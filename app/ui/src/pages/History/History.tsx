@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { cn } from "../../shared/lib/utils";
-import { Clock, Mic, ChevronRight, Activity, Search, LayoutGrid, List } from "lucide-react";
+import { Clock, Mic, ChevronRight, Search } from "lucide-react";
 
 export const History: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'transcripts' | 'conversations'>('transcripts');
@@ -10,18 +10,16 @@ export const History: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 z-10">
         
         {/* Integrated Header & Tabs */}
-        <header className="p-6 md:p-10 lg:p-12 border-b border-[rgba(var(--border))] glass-panel">
+        <header className="p-6 md:p-12 border-b border-[rgba(var(--border))] glass-panel">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 max-w-7xl mx-auto w-full">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                <div className="w-1 h-6 bg-[rgb(var(--accent))] rounded-full" />
-                <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[rgb(var(--foreground))]">
-                  Activity <span className="text-[rgb(var(--accent))] opacity-80">Logs</span>
-                </h1>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
+                <span className="text-[11px] font-bold tracking-[0.2em] text-[rgb(var(--accent))] uppercase">Telemetry</span>
               </div>
-              <p className="text-[rgb(var(--foreground-muted))] text-[10px] md:text-xs uppercase tracking-[0.2em] opacity-60">
-                Distributed Neural Index • Gateway 0.1
-              </p>
+              <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[rgb(var(--foreground))]">
+                Activity <span className="text-[rgb(var(--foreground-muted))] opacity-40">Logs</span>
+              </h1>
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
@@ -31,7 +29,7 @@ export const History: React.FC = () => {
                 <input 
                   type="text" 
                   placeholder="Filter logs..." 
-                  className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground))] focus:outline-none focus:border-[rgb(var(--accent))]/40 transition-all"
+                  className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground))] focus:outline-none focus:border-[rgb(var(--accent))]/40 transition-all"
                 />
               </div>
 
@@ -42,7 +40,7 @@ export const History: React.FC = () => {
                     key={tab}
                     onClick={() => setActiveTab(tab)}
                     className={cn(
-                      "px-6 py-2 rounded-lg text-[9px] font-bold tracking-[0.2em] uppercase transition-all duration-300",
+                      "px-6 py-2 rounded-lg text-[11px] font-bold tracking-[0.2em] uppercase transition-all duration-300",
                       activeTab === tab 
                         ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm" 
                         : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
@@ -69,9 +67,9 @@ export const History: React.FC = () => {
                     <div className="flex md:flex-col items-center md:items-start justify-between md:justify-center gap-3 md:w-28 shrink-0 md:border-r border-white/5 pr-6">
                       <div className="flex items-center gap-2">
                         <Clock size={12} className="text-[rgb(var(--accent))]" />
-                        <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]">14:2{i}</span>
+                        <span className="text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))]">14:2{i}</span>
                       </div>
-                      <span className="text-[8px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded uppercase tracking-tighter">
+                      <span className="text-[11px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded uppercase tracking-tighter">
                         Log_{i}
                       </span>
                     </div>
@@ -104,7 +102,7 @@ export const History: React.FC = () => {
                         </div>
                         <div>
                           <h4 className="text-xs font-bold text-[rgb(var(--foreground))] uppercase tracking-widest">Session {i}</h4>
-                          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))] opacity-50 uppercase">UUID_{i}84</span>
+                          <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] opacity-50 uppercase">UUID_{i}84</span>
                         </div>
                       </div>
                       <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.6)]" />
@@ -118,10 +116,10 @@ export const History: React.FC = () => {
 
                     <div className="flex items-center justify-between pt-4 border-t border-white/5">
                       <div className="flex flex-col">
-                        <span className="text-[8px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-40">Latency</span>
-                        <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))]">12ms</span>
+                        <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-40">Latency</span>
+                        <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">12ms</span>
                       </div>
-                      <button className="text-[9px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest hover:underline">
+                      <button className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest hover:underline">
                         Details
                       </button>
                     </div>

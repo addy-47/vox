@@ -12,7 +12,7 @@ const navItems = [
 export const BottomNav: React.FC = () => {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around md:hidden bg-[#0e0e0e] border-t border-white/5 h-[80px] pb-safe"
+      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around md:hidden bg-[rgb(var(--sidebar))] border-t border-[rgba(var(--border))] h-[64px] pb-safe backdrop-blur-3xl transition-all duration-500"
     >
       {navItems.map((item) => (
         <NavLink
@@ -21,30 +21,28 @@ export const BottomNav: React.FC = () => {
           end={item.path === "/"}
           className={({ isActive }) =>
             cn(
-              "flex flex-col items-center justify-center gap-1.5 flex-1 py-3 transition-all duration-300",
-              isActive ? "text-[#00dbe9]" : "text-white/20 hover:text-white/40"
+              "flex flex-col items-center justify-center flex-1 h-full transition-all duration-500 relative",
+              isActive ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] opacity-40 hover:opacity-80"
             )
           }
         >
-          <div
-            className={cn(
-              "flex items-center justify-center rounded-xl transition-all duration-300",
-              "p-2"
-            )}
-          >
-            <item.icon size={22} strokeWidth={isActive => isActive ? 2 : 1.5} />
-          </div>
-          <span className="font-bold uppercase tracking-[0.2em] text-[8px]">
-            {item.label}
-          </span>
-          {/* Active indicator dot */}
-          <div className={cn(
-            "w-1 h-1 rounded-full bg-[#00dbe9] transition-all duration-500",
-            "opacity-0 scale-0",
-            "mt-1"
-          )} 
-          style={{ opacity: 0 }} // Simplified for now as isActive logic in className handles it
-          />
+          {({ isActive }) => (
+            <>
+              <div
+                className={cn(
+                  "flex items-center justify-center rounded-2xl transition-all duration-500 p-2.5",
+                  isActive && "bg-[rgb(var(--accent))]/5 scale-110"
+                )}
+              >
+                <item.icon size={24} strokeWidth={isActive ? 2 : 1.5} />
+              </div>
+              
+              {/* Active indicator dot */}
+              {isActive && (
+                <div className="absolute bottom-1.5 w-1 h-1 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.5)]" />
+              )}
+            </>
+          )}
         </NavLink>
       ))}
     </nav>
