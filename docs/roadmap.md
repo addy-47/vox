@@ -2,105 +2,95 @@
 
 ---
 
-## Versioning Approach
+## Versioning Philosophy
 
-Follows semantic progression:
+Vox follows a **capability-driven** semantic versioning approach:
 
-```text
-0.x → unstable / building core system  
-1.0.0 → stable, usable product
-```
-
-Each step adds **one core capability**, keeping system testable at all times.
-
----
-
-## 0.1.0 — UI Foundation
-
-* Main app UI (20:9 layout + fullscreen)
-* Orb + animation system
-* Basic navigation (Home, Chat)
-* Overlay tray UI (static, no backend)
-* Tauri multi-window setup
+- **0.1.x**: UI Foundation & Design System
+- **0.2.x**: Audio & Speech Intelligence (STT/VAD)
+- **0.3.x**: Reasoning & Response Loop (LLM/TTS)
+- **0.4.x**: Interaction Fidelity (PTT, Interruption, Hotword)
+- **0.5.0 → 0.9.9**: **The Hardening Loop** (Bugs, Packaging, Performance, Reliability)
+- **1.0.0**: Production Stable Release
 
 ---
 
-## 0.2.0 — Audio + STT Pipeline
+## Phase 1: Foundation (0.1.0)
 
-* Microphone ingestion (real-time streaming)
-* VAD integration (speech start/end detection)
-* STT streaming (Moonshine)
-* Real-time transcript events
-* Tray UI connected to live transcription
+**Goal**: Build a premium, reactive UI shell and establish the design system.
 
----
-
-## 0.3.0 — Core Voice Loop
-
-* LLM integration (local model)
-* TTS integration (Piper)
-* End-to-end pipeline:
-
-```text
-speech → STT → LLM → TTS → playback
-```
-
-* Orb reacts to:
-
-  * listening
-  * thinking
-  * speaking
+- [ ] **Core Layout**: 20:9 dashboard with sidebar navigation.
+- [ ] **The Orb**: Integrate `glob.tsx` as the primary interaction center.
+- [ ] **Tray Architecture**: Tauri multi-window setup for the "Overlay Tray".
+- [ ] **Design Tokens**: Glassmorphism, smooth gradients, and Inter/Outfit typography.
+- [ ] **Mock Interaction**: UI transitions for "Listening", "Thinking", and "Speaking" states.
 
 ---
 
-## 0.4.0 — Interaction Modes
+## Phase 2: Perception (0.2.0)
 
-* Push-to-Talk (PTT)
+**Goal**: Enable the system to hear and transcribe in real-time.
 
-  * in tray
-  * in main app
-* Continuous listening mode
-* Interruption handling:
-
-  * speaking stops playback
-* Hotword detection ("Hey Vox")
-
-  * excludes tray activation
+- [ ] **Streaming Microphones**: Low-latency audio ingestion (PyAudio/SoundDevice).
+- [ ] **VAD Integration**: Silero VAD for speech start/end detection.
+- [ ] **Streaming STT**: Moonshine (local) or Faster-Whisper integration.
+- [ ] **Live Transcripts**: Streaming partial transcripts from backend to UI.
+- [ ] **Noise Profile**: Basic filtering for ambient noise.
 
 ---
 
-## 0.5.0 — System Integration
+## Phase 3: Intelligence (0.3.0)
 
-* Background service (always running STT)
-* Tray lifecycle:
+**Goal**: Close the loop with a local LLM and voice output.
 
-  * show on speech
-  * hide on silence
-  * disabled when app open
-* App auto-launch via hotword
-* Logging system (audio + events + responses)
+- [ ] **Local LLM**: GGUF/Llama.cpp integration (Llama 3 8B or similar).
+- [ ] **Streaming TTS**: Piper (local) for sub-500ms time-to-audio.
+- [ ] **Cloud Fallback**: Optional ElevenLabs integration for high-quality voice.
+- [ ] **Turn Management**: Orchestrate the full STT → LLM → TTS pipeline.
+- [ ] **Context Injection**: Basic session history for "short-term memory".
 
 ---
 
-## 1.0.0 — Stable Release
+## Phase 4: Fidelity (0.4.0)
 
-* Packaging (cross-platform installers)
-* Auto-update system
-* Model download on first run
-* Performance stabilization (8GB target)
-* End-to-end reliability
+**Goal**: Make the interaction feel natural and frictionless.
+
+- [ ] **Push-to-Talk (PTT)**: Global hotkeys and UI triggers.
+- [ ] **Interruption Handling**: Instant audio cutoff when user starts speaking.
+- [ ] **Continuous Mode**: VAD-driven "Always Listening" (optional toggle).
+- [ ] **Wake Word**: "Hey Vox" local detection (Porcupine or similar).
+- [ ] **Audio Ducking**: Automatically lower system volume during voice interaction.
+
+---
+
+## Phase 5: The Hardening Loop (0.5.0 → 0.9.9)
+
+**Goal**: Transition from "Project" to "Product".
+
+- [ ] **Bug Squashing**: Full E2E test coverage.
+- [ ] **Packaging Pipeline**: Cross-platform installers (MSI, AppImage, DMG).
+- [ ] **Model Downloader**: Onboarding flow to download required model weights.
+- [ ] **Performance Profile**: Target 8GB RAM baseline with < 20% CPU overhead.
+- [ ] **Update System**: Tauri auto-updater integration.
+- [ ] **Observability**: Centralized logging for audio, events, and performance.
+
+---
+
+## Phase 6: Release (1.0.0)
+
+**Goal**: A stable, reliable, local-first voice assistant.
+
+- [ ] **Stable APIs**: Finalize IPC protocols between UI and Backend.
+- [ ] **Documentation**: Comprehensive user guide and developer docs.
+- [ ] **Security Audit**: Verify local-only data privacy guarantees.
+- [ ] **Public Beta**: Release to first-wave users.
 
 ---
 
 ## Final Definition of v1.0.0
 
-Vox becomes:
-
-> A stable, always-available voice system that:
->
-> * listens continuously
-> * responds in real-time
-> * runs fully locally
-> * requires zero manual setup after install
-
----
+Vox is a **real-time, always-available voice system** that:
+1. Listens continuously or via hotkey.
+2. Responds in < 1 second.
+3. Runs fully locally with no mandatory cloud dependency.
+4. Provides a reactive, ephemeral UI that stays out of the way.

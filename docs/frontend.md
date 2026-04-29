@@ -8,7 +8,6 @@ Vox frontend is a **multi-surface UI system**, not a single application UI.
 
 It consists of **two independent UI surfaces**:
 
-Logo to use is at : <app/ui/src/assets/vox.webp> and <app/ui/public/vox.svg>
 
 ### 1. Main Application UI
 
