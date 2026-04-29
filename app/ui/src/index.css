@@ -4,19 +4,23 @@
 :root {
   --background: 5, 5, 5;
   --foreground: 229, 226, 225;
+  --foreground-muted: 160, 160, 160;
   --accent: 0, 219, 233;
   --accent-foreground: 5, 5, 5;
-  --card: 14, 14, 14;
-  --border: 255, 255, 255, 0.05;
+  --card: 10, 10, 10;
+  --border: 255, 255, 255, 0.08;
+  --sidebar: 5, 5, 5;
 }
 
 [data-theme='light'] {
-  --background: 250, 250, 250;
-  --foreground: 20, 20, 20;
-  --accent: 0, 180, 190;
+  --background: 248, 250, 252;
+  --foreground: 15, 23, 42;
+  --foreground-muted: 100, 116, 139;
+  --accent: 8, 145, 178; /* Darker cyan for contrast */
   --accent-foreground: 255, 255, 255;
-  --card: 240, 240, 240;
-  --border: 0, 0, 0, 0.1;
+  --card: 255, 255, 255;
+  --border: 0, 0, 0, 0.06;
+  --sidebar: 248, 250, 252;
 }
 
 @layer base {
@@ -28,54 +32,25 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-display;
-  }
-
-  /* Custom Minimalist Scrollbar */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: rgba(var(--foreground), 0.1);
-    border-radius: 10px;
-    border: 2px solid transparent;
-    background-clip: content-box;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(var(--accent), 0.4);
-    background-clip: content-box;
-  }
-
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+    @apply font-display font-semibold;
   }
 }
 
 @layer components {
   .premium-card {
-    @apply bg-[rgb(var(--card))] border border-[rgba(var(--border))] rounded-2xl;
+    @apply bg-[rgb(var(--card))] border border-[rgba(var(--border))] rounded-2xl transition-all duration-300;
   }
 
-  /* Shimmering Text Animation */
-  @keyframes shimmer {
-    0% { background-position: -200% center; }
-    100% { background-position: 200% center; }
+  [data-theme='light'] .premium-card {
+    @apply bg-white/70 backdrop-blur-xl border-white shadow-[0_8px_32px_rgba(0,0,0,0.04)];
   }
 
   .shimmer-text {
     background: linear-gradient(
       90deg, 
-      rgba(var(--foreground), 0.4) 0%, 
-      rgba(var(--foreground), 0.9) 50%, 
-      rgba(var(--foreground), 0.4) 100%
+      rgba(var(--foreground), 0.5) 0%, 
+      rgba(var(--foreground), 1) 50%, 
+      rgba(var(--foreground), 0.5) 100%
     );
     background-size: 200% auto;
     -webkit-background-clip: text;
@@ -84,10 +59,24 @@
   }
 
   .cyan-glow {
-    @apply shadow-[0_0_30px_rgba(var(--accent),0.15)];
+    @apply shadow-[0_0_40px_rgba(var(--accent),0.1)];
   }
+}
 
-  .shimmer-focus {
-    @apply focus:outline-none focus:border-b focus:border-[#00dbe9] focus:shadow-[0_4px_12px_-4px_rgba(0,219,233,0.3)] transition-all;
-  }
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(var(--foreground), 0.15);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--accent), 0.4);
 }
