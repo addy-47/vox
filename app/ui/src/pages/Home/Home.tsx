@@ -25,7 +25,7 @@ export const Home: React.FC = () => {
               {isListening ? "Streaming Active" : "System Standby"}
             </span>
           </div>
-          <p className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-40">
+          <p className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-60">
             {isListening ? "Neural Link Established" : "Gateway Ready"}
           </p>
         </div>
