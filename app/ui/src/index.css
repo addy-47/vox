@@ -1,0 +1,48 @@
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+@layer base {
+  body {
+    @apply bg-background text-on-background font-sans overflow-x-hidden min-h-screen;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-glass-gradient backdrop-blur-2xl border border-white/10;
+  }
+
+  .glass-panel {
+    @apply bg-white/5 backdrop-blur-3xl border border-white/5;
+  }
+
+  .orb-glow {
+    @apply shadow-[0_0_20px_rgba(34,211,238,0.4)];
+  }
+
+  .shimmer-focus {
+    @apply focus:outline-none focus:border-b focus:border-primary-container focus:shadow-[0_4px_12px_-4px_rgba(1,219,233,0.3)] transition-all;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    @apply w-1;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-white/10 rounded-full;
+  }
+
+  .light-leak {
+    @apply fixed rounded-full blur-[120px] opacity-[0.05] pointer-events-none -z-10;
+  }
+}
