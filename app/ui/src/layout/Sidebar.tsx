@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { Settings, Database, Monitor, Sun, Moon } from "lucide-react";
 import { cn } from "../shared/lib/utils";
 import logo from "../assets/logo.webp";
+import logoLight from "../assets/logo-light.webp";
 
 const topNavItems = [
   { icon: Monitor, label: "HOME", path: "/" },
@@ -27,18 +28,20 @@ export const Sidebar: React.FC = () => {
       {/* Top logo area */}
       <div className="flex flex-col items-center justify-center py-10">
         <div
-          className="flex items-center justify-center rounded-full overflow-hidden transition-all duration-300 hover:scale-110 active:scale-95"
+          className={cn(
+            "flex items-center justify-center rounded-full overflow-hidden transition-all duration-300 hover:scale-110 active:scale-95",
+            theme === 'light' ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 shadow-lg shadow-black/[0.05]" : "bg-gradient-to-br from-[rgb(var(--accent))]/20 to-[rgb(var(--accent))]/5 border-[rgb(var(--accent))]/20"
+          )}
           style={{
             width: 52,
             height: 52,
-            background: "linear-gradient(135deg, rgba(var(--accent),0.2) 0%, rgba(var(--accent),0.05) 100%)",
-            border: "1px solid rgba(var(--accent),0.2)",
+            borderWidth: "1px",
           }}
         >
           <img
-            src={logo}
+            src={theme === 'light' ? logoLight : logo}
             alt="VOX"
-            className="w-8 h-8 object-contain"
+            className="w-8 h-8 object-contain transition-all duration-500"
           />
         </div>
       </div>
