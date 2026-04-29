@@ -14,7 +14,7 @@ export const Home: React.FC = () => {
         
         {/* Status Indicator - Reduced top margin */}
         <div className="mt-5 flex flex-col items-center gap-4 animate-in fade-in slide-in-from-top duration-1000">
-          <div className="flex items-center gap-3 px-8 py-2.5 rounded-full bg-white/[0.03] border border-white/10 backdrop-blur-xl shadow-2xl">
+          <div className="flex items-center gap-3 px-8 py-2.5 rounded-full bg-white/[0.03] border border-white/10 backdrop-blur-xl shadow-sm">
             <div className={cn(
               "w-2 h-2 rounded-full",
               isListening 
@@ -30,10 +30,12 @@ export const Home: React.FC = () => {
           </p>
         </div>
 
-        {/* Orb Area - Centered Vertically */}
-        <div className="flex-1 w-full flex items-center justify-center relative overflow-visible">
+        {/* Orb Area - Centered Vertically & Responsive Scaling */}
+        <div className="flex-1 w-full flex items-center justify-center relative overflow-visible px-4">
           <div className="absolute inset-0 bg-gradient-radial from-[rgb(var(--accent))]/5 to-transparent pointer-events-none opacity-40" />
-          <VoxOrb amplitude={isListening ? 0.28 : 0.04} frequency={isListening ? 1.6 : 0.6} />
+          <div className="w-full h-full max-h-[60vh] flex items-center justify-center scale-75 sm:scale-90 lg:scale-100 transition-transform duration-700">
+            <VoxOrb amplitude={isListening ? 0.28 : 0.04} frequency={isListening ? 1.6 : 0.6} />
+          </div>
         </div>
 
         {/* Bottom Interaction Zone - Pushed lower */}
