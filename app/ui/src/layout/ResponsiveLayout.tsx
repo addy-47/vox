@@ -2,7 +2,6 @@ import React from "react";
 import { Sidebar } from "./Sidebar";
 import { BottomNav } from "./BottomNav";
 
-
 interface ResponsiveLayoutProps {
   children: React.ReactNode;
 }
@@ -10,37 +9,33 @@ interface ResponsiveLayoutProps {
 export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) => {
   return (
     <div
-      className="relative h-screen overflow-hidden"
-      style={{ background: "#050505", color: "#e5e2e1" }}
+      className="relative min-h-screen w-full overflow-hidden bg-[rgb(var(--background))] text-[rgb(var(--foreground))] transition-colors duration-500"
     >
       {/* Global atmospheric glow */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <div
-          className="absolute rounded-full"
+          className="absolute rounded-full opacity-40 dark:opacity-100"
           style={{
-            top: "30%",
-            left: "30%",
-            width: 800,
-            height: 800,
-            background: "radial-gradient(circle, rgba(0,219,233,0.06) 0%, transparent 70%)",
-            transform: "translate(-50%, -50%)",
-            filter: "blur(80px)",
+            top: "20%",
+            left: "10%",
+            width: "80vw",
+            height: "80vw",
+            background: "radial-gradient(circle, rgba(var(--accent),0.1) 0%, transparent 70%)",
+            filter: "blur(120px)",
           }}
         />
         <div
-          className="absolute rounded-full"
+          className="absolute rounded-full opacity-30 dark:opacity-100"
           style={{
-            bottom: "0%",
-            right: "0%",
-            width: 600,
-            height: 600,
-            background: "radial-gradient(circle, rgba(107,1,204,0.08) 0%, transparent 70%)",
+            bottom: "-10%",
+            right: "-10%",
+            width: "60vw",
+            height: "60vw",
+            background: "radial-gradient(circle, rgba(var(--accent),0.05) 0%, transparent 70%)",
             filter: "blur(100px)",
           }}
         />
       </div>
-
-      {/* Header removed as requested */}
 
       {/* Left sidebar (desktop only) */}
       <div className="hidden md:block">
@@ -52,14 +47,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
       {/* Main content area */}
       <main
-        className="relative"
-        style={{
-          marginLeft: 0,
-          height: "100vh",
-          zIndex: 1,
-        }}
+        className="relative z-10 w-full h-screen overflow-hidden"
       >
-        <div className="md:ml-[96px] h-full overflow-hidden">
+        <div className="md:ml-[96px] h-full overflow-hidden flex flex-col">
           {children}
         </div>
       </main>

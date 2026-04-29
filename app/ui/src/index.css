@@ -25,32 +25,36 @@
 
 @layer base {
   body {
-    @apply bg-[rgb(var(--background))] text-[rgb(var(--foreground))] font-sans overflow-x-hidden min-h-screen;
+    @apply bg-[rgb(var(--background))] text-[rgb(var(--foreground))] font-sans overflow-x-hidden min-h-screen selection:bg-[rgb(var(--accent))]/30;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "ss01", "ss02", "cv01", "cv02";
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-display font-semibold;
+  #root {
+    @apply min-h-screen flex flex-col overflow-x-hidden;
   }
 }
 
 @layer components {
   .premium-card {
-    @apply bg-[rgb(var(--card))] border border-[rgba(var(--border))] rounded-2xl transition-all duration-300;
+    @apply bg-white/[0.03] dark:bg-white/[0.02] backdrop-blur-md border border-white/10 rounded-2xl transition-all duration-500 shadow-sm;
   }
 
   [data-theme='light'] .premium-card {
-    @apply bg-white/70 backdrop-blur-xl border-white shadow-[0_8px_32px_rgba(0,0,0,0.04)];
+    @apply bg-white/40 backdrop-blur-xl border-white/60 shadow-sm;
+  }
+
+  .glass-panel {
+    @apply bg-white/[0.01] backdrop-blur-2xl border border-white/[0.05] shadow-none;
   }
 
   .shimmer-text {
     background: linear-gradient(
       90deg, 
-      rgba(var(--foreground), 0.5) 0%, 
+      rgba(var(--foreground), 0.4) 0%, 
       rgba(var(--foreground), 1) 50%, 
-      rgba(var(--foreground), 0.5) 100%
+      rgba(var(--foreground), 0.4) 100%
     );
     background-size: 200% auto;
     -webkit-background-clip: text;
