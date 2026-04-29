@@ -32,7 +32,7 @@ export const LiveWaveform: React.FC<LiveWaveformProps> = ({
           const context = new AudioContextClass();
           const source = context.createMediaStreamSource(stream);
           const analyser = context.createAnalyser();
-          analyser.fftSize = 256;
+          analyser.fftSize = 512;
           analyser.smoothingTimeConstant = 0.8;
           source.connect(analyser);
 
@@ -78,52 +78,69 @@ export const LiveWaveform: React.FC<LiveWaveformProps> = ({
         analyserRef.current.getByteFrequencyData(dataArrayRef.current as any);
         const data = dataArrayRef.current;
         
+        // Mirroring and centering logic
         ctx.beginPath();
         ctx.lineWidth = 3;
         ctx.strokeStyle = "#00dbe9";
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
 
-        const sliceWidth = width / data.length;
-        let x = 0;
-
-        for (let i = 0; i < data.length; i++) {
-          const v = data[i] / 128.0;
-          const y = (v * heightVal) / 2;
-
-          if (i === 0) {
-            ctx.moveTo(x, y);
-          } else {
-            ctx.lineTo(x, y);
-          }
-
-          x += sliceWidth;
+        const centerX = width / 2;
+        const barWidth = (width / 2) / (data.length / 2);
+        
+        // Draw from center to right
+        for (let i = 0; i < data.length / 2; i++) {
+          const v = data[i] / 255.0;
+          const h = (v * heightVal * 0.8);
+          const x = centerX + (i * barWidth);
+          const y = (heightVal - h) / 2;
+          
+          if (i === 0) ctx.moveTo(x, heightVal / 2);
+          ctx.lineTo(x, y + h / 2);
+        }
+        
+        // Draw from center to left (mirror)
+        for (let i = 0; i < data.length / 2; i++) {
+          const v = data[i] / 255.0;
+          const h = (v * heightVal * 0.8);
+          const x = centerX - (i * barWidth);
+          const y = (heightVal - h) / 2;
+          
+          if (i === 0) ctx.moveTo(x, heightVal / 2);
+          ctx.lineTo(x, y + h / 2);
         }
 
         ctx.stroke();
 
-        // Add a secondary glow wave
+        // Secondary glow layer
         ctx.beginPath();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = "rgba(0, 219, 233, 0.3)";
-        x = 0;
-        for (let i = 0; i < data.length; i++) {
-          const v = data[i] / 128.0;
-          const y = (v * heightVal) / 2 + Math.sin(i * 0.1) * 5;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-          x += sliceWidth;
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "rgba(0, 219, 233, 0.4)";
+        for (let i = 0; i < data.length / 2; i++) {
+          const v = data[i] / 255.0;
+          const h = (v * heightVal * 1.1) + Math.sin(Date.now() / 200 + i) * 5;
+          const x_right = centerX + (i * barWidth);
+          const x_left = centerX - (i * barWidth);
+          const y = heightVal / 2;
+          
+          ctx.moveTo(x_right, y - h/2);
+          ctx.lineTo(x_right, y + h/2);
+          ctx.moveTo(x_left, y - h/2);
+          ctx.lineTo(x_left, y + h/2);
         }
         ctx.stroke();
+
       } else if (processing) {
-        // Idle breathing wave
+        // Symmetric idle breathing
         const time = Date.now() / 1000;
         ctx.beginPath();
         ctx.lineWidth = 2;
-        ctx.strokeStyle = "rgba(0, 219, 233, 0.2)";
+        ctx.strokeStyle = "rgba(0, 219, 233, 0.25)";
         
         for (let x = 0; x < width; x++) {
-          const y = heightVal / 2 + Math.sin(x * 0.05 + time * 5) * 10;
+          const distanceFromCenter = Math.abs(x - width / 2) / (width / 2);
+          const envelope = Math.pow(1 - distanceFromCenter, 2);
+          const y = heightVal / 2 + Math.sin(x * 0.05 + time * 5) * 15 * envelope;
           if (x === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
@@ -145,7 +162,7 @@ export const LiveWaveform: React.FC<LiveWaveformProps> = ({
     >
       <canvas
         ref={canvasRef}
-        className="w-full h-full opacity-80"
+        className="w-full h-full"
       />
     </div>
   );

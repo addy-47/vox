@@ -25,10 +25,11 @@
 
 @layer base {
   body {
-    @apply bg-[rgb(var(--background))] text-[rgb(var(--foreground))] font-sans overflow-x-hidden min-h-screen selection:bg-[rgb(var(--accent))]/30;
+    @apply bg-[rgb(var(--background))] text-[rgb(var(--foreground))] font-sans overflow-x-hidden min-h-screen selection:bg-[rgb(var(--accent))]/30 transition-all duration-500 ease-in-out;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "ss01", "ss02", "cv01", "cv02";
+    font-size: 14px;
   }
 
   #root {
@@ -37,29 +38,30 @@
 }
 
 @layer components {
+  /* Liquid Glass Design System - Ultra-Premium */
   .premium-card {
-    @apply bg-white/[0.03] dark:bg-white/[0.02] backdrop-blur-md border border-white/10 rounded-2xl transition-all duration-500 shadow-sm;
+    @apply bg-white/[0.03] dark:bg-white/[0.01] backdrop-blur-[40px] border border-white/10 rounded-3xl transition-all duration-700 shadow-none;
   }
 
   [data-theme='light'] .premium-card {
-    @apply bg-white/40 backdrop-blur-xl border-white/60 shadow-sm;
+    @apply bg-white/30 backdrop-blur-[60px] border-white/40 shadow-xl shadow-black/[0.02];
   }
 
   .glass-panel {
-    @apply bg-white/[0.01] backdrop-blur-2xl border border-white/[0.05] shadow-none;
+    @apply bg-white/[0.005] backdrop-blur-[80px] border border-white/[0.04];
   }
 
   .shimmer-text {
     background: linear-gradient(
       90deg, 
-      rgba(var(--foreground), 0.4) 0%, 
+      rgba(var(--foreground), 0.3) 0%, 
       rgba(var(--foreground), 1) 50%, 
-      rgba(var(--foreground), 0.4) 100%
+      rgba(var(--foreground), 0.3) 100%
     );
     background-size: 200% auto;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: shimmer 4s linear infinite;
+    animation: shimmer 5s linear infinite;
   }
 
   .cyan-glow {
@@ -77,10 +79,11 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(var(--foreground), 0.15);
+  background: rgba(var(--accent), 0.3);
   border-radius: 10px;
+  transition: background 0.3s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--accent), 0.4);
+  background: rgba(var(--accent), 0.6);
 }

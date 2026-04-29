@@ -81,13 +81,13 @@ export const Sidebar: React.FC = () => {
 
       {/* Theme Toggle Only at Bottom */}
       <div className="flex flex-col items-center py-10 border-t border-[rgba(var(--border))]">
-        <button 
+        <button
           onClick={toggleTheme}
           className="p-4 rounded-2xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-white/[0.03] transition-all duration-300 group"
           title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
         >
-          {theme === 'dark' 
-            ? <Sun size={20} strokeWidth={1.5} className="group-hover:rotate-45 transition-transform duration-500" /> 
+          {theme === 'dark'
+            ? <Sun size={20} strokeWidth={1.5} className="group-hover:rotate-45 transition-transform duration-500" />
             : <Moon size={20} strokeWidth={1.5} className="group-hover:-rotate-12 transition-transform duration-500" />
           }
         </button>
