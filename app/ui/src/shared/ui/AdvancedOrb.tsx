@@ -30,7 +30,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
     // Scene
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.z = 5;
+    camera.position.z = 6; // Move back slightly to prevent cutoff
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setSize(width, height);
@@ -39,15 +39,15 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
     container.appendChild(renderer.domElement);
 
     // Geometry
-    const geometry = new THREE.SphereGeometry(1.8, 64, 64);
+    const geometry = new THREE.SphereGeometry(2.0, 128, 128);
 
-    // Cyan-teal color matching design spec
+    // Uniforms
     const uniforms = {
       u_time: { value: 0.0 },
       u_amplitude: { value: 0.0 },
       u_frequency: { value: 1.0 },
       u_color_a: { value: new THREE.Color('#00dbe9') },
-      u_color_b: { value: new THREE.Color('#00a8b5') },
+      u_color_b: { value: new THREE.Color('#008c96') },
     };
 
     const material = new THREE.ShaderMaterial({
@@ -65,9 +65,10 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
         void main() {
           vNormal = normalize(normalMatrix * normal);
 
-          float wave = sin(position.y * u_frequency * 3.0 + u_time * 1.5)
-                     * cos(position.x * u_frequency * 2.5 + u_time * 1.2)
-                     * (u_amplitude * 0.4 + 0.08);
+          // Subtle displacement - less aggressive
+          float wave = sin(position.y * u_frequency * 2.0 + u_time * 1.0)
+                     * cos(position.x * u_frequency * 1.5 + u_time * 0.8)
+                     * (u_amplitude * 0.25 + 0.05);
 
           vDisplacement = wave;
           vec3 newPosition = position + normal * wave;
@@ -82,10 +83,13 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
 
         void main() {
           float fresnel = 1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0)));
-          float alpha = smoothstep(0.1, 0.85, fresnel) * 0.9;
+          
+          // More hollow space: adjust smoothstep range for a thinner shell
+          // Higher start value (0.7 instead of 0.4) makes the center clearer
+          float alpha = smoothstep(0.7, 1.0, fresnel) * 0.6;
 
-          // Slight color shift based on displacement
-          vec3 color = mix(u_color_b, u_color_a, clamp(vDisplacement * 4.0 + 0.5, 0.0, 1.0));
+          // Subtle gradient shift
+          vec3 color = mix(u_color_b, u_color_a, clamp(vDisplacement * 10.0 + 0.5, 0.0, 1.0));
 
           gl_FragColor = vec4(color, alpha);
         }
@@ -142,7 +146,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
   return (
     <div
       ref={mountRef}
-      style={{ width: '100%', height: '100%', overflow: 'hidden', background: 'transparent' }}
+      style={{ width: '100%', height: '100%', background: 'transparent' }}
     />
   );
 };
