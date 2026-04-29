@@ -44,7 +44,7 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Main Navigation */}
-      <nav className="flex flex-col items-center gap-4 py-4 flex-1">
+      <nav className="flex flex-col items-center gap-1 py-4 flex-1">
         {topNavItems.map((item) => (
           <NavLink
             key={item.label}
