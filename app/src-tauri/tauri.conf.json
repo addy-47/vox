@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "vox-ui",
         "width": 400,
         "height": 800,
@@ -19,6 +20,19 @@
         "decorations": true,
         "alwaysOnTop": true,
         "resizable": true
+      },
+      {
+        "label": "tray",
+        "title": "vox-tray",
+        "url": "/tray",
+        "width": 360,
+        "height": 500,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "visible": true,
+        "shadow": false
       }
     ],
     "security": {
