@@ -34,6 +34,19 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Position Tray HUD on the right edge
+            if let Some(window) = app.get_webview_window("tray") {
+                if let Some(monitor) = window.current_monitor().unwrap_or(None) {
+                    let screen_size = monitor.size();
+                    let win_size = window.outer_size().unwrap_or(tauri::PhysicalSize::new(360, 500));
+                    
+                    let x = screen_size.width as i32 - win_size.width as i32;
+                    let y = (screen_size.height as i32 - win_size.height as i32) / 2;
+                    
+                    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![greet])
