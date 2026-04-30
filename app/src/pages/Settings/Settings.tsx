@@ -42,25 +42,28 @@ export const Settings: React.FC = () => {
       {/* Page header */}
       <header className="p-6 md:p-12 border-b border-[rgba(var(--border),0.05)] glass-panel shrink-0">
         <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-              <span className="text-[11px] font-bold tracking-[0.2em] text-[rgb(var(--accent))] uppercase">Configuration</span>
+          <div className="flex items-start justify-between w-full md:w-auto">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
+                <span className="text-[11px] font-bold tracking-[0.2em] text-[rgb(var(--accent))] uppercase">Configuration</span>
+              </div>
+              <h1 className="text-3xl md:text-4xl font-bold text-[rgb(var(--foreground))] tracking-tight">System <span className="text-[rgb(var(--foreground-muted))] opacity-40">Core</span></h1>
             </div>
-            <h1 className="text-3xl md:text-4xl font-bold text-[rgb(var(--foreground))] tracking-tight">System <span className="text-[rgb(var(--foreground-muted))] opacity-40">Core</span></h1>
-          </div>
 
-          <div className="flex items-center gap-3">
             {/* Dark mode toggle — visible on mobile only (sidebar has it on desktop) */}
             <button
               onClick={toggleTheme}
-              className="md:hidden p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-white/[0.03] transition-colors duration-300 duration-300"
+              className="md:hidden p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-white/[0.03] transition-colors duration-300"
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             >
               {theme === 'dark'
                 ? <Sun size={18} strokeWidth={1.5} />
                 : <Moon size={18} strokeWidth={1.5} />}
             </button>
+          </div>
+
+          <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 p-1.5 bg-white/[0.03] border border-[rgba(var(--border),0.05)] rounded-2xl">
               <button 
                 onClick={() => setActiveTab("core")}
