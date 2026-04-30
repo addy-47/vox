@@ -1,3 +1,4 @@
+import React from "react";
 import { Sidebar } from "./Sidebar";
 import { BottomNav } from "./BottomNav";
 import { Outlet } from "react-router-dom";
@@ -9,64 +10,40 @@ interface ResponsiveLayoutProps {
 export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) => {
   return (
     <div
-      className="relative min-h-screen w-full overflow-hidden bg-[rgb(var(--background))] text-[rgb(var(--foreground))] transition-colors duration-500"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        width: "100%",
+        overflow: "hidden",
+      }}
+      className="bg-[rgb(var(--background))] text-[rgb(var(--foreground))]"
     >
-      {/* Global atmospheric glow & Orbs */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        {/* Primary Cyan Orb */}
-        <div
-          className="absolute rounded-full opacity-20 dark:opacity-40 transition-all duration-1000"
-          style={{
-            top: "15%",
-            left: "5%",
-            width: "45vw",
-            height: "45vw",
-            background: "radial-gradient(circle, rgba(0, 219, 233, 0.15) 0%, transparent 70%)",
-            filter: "blur(140px)",
-          }}
-        />
-        {/* Secondary Cyan Orb */}
-        <div
-          className="absolute rounded-full opacity-10 dark:opacity-30 transition-all duration-1000"
-          style={{
-            bottom: "10%",
-            right: "5%",
-            width: "40vw",
-            height: "40vw",
-            background: "radial-gradient(circle, rgba(0, 219, 233, 0.1) 0%, transparent 70%)",
-            filter: "blur(120px)",
-          }}
-        />
-        {/* Ambient accent */}
-        <div
-          className="absolute rounded-full opacity-20 dark:opacity-40"
-          style={{
-            top: "40%",
-            right: "10%",
-            width: "30vw",
-            height: "30vw",
-            background: "radial-gradient(circle, rgba(var(--accent),0.05) 0%, transparent 70%)",
-            filter: "blur(100px)",
-          }}
-        />
-      </div>
+      {/* ── Content Area ──────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative", minHeight: 0 }}>
 
-      {/* Left sidebar (desktop only) */}
-      <div className="hidden md:block">
-        <Sidebar />
-      </div>
-
-      {/* Bottom nav (mobile only) */}
-      <BottomNav />
-
-      {/* Main content area */}
-      <main
-        className="relative z-10 w-full h-screen overflow-hidden"
-      >
-        <div className="md:ml-[96px] h-full overflow-hidden flex flex-col pb-[64px] md:pb-0">
-          {children || <Outlet />}
+        {/* Background atmospheric orbs — fixed to viewport, pointer-events none */}
+        <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0 }}>
+          <div style={{ position: "absolute", top: "15%", left: "5%", width: "45vw", height: "45vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,219,233,0.15) 0%, transparent 70%)", filter: "blur(140px)", opacity: 0.3 }} />
+          <div style={{ position: "absolute", bottom: "10%", right: "5%", width: "40vw", height: "40vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,219,233,0.1) 0%, transparent 70%)", filter: "blur(120px)", opacity: 0.15 }} />
+          <div style={{ position: "absolute", top: "40%", right: "10%", width: "30vw", height: "30vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,219,233,0.05) 0%, transparent 70%)", filter: "blur(100px)", opacity: 0.2 }} />
         </div>
-      </main>
+
+        {/* Left sidebar — desktop only */}
+        <div className="hidden md:block">
+          <Sidebar />
+        </div>
+
+        {/* Bottom nav — mobile only */}
+        <BottomNav />
+
+        {/* Page content */}
+        <main style={{ position: "relative", zIndex: 10, flex: 1, height: "100%", overflow: "hidden" }}>
+          <div className="md:ml-[96px] h-full overflow-hidden flex flex-col pb-[64px] md:pb-0">
+            {children || <Outlet />}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

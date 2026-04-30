@@ -41,7 +41,7 @@ export const History: React.FC = () => {
     <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative">
       
       {/* Page header - Identical to Settings */}
-      <header className="p-6 md:p-12 border-b border-[rgba(var(--border))] glass-panel shrink-0">
+      <header className="p-6 md:p-12 border-b border-[rgba(var(--border),0.05)] glass-panel shrink-0">
         <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-center justify-between gap-8">
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-1">
