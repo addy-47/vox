@@ -8,7 +8,7 @@ export const Home: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
 
   return (
-    <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-all duration-500">
+    <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-colors duration-300">
       {/* ===== CENTRAL HUD AREA ===== */}
       <div className="flex-1 flex flex-col relative overflow-hidden">
 

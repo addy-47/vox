@@ -24,7 +24,7 @@ export const Sidebar: React.FC = () => {
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
   return (
-    <aside className="fixed left-0 top-0 h-full z-40 flex flex-col bg-[rgb(var(--sidebar))] border-r border-[rgba(var(--border))] transition-colors duration-300" style={{ width: "96px" }}>
+    <aside className="fixed left-0 top-0 h-full z-40 flex flex-col bg-[rgb(var(--sidebar))] border-r border-[rgba(var(--border),0.05)] transition-colors duration-300" style={{ width: "96px" }}>
       {/* Top logo area */}
       <div className="flex flex-col items-center justify-center py-10">
         <div
@@ -83,7 +83,7 @@ export const Sidebar: React.FC = () => {
       </nav>
 
       {/* Theme Toggle Only at Bottom */}
-      <div className="flex flex-col items-center py-10 border-t border-[rgba(var(--border))]">
+      <div className="flex flex-col items-center py-10 border-t border-[rgba(var(--border),0.05)]">
         <button
           onClick={toggleTheme}
           className="p-4 rounded-2xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-white/[0.03] transition-all duration-300 group"

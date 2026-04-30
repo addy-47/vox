@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Brain, ChevronDown, Activity, Volume2, Shield, Save } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Brain, ChevronDown, Activity, Volume2, Shield, Save, Sun, Moon } from "lucide-react";
 import { cn } from "../../shared/lib/utils";
 
 export const Settings: React.FC = () => {
@@ -8,31 +8,39 @@ export const Settings: React.FC = () => {
   const [selectedVoice, setSelectedVoice] = useState("ETHER");
   const [alwaysListening, setAlwaysListening] = useState(true);
   const [secureMode, setSecureMode] = useState(true);
-  const [trayEnabled, setTrayEnabled] = useState(() => {
-    const saved = localStorage.getItem('isTrayEnabled');
-    return saved === null ? true : saved === 'true';
-  });
-
-  const [theme] = React.useState<'dark' | 'light'>(
+  const [theme, setTheme] = useState<'dark' | 'light'>(
     (localStorage.getItem('theme') as 'dark' | 'light') || 'dark'
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  React.useEffect(() => {
-    localStorage.setItem('isTrayEnabled', String(trayEnabled));
-  }, [trayEnabled]);
+  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
+  // Tray Settings State
+  const [trayEnabled, setTrayEnabled] = useState(() => localStorage.getItem('isTrayEnabled') !== 'false');
+  const [trayTextColor, setTrayTextColor] = useState(() => localStorage.getItem('trayTextColor') || 'accent');
+  const [trayBlurDensity, setTrayBlurDensity] = useState(() => parseInt(localStorage.getItem('trayBlurDensity') || '40'));
+  const [trayGlassTint, setTrayGlassTint] = useState(() => localStorage.getItem('trayGlassTint') !== 'false');
+  const [trayHideDuration, setTrayHideDuration] = useState(() => parseFloat(localStorage.getItem('trayHideDuration') || '5.0'));
+  const [trayFadeTransition, setTrayFadeTransition] = useState(() => localStorage.getItem('trayFadeTransition') || 'Smooth');
+
+  // Sync settings
+  useEffect(() => { localStorage.setItem('isTrayEnabled', String(trayEnabled)); }, [trayEnabled]);
+  useEffect(() => { localStorage.setItem('trayTextColor', trayTextColor); }, [trayTextColor]);
+  useEffect(() => { localStorage.setItem('trayBlurDensity', String(trayBlurDensity)); }, [trayBlurDensity]);
+  useEffect(() => { localStorage.setItem('trayGlassTint', String(trayGlassTint)); }, [trayGlassTint]);
+  useEffect(() => { localStorage.setItem('trayHideDuration', String(trayHideDuration)); }, [trayHideDuration]);
+  useEffect(() => { localStorage.setItem('trayFadeTransition', trayFadeTransition); }, [trayFadeTransition]);
 
   const voices = ["ETHER", "SOLAS", "KRYPTOS", "LYRA"];
 
   return (
     <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative">
       {/* Page header */}
-      <header className="p-6 md:p-12 border-b border-[rgba(var(--border))] glass-panel shrink-0">
+      <header className="p-6 md:p-12 border-b border-[rgba(var(--border),0.05)] glass-panel shrink-0">
         <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-center justify-between gap-8">
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-1">
@@ -42,12 +50,22 @@ export const Settings: React.FC = () => {
             <h1 className="text-3xl md:text-4xl font-bold text-[rgb(var(--foreground))] tracking-tight">System <span className="text-[rgb(var(--foreground-muted))] opacity-40">Core</span></h1>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 p-1.5 bg-white/[0.03] border border-white/10 rounded-2xl">
+          <div className="flex items-center gap-3">
+            {/* Dark mode toggle — visible on mobile only (sidebar has it on desktop) */}
+            <button
+              onClick={toggleTheme}
+              className="md:hidden p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-white/[0.03] transition-colors duration-300 duration-300"
+              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            >
+              {theme === 'dark'
+                ? <Sun size={18} strokeWidth={1.5} />
+                : <Moon size={18} strokeWidth={1.5} />}
+            </button>
+            <div className="flex items-center gap-2 p-1.5 bg-white/[0.03] border border-[rgba(var(--border),0.05)] rounded-2xl">
               <button 
                 onClick={() => setActiveTab("core")}
                 className={cn(
-                  "px-6 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all",
+                  "px-6 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-colors duration-300",
                   activeTab === "core" 
                     ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg" 
                     : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
@@ -58,7 +76,7 @@ export const Settings: React.FC = () => {
               <button 
                 onClick={() => setActiveTab("tray")}
                 className={cn(
-                  "px-6 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all",
+                  "px-6 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-colors duration-300",
                   activeTab === "tray" 
                     ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg" 
                     : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
@@ -91,17 +109,17 @@ export const Settings: React.FC = () => {
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="space-y-3">
                         <label className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-40">Active Inference</label>
-                        <div className="flex items-center justify-between px-5 py-4 rounded-xl bg-white/[0.03] border border-white/10 cursor-pointer hover:border-[rgb(var(--accent))]/30 transition-all group">
+                        <div className="flex items-center justify-between px-5 py-4 rounded-xl bg-white/[0.03] border border-[rgba(var(--border),0.05)] cursor-pointer hover:border-[rgb(var(--accent))]/30 transition-colors duration-300 group">
                           <span className="text-xs font-mono text-[rgb(var(--foreground))] opacity-80">{selectedModel}</span>
                           <ChevronDown size={14} className="text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--accent))]" />
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 md:p-5 rounded-xl bg-white/[0.03] border border-white/5">
+                        <div className="p-4 md:p-5 rounded-xl bg-white/[0.03] border border-[rgba(var(--border),0.03)]">
                             <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase mb-2 opacity-40">Latency</div>
                             <div className="text-sm font-bold text-[rgb(var(--accent))]">24ms</div>
                         </div>
-                        <div className="p-4 md:p-5 rounded-xl bg-white/[0.03] border border-white/5">
+                        <div className="p-4 md:p-5 rounded-xl bg-white/[0.03] border border-[rgba(var(--border),0.03)]">
                             <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase mb-2 opacity-40">Status</div>
                             <div className="text-sm font-bold text-[rgb(var(--foreground))] opacity-60">Stable</div>
                         </div>
@@ -125,10 +143,10 @@ export const Settings: React.FC = () => {
                         key={v}
                         onClick={() => setSelectedVoice(v)}
                         className={cn(
-                          "px-5 py-2 rounded-xl text-[11px] font-bold tracking-[0.15em] uppercase transition-all duration-500",
+                          "px-5 py-2 rounded-xl text-[11px] font-bold tracking-[0.15em] uppercase transition-colors duration-300",
                           selectedVoice === v 
                             ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm" 
-                            : "bg-white/[0.03] text-[rgb(var(--foreground-muted))] border border-white/10 hover:bg-white/10"
+                            : "bg-white/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-white/10"
                         )}
                       >
                         {v}
@@ -136,7 +154,7 @@ export const Settings: React.FC = () => {
                     ))}
                   </div>
 
-                  <div className="h-20 w-full bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-center overflow-hidden">
+                  <div className="h-20 w-full bg-white/[0.02] border border-[rgba(var(--border),0.03)] rounded-2xl flex items-center justify-center overflow-hidden">
                     <div className="flex items-center gap-1.5">
                         {[4, 12, 24, 42, 32, 18, 48, 36, 12, 6].map((h, i) => (
                           <div key={i} className="w-1 rounded-full bg-[rgb(var(--accent))]/40 animate-pulse" style={{ height: h, animationDelay: `${i * 0.1}s` }} />
@@ -160,12 +178,12 @@ export const Settings: React.FC = () => {
                       <button 
                         onClick={() => setAlwaysListening(!alwaysListening)}
                         className={cn(
-                          "w-12 h-6 rounded-full relative transition-all duration-500",
+                          "w-12 h-6 rounded-full relative transition-colors duration-300",
                           alwaysListening ? "bg-[rgb(var(--accent))]" : "bg-white/[0.05]"
                         )}
                       >
                         <div className={cn(
-                          "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-500",
+                          "absolute top-1 w-4 h-4 rounded-full bg-white transition-colors duration-300",
                           alwaysListening ? "left-7" : "left-1"
                         )} />
                       </button>
@@ -179,12 +197,12 @@ export const Settings: React.FC = () => {
                       <button 
                         onClick={() => setSecureMode(!secureMode)}
                         className={cn(
-                          "w-12 h-6 rounded-full relative transition-all duration-500",
+                          "w-12 h-6 rounded-full relative transition-colors duration-300",
                           secureMode ? "bg-[rgb(var(--accent))]" : "bg-white/[0.05]"
                         )}
                       >
                         <div className={cn(
-                          "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-500",
+                          "absolute top-1 w-4 h-4 rounded-full bg-white transition-colors duration-300",
                           secureMode ? "left-7" : "left-1"
                         )} />
                       </button>
@@ -200,7 +218,7 @@ export const Settings: React.FC = () => {
                   <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed mb-6 opacity-70">
                     VOX is operating in a localized neural environment. All biometric and vocal signatures are purged post-inference.
                   </p>
-                  <button className="w-full py-3 rounded-xl bg-white/[0.03] border border-white/10 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-[rgb(var(--foreground))] transition-all">
+                  <button className="w-full py-3 rounded-xl bg-white/[0.03] border border-[rgba(var(--border),0.05)] text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-[rgb(var(--foreground))] transition-colors duration-300">
                       Inspect Metadata
                   </button>
                 </div>
@@ -219,18 +237,18 @@ export const Settings: React.FC = () => {
                     <button 
                         onClick={() => setTrayEnabled(!trayEnabled)}
                         className={cn(
-                          "w-14 h-7 rounded-full relative transition-all duration-500",
+                          "w-14 h-7 rounded-full relative transition-colors duration-300",
                           trayEnabled ? "bg-[rgb(var(--accent))]" : "bg-white/[0.05]"
                         )}
                       >
                         <div className={cn(
-                          "absolute top-1 w-5 h-5 rounded-full bg-white transition-all duration-500",
+                          "absolute top-1 w-5 h-5 rounded-full bg-white transition-colors duration-300",
                           trayEnabled ? "left-8" : "left-1"
                         )} />
                       </button>
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-12 pt-10 border-t border-white/5">
+                  <div className="grid md:grid-cols-2 gap-12 pt-10 border-t border-[rgba(var(--border),0.03)]">
                     {/* Visual Settings */}
                     <div className="space-y-8">
                        <h3 className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest">Aesthetics</h3>
@@ -242,9 +260,12 @@ export const Settings: React.FC = () => {
                                 {['accent', 'white', 'muted'].map(c => (
                                    <button 
                                       key={c}
-                                      className="w-6 h-6 rounded-lg border border-white/10 transition-transform active:scale-90"
+                                      className={cn(
+                                        "w-6 h-6 rounded-lg border border-[rgba(var(--border),0.05)] transition-colors duration-300 active:scale-90",
+                                        trayTextColor === c ? "ring-2 ring-[rgb(var(--accent))] ring-offset-2 ring-offset-[rgb(var(--background))]" : "opacity-50 hover:opacity-100"
+                                      )}
                                       style={{ backgroundColor: c === 'accent' ? 'rgb(var(--accent))' : c === 'white' ? 'white' : 'rgba(255,255,255,0.4)' }}
-                                      onClick={() => localStorage.setItem('trayTextColor', c)}
+                                      onClick={() => setTrayTextColor(c)}
                                    />
                                 ))}
                              </div>
@@ -253,9 +274,15 @@ export const Settings: React.FC = () => {
                           <div className="space-y-3">
                              <div className="flex justify-between">
                                 <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Blur Density</span>
-                                <span className="text-[10px] font-mono opacity-40">40px</span>
+                                <span className="text-[10px] font-mono opacity-40">{trayBlurDensity}px</span>
                              </div>
-                             <input type="range" className="w-full h-1.5 bg-white/5 rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]" />
+                             <input 
+                                type="range" 
+                                min="0" max="100" 
+                                value={trayBlurDensity}
+                                onChange={(e) => setTrayBlurDensity(Number(e.target.value))}
+                                className="w-full h-1.5 bg-white/5 rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]" 
+                              />
                           </div>
 
                           <div className="flex items-center justify-between">
@@ -263,8 +290,17 @@ export const Settings: React.FC = () => {
                                 <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Glass Tint</span>
                                 <p className="text-[10px] opacity-30 uppercase tracking-widest">Enable backdrop colorization</p>
                              </div>
-                             <button className="w-10 h-5 rounded-full bg-[rgb(var(--accent))] relative">
-                                <div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full" />
+                             <button 
+                                onClick={() => setTrayGlassTint(!trayGlassTint)}
+                                className={cn(
+                                  "w-10 h-5 rounded-full relative transition-colors duration-300 duration-300",
+                                  trayGlassTint ? "bg-[rgb(var(--accent))]" : "bg-white/10"
+                                )}
+                              >
+                                <div className={cn(
+                                  "absolute top-1 w-3 h-3 bg-white rounded-full transition-colors duration-300 duration-300",
+                                  trayGlassTint ? "right-1" : "left-1"
+                                )} />
                              </button>
                           </div>
                        </div>
@@ -278,14 +314,19 @@ export const Settings: React.FC = () => {
                           <div className="space-y-4">
                              <div className="flex justify-between">
                                 <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Hide Delay</span>
-                                <span className="text-[10px] font-mono opacity-40">5.0s</span>
+                                <span className="text-[10px] font-mono opacity-40">{trayHideDuration}s</span>
                              </div>
                              <div className="grid grid-cols-5 gap-2">
                                 {[1, 2, 3, 5, 10].map(s => (
                                    <button 
                                       key={s}
-                                      className="py-2 rounded-lg bg-white/5 border border-white/5 text-[10px] font-bold hover:bg-white/10 transition-colors"
-                                      onClick={() => localStorage.setItem('trayHideDuration', String(s))}
+                                      className={cn(
+                                        "py-2 rounded-lg text-[10px] font-bold transition-colors duration-300",
+                                        trayHideDuration === s 
+                                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
+                                          : "bg-white/5 border border-[rgba(var(--border),0.03)] hover:bg-white/10 text-white/60"
+                                      )}
+                                      onClick={() => setTrayHideDuration(s)}
                                    >
                                       {s}s
                                    </button>
@@ -302,7 +343,13 @@ export const Settings: React.FC = () => {
                                 {['Snappy', 'Smooth', 'Liquid'].map(f => (
                                    <button 
                                       key={f}
-                                      className="py-2.5 rounded-lg bg-white/5 border border-white/5 text-[10px] font-bold hover:bg-white/10 transition-colors uppercase tracking-widest"
+                                      onClick={() => setTrayFadeTransition(f)}
+                                      className={cn(
+                                        "py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors duration-300",
+                                        trayFadeTransition === f 
+                                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
+                                          : "bg-white/5 border border-[rgba(var(--border),0.03)] hover:bg-white/10 text-white/60"
+                                      )}
                                    >
                                       {f}
                                    </button>
@@ -325,17 +372,17 @@ export const Settings: React.FC = () => {
         </div>
 
         {/* Footer Actions */}
-        <div className="max-w-7xl mx-auto mt-16 pt-10 border-t border-[rgba(var(--border))] space-y-8">
+        <div className="max-w-7xl mx-auto mt-16 pt-10 border-t border-[rgba(var(--border),0.05)] space-y-8">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-            <button className="flex items-center gap-2 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-[rgb(var(--accent))] transition-all opacity-40 hover:opacity-100">
+            <button className="flex items-center gap-2 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-[rgb(var(--accent))] transition-colors duration-300 opacity-40 hover:opacity-100">
                <Activity size={14} />
                Restore Factory Synthesis
             </button>
             <div className="flex items-center gap-4 w-full sm:w-auto">
-               <button className="flex-1 sm:flex-none px-8 py-3.5 rounded-xl text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:bg-white/[0.03] transition-all">
+               <button className="flex-1 sm:flex-none px-8 py-3.5 rounded-xl text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:bg-white/[0.03] transition-colors duration-300">
                  Discard
                </button>
-               <button className="flex-1 sm:flex-none px-10 py-3.5 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold text-[11px] tracking-[0.2em] uppercase flex items-center justify-center gap-3 hover:scale-105 active:scale-95 transition-all shadow-lg">
+               <button className="flex-1 sm:flex-none px-10 py-3.5 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold text-[11px] tracking-[0.2em] uppercase flex items-center justify-center gap-3 hover:scale-105 active:scale-95 transition-colors duration-300 shadow-lg">
                  <Save size={14} /> Commit Changes
                </button>
             </div>

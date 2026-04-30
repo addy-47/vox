@@ -8,7 +8,7 @@
   --accent: 0, 219, 233;
   --accent-foreground: 5, 5, 5;
   --card: 10, 10, 10;
-  --border: 255, 255, 255, 0.08;
+  --border: 255, 255, 255;
   --sidebar: 5, 5, 5;
 }
 
@@ -19,13 +19,18 @@
   --accent: 8, 145, 178; /* Darker cyan for contrast */
   --accent-foreground: 255, 255, 255;
   --card: 255, 255, 255;
-  --border: 0, 0, 0, 0.06;
+  --border: 0, 0, 0;
   --sidebar: 248, 250, 252;
 }
 
 @layer base {
-  body {
-    @apply bg-transparent text-[rgb(var(--foreground))] font-sans overflow-x-hidden min-h-screen selection:bg-[rgb(var(--accent))]/30 transition-all duration-500 ease-in-out;
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    @apply bg-transparent text-[rgb(var(--foreground))] font-sans selection:bg-[rgb(var(--accent))]/30;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "ss01", "ss02", "cv01", "cv02";
@@ -33,22 +38,28 @@
   }
 
   #root {
-    @apply min-h-screen flex flex-col overflow-x-hidden;
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
   }
 }
 
 @layer components {
   /* Liquid Glass Design System - Ultra-Premium */
   .premium-card {
-    @apply bg-white/[0.03] dark:bg-white/[0.01] backdrop-blur-[40px] border border-white/10 rounded-3xl transition-all duration-700 shadow-none;
+    @apply bg-white/[0.03] dark:bg-white/[0.01] backdrop-blur-[40px] border border-[rgba(var(--border),0.05)] rounded-3xl shadow-none;
+    transition: background-color 0.3s ease, color 0.3s ease, opacity 0.3s ease;
   }
 
   [data-theme='light'] .premium-card {
-    @apply bg-white/30 backdrop-blur-[60px] border-white/40 shadow-xl shadow-black/[0.02];
+    @apply bg-white/30 backdrop-blur-[60px] border-[rgba(var(--border),0.05)] shadow-xl shadow-black/[0.02];
   }
 
   .glass-panel {
-    @apply bg-white/[0.005] backdrop-blur-[80px] border border-white/[0.04];
+    @apply bg-white/[0.005] backdrop-blur-[80px] border border-[rgba(var(--border),0.05)];
   }
 
   .shimmer-text {
