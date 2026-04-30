@@ -12,6 +12,17 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
-    "core:window:allow-hide"
+    "core:window:allow-hide",
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "args": true,
+          "cmd": "python3",
+          "name": "../../backend/.venv/bin/python3"
+        }
+      ]
+    }
   ]
 }
