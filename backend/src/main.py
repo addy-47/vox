@@ -27,7 +27,11 @@ def main():
     signal.signal(signal.SIGTERM, handle_sigterm)
     signal.signal(signal.SIGINT, handle_sigterm)
 
-    vad = VADEngine(model_path="backend/models/silero_vad.onnx", sampling_rate=SAMPLE_RATE)
+    import os
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    model_path = os.path.join(base_dir, "models", "silero_vad.onnx")
+    
+    vad = VADEngine(model_path=model_path, sampling_rate=SAMPLE_RATE)
     
     print(json.dumps({"type": "system", "message": "VAD engine initialized. Listening..."}), flush=True)
 
