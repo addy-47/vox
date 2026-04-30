@@ -6,6 +6,7 @@ import { ResponsiveLayout } from "./layout/ResponsiveLayout";
 const Home = lazy(() => import("./pages/Home/Home").then(m => ({ default: m.Home })));
 const History = lazy(() => import("./pages/History/History").then(m => ({ default: m.History })));
 const Settings = lazy(() => import("./pages/Settings/Settings").then(m => ({ default: m.Settings })));
+const TrayApp = lazy(() => import("./tray/TrayApp").then(m => ({ default: m.TrayApp })));
 
 // Premium Loading Overlay
 const PageLoader = () => (
@@ -25,15 +26,16 @@ const PageLoader = () => (
 const App: React.FC = () => {
   return (
     <Router>
-      <ResponsiveLayout>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route element={<ResponsiveLayout />}>
             <Route path="/" element={<Home />} />
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </Suspense>
-      </ResponsiveLayout>
+          </Route>
+          <Route path="/tray" element={<TrayApp />} />
+        </Routes>
+      </Suspense>
     </Router>
   );
 };
