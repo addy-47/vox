@@ -124,7 +124,47 @@ This reduces perceived latency to sub-second range ([LiveKit][1])
 
 ```text
 audio_chunk (stream)
+
 ```
+## 4.1 Audio Routing Layer
+
+### Purpose
+
+Handles dynamic routing between:
+
+* physical microphone
+* virtual audio devices (future: meeting mode)
+* internal audio streams (TTS output)
+
+---
+
+### Responsibilities
+
+* switch input sources dynamically
+* route TTS output to:
+
+  * speakers (default)
+  * virtual mic (future)
+
+---
+
+### Design
+
+* built using sounddevice / numpy buffers
+* operates as a lightweight mixer
+* supports multiple input/output channels
+
+---
+
+### Why Required
+
+The system is not just capturing audio — it must:
+
+* ingest from different sources
+* output to different targets
+
+This becomes critical for meeting mode and system-level integrations.
+
 
 ---
 
@@ -323,33 +363,54 @@ audio_output_end
 
 ## 11. Concurrency Model
 
----
+### Core Requirement
 
-### Requirements
-
-* no blocking pipeline stages
-* parallel processing where possible
+No stage in the pipeline should block another.
 
 ---
 
 ### Execution Model
 
-* audio capture runs continuously
-* STT runs in streaming mode
-* LLM runs asynchronously
-* TTS runs concurrently with LLM output
+The system must run using parallel workers:
+
+* Audio ingestion → continuous thread/process
+* VAD → real-time processing
+* STT → streaming worker
+* LLM → async worker
+* TTS → concurrent output worker
 
 ---
 
-### Anti-Pattern (Must Avoid)
+### Communication
 
-```text
+* non-blocking queues
+* event-driven messaging between components
+
+---
+
+### Why This Is Required
+
+Python's GIL can block execution if:
+
+* LLM inference runs on main thread
+* audio capture timing is disrupted
+
+This will break real-time performance.
+
+---
+
+### Anti-Pattern (STRICTLY FORBIDDEN)
+
 STT → wait → LLM → wait → TTS
-```
-
-This creates unacceptable latency.
 
 ---
+
+### Recommended Approaches
+
+* multiprocessing (preferred)
+  OR
+* asyncio + thread pools (carefully managed)
+
 
 ## 12. Process Architecture
 
@@ -371,51 +432,87 @@ This creates unacceptable latency.
 
 ## 13. State Management
 
----
+### Core Principle
 
-### Core Rule
-
-Backend is **stateless per interaction cycle**
+The system is **stateless at the logic level**, but **stateful at the buffer level**.
 
 ---
 
-### Allowed State
+### Stateless (Logic)
 
-* current transcript
-* current audio stream
-* current response
+* each interaction turn is independent
+* no persistent conversation state in core loop
 
 ---
 
-### External State (Future)
+### Stateful (Buffers — REQUIRED)
 
-* memory systems
+The following must maintain short-term state:
+
+* audio sliding window (for VAD stability)
+* partial transcript buffer
+* response token buffer
+
+---
+
+### Why This Matters
+
+Without buffering:
+
+* first syllables get clipped
+* VAD becomes unstable
+* transcript flickers
+
+---
+
+### External State (Optional)
+
 * logs
-* context storage
+* settings
+* history (separate system)
+
+## 14. Persistence Boundary
+
+### Principle
+
+The real-time pipeline MUST remain independent of storage.
 
 ---
 
-## 14. Logging & Observability
+### Rules
+
+* no disk writes in critical path
+* no blocking I/O during processing
+* only final outputs may be persisted
 
 ---
 
-### Required Logging
+### Storage Types
 
-* audio timestamps
-* VAD events
-* transcript outputs
-* response timing
-* errors
+* config → JSON
+* logs → file system
+* history → SQLite 
 
 ---
 
-### Purpose
+### Separation
 
-Voice systems require cross-stage debugging:
+```text
+Real-time pipeline (memory only)
+        ↓
+Async persistence layer
+```
 
-* audio → transcript → response → output alignment
+---
 
-Observability must correlate events across pipeline stages ([LiveKit][1])
+### Why This Is Critical
+
+Mixing storage with pipeline will:
+
+* increase latency
+* break real-time behavior
+* introduce blocking operations
+
 
 ---
 
