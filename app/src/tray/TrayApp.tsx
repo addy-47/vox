@@ -16,6 +16,8 @@ export const TrayApp: React.FC = () => {
 
   const hideTimerRef = useRef<number | null>(null);
 
+  const [isVisible, setIsVisible] = useState(false);
+
   // Sync settings
   useEffect(() => {
     const checkSettings = () => {
@@ -46,6 +48,7 @@ export const TrayApp: React.FC = () => {
         setTranscript(""); // Clear previous transcript on new speech
         await appWindow.show();
         await appWindow.setFocus();
+        setIsVisible(true);
       });
 
       unlistenTranscript = await listen<string>("transcript_partial", (event) => {
@@ -54,8 +57,13 @@ export const TrayApp: React.FC = () => {
 
       unlistenSpeechEnd = await listen("speech_end", () => {
         if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = window.setTimeout(async () => {
-          await appWindow.hide();
+        
+        hideTimerRef.current = window.setTimeout(() => {
+          setIsVisible(false);
+          // Wait for CSS transition (700ms) to finish before physically hiding
+          window.setTimeout(async () => {
+            await appWindow.hide();
+          }, 700);
         }, hideDelay * 1000);
       });
     };
@@ -85,11 +93,17 @@ export const TrayApp: React.FC = () => {
 
   return (
     <div 
-      className="w-screen h-screen flex items-center justify-end pr-2 overflow-hidden select-none"
+      className={cn(
+        "w-screen h-screen flex items-center justify-end pr-2 overflow-hidden select-none transition-all duration-700 ease-out",
+        isVisible ? "opacity-100 translate-x-0" : "opacity-0 translate-x-8"
+      )}
       data-tauri-drag-region
     >
       <div 
-        className="w-[340px] max-h-[500px] flex flex-col bg-white/[0.03] border border-white/10 rounded-2xl overflow-hidden shadow-[0_32px_120px_rgba(0,0,0,0.5)] transition-all duration-700"
+        className={cn(
+          "w-[340px] max-h-[500px] flex flex-col bg-white/[0.03] border border-white/10 rounded-2xl overflow-hidden shadow-[0_32px_120px_rgba(0,0,0,0.5)] transition-all duration-700 ease-out",
+          isVisible ? "scale-100" : "scale-95"
+        )}
         style={{ 
           backdropFilter: `blur(${blurDensity}px)`,
           borderColor: `rgba(var(--accent), 0.1)`
