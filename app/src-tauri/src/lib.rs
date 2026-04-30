@@ -1,7 +1,6 @@
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, Emitter};
-use tauri_plugin_shell::ShellExt;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -17,19 +16,22 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
             
-            tauri::async_runtime::spawn(async move {
-                let (mut rx, _child) = app_handle.shell().command("python")
-                    .args(["backend/src/main.py"])
+            std::thread::spawn(move || {
+                let backend_path = "../../backend/src/main.py";
+                let python_bin = "../../backend/.venv/bin/python3";
+
+                let mut child = std::process::Command::new(python_bin)
+                    .arg(backend_path)
+                    .stdout(std::process::Stdio::piped())
                     .spawn()
-                    .expect("Failed to spawn python backend");
-                
-                while let Some(event) = rx.recv().await {
-                    if let tauri_plugin_shell::process::CommandEvent::Stdout(line) = event {
-                        let line_str = String::from_utf8_lossy(&line);
-                        // The python script might output multiple lines or buffered output,
-                        // split by newline to be safe.
-                        for part in line_str.lines() {
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(part) {
+                    .expect("Failed to spawn python3 backend");
+
+                if let Some(stdout) = child.stdout.take() {
+                    use std::io::BufRead;
+                    let reader = std::io::BufReader::new(stdout);
+                    for line in reader.lines() {
+                        if let Ok(line_str) = line {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line_str) {
                                 if let Some(msg_type) = json.get("type").and_then(|v| v.as_str()) {
                                     let _ = app_handle.emit(msg_type, json.clone());
                                 }
