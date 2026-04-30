@@ -30,7 +30,7 @@ html, body {
     width: 100%;
     height: 100vh;
     overflow: hidden;
-    @apply bg-transparent text-[rgb(var(--foreground))] font-sans selection:bg-[rgb(var(--accent))]/30;
+    @apply bg-[rgb(var(--background))] text-[rgb(var(--foreground))] font-sans selection:bg-[rgb(var(--accent))]/30;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "ss01", "ss02", "cv01", "cv02";

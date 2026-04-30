@@ -4,6 +4,7 @@ import { Settings, Database, Monitor, Sun, Moon } from "lucide-react";
 import { cn } from "../shared/lib/utils";
 import logo from "../assets/logo.webp";
 import logoLight from "../assets/logo-light.webp";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const topNavItems = [
   { icon: Monitor, label: "HOME", path: "/" },
@@ -19,6 +20,15 @@ export const Sidebar: React.FC = () => {
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
+    
+    // Sync Tauri window theme
+    try {
+      if ((window as any).__TAURI_INTERNALS__) {
+        getCurrentWindow().setTheme(theme);
+      }
+    } catch (e) {
+      console.warn("Could not set Tauri window theme", e);
+    }
   }, [theme]);
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
