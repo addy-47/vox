@@ -1,9 +1,9 @@
-import React from "react";
 import { Sidebar } from "./Sidebar";
 import { BottomNav } from "./BottomNav";
+import { Outlet } from "react-router-dom";
 
 interface ResponsiveLayoutProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) => {
@@ -64,7 +64,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         className="relative z-10 w-full h-screen overflow-hidden"
       >
         <div className="md:ml-[96px] h-full overflow-hidden flex flex-col pb-[64px] md:pb-0">
-          {children}
+          {children || <Outlet />}
         </div>
       </main>
     </div>

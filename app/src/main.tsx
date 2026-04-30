@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { TrayApp } from "../src-tray/TrayApp";
+import { TrayApp } from "./tray/TrayApp";
 import "./index.css";
 
 // Basic window detection for Tauri
