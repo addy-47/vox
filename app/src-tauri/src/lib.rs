@@ -1,6 +1,7 @@
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, Emitter};
+use tauri_plugin_shell::ShellExt;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -16,24 +17,41 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
             
-            std::thread::spawn(move || {
-                let backend_path = "../../backend/src/main.py";
-                let python_bin = "../../backend/.venv/bin/python3";
+            tauri::async_runtime::spawn(async move {
+                let base_path = if cfg!(debug_assertions) {
+                    std::env::current_dir().unwrap().join("../..")
+                } else {
+                    app_handle.path().resource_dir().expect("Failed to get resource dir")
+                };
 
-                let mut child = std::process::Command::new(python_bin)
-                    .arg(backend_path)
-                    .stdout(std::process::Stdio::piped())
+                let backend_script = base_path.join("backend/src/main.py");
+                
+                #[cfg(windows)]
+                let python_bin = base_path.join("backend/.venv/Scripts/python.exe");
+                #[cfg(not(windows))]
+                let python_bin = base_path.join("backend/.venv/bin/python3");
+
+                let (mut rx, _child) = app_handle.shell()
+                    .command(python_bin.to_str().expect("Invalid python path"))
+                    .args([backend_script.to_str().expect("Invalid script path")])
                     .spawn()
                     .expect("Failed to spawn python3 backend");
 
-                if let Some(stdout) = child.stdout.take() {
-                    use std::io::BufRead;
-                    let reader = std::io::BufReader::new(stdout);
-                    for line in reader.lines() {
-                        if let Ok(line_str) = line {
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line_str) {
-                                if let Some(msg_type) = json.get("type").and_then(|v| v.as_str()) {
-                                    let _ = app_handle.emit(msg_type, json.clone());
+                while let Some(event) = rx.recv().await {
+                    if let tauri_plugin_shell::process::CommandEvent::Stdout(line) = event {
+                        let line_str = String::from_utf8_lossy(&line);
+                        for part in line_str.lines() {
+                            let trimmed = part.trim();
+                            if trimmed.is_empty() { continue; }
+                            
+                            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                                Ok(json) => {
+                                    if let Some(msg_type) = json.get("type").and_then(|v| v.as_str()) {
+                                        let _ = app_handle.emit(msg_type, json.clone());
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Malformed IPC JSON frame: {} | Error: {}", trimmed, e);
                                 }
                             }
                         }
