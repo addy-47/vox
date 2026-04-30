@@ -1,6 +1,7 @@
 import React from "react";
 import { Sidebar } from "./Sidebar";
 import { BottomNav } from "./BottomNav";
+import { TitleBar } from "./TitleBar";
 import { Outlet } from "react-router-dom";
 
 interface ResponsiveLayoutProps {
@@ -19,6 +20,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       }}
       className="bg-[rgb(var(--background))] text-[rgb(var(--foreground))]"
     >
+      <TitleBar />
       {/* ── Content Area ──────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative", minHeight: 0 }}>
 
@@ -38,8 +40,8 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         <BottomNav />
 
         {/* Page content */}
-        <main style={{ position: "relative", zIndex: 10, flex: 1, height: "100%", overflow: "hidden" }}>
-          <div className="md:ml-[96px] h-full overflow-hidden flex flex-col pb-[64px] md:pb-0">
+        <main style={{ position: "relative", zIndex: 10, flex: 1, height: "100%", overflow: "hidden", width: "100%" }}>
+          <div className="md:pl-[96px] h-full w-full overflow-hidden flex flex-col pb-[64px] md:pb-0">
             {children || <Outlet />}
           </div>
         </main>

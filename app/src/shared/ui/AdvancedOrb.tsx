@@ -36,6 +36,11 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.top = '0';
+    renderer.domElement.style.left = '0';
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
     container.appendChild(renderer.domElement);
 
     // Geometry
@@ -99,15 +104,22 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
 
-    // Resize handler
-    const handleResize = () => {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+    // Resize handler using ResizeObserver for better reliability in flex/grid layouts
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (!entries[0]) return;
+      const { width: w, height: h } = entries[0].contentRect;
+
+      // Prevent division by zero and unnecessary updates
+      if (w <= 0 || h <= 0) return;
+
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
-    };
-    window.addEventListener('resize', handleResize);
+
+      // Force a re-render immediately on resize to prevent black flashes
+      renderer.render(scene, camera);
+    });
+    resizeObserver.observe(container);
 
     // Animation loop
     let animationFrameId: number;
@@ -132,7 +144,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
     animate();
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       cancelAnimationFrame(animationFrameId);
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
@@ -146,7 +158,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
   return (
     <div
       ref={mountRef}
-      style={{ width: '100%', height: '100%', background: 'transparent' }}
+      style={{ width: '100%', height: '100%', background: 'transparent', position: 'relative' }}
     />
   );
 };

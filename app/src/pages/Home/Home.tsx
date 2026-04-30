@@ -10,7 +10,7 @@ export const Home: React.FC = () => {
   return (
     <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-colors duration-300">
       {/* ===== CENTRAL HUD AREA ===== */}
-      <div className="flex-1 flex flex-col relative overflow-hidden">
+      <div className="flex-1 flex flex-col relative overflow-visible">
 
         {/* Status Area - Top Aligned matching Header Spacing */}
         <div className="p-6 md:p-12 pb-0 flex flex-col items-center gap-4 shrink-0">
@@ -28,10 +28,10 @@ export const Home: React.FC = () => {
         </div>
 
         {/* Dynamic Orb Area - Fully Flexible */}
-        <div className="flex-1 w-full flex items-center justify-center relative min-h-0 overflow-visible px-6">
+        <div className="flex-1 w-full flex items-center justify-center relative min-h-0 overflow-visible">
           <div className="absolute inset-0 bg-gradient-radial from-[rgb(var(--accent))]/5 to-transparent pointer-events-none opacity-40" />
-          <div className="w-full h-full max-h-[60vh] flex items-center justify-center transition-all duration-700">
-            <div className="w-full h-full scale-110 sm:scale-125 md:scale-100 transition-transform flex items-center justify-center">
+          <div className="w-full h-full max-h-[60vh] min-h-[300px] flex items-center justify-center">
+            <div className="w-full h-full scale-100 transition-transform flex items-center justify-center">
               <VoxOrb amplitude={isListening ? 0.28 : 0.04} frequency={isListening ? 1.6 : 0.6} />
             </div>
           </div>
@@ -104,7 +104,7 @@ export const Home: React.FC = () => {
               </p>
             </div>
 
-            <div className="pt-8 border-t border-[rgba(var(--border))] grid grid-cols-2 gap-8">
+            <div className="pt-8 border-t border-[rgba(var(--border),0.05)] grid grid-cols-2 gap-8">
               <div>
                 <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2 opacity-40">Latency</div>
                 <div className="text-lg font-mono text-[rgb(var(--accent))]">12ms</div>
