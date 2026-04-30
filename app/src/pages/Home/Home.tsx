@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { VoxOrb } from "../../shared/ui/AdvancedOrb";
 import { LiveWaveform } from "../../shared/ui/LiveWaveform";
 import { Activity, Mic, Shield } from "lucide-react";
@@ -6,6 +7,36 @@ import { cn } from "../../shared/lib/utils";
 
 export const Home: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
+  const [amplitude, setAmplitude] = useState(0.04);
+  const [frequency, setFrequency] = useState(0.6);
+
+  useEffect(() => {
+    // Check if we are in Tauri
+    const isTauri = !!(window as any).__TAURI_INTERNALS__;
+    if (!isTauri) return;
+
+    const unlistens: Array<() => void> = [];
+
+    const setupListeners = async () => {
+      const u1 = await listen("speech_start", () => setIsListening(true));
+      const u2 = await listen("speech_end", () => setIsListening(false));
+      const u3 = await listen("telemetry", (event: any) => {
+        if (event.payload && typeof event.payload.amplitude === "number") {
+          setAmplitude(event.payload.amplitude);
+        }
+        if (event.payload && typeof event.payload.frequency === "number") {
+          setFrequency(event.payload.frequency);
+        }
+      });
+      unlistens.push(u1, u2, u3);
+    };
+
+    setupListeners();
+
+    return () => {
+      unlistens.forEach(u => u());
+    };
+  }, []);
 
   return (
     <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-colors duration-300">
@@ -32,7 +63,7 @@ export const Home: React.FC = () => {
           <div className="absolute inset-0 bg-gradient-radial from-[rgb(var(--accent))]/5 to-transparent pointer-events-none opacity-40" />
           <div className="w-full h-full max-h-[60vh] min-h-[300px] flex items-center justify-center">
             <div className="w-full h-full scale-100 transition-transform flex items-center justify-center">
-              <VoxOrb amplitude={isListening ? 0.28 : 0.04} frequency={isListening ? 1.6 : 0.6} />
+              <VoxOrb amplitude={amplitude} frequency={frequency} />
             </div>
           </div>
         </div>
