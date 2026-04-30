@@ -39,7 +39,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
     container.appendChild(renderer.domElement);
 
     // Geometry
-    const geometry = new THREE.SphereGeometry(2.0, 128, 128);
+    const geometry = new THREE.SphereGeometry(2.0, 64, 64);
 
     // Uniforms
     const uniforms = {

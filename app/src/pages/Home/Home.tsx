@@ -11,30 +11,27 @@ export const Home: React.FC = () => {
     <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-all duration-500">
       {/* ===== CENTRAL HUD AREA ===== */}
       <div className="flex-1 flex flex-col relative overflow-hidden">
-        
+
         {/* Status Area - Top Aligned matching Header Spacing */}
         <div className="p-6 md:p-12 pb-0 flex flex-col items-center gap-4 shrink-0">
           <div className="premium-card flex items-center gap-3 px-6 md:px-10 py-2.5 md:py-3">
             <div className={cn(
               "w-2 md:w-2.5 h-2 md:h-2.5 rounded-full transition-all duration-500",
-              isListening 
-                ? "bg-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.6)] animate-pulse" 
+              isListening
+                ? "bg-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.6)] animate-pulse"
                 : "bg-[rgb(var(--foreground-muted))] opacity-20"
             )} />
             <span className="text-[11px] font-bold tracking-[0.3em] md:tracking-[0.4em] uppercase shimmer-text">
               {isListening ? "Streaming Active" : "System Standby"}
             </span>
           </div>
-          <p className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-60">
-            {isListening ? "Neural Link Established" : "Gateway Ready"}
-          </p>
         </div>
 
         {/* Dynamic Orb Area - Fully Flexible */}
         <div className="flex-1 w-full flex items-center justify-center relative min-h-0 overflow-visible px-6">
           <div className="absolute inset-0 bg-gradient-radial from-[rgb(var(--accent))]/5 to-transparent pointer-events-none opacity-40" />
-          <div className="w-full h-full max-h-[45vh] md:max-h-[50vh] flex items-center justify-center transition-all duration-700">
-            <div className="w-full h-full scale-[0.65] sm:scale-80 md:scale-90 lg:scale-100 transition-transform flex items-center justify-center">
+          <div className="w-full h-full max-h-[60vh] flex items-center justify-center transition-all duration-700">
+            <div className="w-full h-full scale-110 sm:scale-125 md:scale-100 transition-transform flex items-center justify-center">
               <VoxOrb amplitude={isListening ? 0.28 : 0.04} frequency={isListening ? 1.6 : 0.6} />
             </div>
           </div>
@@ -48,10 +45,10 @@ export const Home: React.FC = () => {
               "absolute inset-0 flex items-center justify-center transition-all duration-1000",
               isListening ? "opacity-100 scale-100" : "opacity-20 scale-95 blur-sm"
             )}>
-              <LiveWaveform 
-                active={isListening} 
+              <LiveWaveform
+                active={isListening}
                 processing={!isListening}
-                height={120} 
+                height={120}
                 className="w-full"
               />
             </div>
@@ -61,17 +58,17 @@ export const Home: React.FC = () => {
               onClick={() => setIsListening(!isListening)}
               className={cn(
                 "group relative z-20 flex items-center justify-center w-20 h-20 rounded-full transition-all duration-700",
-                isListening 
-                  ? "bg-[rgb(var(--background))] border-2 border-[rgb(var(--accent))] shadow-[0_0_50px_rgba(var(--accent),0.2)] scale-90" 
+                isListening
+                  ? "bg-[rgb(var(--background))] border-2 border-[rgb(var(--accent))] shadow-[0_0_50px_rgba(var(--accent),0.2)] scale-90"
                   : "bg-[rgb(var(--accent))] shadow-[0_0_40px_rgba(var(--accent),0.3)] hover:scale-110 active:scale-95"
               )}
             >
-              <Activity 
-                size={32} 
+              <Activity
+                size={32}
                 className={cn(
                   "transition-all duration-700",
                   isListening ? "text-[rgb(var(--accent))] rotate-180" : "text-[rgb(var(--accent-foreground))]"
-                )} 
+                )}
               />
               {!isListening && (
                 <div className="absolute -bottom-12 flex flex-col items-center gap-1 animate-bounce">
@@ -91,18 +88,18 @@ export const Home: React.FC = () => {
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <Mic size={48} />
           </div>
-          
+
           <div className="flex items-center gap-3 mb-10">
             <div className="w-1 h-8 bg-[rgb(var(--accent))] rounded-full" />
             <span className="text-[11px] font-bold tracking-[0.3em] text-[rgb(var(--accent))] uppercase">Session Brief</span>
           </div>
-          
+
           <div className="space-y-8">
             <div>
               <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] mb-4 opacity-50">Active Context</h3>
               <p className="text-xl font-medium leading-relaxed text-[rgb(var(--foreground))]">
-                {isListening 
-                  ? "Neural patterns being indexed for real-time architectural synthesis." 
+                {isListening
+                  ? "Neural patterns being indexed for real-time architectural synthesis."
                   : "System idling. Awaiting voice trigger for contextual synchronization."}
               </p>
             </div>
