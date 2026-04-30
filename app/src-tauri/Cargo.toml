@@ -1,5 +1,5 @@
 [package]
-name = "vox-ui"
+name = "Vox"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]

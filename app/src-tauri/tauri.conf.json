@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vox-ui",
+  "productName": "Vox",
   "version": "0.1.0",
-  "identifier": "com.addy.vox-ui",
+  "identifier": "com.addy.Vox",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "vox-ui",
+        "title": "Vox",
         "width": 400,
         "height": 800,
         "transparent": true,
@@ -31,7 +31,7 @@
         "decorations": false,
         "alwaysOnTop": true,
         "resizable": false,
-        "visible": true,
+        "visible": false,
         "shadow": false
       }
     ],

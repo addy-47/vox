@@ -12,7 +12,7 @@ const navItems = [
 export const BottomNav: React.FC = () => {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around md:hidden bg-[rgb(var(--sidebar))] border-t border-[rgba(var(--border))] h-[64px] pb-safe backdrop-blur-3xl transition-all duration-500"
+      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around md:hidden bg-[rgb(var(--sidebar))] border-t border-[rgba(var(--border),0.05)] h-[64px] pb-safe backdrop-blur-3xl transition-colors duration-300"
     >
       {navItems.map((item) => (
         <NavLink
