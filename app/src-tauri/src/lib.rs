@@ -1,8 +1,10 @@
 mod audio;
 mod vad;
+mod stt;
 
 use crate::audio::AudioStream;
 use crate::vad::VadEngine;
+use crate::stt::SttEngine;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, Emitter};
@@ -10,8 +12,10 @@ use ringbuf::traits::Split;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+fn hide_tray_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("tray") {
+        let _ = window.hide();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,19 +48,58 @@ pub fn run() {
             let audio_stream = AudioStream::new(producer)
                 .expect("failed to initialize audio stream");
 
-            // 3. Spawn VAD Inference Task
+            // 3. Initialize STT Engine and Worker
+            let stt_model_path = std::env::current_dir()?.join("assets/qwen3-asr");
+            let mut stt = SttEngine::new(&stt_model_path)
+                .expect("failed to initialize STT engine");
+            
+            let (stt_tx, mut stt_rx) = tokio::sync::mpsc::unbounded_channel::<crate::stt::SttCommand>();
+
+            let app_handle_stt = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = vad.run_loop(consumer, tx).await {
+                while let Some(command) = stt_rx.recv().await {
+                    match command {
+                        crate::stt::SttCommand::Audio(audio_data) => {
+                            match stt.transcribe(&audio_data) {
+                                Ok(text) => {
+                                    if !text.is_empty() {
+                                        let _ = app_handle_stt.emit("transcript_partial", serde_json::json!({
+                                            "text": text
+                                        }));
+                                    }
+                                }
+                                Err(e) => eprintln!("STT inference error: {}", e),
+                            }
+                        }
+                        crate::stt::SttCommand::Clear => {
+                            stt.clear_buffer();
+                        }
+                    }
+                }
+            });
+
+            // 4. Spawn VAD Inference Task
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = vad.run_loop(consumer, tx, stt_tx).await {
                     eprintln!("VAD engine error: {}", e);
                 }
             });
 
-            // 4. Spawn Event Forwarder (MPSC -> Tauri Emit)
+            // 5. Spawn Event Forwarder (MPSC -> Tauri Emit)
             let app_handle_emitter = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
                         let msg_type = msg_type.to_string();
+                        
+                        // Mandate 1: Forcefully show tray on speech_start
+                        if msg_type == "speech_start" {
+                            if let Some(window) = app_handle_emitter.get_webview_window("tray") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+
                         let _ = app_handle_emitter.emit(&msg_type, event);
                     }
                 }
@@ -101,7 +144,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![hide_tray_window])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
