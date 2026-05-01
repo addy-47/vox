@@ -1,7 +1,12 @@
+mod audio;
+mod vad;
+
+use crate::audio::AudioStream;
+use crate::vad::VadEngine;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, Emitter};
-use tauri_plugin_shell::ShellExt;
+use ringbuf::traits::Split;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -12,52 +17,53 @@ fn greet(name: &str) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let app_handle = app.handle().clone();
+            let _app_handle = app.handle().clone();
             
+            // 1. Initialize MPSC channel for VAD events -> Tauri
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
+
+            // 2. Initialize VAD Engine and Audio Stream
+            let resource_path = app.path().resource_dir()
+                .expect("failed to get resource dir")
+                .join("assets/ten_vad.onnx");
+            
+            // Fallback for dev environment where assets are in src-tauri/assets
+            let model_path = if resource_path.exists() {
+                resource_path
+            } else {
+                std::env::current_dir()?.join("assets/ten_vad.onnx")
+            };
+
+            let mut vad = VadEngine::new(model_path.to_str().expect("invalid model path"))
+                .expect("failed to initialize VAD engine");
+
+            let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 2).split();
+
+            let audio_stream = AudioStream::new(producer)
+                .expect("failed to initialize audio stream");
+
+            // 3. Spawn VAD Inference Task
             tauri::async_runtime::spawn(async move {
-                let base_path = if cfg!(debug_assertions) {
-                    std::env::current_dir().unwrap().join("../..")
-                } else {
-                    app_handle.path().resource_dir().expect("Failed to get resource dir")
-                };
+                if let Err(e) = vad.run_loop(consumer, tx).await {
+                    eprintln!("VAD engine error: {}", e);
+                }
+            });
 
-                let backend_script = base_path.join("backend/src/main.py");
-                
-                #[cfg(windows)]
-                let python_bin = base_path.join("backend/.venv/Scripts/python.exe");
-                #[cfg(not(windows))]
-                let python_bin = base_path.join("backend/.venv/bin/python3");
-
-                let (mut rx, _child) = app_handle.shell()
-                    .command(python_bin.to_str().expect("Invalid python path"))
-                    .args([backend_script.to_str().expect("Invalid script path")])
-                    .spawn()
-                    .expect("Failed to spawn python3 backend");
-
+            // 4. Spawn Event Forwarder (MPSC -> Tauri Emit)
+            let app_handle_emitter = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
                 while let Some(event) = rx.recv().await {
-                    if let tauri_plugin_shell::process::CommandEvent::Stdout(line) = event {
-                        let line_str = String::from_utf8_lossy(&line);
-                        for part in line_str.lines() {
-                            let trimmed = part.trim();
-                            if trimmed.is_empty() { continue; }
-                            
-                            match serde_json::from_str::<serde_json::Value>(trimmed) {
-                                Ok(json) => {
-                                    if let Some(msg_type) = json.get("type").and_then(|v| v.as_str()) {
-                                        let _ = app_handle.emit(msg_type, json.clone());
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Malformed IPC JSON frame: {} | Error: {}", trimmed, e);
-                                }
-                            }
-                        }
+                    if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
+                        let msg_type = msg_type.to_string();
+                        let _ = app_handle_emitter.emit(&msg_type, event);
                     }
                 }
             });
+
+            // Start Audio Stream
+            audio_stream.start()?;
 
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;

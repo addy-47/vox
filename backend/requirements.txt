@@ -1,4 +1,0 @@
-sounddevice==0.4.6
-numpy==1.26.4
-onnxruntime==1.17.1
-useful-moonshine-onnx
