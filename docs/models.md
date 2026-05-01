@@ -1,345 +1,418 @@
-# Vox — Model Architecture & Selection
+# Vox — Model Architecture & Selection (Native Edge Stack)
 
 ---
 
 ## 1. Overview
 
-Vox is a **model-agnostic system**.
+Vox is a **model-agnostic, role-based system**, but constrained by:
 
-It does not depend on any single:
-
-* model
-* framework
-* provider
-
-Instead, it defines **roles** that can be fulfilled by interchangeable models.
+* **8GB RAM baseline**
+* **CPU-only execution**
+* **<500ms real-time latency**
 
 ---
 
 ## 2. Core Model Roles
 
-The system is built around three primary model types:
+The system is composed of:
+
+1. **VAD** — speech boundary detection
+2. **STT** — audio → text
+3. **LLM** — reasoning + response
+4. **TTS** — text → audio
+
+Each role is replaceable, but must obey strict **memory + latency constraints**.
 
 ---
 
-### 1. Speech-to-Text (STT)
-
-Converts live audio → text
-
----
-
-### 2. Language Model (LLM)
-
-Processes text → generates response / actions
-
----
-
-### 3. Text-to-Speech (TTS)
-
-Converts response → audio output
-
----
-
-## 3. Model Selection Philosophy
+## 3. Core Selection Philosophy
 
 ---
 
 ### ⚡ Local-First
 
-* All core functionality must work **offline**
-* Default models must run on:
-
-  * CPU
-  * 8GB RAM systems
+* Fully offline operation required
+* No cloud dependency
 
 ---
 
 ### ⚡ Latency > Accuracy
 
-* Real-time responsiveness is prioritized
-* Slightly lower accuracy is acceptable if:
-
-  * latency is significantly improved
+* Sub-500ms response is priority
+* Slight accuracy tradeoffs acceptable
 
 ---
 
-### ⚡ Tiered Model Strategy
+### ⚡ Native Execution Only
 
-Each model role supports:
+All inference must run via:
 
-1. **Default (lightweight, always-on)**
-2. **Upgrade (higher quality, optional)**
-3. **External (future integrations)**
+* `onnxruntime` (C++)
+* `llama.cpp` (C++)
 
----
-
-## 4. Speech-to-Text (STT)
+Python is not allowed in inference path.
 
 ---
 
-### ✅ Default
+### ⚡ Memory-Constrained Design
 
-* **Moonshine (tiny / smallest variant)**
+System must never exceed safe RAM threshold:
 
-Why:
-
-* Designed specifically for **real-time streaming speech recognition**
-* Optimized for **edge devices and low compute environments**
-* Provides **continuous partial transcription while user is speaking** ([LinkedIn][1])
-* Up to **5× faster than Whisper on short audio segments** ([arXiv][2])
-* Extremely small models (~27M parameters) suitable for constrained systems ([Hugging Face][3])
+* OS + UI ≈ ~2.5GB
+* Available for inference ≈ **~5.5GB**
 
 ---
 
-### 🔼 Upgrade Options
-
-* Moonshine (base / medium)
-* faster-whisper (base / small)
-
-Use when:
-
-* better accuracy is required
-* system has more CPU headroom
+## 4. Memory Budget (STRICT)
 
 ---
 
-### 🌐 External (Future)
+### Absolute Allocation
 
-* Cloud STT providers
-* Streaming APIs
-
-Examples:
-
-* Google Speech-to-Text
-* Whisper API
-* Other real-time transcription services
-
----
-
-## 5. Language Model (LLM)
+```text
+Memory_Total ≈
+  VAD (0.05GB)
++ STT (0.80GB)
++ LLM (2.20GB)
++ TTS (0.50GB)
++ KV Cache (0.60GB)
+= 4.15GB
+```
 
 ---
 
-### ✅ Default
+### Safety Margin
 
-* **Small quantized local LLM (e.g., Gemma / similar class)**
-
-Characteristics:
-
-* ~2–4 GB footprint
-* CPU inference via GGUF
-* Fast response for short prompts
+* Remaining buffer ≈ **1.35GB**
+* Prevents OS swap → avoids latency collapse
 
 ---
 
-### 🔼 Upgrade Options
+### Hard Rules
 
-* Larger quantized models (Q3 / Q4)
-* 7B class local models
-
-Use when:
-
-* better reasoning is needed
-* device has more RAM (16GB+)
+* No model >3B parameters (unless quantized)
+* No FP16 / FP32 inference
+* Use INT8 / INT4 quantization only
 
 ---
 
-### 🌐 External (Future)
-
-* API-based LLMs
-* Live streaming LLMs
-
-Examples:
-
-* Gemini API
-* OpenAI API
-* other hosted providers
-
----
-
-## 6. Text-to-Speech (TTS)
+## 5. Voice Activity Detection (VAD)
 
 ---
 
 ### ✅ Default
 
-* **Piper TTS**
-
-Why:
-
-* extremely lightweight
-* fast inference
-* runs fully offline
+* **TEN VAD (ONNX Runtime, C++)**
 
 ---
 
-### 🔼 Upgrade Options
+### Why
 
-* Higher-quality local voices
-* Larger neural TTS models
-
----
-
-### 🎤 Voice Cloning Mode
-
-* **XTTS-v2 (session-based)**
-
-Usage:
-
-* used only when user explicitly enables “personal voice mode”
-* requires reference audio
+* ~306KB footprint
+* Real-Time Factor: ~0.015
+* Near-zero end-of-speech delay
+* Frame-level precision
 
 ---
 
-### ⚠️ Important Constraint
+### Behavior
 
-* XTTS embeddings cannot be transferred to Piper
-* Hybrid approach:
-
-  * XTTS used for cloning sessions
-  * Piper used for default fast responses
-
----
-
-### 🌐 External (Future)
-
-* High-quality cloud TTS providers
-
-Examples:
-
-* ElevenLabs
-* other neural voice APIs
+```text
+speech_start → 2 consecutive positive frames
+speech_end → ~300ms silence window
+```
 
 ---
 
-## 7. Model Lifecycle
+### Why NOT Silero
+
+* introduces 300–500ms delay
+* breaks real-time interaction
+
+---
+
+## 6. Speech-to-Text (STT)
+
+---
+
+### ✅ Default
+
+* **Qwen3-ASR-0.6B (INT8 ONNX)**
+
+---
+
+### Why
+
+* ~0.8GB memory footprint
+* ~90–100ms time-to-first-token
+* native multilingual + Hinglish support
+* streaming-friendly
+
+---
+
+### Key Advantage
+
+Avoids **code-switching collapse**:
+
+```text
+Hindi + English mixed speech → handled natively
+```
+
+---
+
+### Streaming Strategy (CRITICAL)
+
+* 240ms overlapping chunks
+* continuous inference
+* encoder state caching
+
+---
+
+### Output
+
+```text
+text_delta (stream)
+text_final
+```
+
+---
+
+### Why NOT Whisper
+
+* fixed 30s window → inefficient
+* high latency on CPU
+
+---
+
+### Why NOT Moonshine
+
+* limited Hindi / Hinglish support
+* less robust multilingual handling
+
+---
+
+## 7. Language Model (LLM)
+
+---
+
+### ✅ Default (Current)
+
+* **Gemma (quantized, GGUF)**
+
+---
+
+### 🧪 Evaluation Candidate
+
+* **Qwen2.5-3B-Instruct (GGUF Q4_K_M)**
+
+---
+
+### Why (Gemma)
+
+* stable
+* lightweight
+* good baseline performance
+
+---
+
+### Why Evaluate Qwen2.5
+
+* superior multilingual reasoning
+* better Hinglish generation
+* optimized for conversational tasks
+
+---
+
+### Runtime
+
+* `llama.cpp` (C++ backend)
+
+---
+
+### Constraints
+
+* context limit: **4096 tokens**
+* quantization: **INT4 (Q4_K_M)**
+* KV cache capped (~600MB)
+
+---
+
+### Key Risk
+
+```text
+Large context → KV cache explosion → RAM overflow → swap death
+```
+
+---
+
+### Mitigation
+
+* sliding window context
+* aggressive summarization
+
+---
+
+## 8. Text-to-Speech (TTS)
+
+---
+
+### ✅ Default
+
+* **Chatterbox-Turbo (~350M)**
+
+---
+
+### Why
+
+* sub-200ms latency
+* CPU-friendly
+* supports Hindi
+* voice cloning capability
+* C++ compatible
+
+---
+
+### Architecture
+
+* distilled one-step decoder
+* avoids autoregressive latency loops
+
+---
+
+### Output
+
+```text
+text stream → audio chunks (real-time)
+```
+
+---
+
+### Why NOT Fish Speech (4B)
+
+* exceeds memory bandwidth
+* unusable on CPU
+* > 5s latency
+
+---
+
+### Why NOT Qwen3-TTS
+
+* no Hindi support
+* poor CPU performance
+
+---
+
+### Why NOT Piper
+
+* no voice cloning
+* lower realism
+
+---
+
+## 9. Model Lifecycle
 
 ---
 
 ### First Launch
 
-* Default lightweight models are downloaded automatically
-* System becomes functional immediately
+* models downloaded on-demand
+* minimal defaults installed
 
 ---
 
-### Runtime Behavior
+### Runtime
 
-* Models are loaded dynamically based on:
-
-  * user settings
-  * system capability
+* models loaded lazily
+* only active components consume memory
 
 ---
 
-### Switching Models
+### Switching
 
-* User can upgrade/downgrade models in settings
-* No system restart required (where possible)
-
----
-
-## 8. Resource Strategy
+* configurable via settings
+* reload without full restart (where possible)
 
 ---
 
-### Memory Targets
-
-| Component | Target  |
-| --------- | ------- |
-| STT       | < 200MB |
-| LLM       | 2–4 GB  |
-| TTS       | < 200MB |
+## 10. Streaming Behavior (System-Level)
 
 ---
 
-### CPU Usage
+### Full Pipeline
 
-* Must remain low enough for:
-
-  * background execution
-  * multitasking
-
----
-
-### GPU
-
-* Not required
-* Optional acceleration only
+```text
+audio → VAD → STT → LLM → TTS → output
+```
 
 ---
 
-## 9. Future Extensions
+### Parallel Execution
+
+* STT streams → feeds LLM early
+* LLM streams → feeds TTS early
+
+---
+
+### Result
+
+* overlapping execution
+* perceived latency <500ms
+
+---
+
+## 11. Future Extensions
 
 ---
 
 ### Multi-Model Routing
 
-* Dynamically select models based on:
-
-  * task complexity
-  * latency requirements
+* dynamic model switching
+* lightweight vs high-quality modes
 
 ---
 
 ### Hybrid Execution
 
-* Local + cloud fallback
-* Example:
-
-  * local STT → cloud LLM → local TTS
-
----
-
-### Streaming Models
-
-* token streaming LLMs
-* real-time voice-to-voice pipelines
+* local + cloud fallback
 
 ---
 
 ### Specialized Models
 
-* intent classifiers
 * wake word detection
 * speaker recognition
+* intent classifiers
 
 ---
 
-## 10. Design Constraints
+## 12. Design Constraints
 
 ---
 
 ### Must Always Support
 
-* fully offline operation
-* real-time interaction
-* low memory usage
+* offline operation
+* low memory footprint
+* real-time responsiveness
 
 ---
 
 ### Must Avoid
 
 * large default models
-* blocking inference
-* cloud dependency
+* Python inference pipelines
+* blocking execution
 
 ---
 
-## 11. Final Principle
+## 13. Final Principle
 
-> Models are **replaceable components**, not the system itself.
+> Models are **bounded by hardware physics**, not just capability.
 
 Vox is defined by:
 
-* its architecture
-* its interaction model
-* its real-time behavior
+* its **real-time pipeline**
+* its **event-driven architecture**
+* its **latency guarantees**
 
-—not by any specific model choice.
-
----
-
-[1]: https://www.linkedin.com/posts/petewarden_github-moonshine-aimoonshine-fast-and-activity-7428109120882393089-YneW?utm_source=chatgpt.com "Introducing Moonshine Voice: Open Source Speech-to-Text Models"
-[2]: https://arxiv.org/abs/2410.15608?utm_source=chatgpt.com "Moonshine: Speech Recognition for Live Transcription and Voice Commands"
-[3]: https://huggingface.co/UsefulSensors/moonshine?utm_source=chatgpt.com "UsefulSensors/moonshine - Hugging Face"
+—not by any specific model.

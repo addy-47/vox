@@ -5,7 +5,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
 export const TrayApp: React.FC = () => {
-  const [transcript, setTranscript] = useState("");
+  const [activeTranscript, setActiveTranscript] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
   const [isTrayEnabled, setIsTrayEnabled] = useState(true);
   
@@ -15,8 +16,16 @@ export const TrayApp: React.FC = () => {
   const [hideDelay, setHideDelay] = useState(5.0);
 
   const hideTimerRef = useRef<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const [isVisible, setIsVisible] = useState(false);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [history, activeTranscript]);
 
   // Sync settings
   useEffect(() => {
@@ -37,7 +46,8 @@ export const TrayApp: React.FC = () => {
     if (!isTrayEnabled) return;
 
     let unlistenSpeechStart: () => void;
-    let unlistenTranscript: () => void;
+    let unlistenPartial: () => void;
+    let unlistenFinal: () => void;
     let unlistenSpeechEnd: () => void;
 
     const setupListeners = async () => {
@@ -45,14 +55,19 @@ export const TrayApp: React.FC = () => {
 
       unlistenSpeechStart = await listen("speech_start", async () => {
         if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
-        setTranscript(""); // Clear previous transcript on new speech
+        setActiveTranscript(""); // Clear previous partial on new speech
         await appWindow.show();
         await appWindow.setFocus();
         setIsVisible(true);
       });
 
-      unlistenTranscript = await listen<string>("transcript_partial", (event) => {
-        setTranscript(event.payload);
+      unlistenPartial = await listen<{ text: string }>("transcript_partial", (event) => {
+        setActiveTranscript(event.payload.text);
+      });
+
+      unlistenFinal = await listen<{ text: string }>("transcript_final", (event) => {
+        setActiveTranscript("");
+        setHistory(prev => [...prev, event.payload.text]);
       });
 
       unlistenSpeechEnd = await listen("speech_end", () => {
@@ -72,14 +87,16 @@ export const TrayApp: React.FC = () => {
 
     return () => {
       if (unlistenSpeechStart) unlistenSpeechStart();
-      if (unlistenTranscript) unlistenTranscript();
+      if (unlistenPartial) unlistenPartial();
+      if (unlistenFinal) unlistenFinal();
       if (unlistenSpeechEnd) unlistenSpeechEnd();
     };
   }, [isTrayEnabled, hideDelay]);
 
   const copyToClipboard = () => {
-    if (!transcript) return;
-    navigator.clipboard.writeText(transcript);
+    const text = [...history, activeTranscript].filter(Boolean).join("\n");
+    if (!text) return;
+    navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -127,21 +144,42 @@ export const TrayApp: React.FC = () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4 max-h-[350px]">
-          <div className="flex gap-4">
-            <div className="space-y-3">
-              <p className={cn(
-                "text-[14px] leading-relaxed font-medium transition-colors duration-500",
-                textColor === 'accent' ? "text-[rgb(var(--accent))]" : textColor === 'white' ? "text-white" : "text-white/40"
-              )}>
-                {transcript || "Listening for speech..."}
+        <div 
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4 max-h-[350px] scroll-smooth"
+        >
+          <div className="flex flex-col gap-3">
+            {history.map((text, idx) => (
+              <p 
+                key={idx}
+                className={cn(
+                  "text-[14px] leading-relaxed font-medium transition-all duration-500",
+                  textColor === 'accent' ? "text-white" : "text-white"
+                )}
+              >
+                {text}
               </p>
-              <div className="flex gap-1.5 opacity-40">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-bounce" style={{ animationDelay: `${i * 0.2}s` }} />
-                ))}
+            ))}
+            
+            {activeTranscript && (
+              <div className="space-y-2">
+                <p className={cn(
+                  "text-[14px] leading-relaxed font-medium animate-in fade-in slide-in-from-bottom-1 duration-300",
+                  textColor === 'accent' ? "text-[rgb(var(--accent))]" : "text-white/60"
+                )}>
+                  {activeTranscript}
+                </p>
+                <div className="flex gap-1.5 opacity-40">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-bounce" style={{ animationDelay: `${i * 0.2}s` }} />
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+
+            {!activeTranscript && history.length === 0 && (
+              <p className="text-[14px] text-white/20 italic">Listening for speech...</p>
+            )}
           </div>
         </div>
 
