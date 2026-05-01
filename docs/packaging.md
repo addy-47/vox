@@ -1,10 +1,10 @@
-# Vox — Packaging & Distribution Architecture
+# Vox — Packaging & Distribution Architecture (Native Stack)
 
 ---
 
 ## 1. Overview
 
-Vox is distributed as a **self-contained desktop application**.
+Vox is distributed as a **self-contained native desktop application**.
 
 The user should:
 
@@ -15,8 +15,8 @@ The user should:
 No manual setup of:
 
 * Python
-* dependencies
-* models (handled separately)
+* Node.js
+* system dependencies
 
 ---
 
@@ -24,74 +24,83 @@ No manual setup of:
 
 ---
 
-### ⚡ Single Binary Experience
-
-The entire system is delivered as:
+### ⚡ Native Binary System
 
 ```text
-Vox App = UI + Runtime + Backend
+Vox App = UI (WebView) + Rust Runtime + Native Inference Engine
 ```
 
-* Frontend (React) → bundled into Tauri
-* Backend (Python) → compiled into binary
-* Delivered as one installable application
+* React → bundled into Tauri WebView
+* Rust → main runtime + system control
+* C++ → inference layer (linked binaries)
 
 ---
 
-### ⚡ Zero Dependency Requirement
+### ⚡ Zero External Runtime
 
-End users must NOT:
+The system must NOT require:
 
-* install Python
-* install Node.js
-* configure environment variables
+* Python
+* Conda
+* CUDA
+* external runtimes
 
-All dependencies are bundled.
+Everything is bundled or handled internally.
 
 ---
 
 ### ⚡ Models are NOT Bundled
 
-* Models are downloaded on first run
-* Keeps installer lightweight
-* Allows dynamic upgrades
+* models downloaded on first run
+* stored in user directory
+* upgradable independently
 
 ---
 
-### ⚡ Cross-Platform First
+### ⚡ Hardware-Constrained Design
 
-Supported targets:
+Packaging must respect:
 
-* Windows → `.exe` (primary)
-* Linux → `.AppImage`, `.deb`
-* macOS → `.dmg` (future)
-
----
-
-## 3. System Architecture
+* 8GB RAM systems
+* CPU-only execution
+* low disk footprint
 
 ---
 
-### Packaging Composition
+## 3. System Architecture (Packaging View)
+
+---
+
+### Composition
 
 ```text
-Tauri App (container)
+Tauri Application
 ├── UI (React build)
-├── Backend (Python binary — sidecar)
-└── Native OS bindings
+├── Rust Core
+│   ├── Audio (cpal)
+│   ├── IPC/Event System
+│
+├── Native Inference Layer
+│   ├── ONNX Runtime (VAD + STT)
+│   ├── llama.cpp (LLM)
+│   └── TTS Engine
 ```
 
 ---
 
-### Sidecar Model
+### Key Change
 
-The backend runs as a **sidecar process**:
+❌ Old:
 
-* compiled using PyInstaller
-* spawned by Tauri at runtime
-* communicates via IPC / HTTP
+```text
+Python sidecar process
+```
 
-This pattern allows bundling external runtimes into the app without requiring user setup ([GitHub][1])
+✅ New:
+
+```text
+Native libraries + compiled inference
+```
 
 ---
 
@@ -99,63 +108,76 @@ This pattern allows bundling external runtimes into the app without requiring us
 
 ---
 
-### Step 1 — Build Backend
-
-Compile Python into binary:
+### Step 1 — Build Frontend
 
 ```bash
-pyinstaller main.py --onefile --name vox_backend
+pnpm build
 ```
 
 Output:
 
-```
-dist/backend/vox_backend
+```text
+dist/ui/
 ```
 
 ---
 
-### Step 2 — Attach Backend to App
+### Step 2 — Build Native Components
 
-Move binary to Tauri:
+---
+
+#### Rust (Core)
 
 ```bash
-app/src-tauri/binaries/vox_backend-<target>
+cargo build --release
 ```
 
 ---
 
-### Step 3 — Configure Sidecar
+#### C++ Inference Layer
 
-In `tauri.conf.json`:
+Options:
 
-```json
-{
-  "bundle": {
-    "externalBin": ["binaries/vox_backend"]
-  }
-}
-```
+* statically linked binaries
+  OR
+* dynamic libraries bundled with app
 
-Tauri automatically includes platform-specific binaries during build ([Tauri][2])
+Includes:
+
+* ONNX Runtime
+* llama.cpp
+* TTS engine
 
 ---
 
-### Step 4 — Build Application
+### Step 3 — Integrate with Tauri
+
+```text
+src-tauri/
+  ├── target/release/
+  ├── native/         # inference libs
+  └── tauri.conf.json
+```
+
+---
+
+### Step 4 — Bundle Application
 
 ```bash
 pnpm tauri build
 ```
 
-Output:
+---
 
-* Windows → `.exe` installer
+### Output
+
+* Windows → `.exe`
 * Linux → `.AppImage`, `.deb`
-* macOS → `.dmg`
+* macOS → `.dmg` (future)
 
 ---
 
-## 5. Directory Structure (Packaging-Relevant)
+## 5. Directory Structure
 
 ---
 
@@ -164,61 +186,45 @@ vox/
 ├── app/
 │   ├── ui/
 │   ├── src-tauri/
-│   │   ├── binaries/          # sidecar binaries
+│   │   ├── native/          # ONNX + llama.cpp + TTS libs
+│   │   ├── target/
 │   │   └── tauri.conf.json
 │
-├── backend/
-│   └── src/
-│
-├── dist/                     # build outputs (ignored in git)
-│   ├── backend/
-│   └── app/
-│
+├── models/                  # downloaded at runtime
+├── dist/
 ├── scripts/
-│   ├── build-backend.sh
-│   ├── build-app.sh
-│   └── release.sh
 ```
 
 ---
 
-## 6. CI/CD Pipeline
+## 6. Model Distribution
 
 ---
 
-### Trigger
+### First Run Flow
 
-* On push to `main`
-* On tagged release
-
----
-
-### Pipeline Steps
-
-1. Install dependencies
-2. Build frontend (Vite)
-3. Compile backend (PyInstaller)
-4. Copy backend binary to Tauri
-5. Build Tauri app
-6. Upload artifacts
+```text
+App starts
+→ checks model directory
+→ downloads required models
+→ verifies integrity
+```
 
 ---
 
-### Outputs
+### Storage Location
 
-Artifacts per OS:
-
-* `Vox-Setup.exe`
-* `Vox.AppImage`
-* `Vox.deb`
+```text
+~/.vox/models/
+```
 
 ---
 
-### Release System
+### Benefits
 
-* Use GitHub Releases
-* Attach build artifacts
-* Version tied to Git tags
+* smaller installer
+* flexible updates
+* model switching without reinstall
 
 ---
 
@@ -228,84 +234,37 @@ Artifacts per OS:
 
 ### Mechanism
 
-Vox uses Tauri’s built-in updater.
-
-Flow:
+Tauri updater:
 
 ```text
-App launches
-→ checks update server
-→ new version available
-→ downloads update
-→ installs silently / prompts user
+App start
+→ check release server
+→ download update
+→ apply patch
 ```
 
 ---
 
-### Update Source
+### Constraints
 
-* GitHub Releases (default)
-* Custom update server (optional)
-
----
-
-### Requirements
-
-* versioned builds
-* signed artifacts (recommended)
-* consistent release naming
+* binary compatibility must be maintained
+* inference layer version must match app
 
 ---
 
-### Important Constraints
-
-* updater must not break sidecar compatibility
-* backend + frontend must be version-aligned
-
----
-
-## 8. Model Distribution
-
----
-
-### First Run Behavior
-
-```text
-App starts
-→ checks model directory
-→ downloads default models
-```
-
----
-
-### Storage
-
-* stored in user directory
-* not inside app bundle
-
----
-
-### Benefits
-
-* smaller installer
-* flexible upgrades
-* no reinstall needed for model changes
-
----
-
-## 9. Development vs Production
+## 8. Development vs Production
 
 ---
 
 ### Development Mode
 
 ```bash
-pnpm dev
 pnpm tauri dev
 ```
 
-* backend runs uncompiled
-* hot reload enabled
+* Rust runs in debug mode
+* native libs loaded dynamically
+* hot reload UI
 
 ---
 
@@ -315,36 +274,66 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-* backend compiled
-* optimized bundle
+* Rust optimized
+* native inference bundled
+* minimized binary
 
 ---
 
-## 10. Known Challenges
+## 9. CI/CD Pipeline
 
 ---
 
-### PyInstaller Limitations
+### Steps
 
-* slow startup for large binaries
-* process management complexity ([GitHub][3])
+1. Install dependencies
+2. Build frontend
+3. Build Rust core
+4. Build native inference layer
+5. Bundle Tauri app
+6. Upload artifacts
 
 ---
 
-### Sidecar Lifecycle
+### Outputs
 
-* must handle:
+* `Vox-Setup.exe`
+* `Vox.AppImage`
+* `Vox.deb`
 
-  * startup
-  * crash recovery
-  * graceful shutdown
+---
+
+### Release Strategy
+
+* GitHub Releases
+* version tagging
+* platform-specific builds
+
+---
+
+## 10. Key Challenges
+
+---
+
+### Native Dependency Management
+
+* ONNX runtime size
+* cross-platform compatibility
+* library linking
+
+---
+
+### Binary Size
+
+* multiple inference components
+* need for optimization
 
 ---
 
 ### OS Differences
 
-* different binaries per platform
-* different installer formats
+* audio systems differ
+* packaging formats differ
 
 ---
 
@@ -354,38 +343,32 @@ pnpm tauri build
 
 ### Must Ensure
 
-* single-click installation
-* minimal system overhead
-* reliable startup
+* single-click install
+* fast startup
+* minimal memory overhead
 
 ---
 
 ### Must Avoid
 
-* requiring external runtimes
-* bundling large models
-* manual setup steps
+* Python bundling
+* redundant libraries
+* large default models
 
 ---
 
 ## 12. Final Principle
 
-> Packaging is not distribution logic.
-
-It is the **final form of the system**.
+> Packaging is the **final integration layer of the system**.
 
 The user should never see:
 
-* the backend
-* the models
-* the complexity
+* inference complexity
+* model management
+* runtime architecture
 
 Only:
 
-> Vox — ready to use.
-
----
-
-[1]: https://github.com/dieharders/example-tauri-v2-python-server-sidecar?utm_source=chatgpt.com "dieharders/example-tauri-v2-python-server-sidecar"
-[2]: https://v2.tauri.app/develop/sidecar/?utm_source=chatgpt.com "Embedding External Binaries"
-[3]: https://github.com/orgs/tauri-apps/discussions/1645?utm_source=chatgpt.com "Executing python scripts using Tauri #1645"
+```text
+Vox — instant, real-time voice system
+```

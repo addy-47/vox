@@ -1,109 +1,366 @@
-# Meeting Reply Mode - Vox Assistant
-
-## Goal
-
-Enable Vox to act as a **silent meeting co-pilot** that allows the user to:
-- Listen to and transcribe meetings (Zoom, Google Meet, Microsoft Teams, etc.) in the background
-- Maintain live context/summaries of the conversation
-- Generate intelligent replies using the LLM
-- Speak **in the user's cloned voice** directly into the meeting when the user clicks "Send"
-- Let the user participate in meetings **without ever speaking themselves**
-
-This is an optional **advanced feature** (not part of MVP).
-
-## Core Approach (Recommended)
-
-We will use the **Virtual Audio Cable / Loopback** method instead of packet-level or process injection.
-
-### Audio Flow
-
-**Incoming Audio (Capture):**
-- User sets meeting app's **Speaker Output** → Virtual Cable (e.g., "VB-Cable" or "Vox Virtual Sink")
-- Vox STT continuously listens to this virtual cable
-- Transcription → periodic summarization → fed into LLM context
-
-**Outgoing Audio (Reply):**
-- Vox generates reply using Gemma 4 E2B (or better model)
-- Text → TTS (XTTS-v2 with user's cloned voice preferred)
-- Audio played through **Virtual Microphone** (e.g., "VB-Cable Input")
-- User selects this virtual mic as their microphone in the meeting app
-- When user clicks **"Send to Meeting"** button in Vox, the audio is played into the meeting
-
-## User Experience Principles
-
-- **Minimal clicks** and friction is the highest priority
-- One-time setup should be guided and as automatic as possible
-- Default behavior should remain simple desktop mode
-- Meeting Mode must be explicitly enabled by user
-- Clear visual feedback at all times (e.g., "Listening to meeting...", "Generating reply...")
-
-## Setup Flow (Target: ≤ 3 clicks after initial install)
-
-1. **First Time Setup (Guided Wizard)**
-   - User enables "Meeting Mode" in Settings
-   - App detects OS and guides user to install virtual audio driver (VB-Cable on Windows, PipeWire module on Linux)
-   - App provides direct download links + simple instructions
-   - User is walked through setting:
-     - Meeting Speaker Output → Vox Virtual Sink
-     - Meeting Microphone → Vox Virtual Mic (optional)
-
-2. **Daily Usage**
-   - User joins meeting normally
-   - Opens Vox (or it runs in background)
-   - Toggles **"Meeting Mode"** ON with **one click**
-   - Vox automatically starts transcribing + maintaining context
-   - When user wants to reply → clicks **"Send to Meeting"** (big prominent button)
-
-## Technical Implementation Notes
-
-- **STT**: faster-whisper (tiny/base) listening to virtual audio source
-- **LLM**: Gemma 4 E2B (IQ2_M/Q2_K default). Maintain rolling summary of meeting to keep context small
-- **TTS**: 
-  - Default: Piper (fast)
-  - Preferred for meetings: XTTS-v2 using user's cloned voice
-- **Context Management**: Periodically summarize last N minutes and refresh LLM context to prevent token bloat
-- **Trigger**: User name mention detection (optional) + manual "Send" button (primary)
-
-## Things to Take Care Of (UX Focus)
-
-- **Simplicity**:
-  - Never require manual audio routing every time. Save settings and auto-apply when possible.
-  - Provide clear status indicators: "Meeting Mode Active", "Listening", "Generating", "Speaking into meeting"
-  - Show live transcription preview
-
-- **Reliability**:
-  - Graceful fallback if virtual devices are not found
-  - Warn user if meeting app audio routing is incorrect
-
-- **Performance**:
-  - Keep continuous transcription lightweight (use tiny model by default)
-  - Limit LLM context size aggressively using summarization
-
-- **Privacy & Consent**:
-  - Clear warning on first use: "You are responsible for informing meeting participants if required by law/company policy"
-  - Option to pause recording/transcription easily
-
-- **Cross-Platform**:
-  - Different virtual audio solutions needed for Windows vs Linux
-  - Abstract audio device handling in code
-
-## Future Enhancements (Phase 2+)
-
-- Automatic name mention detection + suggested replies
-- Fully automatic replies (with user-defined confidence threshold)
-- Smart mute/unmute of real microphone
-- Meeting summary at the end
-- Support for more platforms (Discord, Webex, etc.)
-
-## Risks & Limitations
-
-- Requires one-time virtual audio setup (cannot be fully automatic due to OS restrictions)
-- Slight latency (1.5–4 seconds) between someone speaking and Vox being ready to reply
-- Audio quality of injected voice depends on virtual cable + XTTS performance
-- Some meeting apps may have restrictions on virtual microphones
+# Meeting Reply Mode — Vox Assistant (Native Architecture)
 
 ---
 
-**Status**: Planned for v2  
-**Priority**: Medium-High  
-**Owner**: @adhbhut
+## 1. Goal
+
+Enable Vox to act as a **silent meeting co-pilot** that:
+
+* listens to meeting audio in real-time
+* maintains rolling context
+* generates intelligent replies
+* injects speech into the meeting using TTS
+
+---
+
+## 2. Status
+
+* **Not part of MVP (v1)**
+* Planned for **v2**
+
+---
+
+## 3. Core Architectural Shift
+
+Meeting mode is **not a separate system**.
+
+It is an **extension of the core audio pipeline**:
+
+```text
+Meeting Audio → VAD → STT → LLM → TTS → Virtual Mic
+```
+
+---
+
+## 4. Audio Routing Model (CRITICAL)
+
+---
+
+### Principle
+
+Use **virtual audio devices (loopback routing)** instead of:
+
+* packet interception
+* process injection
+
+---
+
+### Why
+
+Virtual audio cables act as an internal audio bridge:
+
+* output of one app → input of another
+* no quality loss
+* near real-time transfer ([Virtual Audio Cable][1])
+
+---
+
+## 5. Native Audio Handling (Rust)
+
+---
+
+### Library
+
+* `cpal` (cross-platform audio I/O)
+
+---
+
+### Capabilities
+
+* enumerate devices
+* create input/output streams
+* real-time audio callbacks ([docs.rs][2])
+
+---
+
+### Important Detail
+
+Audio streams run on **high-priority threads**, ensuring:
+
+* low latency
+* non-blocking capture
+
+---
+
+## 6. Audio Flow (Updated)
+
+---
+
+### 6.1 Incoming Audio (Meeting Capture)
+
+```text
+Meeting App Output
+    ↓
+Virtual Audio Device (Sink)
+    ↓
+Rust (cpal input stream)
+    ↓
+STT (Qwen3-ASR)
+```
+
+---
+
+### Behavior
+
+* Vox listens continuously
+* STT emits `text_delta`
+* context updated incrementally
+
+---
+
+---
+
+### 6.2 Outgoing Audio (Reply Injection)
+
+```text
+LLM Response
+    ↓
+TTS (Chatterbox-Turbo)
+    ↓
+Rust Output Stream (cpal)
+    ↓
+Virtual Microphone Device
+    ↓
+Meeting App Input
+```
+
+---
+
+### Behavior
+
+* user triggers “Send to Meeting”
+* audio streamed into meeting
+* no blocking
+
+---
+
+## 7. Device Routing (User Setup)
+
+---
+
+### One-Time Setup
+
+User configures:
+
+* Meeting Speaker → Virtual Sink
+* Meeting Microphone → Virtual Mic
+
+---
+
+### Concept
+
+Virtual cable behaves like:
+
+```text
+App A (Zoom) → Virtual Output → Virtual Input → Vox
+```
+
+It routes audio internally without hardware dependency ([Wikipedia][3])
+
+---
+
+## 8. System Behavior
+
+---
+
+### Continuous Loop
+
+```text
+audio → STT → context → LLM → suggestion
+```
+
+---
+
+### Reply Flow
+
+```text
+User clicks "Send"
+→ LLM generates reply
+→ TTS streams audio
+→ injected into meeting
+```
+
+---
+
+## 9. Context Management
+
+---
+
+### Problem
+
+Meeting audio = long + continuous
+
+→ LLM context will explode
+
+---
+
+### Solution
+
+* rolling summarization
+* sliding context window
+* discard raw history
+
+---
+
+### Rule
+
+```text
+Keep:
+- summary
+- last few exchanges
+
+Discard:
+- full transcript
+```
+
+---
+
+## 10. UI Behavior
+
+---
+
+### Modes
+
+* **Idle**
+* **Listening to Meeting**
+* **Generating Reply**
+* **Speaking into Meeting**
+
+---
+
+### Requirements
+
+* clear state indicators
+* live transcript preview
+* single-click reply
+
+---
+
+## 11. Performance Constraints
+
+---
+
+### Critical Limits
+
+* STT must remain lightweight
+* LLM context ≤ 4096 tokens
+* TTS must stream (<200ms start)
+
+---
+
+### Latency Expectation
+
+* 1.5s – 3s response acceptable
+* (higher than normal mode)
+
+---
+
+## 12. Reliability Considerations
+
+---
+
+### Must Handle
+
+* missing virtual devices
+* incorrect routing
+* device switching
+
+---
+
+### Behavior
+
+* auto-detect devices
+* fallback to mic if needed
+* show clear warnings
+
+---
+
+## 13. Privacy & Safety
+
+---
+
+### Requirement
+
+User must be informed:
+
+* meeting recording laws
+* consent responsibility
+
+---
+
+### Controls
+
+* pause listening
+* disable mode instantly
+
+---
+
+## 14. Cross-Platform Complexity
+
+---
+
+### Windows
+
+* VB-Cable / WASAPI loopback
+
+---
+
+### Linux
+
+* PipeWire routing
+
+---
+
+### macOS
+
+* CoreAudio virtual devices (manual setup)
+
+---
+
+## 15. Future Enhancements
+
+---
+
+* auto reply suggestions
+* name detection
+* full autonomous replies
+* meeting summary
+* smart interruption
+
+---
+
+## 16. Key Architectural Constraints
+
+---
+
+### Must NOT
+
+* block main pipeline
+* duplicate audio processing
+* introduce extra buffering
+
+---
+
+### Must Ensure
+
+* reuse core pipeline
+* same event-driven flow
+* minimal additional overhead
+
+---
+
+## 17. Final Principle
+
+> Meeting mode is NOT a feature.
+
+It is a **different audio routing layer on top of the same real-time engine**.
+
+---
+
+**Status:** Planned for v2
+**Priority:** Medium-High
+**Owner:** @adhbhut
+
+[1]: https://vac.muzychenko.net/en/?utm_source=chatgpt.com "Virtual Audio Cable - connect audio applications, route and ..."
+[2]: https://docs.rs/cpal/latest/cpal/?utm_source=chatgpt.com "cpal - Rust"
+[3]: https://en.wikipedia.org/wiki/Virtual_Audio_Cable?utm_source=chatgpt.com "Virtual Audio Cable"
