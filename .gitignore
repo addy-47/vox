@@ -26,4 +26,4 @@ dist-ssr
 *.venv
 *pycache*
 *.onnx
-src-tauri/assets/*
+**/src-tauri/assets/

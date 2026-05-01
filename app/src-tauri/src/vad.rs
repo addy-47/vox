@@ -130,6 +130,7 @@ impl VadEngine {
         &mut self,
         mut consumer: C,
         tx: mpsc::Sender<serde_json::Value>,
+        stt_tx: mpsc::UnboundedSender<crate::stt::SttCommand>,
     ) -> Result<()> 
     where 
         C: ringbuf::traits::Consumer<Item = f32> 
@@ -145,7 +146,7 @@ impl VadEngine {
                 consumer.pop_slice(&mut chunk);
 
                 // Add to rolling 768 buffer
-                audio_buffer.extend(chunk);
+                audio_buffer.extend_from_slice(&chunk);
                 if audio_buffer.len() > 768 {
                     audio_buffer.drain(0..(audio_buffer.len() - 768));
                 }
@@ -168,6 +169,11 @@ impl VadEngine {
                             if !in_speech {
                                 in_speech = true;
                                 let _ = tx.send(json!({ "type": "speech_start" })).await;
+                                // Send the current chunk that triggered speech_start
+                                let _ = stt_tx.send(crate::stt::SttCommand::Audio(chunk.clone()));
+                            } else {
+                                // Already in speech, continue sending audio
+                                let _ = stt_tx.send(crate::stt::SttCommand::Audio(chunk.clone()));
                             }
                             silence_frames = 0;
                         } else {
@@ -176,6 +182,7 @@ impl VadEngine {
                                 if silence_frames > 50 { // 500ms silence
                                     in_speech = false;
                                     let _ = tx.send(json!({ "type": "speech_end" })).await;
+                                    let _ = stt_tx.send(crate::stt::SttCommand::Clear);
                                     self.reset_states();
                                 }
                             }
