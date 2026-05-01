@@ -1,11 +1,11 @@
-# Vox — Roadmap (v1.0 Focused)
+# Vox — Roadmap (v1.0 Native Architecture)
 
 ---
 
 ## Versioning Logic
 
-* **0.1.x → 0.4.x** = Core system build
-* **0.5.x → 0.7.x** = Persistence + UX + Packaging
+* **0.1.x → 0.4.x** = Core real-time pipeline (native)
+* **0.5.x → 0.7.x** = System intelligence + UX + persistence
 * **1.0.0** = Stable release
 
 ---
@@ -22,112 +22,257 @@
 
 ---
 
-## Phase 0.2.0 — Audio + VAD
+## Phase 0.2.0 — Native Audio + VAD
 
-**Goal:** System can detect speech in real-time
-
-* Python sidecar setup
-* Microphone streaming (non-blocking)
-* VAD (speech_start / speech_end)
-* IPC bridge (Rust ↔ Python ↔ UI)
-* Emit events to frontend
+**Goal:** Real-time speech detection using native stack
 
 ---
 
-## Phase 0.3.0 — STT (Transcription Layer)
+### Core Work
 
-**Goal:** Real-time transcription pipeline
+* Rust audio capture using `cpal`
+* 16kHz mono PCM stream (10–20ms chunks)
+* Integrate TEN VAD via ONNX (`ort` / C++ binding)
+* Real-time speech detection:
 
-* Moonshine STT integration
-* Streaming partial transcripts
-* Final transcript emission
-* Overlay UI fully driven by events
-* Proper buffering (no flicker)
-
----
-
-## Phase 0.4.0 — LLM + TTS
-
-**Goal:** Response generation loop
-
-* Local LLM (quantized, CPU)
-* Streaming token generation
-* TTS (Piper default)
-* Audio playback system
-* Basic turn orchestration
+  * `speech_start`
+  * `speech_end`
 
 ---
 
-## Phase 0.5.0 — Real-Time Loop (CRITICAL)
+### IPC & Events
 
-**Goal:** True voice interaction system
+* Rust event bus (no JSON streaming)
+* Emit to frontend:
 
-* Full pipeline:
-  audio → STT → LLM → TTS → output
+  * `speech_start`
+  * `speech_end`
+  * `audio_level`
 
-* Barge-in (interrupt system)
+---
 
-* Parallel execution (no blocking)
+### Output
 
-* Event-driven orchestration
+```text
+audio → VAD → event stream → UI reacts
+```
 
-* Stable latency (<1s perceived)
+---
+
+## Phase 0.3.0 — STT (Streaming Transcription)
+
+**Goal:** Low-latency multilingual transcription
+
+---
+
+### Core Work
+
+* Integrate Qwen3-ASR-0.6B (INT8 ONNX)
+* Implement **ring buffer audio pipeline**
+* Feed **overlapping 240ms chunks**
+* Implement encoder state caching
+
+---
+
+### Streaming Behavior
+
+* emit:
+
+  * `text_delta` (partial transcript)
+  * `text_final`
+
+---
+
+### UI Integration
+
+* overlay driven entirely by streaming text
+* no buffering delays
+
+---
+
+### Critical Constraint
+
+* no full-audio batching
+* no reprocessing of old frames
+
+---
+
+## Phase 0.4.0 — LLM Integration
+
+**Goal:** Real-time reasoning with minimal latency
+
+---
+
+### Core Work
+
+* integrate Gemma via `llama.cpp` (Rust binding)
+* quantized GGUF (INT4)
+* enforce:
+
+  * `ctx-size = 4096`
+  * KV cache limits
+
+---
+
+### Streaming Behavior
+
+* consume `text_delta` from STT
+* speculative prompt feeding (pre-fill context early)
+* emit:
+
+  * `llm_token`
+  * `response_final`
+
+---
+
+### Key Optimization
+
+* LLM begins before STT completes
+
+---
+
+## Phase 0.5.0 — TTS + Full Real-Time Loop (CRITICAL)
+
+**Goal:** Complete voice-to-voice interaction loop
+
+---
+
+### Core Work
+
+* integrate Chatterbox-Turbo (~350M)
+* streaming TTS (text → audio chunks)
+* audio playback via Rust (`cpal`)
+
+---
+
+### Barge-In System (MANDATORY)
+
+```text
+speech_start →
+    cancel LLM
+    clear TTS buffer
+    switch to listening
+```
+
+---
+
+### Final Pipeline
+
+```text
+audio → VAD → STT → LLM → TTS → output
+```
+
+---
+
+### Target
+
+* <500ms perceived latency
+* fully non-blocking pipeline
 
 ---
 
 ## Phase 0.6.0 — Persistence Layer
 
-**Goal:** Add storage (minimal, structured)
-
-* `config.json` (settings)
-* log system (rotating files)
-* SQLite (history only — optional UI)
-* `.vox/` directory structure
-
-⚠️ No storage in core loop
-⚠️ Only final outputs stored (not streams)
+**Goal:** Add structured storage (outside core loop)
 
 ---
 
-## Phase 0.7.0 — Onboarding (In-App, NOT installer)
+### Storage Design
 
-**Goal:** First-run experience
-
-* React onboarding flow:
-
-  * welcome
-  * model download
-  * mic test
-  * settings init
-
-* Model downloader
-
-* Permission checks
-
-* System readiness validation
+* `config.json` → settings
+* logs → rotating files
+* SQLite → optional history
 
 ---
 
-## Phase 0.8.0 — Packaging
+### Constraints
 
-**Goal:** Shipable app
+* no storage in real-time path
+* only final outputs persisted
 
-* PyInstaller backend binary
-* Tauri bundling (sidecar)
-* Windows `.exe`, Linux builds
-* Auto-updater integration
+---
+
+### Directory
+
+```text
+~/.vox/
+  ├── config.json
+  ├── logs/
+  └── sessions/ (optional)
+```
+
+---
+
+## Phase 0.7.0 — Onboarding (In-App)
+
+**Goal:** First-run system setup
+
+---
+
+### Flow
+
+* welcome screen
+* model download manager
+* microphone test
+* system readiness check
+
+---
+
+### Notes
+
+* built in React (NOT installer)
+* handles model downloads dynamically
+
+---
+
+## Phase 0.8.0 — Packaging (Native)
+
+**Goal:** Shipable application
+
+---
+
+### Build System
+
+* Tauri bundling (Rust + UI)
+* C++ inference binaries included
+* ONNX models external (downloaded)
+
+---
+
+### Outputs
+
+* Windows → `.exe`
+* Linux → `.AppImage`, `.deb`
+* macOS → `.dmg` (future)
+
+---
+
+### Constraints
+
+* no Python runtime
+* no external dependencies
 
 ---
 
 ## Phase 0.9.0 — Hardening
 
-**Goal:** Make system stable
+**Goal:** Stability + performance tuning
 
-* CPU + RAM profiling (8GB target)
-* Fix latency spikes
-* Crash recovery (backend)
-* Multi-device testing
-* Logging + debugging improvements
+---
+
+### Core Work
+
+* CPU profiling (thread allocation)
+* RAM monitoring (≤5.5GB inference)
+* latency tuning (<500ms target)
+* crash recovery (inference layer)
+
+---
+
+### Testing
+
+* low-end devices (8GB baseline)
+* multi-OS validation
 
 ---
 
@@ -135,18 +280,35 @@
 
 **Goal:** Production-ready system
 
-* Stable IPC contract
-* Clean onboarding
-* Reliable real-time loop
-* Fully local-first operation
+---
+
+### Requirements
+
+* stable IPC contract
+* consistent latency
+* reliable barge-in behavior
+* clean onboarding flow
 
 ---
 
-## Final Definition
+### Final State
 
 Vox v1.0 =
 
-* Real-time voice system
-* Fully local-first
-* Event-driven (NOT request-response)
-* Ephemeral UI with optional persistence
+* native real-time voice system
+* fully local-first
+* event-driven architecture
+* ephemeral UI (no persistent chat)
+* optimized for constrained hardware
+
+---
+
+## Final Principle
+
+> Vox is not a chatbot.
+
+It is a **real-time streaming voice system** constrained by:
+
+* memory physics
+* CPU bandwidth
+* latency guarantees

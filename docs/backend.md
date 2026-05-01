@@ -1,18 +1,15 @@
-# Vox — Backend Architecture
+# Vox — Backend Architecture (Native Inference)
 
 ---
 
 ## 1. Overview
 
-The Vox backend is a **real-time, event-driven audio processing system**.
+The Vox backend is a **real-time, event-driven native audio processing system**.
 
-It is responsible for:
+It is built using:
 
-* capturing audio input
-* detecting speech boundaries
-* transcribing speech
-* generating responses
-* producing audio output
+* **Rust (Tauri)** → system orchestration, audio I/O, IPC
+* **C++ Inference Layer** → model execution (`onnxruntime`, `llama.cpp`)
 
 ---
 
@@ -20,413 +17,354 @@ It is responsible for:
 
 ---
 
+### ⚡ Native-First Execution
+
+All inference MUST run using:
+
+* ONNX Runtime (C++)
+* llama.cpp (C++)
+
+Python is **not part of runtime**.
+
+---
+
 ### ⚡ Streaming First
 
-The system must operate using **streaming pipelines**, not batch processing.
+The system operates as a continuous stream:
 
-* partial data flows continuously
-* downstream components begin processing immediately
+```text
+audio → VAD → STT → LLM → TTS → output
+```
 
-A streaming pipeline allows overlapping execution across STT → LLM → TTS, significantly reducing latency ([LiveKit][1])
+No stage waits for completion.
 
 ---
 
 ### ⚡ Event-Driven Architecture
 
-The backend is not request-response based.
-
-It operates on events:
-
 ```text
-audio_chunk → vad_event → transcript_event → response_event → audio_output
+audio_chunk → speech_start → text_delta → llm_token → tts_chunk
 ```
 
-Each stage emits signals consumed by downstream components.
-
----
-
-### ⚡ Stateless Per Turn
-
-* Each speech turn is isolated
-* No persistent conversational state in the core loop
-* Context (if any) is injected externally
-
----
-
-### ⚡ Local-First Execution
-
-* All processing must work offline
-* External services are optional extensions
+Each stage emits incremental outputs.
 
 ---
 
 ### ⚡ Low-Latency Constraint
 
-Every stage must optimize for:
+Target: **<500ms voice-to-voice**
 
-* time-to-first-result
-* incremental output
+Every component must minimize:
+
+* buffering
+* blocking
+* memory allocation
 
 ---
 
-## 3. Core Pipeline
+## 3. System Topology
 
 ---
 
-### Primary Flow
+### Architecture
 
 ```text
-Audio Input
-→ Voice Activity Detection (VAD)
-→ Speech-to-Text (STT)
-→ Language Model (LLM)
-→ Text-to-Speech (TTS)
-→ Audio Output
+[Tauri (Rust)]
+    ├── Audio Capture (cpal)
+    ├── Event Bus
+    ├── UI IPC
+    │
+    ↓
+[C++ Inference Layer]
+    ├── VAD (ONNX)
+    ├── STT (ONNX)
+    ├── LLM (llama.cpp)
+    └── TTS (native)
 ```
 
-This cascading pipeline is the standard architecture for real-time voice systems ([getbluejay.ai][2])
+---
+
+## 4. Audio Ingestion (Rust)
 
 ---
 
-### Streaming Behavior
+### Implementation
 
-Each stage operates incrementally:
-
-* STT emits partial transcripts
-* LLM begins processing before full sentence
-* TTS starts synthesis before full response
-
-This reduces perceived latency to sub-second range ([LiveKit][1])
-
----
-
-## 4. Audio Ingestion Layer
-
----
-
-### Responsibilities
-
-* capture microphone input
-* chunk audio into frames (e.g., 20–40 ms)
-* stream audio continuously
+* library: `cpal`
+* format: 16kHz mono PCM
+* chunk size: 10–20 ms
 
 ---
 
 ### Requirements
 
-* non-blocking audio capture
-* consistent sampling rate
-* minimal buffering
+* zero blocking
+* consistent timing
+* low jitter
 
 ---
 
 ### Output
 
 ```text
-audio_chunk (stream)
-
+audio_chunk (ring buffer)
 ```
-## 4.1 Audio Routing Layer
-
-### Purpose
-
-Handles dynamic routing between:
-
-* physical microphone
-* virtual audio devices (future: meeting mode)
-* internal audio streams (TTS output)
 
 ---
 
-### Responsibilities
-
-* switch input sources dynamically
-* route TTS output to:
-
-  * speakers (default)
-  * virtual mic (future)
+## 5. Data Marshalling (CRITICAL)
 
 ---
 
-### Design
+### ❌ Forbidden
 
-* built using sounddevice / numpy buffers
-* operates as a lightweight mixer
-* supports multiple input/output channels
-
----
-
-### Why Required
-
-The system is not just capturing audio — it must:
-
-* ingest from different sources
-* output to different targets
-
-This becomes critical for meeting mode and system-level integrations.
-
+* JSON audio transfer
+* WebSocket streaming
+* copying buffers
 
 ---
 
-## 5. Voice Activity Detection (VAD)
+### ✅ Required
+
+* **Shared Memory Ring Buffer**
+* zero-copy audio transfer
 
 ---
 
-### Responsibilities
+### Flow
 
-* detect speech start
-* detect speech end
-* segment audio into turns
+```text
+Rust writes → shared buffer
+C++ reads → processes
+```
+
+---
+
+### Control Signals
+
+Use lightweight IPC:
+
+* Unix sockets / named pipes
+* Rust channels
+
+Events:
+
+```text
+speech_start
+speech_end
+text_delta
+llm_token
+interrupt
+```
+
+---
+
+## 6. Voice Activity Detection (VAD)
+
+---
+
+### Model
+
+* TEN VAD (ONNX)
 
 ---
 
 ### Behavior
 
 ```text
-silence → speech_start
-speech → active_stream
-silence_threshold → speech_end
+2 frames speech → speech_start
+300ms silence → speech_end
 ```
+
+---
+
+### Key Property
+
+* near-zero endpoint delay
+
+---
+
+## 7. Speech-to-Text (STT)
+
+---
+
+### Model
+
+* Qwen3-ASR-0.6B (INT8 ONNX)
+
+---
+
+### Input Strategy
+
+* 240ms overlapping chunks
+* continuous streaming
+
+---
+
+### Output
+
+```text
+text_delta (streaming)
+text_final
+```
+
+---
+
+### Critical Optimization
+
+* cache encoder state
+* avoid recomputation
+
+---
+
+## 8. Language Model (LLM)
+
+---
+
+### Runtime
+
+* llama.cpp (via Rust bindings)
+
+---
+
+### Model
+
+* Gemma (current)
+* future: Qwen2.5-3B
 
 ---
 
 ### Constraints
 
-* must be low-latency
-* must avoid premature cutoff
-* must tolerate pauses in natural speech
-
-VAD-based segmentation is the most practical tradeoff between latency and accuracy in real-time systems ([Wikipedia][3])
+* context limit: 4096 tokens
+* quantization: Q4 / INT4
+* KV cache capped
 
 ---
 
-## 6. Speech-to-Text (STT)
+### Streaming
+
+```text
+input → token stream → output
+```
 
 ---
 
-### Responsibilities
+### Optimization
 
-* convert audio stream → text
-* emit partial transcripts
+* speculative prompt feeding from STT stream
+
+---
+
+## 9. Text-to-Speech (TTS)
+
+---
+
+### Model
+
+* Chatterbox-Turbo (~350M)
 
 ---
 
 ### Behavior
 
 ```text
-audio_stream → partial_transcript → final_transcript
+text chunks → audio chunks
 ```
 
 ---
 
 ### Requirements
 
-* streaming support (mandatory)
-* low time-to-first-token
-* continuous updates
+* sub-200ms startup
+* streaming synthesis
 
 ---
 
-### Output Events
-
-```text
-transcript_partial
-transcript_final
-```
+## 10. Audio Output
 
 ---
 
-## 7. Language Model (LLM)
+### Implementation
 
----
-
-### Responsibilities
-
-* process transcript
-* generate response text
+* Rust (cpal)
 
 ---
 
 ### Behavior
 
-```text
-input_text → token_stream → response_text
-```
+* continuous playback
+* interruptible
 
 ---
 
-### Requirements
-
-* fast inference (small models)
-* short responses preferred
-* optional streaming tokens
-
----
-
-### Notes
-
-* no long-term memory in core loop
-* no tool execution in base architecture
-
----
-
-## 8. Text-to-Speech (TTS)
-
----
-
-### Responsibilities
-
-* convert text → audio
-* stream output where possible
-
----
-
-### Behavior
+### Barge-In Logic
 
 ```text
-text_stream → audio_chunks → playback
+speech_start →
+    cancel LLM
+    clear TTS buffer
+    switch to listening
 ```
-
----
-
-### Requirements
-
-* fast startup time
-* low compute usage
-* streaming or chunked output
-
----
-
-## 9. Audio Output Layer
-
----
-
-### Responsibilities
-
-* play generated audio
-* manage playback lifecycle
-
----
-
-### Requirements
-
-* interruptible playback
-* low latency output
-* smooth streaming
-
----
-
-### Critical Behavior
-
-If user starts speaking during playback:
-
-```text
-interrupt → stop TTS → switch to listening
-```
-
-This enables natural interaction flow ([LiveKit][1])
-
----
-
-## 10. Event Bus / Messaging Layer
-
----
-
-### Purpose
-
-Decouples components using events.
-
----
-
-### Event Types
-
-```text
-speech_start
-speech_end
-audio_chunk
-transcript_partial
-transcript_final
-response_partial
-response_final
-audio_output_start
-audio_output_end
-```
-
----
-
-### Design
-
-* lightweight in-process event system
-* async communication between modules
 
 ---
 
 ## 11. Concurrency Model
 
-### Core Requirement
+---
 
-No stage in the pipeline should block another.
+### Core Principle
+
+Avoid CPU thrashing.
 
 ---
 
-### Execution Model
+### Execution Strategy
 
-The system must run using parallel workers:
-
-* Audio ingestion → continuous thread/process
-* VAD → real-time processing
-* STT → streaming worker
-* LLM → async worker
-* TTS → concurrent output worker
+* sequential pipeline with overlap
+* controlled thread allocation
 
 ---
 
-### Communication
+### Thread Allocation
 
-* non-blocking queues
-* event-driven messaging between components
-
----
-
-### Why This Is Required
-
-Python's GIL can block execution if:
-
-* LLM inference runs on main thread
-* audio capture timing is disrupted
-
-This will break real-time performance.
+```text
+Total cores = N
+LLM threads = N - 2
+Remaining:
+    - audio thread
+    - VAD thread
+```
 
 ---
 
-### Anti-Pattern (STRICTLY FORBIDDEN)
-
-STT → wait → LLM → wait → TTS
+## 12. Memory Constraints
 
 ---
 
-### Recommended Approaches
+### Total Budget
 
-* multiprocessing (preferred)
-  OR
-* asyncio + thread pools (carefully managed)
-
-
-## 12. Process Architecture
+```text
+~5.5GB max usable
+```
 
 ---
 
-### Single Process (Default)
+### Allocation
 
-* all components run in one Python process
-* lightweight threading / async model
+```text
+VAD  ~0.05GB
+STT  ~0.80GB
+LLM  ~2.20GB
+TTS  ~0.50GB
+KV   ~0.60GB
+```
 
 ---
 
-### Optional (Future)
+### Rule
 
-* split into multiple processes if needed
-* IPC-based communication
+Never exceed memory ceiling → prevents OS swap
 
 ---
 
@@ -454,22 +392,6 @@ The following must maintain short-term state:
 * response token buffer
 
 ---
-
-### Why This Matters
-
-Without buffering:
-
-* first syllables get clipped
-* VAD becomes unstable
-* transcript flickers
-
----
-
-### External State (Optional)
-
-* logs
-* settings
-* history (separate system)
 
 ## 14. Persistence Boundary
 
@@ -522,76 +444,26 @@ Mixing storage with pipeline will:
 
 ### Must Handle
 
-* STT failure
-* LLM timeout
-* TTS errors
-* audio device issues
+* model crash
+* audio device failure
+* inference timeout
 
 ---
 
 ### Behavior
 
-* fail gracefully
-* continue listening
-* do not crash main loop
+* fail silently
+* restart component
+* keep listening active
 
 ---
 
-## 16. Performance Constraints
+## 16. Final Principle
 
----
+> Vox backend = **native real-time streaming engine**
 
-### Target Latency
+NOT:
 
-| Stage             | Target     |
-| ----------------- | ---------- |
-| STT (first token) | 100–200 ms |
-| LLM (first token) | 200–400 ms |
-| TTS start         | 100–300 ms |
-
----
-
-### System Goals
-
-* < 1 second perceived response time
-* continuous responsiveness
-
----
-
-## 17. Extensibility Hooks
-
----
-
-### Designed for future additions:
-
-* memory systems
-* tool calling
-* agentic workflows
-* external APIs
-
----
-
-### Rule
-
-New capabilities must integrate via:
-
-* event system
-* modular components
-
----
-
-## 18. Final Principle
-
-> The backend is a **real-time streaming engine**, not a request-response service.
-
-It must:
-
-* react continuously
-* process incrementally
-* remain lightweight
-
----
-
-[1]: https://livekit.com/blog/voice-agent-architecture-stt-llm-tts-pipelines-explained?utm_source=chatgpt.com "Voice Agent Architecture: STT, LLM, and TTS Pipelines ..."
-[2]: https://getbluejay.ai/resources/voice-ai-agent-architecture?utm_source=chatgpt.com "Voice AI Agent Architecture Patterns: How to Design ..."
-[3]: https://fr.wikipedia.org/wiki/Gradium?utm_source=chatgpt.com "Gradium"
+* Python service
+* REST API
+* batch system
