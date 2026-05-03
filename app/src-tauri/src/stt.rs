@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ndarray::{Array1, Array2, Axis, s};
+use ndarray::{Array1, Array2, Axis};
 use ort::session::Session;
 use ort::inputs;
 use rustfft::{FftPlanner, num_complex::Complex};
@@ -47,7 +47,7 @@ impl MelSpectrogram {
         let mel_min = Self::hz_to_mel(f_min);
         let mel_max = Self::hz_to_mel(f_max);
 
-        let mut mel_points = Array1::linspace(mel_min, mel_max, num_mels + 2);
+        let mel_points = Array1::linspace(mel_min, mel_max, num_mels + 2);
         let hz_points = mel_points.mapv(Self::mel_to_hz);
 
         let bin_points = hz_points.mapv(|hz| (fft_size as f32 + 1.0) * hz / sample_rate);
@@ -184,7 +184,7 @@ impl SttEngine {
 
         // 2. Conv Frontend
         let outputs = self.conv_frontend.run(inputs![
-            "input_features" => ort::value::Value::from_array(mel_input.view())?
+            "input_features" => ort::value::Value::from_array(mel_input)?
         ])?;
         let x = outputs.get("output")
             .ok_or_else(|| anyhow::anyhow!("missing output 'output'"))?;
@@ -205,23 +205,25 @@ impl SttEngine {
             let input_ids_array = Array2::from_shape_vec((1, input_ids.len()), input_ids.clone())?;
             
             let outputs = self.decoder.run(inputs![
-                "input_ids" => ort::value::Value::from_array(input_ids_array.view())?,
+                "input_ids" => ort::value::Value::from_array(input_ids_array)?,
                 "encoder_hidden_states" => enc_out
             ])?;
             
-            let logits = outputs.get("logits")
+            let (shape, data) = outputs.get("logits")
                 .ok_or_else(|| anyhow::anyhow!("missing output 'logits'"))?
                 .try_extract_tensor::<f32>()?;
             
-            let logits_view = logits.view();
-            let last_token_logits = logits_view.slice(s![0, -1, ..]);
+            let seq_len = shape[1] as usize;
+            let vocab_size = shape[2] as usize;
+            let last_token_start = (seq_len - 1) * vocab_size;
             
             let mut max_val = f32::MIN;
             let mut max_idx = 0;
-            for (idx, &val) in last_token_logits.iter().enumerate() {
+            for i in 0..vocab_size {
+                let val = data[last_token_start + i];
                 if val > max_val {
                     max_val = val;
-                    max_idx = idx;
+                    max_idx = i;
                 }
             }
             
