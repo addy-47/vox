@@ -19,6 +19,10 @@ impl AudioStream {
         let config: cpal::StreamConfig = device.default_input_config()?.into();
         let sample_rate = config.sample_rate.0;
         let channels = config.channels as usize;
+        
+        log::info!("[Audio] Using input device: {}", device.name()?);
+        log::info!("[Audio] Config: {}Hz, {} channels", sample_rate, channels);
+        
         let step = (sample_rate as f32 / 16000.0).round() as usize;
         
         let mut producer = producer;
