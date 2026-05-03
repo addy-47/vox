@@ -47,9 +47,12 @@ pub fn run() {
             std::thread::spawn(move || {
                 // Initialize STT engine on this thread
                 let mut engine = match SttEngine::new(&stt_model_path) {
-                    Ok(e) => e,
+                    Ok(e) => {
+                        log::info!("[STT] Engine initialized successfully");
+                        e
+                    },
                     Err(err) => {
-                        eprintln!("[STT] Failed to initialize SttEngine: {}", err);
+                        log::error!("[STT] Failed to initialize SttEngine: {}", err);
                         return;
                     }
                 };
@@ -74,14 +77,16 @@ pub fn run() {
                                 let elapsed_ms = last_partial_time.elapsed().as_millis();
 
                                 if new_samples >= 12800 || elapsed_ms >= 800 {
+                                    log::debug!("[STT] Running partial transcription ({} samples)", audio_buffer.len());
                                     match engine.transcribe(&audio_buffer) {
                                         Ok(text) if !text.is_empty() => {
+                                            log::info!("[STT] Partial: {}", text);
                                             let _ = app_handle_stt.emit("transcript_partial", serde_json::json!({
                                                 "text": text
                                             }));
                                         }
                                         Ok(_) => {}
-                                        Err(e) => eprintln!("[STT] partial transcribe error: {}", e),
+                                        Err(e) => log::error!("[STT] partial transcribe error: {}", e),
                                     }
                                     samples_at_last_partial = audio_buffer.len();
                                     last_partial_time = Instant::now();
@@ -91,13 +96,15 @@ pub fn run() {
                             SttCommand::Clear => {
                                 // speech_end: run one final definitive pass
                                 if !audio_buffer.is_empty() {
+                                    log::info!("[STT] Running final transcription ({} samples)", audio_buffer.len());
                                     match engine.transcribe(&audio_buffer) {
                                         Ok(text) => {
+                                            log::info!("[STT] Final: {}", text);
                                             let _ = app_handle_stt.emit("transcript_final", serde_json::json!({
                                                 "text": text
                                             }));
                                         }
-                                        Err(e) => eprintln!("[STT] final transcribe error: {}", e),
+                                        Err(e) => log::error!("[STT] final transcribe error: {}", e),
                                     }
                                 }
                                 // Reset for next utterance
@@ -131,8 +138,9 @@ pub fn run() {
 
             // ── 5. VAD inference task (async, non-blocking) ───────────────
             tauri::async_runtime::spawn(async move {
+                log::info!("[VAD] Engine starting...");
                 if let Err(e) = vad.run_loop(consumer, vad_tx, stt_tx).await {
-                    eprintln!("[VAD] engine error: {}", e);
+                    log::error!("[VAD] engine error: {}", e);
                 }
             });
 
@@ -145,10 +153,12 @@ pub fn run() {
 
                         // Mandate: show tray window immediately on speech_start
                         if msg_type == "speech_start" {
+                            log::info!("[VAD] Speech started");
                             if let Some(win) = app_handle_emit.get_webview_window("tray") {
                                 let _ = win.show();
-                                // Do NOT steal focus — tray must not interrupt the user
                             }
+                        } else if msg_type == "speech_end" {
+                            log::info!("[VAD] Speech ended");
                         }
 
                         let _ = app_handle_emit.emit(&msg_type, &event);
