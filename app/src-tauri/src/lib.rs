@@ -1,6 +1,6 @@
 mod audio;
-mod vad;
-mod stt;
+pub mod vad;
+pub mod stt;
 
 use crate::audio::AudioStream;
 use crate::vad::VadEngine;
@@ -10,7 +10,6 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, Emitter};
 use ringbuf::traits::Split;
-use std::time::Instant;
 
 #[tauri::command]
 fn hide_tray_window(app: tauri::AppHandle) {
@@ -57,10 +56,6 @@ pub fn run() {
                     }
                 };
 
-                let mut audio_buffer: Vec<f32> = Vec::with_capacity(16000 * 10);
-                let mut samples_at_last_partial: usize = 0;
-                let mut last_partial_time = Instant::now();
-
                 // Convert the async tokio receiver to blocking via blocking_recv
                 let mut rx = stt_rx;
 
@@ -68,49 +63,25 @@ pub fn run() {
                     match rx.blocking_recv() {
                         None => break, // channel closed — engine shutting down
                         Some(cmd) => match cmd {
-                            SttCommand::Audio(chunk) => {
-                                audio_buffer.extend_from_slice(&chunk);
-
-                                // Throttle: only transcribe if ≥800ms (12800 samples)
-                                // of NEW audio has accumulated since last partial.
-                                let new_samples = audio_buffer.len().saturating_sub(samples_at_last_partial);
-                                let elapsed_ms = last_partial_time.elapsed().as_millis();
-
-                                if new_samples >= 12800 || elapsed_ms >= 800 {
-                                    log::debug!("[STT] Running partial transcription ({} samples)", audio_buffer.len());
-                                    match engine.transcribe(&audio_buffer) {
-                                        Ok(text) if !text.is_empty() => {
-                                            log::info!("[STT] Partial: {}", text);
-                                            let _ = app_handle_stt.emit("transcript_partial", serde_json::json!({
-                                                "text": text
-                                            }));
-                                        }
-                                        Ok(_) => {}
-                                        Err(e) => log::error!("[STT] partial transcribe error: {}", e),
-                                    }
-                                    samples_at_last_partial = audio_buffer.len();
-                                    last_partial_time = Instant::now();
-                                }
-                            }
-
-                            SttCommand::Clear => {
-                                // speech_end: run one final definitive pass
-                                if !audio_buffer.is_empty() {
-                                    log::info!("[STT] Running final transcription ({} samples)", audio_buffer.len());
-                                    match engine.transcribe(&audio_buffer) {
-                                        Ok(text) => {
-                                            log::info!("[STT] Final: {}", text);
-                                            let _ = app_handle_stt.emit("transcript_final", serde_json::json!({
-                                                "text": text
-                                            }));
-                                        }
-                                        Err(e) => log::error!("[STT] final transcribe error: {}", e),
-                                    }
-                                }
-                                // Reset for next utterance
-                                audio_buffer.clear();
-                                samples_at_last_partial = 0;
-                                last_partial_time = Instant::now();
+                            SttCommand::Transcribe(utterance) => {
+                                // Full utterance from VAD (speech_start → speech_end).
+                                // VAD accumulates audio and sends it atomically here.
+                                log::info!("[STT] Transcribing {} samples ({:.1}s)",
+                                    utterance.len(), utterance.len() as f32 / 16000.0);
+                                 let handle = app_handle_stt.clone();
+                                 match engine.transcribe(&utterance, |text| {
+                                     let _ = handle.emit("transcript_partial", serde_json::json!({
+                                         "text": text
+                                     }));
+                                 }) {
+                                     Ok(text) => {
+                                         log::info!("[STT] Final: {:?}", text);
+                                         let _ = app_handle_stt.emit("transcript_final", serde_json::json!({
+                                             "text": text
+                                         }));
+                                     }
+                                     Err(e) => log::error!("[STT] transcribe error: {}", e),
+                                 }
                             }
                         }
                     }
@@ -147,20 +118,23 @@ pub fn run() {
             // ── 6. VAD event forwarder → Tauri frontend ───────────────────
             let app_handle_emit = app_handle.clone();
             tauri::async_runtime::spawn(async move {
+                log::info!("[PIPELINE] Event forwarder started.");
                 while let Some(event) = vad_rx.recv().await {
+                    log::debug!("[PIPELINE] Received event: {:?}", event);
                     if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
                         let msg_type = msg_type.to_string();
 
-                        // Mandate: show tray window immediately on speech_start
+                        // Automatically show the tray window when speech starts
                         if msg_type == "speech_start" {
-                            log::info!("[VAD] Speech started");
-                            if let Some(win) = app_handle_emit.get_webview_window("tray") {
-                                let _ = win.show();
+                            if let Some(window) = app_handle_emit.get_webview_window("tray") {
+                                let _ = window.show();
+                                log::info!("[PIPELINE] Speech detected! Showing tray.");
+                            } else {
+                                log::error!("[PIPELINE] Tray window NOT FOUND! check tauri.conf.json");
                             }
-                        } else if msg_type == "speech_end" {
-                            log::info!("[VAD] Speech ended");
                         }
 
+                        // Forward transcription events to the tray
                         let _ = app_handle_emit.emit(&msg_type, &event);
                     }
                 }
@@ -168,23 +142,20 @@ pub fn run() {
 
             // ── 7. Start audio capture ────────────────────────────────────
             audio_stream.start()?;
+            // Control-leak the stream to prevent it from being dropped when setup ends.
+            // cpal::Stream is often !Send/!Sync on some platforms, preventing it from being
+            // managed as Tauri State or moved to another thread easily.
+            Box::leak(Box::new(audio_stream));
 
             // ── 8. System tray menu ───────────────────────────────────────
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&quit_i])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => app.exit(0),
-                    "show" => {
-                        if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.set_focus();
-                        }
-                    }
                     _ => {}
                 })
                 .build(app)?;

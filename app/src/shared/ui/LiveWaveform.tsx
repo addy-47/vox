@@ -4,55 +4,28 @@ import { cn } from "../lib/utils";
 interface LiveWaveformProps {
   active?: boolean;
   processing?: boolean;
+  amplitude?: number; // New: provided from backend telemetry
   height?: string | number;
   width?: string | number;
   className?: string;
 }
 
+// Helper for mapping values
+const mapRange = (val: number, in_min: number, in_max: number, out_min: number, out_max: number) => {
+  return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+};
+
 export const LiveWaveform: React.FC<LiveWaveformProps> = ({
   active = false,
   processing = false,
+  amplitude = 0.04,
   height = 60,
   width = "100%",
   className,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const dataArrayRef = useRef<Uint8Array | null>(null);
   const animationFrameRef = useRef<number>(0);
-
-  useEffect(() => {
-    if (active && !audioContextRef.current) {
-      const initAudio = async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-          const context = new AudioContextClass();
-          const source = context.createMediaStreamSource(stream);
-          const analyser = context.createAnalyser();
-          analyser.fftSize = 512;
-          analyser.smoothingTimeConstant = 0.8;
-          source.connect(analyser);
-
-          audioContextRef.current = context;
-          analyserRef.current = analyser;
-          dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
-        } catch (err) {
-          console.error("Error accessing microphone:", err);
-        }
-      };
-      initAudio();
-    }
-
-    return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
-      }
-    };
-  }, [active]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -74,11 +47,7 @@ export const LiveWaveform: React.FC<LiveWaveformProps> = ({
 
       ctx.clearRect(0, 0, width, heightVal);
 
-      if (active && analyserRef.current && dataArrayRef.current) {
-        analyserRef.current.getByteFrequencyData(dataArrayRef.current as any);
-        const data = dataArrayRef.current;
-        
-        // Mirroring and centering logic
+      if (active) {
         ctx.beginPath();
         ctx.lineWidth = 3;
         ctx.strokeStyle = "#00dbe9";
@@ -86,52 +55,31 @@ export const LiveWaveform: React.FC<LiveWaveformProps> = ({
         ctx.lineJoin = "round";
 
         const centerX = width / 2;
-        const barWidth = (width / 2) / (data.length / 2);
+        const time = Date.now() / 1000;
+        const bars = 40;
+        const barWidth = (width / 2) / bars;
         
-        // Draw from center to right
-        for (let i = 0; i < data.length / 2; i++) {
-          const v = data[i] / 255.0;
+        for (let i = 0; i < bars; i++) {
+          const noise = Math.sin(time * 10 + i * 0.5) * 0.1;
+          const v = mapRange(amplitude + noise, 0, 1, 0.1, 1.0);
           const h = (v * heightVal * 0.8);
-          const x = centerX + (i * barWidth);
-          const y = (heightVal - h) / 2;
-          
-          if (i === 0) ctx.moveTo(x, heightVal / 2);
-          ctx.lineTo(x, y + h / 2);
-        }
-        
-        // Draw from center to left (mirror)
-        for (let i = 0; i < data.length / 2; i++) {
-          const v = data[i] / 255.0;
-          const h = (v * heightVal * 0.8);
-          const x = centerX - (i * barWidth);
-          const y = (heightVal - h) / 2;
-          
-          if (i === 0) ctx.moveTo(x, heightVal / 2);
-          ctx.lineTo(x, y + h / 2);
-        }
-
-        ctx.stroke();
-
-        // Secondary glow layer
-        ctx.beginPath();
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = "rgba(0, 219, 233, 0.4)";
-        for (let i = 0; i < data.length / 2; i++) {
-          const v = data[i] / 255.0;
-          const h = (v * heightVal * 1.1) + Math.sin(Date.now() / 200 + i) * 5;
           const x_right = centerX + (i * barWidth);
           const x_left = centerX - (i * barWidth);
-          const y = heightVal / 2;
+          const y = (heightVal - h) / 2;
           
-          ctx.moveTo(x_right, y - h/2);
-          ctx.lineTo(x_right, y + h/2);
-          ctx.moveTo(x_left, y - h/2);
-          ctx.lineTo(x_left, y + h/2);
+          if (i === 0) ctx.moveTo(centerX, heightVal / 2);
+          ctx.lineTo(x_right, y + h / 2);
+          ctx.moveTo(centerX, heightVal / 2);
+          ctx.lineTo(x_left, y + h / 2);
         }
         ctx.stroke();
 
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = "rgba(0, 219, 233, 0.5)";
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
       } else if (processing) {
-        // Symmetric idle breathing
         const time = Date.now() / 1000;
         ctx.beginPath();
         ctx.lineWidth = 2;
@@ -152,7 +100,7 @@ export const LiveWaveform: React.FC<LiveWaveformProps> = ({
 
     render();
     return () => cancelAnimationFrame(animationFrameRef.current);
-  }, [active, processing]);
+  }, [active, processing, amplitude]);
 
   return (
     <div 
