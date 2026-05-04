@@ -6,6 +6,9 @@ pub struct AudioStream {
     _stream: cpal::Stream,
 }
 
+unsafe impl Send for AudioStream {}
+unsafe impl Sync for AudioStream {}
+
 impl AudioStream {
     pub fn new<P>(producer: P) -> Result<Self> 
     where 
@@ -64,15 +67,6 @@ impl AudioStream {
                         log::warn!("[Audio] Ring buffer overflow: {}/{} samples pushed", pushed, resampled.len());
                     }
                     
-                    // Low-frequency signal log
-                    static mut LOG_COUNT: u32 = 0;
-                    unsafe {
-                        LOG_COUNT += 1;
-                        if LOG_COUNT % 100 == 0 {
-                            let rms = (resampled.iter().map(|&x| x * x).sum::<f32>() / resampled.len() as f32).sqrt();
-                            log::debug!("[Audio] Signal RMS: {:.4}, Resampled: {} samples", rms, resampled.len());
-                        }
-                    }
                 }
             },
             move |err| {
