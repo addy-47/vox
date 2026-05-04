@@ -47,48 +47,93 @@ html, body {
   }
 }
 
-/* Fix for Tray Window "Black Box" issue */
+/* Tray Window styling - Clean Glassmorphism */
 html.is-tray,
 body.is-tray, 
 body.is-tray #root {
-  background: rgba(255, 0, 0, 0.2) !important;
-  border: 5px solid red !important;
+  background: transparent !important;
+  border: none !important;
 }
 
+/* Liquid Glass Design System - Ultra-Premium Frosted Effect */
 @layer components {
-  /* Liquid Glass Design System - Ultra-Premium */
-  .premium-card {
-    @apply bg-white/[0.03] dark:bg-white/[0.01] backdrop-blur-[40px] border border-[rgba(var(--border),0.05)] rounded-3xl shadow-none;
-    transition: background-color 0.3s ease, color 0.3s ease, opacity 0.3s ease;
+  .liquid-glass {
+    position: relative;
+    /* Ultra-premium obsidian glass with high opacity for readability on Linux fallbacks */
+    background: linear-gradient(
+      165deg, 
+      rgba(10, 12, 14, 0.96) 0%, 
+      rgba(18, 20, 24, 0.92) 100%
+    ) !important;
+    border: 1px solid rgba(0, 219, 233, 0.15);
+    border-radius: 1.2rem; /* Refined "thinking box" shape */
+    overflow: hidden;
+    /* Cyan brand accent - subtle top bar instead of left */
+    border-top: 2px solid rgba(0, 219, 233, 0.4);
+    box-shadow: 
+      0 20px 50px rgba(0, 0, 0, 0.5),
+      inset 0 0 40px rgba(255, 255, 255, 0.02);
   }
 
-  [data-theme='light'] .premium-card {
-    @apply bg-white/30 backdrop-blur-[60px] border-[rgba(var(--border),0.05)] shadow-xl shadow-black/[0.02];
+  /* Milky Frost Overlay - Simulates depth on non-compositing environments */
+  .liquid-glass::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle at 50% 0%, 
+      rgba(255, 255, 255, 0.05) 0%, 
+      transparent 70%
+    );
+    pointer-events: none;
+    z-index: 1;
   }
 
-  .glass-panel {
-    @apply bg-white/[0.005] backdrop-blur-[80px] border border-[rgba(var(--border),0.05)];
+  /* Frosted Glass Simulation - Improved Grain */
+  .liquid-glass::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    /* High-frequency fractal noise for a "physical" frost grain */
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 250 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.15;
+    mix-blend-mode: soft-light;
+    pointer-events: none;
+    z-index: 1;
   }
 
-  .shimmer-text {
+  /* Glass Sheen / Specular Highlight */
+  .liquid-glass::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg, 
+      rgba(255, 255, 255, 0.08) 0%, 
+      rgba(255, 255, 255, 0) 40%, 
+      rgba(255, 255, 255, 0.03) 100%
+    );
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .cyan-glow-text {
+    color: rgb(0, 219, 233);
+    text-shadow: 0 0 12px rgba(0, 219, 233, 0.4);
+  }
+
+  .shimmer-cyan {
     background: linear-gradient(
       90deg, 
-      rgba(var(--foreground), 0.3) 0%, 
-      rgba(var(--foreground), 1) 50%, 
-      rgba(var(--foreground), 0.3) 100%
+      rgba(0, 219, 233, 0.5) 0%, 
+      rgba(0, 219, 233, 1) 50%, 
+      rgba(0, 219, 233, 0.5) 100%
     );
     background-size: 200% auto;
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: shimmer 5s linear infinite;
-  }
-
-  .cyan-glow {
-    @apply shadow-[0_0_40px_rgba(var(--accent),0.1)];
-  }
-
-  .shimmer-text:hover {
-    background-position: 100% 0;
+    animation: shimmer 4s linear infinite;
   }
 }
 
@@ -96,16 +141,16 @@ body.is-tray #root {
 .tray-container {
   width: 100%;
   height: 100%;
-  padding: 12px;
+  padding: 16px; /* Slightly tighter padding */
   display: flex;
   flex-direction: column;
-  transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: right center;
 }
 
 .tray-container.hidden {
   opacity: 0;
-  transform: translateX(30px) scale(0.98);
+  transform: translateX(40px) scale(0.98);
   pointer-events: none;
 }
 
@@ -115,15 +160,9 @@ body.is-tray #root {
   pointer-events: auto;
 }
 
-.tray-container.fading {
-  opacity: 0;
-  transform: translateX(10px) scale(0.99);
-  pointer-events: none;
-}
-
-/* Custom Scrollbar */
+/* Custom Scrollbar - Ultra Minimal (Cyan) */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 10px;
+  width: 2px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -131,17 +170,24 @@ body.is-tray #root {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(var(--accent), 0.4);
-  border-radius: 20px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  transition: all 0.3s ease;
+  background: rgba(0, 219, 233, 0.2);
+  border-radius: 10px;
 }
 
-[data-theme='light'] .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(var(--accent), 0.6);
+/* Telemetry Stats Bar */
+.stats-badge {
+  @apply px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-[9px] font-mono text-white/40 flex items-center gap-1.5;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--accent), 0.8);
+/* Animations */
+@keyframes pulse-cyan {
+  0% { box-shadow: 0 0 0 0 rgba(0, 219, 233, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(0, 219, 233, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 219, 233, 0); }
 }
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
