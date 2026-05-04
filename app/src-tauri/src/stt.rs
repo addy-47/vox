@@ -20,14 +20,17 @@ const SAMPLE_RATE: f32 = 16000.0;
 const NUM_LAYERS: usize = 28;
 const NUM_KV_HEADS: usize = 8;
 const HEAD_DIM: usize = 128;
-const MAX_TOTAL_LEN: usize = 256;
-const MAX_NEW_TOKENS: usize = 64;
+const MAX_TOTAL_LEN: usize = 1024;
+const MAX_NEW_TOKENS: usize = 256;
 
 // Token IDs (from tokenizer_config.json)
 const IM_START_ID: i64 = 151644;
 const IM_END_ID: i64 = 151645;
 const EOS_ID: i64 = 151645;  // <|im_end|> is EOS for Qwen3-ASR
+const AUDIO_START_ID: i64 = 151669;
+const AUDIO_END_ID: i64 = 151670;
 const AUDIO_PAD_ID: i64 = 151676;
+const ASR_TEXT_ID: i64 = 151704;
 
 // ─── Mel Spectrogram ─────────────────────────────────────────────────────────
 
@@ -134,9 +137,19 @@ impl MelSpectrogram {
             let mel_row = self.mel_filters.dot(&power_arr);
 
             for j in 0..self.num_mels {
+                // Whisper normalization: log10, clip, scale
+                // We use 1e-10 as floor, then log10, then clip to max-8, then (mel+4)/4
                 out[[i, j]] = mel_row[j].max(1e-10).log10();
             }
         }
+
+        // Dynamic range clipping and normalization
+        let max_val = out.fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        for x in out.iter_mut() {
+            *x = (*x).max(max_val - 8.0); // Clip to 80dB range
+            *x = (*x + 4.0) / 4.0;         // Scale to approx [-1, 1]
+        }
+
         out
     }
 }
@@ -144,8 +157,10 @@ impl MelSpectrogram {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 pub enum SttCommand {
-    Audio(Vec<f32>),
-    Clear,
+    /// Full utterance buffer from VAD (speech_start → speech_end).
+    /// Replaces the old Audio(chunk)+Clear streaming approach.
+    /// Streaming partials (Phase 0.3) require encoder state caching — not yet implemented.
+    Transcribe(Vec<f32>),
 }
 
 // ─── Engine ───────────────────────────────────────────────────────────────────
@@ -183,6 +198,10 @@ impl SttEngine {
             .commit_from_file(model_dir.join("decoder.int8.onnx"))
             .map_err(|e| anyhow!("load decoder: {:?}", e))?;
 
+        log::info!("[STT] Conv inputs: {:?}", conv_frontend.inputs().iter().map(|i| i.name().to_string()).collect::<Vec<_>>());
+        log::info!("[STT] Encoder inputs: {:?}", encoder.inputs().iter().map(|i| i.name().to_string()).collect::<Vec<_>>());
+        log::info!("[STT] Decoder inputs: {:?}", decoder.inputs().iter().map(|i| i.name().to_string()).collect::<Vec<_>>());
+
         // ── Tokenizer ────────────────────────────────────────────────────────
         // The model ships vocab.json + merges.txt (BPE) but no tokenizer.json.
         // We load BPE manually and register special tokens so the tokenizer
@@ -212,28 +231,28 @@ impl SttEngine {
         tokenizer.add_special_tokens(&special_tokens);
 
         // ── Pre-encode static prompt parts ──────────────────────────────────
-        // Full prompt: <|im_start|>user\nAudio 1:  [audio_pad×N]<|im_end|>\n<|im_start|>assistant\n
-        //
-        // prefix = [IM_START] + encode("user\nAudio 1:  ")
-        // suffix = [IM_END]   + encode("\n") + [IM_START] + encode("assistant\n")
-
+        // Full prompt: <|im_start|>user\nAudio 1: <|audio_start|>[audio_pad×N]<|audio_end|><|im_end|>\n<|im_start|>assistant\n
+        
         let prefix_text = tokenizer
-            .encode("user\nAudio 1:  ", false)
+            .encode("user\nAudio 1: ", false)
             .map_err(|e| anyhow!("encode prefix: {}", e))?;
-        let newline_text = tokenizer
-            .encode("\n", false)
-            .map_err(|e| anyhow!("encode newline: {}", e))?;
+        let instruction_text = tokenizer
+            .encode("\nTranscribe the audio to English.\n", false)
+            .map_err(|e| anyhow!("encode instruction: {}", e))?;
         let asst_text = tokenizer
             .encode("assistant\n", false)
             .map_err(|e| anyhow!("encode assistant: {}", e))?;
 
         let mut prompt_prefix = vec![IM_START_ID];
         prompt_prefix.extend(prefix_text.get_ids().iter().map(|&x| x as i64));
+        prompt_prefix.push(AUDIO_START_ID);
 
-        let mut prompt_suffix = vec![IM_END_ID];
-        prompt_suffix.extend(newline_text.get_ids().iter().map(|&x| x as i64));
+        let mut prompt_suffix = vec![AUDIO_END_ID];
+        prompt_suffix.extend(instruction_text.get_ids().iter().map(|&x| x as i64));
+        prompt_suffix.push(IM_END_ID);
         prompt_suffix.push(IM_START_ID);
         prompt_suffix.extend(asst_text.get_ids().iter().map(|&x| x as i64));
+        prompt_suffix.push(ASR_TEXT_ID);
 
         Ok(Self {
             conv_frontend,
@@ -248,26 +267,51 @@ impl SttEngine {
 
     /// Transcribe a complete audio buffer (speech_start → speech_end).
     /// `audio` must be 16kHz mono f32 in [-1, 1].
-    pub fn transcribe(&mut self, audio: &[f32]) -> Result<String> {
+    pub fn transcribe<F>(&mut self, audio: &[f32], mut on_partial: F) -> Result<String>
+    where
+        F: FnMut(&str),
+    {
+        let audio_max = audio.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        log::info!("[STT] Transcribe called with audio len={}, max={:.4}", audio.len(), audio_max);
+        log::debug!("[STT] Raw audio first 20: {:?}", &audio[..20.min(audio.len())]);
+
+        let start_time = std::time::Instant::now();
         if audio.len() < FFT_SIZE {
             return Ok(String::new());
         }
 
+        // ── Step 0: Audio Normalization ─────────────────────────────────────
+        // ASR models are sensitive to volume. Normalize to peak 0.8 to ensure
+        // consistent signal levels.
+        let max_val = audio.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        let normalized_audio: Vec<f32> = if max_val > 0.01 {
+            let scale = 0.8 / max_val;
+            audio.iter().map(|&x| x * scale).collect()
+        } else {
+            audio.to_vec()
+        };
+
         // ── Step 1: Mel spectrogram ──────────────────────────────────────────
-        // mel_frames: [n_frames, 128]
-        let mel_frames = self.mel.extract(audio);
+        let mel_start = std::time::Instant::now();
+        let mel_frames = self.mel.extract(&normalized_audio);
         let n_frames = mel_frames.nrows();
+        log::debug!("[STT] Mel extraction took: {:?} ({} frames)", mel_start.elapsed(), n_frames);
+        
         if n_frames == 0 {
             return Ok(String::new());
         }
 
-        // conv_frontend wants [batch, n_frames, 128]
         let mel_input = mel_frames
             .insert_axis(Axis(0))
             .into_owned(); // [1, n_frames, 128]
 
+        let mel_mean = mel_input.mean().unwrap_or(0.0);
+        let mel_std = mel_input.std(0.0);
+        let mel_max = mel_input.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        log::info!("[STT] Mel Input: mean={:.4}, std={:.4}, max={:.4}, shape={:?}", 
+            mel_mean, mel_std, mel_max, mel_input.shape());
+
         // ── Step 2: Conv frontend ────────────────────────────────────────────
-        // output: [1, n_audio_tokens, 896] (dynamic n_audio_tokens)
         let (n_audio_tokens, conv_dim, conv_data_owned): (usize, usize, Vec<f32>) = {
             let conv_out = self.conv_frontend.run(ort::inputs![
                 "input_features" => ort::value::Value::from_array(mel_input)?
@@ -276,9 +320,8 @@ impl SttEngine {
                 .try_extract_tensor::<f32>()
                 .map_err(|e| anyhow!("conv_output extract: {:?}", e))?;
             (conv_shape[1] as usize, conv_shape[2] as usize, conv_data.to_vec())
-        }; // conv_out dropped here — borrow on self.conv_frontend released
+        };
 
-        // Reshape to [1, n_audio_tokens, conv_dim]
         let conv_arr = Array2::from_shape_vec(
             (n_audio_tokens, conv_dim),
             conv_data_owned,
@@ -286,10 +329,15 @@ impl SttEngine {
         .insert_axis(Axis(0))
         .into_owned(); // [1, n_audio_tokens, conv_dim]
 
+        let conv_mean = conv_arr.mean().unwrap_or(0.0);
+        let conv_std = conv_arr.std(0.0);
+        let conv_max = conv_arr.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        log::info!("[STT] Conv Output: mean={:.4}, std={:.4}, max={:.4}, shape={:?}", 
+            conv_mean, conv_std, conv_max, conv_arr.shape());
+        log::debug!("[STT] Conv first 10: {:?}", &conv_arr.as_slice().unwrap()[..10.min(conv_arr.len())]);
+
         // ── Step 3: Encoder ──────────────────────────────────────────────────
-        // input_features: [1, n_audio_tokens, 896]
-        // feature_attention_mask: [1, n_audio_tokens] bool (all ones = valid)
-        let attn_mask_enc = Array2::<i64>::ones((1, n_audio_tokens));
+        let attn_mask_enc = Array2::<bool>::from_elem((1, n_audio_tokens), true);
 
         let (audio_feat_dim, audio_features_owned): (usize, Vec<f32>) = {
             let enc_out = self.encoder.run(ort::inputs![
@@ -300,16 +348,24 @@ impl SttEngine {
                 .try_extract_tensor::<f32>()
                 .map_err(|e| anyhow!("audio_features extract: {:?}", e))?;
             (enc_shape[2] as usize, enc_data.to_vec())
-        }; // enc_out dropped here — borrow on self.encoder released
+        };
         let audio_features_arr = Array2::from_shape_vec(
             (n_audio_tokens, audio_feat_dim),
             audio_features_owned,
         )?
         .insert_axis(Axis(0))
-        .into_owned(); // [1, n_audio_tokens, 1024]
+        .into_owned();
 
-        // ── Step 4: Build prompt input_ids ───────────────────────────────────
-        // <|im_start|>user\nAudio 1:  [audio_pad×N]<|im_end|>\n<|im_start|>assistant\n
+        log::debug!("[STT] Audio Feat first 10: {:?}", &audio_features_arr.as_slice().unwrap()[..10.min(audio_features_arr.len())]);
+
+        // ── Step 3: Statistics Logging ──────────────────────────────────────
+        let feat_mean = audio_features_arr.mean().unwrap_or(0.0);
+        let feat_std = audio_features_arr.std(0.0);
+        let feat_max = audio_features_arr.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        log::info!("[STT] Audio Features: mean={:.4}, std={:.4}, max={:.4}, shape={:?}", 
+            feat_mean, feat_std, feat_max, audio_features_arr.shape());
+
+        // ── Step 4: Build Prompt ─────────────────────────────────────────────
         let mut input_ids: Vec<i64> = Vec::new();
         input_ids.extend_from_slice(&self.prompt_prefix);
         input_ids.extend(std::iter::repeat(AUDIO_PAD_ID).take(n_audio_tokens));
@@ -317,7 +373,6 @@ impl SttEngine {
 
         let s0 = input_ids.len();
 
-        // Check if prompt fits in KV cache
         if s0 + MAX_NEW_TOKENS > MAX_TOTAL_LEN {
             return Err(anyhow!(
                 "Prompt ({} tokens) + max_new_tokens ({}) exceeds MAX_TOTAL_LEN ({})",
@@ -326,7 +381,6 @@ impl SttEngine {
         }
 
         // ── Step 5: Allocate KV caches ───────────────────────────────────────
-        // 28 layers × 2 (key + value) = 56 tensors, each [1, 256, 8, 128]
         let mut kv_caches: Vec<Array4<f32>> = (0..NUM_LAYERS * 2)
             .map(|_| Array4::zeros((1, MAX_TOTAL_LEN, NUM_KV_HEADS, HEAD_DIM)))
             .collect();
@@ -335,26 +389,31 @@ impl SttEngine {
         let mut generated_tokens: Vec<u32> = Vec::new();
         let mut cur_len: usize = 0;
 
-        // First pass: prefill with full prompt
+        let prefill_start = std::time::Instant::now();
         let logits_data = self.run_decoder_step_inner(
             &input_ids,
             cur_len,
             &audio_features_arr,
             &mut kv_caches,
         )?;
+        let prefill_duration = prefill_start.elapsed();
         cur_len += s0;
 
-        // Greedy token from last position
         let vocab_size = 151936_usize;
         let last_pos_offset = (s0 - 1) * vocab_size;
-        let next_id = argmax(&logits_data[last_pos_offset..last_pos_offset + vocab_size]) as i64;
+        let last_logits = &logits_data[last_pos_offset..last_pos_offset + vocab_size];
 
-        if next_id == EOS_ID {
-            // Empty response — return empty
-        } else {
+        let mut indexed_logits: Vec<(usize, f32)> = last_logits.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+        indexed_logits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let top_20: Vec<String> = indexed_logits.iter().take(20).map(|(id, val)| format!("{}({:.2})", id, val)).collect();
+        let top_20_str = top_20.join(", ");
+        log::info!("[STT] Prefill Top 20: {}", if top_20_str.len() > 200 { &top_20_str[..200] } else { &top_20_str });
+
+        let next_id = indexed_logits[0].0 as i64;
+
+        if next_id != EOS_ID {
             generated_tokens.push(next_id as u32);
 
-            // Decode loop: one token at a time
             for _ in 0..MAX_NEW_TOKENS - 1 {
                 let last_tok = *generated_tokens.last().unwrap() as i64;
                 let step_ids = vec![last_tok];
@@ -367,11 +426,30 @@ impl SttEngine {
                 )?;
                 cur_len += 1;
 
-                let token = argmax(&step_logits[..vocab_size]) as i64;
+                // Debug top 3 logits
+                let mut indexed_logits: Vec<(usize, f32)> = step_logits[..vocab_size]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &v)| (i, v))
+                    .collect();
+                indexed_logits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                
+                let top_3: Vec<String> = indexed_logits.iter().take(3)
+                    .map(|(id, val)| format!("{}({:.2})", id, val))
+                    .collect();
+                log::debug!("[STT] Step {}: top logits: {}", cur_len, top_3.join(", "));
+
+                let token = indexed_logits[0].0 as i64;
                 if token == EOS_ID {
                     break;
                 }
                 generated_tokens.push(token as u32);
+
+                if let Ok(partial_text) = self.tokenizer.decode(&generated_tokens, true) {
+                    if !partial_text.is_empty() {
+                        on_partial(partial_text.trim());
+                    }
+                }
             }
         }
 
@@ -379,12 +457,17 @@ impl SttEngine {
         if generated_tokens.is_empty() {
             return Ok(String::new());
         }
-
+        let decode_start = std::time::Instant::now();
         let text = self
             .tokenizer
             .decode(&generated_tokens, true)
             .map_err(|e| anyhow!("token decode: {}", e))?;
+        let decode_duration = decode_start.elapsed();
 
+        log::info!(
+            "[STT] Transcribe took: {:?} (Prefill: {:?}, Decode: {:?}, Tokens: {})", 
+            start_time.elapsed(), prefill_duration, decode_duration, generated_tokens.len()
+        );
         Ok(text.trim().to_string())
     }
 
@@ -406,8 +489,8 @@ impl SttEngine {
             input_ids.iter().map(|&x| x as i64).collect(),
         )?;
 
-        // attention_mask: [1, step_len] — all ones (every token is attended to)
-        let attn_mask_dec = Array2::<i64>::ones((batch, step_len));
+        // attention_mask: [1, cur_len + step_len] — must cover the entire sequence (past + current)
+        let attn_mask_dec = Array2::<i64>::from_elem((batch, cur_len + step_len), 1);
 
         // cache_position: [step_len] — positions in the KV cache
         let cache_pos: Array1<i64> = Array1::from_iter(

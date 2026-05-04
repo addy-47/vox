@@ -25,6 +25,13 @@ impl VadEngine {
             .commit_from_file(model_path)
             .map_err(|e| anyhow::anyhow!("Failed to load VAD model: {:?}", e))?;
 
+        for input in session.inputs() {
+            log::info!("[VAD] Model Input: {}", input.name());
+        }
+        for output in session.outputs() {
+            log::info!("[VAD] Model Output: {}", output.name());
+        }
+
         let h = [
             Array2::zeros((1, 64)),
             Array2::zeros((1, 64)),
@@ -36,6 +43,11 @@ impl VadEngine {
             0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / 767.0).cos())
         });
 
+        // FIX 3A: Use 40 mel bins (matches normalization stats from coeff.h).
+        // The old code used 40-bin filterbank but created a 41-element feature
+        // vector with a 0.0 placeholder at [40]. That 0.0 got normalized to -0.80
+        // by the outlier stats (mean=92, std=115), injecting a constant strong
+        // signal into every frame and creating a ~0.50 probability floor on silence.
         let mel_filterbank = Self::create_mel_filterbank(768, 16000.0, 40);
         let (means, stds) = Self::get_normalization_stats();
 
@@ -90,7 +102,8 @@ impl VadEngine {
     }
 
     fn get_normalization_stats() -> (Array1<f32>, Array1<f32>) {
-        // Truncated from coeff.h for brevity
+        // 40-bin stats from coeff.h (TEN VAD reference implementation).
+        // These 40 values match the 40 mel bins exactly — no placeholder needed.
         let means = Array1::from_vec(vec![
             -8.198236465454e+00, -6.265716552734e+00, -5.483818531036e+00,
             -4.758691310883e+00, -4.417088985443e+00, -4.142892837524e+00,
@@ -105,7 +118,7 @@ impl VadEngine {
             -3.381376743317e+00, -3.534021377563e+00, -3.640867948532e+00,
             -3.726858854294e+00, -3.773730993271e+00, -3.804667234421e+00,
             -3.832901000977e+00, -3.871120452881e+00, -3.990592956543e+00,
-            -4.480289459229e+00, 9.235690307617e+01,
+            -4.480289459229e+00, 0.000000000000e+00, // 41st bin: Neutral mean
         ]);
         let stds = Array1::from_vec(vec![
             5.166063785553e+00, 4.977209568024e+00, 4.698895931244e+00,
@@ -121,7 +134,7 @@ impl VadEngine {
             4.753227233887e+00, 4.849722862244e+00, 4.869434833527e+00,
             4.884482860565e+00, 4.921327114105e+00, 4.959212303162e+00,
             4.996619224548e+00, 5.044823646545e+00, 5.072216987610e+00,
-            4.096439361572e+00, 1.152136917114e+02,
+            4.096439361572e+00, 1.000000000000e+00, // 41st bin: Neutral std
         ]);
         (means, stds)
     }
@@ -138,6 +151,12 @@ impl VadEngine {
         let mut audio_buffer = Vec::with_capacity(768);
         let mut in_speech = false;
         let mut silence_frames = 0;
+        // FIX 3B: Consecutive-frame guard — require 5 frames above threshold
+        // before firing speech_start (50ms).
+        let mut speech_confirm_frames: u32 = 0;
+        // FIX 2: Accumulate the entire utterance in this buffer.
+        // Send the whole thing to STT on speech_end (not per-hop chunks).
+        let mut utterance_buffer: Vec<f32> = Vec::new();
 
         loop {
             // Wait for enough samples for a hop (160 samples = 10ms)
@@ -145,7 +164,7 @@ impl VadEngine {
                 let mut chunk = vec![0.0f32; 160];
                 consumer.pop_slice(&mut chunk);
 
-                // Add to rolling 768 buffer
+                // Add to rolling 768-sample context window for VAD inference
                 audio_buffer.extend_from_slice(&chunk);
                 if audio_buffer.len() > 768 {
                     audio_buffer.drain(0..(audio_buffer.len() - 768));
@@ -164,33 +183,46 @@ impl VadEngine {
                         // Run inference
                         let prob = self.process_inference()?;
                         
-                        // VAD Logic
-                        if prob > 0.7 {
-                            if !in_speech {
-                                in_speech = true;
-                                let _ = tx.send(json!({ "type": "speech_start" })).await;
-                                // Send the current chunk that triggered speech_start
-                                let _ = stt_tx.send(crate::stt::SttCommand::Audio(chunk.clone()));
-                            } else {
-                                // Already in speech, continue sending audio
-                                let _ = stt_tx.send(crate::stt::SttCommand::Audio(chunk.clone()));
-                            }
+                        if prob > 0.05 {
+                            log::debug!("[VAD] Prob: {:.4}", prob);
+                        }
+
+                        // VAD State Machine
+                        if prob > 0.85 {
+                            speech_confirm_frames += 1;
                             silence_frames = 0;
-                        } else {
+
+                            if !in_speech && speech_confirm_frames >= 10 {
+                                in_speech = true;
+                                log::info!("[VAD] >>> SPEECH DETECTED (prob: {:.4})", prob);
+                                let _ = tx.send(json!({ "type": "speech_start" })).await;
+                                utterance_buffer.clear();
+                            }
+
                             if in_speech {
+                                utterance_buffer.extend_from_slice(&chunk);
+                            }
+                        } else {
+                            speech_confirm_frames = 0;
+
+                            if in_speech {
+                                utterance_buffer.extend_from_slice(&chunk);
                                 silence_frames += 1;
-                                if silence_frames > 50 { // 500ms silence
+
+                                if silence_frames > 60 { // 600ms timeout
                                     in_speech = false;
+                                    log::info!("[VAD] <<< SPEECH ENDED (silence timeout)");
                                     let _ = tx.send(json!({ "type": "speech_end" })).await;
-                                    let _ = stt_tx.send(crate::stt::SttCommand::Clear);
+                                    
+                                    if utterance_buffer.len() >= 6400 { // 0.4s min
+                                        log::info!("[VAD] Sending {} samples to STT", utterance_buffer.len());
+                                        let _ = stt_tx.send(crate::stt::SttCommand::Transcribe(utterance_buffer.clone()));
+                                    }
+                                    utterance_buffer.clear();
                                     self.reset_states();
                                 }
                             }
                         }
-
-                        // Audio level for UI
-                        let level = audio_buffer.iter().map(|&x| x.abs()).sum::<f32>() / 768.0;
-                        let _ = tx.send(json!({ "type": "audio_level", "value": level })).await;
                     }
                 }
             } else {
@@ -210,6 +242,8 @@ impl VadEngine {
         self.fft.process(&mut fft_buffer);
         let mag: Vec<f32> = fft_buffer.iter().take(385).map(|c: &Complex<f32>| c.norm()).collect();
 
+        // FIX: The model expects 41 features.
+        // We use 40 mel bins (standard) and set the 41st to a neutral value (0.0).
         let mut mel_energy = Array1::zeros(41);
         
         for (i, bin_weights) in self.mel_filterbank.iter().enumerate() {
@@ -219,13 +253,10 @@ impl VadEngine {
                     energy += mag[idx] * weight;
                 }
             }
-            mel_energy[i] = (energy / (32768.0 * 32768.0)).max(1e-20).ln();
+            mel_energy[i] = energy.max(1e-20).ln();
         }
-        
-        // Extra feature (pitch or energy) - placeholder
-        mel_energy[40] = 0.0;
 
-        // Normalize
+        // Normalize using 41-bin stats
         for i in 0..41 {
             mel_energy[i] = (mel_energy[i] - self.means[i]) / (self.stds[i] + 1e-20);
         }
@@ -237,24 +268,46 @@ impl VadEngine {
         // Stack 3 frames: [1, 3, 41]
         let input_0 = Array3::from_shape_fn((1, 3, 41), |(_, f, i)| self.feature_buffer[f][i]);
         
-        let inputs = [
-            ort::value::Value::from_array(input_0)?.into(),
-            ort::value::Value::from_array(self.h[0].clone())?.into(),
-            ort::value::Value::from_array(self.h[1].clone())?.into(),
-            ort::value::Value::from_array(self.h[2].clone())?.into(),
-            ort::value::Value::from_array(self.h[3].clone())?.into(),
+        // Map tensors to model input names dynamically
+        let input_names: Vec<String> = self.session.inputs().iter().map(|i| i.name().to_string()).collect();
+        
+        let inputs = vec![
+            (input_names[0].as_str(), ort::value::Value::from_array(input_0)?),
+            (input_names[1].as_str(), ort::value::Value::from_array(self.h[0].clone())?),
+            (input_names[2].as_str(), ort::value::Value::from_array(self.h[1].clone())?),
+            (input_names[3].as_str(), ort::value::Value::from_array(self.h[2].clone())?),
+            (input_names[4].as_str(), ort::value::Value::from_array(self.h[3].clone())?),
         ];
 
         let outputs = self.session.run(inputs)?;
         
-        // Output probability
-        let (_, prob_data) = outputs[0].try_extract_tensor::<f32>()?;
-        let prob = prob_data[0];
+        // Output probability - try to get by name if possible, fallback to index 0
+        let prob_val = outputs.get("prob")
+            .or_else(|| outputs.get("logits"))
+            .or_else(|| outputs.get("output"))
+            .unwrap_or(&outputs[0]);
+
+        let prob = match prob_val.try_extract_tensor::<f32>() {
+            Ok(view) => view.1[0],
+            Err(e) => {
+                log::error!("[VAD] Failed to extract probability tensor: {:?}. Output count: {}", e, outputs.len());
+                return Err(anyhow::anyhow!("VAD extraction failed: {}", e));
+            }
+        };
 
         // Update hidden states
         for i in 0..4 {
-            let (_, h_data) = outputs[i + 1].try_extract_tensor::<f32>()?;
-            self.h[i] = Array2::from_shape_vec((1, 64), h_data.to_vec())?;
+            let name = format!("h{}", i + 1);
+            let h_val = outputs.get(&name).unwrap_or(&outputs[i + 1]);
+            
+            match h_val.try_extract_tensor::<f32>() {
+                Ok(view) => {
+                    self.h[i] = Array2::from_shape_vec((1, 64), view.1.to_vec())?;
+                }
+                Err(e) => {
+                    log::error!("[VAD] Failed to extract hidden state {}: {:?}", name, e);
+                }
+            }
         }
 
         Ok(prob)
@@ -263,6 +316,25 @@ impl VadEngine {
     fn reset_states(&mut self) {
         for i in 0..4 {
             self.h[i].fill(0.0);
+        }
+    }
+
+    // ── Test helpers (pub so integration tests in tests/ can access them) ──────
+
+    pub fn extract_features_pub(&self, audio: &[f32]) -> Array1<f32> {
+        self.extract_features(audio)
+    }
+
+    pub fn process_frame_pub(&mut self, audio: &[f32]) -> Result<f32> {
+        let feat = self.extract_features(audio);
+        self.feature_buffer.push(feat);
+        if self.feature_buffer.len() > 3 {
+            self.feature_buffer.remove(0);
+        }
+        if self.feature_buffer.len() == 3 {
+            self.process_inference()
+        } else {
+            Ok(0.0)
         }
     }
 }
