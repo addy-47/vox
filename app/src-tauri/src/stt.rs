@@ -563,11 +563,3 @@ impl SttEngine {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-fn argmax(slice: &[f32]) -> usize {
-    slice
-        .iter()
-        .enumerate()
-        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Less))
-        .map(|(i, _)| i)
-        .unwrap_or(0)
-}

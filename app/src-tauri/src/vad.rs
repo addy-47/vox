@@ -183,16 +183,13 @@ impl VadEngine {
                         // Run inference
                         let prob = self.process_inference()?;
                         
-                        if prob > 0.05 {
-                            log::debug!("[VAD] Prob: {:.4}", prob);
-                        }
 
                         // VAD State Machine
-                        if prob > 0.85 {
+                        if prob > 0.65 {
                             speech_confirm_frames += 1;
                             silence_frames = 0;
-
-                            if !in_speech && speech_confirm_frames >= 10 {
+                            
+                            if !in_speech && speech_confirm_frames >= 5 {
                                 in_speech = true;
                                 log::info!("[VAD] >>> SPEECH DETECTED (prob: {:.4})", prob);
                                 let _ = tx.send(json!({ "type": "speech_start" })).await;
