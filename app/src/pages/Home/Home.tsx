@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { VoxOrb } from "../../shared/ui/AdvancedOrb";
 import { LiveWaveform } from "../../shared/ui/LiveWaveform";
 import { Activity, Mic, Shield } from "lucide-react";
@@ -11,31 +10,12 @@ export const Home: React.FC = () => {
   const [frequency, setFrequency] = useState(0.6);
 
   useEffect(() => {
-    // Check if we are in Tauri
-    const isTauri = !!(window as any).__TAURI_INTERNALS__;
-    if (!isTauri) return;
-
-    const unlistens: Array<() => void> = [];
-
-    const setupListeners = async () => {
-      const u1 = await listen("speech_start", () => setIsListening(true));
-      const u2 = await listen("speech_end", () => setIsListening(false));
-      const u3 = await listen("telemetry", (event: any) => {
-        if (event.payload && typeof event.payload.amplitude === "number") {
-          setAmplitude(event.payload.amplitude);
-        }
-        if (event.payload && typeof event.payload.frequency === "number") {
-          setFrequency(event.payload.frequency);
-        }
-      });
-      unlistens.push(u1, u2, u3);
-    };
-
-    setupListeners();
-
-    return () => {
-      unlistens.forEach(u => u());
-    };
+    // MOCKED: Main app logic is disabled to focus on the Transcription Tray.
+    // The orb and telemetry listeners are removed to prevent interference.
+    // In future phases, these will be restored for the 'Orb' feature.
+    setIsListening(false);
+    setAmplitude(0.04);
+    setFrequency(0.6);
   }, []);
 
   return (
@@ -79,6 +59,7 @@ export const Home: React.FC = () => {
               <LiveWaveform
                 active={isListening}
                 processing={!isListening}
+                amplitude={amplitude}
                 height={120}
                 className="w-full"
               />

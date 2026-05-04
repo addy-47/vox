@@ -23,27 +23,57 @@ impl AudioStream {
         log::info!("[Audio] Using input device: {}", device.name()?);
         log::info!("[Audio] Config: {}Hz, {} channels", sample_rate, channels);
         
-        let step = (sample_rate as f32 / 16000.0).round() as usize;
-        
         let mut producer = producer;
+        
+        // Accurate resampling state
+        let mut source_index: f32 = 0.0;
+        let resample_ratio = sample_rate as f32 / 16000.0;
         
         let stream = device.build_input_stream(
             &config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                // 1. Mono conversion & Resampling
-                // Naive downsampling: take every step-th block
-                let mut processed = Vec::with_capacity(data.len() / (channels * step));
-                
-                for chunk in data.chunks_exact(channels * step) {
-                    // Average channels of the first sample in the step
-                    let mut mono = 0.0;
-                    for i in 0..channels {
-                        mono += chunk[i];
-                    }
-                    processed.push(mono / channels as f32);
+                // 1. Mono conversion (Channel Averaging)
+                let mut mono_buffer = Vec::with_capacity(data.len() / channels);
+                for chunk in data.chunks_exact(channels) {
+                    let avg: f32 = chunk.iter().sum::<f32>() / channels as f32;
+                    mono_buffer.push(avg);
                 }
-
-                let _ = producer.push_slice(&processed);
+                
+                let n_mono = mono_buffer.len();
+                let mut resampled = Vec::with_capacity((n_mono as f32 / resample_ratio) as usize + 1);
+                
+                // 2. Linear Resampling
+                while (source_index as usize) < n_mono {
+                    let idx = source_index as usize;
+                    let next_idx = (idx + 1).min(n_mono - 1);
+                    let frac = source_index - idx as f32;
+                    
+                    let sample = (1.0 - frac) * mono_buffer[idx] + frac * mono_buffer[next_idx];
+                    resampled.push(sample);
+                    
+                    source_index += resample_ratio;
+                }
+                
+                // 3. Subtract processed from total source_index to keep it relative
+                source_index -= n_mono as f32;
+                
+                // 4. Push to ring buffer
+                if !resampled.is_empty() {
+                    let pushed = producer.push_slice(&resampled);
+                    if pushed < resampled.len() {
+                        log::warn!("[Audio] Ring buffer overflow: {}/{} samples pushed", pushed, resampled.len());
+                    }
+                    
+                    // Low-frequency signal log
+                    static mut LOG_COUNT: u32 = 0;
+                    unsafe {
+                        LOG_COUNT += 1;
+                        if LOG_COUNT % 100 == 0 {
+                            let rms = (resampled.iter().map(|&x| x * x).sum::<f32>() / resampled.len() as f32).sqrt();
+                            log::debug!("[Audio] Signal RMS: {:.4}, Resampled: {} samples", rms, resampled.len());
+                        }
+                    }
+                }
             },
             move |err| {
                 eprintln!("[Audio] Stream error: {}", err);
@@ -55,6 +85,7 @@ impl AudioStream {
     }
 
     pub fn start(&self) -> Result<()> {
+        log::info!("[Audio] Stream play() called successfully");
         self._stream.play()?;
         Ok(())
     }
