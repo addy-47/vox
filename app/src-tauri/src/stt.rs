@@ -99,14 +99,7 @@ impl MelSpectrogram {
                     filters[[i, j]] = (right - j) as f32 / (right - center) as f32;
                 }
             }
-        }
-
-        // Slaney normalization
-        for mut row in filters.axis_iter_mut(Axis(0)) {
-            let s = row.sum();
-            if s > 0.0 {
-                row.mapv_inplace(|x| x / s);
-            }
+            
         }
         filters
     }
@@ -243,8 +236,12 @@ impl SttEngine {
             .encode("assistant\n", false)
             .map_err(|e| anyhow!("encode assistant: {}", e))?;
 
+        // Unified Prompt for Qwen2-Audio ASR:
+        // <|im_start|>user\n<|audio_start|><|audio_pad|><|audio_end|>Transcribe the audio to English.<|im_end|>\n<|im_start|>assistant\n<|voice_asr_text|>
+        
         let mut prompt_prefix = vec![IM_START_ID];
-        prompt_prefix.extend(prefix_text.get_ids().iter().map(|&x| x as i64));
+        let user_text = tokenizer.encode("user\n", false).map_err(|e| anyhow!(e))?;
+        prompt_prefix.extend(user_text.get_ids().iter().map(|&x| x as i64));
         prompt_prefix.push(AUDIO_START_ID);
 
         let mut prompt_suffix = vec![AUDIO_END_ID];
@@ -468,6 +465,7 @@ impl SttEngine {
             "[STT] Transcribe took: {:?} (Prefill: {:?}, Decode: {:?}, Tokens: {})", 
             start_time.elapsed(), prefill_duration, decode_duration, generated_tokens.len()
         );
+        log::info!("[STT] Generated IDs: {:?}", generated_tokens);
         Ok(text.trim().to_string())
     }
 

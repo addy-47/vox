@@ -69,6 +69,18 @@ export const TrayApp: React.FC = () => {
     const unlisten: (() => void)[] = [];
 
     const setup = async () => {
+      // 1. Check if engine is already ready (handles race conditions)
+      try {
+        const isReady = await invoke<boolean>("check_engine_status");
+        if (isReady) {
+          console.log("[HUD] Engine already ready on mount");
+          setVisState("visible");
+          setIsProcessing(false);
+          scheduleHide(5000);
+        }
+      } catch (err) {
+        console.error("Failed to check engine status:", err);
+      }
       // ── speech_start ──────────────────────────────────────────────────────
       // Cold start: show from hidden.
       // Hot start (barge-in): tray may be fading — cancel the timer and
@@ -122,6 +134,16 @@ export const TrayApp: React.FC = () => {
         }
       });
       unlisten.push(u4);
+
+      // ── engine_launched ───────────────────────────────────────────────────
+      const u5 = await listen("engine_launched", () => {
+        console.log("Engine launched event received");
+        setVisState("visible");
+        setIsProcessing(false);
+        // Show "Ready" for 5 seconds then fade if no speech
+        scheduleHide(5000);
+      });
+      unlisten.push(u5);
     };
 
     setup().catch(console.error);

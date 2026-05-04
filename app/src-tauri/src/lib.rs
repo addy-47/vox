@@ -34,6 +34,12 @@ fn hide_tray_window(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+async fn check_engine_status(state: State<'_, EngineState>) -> Result<bool, String> {
+    let lock = state.0.lock().await;
+    Ok(lock.is_some())
+}
+
+#[tauri::command]
 async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let state: State<'_, EngineState> = app.state();
     let mut lock = state.0.lock().await;
@@ -173,6 +179,8 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let _ = window.set_focus();
     }
 
+    let _ = app.emit("engine_launched", serde_json::json!({ "status": "ready" }));
+
     // ── 8. Cold Start Timeout (5 minutes) ────────────────────────────────────
     let state_clone = state.0.clone();
     tauri::async_runtime::spawn(async move {
@@ -264,7 +272,11 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![hide_tray_window, launch_engine])
+        .invoke_handler(tauri::generate_handler![
+            hide_tray_window,
+            launch_engine,
+            check_engine_status
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

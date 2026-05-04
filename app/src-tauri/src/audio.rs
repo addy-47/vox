@@ -67,6 +67,13 @@ impl AudioStream {
                         log::warn!("[Audio] Ring buffer overflow: {}/{} samples pushed", pushed, resampled.len());
                     }
                     
+                    // Throttled RMS logging (optional, for debug)
+                    /*
+                    let rms = (resampled.iter().map(|&x| x * x).sum::<f32>() / resampled.len() as f32).sqrt();
+                    if rms > 0.01 {
+                        log::debug!("[Audio] RMS: {:.4}", rms);
+                    }
+                    */
                 }
             },
             move |err| {
