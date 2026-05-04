@@ -25,13 +25,13 @@
         "label": "tray",
         "title": "vox-tray",
         "url": "/tray",
-        "width": 360,
-        "height": 500,
+        "width": 400,
+        "height": 600,
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,
         "resizable": false,
-        "visible": false,
+        "visible": true,
         "shadow": false
       }
     ],

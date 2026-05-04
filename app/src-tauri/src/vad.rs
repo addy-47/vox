@@ -154,6 +154,7 @@ impl VadEngine {
         // FIX 3B: Consecutive-frame guard — more sensitive now
         let mut speech_confirm_frames: u32 = 0;
         let mut utterance_buffer: Vec<f32> = Vec::new();
+        let mut samples_since_partial = 0;
         let mut last_log = std::time::Instant::now();
 
         loop {
@@ -187,26 +188,44 @@ impl VadEngine {
                             last_log = std::time::Instant::now();
                         }
 
-                        // VAD State Machine - Lower threshold for better sensitivity
-                        if prob > 0.45 {
+                        // VAD State Machine - Threshold: 0.6, Confirm: 5 frames (50ms)
+                        if prob > 0.60 {
                             speech_confirm_frames += 1;
                             silence_frames = 0;
                             
-                            if !in_speech && speech_confirm_frames >= 3 {
+                            if !in_speech && speech_confirm_frames >= 5 {
                                 in_speech = true;
                                 log::info!("[VAD] >>> SPEECH DETECTED (prob: {:.4})", prob);
                                 let _ = tx.send(json!({ "type": "speech_start" })).await;
                                 utterance_buffer.clear();
+                                samples_since_partial = 0;
                             }
 
                             if in_speech {
                                 utterance_buffer.extend_from_slice(&chunk);
+                                samples_since_partial += chunk.len();
+
+                                // Every 800ms (12800 samples at 16kHz), send a partial transcript command
+                                if samples_since_partial >= 12800 {
+                                    log::debug!("[VAD] Triggering partial transcription ({} samples accumulated)", utterance_buffer.len());
+                                    let _ = stt_tx.send(crate::stt::SttCommand::Transcribe(utterance_buffer.clone()));
+                                    samples_since_partial = 0;
+                                }
                             }
                         } else {
                             speech_confirm_frames = 0;
 
                             if in_speech {
                                 utterance_buffer.extend_from_slice(&chunk);
+                                samples_since_partial += chunk.len();
+
+                                // Still check for partials even during low-prob frames if we are in_speech
+                                if samples_since_partial >= 12800 {
+                                    log::debug!("[VAD] Triggering partial transcription ({} samples accumulated)", utterance_buffer.len());
+                                    let _ = stt_tx.send(crate::stt::SttCommand::Transcribe(utterance_buffer.clone()));
+                                    samples_since_partial = 0;
+                                }
+
                                 silence_frames += 1;
 
                                 if silence_frames > 100 { // 1.0s timeout
@@ -215,10 +234,11 @@ impl VadEngine {
                                     let _ = tx.send(json!({ "type": "speech_end" })).await;
                                     
                                     if utterance_buffer.len() >= 6400 { // 0.4s min
-                                        log::info!("[VAD] Sending {} samples to STT", utterance_buffer.len());
+                                        log::info!("[VAD] Sending final {} samples to STT", utterance_buffer.len());
                                         let _ = stt_tx.send(crate::stt::SttCommand::Transcribe(utterance_buffer.clone()));
                                     }
                                     utterance_buffer.clear();
+                                    samples_since_partial = 0;
                                     self.reset_states();
                                 }
                             }
