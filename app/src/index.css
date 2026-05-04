@@ -47,6 +47,15 @@ html, body {
   }
 }
 
+/* Fix for Tray Window "Black Box" issue */
+html.is-tray,
+body.is-tray, 
+body.is-tray #root {
+  background: transparent !important;
+  background-color: transparent !important;
+  color-scheme: dark;
+}
+
 @layer components {
   /* Liquid Glass Design System - Ultra-Premium */
   .premium-card {

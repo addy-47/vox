@@ -151,12 +151,10 @@ impl VadEngine {
         let mut audio_buffer = Vec::with_capacity(768);
         let mut in_speech = false;
         let mut silence_frames = 0;
-        // FIX 3B: Consecutive-frame guard — require 5 frames above threshold
-        // before firing speech_start (50ms).
+        // FIX 3B: Consecutive-frame guard — more sensitive now
         let mut speech_confirm_frames: u32 = 0;
-        // FIX 2: Accumulate the entire utterance in this buffer.
-        // Send the whole thing to STT on speech_end (not per-hop chunks).
         let mut utterance_buffer: Vec<f32> = Vec::new();
+        let mut last_log = std::time::Instant::now();
 
         loop {
             // Wait for enough samples for a hop (160 samples = 10ms)
@@ -183,13 +181,18 @@ impl VadEngine {
                         // Run inference
                         let prob = self.process_inference()?;
                         
+                        // Throttled logging for debug
+                        if last_log.elapsed() > std::time::Duration::from_secs(1) {
+                            log::debug!("[VAD] Prob: {:.4}, in_speech: {}", prob, in_speech);
+                            last_log = std::time::Instant::now();
+                        }
 
-                        // VAD State Machine
-                        if prob > 0.65 {
+                        // VAD State Machine - Lower threshold for better sensitivity
+                        if prob > 0.45 {
                             speech_confirm_frames += 1;
                             silence_frames = 0;
                             
-                            if !in_speech && speech_confirm_frames >= 5 {
+                            if !in_speech && speech_confirm_frames >= 3 {
                                 in_speech = true;
                                 log::info!("[VAD] >>> SPEECH DETECTED (prob: {:.4})", prob);
                                 let _ = tx.send(json!({ "type": "speech_start" })).await;
@@ -206,7 +209,7 @@ impl VadEngine {
                                 utterance_buffer.extend_from_slice(&chunk);
                                 silence_frames += 1;
 
-                                if silence_frames > 60 { // 600ms timeout
+                                if silence_frames > 100 { // 1.0s timeout
                                     in_speech = false;
                                     log::info!("[VAD] <<< SPEECH ENDED (silence timeout)");
                                     let _ = tx.send(json!({ "type": "speech_end" })).await;
