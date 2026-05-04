@@ -157,6 +157,8 @@ impl VadEngine {
         let mut samples_since_partial = 0;
         let mut last_log = std::time::Instant::now();
 
+        let mut current_session_id: u32 = 0;
+
         loop {
             // Wait for enough samples for a hop (160 samples = 10ms)
             if consumer.occupied_len() >= 160 {
@@ -195,8 +197,12 @@ impl VadEngine {
                             
                             if !in_speech && speech_confirm_frames >= 5 {
                                 in_speech = true;
-                                log::info!("[VAD] >>> SPEECH DETECTED (prob: {:.4})", prob);
-                                let _ = tx.send(json!({ "type": "speech_start" })).await;
+                                current_session_id += 1;
+                                log::info!("[VAD] >>> SPEECH DETECTED (prob: {:.4}, session: {})", prob, current_session_id);
+                                let _ = tx.send(json!({ 
+                                    "type": "speech_start", 
+                                    "session_id": current_session_id 
+                                })).await;
                                 utterance_buffer.clear();
                                 samples_since_partial = 0;
                             }
@@ -207,8 +213,8 @@ impl VadEngine {
 
                                 // Every 800ms (12800 samples at 16kHz), send a partial transcript command
                                 if samples_since_partial >= 12800 {
-                                    log::debug!("[VAD] Triggering partial transcription ({} samples accumulated)", utterance_buffer.len());
-                                    let _ = stt_tx.send(crate::stt::SttCommand::Transcribe(utterance_buffer.clone()));
+                                    log::debug!("[VAD] Triggering partial transcription (session: {})", current_session_id);
+                                    let _ = stt_tx.send(crate::stt::SttCommand::Partial(current_session_id, utterance_buffer.clone()));
                                     samples_since_partial = 0;
                                 }
                             }
@@ -221,8 +227,8 @@ impl VadEngine {
 
                                 // Still check for partials even during low-prob frames if we are in_speech
                                 if samples_since_partial >= 12800 {
-                                    log::debug!("[VAD] Triggering partial transcription ({} samples accumulated)", utterance_buffer.len());
-                                    let _ = stt_tx.send(crate::stt::SttCommand::Transcribe(utterance_buffer.clone()));
+                                    log::debug!("[VAD] Triggering partial transcription (session: {})", current_session_id);
+                                    let _ = stt_tx.send(crate::stt::SttCommand::Partial(current_session_id, utterance_buffer.clone()));
                                     samples_since_partial = 0;
                                 }
 
@@ -230,12 +236,15 @@ impl VadEngine {
 
                                 if silence_frames > 100 { // 1.0s timeout
                                     in_speech = false;
-                                    log::info!("[VAD] <<< SPEECH ENDED (silence timeout)");
-                                    let _ = tx.send(json!({ "type": "speech_end" })).await;
+                                    log::info!("[VAD] <<< SPEECH ENDED (silence timeout, session: {})", current_session_id);
+                                    let _ = tx.send(json!({ 
+                                        "type": "speech_end",
+                                        "session_id": current_session_id 
+                                    })).await;
                                     
                                     if utterance_buffer.len() >= 6400 { // 0.4s min
-                                        log::info!("[VAD] Sending final {} samples to STT", utterance_buffer.len());
-                                        let _ = stt_tx.send(crate::stt::SttCommand::Transcribe(utterance_buffer.clone()));
+                                        log::info!("[VAD] Sending final {} samples to STT (session: {})", utterance_buffer.len(), current_session_id);
+                                        let _ = stt_tx.send(crate::stt::SttCommand::Final(current_session_id, utterance_buffer.clone()));
                                     }
                                     utterance_buffer.clear();
                                     samples_since_partial = 0;

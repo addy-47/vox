@@ -130,16 +130,17 @@ impl MelSpectrogram {
             let mel_row = self.mel_filters.dot(&power_arr);
 
             for j in 0..self.num_mels {
-                // Whisper normalization: log10, clip, scale
-                // We use 1e-10 as floor, then log10, then clip to max-8, then (mel+4)/4
+                // Whisper/Qwen-Audio normalization: log10, clip, scale
+                // We use 1e-10 as floor, then log10.
                 out[[i, j]] = mel_row[j].max(1e-10).log10();
             }
         }
 
         // Dynamic range clipping and normalization
-        let max_val = out.fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        // Improved: Use a relative max but ensure it doesn't boost silence noise
+        let max_val = out.fold(f32::NEG_INFINITY, |a, &b| a.max(b)).max(-8.0);
         for x in out.iter_mut() {
-            *x = (*x).max(max_val - 8.0); // Clip to 80dB range
+            *x = (*x).max(max_val - 8.0); // Clip to 80dB range relative to peak (min -8)
             *x = (*x + 4.0) / 4.0;         // Scale to approx [-1, 1]
         }
 
@@ -150,10 +151,10 @@ impl MelSpectrogram {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 pub enum SttCommand {
+    /// Partial utterance buffer for real-time feedback.
+    Partial(u32, Vec<f32>),
     /// Full utterance buffer from VAD (speech_start → speech_end).
-    /// Replaces the old Audio(chunk)+Clear streaming approach.
-    /// Streaming partials (Phase 0.3) require encoder state caching — not yet implemented.
-    Transcribe(Vec<f32>),
+    Final(u32, Vec<f32>),
 }
 
 // ─── Engine ───────────────────────────────────────────────────────────────────
@@ -442,10 +443,22 @@ impl SttEngine {
                 }
                 generated_tokens.push(token as u32);
 
-                if let Ok(partial_text) = self.tokenizer.decode(&generated_tokens, true) {
-                    if !partial_text.is_empty() {
-                        on_partial(partial_text.trim());
-                    }
+                // Removed per-token partial emission to prevent event spam
+            }
+        }
+
+        if !generated_tokens.is_empty() {
+            if let Ok(partial_text) = self.tokenizer.decode(&generated_tokens, true) {
+                // Byte-Level BPE cleaning: remove artifacts like Ġ and normalize whitespace
+                let cleaned = partial_text
+                    .replace('\u{0120}', " ")
+                    .replace('\u{00A0}', " ")
+                    .replace("  ", " ")
+                    .trim()
+                    .to_string();
+
+                if !cleaned.is_empty() {
+                    on_partial(&cleaned);
                 }
             }
         }
@@ -461,12 +474,19 @@ impl SttEngine {
             .map_err(|e| anyhow!("token decode: {}", e))?;
         let decode_duration = decode_start.elapsed();
 
+        let cleaned_final = text
+            .replace('\u{0120}', " ")
+            .replace('\u{00A0}', " ")
+            .replace("  ", " ")
+            .trim()
+            .to_string();
+
         log::info!(
             "[STT] Transcribe took: {:?} (Prefill: {:?}, Decode: {:?}, Tokens: {})", 
             start_time.elapsed(), prefill_duration, decode_duration, generated_tokens.len()
         );
         log::info!("[STT] Generated IDs: {:?}", generated_tokens);
-        Ok(text.trim().to_string())
+        Ok(cleaned_final)
     }
 
     /// Run one decoder step. Updates kv_caches in-place.
