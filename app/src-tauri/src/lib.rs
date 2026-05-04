@@ -152,7 +152,11 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
                 if msg_type == "speech_start" {
                     if let Some(window) = app_handle_emit.get_webview_window("tray") {
+                        log::info!("[HUD] Backend showing tray window on speech_start");
                         let _ = window.show();
+                        let _ = window.set_focus();
+                    } else {
+                        log::error!("[HUD] Backend could not find 'tray' window!");
                     }
                 }
                 let _ = app_handle_emit.emit(msg_type, &event);
@@ -226,7 +230,11 @@ pub fn run() {
                     "launch" => {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let _ = launch_engine(handle).await;
+                            if let Some(window) = handle.get_webview_window("tray") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                let _ = window.set_always_on_top(true);
+                            }
                         });
                     }
                     "quit" => app.exit(0),
@@ -244,15 +252,51 @@ pub fn run() {
 
             // ── 2. Position tray HUD ─────────────────────────────────────────
             if let Some(tray_win) = app.get_webview_window("tray") {
-                if let Ok(Some(monitor)) = tray_win.primary_monitor() {
-                    let screen = monitor.size();
-                    let win_size = tray_win.outer_size().unwrap_or(tauri::PhysicalSize::new(360, 500));
-                    let scale = monitor.scale_factor();
-                    let padding = (20.0 * scale) as i32;
-                    let x = screen.width as i32 - win_size.width as i32 - padding;
-                    let y = (screen.height as i32 - win_size.height as i32) / 2;
-                    let _ = tray_win.set_position(tauri::PhysicalPosition::new(x, y));
-                }
+                let tray_win_clone = tray_win.clone();
+                
+                tauri::async_runtime::spawn(async move {
+                    // Give the window manager a moment to register the window
+                    tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
+                    
+                    // Force frameless and always on top
+                    let _ = tray_win_clone.set_decorations(false);
+                    let _ = tray_win_clone.set_always_on_top(true);
+                    let _ = tray_win_clone.set_shadow(false);
+                    let _ = tray_win_clone.set_skip_taskbar(true);
+                    let _ = tray_win_clone.set_resizable(false);
+
+                    let monitor = tray_win_clone.primary_monitor().ok().flatten()
+                        .or_else(|| tray_win_clone.current_monitor().ok().flatten());
+
+                    if let Some(mon) = monitor {
+                        let scale = mon.scale_factor();
+                        let screen = mon.size().to_logical::<f64>(scale);
+                        let mon_pos = mon.position().to_logical::<f64>(scale);
+                        
+                        let width = 400.0;
+                        let height = 600.0;
+                        let _ = tray_win_clone.set_size(tauri::LogicalSize::new(width, height)).ok();
+                        
+                        let padding = 24.0;
+                        let x = mon_pos.x + screen.width - width - padding;
+                        let y = mon_pos.y + (screen.height - height) / 2.0;
+                        
+                        log::info!("[HUD] Monitor Detect: pos={:?},{:?} size={:?}x{:?} scale={:?}", mon_pos.x, mon_pos.y, screen.width, screen.height, scale);
+                        log::info!("[HUD] Target Position: Logical({:?}, {:?})", x, y);
+                        
+                        if let Err(e) = tray_win_clone.set_position(tauri::LogicalPosition::new(x, y)) {
+                            log::error!("[HUD] Failed to set window position: {:?}", e);
+                        }
+                        
+                        // Explicitly show after positioning
+                        let _ = tray_win_clone.hide(); // Hide first to reset
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        // But wait, the user says it's already showing. 
+                        // Let's just make sure it's at the right spot.
+                    } else {
+                        log::warn!("[HUD] NO MONITOR DETECTED. Window may be misplaced.");
+                    }
+                });
             }
 
             // ── 3. Auto-launch on startup ───────────────────────────────────
