@@ -16,13 +16,92 @@ use std::time::{Duration, Instant};
 
 // ─── Managed State ───────────────────────────────────────────────────────────
 
+// ─── Managed State ───────────────────────────────────────────────────────────
 struct VoxEngine {
     _audio_stream: AudioStream,
-    _stt_tx: tokio::sync::mpsc::UnboundedSender<SttCommand>,
-    last_active: Arc<Mutex<Instant>>,
+    stt_tx: tokio::sync::mpsc::UnboundedSender<SttCommand>,
 }
 
 struct EngineState(Arc<Mutex<Option<VoxEngine>>>);
+
+// ─── STT Master Worker (Lazy Loader) ─────────────────────────────────────────
+async fn start_stt_master(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::UnboundedReceiver<SttCommand>) {
+    let mut engine: Option<SttEngine> = None;
+    let mut last_activity = Instant::now();
+    
+    // Resolve model path once
+    let stt_model_path = {
+        let res_path = app.path().resource_dir().unwrap_or_default().join("assets/qwen3-asr");
+        if res_path.exists() { res_path }
+        else {
+            let dev_path = std::env::current_dir().unwrap().join("assets/qwen3-asr");
+            if dev_path.exists() { dev_path } else { res_path }
+        }
+    };
+
+    loop {
+        tokio::select! {
+            cmd_opt = rx.recv() => {
+                match cmd_opt {
+                    Some(cmd) => {
+                        last_activity = Instant::now();
+                        
+                        // Lazy load engine if dropped or not yet started
+                        if engine.is_none() {
+                            log::info!("[STT] >>> Waking up STT Engine (Cold Start)...");
+                            match SttEngine::new(&stt_model_path) {
+                                Ok(e) => {
+                                    engine = Some(e);
+                                    let _ = app.emit("engine_status", serde_json::json!({ "status": "active" }));
+                                },
+                                Err(err) => {
+                                    log::error!("[STT] Failed to initialize SttEngine: {}", err);
+                                    continue;
+                                }
+                            }
+                        }
+
+                        let stt = engine.as_mut().unwrap();
+                        match cmd {
+                            SttCommand::Partial(sid, utterance) => {
+                                let handle = app.clone();
+                                let _ = stt.transcribe(&utterance, |text| {
+                                    let _ = handle.emit("transcript_partial", serde_json::json!({ 
+                                        "text": text,
+                                        "session_id": sid 
+                                    }));
+                                });
+                            }
+                            SttCommand::Final(sid, utterance) => {
+                                let handle = app.clone();
+                                match stt.transcribe(&utterance, |_| {}) {
+                                    Ok(text) => {
+                                        log::info!("[STT] Final (session: {}): {:?}", sid, text);
+                                        let _ = handle.emit("transcript_final", serde_json::json!({ 
+                                            "text": text,
+                                            "session_id": sid
+                                        }));
+                                    }
+                                    Err(e) => log::error!("[STT] Final transcribe error (session: {}): {}", sid, e),
+                                }
+                            }
+                        }
+                    }
+                    None => break, // Channel closed
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                // If idle for > 5 mins, drop the engine to release RAM
+                if engine.is_some() && last_activity.elapsed() > Duration::from_secs(300) {
+                    log::info!("[STT] <<< 5m inactivity. Releasing STT model from RAM.");
+                    engine = None;
+                    let _ = app.emit("engine_status", serde_json::json!({ "status": "cold" }));
+                }
+            }
+        }
+    }
+    log::info!("[STT] Master worker exiting.");
+}
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
@@ -44,92 +123,36 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let state: State<'_, EngineState> = app.state();
     let mut lock = state.0.lock().await;
     
-    // Update last active time regardless of whether it's already running
-    if let Some(engine) = lock.as_ref() {
-        let mut last_active = engine.last_active.lock().await;
-        *last_active = Instant::now();
-        
-        // If already running, just show and focus the tray window
+    if lock.is_some() {
         if let Some(window) = app.get_webview_window("tray") {
             let _ = window.show();
             let _ = window.set_focus();
         }
-        log::info!("[ENGINE] App already launched. Bringing to focus.");
         return Ok(());
     }
 
-    log::info!("[ENGINE] Launching speech engine (Cold Start)...");
+    log::info!("[ENGINE] Initializing Core (Audio + VAD)...");
 
     // ── 1. Channels ──────────────────────────────────────────────────────────
     let (vad_tx, mut vad_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
     let (stt_tx, stt_rx) = tokio::sync::mpsc::unbounded_channel::<SttCommand>();
 
-    // ── 2. STT worker (OS Thread) ───────────────────────────────────────────
-    let stt_model_path = {
-        let res_path = app.path().resource_dir().unwrap_or_default().join("assets/qwen3-asr");
-        if res_path.exists() {
-            res_path
-        } else {
-            let dev_path = std::env::current_dir().unwrap().join("assets/qwen3-asr");
-            if dev_path.exists() {
-                dev_path
-            } else {
-                res_path
-            }
-        }
-    };
-    
-    log::info!("[ENGINE] Using STT model path: {:?}", stt_model_path);
+    // ── 2. STT Master (Lazy Loader) ─────────────────────────────────────────
     let app_handle_stt = app.clone();
-    std::thread::spawn(move || {
-        let mut engine = match SttEngine::new(&stt_model_path) {
-            Ok(e) => {
-                log::info!("[STT] Engine initialized successfully");
-                e
-            },
-            Err(err) => {
-                log::error!("[STT] Failed to initialize SttEngine: {}", err);
-                return;
-            }
-        };
-
-        let mut rx = stt_rx;
-        while let Some(cmd) = rx.blocking_recv() {
-            match cmd {
-                SttCommand::Transcribe(utterance) => {
-                    log::info!("[STT] Transcribing {} samples", utterance.len());
-                    let handle = app_handle_stt.clone();
-                    match engine.transcribe(&utterance, |text| {
-                        let _ = handle.emit("transcript_partial", serde_json::json!({ "text": text }));
-                    }) {
-                        Ok(text) => {
-                            log::info!("[STT] Final: {:?}", text);
-                            let _ = app_handle_stt.emit("transcript_final", serde_json::json!({ "text": text }));
-                        }
-                        Err(e) => log::error!("[STT] transcribe error: {}", e),
-                    }
-                }
-            }
-        }
-        log::info!("[STT] Worker thread exiting.");
+    tauri::async_runtime::spawn(async move {
+        start_stt_master(app_handle_stt, stt_rx).await;
     });
 
     // ── 3. VAD Engine ────────────────────────────────────────────────────────
     let vad_model_path = {
         let res_path = app.path().resource_dir().unwrap_or_default().join("assets/ten_vad.onnx");
-        if res_path.exists() {
-            res_path
-        } else {
+        if res_path.exists() { res_path }
+        else {
             let dev_path = std::env::current_dir().unwrap().join("assets/ten_vad.onnx");
-            if dev_path.exists() {
-                dev_path
-            } else {
-                res_path
-            }
+            if dev_path.exists() { dev_path } else { res_path }
         }
     };
-    log::info!("[ENGINE] Using VAD model path: {:?}", vad_model_path);
-
+    
     let mut vad = VadEngine::new(vad_model_path.to_str().expect("invalid model path"))
         .map_err(|e| e.to_string())?;
 
@@ -142,7 +165,6 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         if let Err(e) = vad.run_loop(consumer, vad_tx, stt_tx_clone).await {
             log::error!("[VAD] engine error: {}", e);
         }
-        log::info!("[VAD] Loop exited.");
     });
 
     // ── 5. Event Forwarder ───────────────────────────────────────────────────
@@ -168,39 +190,49 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     // ── 6. Start Audio ───────────────────────────────────────────────────────
     audio_stream.start().map_err(|e| e.to_string())?;
 
-    let last_active = Arc::new(Mutex::new(Instant::now()));
-    
     // ── 7. Store in state ────────────────────────────────────────────────────
     *lock = Some(VoxEngine {
         _audio_stream: audio_stream,
-        _stt_tx: stt_tx,
-        last_active: last_active.clone(),
+        stt_tx,
     });
 
-    // Show and focus window on launch
-    if let Some(window) = app.get_webview_window("tray") {
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-
-    let _ = app.emit("engine_launched", serde_json::json!({ "status": "ready" }));
-
-    // ── 8. Cold Start Timeout (5 minutes) ────────────────────────────────────
-    let state_clone = state.0.clone();
+    // ── 8. System Telemetry (CPU/RAM) ────────────────────────────────────────
+    let app_handle_stats = app.clone();
     tauri::async_runtime::spawn(async move {
+        let mut last_cpu_time: u64 = 0;
+        let mut last_check = Instant::now();
         loop {
-            tokio::time::sleep(Duration::from_secs(60)).await;
-            let mut lock = state_clone.lock().await;
-            if let Some(engine) = lock.as_ref() {
-                let last = *engine.last_active.lock().await;
-                if last.elapsed() > Duration::from_secs(300) {
-                    log::info!("[ENGINE] 5m inactivity timeout. Transitioning to Cold Start (releasing RAM)...");
-                    *lock = None; // Drops VoxEngine, stopping audio and STT thread
-                    break;
-                }
-            } else {
-                break;
-            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            
+            let stats = std::fs::read_to_string("/proc/self/stat").ok();
+            let cpu_usage = if let Some(s) = stats {
+                let parts: Vec<&str> = s.split_whitespace().collect();
+                if parts.len() > 14 {
+                    let utime: u64 = parts[13].parse().unwrap_or(0);
+                    let stime: u64 = parts[14].parse().unwrap_or(0);
+                    let total = utime + stime;
+                    let diff = if last_cpu_time > 0 { total - last_cpu_time } else { 0 };
+                    last_cpu_time = total;
+                    let elapsed = last_check.elapsed().as_secs_f32();
+                    last_check = Instant::now();
+                    (diff as f32 / 100.0) / elapsed * 100.0
+                } else { 0.0 }
+            } else { 0.0 };
+
+            let status = std::fs::read_to_string("/proc/self/status").ok();
+            let mem_rss_mb = if let Some(s) = status {
+                s.lines()
+                    .find(|l| l.starts_with("VmRSS:"))
+                    .and_then(|l| l.split_whitespace().nth(1))
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .map(|kb| kb / 1024)
+                    .unwrap_or(0)
+            } else { 0 };
+
+            let _ = app_handle_stats.emit("system_stats", serde_json::json!({
+                "cpu_usage": cpu_usage,
+                "memory_used_mb": mem_rss_mb,
+            }));
         }
     });
 
@@ -273,8 +305,8 @@ pub fn run() {
                         let screen = mon.size().to_logical::<f64>(scale);
                         let mon_pos = mon.position().to_logical::<f64>(scale);
                         
-                        let width = 400.0;
-                        let height = 600.0;
+                        let width = (screen.width * 0.30).max(380.0).min(500.0);
+                        let height = (screen.height * 0.25).max(220.0).min(450.0);
                         let _ = tray_win_clone.set_size(tauri::LogicalSize::new(width, height)).ok();
                         
                         let padding = 24.0;
