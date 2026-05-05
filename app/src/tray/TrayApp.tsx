@@ -1,76 +1,100 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Copy, Check, Cpu, Zap, Activity } from "lucide-react";
+import { Header } from "./components/Header";
+import { TranscriptRenderer } from "./components/TranscriptRenderer";
+import { Footer } from "./components/Footer";
+import { useInteraction } from "./hooks/useInteraction";
+import { useVisibility } from "./hooks/useVisibility";
+import { useStreamingRenderer } from "./hooks/useStreamingRenderer";
+import { CircularBuffer } from "./utils/CircularBuffer";
 
-// ─── Telemetry Data Type ───────────────────────────────────────────────────
 interface SystemStats {
   cpu_usage: number;
   memory_used_mb: number;
-  memory_total_mb: number;
 }
 
 export const TrayApp: React.FC = () => {
-  const [partialText, setPartialText] = useState("");
-  const [finalText, setFinalText] = useState("");
+  // ─── History System ────────────────────────────────────────────────────────
+  const history = useMemo(() => new CircularBuffer<string>(10), []);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const [viewingHistory, setViewingHistory] = useState(false);
+
+  // ─── Interaction & Text State ──────────────────────────────────────────────
+  const { 
+    interactionId, committedText, partialText, 
+    startNewInteraction, endSpeechSegment, updatePartial, commitFinal 
+  } = useInteraction();
+  
+  const liveTargetText = useMemo(() => {
+    const separator = committedText && partialText ? " " : "";
+    return committedText + separator + partialText;
+  }, [committedText, partialText]);
+
+  const currentTargetText = useMemo(() => {
+    if (viewingHistory && historyIndex >= 0) {
+      const allHistory = history.getAll();
+      return allHistory[historyIndex] || "";
+    }
+    return liveTargetText;
+  }, [viewingHistory, historyIndex, history, liveTargetText]);
+
+  const displayText = useStreamingRenderer(currentTargetText);
+  
+  // ─── Visibility & UX State ────────────────────────────────────────────────
+  const { 
+    state: visibilityState, isHovered, setIsHovered, show, startHold, hideImmediately 
+  } = useVisibility({ holdDuration: 3000, fadeDuration: 2000 });
+
   const [isListening, setIsListening] = useState(false);
-  const [activeSessionId, setActiveSessionId] = useState<number>(0);
-  const [isVisible, setIsVisible] = useState(true);
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll on new content
+  // Sync React state to OS Window and Backend state
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (visibilityState === 'HIDDEN') {
+      invoke("hide_tray_window");
+      invoke("sync_hud_visibility", { visible: false });
+    } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
+      invoke("sync_hud_visibility", { visible: true });
     }
-  }, [partialText, finalText]);
+  }, [visibilityState]);
 
-  // IPC Event listeners
+  // ─── IPC Event Listeners ───────────────────────────────────────────────────
   useEffect(() => {
-    document.body.classList.add("is-tray");
     let isMounted = true;
     let unlisteners: (() => void)[] = [];
 
     const setupListeners = async () => {
       const appWindow = getCurrentWindow();
       
-      const u1 = await appWindow.listen<{ session_id: number }>("speech_start", (event) => {
+      const u1 = await appWindow.listen("speech_start", () => {
         if (!isMounted) return;
         setIsListening(true);
-        setPartialText("");
-        setFinalText("");
-        setIsVisible(true);
-        setCopied(false);
-        setActiveSessionId(event.payload.session_id);
+        setViewingHistory(false);
+        startNewInteraction();
+        show();
       });
 
       const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
         if (!isMounted) return;
-        // Accessing latest state via functional update to avoid stale closure
-        setActiveSessionId(currentId => {
-          if (event.payload.session_id === currentId) {
-            setPartialText(event.payload.text);
-          }
-          return currentId;
-        });
+        updatePartial(event.payload.text);
       });
 
       const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
         if (!isMounted) return;
-        setActiveSessionId(currentId => {
-          if (event.payload.session_id === currentId) {
-            setFinalText(event.payload.text);
-            setPartialText("");
-          }
-          return currentId;
-        });
+        if (event.payload.text) {
+          commitFinal(event.payload.text);
+          history.push(event.payload.text);
+        }
       });
 
       const u4 = await appWindow.listen("speech_end", () => {
         if (!isMounted) return;
         setIsListening(false);
+        endSpeechSegment();
+        startHold();
       });
 
       const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
@@ -78,10 +102,16 @@ export const TrayApp: React.FC = () => {
         setStats(event.payload);
       });
 
+      const u6 = await appWindow.listen("toggle_hud", () => {
+        if (!isMounted) return;
+        if (visibilityState === 'HIDDEN') show();
+        else hideImmediately();
+      });
+
       if (isMounted) {
-        unlisteners = [u1, u2, u3, u4, u5];
+        unlisteners = [u1, u2, u3, u4, u5, u6];
       } else {
-        u1(); u2(); u3(); u4(); u5();
+        u1(); u2(); u3(); u4(); u5(); u6();
       }
     };
 
@@ -91,133 +121,80 @@ export const TrayApp: React.FC = () => {
       isMounted = false;
       unlisteners.forEach(u => u());
     };
-  }, []); // Remove isFinalized from deps, we want one stable listener
+  }, [startNewInteraction, show, updatePartial, commitFinal, endSpeechSegment, startHold, history, visibilityState, hideImmediately]);
 
-  const handleClose = () => {
-    setIsVisible(false);
-    // Flush state on close so previous transcripts don't reappear
-    setPartialText("");
-    setFinalText("");
-    setIsListening(false);
-  };
-
+  // ─── Actions ───────────────────────────────────────────────────────────────
   const copyToClipboard = () => {
-    const text = finalText || partialText;
-    if (text) {
-      navigator.clipboard.writeText(text);
+    if (currentTargetText) {
+      navigator.clipboard.writeText(currentTargetText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
+  const handlePrev = useCallback(() => {
+    const all = history.getAll();
+    if (all.length === 0) return;
+    setViewingHistory(true);
+    setHistoryIndex(prev => (prev === -1 ? all.length - 1 : Math.max(0, prev - 1)));
+  }, [history]);
+
+  const handleNext = useCallback(() => {
+    const all = history.getAll();
+    setHistoryIndex(prev => {
+      if (prev === -1 || prev >= all.length - 1) {
+        setViewingHistory(false);
+        return -1;
+      }
+      return prev + 1;
+    });
+  }, [history]);
+
+  const containerVariants = {
+    HIDDEN: { opacity: 0, x: 20, scale: 0.98, pointerEvents: "none" as const },
+    APPEARING: { opacity: 1, x: 0, scale: 1 },
+    ACTIVE: { opacity: 1, x: 0, scale: 1, pointerEvents: "auto" as const },
+    HOLD: { opacity: 1, x: 0, scale: 1, pointerEvents: "auto" as const },
+    FADING: { opacity: 0, x: 10, scale: 0.99, transition: { duration: 2 }, pointerEvents: "none" as const }
+  };
+
   return (
-    <div className={`tray-container w-screen h-screen select-none overflow-hidden relative ${isVisible ? 'visible' : 'hidden'}`}>
-        <motion.div 
-          key={activeSessionId}
-          initial={{ opacity: 0, x: 100 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ type: "spring", damping: 30, stiffness: 300 }}
-          className="absolute top-[20%] right-[30px] w-[380px] sm:w-[420px] min-h-[220px] max-h-[450px] flex flex-col liquid-glass overflow-hidden border border-cyan-400/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]"
-        >
-          {/* Deep Cyan Gradient Glow (Ambient) */}
-          <div className="absolute top-[-20%] left-[-10%] w-[120%] h-[50%] bg-cyan-400/10 blur-[80px] rounded-full pointer-events-none" />
-          
-          {/* Header */}
-          <div className="px-6 py-5 flex items-center justify-between border-b border-white/5 relative z-10" data-tauri-drag-region>
-            <div className="flex items-center gap-3">
-              <div className="relative flex items-center justify-center">
-                <motion.div 
-                  animate={{ 
-                    scale: isListening ? [1, 1.4, 1] : 1, 
-                    opacity: isListening ? [0.6, 0.2, 0.6] : 0.1 
-                  }}
-                  transition={{ repeat: Infinity, duration: 2 }}
-                  className="absolute w-5 h-5 rounded-full bg-cyan-400 blur-md"
-                />
-                <div className={`w-2.5 h-2.5 rounded-full z-10 transition-all duration-700 ${isListening ? 'bg-cyan-400 shadow-[0_0_10px_rgba(0,219,233,0.8)]' : 'bg-white/10'}`} />
-              </div>
-              <span className="text-[11px] font-black tracking-[0.4em] text-white/40 uppercase">
-                Vox <span className="text-cyan-400">Live</span>
-              </span>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              {(finalText || partialText) && (
-                <button 
-                  onClick={copyToClipboard}
-                  className="p-2.5 rounded-full hover:bg-cyan-400/20 transition-all text-white/30 hover:text-cyan-400 active:scale-90"
-                >
-                  {copied ? <Check size={16} /> : <Copy size={16} />}
-                </button>
-              )}
-              <button 
-                onClick={handleClose}
-                className="p-2.5 rounded-full hover:bg-white/5 transition-all text-white/20 hover:text-white/80 active:scale-90"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          </div>
-
-          {/* Content */}
-          <div 
-            ref={scrollRef} 
-            className="flex-1 overflow-y-auto px-7 py-6 custom-scrollbar relative z-10"
+    <div 
+      className="tray-container w-full h-full select-none overflow-hidden relative flex flex-col"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <AnimatePresence>
+        {visibilityState !== 'HIDDEN' && (
+          <motion.div 
+            key={`hud-${interactionId}`}
+            variants={containerVariants}
+            initial="HIDDEN"
+            animate={visibilityState}
+            exit="HIDDEN"
+            className="w-full h-full flex flex-col liquid-glass overflow-hidden rounded-2xl"
           >
-            <AnimatePresence mode="wait">
-              {(finalText || partialText) ? (
-                <motion.div 
-                  key="text"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4"
-                >
-                  <div className="text-[19px] leading-relaxed font-semibold tracking-tight text-white/95 drop-shadow-sm">
-                    {finalText || partialText}
-                    {isListening && (
-                      <motion.span 
-                        animate={{ opacity: [0, 1, 0] }}
-                        transition={{ repeat: Infinity, duration: 0.8 }}
-                        className="inline-block w-[3px] h-[1.1em] ml-1 bg-cyan-400 align-middle shadow-[0_0_8px_rgba(0,219,233,0.8)]"
-                      />
-                    )}
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div 
-                  key="empty"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="h-full flex flex-col items-center justify-center"
-                >
-                  <Activity size={32} className="mb-4 text-cyan-400/20 animate-pulse" />
-                  <p className="text-[10px] font-black uppercase tracking-[0.5em] text-white/10">
-                    Ready to Listen
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+            <Header 
+              isListening={isListening} 
+              hasContent={!!currentTargetText} 
+              copied={copied} 
+              onCopy={copyToClipboard} 
+              onClose={hideImmediately}
+              onPrev={handlePrev}
+              onNext={handleNext}
+              canPrev={history.getAll().length > 0 && historyIndex !== 0}
+              canNext={viewingHistory}
+            />
 
-          {/* Telemetry Footer */}
-          {stats && (
-            <div className="px-6 py-4 bg-black/20 border-t border-white/5 flex items-center justify-between z-10">
-               <div className="flex items-center gap-5">
-                  <div className="flex items-center gap-2">
-                    <Cpu size={12} className="text-cyan-400" />
-                    <span className="text-[10px] font-mono text-cyan-400/90 font-bold">{stats.cpu_usage.toFixed(1)}%</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Zap size={12} className="text-cyan-400" />
-                    <span className="text-[10px] font-mono text-cyan-400/90 font-bold">{stats.memory_used_mb}MB</span>
-                  </div>
-               </div>
-               <div className="text-[9px] font-black text-white/20 tracking-[0.2em] uppercase">
-                  Obsidian v0.3
-               </div>
-            </div>
-          )}
-        </motion.div>
+            <TranscriptRenderer 
+              displayText={displayText} 
+              isListening={isListening} 
+            />
+
+            <Footer stats={stats} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
