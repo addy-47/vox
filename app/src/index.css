@@ -143,6 +143,10 @@ body.is-tray #root {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  align-items: flex-end; /* Align HUD to the right */
+  justify-content: flex-start; /* Align HUD to the top */
+  padding-top: 15vh; /* Initial vertical offset */
+  padding-right: 30px; /* Padding from right edge */
   transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none !important; /* Allow clicks to pass through to apps underneath */
   background: transparent !important;
