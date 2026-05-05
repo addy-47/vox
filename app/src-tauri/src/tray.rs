@@ -1,4 +1,4 @@
-use tauri::{Manager, State, AppHandle, WebviewWindow};
+use tauri::{Manager, State, AppHandle, WebviewWindow, Emitter};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::Duration;
@@ -70,6 +70,28 @@ pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
     }
 }
 
+/// Updates the interaction mode (Passive vs PTT).
+#[tauri::command]
+pub async fn update_interaction_mode(app: AppHandle, mode: String) -> Result<(), String> {
+    let state: State<'_, crate::InteractionState> = app.state();
+    let mut lock = state.0.lock().await;
+    
+    match mode.to_uppercase().as_str() {
+        "PASSIVE" => {
+            *lock = crate::InteractionMode::Passive;
+            log::info!("[MODE] Switched to PASSIVE mode.");
+        }
+        "PTT" => {
+            *lock = crate::InteractionMode::Ptt;
+            log::info!("[MODE] Switched to PTT mode.");
+        }
+        _ => return Err(format!("Invalid interaction mode: {}", mode)),
+    }
+    
+    let _ = app.emit("mode_changed", mode);
+    Ok(())
+}
+
 // ─── Positioning Logic ───────────────────────────────────────────────────────
 
 /// Positions the tray window at the top-right of the screen.
@@ -121,12 +143,26 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
         }
 
         if let Ok(gtk_window) = window.gtk_window() {
-            let hud_w = 420; 
-            let hud_h = 250; // Match React's fixed height
-            let padding_x = 30; // Match CSS padding-right
+            let scale_factor = window.scale_factor().unwrap_or(1.0);
             
-            let x = (size.width as i32) - hud_w - padding_x;
-            let y = (size.height as f64 * 0.15) as i32; // Match CSS padding-top: 15vh
+            // Logical units from CSS/React
+            let hud_w_logical = 420.0; 
+            let hud_h_logical = 250.0;
+            let padding_x_logical = 30.0;
+            let padding_top_vh = 0.15; // 15vh
+
+            // Convert to physical pixels for region math
+            let hud_w = (hud_w_logical * scale_factor) as i32;
+            let hud_h = (hud_h_logical * scale_factor) as i32;
+            let padding_x = (padding_x_logical * scale_factor) as i32;
+            
+            let screen_w = size.width as i32;
+            let screen_h = size.height as i32;
+
+            let x = screen_w - hud_w - padding_x;
+            let y = (screen_h as f64 * padding_top_vh) as i32;
+
+            log::debug!("[TRAY] Setting input region: x={}, y={}, w={}, h={} (scale={})", x, y, hud_w, hud_h, scale_factor);
 
             let rect = cairo::RectangleInt::new(x, y, hud_w, hud_h);
             let region = cairo::Region::create_rectangle(&rect);
