@@ -145,10 +145,10 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
         if let Ok(gtk_window) = window.gtk_window() {
             let scale_factor = window.scale_factor().unwrap_or(1.0);
             
-            // Logical units from CSS/React
-            let hud_w_logical = 420.0; 
+            // Logical units from CSS/React (Sync with TrayApp.tsx and index.css)
+            let hud_w_logical = 380.0; 
             let hud_h_logical = 250.0;
-            let padding_x_logical = 30.0;
+            let padding_x_logical = 55.0;
             let padding_top_vh = 0.15; // 15vh
 
             // Convert to physical pixels for region math

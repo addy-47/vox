@@ -87,6 +87,8 @@ export const TrayApp: React.FC = () => {
 
       const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
         if (!isMounted) return;
+        // Deferred UI: Ignore partials during PTT recording
+        if (pttStatus === 'RECORDING') return;
         updatePartial(event.payload.text);
       });
 
@@ -200,7 +202,7 @@ export const TrayApp: React.FC = () => {
             initial="HIDDEN"
             animate={visibilityState}
             exit="HIDDEN"
-            className="w-[420px] h-[250px] flex flex-col liquid-glass overflow-hidden rounded-2xl"
+            className="w-[380px] h-[250px] flex flex-col liquid-glass overflow-hidden rounded-2xl"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
           >
@@ -215,26 +217,6 @@ export const TrayApp: React.FC = () => {
             />
 
             <div className="flex-1 flex flex-col relative overflow-hidden group">
-              {/* Navigation Buttons - Top Right of Body */}
-              {(history.getAll().length > 0) && (
-                <div className="absolute top-2 right-4 flex items-center gap-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  <button 
-                    onClick={handlePrev}
-                    disabled={historyIndex === 0}
-                    className="p-1.5 rounded-md hover:bg-white/5 disabled:opacity-20 transition-all text-white/40 hover:text-white"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                  </button>
-                  <button 
-                    onClick={handleNext}
-                    disabled={!viewingHistory}
-                    className="p-1.5 rounded-md hover:bg-white/5 disabled:opacity-20 transition-all text-white/40 hover:text-white"
-                  >
-                    <motion.svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></motion.svg>
-                  </button>
-                </div>
-              )}
-
               <TranscriptRenderer 
                 displayText={displayText} 
                 isListening={isListening || pttStatus === 'RECORDING'} 
@@ -243,7 +225,14 @@ export const TrayApp: React.FC = () => {
               />
             </div>
 
-            <Footer stats={stats} />
+            <Footer 
+              stats={stats} 
+              onPrev={handlePrev}
+              onNext={handleNext}
+              historyIndex={historyIndex}
+              viewingHistory={viewingHistory}
+              historyCount={history.getAll().length}
+            />
           </motion.div>
         )}
       </AnimatePresence>
