@@ -56,8 +56,12 @@ export const TrayApp: React.FC = () => {
     if (visibilityState === 'HIDDEN') {
       invoke("hide_tray_window");
       invoke("sync_hud_visibility", { visible: false });
+      invoke("set_hud_ignore_cursor", { ignore: true });
     } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
       invoke("sync_hud_visibility", { visible: true });
+      invoke("set_hud_ignore_cursor", { ignore: false });
+    } else if (visibilityState === 'FADING') {
+      invoke("set_hud_ignore_cursor", { ignore: true });
     }
   }, [visibilityState]);
 
@@ -161,8 +165,6 @@ export const TrayApp: React.FC = () => {
   return (
     <div 
       className="tray-container w-full h-full select-none overflow-hidden relative flex flex-col"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
       <AnimatePresence>
         {visibilityState !== 'HIDDEN' && (
@@ -173,6 +175,8 @@ export const TrayApp: React.FC = () => {
             animate={visibilityState}
             exit="HIDDEN"
             className="w-[420px] h-[250px] flex flex-col liquid-glass overflow-hidden rounded-2xl"
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
           >
             <Header 
               isListening={isListening} 
