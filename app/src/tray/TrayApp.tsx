@@ -172,7 +172,7 @@ export const TrayApp: React.FC = () => {
             initial="HIDDEN"
             animate={visibilityState}
             exit="HIDDEN"
-            className="w-full h-full flex flex-col liquid-glass overflow-hidden rounded-2xl"
+            className="w-[420px] h-[250px] flex flex-col liquid-glass overflow-hidden rounded-2xl"
           >
             <Header 
               isListening={isListening} 
