@@ -53,7 +53,21 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
 /// Sets whether the HUD window should ignore cursor events (click-through).
 #[tauri::command]
 pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
-    let _ = window.set_ignore_cursor_events(ignore);
+    #[cfg(target_os = "linux")]
+    {
+        if ignore {
+            if let Ok(gtk_window) = window.gtk_window() {
+                gtk_window.input_shape_combine_region(None);
+            }
+        } else {
+            // Restore the HUD-specific hitbox instead of making the whole window interactive
+            setup_linux_virtual_layer(window.app_handle(), "tray");
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = window.set_ignore_cursor_events(ignore);
+    }
 }
 
 // ─── Positioning Logic ───────────────────────────────────────────────────────
@@ -108,11 +122,11 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
 
         if let Ok(gtk_window) = window.gtk_window() {
             let hud_w = 420; 
-            let hud_h = 500;
-            let padding_x = 30;
+            let hud_h = 250; // Match React's fixed height
+            let padding_x = 30; // Match CSS padding-right
             
             let x = (size.width as i32) - hud_w - padding_x;
-            let y = (size.height as f64 * 0.2) as i32 - 10; 
+            let y = (size.height as f64 * 0.15) as i32; // Match CSS padding-top: 15vh
 
             let rect = cairo::RectangleInt::new(x, y, hud_w, hud_h);
             let region = cairo::Region::create_rectangle(&rect);
