@@ -13,6 +13,7 @@ use ringbuf::traits::Split;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
+use std::path::PathBuf;
 use tauri_plugin_positioner;
 
 #[cfg(target_os = "linux")]
@@ -20,95 +21,80 @@ use gtk::prelude::*;
 
 // ─── Managed State ───────────────────────────────────────────────────────────
 
-// ─── Managed State ───────────────────────────────────────────────────────────
+/// Holds the active audio ingestion stream and the communication channel 
+/// to the STT worker thread.
 struct VoxEngine {
     _audio_stream: AudioStream,
     stt_tx: tokio::sync::mpsc::Sender<SttCommand>,
 }
 
+/// Thread-safe wrapper for the VoxEngine, allowed to be None if the engine 
+/// hasn't been launched.
 struct EngineState(Arc<Mutex<Option<VoxEngine>>>);
 
-// ─── STT Master Worker (Lazy Loader) ─────────────────────────────────────────
-async fn start_stt_master(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<SttCommand>) {
-    let mut engine: Option<SttEngine> = None;
-    let mut last_activity = Instant::now();
-    
-    // Resolve model path once
-    let stt_model_path = {
-        let res_path = app.path().resource_dir().unwrap_or_default().join("assets/qwen3-asr");
-        if res_path.exists() { res_path }
-        else {
-            let dev_path = std::env::current_dir().unwrap().join("assets/qwen3-asr");
-            if dev_path.exists() { dev_path } else { res_path }
-        }
-    };
+// ─── STT Worker (Dedicated OS Thread) ────────────────────────────────────────
 
-    loop {
-        tokio::select! {
-            cmd_opt = rx.recv() => {
-                match cmd_opt {
-                    Some(cmd) => {
-                        last_activity = Instant::now();
-                        
-                        // Lazy load engine if dropped or not yet started
-                        if engine.is_none() {
-                            log::info!("[STT] >>> Waking up STT Engine (Cold Start)...");
-                            match SttEngine::new(&stt_model_path) {
-                                Ok(e) => {
-                                    engine = Some(e);
-                                    let _ = app.emit("engine_status", serde_json::json!({ "status": "active" }));
-                                },
-                                Err(err) => {
-                                    log::error!("[STT] Failed to initialize SttEngine: {}", err);
-                                    continue;
-                                }
-                            }
-                        }
+fn spawn_stt_worker(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<SttCommand>, model_path: PathBuf) {
+    std::thread::spawn(move || {
+        log::info!("[STT] >>> Dedicated worker thread started.");
+        
+        let engine = match SttEngine::new(&model_path) {
+            Ok(e) => e,
+            Err(err) => {
+                log::error!("[STT] CRITICAL: Failed to initialize Sherpa engine: {}", err);
+                return;
+            }
+        };
 
-                        let stt = engine.as_mut().unwrap();
-                        match cmd {
-                            SttCommand::Partial(sid, utterance) => {
-                                let handle = app.clone();
-                                let _ = stt.transcribe(&utterance, |text| {
-                                    let _ = handle.emit("transcript_partial", serde_json::json!({ 
-                                        "text": text,
+        let mut last_emit_time = Instant::now();
+        let mut last_transcript = String::new();
+
+        while let Some(cmd) = rx.blocking_recv() {
+            match cmd {
+                SttCommand::Partial(sid, utterance) => {
+                    // UX Throttling: Only run inference if 800ms passed to save CPU
+                    if last_emit_time.elapsed() >= Duration::from_millis(800) {
+                        match engine.transcribe(&utterance) {
+                            Ok(text) => {
+                                if !text.is_empty() && text != last_transcript {
+                                    let _ = app.emit("transcript_partial", serde_json::json!({ 
+                                        "text": text.clone(),
                                         "session_id": sid 
                                     }));
-                                });
-                            }
-                            SttCommand::Final(sid, utterance) => {
-                                let handle = app.clone();
-                                match stt.transcribe(&utterance, |_| {}) {
-                                    Ok(text) => {
-                                        log::info!("[STT] Final (session: {}): {:?}", sid, text);
-                                        let _ = handle.emit("transcript_final", serde_json::json!({ 
-                                            "text": text,
-                                            "session_id": sid
-                                        }));
-                                    }
-                                    Err(e) => log::error!("[STT] Final transcribe error (session: {}): {}", sid, e),
+                                    last_transcript = text;
                                 }
+                                last_emit_time = Instant::now();
                             }
+                            Err(e) => log::error!("[STT] Partial decode error: {}", e),
                         }
                     }
-                    None => break, // Channel closed
                 }
-            }
-            _ = tokio::time::sleep(Duration::from_secs(30)) => {
-                // If idle for > 5 mins, drop the engine to release RAM
-                if engine.is_some() && last_activity.elapsed() > Duration::from_secs(300) {
-                    log::info!("[STT] <<< 5m inactivity. Releasing STT model from RAM.");
-                    engine = None;
-                    let _ = app.emit("engine_status", serde_json::json!({ "status": "cold" }));
+                SttCommand::Final(sid, utterance) => {
+                    log::info!("[STT] >>> Finalizing utterance (session: {})", sid);
+                    match engine.transcribe(&utterance) {
+                        Ok(text) => {
+                            log::info!("[STT] Result ({}): {:?}", sid, text);
+                            let _ = app.emit("transcript_final", serde_json::json!({ 
+                                "text": text,
+                                "session_id": sid
+                            }));
+                        }
+                        Err(e) => log::error!("[STT] Final decode error: {}", e),
+                    }
+                    // Reset tracking state. The OfflineRecognizer stream is dropped internally
+                    // in engine.transcribe(), clearing the KV cache for the next turn.
+                    last_transcript.clear();
+                    last_emit_time = Instant::now();
                 }
             }
         }
-    }
-    log::info!("[STT] Master worker exiting.");
+        log::info!("[STT] Worker thread exiting.");
+    });
 }
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
+/// Hides the transcription tray window.
 #[tauri::command]
 fn hide_tray_window(app: tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("tray") {
@@ -116,11 +102,15 @@ fn hide_tray_window(app: tauri::AppHandle) {
     }
 }
 
+/// Sets whether the HUD window should ignore cursor events (click-through).
 #[tauri::command]
 fn set_hud_ignore_cursor(window: tauri::WebviewWindow, ignore: bool) {
     let _ = window.set_ignore_cursor_events(ignore);
 }
 
+/// Positions the tray window at the top-right of the screen.
+/// 
+/// On Linux, this triggers the "virtual layer" setup for click-through support.
 async fn position_tray_window(window: &tauri::WebviewWindow) {
     #[cfg(target_os = "linux")]
     {
@@ -140,6 +130,10 @@ async fn position_tray_window(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Configures a fullscreen transparent "Virtual Layer" on Linux Wayland/X11.
+/// 
+/// This creates a click-through region for the HUD while allowing it to appear 
+/// correctly above other windows despite compositor restrictions.
 #[cfg(target_os = "linux")]
 fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &tauri::AppHandle<R>, label: &str) {
     let window = match app.get_webview_window(label) {
@@ -147,9 +141,6 @@ fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &tauri::AppHandle<R>, label
         None => return,
     };
 
-    log::info!("[HUD] setup_linux_virtual_layer triggered for window: {}", label);
-
-    // Try multiple ways to get the monitor if primary_monitor fails
     let mon = window.primary_monitor().ok().flatten()
         .or_else(|| window.current_monitor().ok().flatten())
         .or_else(|| window.app_handle().primary_monitor().ok().flatten());
@@ -158,21 +149,12 @@ fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &tauri::AppHandle<R>, label
         let size = mon.size();
         let cur_size = window.outer_size().unwrap_or_default();
         
-        log::info!("[HUD] Virtual Layer targeting Monitor: {:?} (Current size: {:?})", size, cur_size);
-
-        // If we are already at monitor size, we probably already did this
-        if cur_size.width == size.width && cur_size.height == size.height {
-            log::info!("[HUD] Window already at monitor size, skipping resize.");
-            // We still re-apply the input mask just in case
-        } else {
-            // 1. Fullscreen the window via manual sizing (Wayland safe)
+        if cur_size.width != size.width || cur_size.height != size.height {
             let _ = window.set_size(tauri::Size::Physical(*size));
             let _ = window.set_position(tauri::Position::Physical(*mon.position()));
             let _ = window.set_always_on_top(true);
         }
 
-        // 2. Punch a hole for the HUD (Top Right area)
-        // HUD Dimensions: 360x540 (approx)
         if let Ok(gtk_window) = window.gtk_window() {
             let hud_w = 420; 
             let hud_h = 500;
@@ -183,21 +165,25 @@ fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &tauri::AppHandle<R>, label
 
             let rect = cairo::RectangleInt::new(x, y, hud_w, hud_h);
             let region = cairo::Region::create_rectangle(&rect);
-            
-            // This is the magic: it tells the OS to ignore mouse events 
-            // EVERYWHERE except in this region.
             gtk_window.input_shape_combine_region(Some(&region));
-            log::info!("[HUD] Linux Input Mask applied at {},{} {}x{}", x, y, hud_w, hud_h);
         }
     }
 }
 
+/// Checks if the audio/STT engine is currently running.
 #[tauri::command]
 async fn check_engine_status(state: State<'_, EngineState>) -> Result<bool, String> {
     let lock = state.0.lock().await;
     Ok(lock.is_some())
 }
 
+/// Launches the 3-tier audio processing engine.
+/// 
+/// 1. Initializes STT worker thread (Tier 3).
+/// 2. Initializes VAD worker thread (Tier 2).
+/// 3. Starts Audio Ingestion stream (Tier 1).
+/// 
+/// If the engine is already running, it simply ensures the HUD is positioned.
 #[tauri::command]
 async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let state: State<'_, EngineState> = app.state();
@@ -211,66 +197,59 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    log::info!("[ENGINE] Initializing Core (Audio + VAD)...");
+    log::info!("[PIPELINE] >>> Launching 3-Tier Audio Engine...");
 
-    // ── 1. Channels ──────────────────────────────────────────────────────────
-    let (vad_tx, mut vad_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
-    let (stt_tx, stt_rx) = tokio::sync::mpsc::channel::<SttCommand>(10);
-
-    // ── 2. STT Master (Lazy Loader) ─────────────────────────────────────────
-    let app_handle_stt = app.clone();
-    tauri::async_runtime::spawn(async move {
-        start_stt_master(app_handle_stt, stt_rx).await;
-    });
-
-    // ── 3. VAD Engine ────────────────────────────────────────────────────────
-    let vad_model_path = {
-        let res_path = app.path().resource_dir().unwrap_or_default().join("assets/ten_vad.onnx");
-        if res_path.exists() { res_path }
-        else {
-            let dev_path = std::env::current_dir().unwrap().join("assets/ten_vad.onnx");
-            if dev_path.exists() { dev_path } else { res_path }
-        }
+    // ── 1. Paths ─────────────────────────────────────────────────────────────
+    let resource_dir = app.path().resource_dir().unwrap_or_default();
+    
+    let stt_model_path = {
+        let p = resource_dir.join("assets/qwen3-asr");
+        if p.exists() { p } else { std::env::current_dir().unwrap().join("assets/qwen3-asr") }
     };
     
-    let mut vad = VadEngine::new(vad_model_path.to_str().expect("invalid model path"))
-        .map_err(|e| e.to_string())?;
+    let vad_model_path = {
+        let p = resource_dir.join("assets/ten_vad.onnx");
+        if p.exists() { p } else { std::env::current_dir().unwrap().join("assets/ten_vad.onnx") }
+    };
 
-    let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 2).split();
-    let audio_stream = AudioStream::new(producer).map_err(|e| e.to_string())?;
+    // ── 2. Channels ──────────────────────────────────────────────────────────
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
+    let (stt_tx, stt_rx) = tokio::sync::mpsc::channel::<SttCommand>(10);
 
-    // ── 4. VAD loop ──────────────────────────────────────────────────────────
-    let stt_tx_clone = stt_tx.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = vad.run_loop(consumer, vad_tx, stt_tx_clone).await {
-            log::error!("[VAD] engine error: {}", e);
+    // ── 3. Tier 3: STT Worker (Dedicated OS Thread) ─────────────────────────
+    spawn_stt_worker(app.clone(), stt_rx, stt_model_path);
+
+    // ── 4. Tier 2: VAD & Router (Dedicated OS Thread) ───────────────────────
+    let mut vad = VadEngine::new(&vad_model_path).map_err(|e| e.to_string())?;
+    let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split(); // 4s buffer
+    
+    let stt_tx_for_vad = stt_tx.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = vad.run_sync_loop(consumer, event_tx, stt_tx_for_vad) {
+            log::error!("[VAD] CRITICAL: Worker thread crashed: {}", e);
         }
     });
 
-    // ── 5. Event Forwarder ───────────────────────────────────────────────────
+    // ── 5. Event Forwarder (Tokio Bridge) ────────────────────────────────────
     let app_handle_emit = app.clone();
     tauri::async_runtime::spawn(async move {
-        while let Some(event) = vad_rx.recv().await {
+        while let Some(event) = event_rx.recv().await {
             if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
                 if msg_type == "speech_start" {
                     if let Some(window) = app_handle_emit.get_webview_window("tray") {
-                        log::info!("[HUD] Backend showing tray window on speech_start");
                         let w = window.clone();
                         tauri::async_runtime::spawn(async move {
                             position_tray_window(&w).await;
-                            let _ = w.set_focus();
                         });
-                    } else {
-                        log::error!("[HUD] Backend could not find 'tray' window!");
                     }
                 }
                 let _ = app_handle_emit.emit(msg_type, &event);
             }
         }
-        log::info!("[PIPELINE] Event forwarder exiting.");
     });
 
-    // ── 6. Start Audio ───────────────────────────────────────────────────────
+    // ── 6. Tier 1: Audio Ingestion (Hardware Interrupt) ─────────────────────
+    let audio_stream = AudioStream::new(producer).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
     // ── 7. Store in state ────────────────────────────────────────────────────
@@ -324,6 +303,10 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 
 // ─── App Entry Point ─────────────────────────────────────────────────────────
 
+/// Main entry point for the Vox application.
+/// 
+/// Sets up tray icon, menu events, window management, and auto-launches the 
+/// engine on startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let engine_state = EngineState(Arc::new(Mutex::new(None)));
@@ -331,12 +314,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
-        .invoke_handler(tauri::generate_handler![
-            launch_engine,
-            check_engine_status,
-            hide_tray_window,
-            set_hud_ignore_cursor
-        ])
         .manage(engine_state)
         .setup(|app| {
 
@@ -423,7 +400,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             hide_tray_window,
             launch_engine,
-            check_engine_status
+            check_engine_status,
+            set_hud_ignore_cursor
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

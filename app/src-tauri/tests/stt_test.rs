@@ -94,8 +94,8 @@ fn test_stt_transcribe_english() {
     let audio = &audio[..audio.len().min(16000 * 8)];
 
     let _ = env_logger::builder().is_test(true).filter_level(log::LevelFilter::Debug).try_init();
-    let mut engine = SttEngine::new(&model_dir()).expect("init engine");
-    let result = engine.transcribe(audio, |_| {});
+    let engine = SttEngine::new(&model_dir()).expect("init engine");
+    let result = engine.transcribe(audio);
 
     assert!(result.is_ok(), "transcribe() returned error: {:?}", result.err());
     let text = result.unwrap();
@@ -108,11 +108,11 @@ fn test_stt_transcribe_english() {
 
 #[test]
 fn test_stt_short_audio_no_crash() {
-    // 100ms of silence at 16kHz = 1600 samples (below FFT_SIZE=400 threshold)
+    // 100 samples of silence
     let silence = vec![0.0f32; 100];
 
-    let mut engine = SttEngine::new(&model_dir()).expect("init engine");
-    let result = engine.transcribe(&silence, |_| {});
+    let engine = SttEngine::new(&model_dir()).expect("init engine");
+    let result = engine.transcribe(&silence);
 
     assert!(result.is_ok(), "should not error on short silence: {:?}", result.err());
     assert_eq!(result.unwrap(), "", "short silence should produce empty string");
@@ -134,9 +134,9 @@ fn test_stt_transcribe_fast_speech() {
     let audio = &audio[..audio.len().min(16000 * 5)];
 
     let _ = env_logger::builder().is_test(true).filter_level(log::LevelFilter::Debug).try_init();
-    let mut engine = SttEngine::new(&model_dir()).expect("init engine");
+    let engine = SttEngine::new(&model_dir()).expect("init engine");
     let start = std::time::Instant::now();
-    let result = engine.transcribe(audio, |t| println!("[partial] {}", t)).expect("transcribe failed");
+    let result = engine.transcribe(audio).expect("transcribe failed");
     eprintln!("[test] fast1 took {:?} → {:?}", start.elapsed(), result);
 
     // Just verify it doesn't crash — content check skipped (Chinese audio)
