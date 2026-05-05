@@ -1,22 +1,20 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { X, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Copy, Check, Mic } from 'lucide-react';
 
 interface HeaderProps {
   isListening: boolean;
   hasContent: boolean;
   copied: boolean;
+  isPttActive: boolean;
   onCopy: () => void;
   onClose: () => void;
-  onPrev?: () => void;
-  onNext?: () => void;
-  canPrev?: boolean;
-  canNext?: boolean;
+  onTogglePtt: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
-  isListening, hasContent, copied, onCopy, onClose,
-  onPrev, onNext, canPrev, canNext 
+  isListening, hasContent, copied, isPttActive,
+  onCopy, onClose, onTogglePtt
 }) => {
   return (
     <div className="px-6 py-4 flex items-center justify-between relative z-10" data-tauri-drag-region>
@@ -38,23 +36,12 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
       
       <div className="flex items-center gap-2">
-        {/* Compact History Navigation */}
-        <div className="flex items-center gap-1 mr-3 opacity-60 hover:opacity-100 transition-opacity">
-          <button 
-            onClick={(e) => { e.stopPropagation(); onPrev?.(); }}
-            disabled={!canPrev}
-            className={`p-2 rounded-lg transition-all ${canPrev ? 'text-white/40 hover:bg-white/5 hover:text-white/80 active:scale-90' : 'text-white/5 cursor-not-allowed'}`}
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <button 
-            onClick={(e) => { e.stopPropagation(); onNext?.(); }}
-            disabled={!canNext}
-            className={`p-2 rounded-lg transition-all ${canNext ? 'text-white/40 hover:bg-white/5 hover:text-white/80 active:scale-90' : 'text-white/5 cursor-not-allowed'}`}
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
+        <button 
+          onClick={(e) => { e.stopPropagation(); onTogglePtt(); }}
+          className={`p-2 rounded-lg transition-all active:scale-90 ${isPttActive ? 'text-cyan-400 bg-cyan-400/10' : 'text-white/20 hover:bg-white/5 hover:text-white/60'}`}
+        >
+          <Mic size={16} />
+        </button>
 
         {hasContent && (
           <button 
@@ -64,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
             {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
         )}
+
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="p-2 rounded-lg hover:bg-white/5 transition-all text-white/10 hover:text-white/60 active:scale-90"

@@ -2,6 +2,7 @@ mod audio;
 pub mod vad;
 pub mod stt;
 pub mod tray;
+pub mod ptt;
 
 use crate::audio::AudioStream;
 use crate::vad::VadEngine;
@@ -29,6 +30,21 @@ struct VoxEngine {
 /// Thread-safe wrapper for the VoxEngine, allowed to be None if the engine 
 /// hasn't been launched.
 struct EngineState(Arc<Mutex<Option<VoxEngine>>>);
+
+/// Tracks the active interaction mode (Passive VAD vs Manual PTT).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InteractionMode {
+    Passive,
+    Ptt,
+}
+
+pub struct InteractionState(pub Arc<Mutex<InteractionMode>>);
+
+impl InteractionState {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(InteractionMode::Passive)))
+    }
+}
 
 // ─── STT Worker (Dedicated OS Thread) ────────────────────────────────────────
 
@@ -80,6 +96,9 @@ fn spawn_stt_worker(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<S
                         }
                         Err(e) => log::error!("[STT] Final decode error: {}", e),
                     }
+                    
+                    // Signal UI that processing is complete for PTT
+                    let _ = app.emit("ptt_status", serde_json::json!({ "state": "IDLE" }));
                     // Reset tracking state. The OfflineRecognizer stream is dropped internally
                     // in engine.transcribe(), clearing the KV cache for the next turn.
                     last_transcript.clear();
@@ -147,8 +166,9 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split(); // 4s buffer
     
     let stt_tx_for_vad = stt_tx.clone();
+    let app_handle_vad = app.clone();
     std::thread::spawn(move || {
-        if let Err(e) = vad.run_sync_loop(consumer, event_tx, stt_tx_for_vad) {
+        if let Err(e) = vad.run_sync_loop(app_handle_vad, consumer, event_tx, stt_tx_for_vad) {
             log::error!("[VAD] CRITICAL: Worker thread crashed: {}", e);
         }
     });
@@ -232,6 +252,7 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+
 // ─── App Entry Point ─────────────────────────────────────────────────────────
 
 /// Main entry point for the Vox application.
@@ -243,6 +264,8 @@ pub fn run() {
     let engine_state = EngineState(Arc::new(Mutex::new(None)));
     let hud_visibility = HudVisibility::new();
     let hud_menu_item = HudMenuItem::new();
+    let interaction_state = InteractionState::new();
+    let ptt_manager = ptt::PttManager::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -250,6 +273,8 @@ pub fn run() {
         .manage(engine_state)
         .manage(hud_visibility)
         .manage(hud_menu_item)
+        .manage(interaction_state)
+        .manage(ptt_manager)
         .setup(|app| {
 
             // ── 1. Tray Menu ─────────────────────────────────────────────────
@@ -362,7 +387,11 @@ pub fn run() {
             launch_engine,
             check_engine_status,
             crate::tray::set_hud_ignore_cursor,
-            crate::tray::sync_hud_visibility
+            crate::tray::sync_hud_visibility,
+            crate::tray::update_interaction_mode,
+            crate::ptt::ptt_start,
+            crate::ptt::ptt_stop,
+            crate::ptt::ptt_cancel
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

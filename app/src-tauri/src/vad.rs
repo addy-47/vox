@@ -5,6 +5,7 @@ use sherpa_onnx::{
 };
 use serde_json::json;
 use tokio::sync::mpsc;
+use tauri::Manager;
 
 /// Wrapper for the Sherpa-ONNX Voice Activity Detection (VAD) engine.
 /// 
@@ -77,6 +78,7 @@ impl VadEngine {
     /// * `stt_tx` - Channel to send audio chunks to the STT worker.
     pub fn run_sync_loop<C>(
         &mut self,
+        app: tauri::AppHandle,
         mut consumer: C,
         event_tx: mpsc::Sender<serde_json::Value>,
         stt_tx: mpsc::Sender<crate::stt::SttCommand>,
@@ -98,6 +100,23 @@ impl VadEngine {
             // Check if we have at least 10ms of audio available
             if consumer.occupied_len() >= 160 {
                 consumer.pop_slice(&mut chunk);
+
+                // Mode-based routing
+                let mode = {
+                    let state: tauri::State<'_, crate::InteractionState> = app.state();
+                    let lock = state.0.blocking_lock();
+                    *lock
+                };
+
+                if mode == crate::InteractionMode::Ptt {
+                    crate::ptt::handle_ptt_audio_sync(&app, &chunk);
+                    // Ensure VAD state is clean when we return to passive mode later
+                    if in_speech {
+                        in_speech = false;
+                        self.detector.reset();
+                    }
+                    continue;
+                }
                 
                 // Classify chunk as speech or silence
                 self.detector.accept_waveform(&chunk);
