@@ -1,10 +1,12 @@
 mod audio;
 pub mod vad;
 pub mod stt;
+pub mod tray;
 
 use crate::audio::AudioStream;
 use crate::vad::VadEngine;
 use crate::stt::{SttEngine, SttCommand};
+use crate::tray::{HudVisibility, HudMenuItem, position_tray_window};
 
 use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
@@ -14,10 +16,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
 use std::path::PathBuf;
-use tauri_plugin_positioner;
-
-#[cfg(target_os = "linux")]
-use gtk::prelude::WidgetExt;
 
 // ─── Managed State ───────────────────────────────────────────────────────────
 
@@ -31,12 +29,6 @@ struct VoxEngine {
 /// Thread-safe wrapper for the VoxEngine, allowed to be None if the engine 
 /// hasn't been launched.
 struct EngineState(Arc<Mutex<Option<VoxEngine>>>);
-
-/// Tracks if the HUD (Vox Live) is manually enabled via the tray menu.
-struct HudVisibility(Arc<Mutex<bool>>);
-
-/// Stores the handle to the 'Vox Live' checkable menu item for easy sync.
-struct HudMenuItem(Arc<Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>>);
 
 // ─── STT Worker (Dedicated OS Thread) ────────────────────────────────────────
 
@@ -100,96 +92,6 @@ fn spawn_stt_worker(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<S
 }
 
 // ─── Commands ────────────────────────────────────────────────────────────────
-
-/// Hides the transcription tray window.
-#[tauri::command]
-fn hide_tray_window(app: tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("tray") {
-        let _ = window.hide();
-    }
-}
-
-/// Synchronizes the backend HUD state with the frontend visibility.
-#[tauri::command]
-async fn sync_hud_visibility(app: tauri::AppHandle, visible: bool) {
-    let hud_visible_state: State<'_, HudVisibility> = app.state();
-    let mut hud_lock = hud_visible_state.0.lock().await;
-    *hud_lock = visible;
-
-    let item_state: State<'_, HudMenuItem> = app.state();
-    let item_lock = item_state.0.lock().await;
-    if let Some(item) = &*item_lock {
-        let _ = item.set_checked(visible);
-    }
-}
-
-/// Sets whether the HUD window should ignore cursor events (click-through).
-#[tauri::command]
-fn set_hud_ignore_cursor(window: tauri::WebviewWindow, ignore: bool) {
-    let _ = window.set_ignore_cursor_events(ignore);
-}
-
-/// Positions the tray window at the top-right of the screen.
-/// 
-/// On Linux, this triggers the "virtual layer" setup for click-through support.
-async fn position_tray_window(window: &tauri::WebviewWindow) {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = window.show();
-        let win_clone = window.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            setup_linux_virtual_layer(win_clone.app_handle(), "tray");
-        });
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        use tauri_plugin_positioner::{WindowExt, Position};
-        let _ = window.move_window(Position::TopRight);
-        let _ = window.show();
-    }
-}
-
-/// Configures a fullscreen transparent "Virtual Layer" on Linux Wayland/X11.
-/// 
-/// This creates a click-through region for the HUD while allowing it to appear 
-/// correctly above other windows despite compositor restrictions.
-#[cfg(target_os = "linux")]
-fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &tauri::AppHandle<R>, label: &str) {
-    let window = match app.get_webview_window(label) {
-        Some(w) => w,
-        None => return,
-    };
-
-    let mon = window.primary_monitor().ok().flatten()
-        .or_else(|| window.current_monitor().ok().flatten())
-        .or_else(|| window.app_handle().primary_monitor().ok().flatten());
-
-    if let Some(mon) = mon {
-        let size = mon.size();
-        let cur_size = window.outer_size().unwrap_or_default();
-        
-        if cur_size.width != size.width || cur_size.height != size.height {
-            let _ = window.set_size(tauri::Size::Physical(*size));
-            let _ = window.set_position(tauri::Position::Physical(*mon.position()));
-            let _ = window.set_always_on_top(true);
-        }
-
-        if let Ok(gtk_window) = window.gtk_window() {
-            let hud_w = 420; 
-            let hud_h = 500;
-            let padding_x = 30;
-            
-            let x = (size.width as i32) - hud_w - padding_x;
-            let y = (size.height as f64 * 0.2) as i32 - 10; 
-
-            let rect = cairo::RectangleInt::new(x, y, hud_w, hud_h);
-            let region = cairo::Region::create_rectangle(&rect);
-            gtk_window.input_shape_combine_region(Some(&region));
-        }
-    }
-}
 
 /// Checks if the audio/STT engine is currently running.
 #[tauri::command]
@@ -339,8 +241,8 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let engine_state = EngineState(Arc::new(Mutex::new(None)));
-    let hud_visibility = HudVisibility(Arc::new(Mutex::new(false)));
-    let hud_menu_item = HudMenuItem(Arc::new(Mutex::new(None)));
+    let hud_visibility = HudVisibility::new();
+    let hud_menu_item = HudMenuItem::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -442,7 +344,7 @@ pub fn run() {
                 if let tauri::WindowEvent::Resized(size) = event {
                     if size.width > 0 && size.height > 0 {
                         #[cfg(target_os = "linux")]
-                        setup_linux_virtual_layer(window.app_handle(), window.label());
+                        crate::tray::setup_linux_virtual_layer(window.app_handle(), window.label());
                     }
                 }
             }
@@ -456,11 +358,11 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            hide_tray_window,
+            crate::tray::hide_tray_window,
             launch_engine,
             check_engine_status,
-            set_hud_ignore_cursor,
-            sync_hud_visibility
+            crate::tray::set_hud_ignore_cursor,
+            crate::tray::sync_hud_visibility
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
