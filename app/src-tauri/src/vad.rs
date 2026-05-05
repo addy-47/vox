@@ -143,7 +143,7 @@ impl VadEngine {
         &mut self,
         mut consumer: C,
         tx: mpsc::Sender<serde_json::Value>,
-        stt_tx: mpsc::UnboundedSender<crate::stt::SttCommand>,
+        stt_tx: mpsc::Sender<crate::stt::SttCommand>,
     ) -> Result<()> 
     where 
         C: ringbuf::traits::Consumer<Item = f32> 
@@ -214,7 +214,9 @@ impl VadEngine {
                                 // Every 800ms (12800 samples at 16kHz), send a partial transcript command
                                 if samples_since_partial >= 12800 {
                                     log::debug!("[VAD] Triggering partial transcription (session: {})", current_session_id);
-                                    let _ = stt_tx.send(crate::stt::SttCommand::Partial(current_session_id, utterance_buffer.clone()));
+                                    if let Err(e) = stt_tx.try_send(crate::stt::SttCommand::Partial(current_session_id, utterance_buffer.clone())) {
+                                        log::warn!("[VAD] STT queue full, skipping partial update: {:?}", e);
+                                    }
                                     samples_since_partial = 0;
                                 }
                             }
@@ -228,7 +230,9 @@ impl VadEngine {
                                 // Still check for partials even during low-prob frames if we are in_speech
                                 if samples_since_partial >= 12800 {
                                     log::debug!("[VAD] Triggering partial transcription (session: {})", current_session_id);
-                                    let _ = stt_tx.send(crate::stt::SttCommand::Partial(current_session_id, utterance_buffer.clone()));
+                                    if let Err(e) = stt_tx.try_send(crate::stt::SttCommand::Partial(current_session_id, utterance_buffer.clone())) {
+                                        log::warn!("[VAD] STT queue full, skipping partial update: {:?}", e);
+                                    }
                                     samples_since_partial = 0;
                                 }
 
@@ -244,7 +248,16 @@ impl VadEngine {
                                     
                                     if utterance_buffer.len() >= 6400 { // 0.4s min
                                         log::info!("[VAD] Sending final {} samples to STT (session: {})", utterance_buffer.len(), current_session_id);
-                                        let _ = stt_tx.send(crate::stt::SttCommand::Final(current_session_id, utterance_buffer.clone()));
+                                        // CRITICAL: We MUST NOT drop final updates.
+                                        // Spawn a task to send it so we don't block the VAD loop, but use .send().await to ensure it gets in the queue.
+                                        let stt_tx_clone = stt_tx.clone();
+                                        let sid = current_session_id;
+                                        let buf = utterance_buffer.clone();
+                                        tokio::spawn(async move {
+                                            if let Err(e) = stt_tx_clone.send(crate::stt::SttCommand::Final(sid, buf)).await {
+                                                log::error!("[VAD] CRITICAL: Failed to queue final STT command: {:?}", e);
+                                            }
+                                        });
                                     }
                                     utterance_buffer.clear();
                                     samples_since_partial = 0;

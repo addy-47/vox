@@ -19,13 +19,13 @@ use std::time::{Duration, Instant};
 // ─── Managed State ───────────────────────────────────────────────────────────
 struct VoxEngine {
     _audio_stream: AudioStream,
-    stt_tx: tokio::sync::mpsc::UnboundedSender<SttCommand>,
+    stt_tx: tokio::sync::mpsc::Sender<SttCommand>,
 }
 
 struct EngineState(Arc<Mutex<Option<VoxEngine>>>);
 
 // ─── STT Master Worker (Lazy Loader) ─────────────────────────────────────────
-async fn start_stt_master(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::UnboundedReceiver<SttCommand>) {
+async fn start_stt_master(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<SttCommand>) {
     let mut engine: Option<SttEngine> = None;
     let mut last_activity = Instant::now();
     
@@ -135,7 +135,7 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 
     // ── 1. Channels ──────────────────────────────────────────────────────────
     let (vad_tx, mut vad_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
-    let (stt_tx, stt_rx) = tokio::sync::mpsc::unbounded_channel::<SttCommand>();
+    let (stt_tx, stt_rx) = tokio::sync::mpsc::channel::<SttCommand>(10);
 
     // ── 2. STT Master (Lazy Loader) ─────────────────────────────────────────
     let app_handle_stt = app.clone();
