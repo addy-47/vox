@@ -23,7 +23,7 @@
       },
       {
         "label": "tray",
-        "title": "vox-tray",
+        "title": "vox-live",
         "url": "/tray",
         "width": 640,
         "height": 320,
@@ -31,7 +31,7 @@
         "decorations": false,
         "alwaysOnTop": true,
         "resizable": false,
-        "visible": true,
+        "visible": false,
         "shadow": false
       }
     ],

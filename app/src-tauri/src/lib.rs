@@ -13,6 +13,10 @@ use ringbuf::traits::Split;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
+use tauri_plugin_positioner;
+
+#[cfg(target_os = "linux")]
+use gtk::prelude::*;
 
 // ─── Managed State ───────────────────────────────────────────────────────────
 
@@ -113,6 +117,82 @@ fn hide_tray_window(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn set_hud_ignore_cursor(window: tauri::WebviewWindow, ignore: bool) {
+    let _ = window.set_ignore_cursor_events(ignore);
+}
+
+async fn position_tray_window(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = window.show();
+        let win_clone = window.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            setup_linux_virtual_layer(win_clone.app_handle(), "tray");
+        });
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        use tauri_plugin_positioner::{WindowExt, Position};
+        let _ = window.move_window(Position::TopRight);
+        let _ = window.show();
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &tauri::AppHandle<R>, label: &str) {
+    let window = match app.get_webview_window(label) {
+        Some(w) => w,
+        None => return,
+    };
+
+    log::info!("[HUD] setup_linux_virtual_layer triggered for window: {}", label);
+
+    // Try multiple ways to get the monitor if primary_monitor fails
+    let mon = window.primary_monitor().ok().flatten()
+        .or_else(|| window.current_monitor().ok().flatten())
+        .or_else(|| window.app_handle().primary_monitor().ok().flatten());
+
+    if let Some(mon) = mon {
+        let size = mon.size();
+        let cur_size = window.outer_size().unwrap_or_default();
+        
+        log::info!("[HUD] Virtual Layer targeting Monitor: {:?} (Current size: {:?})", size, cur_size);
+
+        // If we are already at monitor size, we probably already did this
+        if cur_size.width == size.width && cur_size.height == size.height {
+            log::info!("[HUD] Window already at monitor size, skipping resize.");
+            // We still re-apply the input mask just in case
+        } else {
+            // 1. Fullscreen the window via manual sizing (Wayland safe)
+            let _ = window.set_size(tauri::Size::Physical(*size));
+            let _ = window.set_position(tauri::Position::Physical(*mon.position()));
+            let _ = window.set_always_on_top(true);
+        }
+
+        // 2. Punch a hole for the HUD (Top Right area)
+        // HUD Dimensions: 360x540 (approx)
+        if let Ok(gtk_window) = window.gtk_window() {
+            let hud_w = 420; 
+            let hud_h = 500;
+            let padding_x = 30;
+            
+            let x = (size.width as i32) - hud_w - padding_x;
+            let y = (size.height as f64 * 0.2) as i32 - 10; 
+
+            let rect = cairo::RectangleInt::new(x, y, hud_w, hud_h);
+            let region = cairo::Region::create_rectangle(&rect);
+            
+            // This is the magic: it tells the OS to ignore mouse events 
+            // EVERYWHERE except in this region.
+            gtk_window.input_shape_combine_region(Some(&region));
+            log::info!("[HUD] Linux Input Mask applied at {},{} {}x{}", x, y, hud_w, hud_h);
+        }
+    }
+}
+
+#[tauri::command]
 async fn check_engine_status(state: State<'_, EngineState>) -> Result<bool, String> {
     let lock = state.0.lock().await;
     Ok(lock.is_some())
@@ -125,7 +205,7 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     
     if lock.is_some() {
         if let Some(window) = app.get_webview_window("tray") {
-            let _ = window.show();
+            position_tray_window(&window).await;
             let _ = window.set_focus();
         }
         return Ok(());
@@ -175,8 +255,11 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                 if msg_type == "speech_start" {
                     if let Some(window) = app_handle_emit.get_webview_window("tray") {
                         log::info!("[HUD] Backend showing tray window on speech_start");
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                        let w = window.clone();
+                        tauri::async_runtime::spawn(async move {
+                            position_tray_window(&w).await;
+                            let _ = w.set_focus();
+                        });
                     } else {
                         log::error!("[HUD] Backend could not find 'tray' window!");
                     }
@@ -247,6 +330,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_positioner::init())
+        .invoke_handler(tauri::generate_handler![
+            launch_engine,
+            check_engine_status,
+            hide_tray_window,
+            set_hud_ignore_cursor
+        ])
         .manage(engine_state)
         .setup(|app| {
 
@@ -263,7 +353,7 @@ pub fn run() {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
                             if let Some(window) = handle.get_webview_window("tray") {
-                                let _ = window.show();
+                                position_tray_window(&window).await;
                                 let _ = window.set_focus();
                                 let _ = window.set_always_on_top(true);
                             }
@@ -297,37 +387,10 @@ pub fn run() {
                     let _ = tray_win_clone.set_skip_taskbar(true);
                     let _ = tray_win_clone.set_resizable(false);
 
-                    let monitor = tray_win_clone.primary_monitor().ok().flatten()
-                        .or_else(|| tray_win_clone.current_monitor().ok().flatten());
-
-                    if let Some(mon) = monitor {
-                        let scale = mon.scale_factor();
-                        let screen = mon.size().to_logical::<f64>(scale);
-                        let mon_pos = mon.position().to_logical::<f64>(scale);
-                        
-                        let width = (screen.width * 0.30).max(380.0).min(500.0);
-                        let height = (screen.height * 0.25).max(220.0).min(450.0);
-                        let _ = tray_win_clone.set_size(tauri::LogicalSize::new(width, height)).ok();
-                        
-                        let padding = 24.0;
-                        let x = mon_pos.x + screen.width - width - padding;
-                        let y = mon_pos.y + (screen.height - height) / 2.0;
-                        
-                        log::info!("[HUD] Monitor Detect: pos={:?},{:?} size={:?}x{:?} scale={:?}", mon_pos.x, mon_pos.y, screen.width, screen.height, scale);
-                        log::info!("[HUD] Target Position: Logical({:?}, {:?})", x, y);
-                        
-                        if let Err(e) = tray_win_clone.set_position(tauri::LogicalPosition::new(x, y)) {
-                            log::error!("[HUD] Failed to set window position: {:?}", e);
-                        }
-                        
-                        // Explicitly show after positioning
-                        let _ = tray_win_clone.hide(); // Hide first to reset
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                        // But wait, the user says it's already showing. 
-                        // Let's just make sure it's at the right spot.
-                    } else {
-                        log::warn!("[HUD] NO MONITOR DETECTED. Window may be misplaced.");
-                    }
+                    position_tray_window(&tray_win_clone).await;
+                    
+                    // Initial hide to ensure it's hidden on startup despite tauri.conf.json
+                    let _ = tray_win_clone.hide();
                 });
             }
 
@@ -340,6 +403,15 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == "tray" {
+                if let tauri::WindowEvent::Resized(size) = event {
+                    if size.width > 0 && size.height > 0 {
+                        #[cfg(target_os = "linux")]
+                        setup_linux_virtual_layer(window.app_handle(), window.label());
+                    }
+                }
+            }
+
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Instead of closing, just hide the window (unless it's the tray window being properly closed)
                 if window.label() == "main" || window.label() == "tray" {
