@@ -6,7 +6,7 @@ use crate::audio::AudioStream;
 use crate::vad::VadEngine;
 use crate::stt::{SttEngine, SttCommand};
 
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, Emitter, State};
 use ringbuf::traits::Split;
@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use tauri_plugin_positioner;
 
 #[cfg(target_os = "linux")]
-use gtk::prelude::*;
+use gtk::prelude::WidgetExt;
 
 // ─── Managed State ───────────────────────────────────────────────────────────
 
@@ -31,6 +31,12 @@ struct VoxEngine {
 /// Thread-safe wrapper for the VoxEngine, allowed to be None if the engine 
 /// hasn't been launched.
 struct EngineState(Arc<Mutex<Option<VoxEngine>>>);
+
+/// Tracks if the HUD (Vox Live) is manually enabled via the tray menu.
+struct HudVisibility(Arc<Mutex<bool>>);
+
+/// Stores the handle to the 'Vox Live' checkable menu item for easy sync.
+struct HudMenuItem(Arc<Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>>);
 
 // ─── STT Worker (Dedicated OS Thread) ────────────────────────────────────────
 
@@ -56,12 +62,13 @@ fn spawn_stt_worker(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<S
                     if last_emit_time.elapsed() >= Duration::from_millis(800) {
                         match engine.transcribe(&utterance) {
                             Ok(text) => {
-                                if !text.is_empty() && text != last_transcript {
+                                let text_str: String = text;
+                                if !text_str.is_empty() && text_str != last_transcript {
                                     let _ = app.emit("transcript_partial", serde_json::json!({ 
-                                        "text": text.clone(),
+                                        "text": text_str.clone(),
                                         "session_id": sid 
                                     }));
-                                    last_transcript = text;
+                                    last_transcript = text_str;
                                 }
                                 last_emit_time = Instant::now();
                             }
@@ -99,6 +106,20 @@ fn spawn_stt_worker(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<S
 fn hide_tray_window(app: tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("tray") {
         let _ = window.hide();
+    }
+}
+
+/// Synchronizes the backend HUD state with the frontend visibility.
+#[tauri::command]
+async fn sync_hud_visibility(app: tauri::AppHandle, visible: bool) {
+    let hud_visible_state: State<'_, HudVisibility> = app.state();
+    let mut hud_lock = hud_visible_state.0.lock().await;
+    *hud_lock = visible;
+
+    let item_state: State<'_, HudMenuItem> = app.state();
+    let item_lock = item_state.0.lock().await;
+    if let Some(item) = &*item_lock {
+        let _ = item.set_checked(visible);
     }
 }
 
@@ -233,14 +254,22 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     // ── 5. Event Forwarder (Tokio Bridge) ────────────────────────────────────
     let app_handle_emit = app.clone();
     tauri::async_runtime::spawn(async move {
+        let hud_visible_state: State<'_, HudVisibility> = app_handle_emit.state();
         while let Some(event) = event_rx.recv().await {
             if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
                 if msg_type == "speech_start" {
-                    if let Some(window) = app_handle_emit.get_webview_window("tray") {
-                        let w = window.clone();
-                        tauri::async_runtime::spawn(async move {
-                            position_tray_window(&w).await;
-                        });
+                    let hud_visible = {
+                        let hud_lock = hud_visible_state.0.lock().await;
+                        *hud_lock
+                    };
+
+                    if hud_visible {
+                        if let Some(window) = app_handle_emit.get_webview_window("tray") {
+                            let w = window.clone();
+                            tauri::async_runtime::spawn(async move {
+                                position_tray_window(&w).await;
+                            });
+                        }
                     }
                 }
                 let _ = app_handle_emit.emit(msg_type, &event);
@@ -310,30 +339,59 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let engine_state = EngineState(Arc::new(Mutex::new(None)));
+    let hud_visibility = HudVisibility(Arc::new(Mutex::new(false)));
+    let hud_menu_item = HudMenuItem(Arc::new(Mutex::new(None)));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
         .manage(engine_state)
+        .manage(hud_visibility)
+        .manage(hud_menu_item)
         .setup(|app| {
 
             // ── 1. Tray Menu ─────────────────────────────────────────────────
+            use tauri::menu::{CheckMenuItem, MenuItem};
             let launch_i = MenuItem::with_id(app, "launch", "Launch Vox", true, None::<&str>)?;
+            let live_i = CheckMenuItem::with_id(app, "live", "Vox Live", true, false, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&launch_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&launch_i, &live_i, &quit_i])?;
 
-            let _tray = TrayIconBuilder::new()
+            // Store the live_i handle in managed state
+            let hud_menu_item: State<'_, HudMenuItem> = app.state();
+            {
+                let mut lock = hud_menu_item.0.blocking_lock();
+                *lock = Some(live_i.clone());
+            }
+
+            let _tray = TrayIconBuilder::with_id("main_tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "launch" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "live" => {
                         let handle = app.clone();
+                        let live_item = live_i.clone();
                         tauri::async_runtime::spawn(async move {
+                            let hud_state: State<'_, HudVisibility> = handle.state();
+                            let mut hud_lock = hud_state.0.lock().await;
+                            let new_state = !*hud_lock;
+                            *hud_lock = new_state;
+
                             if let Some(window) = handle.get_webview_window("tray") {
-                                position_tray_window(&window).await;
-                                let _ = window.set_focus();
-                                let _ = window.set_always_on_top(true);
+                                if new_state {
+                                    position_tray_window(&window).await;
+                                } else {
+                                    let _ = window.hide();
+                                }
+                                let _ = handle.emit("toggle_hud", ());
                             }
+                            let _ = live_item.set_checked(new_state);
                         });
                     }
                     "quit" => app.exit(0),
@@ -371,7 +429,7 @@ pub fn run() {
                 });
             }
 
-            // ── 3. Auto-launch on startup ───────────────────────────────────
+                // ── 3. Auto-launch on startup ───────────────────────────────────
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let _ = launch_engine(handle).await;
@@ -401,7 +459,8 @@ pub fn run() {
             hide_tray_window,
             launch_engine,
             check_engine_status,
-            set_hud_ignore_cursor
+            set_hud_ignore_cursor,
+            sync_hud_visibility
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
