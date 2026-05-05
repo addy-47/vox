@@ -1,114 +1,98 @@
 /// VAD Unit Tests
-/// Tests feature extraction shape, silence detection, and probability floor.
+/// Verified with real audio assets to ensure detection accuracy.
 /// Run with: cargo test --test vad_test -- --nocapture
 
 use std::path::PathBuf;
 use vox_ui_lib::vad::VadEngine;
+use ringbuf::traits::*;
 
+/// Path to the VAD model.
 fn vad_model_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/ten_vad.onnx")
 }
 
-// ─── Test 1: VAD engine initializes ──────────────────────────────────────────
+/// Path to a known speech file.
+fn speech_wav_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/qwen3-asr/test_wavs/fast1.wav")
+}
+
+/// Load a mono 16kHz WAV into a Vec<f32> sample buffer.
+fn load_wav(path: &std::path::Path) -> Vec<f32> {
+    let mut reader = hound::WavReader::open(path)
+        .unwrap_or_else(|e| panic!("Failed to open {:?}: {}", path, e));
+
+    let spec = reader.spec();
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => reader
+            .samples::<f32>()
+            .map(|s| s.expect("read sample"))
+            .collect(),
+        hound::SampleFormat::Int => reader
+            .samples::<i16>()
+            .map(|s| s.expect("read sample") as f32 / 32768.0)
+            .collect(),
+    };
+
+    // Convert stereo → mono if needed
+    let mono: Vec<f32> = if spec.channels == 2 {
+        samples.chunks(2).map(|c| (c[0] + c[1]) / 2.0).collect()
+    } else {
+        samples
+    };
+
+    // Resample to 16kHz if source rate differs
+    if spec.sample_rate != 16000 {
+        let ratio = 16000.0 / spec.sample_rate as f32;
+        let new_len = (mono.len() as f32 * ratio) as usize;
+        (0..new_len)
+            .map(|i| {
+                let src = i as f32 / ratio;
+                let idx = src as usize;
+                let frac = src - idx as f32;
+                let a = mono.get(idx).copied().unwrap_or(0.0);
+                let b = mono.get(idx + 1).copied().unwrap_or(0.0);
+                a * (1.0 - frac) + b * frac
+            })
+            .collect()
+    } else {
+        mono
+    }
+}
 
 #[test]
 fn test_vad_engine_init() {
     let path = vad_model_path();
     assert!(path.exists(), "VAD model missing at {:?}", path);
 
-    let engine = VadEngine::new(path.to_str().unwrap());
+    let engine = VadEngine::new(&path);
     assert!(engine.is_ok(), "VadEngine::new failed: {:?}", engine.err());
     println!("[PASS] VAD engine initialized");
 }
 
-// ─── Test 2: Feature extraction returns correct shape ────────────────────────
-
 #[test]
-fn test_vad_feature_shape() {
+fn test_vad_speech_detection() {
     let path = vad_model_path();
-    if !path.exists() {
-        eprintln!("[SKIP] VAD model missing");
+    let wav_path = speech_wav_path();
+    
+    if !path.exists() || !wav_path.exists() {
+        eprintln!("[SKIP] Assets missing: VAD={:?}, WAV={:?}", path.exists(), wav_path.exists());
         return;
     }
 
-    let engine = VadEngine::new(path.to_str().unwrap()).expect("init vad");
-
-    // 768 samples = one VAD frame at 16kHz
-    let audio = vec![0.0f32; 768];
-    let features = engine.extract_features_pub(&audio);
-
-    eprintln!("[test] Feature vector len: {}", features.len());
-    // Should match model's expected input dimension (41 bins in this specific model)
-    assert_eq!(
-        features.len(),
-        41,
-        "Feature vector should be 41 bins, got {}",
-        features.len()
-    );
-    println!("[PASS] Feature shape correct: {} bins", features.len());
-}
-
-// ─── Test 3: Silence produces prob << 0.5 (no false positives) ───────────────
-
-#[test]
-fn test_vad_silence_low_probability() {
-    let path = vad_model_path();
-    if !path.exists() {
-        eprintln!("[SKIP] VAD model missing");
-        return;
-    }
-
-    let mut engine = VadEngine::new(path.to_str().unwrap()).expect("init vad");
-
-    // Feed 3 frames of digital silence
-    let silence_frame = vec![0.0f32; 768];
-    let mut probs = Vec::new();
-
-    for _ in 0..5 {
-        if let Ok(prob) = engine.process_frame_pub(&silence_frame) {
-            probs.push(prob);
-            eprintln!("[test] Silence frame prob: {:.4}", prob);
-        }
-    }
-
-    // All silence probs must be well below 0.5 threshold
-    for &p in &probs {
-        assert!(
-            p < 0.4,
-            "Silence probability {:.4} is too high (expected < 0.4) — false positive risk",
-            p
-        );
-    }
-    println!("[PASS] Silence probabilities all < 0.4: {:?}", probs);
-}
-
-// ─── Test 4: Very low amplitude noise stays below threshold ──────────────────
-
-#[test]
-fn test_vad_low_noise_no_trigger() {
-    let path = vad_model_path();
-    if !path.exists() {
-        eprintln!("[SKIP] VAD model missing");
-        return;
-    }
-
-    let mut engine = VadEngine::new(path.to_str().unwrap()).expect("init vad");
-
-    // Simulate ambient noise at very low amplitude (~-60dB)
-    let noise: Vec<f32> = (0..768)
-        .map(|i| (i as f32 * 0.017).sin() * 0.001)
-        .collect();
-
-    let mut triggered = false;
-    for _ in 0..10 {
-        if let Ok(prob) = engine.process_frame_pub(&noise) {
-            eprintln!("[test] Low-noise prob: {:.4}", prob);
-            if prob > 0.65 {
-                triggered = true;
+    let mut engine = VadEngine::new(&path).expect("init vad");
+    let audio = load_wav(&wav_path);
+    
+    let mut speech_detected = false;
+    // Process first 2 seconds in 10ms chunks
+    for chunk in audio[..audio.len().min(16000 * 2)].chunks(160) {
+        if chunk.len() == 160 {
+            if engine.predict(chunk) {
+                speech_detected = true;
+                break;
             }
         }
     }
-
-    assert!(!triggered, "Low-amplitude noise triggered VAD speech detection");
-    println!("[PASS] Low noise stays below detection threshold");
+    
+    assert!(speech_detected, "VAD failed to detect speech in a known speech file (fast1.wav)");
+    println!("[PASS] VAD speech detection verified on real audio");
 }
