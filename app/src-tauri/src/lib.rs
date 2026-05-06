@@ -195,10 +195,14 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                         *hud_lock
                     };
 
+                    // Only show the tray when the user has "Vox Live" enabled.
+                    // Explicitly call show() so the first speech_start works
+                    // (position_tray_window alone does not guarantee visibility).
                     if hud_visible {
                         if let Some(window) = app_handle_emit.get_webview_window("tray") {
                             let w = window.clone();
                             tauri::async_runtime::spawn(async move {
+                                let _ = w.show();
                                 position_tray_window(&w).await;
                             });
                         }
@@ -296,6 +300,8 @@ pub fn run() {
                 let state: State<'_, AppState> = app.state();
                 let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
                 *menu_item_lock = Some(live_i.clone());
+                // Reflect the default hud_visible=true in the menu UI
+                let _ = live_i.set_checked(true);
             }
 
             let _tray = TrayIconBuilder::new()

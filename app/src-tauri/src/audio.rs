@@ -90,7 +90,9 @@ impl AudioStream {
                 }
                 
                 // 3. Keep index relative for the next callback block.
-                source_index -= n_mono as f32;
+                // Clamp to 0.0 to prevent negative drift from floating point subtraction
+                // across callback boundaries (can cause out-of-bounds on next call).
+                source_index = (source_index - n_mono as f32).max(0.0);
                 
                 // 4. Push to the lock-free SPSC ring buffer for Tier 2 (VAD) processing.
                 if !resampled_buffer.is_empty() {

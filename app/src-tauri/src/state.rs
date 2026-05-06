@@ -50,7 +50,9 @@ impl AppState {
         Self {
             engine: Mutex::new(None),
             interaction: Mutex::new(InteractionMode::Passive),
-            hud_visible: Mutex::new(false),
+            // Default to visible so passive mode works on first speech without
+            // requiring the user to manually enable "Vox Live" from the tray menu.
+            hud_visible: Mutex::new(true),
             settings: Mutex::new(settings),
             hud_menu_item: Mutex::new(None),
             ptt: PttState {
