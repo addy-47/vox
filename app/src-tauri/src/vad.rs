@@ -103,13 +103,16 @@ impl VadEngine {
 
                 // Mode-based routing
                 let mode = {
-                    let state: tauri::State<'_, crate::InteractionState> = app.state();
-                    let lock = state.0.blocking_lock();
+                    let state: tauri::State<'_, crate::state::AppState> = app.state();
+                    let lock = state.interaction.blocking_lock();
                     *lock
                 };
 
-                if mode == crate::InteractionMode::Ptt {
-                    crate::ptt::handle_ptt_audio_sync(&app, &chunk);
+                if mode == crate::state::InteractionMode::Ptt {
+                    self.detector.accept_waveform(&chunk);
+                    let detected = self.detector.detected();
+                    crate::ptt::handle_ptt_audio_sync(&app, &chunk, detected);
+                    
                     // Ensure VAD state is clean when we return to passive mode later
                     if in_speech {
                         in_speech = false;
@@ -144,9 +147,12 @@ impl VadEngine {
                     // Partial Emit: Every 800ms (12,800 samples), send the current 
                     // buffer to STT for intermediate transcription.
                     if samples_since_partial >= 12800 {
+                        // For partial transcripts, only send the last 15 seconds to keep CPU low
+                        // 15 seconds * 16,000 samples/sec = 240,000 samples
+                        let start_idx = utterance_buffer.len().saturating_sub(240000);
                         let _ = stt_tx.try_send(crate::stt::SttCommand::Partial(
                             current_session_id, 
-                            utterance_buffer.clone()
+                            utterance_buffer[start_idx..].to_vec()
                         ));
                         samples_since_partial = 0;
                     }

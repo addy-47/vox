@@ -1,30 +1,11 @@
 use tauri::{Manager, State, AppHandle, WebviewWindow, Emitter};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::time::Duration;
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::WidgetExt;
 
-// ─── Managed State ───────────────────────────────────────────────────────────
+use crate::state::{AppState, InteractionMode};
 
-/// Tracks if the HUD (Vox Live) is manually enabled via the tray menu.
-pub struct HudVisibility(pub Arc<Mutex<bool>>);
-
-/// Stores the handle to the 'Vox Live' checkable menu item for easy sync.
-pub struct HudMenuItem(pub Arc<Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>>);
-
-impl HudVisibility {
-    pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(false)))
-    }
-}
-
-impl HudMenuItem {
-    pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(None)))
-    }
-}
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
@@ -39,12 +20,11 @@ pub fn hide_tray_window(app: AppHandle) {
 /// Synchronizes the backend HUD state with the frontend visibility.
 #[tauri::command]
 pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
-    let hud_visible_state: State<'_, HudVisibility> = app.state();
-    let mut hud_lock = hud_visible_state.0.lock().await;
+    let state: State<'_, AppState> = app.state();
+    let mut hud_lock = state.hud_visible.lock().await;
     *hud_lock = visible;
 
-    let item_state: State<'_, HudMenuItem> = app.state();
-    let item_lock = item_state.0.lock().await;
+    let item_lock = state.hud_menu_item.lock().await;
     if let Some(item) = &*item_lock {
         let _ = item.set_checked(visible);
     }
@@ -73,16 +53,16 @@ pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
 /// Updates the interaction mode (Passive vs PTT).
 #[tauri::command]
 pub async fn update_interaction_mode(app: AppHandle, mode: String) -> Result<(), String> {
-    let state: State<'_, crate::InteractionState> = app.state();
-    let mut lock = state.0.lock().await;
+    let state: State<'_, AppState> = app.state();
+    let mut lock = state.interaction.lock().await;
     
     match mode.to_uppercase().as_str() {
         "PASSIVE" => {
-            *lock = crate::InteractionMode::Passive;
+            *lock = InteractionMode::Passive;
             log::info!("[MODE] Switched to PASSIVE mode.");
         }
         "PTT" => {
-            *lock = crate::InteractionMode::Ptt;
+            *lock = InteractionMode::Ptt;
             log::info!("[MODE] Switched to PTT mode.");
         }
         _ => return Err(format!("Invalid interaction mode: {}", mode)),
@@ -91,6 +71,7 @@ pub async fn update_interaction_mode(app: AppHandle, mode: String) -> Result<(),
     let _ = app.emit("mode_changed", mode);
     Ok(())
 }
+
 
 // ─── Positioning Logic ───────────────────────────────────────────────────────
 
