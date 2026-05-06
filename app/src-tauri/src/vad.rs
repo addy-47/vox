@@ -127,6 +127,25 @@ impl VadEngine {
                     continue;
                 }
                 
+                // ── Phase 4: Speaker-mode mic ducking ────────────────────────────
+                // Drop mic frames while playback is active in Speaker mode.
+                // Prevents TTS audio from looping back through the mic and re-triggering VAD.
+                // In Headset mode, mic stays live for barge-in (pipeline cancellation handles it).
+                {
+                    let state: tauri::State<'_, crate::state::AppState> = app.state();
+                    let is_playing = state.pipeline.playback_active.load(std::sync::atomic::Ordering::Relaxed);
+                    if is_playing {
+                        let audio_mode = {
+                            let settings = state.settings.blocking_lock();
+                            settings.audio_output_mode.clone()
+                        };
+                        if audio_mode == crate::settings::AudioOutputMode::Speaker {
+                            // Drop this frame — do NOT advance utterance buffer or VAD state
+                            continue;
+                        }
+                    }
+                }
+
                 // Classify chunk as speech or silence
                 self.detector.accept_waveform(&chunk);
 
