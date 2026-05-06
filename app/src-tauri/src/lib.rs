@@ -3,48 +3,23 @@ pub mod vad;
 pub mod stt;
 pub mod tray;
 pub mod ptt;
+pub mod settings;
+pub mod state;
 
 use crate::audio::AudioStream;
 use crate::vad::VadEngine;
 use crate::stt::{SttEngine, SttCommand};
-use crate::tray::{HudVisibility, HudMenuItem, position_tray_window};
+use crate::tray::position_tray_window;
+use crate::state::{AppState, VoxEngine};
+use crate::settings::VoxSettings;
 
 use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, Emitter, State};
+use tauri::{Manager, Emitter, State, WebviewWindow};
 use ringbuf::traits::Split;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
 use std::path::PathBuf;
 
-// ─── Managed State ───────────────────────────────────────────────────────────
-
-/// Holds the active audio ingestion stream and the communication channel 
-/// to the STT worker thread.
-struct VoxEngine {
-    _audio_stream: AudioStream,
-    stt_tx: tokio::sync::mpsc::Sender<SttCommand>,
-}
-
-/// Thread-safe wrapper for the VoxEngine, allowed to be None if the engine 
-/// hasn't been launched.
-struct EngineState(Arc<Mutex<Option<VoxEngine>>>);
-
-/// Tracks the active interaction mode (Passive VAD vs Manual PTT).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum InteractionMode {
-    Passive,
-    Ptt,
-}
-
-pub struct InteractionState(pub Arc<Mutex<InteractionMode>>);
-
-impl InteractionState {
-    pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(InteractionMode::Passive)))
-    }
-}
 
 // ─── STT Worker (Dedicated OS Thread) ────────────────────────────────────────
 
@@ -114,8 +89,8 @@ fn spawn_stt_worker(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<S
 
 /// Checks if the audio/STT engine is currently running.
 #[tauri::command]
-async fn check_engine_status(state: State<'_, EngineState>) -> Result<bool, String> {
-    let lock = state.0.lock().await;
+async fn check_engine_status(state: State<'_, AppState>) -> Result<bool, String> {
+    let lock = state.engine.lock().await;
     Ok(lock.is_some())
 }
 
@@ -127,9 +102,35 @@ async fn check_engine_status(state: State<'_, EngineState>) -> Result<bool, Stri
 /// 
 /// If the engine is already running, it simply ensures the HUD is positioned.
 #[tauri::command]
+async fn get_settings(state: State<'_, AppState>) -> Result<VoxSettings, String> {
+    Ok(state.settings.lock().await.clone())
+}
+
+#[tauri::command]
+async fn update_theme(app: tauri::AppHandle, theme: String) -> Result<(), String> {
+    let state: State<'_, AppState> = app.state();
+    let changed = {
+        let mut settings = state.settings.lock().await;
+        if settings.theme != theme {
+            settings.theme = theme.clone();
+            let _ = settings.save(&state.config_dir);
+            true
+        } else {
+            false
+        }
+    };
+    
+    if changed {
+        // Notify all windows
+        let _ = app.emit("theme-changed", theme);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
-    let state: State<'_, EngineState> = app.state();
-    let mut lock = state.0.lock().await;
+    let state: State<'_, AppState> = app.state();
+    let mut lock = state.engine.lock().await;
     
     if lock.is_some() {
         if let Some(window) = app.get_webview_window("tray") {
@@ -142,16 +143,25 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     log::info!("[PIPELINE] >>> Launching 3-Tier Audio Engine...");
 
     // ── 1. Paths ─────────────────────────────────────────────────────────────
-    let resource_dir = app.path().resource_dir().unwrap_or_default();
-    
-    let stt_model_path = {
-        let p = resource_dir.join("assets/qwen3-asr");
-        if p.exists() { p } else { std::env::current_dir().unwrap().join("assets/qwen3-asr") }
-    };
-    
-    let vad_model_path = {
-        let p = resource_dir.join("assets/ten_vad.onnx");
-        if p.exists() { p } else { std::env::current_dir().unwrap().join("assets/ten_vad.onnx") }
+    let (stt_model_path, vad_model_path) = {
+        let settings = state.settings.lock().await;
+        let resource_dir = app.path().resource_dir().unwrap_or_default();
+        
+        let stt = if settings.stt_model_dir.is_absolute() {
+            settings.stt_model_dir.clone()
+        } else {
+            let p = resource_dir.join(&settings.stt_model_dir);
+            if p.exists() { p } else { std::env::current_dir().unwrap().join(&settings.stt_model_dir) }
+        };
+
+        let vad = if settings.vad_model_path.is_absolute() {
+            settings.vad_model_path.clone()
+        } else {
+            let p = resource_dir.join(&settings.vad_model_path);
+            if p.exists() { p } else { std::env::current_dir().unwrap().join(&settings.vad_model_path) }
+        };
+
+        (stt, vad)
     };
 
     // ── 2. Channels ──────────────────────────────────────────────────────────
@@ -176,12 +186,12 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     // ── 5. Event Forwarder (Tokio Bridge) ────────────────────────────────────
     let app_handle_emit = app.clone();
     tauri::async_runtime::spawn(async move {
-        let hud_visible_state: State<'_, HudVisibility> = app_handle_emit.state();
+        let app_state: State<'_, AppState> = app_handle_emit.state();
         while let Some(event) = event_rx.recv().await {
             if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
                 if msg_type == "speech_start" {
                     let hud_visible = {
-                        let hud_lock = hud_visible_state.0.lock().await;
+                        let hud_lock = app_state.hud_visible.lock().await;
                         *hud_lock
                     };
 
@@ -199,13 +209,14 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         }
     });
 
+
     // ── 6. Tier 1: Audio Ingestion (Hardware Interrupt) ─────────────────────
     let audio_stream = AudioStream::new(producer).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
     // ── 7. Store in state ────────────────────────────────────────────────────
     *lock = Some(VoxEngine {
-        _audio_stream: audio_stream,
+        audio_stream,
         stt_tx,
     });
 
@@ -261,42 +272,39 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 /// engine on startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let engine_state = EngineState(Arc::new(Mutex::new(None)));
-    let hud_visibility = HudVisibility::new();
-    let hud_menu_item = HudMenuItem::new();
-    let interaction_state = InteractionState::new();
-    let ptt_manager = ptt::PttManager::new();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
-        .manage(engine_state)
-        .manage(hud_visibility)
-        .manage(hud_menu_item)
-        .manage(interaction_state)
-        .manage(ptt_manager)
         .setup(|app| {
+            // ── 0. App State ────────────────────────────────────────────────────────
+            let app_state = AppState::new(app.handle());
+            app.manage(app_state);
 
-            // ── 1. Tray Menu ─────────────────────────────────────────────────
-            use tauri::menu::{CheckMenuItem, MenuItem};
-            let launch_i = MenuItem::with_id(app, "launch", "Launch Vox", true, None::<&str>)?;
-            let live_i = CheckMenuItem::with_id(app, "live", "Vox Live", true, false, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&launch_i, &live_i, &quit_i])?;
+            // ── 1. System Tray ───────────────────────────────────────────────────────
+            let tray_menu = Menu::new(app)?;
+            let launch_i = tauri::menu::MenuItemBuilder::new("Launch Vox").id("launch").build(app)?;
+            let live_i = tauri::menu::CheckMenuItemBuilder::new("Vox Live").id("live").build(app)?;
+            let quit_i = tauri::menu::MenuItemBuilder::new("Quit").id("quit").build(app)?;
 
-            // Store the live_i handle in managed state
-            let hud_menu_item: State<'_, HudMenuItem> = app.state();
+            tray_menu.append(&launch_i)?;
+            tray_menu.append(&live_i)?;
+            tray_menu.append(&tauri::menu::PredefinedMenuItem::separator(app)?)?;
+            tray_menu.append(&quit_i)?;
+
+            // Store live_i handle in state for synchronization
             {
-                let mut lock = hud_menu_item.0.blocking_lock();
-                *lock = Some(live_i.clone());
+                let state: State<'_, AppState> = app.state();
+                let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
+                *menu_item_lock = Some(live_i.clone());
             }
 
-            let _tray = TrayIconBuilder::with_id("main_tray")
+            let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
-                .on_menu_event(move |app, event| match event.id.as_ref() {
+                .menu(&tray_menu)
+                .on_menu_event(move |app: &tauri::AppHandle, event: tauri::menu::MenuEvent| match event.id.as_ref() {
                     "launch" => {
                         if let Some(window) = app.get_webview_window("main") {
+                            let window: WebviewWindow = window;
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
@@ -305,12 +313,13 @@ pub fn run() {
                         let handle = app.clone();
                         let live_item = live_i.clone();
                         tauri::async_runtime::spawn(async move {
-                            let hud_state: State<'_, HudVisibility> = handle.state();
-                            let mut hud_lock = hud_state.0.lock().await;
+                            let app_state: State<'_, AppState> = handle.state();
+                            let mut hud_lock = app_state.hud_visible.lock().await;
                             let new_state = !*hud_lock;
                             *hud_lock = new_state;
 
                             if let Some(window) = handle.get_webview_window("tray") {
+                                let window: WebviewWindow = window;
                                 if new_state {
                                     position_tray_window(&window).await;
                                 } else {
@@ -324,7 +333,7 @@ pub fn run() {
                     "quit" => app.exit(0),
                     _ => {}
                 })
-                .on_tray_icon_event(|tray, event| {
+                .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
                     if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
                         let app = tray.app_handle().clone();
                         tauri::async_runtime::spawn(async move {
@@ -386,6 +395,8 @@ pub fn run() {
             crate::tray::hide_tray_window,
             launch_engine,
             check_engine_status,
+            get_settings,
+            update_theme,
             crate::tray::set_hud_ignore_cursor,
             crate::tray::sync_hud_visibility,
             crate::tray::update_interaction_mode,
