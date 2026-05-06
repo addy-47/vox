@@ -5,6 +5,13 @@ pub mod tray;
 pub mod ptt;
 pub mod settings;
 pub mod state;
+// Phase 4
+pub mod events;
+pub mod metrics;
+pub mod llm;
+pub mod tts;
+pub mod playback;
+pub mod pipeline;
 
 use crate::audio::AudioStream;
 use crate::vad::VadEngine;
@@ -12,6 +19,10 @@ use crate::stt::{SttEngine, SttCommand};
 use crate::tray::position_tray_window;
 use crate::state::{AppState, VoxEngine};
 use crate::settings::VoxSettings;
+use crate::events::VoxEvent;
+use crate::pipeline::PipelineOrchestrator;
+use crate::playback::PlaybackEngine;
+use std::sync::atomic::Ordering;
 
 use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
@@ -23,7 +34,13 @@ use std::path::PathBuf;
 
 // ─── STT Worker (Dedicated OS Thread) ────────────────────────────────────────
 
-fn spawn_stt_worker(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<SttCommand>, model_path: PathBuf) {
+fn spawn_stt_worker(
+    app: tauri::AppHandle,
+    mut rx: tokio::sync::mpsc::Receiver<SttCommand>,
+    model_path: PathBuf,
+    /// Optional pipeline event channel — `Some` when Phase 4 pipeline is active.
+    pipeline_event_tx: Option<tokio::sync::mpsc::Sender<VoxEvent>>,
+) {
     std::thread::spawn(move || {
         log::info!("[STT] >>> Dedicated worker thread started.");
         
@@ -64,18 +81,24 @@ fn spawn_stt_worker(app: tauri::AppHandle, mut rx: tokio::sync::mpsc::Receiver<S
                     match engine.transcribe(&utterance) {
                         Ok(text) => {
                             log::info!("[STT] Result ({}): {:?}", sid, text);
-                            let _ = app.emit("transcript_final", serde_json::json!({ 
-                                "text": text,
+                            // Emit to frontend for transcript display
+                            let _ = app.emit("transcript_final", serde_json::json!({
+                                "text": text.clone(),
                                 "session_id": sid
                             }));
+                            // Phase 4: forward to pipeline orchestrator for LLM→TTS→Playback
+                            if let Some(ref pipeline_tx) = pipeline_event_tx {
+                                let _ = pipeline_tx.blocking_send(VoxEvent::TranscriptFinal {
+                                    session_id: sid,
+                                    text: text.clone(),
+                                });
+                            }
                         }
                         Err(e) => log::error!("[STT] Final decode error: {}", e),
                     }
-                    
+
                     // Signal UI that processing is complete for PTT
                     let _ = app.emit("ptt_status", serde_json::json!({ "state": "IDLE" }));
-                    // Reset tracking state. The OfflineRecognizer stream is dropped internally
-                    // in engine.transcribe(), clearing the KV cache for the next turn.
                     last_transcript.clear();
                     last_emit_time = Instant::now();
                 }
@@ -169,7 +192,9 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let (stt_tx, stt_rx) = tokio::sync::mpsc::channel::<SttCommand>(10);
 
     // ── 3. Tier 3: STT Worker (Dedicated OS Thread) ─────────────────────────
-    spawn_stt_worker(app.clone(), stt_rx, stt_model_path);
+    // Create the internal pipeline event channel (VoxEvent bus)
+    let (vox_event_tx, vox_event_rx) = tokio::sync::mpsc::channel::<VoxEvent>(128);
+    spawn_stt_worker(app.clone(), stt_rx, stt_model_path, Some(vox_event_tx.clone()));
 
     // ── 4. Tier 2: VAD & Router (Dedicated OS Thread) ───────────────────────
     let mut vad = VadEngine::new(&vad_model_path).map_err(|e| e.to_string())?;
@@ -218,7 +243,72 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let audio_stream = AudioStream::new(producer).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
-    // ── 7. Store in state ────────────────────────────────────────────────────
+    // ── 7. Phase 4: Pipeline Orchestrator + Playback Engine ─────────────────
+    let (tts_model_dir, audio_output_mode) = {
+        let settings = state.settings.lock().await;
+        let resource_dir = app.path().resource_dir().unwrap_or_default();
+        let tts = if settings.tts_model_dir.is_absolute() {
+            settings.tts_model_dir.clone()
+        } else {
+            let p = resource_dir.join(&settings.tts_model_dir);
+            if p.exists() { p } else { std::env::current_dir().unwrap().join(&settings.tts_model_dir) }
+        };
+        (tts, settings.audio_output_mode.clone())
+    };
+
+    let pipeline_atomics = {
+        let s = state.inner();
+        (
+            std::sync::Arc::clone(&s.pipeline.cancel_flag),
+            std::sync::Arc::clone(&s.pipeline.playback_active),
+            std::sync::Arc::clone(&s.pipeline.llm_generating),
+            std::sync::Arc::clone(&s.pipeline.tts_generating),
+            std::sync::Arc::clone(&s.pipeline.session_id),
+        )
+    };
+    let (cancel_flag, playback_active, llm_gen, tts_gen, session_id) = pipeline_atomics;
+
+    // Playback engine (CPAL stream starts idle)
+    let playback_engine = match PlaybackEngine::new(
+        std::sync::Arc::clone(&playback_active),
+        std::sync::Arc::clone(&cancel_flag),
+    ) {
+        Ok(pe) => std::sync::Arc::new(pe),
+        Err(e) => {
+            log::error!("[Pipeline] PlaybackEngine init failed: {} — TTS output disabled", e);
+            return Ok(()); // Non-fatal: STT still works
+        }
+    };
+
+    // Pipeline orchestrator — spawns on its own coordinator thread
+    let vox_settings = state.settings.lock().await.clone();
+    let orchestrator = PipelineOrchestrator::new(
+        std::sync::Arc::clone(&cancel_flag),
+        std::sync::Arc::clone(&playback_active),
+        llm_gen,
+        tts_gen,
+        session_id,
+        vox_event_tx.clone(),
+        vox_settings,
+    );
+
+    let playback_for_orch = std::sync::Arc::clone(&playback_engine);
+    let app_for_orch = app.clone();
+    std::thread::Builder::new()
+        .name("vox-pipeline".to_string())
+        .spawn(move || {
+            orchestrator.run_event_loop(
+                vox_event_rx,
+                tts_model_dir,
+                playback_for_orch,
+                app_for_orch,
+            );
+        })
+        .map_err(|e| e.to_string())?;
+
+    log::info!("[Pipeline] Phase 4 pipeline online (LLM + TTS + Playback)");
+
+    // ── 8. Store in state ────────────────────────────────────────────────────
     *lock = Some(VoxEngine {
         audio_stream,
         stt_tx,

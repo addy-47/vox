@@ -1,6 +1,6 @@
 [package]
 name = "Vox"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -33,7 +33,18 @@ env_logger = "0.11"
 gtk = { version = "0.18", features = ["v3_24"] }
 cairo-rs = "0.18"
 
-[dev-dependencies]
-# WAV file loading for integration tests
+# Phase 4 — LLM runtime (llama.cpp Rust bindings, compiles llama.cpp from source, CPU-only)
+llama-cpp-2 = "0.1.146"
+
+# Phase 4 — TTS ONNX runtime (load-dynamic per Directive 1: shares libonnxruntime with sherpa-onnx)
+ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
+
+# Phase 4 — Tensor manipulation for TTS ONNX inputs/outputs
+ndarray = "0.16"
+
+# Reference voice WAV loading for TTS speaker conditioning
 hound = "3"
+
+[dev-dependencies]
+# Helpers for integration tests
 chrono = "0.4"
