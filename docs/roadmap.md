@@ -97,7 +97,7 @@ audio → VAD → event stream → UI reacts
 
 ---
 
-## Phase 0.4.0 — LLM Integration
+## Phase 0.4.0 — Runtime infernce LLM + TTS 
 
 **Goal:** Real-time reasoning with minimal latency
 
@@ -131,7 +131,7 @@ audio → VAD → event stream → UI reacts
 
 ---
 
-## Phase 0.5.0 — TTS + Full Real-Time Loop (CRITICAL)
+## Phase 0.5.0 — Full Real-Time Loop frontend integration (CRITICAL)
 
 **Goal:** Complete voice-to-voice interaction loop
 
