@@ -5,10 +5,23 @@ import { Minus, Square, X } from "lucide-react";
 
 export const TitleBar: React.FC = () => {
   const [isTauri, setIsTauri] = useState(false);
+  const [isCloseHovered, setIsCloseHovered] = useState(false);
 
   useEffect(() => {
     // Check if we are running in Tauri
     setIsTauri(!!(window as any).__TAURI_INTERNALS__);
+
+    if ((window as any).__TAURI_INTERNALS__) {
+      const win = getCurrentWindow();
+      const unlistenFocus = win.listen("tauri://focus", () => setIsCloseHovered(false));
+      const unlistenBlur = win.listen("tauri://blur", () => setIsCloseHovered(false));
+      
+      return () => {
+        unlistenFocus.then(u => u());
+        unlistenBlur.then(u => u());
+      };
+    }
+    return () => {};
   }, []);
 
   const handleMinimize = async () => {
@@ -24,6 +37,7 @@ export const TitleBar: React.FC = () => {
   };
 
   const handleClose = async () => {
+    setIsCloseHovered(false);
     try {
       await getCurrentWindow().close();
     } catch (e) {}
@@ -44,21 +58,27 @@ export const TitleBar: React.FC = () => {
       <div className="flex items-center h-full">
         <button 
           onClick={handleMinimize}
-          className="flex items-center justify-center w-10 h-full text-[rgb(var(--foreground-muted))] hover:bg-white/5 hover:text-[rgb(var(--foreground))] transition-colors"
+          className="flex items-center justify-center w-10 h-full text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--foreground))]/5 hover:text-[rgb(var(--foreground))] transition-colors"
           title="Minimize"
         >
           <Minus size={14} />
         </button>
         <button 
           onClick={handleMaximize}
-          className="flex items-center justify-center w-10 h-full text-[rgb(var(--foreground-muted))] hover:bg-white/5 hover:text-[rgb(var(--foreground))] transition-colors"
+          className="flex items-center justify-center w-10 h-full text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--foreground))]/5 hover:text-[rgb(var(--foreground))] transition-colors"
           title="Maximize"
         >
           <Square size={12} />
         </button>
         <button 
           onClick={handleClose}
-          className="flex items-center justify-center w-10 h-full text-[rgb(var(--foreground-muted))] hover:bg-red-500 hover:text-white transition-colors"
+          onMouseEnter={() => setIsCloseHovered(true)}
+          onMouseLeave={() => setIsCloseHovered(false)}
+          className={`flex items-center justify-center w-10 h-full transition-colors ${
+            isCloseHovered 
+              ? "bg-red-500 text-white" 
+              : "text-[rgb(var(--foreground-muted))]"
+          }`}
           title="Close"
         >
           <X size={16} />

@@ -131,21 +131,28 @@ export const TrayApp: React.FC = () => {
         setPttStatus(event.payload.state as any);
       });
 
+      const u9 = await appWindow.listen<string>("theme-changed", (event) => {
+        if (!isMounted) return;
+        document.documentElement.setAttribute('data-theme', event.payload);
+      });
 
-      if (isMounted) {
-        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8];
-      } else {
-        u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8();
-      }
+      unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
     };
 
     setupListeners();
+
+    // Initial theme setup
+    invoke<any>("get_settings").then(settings => {
+      if (isMounted && settings?.theme) {
+        document.documentElement.setAttribute('data-theme', settings.theme);
+      }
+    });
 
     return () => {
       isMounted = false;
       unlisteners.forEach(u => u());
     };
-  }, [startNewInteraction, show, updatePartial, commitFinal, endSpeechSegment, startHold, history, visibilityState, hideImmediately]);
+  }, [pttStatus, startNewInteraction, updatePartial, commitFinal, show, endSpeechSegment, startHold, history, visibilityState, hideImmediately]);
 
   // ─── Actions ───────────────────────────────────────────────────────────────
   const copyToClipboard = () => {

@@ -23,40 +23,43 @@ export const Footer: React.FC<FooterProps> = ({
   viewingHistory, 
   historyCount 
 }) => {
-  if (!stats) return null;
-
   return (
-    <div className="px-7 py-4 mt-auto flex items-center justify-between z-10">
+    <div className="px-7 py-4 mt-auto flex items-center justify-between z-10 min-h-[60px]">
        <div className="flex items-center gap-6 opacity-40 hover:opacity-100 transition-opacity">
-          <div className="flex items-center gap-2">
-            <Cpu size={12} className="text-cyan-400" />
-            <span className="text-[10px] font-mono text-white/80 font-bold">{stats.cpu_usage.toFixed(1)}%</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Zap size={12} className="text-cyan-400" />
-            <span className="text-[10px] font-mono text-white/80 font-bold">{stats.memory_used_mb}MB</span>
-          </div>
+          {stats ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Cpu size={12} className="text-[rgb(var(--accent))]" />
+                <span className="text-[10px] font-mono text-[rgb(var(--foreground))]/80 font-bold">{stats.cpu_usage.toFixed(1)}%</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Zap size={12} className="text-[rgb(var(--accent))]" />
+                <span className="text-[10px] font-mono text-[rgb(var(--foreground))]/80 font-bold">{stats.memory_used_mb}MB</span>
+              </div>
+            </>
+          ) : (
+            <div className="text-[9px] font-mono text-[rgb(var(--foreground))]/20 uppercase tracking-widest">System Ready</div>
+          )}
        </div>
        
-       {historyCount > 0 && (
-         <div className="flex items-center gap-2 bg-white/5 rounded-lg p-0.5 border border-white/5">
-            <button 
-              onClick={onPrev}
-              disabled={historyIndex === 0}
-              className="p-1.5 rounded-md hover:bg-white/5 disabled:opacity-10 transition-all text-white/40 hover:text-cyan-400"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-            </button>
-            <div className="w-[1px] h-3 bg-white/10" />
-            <button 
-              onClick={onNext}
-              disabled={!viewingHistory}
-              className="p-1.5 rounded-md hover:bg-white/5 disabled:opacity-10 transition-all text-white/40 hover:text-cyan-400"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
-         </div>
-       )}
+       <div className="flex items-center gap-1">
+          <button 
+            onClick={onPrev}
+            disabled={historyIndex === 0 || historyCount === 0}
+            className="p-1.5 rounded-md hover:bg-[rgb(var(--accent))]/10 disabled:opacity-30 transition-all text-[rgb(var(--accent))] hover:scale-110 active:scale-95"
+            title="Previous Transcription"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <button 
+            onClick={onNext}
+            disabled={!viewingHistory || historyCount === 0}
+            className="p-1.5 rounded-md hover:bg-[rgb(var(--accent))]/10 disabled:opacity-30 transition-all text-[rgb(var(--accent))] hover:scale-110 active:scale-95"
+            title="Next Transcription"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+       </div>
     </div>
   );
 };

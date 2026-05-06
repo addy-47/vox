@@ -5,6 +5,7 @@ import { cn } from "../shared/lib/utils";
 import logo from "../assets/logo.webp";
 import logoLight from "../assets/logo-light.webp";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 
 const topNavItems = [
   { icon: Monitor, label: "HOME", path: "/" },
@@ -13,9 +14,20 @@ const topNavItems = [
 ];
 
 export const Sidebar: React.FC = () => {
-  const [theme, setTheme] = React.useState<'dark' | 'light'>(
-    (localStorage.getItem('theme') as 'dark' | 'light') || 'dark'
-  );
+  const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
+
+  React.useEffect(() => {
+    const initTheme = async () => {
+      try {
+        const settings = await invoke<any>("get_settings");
+        setTheme(settings.theme as 'dark' | 'light');
+      } catch (e) {
+        const stored = localStorage.getItem('theme') as 'dark' | 'light';
+        if (stored) setTheme(stored);
+      }
+    };
+    initTheme();
+  }, []);
 
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -25,11 +37,28 @@ export const Sidebar: React.FC = () => {
     try {
       if ((window as any).__TAURI_INTERNALS__) {
         getCurrentWindow().setTheme(theme);
+        // Only invoke update_theme if it's different from what's likely already in the backend
+        // to avoid infinite loops, though update_theme itself is idempotent.
+        invoke("update_theme", { theme });
       }
     } catch (e) {
       console.warn("Could not set Tauri window theme", e);
     }
   }, [theme]);
+
+  React.useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    
+    const setup = async () => {
+      const appWindow = getCurrentWindow();
+      unlisten = await appWindow.listen<string>("theme-changed", (event) => {
+        setTheme(event.payload as 'dark' | 'light');
+      });
+    };
+    
+    setup();
+    return () => { if (unlisten) unlisten(); };
+  }, []);
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
