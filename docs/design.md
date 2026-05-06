@@ -135,3 +135,16 @@ The shape language is sophisticated and modern. Standard cards use a **1rem (16p
 *   **Status Chips:** Small, uppercase labels with a "dot" indicator to show connectivity or mode (e.g., • LIVE).
 *   **Input Fields:** Minimalist underlines or glass-morphed fields with a shimmering focus state.
 *   **The Orb:** A 3D-effect fluid sphere. It should utilize CSS/SVG filters to create an iridescent "gas" effect that moves in response to voice frequency.
+
+## PTT Interaction & Waveform
+
+The **Push-To-Talk (PTT)** mode provides a high-intent capture experience.
+
+### Visual Language
+*   **Capture Overlay:** A deep translucent obsidian layer (`rgba(10, 12, 14, 0.4)`) with high-radius backdrop blur (`20px+`) that isolates the recording action.
+*   **Waveform Aesthetic:** Real-time frequency visualization using a high-fidelity bar renderer.
+    *   **Color:** Electric Cyan (`#22d3ee`) with varying opacity based on amplitude.
+    *   **Geometry:** Rounded bars (2px-3px width) with 2px gaps, creating a technical yet organic pulse.
+*   **State Feedback:**
+    *   **RECORDING:** Pulsing "Release to Send" label and active waveform.
+    *   **PROCESSING:** A minimalist infinite spinner with a tracked "Processing" status label in uppercase tracking.
