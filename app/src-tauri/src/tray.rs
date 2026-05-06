@@ -162,7 +162,7 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
             let x = screen_w - hud_w - padding_x;
             let y = (screen_h as f64 * padding_top_vh) as i32;
 
-            log::debug!("[TRAY] Setting input region: x={}, y={}, w={}, h={} (scale={})", x, y, hud_w, hud_h, scale_factor);
+            // log::debug!("[TRAY] Setting input region: x={}, y={}, w={}, h={} (scale={})", x, y, hud_w, hud_h, scale_factor);
 
             let rect = cairo::RectangleInt::new(x, y, hud_w, hud_h);
             let region = cairo::Region::create_rectangle(&rect);
