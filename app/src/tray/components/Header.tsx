@@ -26,19 +26,19 @@ export const Header: React.FC<HeaderProps> = ({
               opacity: isListening ? [0.4, 0.1, 0.4] : 0.05 
             }}
             transition={{ repeat: Infinity, duration: 2 }}
-            className="absolute w-5 h-5 rounded-full bg-cyan-400 blur-md"
+            className="absolute w-5 h-5 rounded-full bg-[rgb(var(--accent))] blur-md"
           />
-          <div className={`w-2.5 h-2.5 rounded-full z-10 transition-all duration-700 ${isListening ? 'bg-cyan-400 shadow-[0_0_10px_rgba(0,219,233,0.8)]' : 'bg-white/10'}`} />
+          <div className={`w-2.5 h-2.5 rounded-full z-10 transition-all duration-700 ${isListening ? 'bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)]' : 'bg-[rgb(var(--foreground))]/10'}`} />
         </div>
-        <span className="text-[11px] font-black tracking-[0.4em] text-white/30 uppercase">
-          Vox <span className="text-cyan-400/80">Live</span>
+        <span className="text-[11px] font-black tracking-[0.4em] text-[rgb(var(--foreground))]/60 uppercase">
+          Vox <span className="text-[rgb(var(--accent))]">Live</span>
         </span>
       </div>
       
       <div className="flex items-center gap-2">
         <button 
           onClick={(e) => { e.stopPropagation(); onTogglePtt(); }}
-          className={`p-2 rounded-lg transition-all active:scale-90 ${isPttActive ? 'text-cyan-400 bg-cyan-400/10' : 'text-white/20 hover:bg-white/5 hover:text-white/60'}`}
+          className={`p-2 rounded-lg transition-all active:scale-90 ${isPttActive ? 'text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10' : 'text-[rgb(var(--foreground))]/40 hover:bg-[rgb(var(--foreground))]/10 hover:text-[rgb(var(--foreground))]/80'}`}
         >
           <Mic size={16} />
         </button>
@@ -46,7 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
         {hasContent && (
           <button 
             onClick={(e) => { e.stopPropagation(); onCopy(); }}
-            className="p-2 rounded-lg hover:bg-cyan-400/10 transition-all text-white/20 hover:text-cyan-400 active:scale-90"
+            className="p-2 rounded-lg hover:bg-[rgb(var(--accent))]/10 transition-all text-[rgb(var(--foreground))]/40 hover:text-[rgb(var(--accent))] active:scale-90"
           >
             {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
@@ -54,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="p-2 rounded-lg hover:bg-white/5 transition-all text-white/10 hover:text-white/60 active:scale-90"
+          className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/10 transition-all text-[rgb(var(--foreground))]/30 hover:text-[rgb(var(--foreground))]/80 active:scale-90"
         >
           <X size={16} />
         </button>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Brain, ChevronDown, Activity, Volume2, Shield, Save, Sun, Moon } from "lucide-react";
 import { cn } from "../../shared/lib/utils";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"core" | "tray">("core");
@@ -8,14 +10,45 @@ export const Settings: React.FC = () => {
   const [selectedVoice, setSelectedVoice] = useState("ETHER");
   const [alwaysListening, setAlwaysListening] = useState(true);
   const [secureMode, setSecureMode] = useState(true);
-  const [theme, setTheme] = useState<'dark' | 'light'>(
-    (localStorage.getItem('theme') as 'dark' | 'light') || 'dark'
-  );
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    const initTheme = async () => {
+      try {
+        const settings = await invoke<any>("get_settings");
+        setTheme(settings.theme as 'dark' | 'light');
+      } catch (e) {
+        const stored = localStorage.getItem('theme') as 'dark' | 'light';
+        if (stored) setTheme(stored);
+      }
+    };
+    initTheme();
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
+    
+    try {
+      if ((window as any).__TAURI_INTERNALS__) {
+        invoke("update_theme", { theme });
+      }
+    } catch (e) {
+      console.warn("Could not sync theme to backend", e);
+    }
   }, [theme]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const setup = async () => {
+      const appWindow = getCurrentWindow();
+      unlisten = await appWindow.listen<string>("theme-changed", (event) => {
+        setTheme(event.payload as 'dark' | 'light');
+      });
+    };
+    setup();
+    return () => { if (unlisten) unlisten(); };
+  }, []);
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 

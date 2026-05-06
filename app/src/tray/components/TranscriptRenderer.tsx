@@ -42,7 +42,6 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
                <Waveform 
                 data={amplitudeBuffer} 
                 height={60} 
-                barColor="linear-gradient(to bottom, #22d3ee, #0891b2)" 
                 barWidth={3} 
                 barGap={2}
                 className="w-full"
@@ -59,13 +58,13 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
             animate={{ opacity: 1, y: 0 }}
             className="space-y-2"
           >
-            <div className="text-[17px] leading-snug font-medium tracking-tight text-white/90 drop-shadow-sm">
+            <div className="text-[17px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 drop-shadow-sm">
               {displayText}
               {(isListening || pttStatus === 'PROCESSING') && (
                 <motion.span 
                   animate={{ opacity: [0, 1, 0] }}
                   transition={{ repeat: Infinity, duration: 0.8 }}
-                  className={`inline-block w-[2px] h-[1em] ml-1 align-middle shadow-[0_0_8px_rgba(0,219,233,0.8)] ${pttStatus === 'PROCESSING' ? 'bg-amber-400' : 'bg-cyan-400'}`}
+                  className={`inline-block w-[2px] h-[1em] ml-1 align-middle shadow-[0_0_8px_rgba(var(--accent),0.8)] ${pttStatus === 'PROCESSING' ? 'bg-amber-400' : 'bg-[rgb(var(--accent))]'}`}
                 />
               )}
             </div>
@@ -79,13 +78,13 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
           >
             {pttStatus === 'PROCESSING' ? (
               <div className="flex flex-col items-center gap-3">
-                <div className="w-8 h-8 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
-                <span className="text-[10px] text-cyan-400/60 font-bold uppercase tracking-[0.2em]">Processing</span>
+                <div className="w-8 h-8 border-2 border-[rgb(var(--accent))]/30 border-t-[rgb(var(--accent))] rounded-full animate-spin" />
+                <span className="text-[10px] text-[rgb(var(--accent))]/60 font-bold uppercase tracking-[0.2em]">Processing</span>
               </div>
             ) : (
               <>
-                <Activity size={24} className="mb-2 text-cyan-400/40 animate-pulse" />
-                <p className="text-[9px] font-black uppercase tracking-[0.4em] text-white/20">
+                <Activity size={24} className="mb-2 text-[rgb(var(--accent))]/40 animate-pulse" />
+                <p className="text-[9px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/40">
                   Standby
                 </p>
               </>

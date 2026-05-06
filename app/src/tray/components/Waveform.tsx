@@ -72,23 +72,28 @@ export const Waveform = ({
       const barCount = Math.floor(rect.width / (barWidth + barGap))
       const centerY = rect.height / 2
 
-      // Create gradient if requested
+      // Create gradient if requested or as default
       let gradient: CanvasGradient | null = null
+      const computedStyle = getComputedStyle(canvas);
+      const accent = `rgb(${computedStyle.getPropertyValue("--accent").trim() || "0, 219, 233"})`;
+      const accentDark = `rgb(${computedStyle.getPropertyValue("--accent-dark").trim() || "8, 145, 178"})`;
+
       if (barColor && (barColor.includes('gradient') || barColor.includes(','))) {
-        // Simple extraction for cyan-dark cyan gradient or similar
-        // For now, let's just support a vertical gradient based on provided colors
         const colors = barColor.match(/#[a-fA-F0-9]{3,6}|rgba?\([^)]+\)/g);
         if (colors && colors.length >= 2) {
           gradient = ctx.createLinearGradient(0, 0, 0, rect.height);
           gradient.addColorStop(0, colors[0]);
           gradient.addColorStop(1, colors[1]);
         }
+      } else if (!barColor) {
+        gradient = ctx.createLinearGradient(0, 0, 0, rect.height);
+        gradient.addColorStop(0, accent);
+        gradient.addColorStop(1, accentDark);
       }
 
       const baseColor =
         barColor && !gradient ? barColor :
-        getComputedStyle(canvas).getPropertyValue("--foreground") ||
-        "#000"
+        `rgb(${getComputedStyle(canvas).getPropertyValue("--accent").trim() || "0, 219, 233"})`
 
       for (let i = 0; i < barCount; i++) {
         const dataIndex = Math.floor((i / barCount) * data.length)
