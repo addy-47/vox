@@ -13,12 +13,31 @@ export const TitleBar: React.FC = () => {
 
     if ((window as any).__TAURI_INTERNALS__) {
       const win = getCurrentWindow();
-      const unlistenFocus = win.listen("tauri://focus", () => setIsCloseHovered(false));
-      const unlistenBlur = win.listen("tauri://blur", () => setIsCloseHovered(false));
+      
+      // Clear hover state on any focus change
+      const setupListeners = async () => {
+        const unlistenFocus = await win.listen("tauri://focus", () => {
+          setIsCloseHovered(false);
+        });
+        const unlistenBlur = await win.listen("tauri://blur", () => {
+          setIsCloseHovered(false);
+        });
+        
+        return () => {
+          unlistenFocus();
+          unlistenBlur();
+        };
+      };
+
+      const cleanupPromise = setupListeners();
+      
+      // Also use standard web focus event for redundancy
+      const handleWebFocus = () => setIsCloseHovered(false);
+      window.addEventListener('focus', handleWebFocus);
       
       return () => {
-        unlistenFocus.then(u => u());
-        unlistenBlur.then(u => u());
+        cleanupPromise.then(cleanup => cleanup());
+        window.removeEventListener('focus', handleWebFocus);
       };
     }
     return () => {};

@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="app/public/logo-light.png" width="400" alt="Vox Banner">
+  <img src="app/public/Vox.png" width="400" alt="Vox Banner">
   <h3>The Ambient Intelligence Layer for the Native Edge.</h3>
   <p align="center">
     <a href="#-vox-live-the-interaction-surface">Vox Live</a> •
