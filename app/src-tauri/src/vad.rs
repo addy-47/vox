@@ -30,10 +30,13 @@ impl VadEngine {
             silero_vad: Default::default(),
             ten_vad: TenVadModelConfig {
                 model: Some(model_path.to_string_lossy().into()),
-                threshold: 0.6,
-                min_silence_duration: 0.8,
-                min_speech_duration: 0.1,
-                window_size: 160, // 10ms at 16kHz
+                // Official TenVAD defaults from sherpa-onnx/csrc/ten-vad-model-config.h
+                // threshold=0.5, window_size=256 (16ms at 16kHz), min_silence=0.5, min_speech=0.25
+                // Using 0.6 caused first 3s of speech to be dropped (warm-up frames below threshold)
+                threshold: 0.5,
+                min_silence_duration: 0.5,
+                min_speech_duration: 0.25,
+                window_size: 256, // 16ms at 16kHz — TenVAD default (NOT 160 which is SileroVAD)
                 max_speech_duration: 30.0,
             },
             sample_rate: 16000,
@@ -93,12 +96,12 @@ impl VadEngine {
         let mut utterance_buffer: Vec<f32> = Vec::new();
         let mut samples_since_partial = 0;
         
-        // 10ms chunks (160 samples at 16kHz)
-        let mut chunk = vec![0.0f32; 160];
+        // 16ms chunks (256 samples at 16kHz) — matches TenVAD window_size default
+        let mut chunk = vec![0.0f32; 256];
 
         loop {
-            // Check if we have at least 10ms of audio available
-            if consumer.occupied_len() >= 160 {
+            // Check if we have at least 16ms of audio available (256 samples at 16kHz)
+            if consumer.occupied_len() >= 256 {
                 consumer.pop_slice(&mut chunk);
 
                 // Mode-based routing
@@ -109,14 +112,17 @@ impl VadEngine {
                 };
 
                 if mode == crate::state::InteractionMode::Ptt {
-                    self.detector.accept_waveform(&chunk);
-                    let detected = self.detector.detected();
-                    crate::ptt::handle_ptt_audio_sync(&app, &chunk, detected);
+                    // PTT mode: user explicitly controls recording — skip VAD classification.
+                    // Passing all audio regardless of VAD state ensures no onset frames are lost.
+                    // The VAD model is NOT called to avoid corrupting its RNN hidden state;
+                    // we preserve it so passive mode resumes cleanly after PTT ends.
+                    crate::ptt::handle_ptt_audio_sync(&app, &chunk);
                     
-                    // Ensure VAD state is clean when we return to passive mode later
+                    // If we were mid-utterance in passive mode, cleanly exit that state
                     if in_speech {
                         in_speech = false;
-                        self.detector.reset();
+                        utterance_buffer.clear();
+                        samples_since_partial = 0;
                     }
                     continue;
                 }
@@ -190,7 +196,8 @@ impl VadEngine {
             } else {
                 // Throttle: Prevent the loop from spinning and pinning a CPU core 
                 // when the ring buffer is empty.
-                std::thread::sleep(std::time::Duration::from_millis(5));
+                // Throttle: 3ms sleep — enough to yield without adding perceptible latency
+                std::thread::sleep(std::time::Duration::from_millis(3));
             }
         }
     }

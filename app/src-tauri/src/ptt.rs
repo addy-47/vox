@@ -33,27 +33,35 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
 pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
     let state: State<'_, AppState> = app.state();
     
-    let mut recording = state.ptt.is_recording.lock().await;
-    let buffer = state.ptt.audio_buffer.lock().await;
-    let session = state.ptt.session_id.lock().await;
-    let mut mode = state.interaction.lock().await;
+    // Extract everything we need and drop the locks immediately to prevent 
+    // pipeline freezes while waiting for the STT channel.
+    let (session, buffer_clone) = {
+        let mut recording = state.ptt.is_recording.lock().await;
+        if !*recording {
+            return Ok(());
+        }
 
-    if !*recording {
-        return Ok(());
-    }
+        let buffer = state.ptt.audio_buffer.lock().await;
+        let session = state.ptt.session_id.lock().await;
+        let mut mode = state.interaction.lock().await;
 
-    *recording = false;
-    *mode = InteractionMode::Passive;
-    log::info!("[PTT] <<< Recording stopped. Finalizing {} samples...", buffer.len());
-    
-    let _ = app.emit("ptt_status", json!({ "state": "PROCESSING", "session_id": *session }));
+        *recording = false;
+        *mode = InteractionMode::Passive;
+        log::info!("[PTT] <<< Recording stopped. Finalizing {} samples...", buffer.len());
+        
+        (*session, buffer.clone())
+    }; 
+
+    let _ = app.emit("ptt_status", json!({ "state": "PROCESSING", "session_id": session }));
 
     // Send the full buffer to STT for finalization
     let engine_lock = state.engine.lock().await;
-    
     if let Some(engine) = engine_lock.as_ref() {
-        let _ = engine.stt_tx.send(SttCommand::Final(*session, buffer.clone())).await;
-        log::info!("[PTT] Sent final buffer to STT worker (session: {})", *session);
+        // We use .send().await here because it's the final buffer; we MUST ensure it's delivered.
+        // Since we dropped the ptt locks above, the VAD thread can continue processing 
+        // other tasks even if this send blocks temporarily.
+        let _ = engine.stt_tx.send(SttCommand::Final(session, buffer_clone)).await;
+        log::info!("[PTT] Sent final buffer to STT worker (session: {})", session);
     } else {
         log::error!("[PTT] Engine not running, cannot finalize transcription.");
     }
@@ -84,7 +92,13 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
 /// Maximum samples allowed in PTT buffer (approx 10 minutes at 16kHz)
 const MAX_PTT_SAMPLES: usize = 16000 * 60 * 10;
 
-pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32], is_speech: bool) {
+/// Appends audio samples to the PTT buffer unconditionally.
+/// 
+/// In PTT mode the user explicitly controls when recording starts/stops with 
+/// a button. Unlike passive VAD mode, silence must NOT be discarded — doing so
+/// causes onset frames (first ~300ms of speech) to be lost during VAD warm-up,
+/// producing empty or truncated transcripts.
+pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
     let state: State<'_, AppState> = app.state();
     
     let recording = state.ptt.is_recording.blocking_lock();
@@ -92,23 +106,22 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32], is_speech: bool) 
 
     let mut buffer = state.ptt.audio_buffer.blocking_lock();
     
-    // Memory Safety: Discard silent chunks to prevent massive buffers 
-    // and OOM if user forgets to release PTT.
-    if is_speech {
-        if buffer.len() < MAX_PTT_SAMPLES {
-            buffer.extend_from_slice(samples);
-        } else {
-            // Cap reached: stop recording to prevent OOM
-            drop(buffer);
-            drop(recording);
-            let app_clone = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = ptt_stop(app_clone).await;
-            });
-            return;
-        }
+    // Capture ALL audio — the user's button press is the gate.
+    if buffer.len() < MAX_PTT_SAMPLES {
+        buffer.extend_from_slice(samples);
+    } else {
+        // Safety Cap: Stop recording if it exceeds 10 minutes (OOM protection)
+        log::warn!("[PTT] Hard limit reached ({} samples). Stopping recording.", MAX_PTT_SAMPLES);
+        drop(buffer);
+        drop(recording);
+        let app_clone = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = ptt_stop(app_clone).await;
+        });
+        return;
     }
 
+    // Advance partial counter only for appended samples (not silence)
     let mut samples_since = state.ptt.samples_since_partial.blocking_lock();
     *samples_since += samples.len();
 
@@ -132,7 +145,7 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32], is_speech: bool) 
     *samples_waveform += samples.len();
 
     if *samples_waveform >= 960 {
-        // Calculate RMS for waveform
+        // Calculate RMS on the actual samples for live waveform feedback
         let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
         let rms = (sum_sq / samples.len() as f32).sqrt();
 
