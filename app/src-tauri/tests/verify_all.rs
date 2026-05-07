@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-use vox_ui_lib::stt::SttEngine;
+use vox_ui_lib::services::stt::SttEngine;
 use std::io::Write;
 
 fn model_dir() -> PathBuf {

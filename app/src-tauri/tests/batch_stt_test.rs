@@ -5,7 +5,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use vox_ui_lib::stt::SttEngine;
+use vox_ui_lib::services::stt::SttEngine;
 
 /// Resolve path to model dir relative to the cargo manifest.
 fn model_dir() -> PathBuf {
