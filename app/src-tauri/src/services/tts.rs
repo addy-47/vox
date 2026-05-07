@@ -59,6 +59,7 @@ impl TtsEngine {
     pub fn synthesize_chunk(
         &mut self,
         text: &str,
+        voice_sid: i32,
         session_id: u32,
         cancel: Arc<AtomicBool>,
         event_tx: Sender<VoxEvent>,
@@ -68,7 +69,7 @@ impl TtsEngine {
         }
 
         let gen_config = GenerationConfig {
-            sid: 0, // Default voice index
+            sid: voice_sid, 
             speed: 1.0,
             ..Default::default()
         };

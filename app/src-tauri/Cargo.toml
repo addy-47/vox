@@ -47,6 +47,7 @@ ndarray = "0.17"
 # Reference voice WAV loading for TTS speaker conditioning
 hound = "3"
 encoding_rs = "0.8.35"
+regex = "1.12.3"
 
 [dev-dependencies]
 # Helpers for integration tests

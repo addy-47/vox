@@ -126,13 +126,9 @@ impl LlmWorker {
         cancel_flag: &Arc<AtomicBool>,
         tx: &Sender<VoxEvent>,
     ) -> Result<()> {
-        // Build chat-formatted prompt (Gemma instruct format)
-        let prompt = format!(
-            "<start_of_turn>system\n{}<end_of_turn>\n\
-             <start_of_turn>user\n{}<end_of_turn>\n\
-             <start_of_turn>model\n",
-            SYSTEM_PROMPT, user_text
-        );
+        // Gemma 2/4 Instruct Format:
+        // <start_of_turn>user\n{system}\n\n{user}<end_of_turn>\n<start_of_turn>model\n
+        let prompt = self.format_prompt(user_text);
 
         // Tokenize
         let tokens = self.model
@@ -197,10 +193,13 @@ impl LlmWorker {
                 .token_to_piece(token, &mut decoder, false, None)
                 .unwrap_or_default();
 
-            if !token_str.is_empty() {
+            let cleaned = Self::strip_tags(&token_str);
+            log::debug!("[LLM] raw: {:?} -> cleaned: {:?}", token_str, cleaned);
+
+            if !cleaned.trim().is_empty() {
                 let _ = tx.blocking_send(VoxEvent::LlmToken {
                     session_id,
-                    token: token_str,
+                    token: cleaned,
                 });
             }
 
@@ -215,8 +214,8 @@ impl LlmWorker {
                 .map_err(|e| anyhow!("[LLM] Batch add (gen) failed: {}", e))?;
             n_cur += 1;
 
-            if n_cur > (tokens.len() as i32 + 100) {
-                log::warn!("[LLM] Safety limit reached (100 tokens). stopping.");
+            if n_cur > (tokens.len() as i32 + 512) {
+                log::warn!("[LLM] Safety limit reached (512 tokens). stopping.");
                 break;
             }
 
@@ -227,5 +226,32 @@ impl LlmWorker {
         let _ = tx.blocking_send(VoxEvent::LlmFinished { session_id });
         log::info!("[LLM] Generation complete (session: {}, tokens: {})", session_id, n_cur);
         Ok(())
+    }
+
+    fn format_prompt(&self, text: &str) -> String {
+        // Gemma 4 E2B-it (March 2026) uses <|turn>role<turn|> format.
+        // It supports a native system role.
+        format!(
+            "<|turn>system {}<turn|>\n<|turn>user {}<turn|>\n<|turn>model\n",
+            SYSTEM_PROMPT, text
+        )
+    }
+
+    fn strip_tags(text: &str) -> String {
+        // Gemma 4 uses <|turn>role, <turn|>, and <|channel>thought blocks.
+        // This function is still called per-token in the LLM worker, which is 
+        // suboptimal for multi-token tags, but we handle the most obvious leaks here.
+        let mut cleaned = text.to_string();
+        
+        // 1. Remove markers and common role labels
+        let re_tags = regex::Regex::new(r"<\|turn>|<turn\|>|<\|channel>|<channel\|>|system\n|user\n|model\n").unwrap();
+        cleaned = re_tags.replace_all(&cleaned, "").to_string();
+        
+        if cleaned.contains("<|") || cleaned.contains("<start") || cleaned.contains("<end") {
+             log::warn!("[LLM] Possible leaked partial tag detected: {:?}", cleaned);
+             return "".to_string();
+        }
+        
+        cleaned
     }
 }
