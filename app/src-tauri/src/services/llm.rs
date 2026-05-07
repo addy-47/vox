@@ -215,6 +215,11 @@ impl LlmWorker {
                 .map_err(|e| anyhow!("[LLM] Batch add (gen) failed: {}", e))?;
             n_cur += 1;
 
+            if n_cur > (tokens.len() as i32 + 100) {
+                log::warn!("[LLM] Safety limit reached (100 tokens). stopping.");
+                break;
+            }
+
             ctx.decode(&mut batch)
                 .map_err(|e| anyhow!("[LLM] Decode step failed: {}", e))?;
         }
