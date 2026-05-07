@@ -14,10 +14,10 @@ Phase 4 establishes the **native realtime inference runtime** for Vox.
 
 This phase is NOT:
 
-* frontend synchronization
-* orb animation integration
-* advanced UI logic
-* persistent memory systems
+- frontend synchronization
+- orb animation integration
+- advanced UI logic
+- persistent memory systems
 
 This phase ONLY focuses on:
 
@@ -27,10 +27,10 @@ STT → LLM → TTS → Playback
 
 using:
 
-* realtime-safe threading
-* blocking native inference
-* interruption-aware orchestration
-* low-latency streaming
+- realtime-safe threading
+- blocking native inference
+- interruption-aware orchestration
+- low-latency streaming
 
 ---
 
@@ -42,8 +42,8 @@ using:
 
 Both:
 
-* `llama.cpp`
-* `onnxruntime`
+- `llama.cpp`
+- `onnxruntime`
 
 are fundamentally blocking native workloads.
 
@@ -86,9 +86,9 @@ Partial transcripts are UI-only.
 
 Internal backend systems communicate through:
 
-* lightweight events
-* channels
-* atomics
+- lightweight events
+- channels
+- atomics
 
 Frontend IPC is ONLY a bridge layer.
 
@@ -104,9 +104,9 @@ Arc<AtomicBool>
 
 NOT:
 
-* channels
-* async cancellation
-* event messages
+- channels
+- async cancellation
+- event messages
 
 because blocking C++ loops cannot be interrupted safely otherwise. ([GitHub][1])
 
@@ -133,11 +133,11 @@ src/
 
 Reason:
 
-* simpler ownership
-* simpler channels
-* shared atomics
-* faster compilation
-* avoids over-engineering
+- simpler ownership
+- simpler channels
+- shared atomics
+- faster compilation
+- avoids over-engineering
 
 ---
 
@@ -232,8 +232,8 @@ TTS output
 
 Neural AEC is too expensive for:
 
-* CPU-only systems
-* 8GB RAM target
+- CPU-only systems
+- 8GB RAM target
 
 ---
 
@@ -269,9 +269,9 @@ if playback_active.load(Ordering::Relaxed) {
 
 This prevents:
 
-* self-triggering
-* feedback loops
-* recursive STT
+- self-triggering
+- feedback loops
+- recursive STT
 
 ---
 
@@ -285,8 +285,8 @@ audio_output_mode = Headset
 
 Behavior:
 
-* microphone remains fully active
-* true barge-in enabled
+- microphone remains fully active
+- true barge-in enabled
 
 If VAD detects speech:
 
@@ -316,12 +316,12 @@ src/pipeline.rs
 
 Responsibilities:
 
-* route events
-* coordinate workers
-* manage cancellation
-* enforce audio routing policy
-* own session lifecycle
-* own playback policy
+- route events
+- coordinate workers
+- manage cancellation
+- enforce audio routing policy
+- own session lifecycle
+- own playback policy
 
 ---
 
@@ -378,12 +378,12 @@ Implement native llama.cpp realtime generation worker.
 
 ## Responsibilities
 
-* load GGUF
-* maintain llama context
-* token streaming
-* cancellation checking
-* prompt formatting
-* generation telemetry
+- load GGUF
+- maintain llama context
+- token streaming
+- cancellation checking
+- prompt formatting
+- generation telemetry
 
 ---
 
@@ -457,8 +457,8 @@ language_model_q4.onnx
 
 Avoid:
 
-* fp16
-* q4f16
+- fp16
+- q4f16
 
 for CPU-first systems.
 
@@ -466,11 +466,11 @@ for CPU-first systems.
 
 ## Responsibilities
 
-* ONNX session management
-* text chunk synthesis
-* chunk streaming
-* cancellation checks
-* telemetry emission
+- ONNX session management
+- text chunk synthesis
+- chunk streaming
+- cancellation checks
+- telemetry emission
 
 ---
 
@@ -506,9 +506,9 @@ CPAL output callback
 
 NOT:
 
-* tokio timers
-* sleeps
-* async intervals
+- tokio timers
+- sleeps
+- async intervals
 
 ---
 
@@ -530,14 +530,14 @@ Playback MUST NOT begin immediately.
 
 Instead:
 
-* accumulate ~300ms audio
-* THEN begin playback
+- accumulate ~300ms audio
+- THEN begin playback
 
 This absorbs:
 
-* ONNX jitter
-* CPU spikes
-* scheduling delays
+- ONNX jitter
+- CPU spikes
+- scheduling delays
 
 without audio stuttering.
 
@@ -601,9 +601,9 @@ Every step MUST be independently testable.
 
 Verify:
 
-* GGUF loads
-* tokens stream
-* cancellation works
+- GGUF loads
+- tokens stream
+- cancellation works
 
 ---
 
@@ -629,10 +629,10 @@ prompt
 
 ## Success Criteria
 
-* model loads successfully
-* tokens stream incrementally
-* cancellation aborts instantly
-* no deadlock
+- model loads successfully
+- tokens stream incrementally
+- cancellation aborts instantly
+- no deadlock
 
 ---
 
@@ -644,9 +644,9 @@ prompt
 
 Verify:
 
-* ONNX graph loads
-* audio chunks generate
-* cancellation works
+- ONNX graph loads
+- audio chunks generate
+- cancellation works
 
 ---
 
@@ -672,9 +672,9 @@ text
 
 ## Success Criteria
 
-* valid audio produced
-* chunks stream incrementally
-* cancellation interrupts synthesis safely
+- valid audio produced
+- chunks stream incrementally
+- cancellation interrupts synthesis safely
 
 ---
 
@@ -686,9 +686,9 @@ text
 
 Verify:
 
-* jitter buffering
-* stable playback
-* no underruns
+- jitter buffering
+- stable playback
+- no underruns
 
 ---
 
@@ -714,9 +714,9 @@ simulate delayed chunk arrival
 
 ## Success Criteria
 
-* no audio stutter
-* playback remains continuous
-* jitter buffer absorbs delays
+- no audio stutter
+- playback remains continuous
+- jitter buffer absorbs delays
 
 ---
 
@@ -728,8 +728,8 @@ simulate delayed chunk arrival
 
 Verify:
 
-* realtime interruption
-* atomic cancellation propagation
+- realtime interruption
+- atomic cancellation propagation
 
 ---
 
@@ -757,9 +757,9 @@ LLM generating
 
 ## Success Criteria
 
-* interruption latency <200ms
-* playback stops immediately
-* no thread deadlock
+- interruption latency <200ms
+- playback stops immediately
+- no thread deadlock
 
 ---
 
@@ -771,8 +771,8 @@ LLM generating
 
 Verify:
 
-* Speaker mode mic ducking
-* Headset mode true barge-in
+- Speaker mode mic ducking
+- Headset mode true barge-in
 
 ---
 
@@ -788,17 +788,17 @@ tests/audio_mode_test.rs
 
 ## Speaker Mode Success Criteria
 
-* playback_active=true
-* mic frames dropped
-* VAD never self-triggers
+- playback_active=true
+- mic frames dropped
+- VAD never self-triggers
 
 ---
 
 ## Headset Mode Success Criteria
 
-* VAD remains active
-* speech_start triggers cancellation
-* true interruption works
+- VAD remains active
+- speech_start triggers cancellation
+- true interruption works
 
 ---
 
@@ -837,10 +837,10 @@ input.wav
 
 ## Success Criteria
 
-* complete pipeline executes
-* no blocking
-* no crashes
-* cancellation remains functional
+- complete pipeline executes
+- no blocking
+- no crashes
+- cancellation remains functional
 
 ---
 
@@ -871,16 +871,16 @@ This destroys responsiveness.
 
 DO NOT build in Phase 4:
 
-* orb synchronization
-* frontend animation logic
-* persistent conversations
-* memory systems
-* vector DB
-* RAG
-* speculative LLM execution
-* meeting mode
-* multi-model routing
-* tool calling
+- orb synchronization
+- frontend animation logic
+- persistent conversations
+- memory systems
+- vector DB
+- RAG
+- speculative LLM execution
+- meeting mode
+- multi-model routing
+- tool calling
 
 ---
 
@@ -898,17 +898,17 @@ audio
 
 works with:
 
-* realtime-safe cancellation
-* stable playback
-* no deadlocks
-* no feedback loops
-* independent test coverage
-* latency telemetry
+- realtime-safe cancellation
+- stable playback
+- no deadlocks
+- no feedback loops
+- independent test coverage
+- latency telemetry
 
 under:
 
-* CPU-only execution
-* 8GB RAM constraints
+- CPU-only execution
+- 8GB RAM constraints
 
 ---
 
@@ -924,22 +924,22 @@ native realtime voice runtime
 
 The system is constrained by:
 
-* audio hardware timing
-* CPU scheduling
-* memory bandwidth
-* blocking inference physics
+- audio hardware timing
+- CPU scheduling
+- memory bandwidth
+- blocking inference physics
 
 Every architectural decision MUST prioritize:
 
-* low latency
-* interruption responsiveness
-* realtime stability
+- low latency
+- interruption responsiveness
+- realtime stability
 
 over:
 
-* maximum intelligence
-* giant models
-* feature complexity
+- maximum intelligence
+- giant models
+- feature complexity
 
 ---
 

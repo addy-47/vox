@@ -146,7 +146,13 @@ Includes:
 
 * ONNX Runtime
 * llama.cpp
-* TTS engine
+* TTS engine (Kokoro + espeak-ng-data)
+
+> [!IMPORTANT]
+> **Linux Build Requirement**: To avoid `std::bad_alloc` crashes in `llama.cpp` caused by `libstdc++` bugs, Linux builds MUST link against LLVM's `libc++`.
+>
+> Run: `sudo apt install libc++-dev libc++abi-dev`
+> Build with: `CXXFLAGS="-stdlib=libc++" LDFLAGS="-lc++"`
 
 ---
 
