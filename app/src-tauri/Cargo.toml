@@ -37,15 +37,6 @@ cairo-rs = "0.18"
 llama-cpp-2 = "0.1.146"
 llama-cpp-sys-2 = "0.1.146"
 
-
-# Phase 4 — TTS ONNX runtime (load-dynamic per Directive 1: shares libonnxruntime with sherpa-onnx)
-ort = { version = "2.0.0-rc.12", features = ["load-dynamic", "ndarray"] }
-
-# Phase 4 — Tensor manipulation for TTS ONNX inputs/outputs
-ndarray = "0.17"
-
-# Reference voice WAV loading for TTS speaker conditioning
-hound = "3"
 encoding_rs = "0.8.35"
 regex = "1.12.3"
 
