@@ -1,69 +1,56 @@
-/// Integration test: TTS runtime (Chatterbox multilingual ONNX)
+/// Integration test: TTS runtime (Kokoro-82M via sherpa-onnx)
 ///
 /// Run with:
-///   cargo test --test tts_test -- --ignored --nocapture
+///   cargo test --test tts_test -- --ignored --nocapture --test-threads=1
 ///
-/// The schema validation tests (non-ignored) verify that the ONNX files exist
-/// and match the hardcoded tensor shapes from tts.rs.
+/// The schema validation tests (non-ignored) verify that the model files exist.
 
 use std::path::PathBuf;
 
-fn onnx_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/chatterbox/onnx")
-}
-
 fn model_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/chatterbox")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/kokoro")
 }
 
 // ─── File Existence (always run) ─────────────────────────────────────────────
 
 #[test]
-fn test_chatterbox_onnx_files_exist() {
-    let onnx = onnx_dir();
+fn test_kokoro_assets_exist() {
+    let dir = model_dir();
     for file in &[
-        "speech_encoder.onnx",
-        "embed_tokens.onnx",
-        "language_model_q4.onnx",
-        "conditional_decoder.onnx",
+        "model.onnx",
+        "voices.bin",
+        "tokens.txt",
     ] {
-        let path = onnx.join(file);
-        // Follow symlinks — these are HF hub symlinks
-        let resolved = path.canonicalize()
-            .unwrap_or_else(|_| path.clone());
+        let path = dir.join(file);
         assert!(
-            resolved.exists(),
-            "[TTS] ONNX file not found (or broken symlink): {:?}",
+            path.exists(),
+            "[TTS] Asset not found: {:?}",
             path
         );
-        println!("[TTS TEST] {:?} → {:?}", file, resolved);
+        println!("[TTS TEST] Found asset: {:?}", path);
     }
+    
+    let espeak = dir.join("espeak-ng-data");
+    assert!(espeak.exists(), "[TTS] espeak-ng-data directory missing at {:?}", espeak);
 }
 
-#[test]
-fn test_chatterbox_tokenizer_exists() {
-    let path = model_dir().join("tokenizer.json");
-    let resolved = path.canonicalize().unwrap_or_else(|_| path.clone());
-    assert!(resolved.exists(), "[TTS] tokenizer.json missing at {:?}", path);
-}
-
-// ─── Model Load + Schema Validation (ignored — requires ort runtime) ─────────
+// ─── Model Load (ignored — requires runtime) ─────────────────────────────────
 
 #[test]
 #[ignore]
-fn test_tts_engine_loads_and_validates_schema() {
+fn test_tts_engine_loads() {
     use vox_ui_lib::services::tts::TtsEngine;
 
     let dir = model_dir();
-    let mut engine = TtsEngine::new(&dir);
+    let engine = TtsEngine::new(&dir);
     assert!(engine.is_ok(), "TtsEngine::new failed: {:?}", engine.err());
-    println!("[TTS TEST] TtsEngine loaded and schema validated successfully");
+    println!("[TTS TEST] TtsEngine loaded successfully");
 }
 
 #[test]
 #[ignore]
 fn test_tts_synthesises_audio() {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use tokio::sync::mpsc;
     use vox_ui_lib::services::tts::TtsEngine;
@@ -75,7 +62,7 @@ fn test_tts_synthesises_audio() {
 
     let cancel_clone = cancel.clone();
     let handle = std::thread::spawn(move || {
-        engine.synthesize_chunk("Hello world.", 1, &cancel_clone, &tx)
+        engine.synthesize_chunk("Hello world, this is Kokoro speaking.", 1, cancel_clone, tx.clone())
     });
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -83,7 +70,7 @@ fn test_tts_synthesises_audio() {
         let mut collected = Vec::new();
         loop {
             match tokio::time::timeout(
-                std::time::Duration::from_secs(60),
+                std::time::Duration::from_secs(30),
                 rx.recv(),
             ).await {
                 Ok(Some(VoxEvent::TtsChunk { samples, .. })) => {
@@ -113,7 +100,7 @@ fn test_tts_cancels_mid_synthesis() {
     use std::sync::Arc;
     use tokio::sync::mpsc;
     use vox_ui_lib::services::tts::TtsEngine;
-    use vox_ui_lib::core::events::VoxEvent;
+
 
     let mut engine = TtsEngine::new(&model_dir()).expect("TtsEngine load failed");
     let cancel = Arc::new(AtomicBool::new(false));
@@ -121,16 +108,24 @@ fn test_tts_cancels_mid_synthesis() {
     let cancel_killer = cancel.clone();
 
     let (tx, mut rx) = mpsc::channel(32);
+    
+    // Drain the receiver in the background to avoid blocking the sender
+    let rx_handle = tokio::runtime::Runtime::new().unwrap().spawn(async move {
+        while let Some(_) = rx.recv().await {}
+    });
+
     let handle = std::thread::spawn(move || {
         engine.synthesize_chunk(
-            "The quick brown fox jumped over the lazy dog repeatedly.",
-            1, &cancel_clone, &tx
+            "The quick brown fox jumped over the lazy dog repeatedly and then some more text to make it longer.",
+            1, cancel_clone, tx.clone()
         )
     });
 
-    // Cancel immediately
+    // Wait a tiny bit then cancel
+    std::thread::sleep(std::time::Duration::from_millis(50));
     cancel_killer.store(true, Ordering::Relaxed);
 
     handle.join().expect("thread panicked").expect("synthesize_chunk errored");
+    drop(rx_handle);
     println!("[TTS TEST] Cancellation respected — no crash");
 }

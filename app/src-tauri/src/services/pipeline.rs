@@ -219,7 +219,7 @@ impl PipelineOrchestrator {
                             continue;
                         }
                         tts_flag.store(true, Ordering::Relaxed);
-                        if let Err(e) = engine.synthesize_chunk(&text, session_id, &cancel_tts, &event_tx) {
+                        if let Err(e) = engine.synthesize_chunk(&text, session_id, cancel_tts.clone(), event_tx.clone()) {
                             log::error!("[TTS] Synthesis error (session {}): {}", session_id, e);
                         }
                         tts_flag.store(false, Ordering::Relaxed);
