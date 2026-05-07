@@ -7,7 +7,7 @@
 
 #[test]
 fn test_upsample_2x_doubles_length() {
-    use vox_ui_lib::playback::upsample_2x;
+    use vox_ui_lib::services::playback::upsample_2x;
 
     let input = vec![0.0f32, 1.0, 0.0, -1.0];
     let out = upsample_2x(&input);
@@ -16,7 +16,7 @@ fn test_upsample_2x_doubles_length() {
 
 #[test]
 fn test_upsample_2x_preserves_originals() {
-    use vox_ui_lib::playback::upsample_2x;
+    use vox_ui_lib::services::playback::upsample_2x;
 
     let input = vec![0.2f32, 0.8, -0.4, 0.6];
     let out = upsample_2x(&input);
@@ -31,7 +31,7 @@ fn test_upsample_2x_preserves_originals() {
 
 #[test]
 fn test_upsample_2x_midpoints_correct() {
-    use vox_ui_lib::playback::upsample_2x;
+    use vox_ui_lib::services::playback::upsample_2x;
 
     let input = vec![0.0f32, 1.0, 0.0];
     let out = upsample_2x(&input);
@@ -44,7 +44,7 @@ fn test_upsample_2x_midpoints_correct() {
 
 #[test]
 fn test_upsample_2x_single_sample() {
-    use vox_ui_lib::playback::upsample_2x;
+    use vox_ui_lib::services::playback::upsample_2x;
 
     let input = vec![0.5f32];
     let out = upsample_2x(&input);
@@ -55,7 +55,7 @@ fn test_upsample_2x_single_sample() {
 
 #[test]
 fn test_upsample_2x_empty_input() {
-    use vox_ui_lib::playback::upsample_2x;
+    use vox_ui_lib::services::playback::upsample_2x;
 
     let out = upsample_2x(&[]);
     assert!(out.is_empty());
@@ -63,7 +63,7 @@ fn test_upsample_2x_empty_input() {
 
 #[test]
 fn test_upsample_2x_silence_stays_silent() {
-    use vox_ui_lib::playback::upsample_2x;
+    use vox_ui_lib::services::playback::upsample_2x;
 
     let input = vec![0.0f32; 1000];
     let out = upsample_2x(&input);
@@ -77,7 +77,7 @@ fn test_upsample_2x_silence_stays_silent() {
 fn test_playback_engine_creates_without_error() {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
-    use vox_ui_lib::playback::PlaybackEngine;
+    use vox_ui_lib::services::playback::PlaybackEngine;
 
     let active = Arc::new(AtomicBool::new(false));
     let cancel = Arc::new(AtomicBool::new(false));
@@ -91,7 +91,7 @@ fn test_playback_engine_creates_without_error() {
 fn test_playback_jitter_prebuffer_triggers_active() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
-    use vox_ui_lib::playback::{PlaybackEngine, upsample_2x};
+    use vox_ui_lib::services::playback::{PlaybackEngine, upsample_2x};
 
     let active = Arc::new(AtomicBool::new(false));
     let cancel = Arc::new(AtomicBool::new(false));

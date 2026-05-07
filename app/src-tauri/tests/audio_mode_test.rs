@@ -9,37 +9,37 @@
 
 #[test]
 fn test_flush_on_hard_boundary_period() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     assert!(should_flush("Hello world.", 2), "Period should flush");
 }
 
 #[test]
 fn test_flush_on_hard_boundary_exclamation() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     assert!(should_flush("Great!", 1), "Exclamation should flush");
 }
 
 #[test]
 fn test_flush_on_hard_boundary_question() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     assert!(should_flush("What is this?", 3), "Question should flush");
 }
 
 #[test]
 fn test_flush_on_soft_boundary_comma() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     assert!(should_flush("Well,", 1), "Comma should flush (soft boundary)");
 }
 
 #[test]
 fn test_flush_on_soft_boundary_semicolon() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     assert!(should_flush("First clause;", 2), "Semicolon should flush");
 }
 
 #[test]
 fn test_flush_on_word_count_limit() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     // Exactly 6 words, no punctuation — must flush
     let buf = "one two three four five six";
     assert!(should_flush(buf, 6), "6 words without punctuation must flush (Directive 2)");
@@ -47,20 +47,20 @@ fn test_flush_on_word_count_limit() {
 
 #[test]
 fn test_no_flush_below_word_count_with_no_punctuation() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     let buf = "one two three four five";
     assert!(!should_flush(buf, 5), "5 words without punctuation should NOT flush");
 }
 
 #[test]
 fn test_no_flush_on_empty_buffer() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     assert!(!should_flush("", 0), "Empty buffer should never flush");
 }
 
 #[test]
 fn test_flush_on_em_dash() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     // Em dash as soft boundary
     let buf = "he said — ";
     // Note: ends_with check includes trailing space
@@ -69,7 +69,7 @@ fn test_flush_on_em_dash() {
 
 #[test]
 fn test_flush_priority_hard_before_word_limit() {
-    use vox_ui_lib::pipeline::should_flush;
+    use vox_ui_lib::services::pipeline::should_flush;
     // Even 1 word with hard punctuation should flush
     assert!(should_flush("Stop.", 1), "Hard punctuation beats word count — should flush at 1 word");
     assert!(!should_flush("Go", 1), "1 word no punctuation should NOT flush");
@@ -79,14 +79,14 @@ fn test_flush_priority_hard_before_word_limit() {
 
 #[test]
 fn test_audio_output_mode_default_is_speaker() {
-    use vox_ui_lib::settings::AudioOutputMode;
+    use vox_ui_lib::core::settings::AudioOutputMode;
     let mode: AudioOutputMode = Default::default();
     assert_eq!(mode, AudioOutputMode::Speaker, "Default mode must be Speaker");
 }
 
 #[test]
 fn test_audio_output_mode_equality() {
-    use vox_ui_lib::settings::AudioOutputMode;
+    use vox_ui_lib::core::settings::AudioOutputMode;
     assert_eq!(AudioOutputMode::Speaker,  AudioOutputMode::Speaker);
     assert_eq!(AudioOutputMode::Headset,  AudioOutputMode::Headset);
     assert_ne!(AudioOutputMode::Speaker,  AudioOutputMode::Headset);

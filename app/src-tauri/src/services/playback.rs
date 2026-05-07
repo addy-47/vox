@@ -53,6 +53,11 @@ pub struct PlaybackEngine {
     _stream:        Option<cpal::Stream>,
 }
 
+// Safety: cpal::Stream is not Send/Sync on some platforms (macOS), but is
+// generally safe to move on Linux. We own the stream and manage its lifecycle.
+unsafe impl Send for PlaybackEngine {}
+unsafe impl Sync for PlaybackEngine {}
+
 impl PlaybackEngine {
     /// Initialise CPAL output stream at 48kHz. Does not start playback yet.
     pub fn new(

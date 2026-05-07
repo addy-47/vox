@@ -1,28 +1,16 @@
-mod audio;
-pub mod vad;
-pub mod stt;
-pub mod tray;
-pub mod ptt;
-pub mod settings;
-pub mod state;
-// Phase 4
-pub mod events;
-pub mod metrics;
-pub mod llm;
-pub mod tts;
-pub mod playback;
-pub mod pipeline;
+pub mod core;
+pub mod services;
+pub mod ui;
 
-use crate::audio::AudioStream;
-use crate::vad::VadEngine;
-use crate::stt::{SttEngine, SttCommand};
-use crate::tray::position_tray_window;
-use crate::state::{AppState, VoxEngine};
-use crate::settings::VoxSettings;
-use crate::events::VoxEvent;
-use crate::pipeline::PipelineOrchestrator;
-use crate::playback::PlaybackEngine;
-use std::sync::atomic::Ordering;
+use crate::services::audio::AudioStream;
+use crate::services::vad::VadEngine;
+use crate::services::stt::{SttEngine, SttCommand};
+use crate::ui::tray::position_tray_window;
+use crate::core::state::{AppState, VoxEngine};
+use crate::core::settings::VoxSettings;
+use crate::core::events::VoxEvent;
+use crate::services::pipeline::PipelineOrchestrator;
+use crate::services::playback::PlaybackEngine;
 
 use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
@@ -38,7 +26,7 @@ fn spawn_stt_worker(
     app: tauri::AppHandle,
     mut rx: tokio::sync::mpsc::Receiver<SttCommand>,
     model_path: PathBuf,
-    /// Optional pipeline event channel — `Some` when Phase 4 pipeline is active.
+    // Optional pipeline event channel — `Some` when Phase 4 pipeline is active.
     pipeline_event_tx: Option<tokio::sync::mpsc::Sender<VoxEvent>>,
 ) {
     std::thread::spawn(move || {
@@ -244,7 +232,7 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     audio_stream.start().map_err(|e| e.to_string())?;
 
     // ── 7. Phase 4: Pipeline Orchestrator + Playback Engine ─────────────────
-    let (tts_model_dir, audio_output_mode) = {
+    let (tts_model_dir, _audio_output_mode) = {
         let settings = state.settings.lock().await;
         let resource_dir = app.path().resource_dir().unwrap_or_default();
         let tts = if settings.tts_model_dir.is_absolute() {
@@ -474,7 +462,7 @@ pub fn run() {
                 if let tauri::WindowEvent::Resized(size) = event {
                     if size.width > 0 && size.height > 0 {
                         #[cfg(target_os = "linux")]
-                        crate::tray::setup_linux_virtual_layer(window.app_handle(), window.label());
+                        crate::ui::tray::setup_linux_virtual_layer(window.app_handle(), window.label());
                     }
                 }
             }
@@ -488,17 +476,17 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            crate::tray::hide_tray_window,
+            crate::ui::tray::hide_tray_window,
             launch_engine,
             check_engine_status,
             get_settings,
             update_theme,
-            crate::tray::set_hud_ignore_cursor,
-            crate::tray::sync_hud_visibility,
-            crate::tray::update_interaction_mode,
-            crate::ptt::ptt_start,
-            crate::ptt::ptt_stop,
-            crate::ptt::ptt_cancel
+            crate::ui::tray::set_hud_ignore_cursor,
+            crate::ui::tray::sync_hud_visibility,
+            crate::ui::tray::update_interaction_mode,
+            crate::ui::ptt::ptt_start,
+            crate::ui::ptt::ptt_stop,
+            crate::ui::ptt::ptt_cancel
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
