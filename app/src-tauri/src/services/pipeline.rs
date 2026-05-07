@@ -56,14 +56,22 @@ fn count_words(s: &str) -> usize {
 
 // ─── Pipeline Orchestrator ────────────────────────────────────────────────────
 
+pub enum PipelineState {
+    Cold,
+    Warm,
+}
+
 pub struct PipelineOrchestrator {
-    cancel_flag:     Arc<AtomicBool>,
-    _playback_active: Arc<AtomicBool>,
-    llm_generating:  Arc<AtomicBool>,
-    tts_generating:  Arc<AtomicBool>,
-    session_id:      Arc<AtomicU32>,
-    event_tx:        Sender<VoxEvent>,
-    settings:        VoxSettings,
+    cancel_flag:      Arc<AtomicBool>,
+    _playback_active:  Arc<AtomicBool>,
+    llm_generating:   Arc<AtomicBool>,
+    tts_generating:   Arc<AtomicBool>,
+    session_id:       Arc<AtomicU32>,
+    event_tx:         Sender<VoxEvent>,
+    settings:         VoxSettings,
+    
+    // Lifecycle management
+    llm_tx:           Arc<std::sync::Mutex<Option<tokio::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
 }
 
 impl PipelineOrchestrator {
@@ -84,63 +92,91 @@ impl PipelineOrchestrator {
             session_id,
             event_tx,
             settings,
+            llm_tx: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
-    /// Handle a `TranscriptFinal` event: cancel any in-progress turn and
-    /// spawn a new LLM worker for the new transcript.
-    pub fn on_transcript_final(&self, text: String, _app_handle: tauri::AppHandle) {
-        // Cancel any existing turn
-        self.cancel_flag.store(true, Ordering::Relaxed);
+    /// Lazily initialize the LLM worker if it's not already running.
+    pub fn warm_up_llm(&self) -> Result<(), String> {
+        let mut lock = self.llm_tx.lock().map_err(|e| e.to_string())?;
+        if lock.is_some() {
+            return Ok(());
+        }
 
-        // Bump session ID — stale events from previous turn are ignored by consumers
-        let new_session = self.session_id.fetch_add(1, Ordering::Relaxed) + 1;
-        log::info!("[Pipeline] New session {} — transcript: {:?}", new_session, text);
-
-        // Reset cancellation flag for the new turn
-        self.cancel_flag.store(false, Ordering::Relaxed);
-
-        let cancel      = Arc::clone(&self.cancel_flag);
-        let llm_flag    = Arc::clone(&self.llm_generating);
-        let event_tx    = self.event_tx.clone();
+        log::info!("[Pipeline] Warming up LLM worker...");
+        let (tx, rx) = tokio::sync::mpsc::channel(32);
+        
         let llm_path    = self.settings.llm_model_path.clone();
         let ctx_size    = self.settings.llm_ctx_size;
         let n_threads   = self.settings.llm_threads;
+        let event_tx    = self.event_tx.clone();
+        let llm_flag    = Arc::clone(&self.llm_generating);
 
-        // LLM runs on a dedicated OS thread — never tokio
         std::thread::Builder::new()
-            .name(format!("vox-llm-{}", new_session))
+            .name("vox-llm-persistent".to_string())
             .spawn(move || {
                 llm_flag.store(true, Ordering::Relaxed);
-                log::info!("[LLM Thread] session={}", new_session);
-
+                
                 // Resolve symlinks for HuggingFace hub paths
                 let resolved = llm_path.canonicalize()
                     .unwrap_or_else(|_| llm_path.clone());
 
                 match crate::services::llm::LlmWorker::new(&resolved, ctx_size, n_threads) {
                     Ok(worker) => {
-                        if let Err(e) = worker.generate(&text, new_session, &cancel, &event_tx) {
-                            log::error!("[LLM] Generation error (session {}): {}", new_session, e);
-                            let _ = event_tx.blocking_send(VoxEvent::Error {
-                                session_id: new_session,
-                                message: e.to_string(),
-                            });
-                        }
+                        llm_flag.store(false, Ordering::Relaxed);
+                        worker.run_loop(rx, event_tx);
                     }
                     Err(e) => {
-                        log::error!("[LLM] Init error (session {}): {}", new_session, e);
-                        let _ = event_tx.blocking_send(VoxEvent::Error {
-                            session_id: new_session,
-                            message: e.to_string(),
-                        });
+                        log::error!("[LLM Init] Failed: {}", e);
+                        llm_flag.store(false, Ordering::Relaxed);
                     }
                 }
-
-                llm_flag.store(false, Ordering::Relaxed);
-                log::info!("[LLM Thread] Done (session={})", new_session);
             })
-            .expect("[Pipeline] Failed to spawn LLM thread");
+            .map_err(|e| e.to_string())?;
+
+        *lock = Some(tx);
+        Ok(())
+    }
+
+    /// Shutdown the LLM worker and release memory.
+    pub fn cool_down_llm(&self) {
+        let mut lock = self.llm_tx.lock().unwrap();
+        if let Some(tx) = lock.take() {
+            log::info!("[Pipeline] Cooling down LLM worker (releasing memory)...");
+            let _ = tx.blocking_send(crate::services::llm::LlmCommand::Shutdown);
+        }
+    }
+
+    /// Handle a `TranscriptFinal` event: ensure LLM is warm and send generation command.
+    pub fn on_transcript_final(&self, text: String, _app_handle: tauri::AppHandle) {
+        // Cancel any existing turn
+        self.cancel_flag.store(true, Ordering::Relaxed);
+
+        // Bump session ID
+        let new_session = self.session_id.fetch_add(1, Ordering::Relaxed) + 1;
+        log::info!("[Pipeline] New session {} — transcript: {:?}", new_session, text);
+
+        // Reset cancellation flag
+        self.cancel_flag.store(false, Ordering::Relaxed);
+
+        // Ensure LLM is warm
+        if let Err(e) = self.warm_up_llm() {
+            log::error!("[Pipeline] Failed to warm up LLM: {}", e);
+            return;
+        }
+
+        let lock = self.llm_tx.lock().unwrap();
+        if let Some(tx) = &*lock {
+            let cmd = crate::services::llm::LlmCommand::Generate {
+                text,
+                session_id: new_session,
+                cancel_flag: Arc::clone(&self.cancel_flag),
+            };
+            
+            if let Err(e) = tx.blocking_send(cmd) {
+                log::error!("[Pipeline] Failed to send generate command to LLM: {}", e);
+            }
+        }
     }
 
     /// Process the internal event bus in a blocking loop.
