@@ -57,7 +57,7 @@ impl Default for VoxSettings {
             ptt_noise_gate:   0.005,
             theme:            "dark".into(),
             llm_model_path:   PathBuf::from("assets/gemma4/google_gemma-4-E2B-it-IQ2_M.gguf"),
-            tts_model_dir:    PathBuf::from("assets/chatterbox"),
+            tts_model_dir:    PathBuf::from("assets/kokoro"),
             llm_ctx_size:     2048,
             llm_threads,
             audio_output_mode: AudioOutputMode::Speaker,

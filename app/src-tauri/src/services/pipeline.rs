@@ -54,6 +54,11 @@ fn count_words(s: &str) -> usize {
     s.split_whitespace().count()
 }
 
+/// Detect if string contains Devanagari (Hindi) characters.
+pub fn is_devanagari(text: &str) -> bool {
+    text.chars().any(|c| (c >= '\u{0900}' && c <= '\u{097F}'))
+}
+
 // ─── Pipeline Orchestrator ────────────────────────────────────────────────────
 
 pub enum PipelineState {
@@ -192,7 +197,7 @@ impl PipelineOrchestrator {
         app_handle: tauri::AppHandle,
     ) {
         // TTS runs on its own thread, receives text chunks via a channel
-        let (tts_tx, tts_rx) = mpsc::channel::<(u32, String)>(32);
+        let (tts_tx, tts_rx) = std::sync::mpsc::channel::<(u32, i32, String)>();
 
         // Spawn the TTS worker thread
         let cancel_tts   = Arc::clone(&self.cancel_flag);
@@ -211,26 +216,29 @@ impl PipelineOrchestrator {
                     }
                 };
 
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(async move {
-                    let mut rx = tts_rx;
-                    while let Some((session_id, text)) = rx.recv().await {
-                        if cancel_tts.load(Ordering::Relaxed) {
-                            continue;
-                        }
-                        tts_flag.store(true, Ordering::Relaxed);
-                        if let Err(e) = engine.synthesize_chunk(&text, session_id, cancel_tts.clone(), event_tx.clone()) {
-                            log::error!("[TTS] Synthesis error (session {}): {}", session_id, e);
-                        }
-                        tts_flag.store(false, Ordering::Relaxed);
+                loop {
+                    let (session_id, voice_sid, text) = match tts_rx.recv() {
+                        Ok(data) => data,
+                        Err(_) => break, // Channel closed
+                    };
+
+                    if cancel_tts.load(Ordering::Relaxed) {
+                        continue;
                     }
-                });
+                    tts_flag.store(true, Ordering::Relaxed);
+                    if let Err(e) = engine.synthesize_chunk(&text, voice_sid, session_id, cancel_tts.clone(), event_tx.clone()) {
+                        log::error!("[TTS] Synthesis error (session {}): {}", session_id, e);
+                    }
+                    tts_flag.store(false, Ordering::Relaxed);
+                }
             })
             .expect("[Pipeline] Failed to spawn TTS thread");
 
         // ── Directive 2: Sub-sentence token accumulator ───────────────────────
         let mut token_buf    = String::new();
         let mut current_sid  = 0u32;
+        let mut voice_sid    = 0i32; // Default to English Female
+        let mut thinking     = false;
         let mut metrics      = PipelineMetrics::new();
         let audio_mode       = self.settings.audio_output_mode.clone();
         let cancel           = Arc::clone(&self.cancel_flag);
@@ -257,6 +265,8 @@ impl PipelineOrchestrator {
                     VoxEvent::TranscriptFinal { session_id, text } => {
                         current_sid = session_id;
                         token_buf.clear();
+                        voice_sid = 0;   // Reset to English default
+                        thinking = false; // Reset thinking state
                         metrics.mark(MetricField::FinalTranscript);
                         log::info!("[Pipeline] TranscriptFinal sid={}: {:?}", session_id, text);
                         // Emit to frontend for display
@@ -267,20 +277,40 @@ impl PipelineOrchestrator {
                     // ── LLM token: accumulate + sub-sentence chunking ─────────
                     VoxEvent::LlmToken { session_id, token } => {
                         if session_id != current_sid { continue; }
+                        
+                        // 1. Stateful thinking-block detection (Directive: Drop thoughts from TTS)
+                        if token.contains("<|channel>thought") {
+                            thinking = true;
+                            log::debug!("[Pipeline] Entered thinking mode — silencing TTS");
+                            continue;
+                        }
+                        if token.contains("<channel|>") {
+                            thinking = false;
+                            log::debug!("[Pipeline] Exited thinking mode");
+                            continue;
+                        }
+                        if thinking { continue; }
+
                         if metrics.first_token.is_none() {
                             metrics.mark(MetricField::FirstToken);
                         }
 
                         token_buf.push_str(&token);
+                        
+                        // 2. Language detection (Devanagari check)
+                        if is_devanagari(&token_buf) {
+                            voice_sid = 10; // hf_alpha (Hindi Female)
+                        }
+
                         let words = count_words(&token_buf);
 
                         // Directive 2: check flush condition
                         if should_flush(&token_buf, words) {
                             let chunk = token_buf.trim().to_string();
                             if !chunk.is_empty() {
-                                log::debug!("[Pipeline] Flushing to TTS: {:?} ({} words)", chunk, words);
+                                log::debug!("[Pipeline] Flushing to TTS (sid={}): {:?} ({} words)", voice_sid, chunk, words);
                                 metrics.mark(MetricField::TtsStart);
-                                let _ = tts_tx.send((session_id, chunk)).await;
+                                let _ = tts_tx.send((session_id, voice_sid, chunk));
                             }
                             token_buf.clear();
                         }
@@ -292,10 +322,11 @@ impl PipelineOrchestrator {
                     // ── LLM finished: flush any remaining buffer ───────────────
                     VoxEvent::LlmFinished { session_id } => {
                         if session_id != current_sid { continue; }
+                        thinking = false; // Reset just in case
                         let remainder = token_buf.trim().to_string();
                         if !remainder.is_empty() {
-                            log::debug!("[Pipeline] Final flush to TTS: {:?}", remainder);
-                            let _ = tts_tx.send((session_id, remainder)).await;
+                            log::debug!("[Pipeline] Final flush to TTS (sid={}): {:?}", voice_sid, remainder);
+                            let _ = tts_tx.send((session_id, voice_sid, remainder));
                         }
                         token_buf.clear();
                         log::info!("[Pipeline] LLM finished (session {})", session_id);

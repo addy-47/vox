@@ -19,6 +19,7 @@ dependencies = [
  "log",
  "ndarray",
  "ort",
+ "regex",
  "ringbuf",
  "serde",
  "serde_json",
