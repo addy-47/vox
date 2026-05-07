@@ -34,7 +34,9 @@ gtk = { version = "0.18", features = ["v3_24"] }
 cairo-rs = "0.18"
 
 # Phase 4 — LLM runtime (llama.cpp Rust bindings, compiles llama.cpp from source, CPU-only)
-llama-cpp-2 = { version = "0.1.146", features = ["sampler"] }
+llama-cpp-2 = "0.1.146"
+llama-cpp-sys-2 = "0.1.146"
+
 
 # Phase 4 — TTS ONNX runtime (load-dynamic per Directive 1: shares libonnxruntime with sherpa-onnx)
 ort = { version = "2.0.0-rc.12", features = ["load-dynamic", "ndarray"] }
