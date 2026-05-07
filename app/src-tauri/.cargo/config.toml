@@ -1,0 +1,9 @@
+[env]
+CC = "/usr/bin/clang"
+CXX = "/usr/bin/clang++"
+CMAKE_C_COMPILER = "/usr/bin/clang"
+CMAKE_CXX_COMPILER = "/usr/bin/clang++"
+CXXFLAGS = "-stdlib=libc++"
+
+[build]
+rustflags = ["-C", "link-arg=-lc++", "-C", "link-arg=-lc++abi"]

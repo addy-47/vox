@@ -15,6 +15,7 @@ dependencies = [
  "gtk",
  "hound",
  "llama-cpp-2",
+ "llama-cpp-sys-2",
  "log",
  "ndarray",
  "ort",

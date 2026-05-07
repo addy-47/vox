@@ -32,13 +32,25 @@ Never use markdown, bullet points, or formatting.";
 
 // ─── LLM Worker ───────────────────────────────────────────────────────────────
 
+/// Commands sent from the Pipeline Orchestrator to the LLM background thread.
+pub enum LlmCommand {
+    /// Start generating a response to `text`.
+    Generate {
+        text: String,
+        session_id: u32,
+        cancel_flag: Arc<AtomicBool>,
+    },
+    /// Stop the background thread and deallocate the model.
+    Shutdown,
+}
+
 /// Owns a loaded llama.cpp model and context.
 ///
 /// Must live on the same OS thread where it was created (llama.cpp is not Send).
 /// Spawn with `std::thread::spawn` — never tokio.
 pub struct LlmWorker {
     model:   LlamaModel,
-    backend: LlamaBackend,
+    backend: &'static LlamaBackend,
     ctx_size: u32,
     n_threads: u32,
 }
@@ -56,7 +68,11 @@ impl LlmWorker {
             return Err(anyhow!("[LLM] GGUF not found: {:?}", resolved));
         }
 
-        let backend = LlamaBackend::init()?;
+        // Initialize global backend exactly once
+        static BACKEND: std::sync::OnceLock<LlamaBackend> = std::sync::OnceLock::new();
+        let backend = BACKEND.get_or_init(|| {
+            LlamaBackend::init().expect("[LLM] Failed to initialize global llama.cpp backend")
+        });
 
         let model_params = LlamaModelParams::default()
             .with_n_gpu_layers(0); // CPU-only per architecture constraint
@@ -67,6 +83,36 @@ impl LlmWorker {
 
         log::info!("[LLM] Model loaded. ctx_size={} n_threads={}", ctx_size, n_threads);
         Ok(Self { model, backend, ctx_size, n_threads })
+    }
+
+    /// Persistent loop running on a dedicated OS thread.
+    /// Listens for `LlmCommand` and executes them.
+    pub fn run_loop(
+        &self,
+        mut rx: tokio::sync::mpsc::Receiver<LlmCommand>,
+        tx: Sender<VoxEvent>,
+    ) {
+        log::info!("[LLM Worker] Persistent loop started.");
+        
+        while let Some(cmd) = rx.blocking_recv() {
+            match cmd {
+                LlmCommand::Generate { text, session_id, cancel_flag } => {
+                    if let Err(e) = self.generate(&text, session_id, &cancel_flag, &tx) {
+                        log::error!("[LLM Worker] Generation error (sid {}): {}", session_id, e);
+                        let _ = tx.blocking_send(VoxEvent::Error { 
+                            session_id, 
+                            message: e.to_string() 
+                        });
+                    }
+                }
+                LlmCommand::Shutdown => {
+                    log::info!("[LLM Worker] Shutdown command received. Exiting loop.");
+                    break;
+                }
+            }
+        }
+        
+        log::info!("[LLM Worker] Loop exited. Model will be dropped.");
     }
 
     /// Generate a response to `user_text`, streaming tokens via `tx`.
@@ -147,8 +193,6 @@ impl LlmWorker {
             }
 
             // Decode token to string using a fresh decoder or existing one if we tracked it
-            // For simplicity in this loop, we can just use a local decoder for each token
-            // Wait, multi-byte characters span multiple tokens, so we should keep the decoder in the generate scope
             let token_str = self.model
                 .token_to_piece(token, &mut decoder, false, None)
                 .unwrap_or_default();
