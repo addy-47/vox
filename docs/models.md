@@ -195,15 +195,15 @@ text_final
 
 ---
 
-### ✅ Default (Current)
+### ✅ Default (Phase 4)
 
-* **Gemma (quantized, GGUF)**
+* **Gemma 4 E2B-it (GGUF, Q2_M)**
 
----
-
-### 🧪 Evaluation Candidate
-
-* **Qwen2.5-3B-Instruct (GGUF Q4_K_M)**
+### Why
+* **State-of-the-Art Reasoning**: Released March 2026, optimized for 2B scale efficiency.
+* **Instruction Tuning**: High adherence to system prompts and conversational flow.
+* **Multilingual Capability**: Significantly improved Hindi and Hinglish reasoning.
+* **Thinking Mode**: Supports internal reasoning blocks for complex queries.
 
 ---
 
