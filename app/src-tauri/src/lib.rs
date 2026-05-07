@@ -232,16 +232,25 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     audio_stream.start().map_err(|e| e.to_string())?;
 
     // ── 7. Phase 4: Pipeline Orchestrator + Playback Engine ─────────────────
-    let (tts_model_dir, _audio_output_mode) = {
+    let (en_tts_dir, hi_tts_dir, _audio_output_mode) = {
         let settings = state.settings.lock().await;
         let resource_dir = app.path().resource_dir().unwrap_or_default();
-        let tts = if settings.tts_model_dir.is_absolute() {
+        
+        let en_tts = if settings.tts_model_dir.is_absolute() {
             settings.tts_model_dir.clone()
         } else {
             let p = resource_dir.join(&settings.tts_model_dir);
             if p.exists() { p } else { std::env::current_dir().unwrap().join(&settings.tts_model_dir) }
         };
-        (tts, settings.audio_output_mode.clone())
+
+        let hi_tts = if settings.tts_hindi_model_dir.is_absolute() {
+            settings.tts_hindi_model_dir.clone()
+        } else {
+            let p = resource_dir.join(&settings.tts_hindi_model_dir);
+            if p.exists() { p } else { std::env::current_dir().unwrap().join(&settings.tts_hindi_model_dir) }
+        };
+
+        (en_tts, hi_tts, settings.audio_output_mode.clone())
     };
 
     let pipeline_atomics = {
@@ -287,7 +296,8 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         .spawn(move || {
             orchestrator.run_event_loop(
                 vox_event_rx,
-                tts_model_dir,
+                en_tts_dir,
+                hi_tts_dir,
                 playback_for_orch,
                 app_for_orch,
             );

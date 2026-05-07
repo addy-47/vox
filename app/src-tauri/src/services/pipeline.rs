@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::core::events::VoxEvent;
 use crate::core::metrics::{MetricField, PipelineMetrics};
@@ -56,7 +56,7 @@ fn count_words(s: &str) -> usize {
 
 /// Detect if string contains Devanagari (Hindi) characters.
 pub fn is_devanagari(text: &str) -> bool {
-    text.chars().any(|c| (c >= '\u{0900}' && c <= '\u{097F}'))
+    text.chars().any(|c| c >= '\u{0900}' && c <= '\u{097F}')
 }
 
 // ─── Pipeline Orchestrator ────────────────────────────────────────────────────
@@ -192,7 +192,8 @@ impl PipelineOrchestrator {
     pub fn run_event_loop(
         &self,
         mut rx: Receiver<VoxEvent>,
-        tts_model_dir: PathBuf,
+        en_tts_dir: PathBuf,
+        hi_tts_dir: PathBuf,
         playback_engine: Arc<crate::services::playback::PlaybackEngine>,
         app_handle: tauri::AppHandle,
     ) {
@@ -203,12 +204,11 @@ impl PipelineOrchestrator {
         let cancel_tts   = Arc::clone(&self.cancel_flag);
         let tts_flag     = Arc::clone(&self.tts_generating);
         let event_tx     = self.event_tx.clone();
-        let tts_dir      = tts_model_dir.clone();
 
         std::thread::Builder::new()
             .name("vox-tts".to_string())
             .spawn(move || {
-                let mut engine = match crate::services::tts::TtsEngine::new(&tts_dir) {
+                let mut engine = match crate::services::tts::TtsEngine::new(&en_tts_dir, &hi_tts_dir) {
                     Ok(e) => e,
                     Err(e) => {
                         log::error!("[TTS Thread] Init failed: {}", e);
