@@ -34,6 +34,8 @@ pub struct VoxSettings {
     pub llm_model_path: PathBuf,
     /// Directory containing chatterbox ONNX files and tokenizer.
     pub tts_model_dir:  PathBuf,
+    /// Directory containing Hindi TTS assets (Piper).
+    pub tts_hindi_model_dir: PathBuf,
     /// LLM context window size in tokens. Keep ≤2048 in Phase 4 (KV cache budget).
     pub llm_ctx_size:   u32,
     /// Number of CPU threads for LLM inference. 0 = auto (total_cores - 2).
@@ -58,6 +60,7 @@ impl Default for VoxSettings {
             theme:            "dark".into(),
             llm_model_path:   PathBuf::from("assets/gemma4/google_gemma-4-E2B-it-IQ2_M.gguf"),
             tts_model_dir:    PathBuf::from("assets/kokoro"),
+            tts_hindi_model_dir: PathBuf::from("assets/piper_hi"),
             llm_ctx_size:     2048,
             llm_threads,
             audio_output_mode: AudioOutputMode::Speaker,
