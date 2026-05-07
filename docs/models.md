@@ -258,17 +258,22 @@ Large context → KV cache explosion → RAM overflow → swap death
 
 ### ✅ Default
 
-* **Chatterbox-Turbo (~350M)**
+* **Kokoro-82M (ONNX)**
 
 ---
 
 ### Why
 
-* sub-200ms latency
-* CPU-friendly
-* supports Hindi
-* voice cloning capability
-* C++ compatible
+* **State-of-the-Art Quality**: Human-level prosody and naturalness at only 82M parameters.
+* **Incredible Efficiency**: Runs significantly faster than real-time even on mid-range CPUs.
+* **Architecture**: Uses a StyleTTS2-inspired architecture with a BERT-based text encoder.
+* **Compatibility**: Native ONNX support allows for low-latency C++ integration.
+
+* **Implementation**: Uses `sherpa-onnx` for high-performance C++ inference.
+* **Assets**: Requires `model.onnx`, `voices.bin`, `tokens.txt`, and `espeak-ng-data/`.
+* **Latency**: sub-200ms time-to-first-audio.
+* **CPU-friendly**: Optimized for 8GB RAM systems.
+* **Hindi Support**: natively supported via multi-language models.
 
 ---
 
