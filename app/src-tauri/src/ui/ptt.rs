@@ -1,7 +1,7 @@
 use tauri::{AppHandle, Manager, Emitter, State};
 use serde_json::json;
-use crate::stt::SttCommand;
-use crate::state::{AppState, InteractionMode};
+use crate::services::stt::SttCommand;
+use crate::core::state::{AppState, InteractionMode};
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 

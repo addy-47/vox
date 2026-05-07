@@ -45,7 +45,7 @@ fn test_gguf_file_exists() {
 #[test]
 #[ignore]
 fn test_llm_model_loads() {
-    use vox_ui_lib::llm::LlmWorker;
+    use vox_ui_lib::services::llm::LlmWorker;
 
     let path = gguf_path();
     let worker = LlmWorker::new(&path, 512, 2);
@@ -55,7 +55,7 @@ fn test_llm_model_loads() {
 #[test]
 #[ignore]
 fn test_llm_generates_tokens() {
-    use vox_ui_lib::llm::LlmWorker;
+    use vox_ui_lib::services::llm::LlmWorker;
 
     let path = gguf_path();
     let worker = LlmWorker::new(&path, 512, 2).expect("model load failed");
@@ -78,10 +78,10 @@ fn test_llm_generates_tokens() {
             rx.recv(),
         ).await {
             match event {
-                Some(vox_ui_lib::events::VoxEvent::LlmToken { token, .. }) => {
+                Some(vox_ui_lib::core::events::VoxEvent::LlmToken { token, .. }) => {
                     collected.push(token);
                 }
-                Some(vox_ui_lib::events::VoxEvent::LlmFinished { .. }) => break,
+                Some(vox_ui_lib::core::events::VoxEvent::LlmFinished { .. }) => break,
                 None => break,
                 _ => {}
             }
@@ -99,7 +99,7 @@ fn test_llm_generates_tokens() {
 #[test]
 #[ignore]
 fn test_llm_cancels_mid_generation() {
-    use vox_ui_lib::llm::LlmWorker;
+    use vox_ui_lib::services::llm::LlmWorker;
 
     let path = gguf_path();
     let worker = LlmWorker::new(&path, 2048, 2).expect("model load failed");
@@ -128,15 +128,15 @@ fn test_llm_cancels_mid_generation() {
                 std::time::Duration::from_secs(30),
                 rx.recv(),
             ).await {
-                Ok(Some(vox_ui_lib::events::VoxEvent::LlmToken { .. })) => {
+                Ok(Some(vox_ui_lib::core::events::VoxEvent::LlmToken { .. })) => {
                     if !got_token {
                         got_token = true;
                         // Trigger cancellation
                         cancel_for_killer.store(true, Ordering::Relaxed);
                     }
                 }
-                Ok(Some(vox_ui_lib::events::VoxEvent::Cancelled { .. })) => return true,
-                Ok(Some(vox_ui_lib::events::VoxEvent::LlmFinished { .. })) => return false,
+                Ok(Some(vox_ui_lib::core::events::VoxEvent::Cancelled { .. })) => return true,
+                Ok(Some(vox_ui_lib::core::events::VoxEvent::LlmFinished { .. })) => return false,
                 _ => return false,
             }
         }

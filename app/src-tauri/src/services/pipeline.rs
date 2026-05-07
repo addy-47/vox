@@ -6,15 +6,15 @@
 //!
 //! Directive 2: Sub-sentence chunker flushes to TTS on `.!?,;—` or ≥6 words.
 
-use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use tauri::Emitter;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
-use crate::events::VoxEvent;
-use crate::metrics::{MetricField, PipelineMetrics};
-use crate::settings::{AudioOutputMode, VoxSettings};
+use crate::core::events::VoxEvent;
+use crate::core::metrics::{MetricField, PipelineMetrics};
+use crate::core::settings::{AudioOutputMode, VoxSettings};
 
 // ─── Directive 2: Sub-Sentence Chunker ───────────────────────────────────────
 
@@ -58,7 +58,7 @@ fn count_words(s: &str) -> usize {
 
 pub struct PipelineOrchestrator {
     cancel_flag:     Arc<AtomicBool>,
-    playback_active: Arc<AtomicBool>,
+    _playback_active: Arc<AtomicBool>,
     llm_generating:  Arc<AtomicBool>,
     tts_generating:  Arc<AtomicBool>,
     session_id:      Arc<AtomicU32>,
@@ -78,7 +78,7 @@ impl PipelineOrchestrator {
     ) -> Self {
         Self {
             cancel_flag,
-            playback_active,
+            _playback_active: playback_active,
             llm_generating,
             tts_generating,
             session_id,
@@ -89,7 +89,7 @@ impl PipelineOrchestrator {
 
     /// Handle a `TranscriptFinal` event: cancel any in-progress turn and
     /// spawn a new LLM worker for the new transcript.
-    pub fn on_transcript_final(&self, text: String, app_handle: tauri::AppHandle) {
+    pub fn on_transcript_final(&self, text: String, _app_handle: tauri::AppHandle) {
         // Cancel any existing turn
         self.cancel_flag.store(true, Ordering::Relaxed);
 
@@ -118,7 +118,7 @@ impl PipelineOrchestrator {
                 let resolved = llm_path.canonicalize()
                     .unwrap_or_else(|_| llm_path.clone());
 
-                match crate::llm::LlmWorker::new(&resolved, ctx_size, n_threads) {
+                match crate::services::llm::LlmWorker::new(&resolved, ctx_size, n_threads) {
                     Ok(worker) => {
                         if let Err(e) = worker.generate(&text, new_session, &cancel, &event_tx) {
                             log::error!("[LLM] Generation error (session {}): {}", new_session, e);
@@ -152,7 +152,7 @@ impl PipelineOrchestrator {
         &self,
         mut rx: Receiver<VoxEvent>,
         tts_model_dir: PathBuf,
-        playback_engine: Arc<crate::playback::PlaybackEngine>,
+        playback_engine: Arc<crate::services::playback::PlaybackEngine>,
         app_handle: tauri::AppHandle,
     ) {
         // TTS runs on its own thread, receives text chunks via a channel
@@ -167,7 +167,7 @@ impl PipelineOrchestrator {
         std::thread::Builder::new()
             .name("vox-tts".to_string())
             .spawn(move || {
-                let engine = match crate::tts::TtsEngine::new(&tts_dir) {
+                let mut engine = match crate::services::tts::TtsEngine::new(&tts_dir) {
                     Ok(e) => e,
                     Err(e) => {
                         log::error!("[TTS Thread] Init failed: {}", e);
@@ -176,7 +176,7 @@ impl PipelineOrchestrator {
                 };
 
                 let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(async {
+                rt.block_on(async move {
                     let mut rx = tts_rx;
                     while let Some((session_id, text)) = rx.recv().await {
                         if cancel_tts.load(Ordering::Relaxed) {
@@ -194,8 +194,6 @@ impl PipelineOrchestrator {
 
         // ── Directive 2: Sub-sentence token accumulator ───────────────────────
         let mut token_buf    = String::new();
-        let mut word_count   = 0usize;
-        let mut first_flush  = true;
         let mut current_sid  = 0u32;
         let mut metrics      = PipelineMetrics::new();
         let audio_mode       = self.settings.audio_output_mode.clone();
@@ -223,8 +221,6 @@ impl PipelineOrchestrator {
                     VoxEvent::TranscriptFinal { session_id, text } => {
                         current_sid = session_id;
                         token_buf.clear();
-                        word_count  = 0;
-                        first_flush = true;
                         metrics.mark(MetricField::FinalTranscript);
                         log::info!("[Pipeline] TranscriptFinal sid={}: {:?}", session_id, text);
                         // Emit to frontend for display
@@ -240,19 +236,17 @@ impl PipelineOrchestrator {
                         }
 
                         token_buf.push_str(&token);
-                        word_count = count_words(&token_buf);
+                        let words = count_words(&token_buf);
 
                         // Directive 2: check flush condition
-                        if should_flush(&token_buf, word_count) {
+                        if should_flush(&token_buf, words) {
                             let chunk = token_buf.trim().to_string();
                             if !chunk.is_empty() {
-                                log::debug!("[Pipeline] Flushing to TTS: {:?} ({} words)", chunk, word_count);
+                                log::debug!("[Pipeline] Flushing to TTS: {:?} ({} words)", chunk, words);
                                 metrics.mark(MetricField::TtsStart);
                                 let _ = tts_tx.send((session_id, chunk)).await;
                             }
                             token_buf.clear();
-                            word_count  = 0;
-                            first_flush = false;
                         }
 
                         // Forward token to frontend for streaming display
@@ -268,7 +262,6 @@ impl PipelineOrchestrator {
                             let _ = tts_tx.send((session_id, remainder)).await;
                         }
                         token_buf.clear();
-                        word_count = 0;
                         log::info!("[Pipeline] LLM finished (session {})", session_id);
                     }
 
@@ -301,7 +294,6 @@ impl PipelineOrchestrator {
                         log::info!("[Pipeline] Cancelled (session {})", session_id);
                         playback_engine.cancel();
                         token_buf.clear();
-                        word_count = 0;
                         let _ = app_handle.emit("pipeline_cancelled", session_id);
                     }
 

@@ -2,9 +2,9 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32};
-use crate::audio::AudioStream;
-use crate::stt::SttCommand;
-use crate::settings::VoxSettings;
+use crate::services::audio::AudioStream;
+use crate::services::stt::SttCommand;
+use crate::core::settings::VoxSettings;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InteractionMode {

@@ -16,11 +16,11 @@ use llama_cpp_2::{
     context::params::LlamaContextParams,
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
-    model::{params::LlamaModelParams, AddBos, LlamaModel, Special},
+    model::{params::LlamaModelParams, AddBos, LlamaModel},
     token::data_array::LlamaTokenDataArray,
 };
 
-use crate::events::VoxEvent;
+use crate::core::events::VoxEvent;
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
@@ -99,9 +99,9 @@ impl LlmWorker {
 
         // Build context
         let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(self.ctx_size).unwrap())
-            .with_n_threads(self.n_threads)
-            .with_n_threads_batch(self.n_threads);
+            .with_n_ctx(Some(NonZeroU32::new(self.ctx_size).unwrap()))
+            .with_n_threads(self.n_threads as i32)
+            .with_n_threads_batch(self.n_threads as i32);
 
         let mut ctx = self.model
             .new_context(&self.backend, ctx_params)
@@ -121,7 +121,8 @@ impl LlmWorker {
             .map_err(|e| anyhow!("[LLM] Prefill decode failed: {}", e))?;
 
         let mut n_cur = tokens.len() as i32;
-        batch.clear();
+
+        let mut decoder = encoding_rs::UTF_8.new_decoder();
 
         log::info!("[LLM] >>> Generating (session: {})...", session_id);
 
@@ -134,10 +135,10 @@ impl LlmWorker {
                 return Ok(());
             }
 
-            // Sample next token (greedy)
+            // Sample next token (greedy) from the last evaluated batch
             let candidates = ctx.candidates_ith(batch.n_tokens() as i32 - 1);
             let mut candidates_p = LlamaTokenDataArray::from_iter(candidates, false);
-            let token = ctx.sample_token_greedy(&mut candidates_p);
+            let token = candidates_p.sample_token_greedy();
 
             // End of generation
             if self.model.is_eog_token(token) {
@@ -145,9 +146,11 @@ impl LlmWorker {
                 break;
             }
 
-            // Decode token to string
+            // Decode token to string using a fresh decoder or existing one if we tracked it
+            // For simplicity in this loop, we can just use a local decoder for each token
+            // Wait, multi-byte characters span multiple tokens, so we should keep the decoder in the generate scope
             let token_str = self.model
-                .token_to_str(token, Special::Tokenize)
+                .token_to_piece(token, &mut decoder, false, None)
                 .unwrap_or_default();
 
             if !token_str.is_empty() {
@@ -158,6 +161,11 @@ impl LlmWorker {
             }
 
             // Advance
+            if n_cur >= self.ctx_size as i32 {
+                log::warn!("[LLM] Context limit reached ({} tokens). Stopping generation.", self.ctx_size);
+                break;
+            }
+
             batch.clear();
             batch.add(token, n_cur, &[0], true)
                 .map_err(|e| anyhow!("[LLM] Batch add (gen) failed: {}", e))?;

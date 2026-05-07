@@ -52,10 +52,10 @@ fn test_chatterbox_tokenizer_exists() {
 #[test]
 #[ignore]
 fn test_tts_engine_loads_and_validates_schema() {
-    use vox_ui_lib::tts::TtsEngine;
+    use vox_ui_lib::services::tts::TtsEngine;
 
     let dir = model_dir();
-    let engine = TtsEngine::new(&dir);
+    let mut engine = TtsEngine::new(&dir);
     assert!(engine.is_ok(), "TtsEngine::new failed: {:?}", engine.err());
     println!("[TTS TEST] TtsEngine loaded and schema validated successfully");
 }
@@ -66,10 +66,10 @@ fn test_tts_synthesises_audio() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use tokio::sync::mpsc;
-    use vox_ui_lib::tts::TtsEngine;
-    use vox_ui_lib::events::VoxEvent;
+    use vox_ui_lib::services::tts::TtsEngine;
+    use vox_ui_lib::core::events::VoxEvent;
 
-    let engine = TtsEngine::new(&model_dir()).expect("TtsEngine load failed");
+    let mut engine = TtsEngine::new(&model_dir()).expect("TtsEngine load failed");
     let cancel = Arc::new(AtomicBool::new(false));
     let (tx, mut rx) = mpsc::channel(32);
 
@@ -112,10 +112,10 @@ fn test_tts_cancels_mid_synthesis() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use tokio::sync::mpsc;
-    use vox_ui_lib::tts::TtsEngine;
-    use vox_ui_lib::events::VoxEvent;
+    use vox_ui_lib::services::tts::TtsEngine;
+    use vox_ui_lib::core::events::VoxEvent;
 
-    let engine = TtsEngine::new(&model_dir()).expect("TtsEngine load failed");
+    let mut engine = TtsEngine::new(&model_dir()).expect("TtsEngine load failed");
     let cancel = Arc::new(AtomicBool::new(false));
     let cancel_clone = cancel.clone();
     let cancel_killer = cancel.clone();

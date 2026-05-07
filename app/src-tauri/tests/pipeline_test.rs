@@ -48,10 +48,10 @@ fn test_stale_events_rejected_by_session_id() {
 #[test]
 #[ignore]
 fn test_full_pipeline_no_deadlock() {
-    use vox_ui_lib::events::VoxEvent;
-    use vox_ui_lib::llm::LlmWorker;
-    use vox_ui_lib::pipeline::should_flush;
-    use vox_ui_lib::playback::{upsample_2x, PlaybackEngine};
+    use vox_ui_lib::core::events::VoxEvent;
+    use vox_ui_lib::services::llm::LlmWorker;
+    use vox_ui_lib::services::pipeline::should_flush;
+    use vox_ui_lib::services::playback::{upsample_2x, PlaybackEngine};
 
     let cancel = Arc::new(AtomicBool::new(false));
     let (tx, mut rx) = mpsc::channel::<VoxEvent>(128);
@@ -107,7 +107,7 @@ fn test_full_pipeline_no_deadlock() {
 #[test]
 #[ignore]
 fn test_playback_engine_does_not_crash_on_cancel_before_ingest() {
-    use vox_ui_lib::playback::PlaybackEngine;
+    use vox_ui_lib::services::playback::PlaybackEngine;
 
     let active = Arc::new(AtomicBool::new(false));
     let cancel = Arc::new(AtomicBool::new(false));

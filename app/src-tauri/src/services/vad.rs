@@ -84,7 +84,7 @@ impl VadEngine {
         app: tauri::AppHandle,
         mut consumer: C,
         event_tx: mpsc::Sender<serde_json::Value>,
-        stt_tx: mpsc::Sender<crate::stt::SttCommand>,
+        stt_tx: mpsc::Sender<crate::services::stt::SttCommand>,
     ) -> Result<()> 
     where 
         C: ringbuf::traits::Consumer<Item = f32> 
@@ -106,17 +106,17 @@ impl VadEngine {
 
                 // Mode-based routing
                 let mode = {
-                    let state: tauri::State<'_, crate::state::AppState> = app.state();
+                    let state: tauri::State<'_, crate::core::state::AppState> = app.state();
                     let lock = state.interaction.blocking_lock();
                     *lock
                 };
 
-                if mode == crate::state::InteractionMode::Ptt {
+                if mode == crate::core::state::InteractionMode::Ptt {
                     // PTT mode: user explicitly controls recording — skip VAD classification.
                     // Passing all audio regardless of VAD state ensures no onset frames are lost.
                     // The VAD model is NOT called to avoid corrupting its RNN hidden state;
                     // we preserve it so passive mode resumes cleanly after PTT ends.
-                    crate::ptt::handle_ptt_audio_sync(&app, &chunk);
+                    crate::ui::ptt::handle_ptt_audio_sync(&app, &chunk);
                     
                     // If we were mid-utterance in passive mode, cleanly exit that state
                     if in_speech {
@@ -132,14 +132,14 @@ impl VadEngine {
                 // Prevents TTS audio from looping back through the mic and re-triggering VAD.
                 // In Headset mode, mic stays live for barge-in (pipeline cancellation handles it).
                 {
-                    let state: tauri::State<'_, crate::state::AppState> = app.state();
+                    let state: tauri::State<'_, crate::core::state::AppState> = app.state();
                     let is_playing = state.pipeline.playback_active.load(std::sync::atomic::Ordering::Relaxed);
                     if is_playing {
                         let audio_mode = {
                             let settings = state.settings.blocking_lock();
                             settings.audio_output_mode.clone()
                         };
-                        if audio_mode == crate::settings::AudioOutputMode::Speaker {
+                        if audio_mode == crate::core::settings::AudioOutputMode::Speaker {
                             // Drop this frame — do NOT advance utterance buffer or VAD state
                             continue;
                         }
@@ -175,7 +175,7 @@ impl VadEngine {
                         // For partial transcripts, only send the last 15 seconds to keep CPU low
                         // 15 seconds * 16,000 samples/sec = 240,000 samples
                         let start_idx = utterance_buffer.len().saturating_sub(240000);
-                        let _ = stt_tx.try_send(crate::stt::SttCommand::Partial(
+                        let _ = stt_tx.try_send(crate::services::stt::SttCommand::Partial(
                             current_session_id, 
                             utterance_buffer[start_idx..].to_vec()
                         ));
@@ -198,7 +198,7 @@ impl VadEngine {
                         // Routing: Only send to STT if the segment meets a minimum 
                         // duration threshold (e.g., 0.2s) to filter out clicks/noise.
                         if utterance_buffer.len() >= 3200 { 
-                            let _ = stt_tx.try_send(crate::stt::SttCommand::Final(
+                            let _ = stt_tx.try_send(crate::services::stt::SttCommand::Final(
                                 current_session_id, 
                                 utterance_buffer.clone()
                             ));

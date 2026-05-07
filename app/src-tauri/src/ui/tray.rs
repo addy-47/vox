@@ -4,7 +4,7 @@ use std::time::Duration;
 #[cfg(target_os = "linux")]
 use gtk::prelude::WidgetExt;
 
-use crate::state::{AppState, InteractionMode};
+use crate::core::state::{AppState, InteractionMode};
 
 
 // ─── Commands ────────────────────────────────────────────────────────────────

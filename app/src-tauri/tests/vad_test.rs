@@ -3,7 +3,7 @@
 /// Run with: cargo test --test vad_test -- --nocapture
 
 use std::path::PathBuf;
-use vox_ui_lib::vad::VadEngine;
+use vox_ui_lib::services::vad::VadEngine;
 use ringbuf::traits::*;
 
 /// Path to the VAD model.
