@@ -9,12 +9,12 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use tauri::Emitter;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tauri::{Emitter, Manager};
 
 use crate::core::events::VoxEvent;
 use crate::core::metrics::{MetricField, PipelineMetrics};
 use crate::core::settings::{AudioOutputMode, VoxSettings};
+use crate::core::state::InteractionOwner;
 
 // ─── Directive 2: Sub-Sentence Chunker ───────────────────────────────────────
 
@@ -72,11 +72,13 @@ pub struct PipelineOrchestrator {
     llm_generating:   Arc<AtomicBool>,
     tts_generating:   Arc<AtomicBool>,
     session_id:       Arc<AtomicU32>,
-    event_tx:         Sender<VoxEvent>,
+    state:            Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
+    event_tx:         std::sync::mpsc::Sender<VoxEvent>,
     settings:         VoxSettings,
+    is_engaged:       Arc<AtomicBool>,
     
     // Lifecycle management
-    llm_tx:           Arc<std::sync::Mutex<Option<tokio::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
+    llm_tx:           Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
 }
 
 impl PipelineOrchestrator {
@@ -86,8 +88,10 @@ impl PipelineOrchestrator {
         llm_generating:  Arc<AtomicBool>,
         tts_generating:  Arc<AtomicBool>,
         session_id:      Arc<AtomicU32>,
-        event_tx:        Sender<VoxEvent>,
+        state:           Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
+        event_tx:        std::sync::mpsc::Sender<VoxEvent>,
         settings:        VoxSettings,
+        is_engaged:      Arc<AtomicBool>,
     ) -> Self {
         Self {
             cancel_flag,
@@ -95,13 +99,15 @@ impl PipelineOrchestrator {
             llm_generating,
             tts_generating,
             session_id,
+            state,
             event_tx,
             settings,
+            is_engaged,
             llm_tx: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
-    /// Lazily initialize the LLM worker if it's not already running.
+    /// Initialize the LLM worker if it's not already running.
     pub fn warm_up_llm(&self) -> Result<(), String> {
         let mut lock = self.llm_tx.lock().map_err(|e| e.to_string())?;
         if lock.is_some() {
@@ -109,7 +115,7 @@ impl PipelineOrchestrator {
         }
 
         log::info!("[Pipeline] Warming up LLM worker...");
-        let (tx, rx) = tokio::sync::mpsc::channel(32);
+        let (tx, rx) = std::sync::mpsc::channel();
         
         let llm_path    = self.settings.llm_model_path.clone();
         let ctx_size    = self.settings.llm_ctx_size;
@@ -143,27 +149,65 @@ impl PipelineOrchestrator {
         Ok(())
     }
 
+    /// Update internal state and emit IPC event to frontend.
+    pub fn update_interaction_state(&self, new_state: crate::core::state::InteractionState, app_handle: &tauri::AppHandle) {
+        {
+            let mut state_lock = self.state.lock().unwrap();
+            if *state_lock == new_state {
+                return;
+            }
+            *state_lock = new_state;
+        }
+        log::debug!("[Pipeline] State changed -> {:?}", new_state);
+        
+        let target = {
+            let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
+            let owner = state.owner.blocking_lock();
+            match *owner {
+                crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                crate::core::state::InteractionOwner::Tray => "tray",
+            }
+        };
+        
+        let _ = app_handle.emit_to(target, "state_changed", new_state);
+    }
+
     /// Shutdown the LLM worker and release memory.
     pub fn cool_down_llm(&self) {
         let mut lock = self.llm_tx.lock().unwrap();
         if let Some(tx) = lock.take() {
             log::info!("[Pipeline] Cooling down LLM worker (releasing memory)...");
-            let _ = tx.blocking_send(crate::services::llm::LlmCommand::Shutdown);
+            let _ = tx.send(crate::services::llm::LlmCommand::Shutdown);
         }
     }
 
     /// Handle a `TranscriptFinal` event: ensure LLM is warm and send generation command.
-    pub fn on_transcript_final(&self, text: String, _app_handle: tauri::AppHandle) {
+    pub fn on_transcript_final(&self, text: String, owner: InteractionOwner, _app_handle: tauri::AppHandle) {
         // Cancel any existing turn
         self.cancel_flag.store(true, Ordering::Relaxed);
 
         // Bump session ID
         let new_session = self.session_id.fetch_add(1, Ordering::Relaxed) + 1;
-        log::info!("[Pipeline] New session {} — transcript: {:?}", new_session, text);
+        log::info!("[Pipeline] New session {} (owner: {:?}) — transcript: {:?}", new_session, owner, text);
 
         // Reset cancellation flag
         self.cancel_flag.store(false, Ordering::Relaxed);
 
+        // ── Phase 5 Dormancy Check ──────────────────────────────────────────
+        // LLM/TTS only triggers if:
+        // 1. The user explicitly engaged the main app via the Home screen.
+        // 2. OR the interaction owner is already MainWindow/Ptt.
+        let is_engaged = self.is_engaged.load(Ordering::Relaxed);
+        let should_trigger_pipeline = is_engaged || owner != InteractionOwner::Tray;
+
+        if !should_trigger_pipeline {
+            log::info!("[Pipeline] System is dormant. Skipping LLM/TTS for Tray interaction.");
+            // Reset UI state to idle since we won't be "Thinking" or "Speaking"
+            self.update_interaction_state(crate::core::state::InteractionState::Idle, &_app_handle);
+            return;
+        }
+
+        // ── Active Pipeline ──────────────────────────────────────────────────
         // Ensure LLM is warm
         if let Err(e) = self.warm_up_llm() {
             log::error!("[Pipeline] Failed to warm up LLM: {}", e);
@@ -178,20 +222,16 @@ impl PipelineOrchestrator {
                 cancel_flag: Arc::clone(&self.cancel_flag),
             };
             
-            if let Err(e) = tx.blocking_send(cmd) {
+            if let Err(e) = tx.send(cmd) {
                 log::error!("[Pipeline] Failed to send generate command to LLM: {}", e);
             }
         }
     }
 
     /// Process the internal event bus in a blocking loop.
-    ///
-    /// Handles: LlmToken (sub-sentence chunking) → TTS dispatch
-    ///          TtsChunk → Playback ingestion
-    ///          SpeechStart (headset mode barge-in) → cancellation
     pub fn run_event_loop(
         &self,
-        mut rx: Receiver<VoxEvent>,
+        rx: std::sync::mpsc::Receiver<VoxEvent>,
         en_tts_dir: PathBuf,
         hi_tts_dir: PathBuf,
         playback_engine: Arc<crate::services::playback::PlaybackEngine>,
@@ -216,12 +256,8 @@ impl PipelineOrchestrator {
                     }
                 };
 
-                loop {
-                    let (session_id, voice_sid, text) = match tts_rx.recv() {
-                        Ok(data) => data,
-                        Err(_) => break, // Channel closed
-                    };
-
+                log::info!("[TTS Worker] Persistent loop started.");
+                while let Ok((session_id, voice_sid, text)) = tts_rx.recv() {
                     if cancel_tts.load(Ordering::Relaxed) {
                         continue;
                     }
@@ -241,137 +277,163 @@ impl PipelineOrchestrator {
         let mut thinking     = false;
         let mut metrics      = PipelineMetrics::new();
         let audio_mode       = self.settings.audio_output_mode.clone();
-        let cancel           = Arc::clone(&self.cancel_flag);
 
         // Process events synchronously — this runs on the pipeline coordinator thread
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            while let Some(event) = rx.recv().await {
-                match event {
-                    // ── Speech start: headset barge-in cancellation ───────────
-                    VoxEvent::SpeechStart { session_id } => {
-                        metrics.mark(MetricField::SpeechStart);
-                        if audio_mode == AudioOutputMode::Headset
-                            && playback_engine.is_idle() == false
-                        {
-                            log::info!("[Pipeline] Barge-in detected (headset) — cancelling turn {}", session_id);
-                            cancel.store(true, Ordering::Relaxed);
-                            playback_engine.cancel();
-                        }
-                        let _ = app_handle.emit("speech_start", ());
-                    }
-
-                    // ── Transcript final: hand off to LLM ────────────────────
-                    VoxEvent::TranscriptFinal { session_id, text } => {
-                        current_sid = session_id;
-                        token_buf.clear();
-                        voice_sid = 0;   // Reset to English default
-                        thinking = false; // Reset thinking state
-                        metrics.mark(MetricField::FinalTranscript);
-                        log::info!("[Pipeline] TranscriptFinal sid={}: {:?}", session_id, text);
-                        // Emit to frontend for display
-                        let _ = app_handle.emit("transcript_final", &text);
-                        // LLM is spawned externally via on_transcript_final
-                    }
-
-                    // ── LLM token: accumulate + sub-sentence chunking ─────────
-                    VoxEvent::LlmToken { session_id, token } => {
-                        if session_id != current_sid { continue; }
-                        
-                        // 1. Stateful thinking-block detection (Directive: Drop thoughts from TTS)
-                        if token.contains("<|channel>thought") {
-                            thinking = true;
-                            log::debug!("[Pipeline] Entered thinking mode — silencing TTS");
-                            continue;
-                        }
-                        if token.contains("<channel|>") {
-                            thinking = false;
-                            log::debug!("[Pipeline] Exited thinking mode");
-                            continue;
-                        }
-                        if thinking { continue; }
-
-                        if metrics.first_token.is_none() {
-                            metrics.mark(MetricField::FirstToken);
-                        }
-
-                        token_buf.push_str(&token);
-                        
-                        // 2. Language detection (Devanagari check)
-                        if is_devanagari(&token_buf) {
-                            voice_sid = 10; // hf_alpha (Hindi Female)
-                        }
-
-                        let words = count_words(&token_buf);
-
-                        // Directive 2: check flush condition
-                        if should_flush(&token_buf, words) {
-                            let chunk = token_buf.trim().to_string();
-                            if !chunk.is_empty() {
-                                log::debug!("[Pipeline] Flushing to TTS (sid={}): {:?} ({} words)", voice_sid, chunk, words);
-                                metrics.mark(MetricField::TtsStart);
-                                let _ = tts_tx.send((session_id, voice_sid, chunk));
-                            }
-                            token_buf.clear();
-                        }
-
-                        // Forward token to frontend for streaming display
-                        let _ = app_handle.emit("llm_token", &token);
-                    }
-
-                    // ── LLM finished: flush any remaining buffer ───────────────
-                    VoxEvent::LlmFinished { session_id } => {
-                        if session_id != current_sid { continue; }
-                        thinking = false; // Reset just in case
-                        let remainder = token_buf.trim().to_string();
-                        if !remainder.is_empty() {
-                            log::debug!("[Pipeline] Final flush to TTS (sid={}): {:?}", voice_sid, remainder);
-                            let _ = tts_tx.send((session_id, voice_sid, remainder));
-                        }
-                        token_buf.clear();
-                        log::info!("[Pipeline] LLM finished (session {})", session_id);
-                    }
-
-                    // ── TTS chunk: ingest into playback buffer ─────────────────
-                    VoxEvent::TtsChunk { session_id, samples } => {
-                        if session_id != current_sid { continue; }
-                        if metrics.first_audio.is_none() {
-                            metrics.mark(MetricField::FirstAudio);
-                        }
-                        // upsample_2x runs inside ingest_chunk (Directive 3)
-                        playback_engine.ingest_chunk(&samples);
-                        if metrics.playback_start.is_none() && !playback_engine.is_idle() {
-                            metrics.mark(MetricField::PlaybackStart);
-                            let _ = app_handle.emit("playback_started", ());
-                        }
-                    }
-
-                    // ── Playback finished ─────────────────────────────────────
-                    VoxEvent::PlaybackFinished { session_id } => {
-                        if session_id != current_sid { continue; }
-                        metrics.mark(MetricField::PlaybackFinish);
-                        let report = metrics.latency_report();
-                        log::info!("[Pipeline] Turn complete. Latencies: {}", report);
-                        let _ = app_handle.emit("playback_finished", &report);
-                        metrics.reset();
-                    }
-
-                    // ── Cancellation ──────────────────────────────────────────
-                    VoxEvent::Cancelled { session_id } => {
-                        log::info!("[Pipeline] Cancelled (session {})", session_id);
+        log::info!("[Pipeline] Event loop starting...");
+        while let Ok(event) = rx.recv() {
+            match event {
+                // ── Speech start: headset barge-in cancellation ───────────
+                VoxEvent::SpeechStart { session_id } => {
+                    if audio_mode == AudioOutputMode::Headset
+                        && playback_engine.is_idle() == false
+                    {
+                        log::info!("[Pipeline] Barge-in detected (headset) — cancelling turn {}", session_id);
+                        self.cancel_flag.store(true, Ordering::Relaxed);
                         playback_engine.cancel();
-                        token_buf.clear();
-                        let _ = app_handle.emit("pipeline_cancelled", session_id);
+                        self.update_interaction_state(crate::core::state::InteractionState::Interrupted, &app_handle);
+                    } else {
+                        self.update_interaction_state(crate::core::state::InteractionState::UserSpeaking, &app_handle);
                     }
-
-                    VoxEvent::Error { session_id, message } => {
-                        log::error!("[Pipeline] Error (session {}): {}", session_id, message);
-                        let _ = app_handle.emit("pipeline_error", &message);
-                    }
-
-                    _ => {} // SpeechEnd, TtsFinished, etc. — no action needed
                 }
+
+                // ── Transcript partial: update HUD UI ─────────────────────
+                VoxEvent::TranscriptPartial { session_id, owner, text } => {
+                    if session_id < current_sid { continue; }
+                    let target = match owner {
+                        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                        crate::core::state::InteractionOwner::Tray => "tray",
+                    };
+                    let _ = app_handle.emit_to(target, "transcript_partial", serde_json::json!({
+                        "text": text,
+                        "session_id": session_id,
+                        "owner": owner
+                    }));
+                }
+
+                // ── Transcript final: hand off to LLM ────────────────────
+                VoxEvent::TranscriptFinal { session_id, owner, text } => {
+                    if session_id < current_sid { continue; }
+                    current_sid = session_id;
+                    token_buf.clear();
+                    voice_sid = 0;   
+                    thinking = false;
+                    metrics.mark(MetricField::FinalTranscript);
+                    
+                    self.update_interaction_state(crate::core::state::InteractionState::Thinking, &app_handle);
+
+                    let target = match owner {
+                        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                        crate::core::state::InteractionOwner::Tray => "tray",
+                    };
+                    let _ = app_handle.emit_to(target, "transcript_final", serde_json::json!({
+                        "text": text.clone(),
+                        "session_id": session_id,
+                        "owner": owner
+                    }));
+
+                    self.on_transcript_final(text, owner, app_handle.clone());
+                }
+
+                // ── LLM token: accumulate + sub-sentence chunking ─────────
+                VoxEvent::LlmToken { session_id, token } => {
+                    if session_id != current_sid { continue; }
+                    
+                    if token.contains("<|channel>thought") {
+                        thinking = true;
+                        continue;
+                    }
+                    if token.contains("<channel|>") {
+                        thinking = false;
+                        continue;
+                    }
+                    if thinking { continue; }
+
+                    token_buf.push_str(&token);
+                    let word_count = count_words(&token_buf);
+
+                    if should_flush(&token_buf, word_count) {
+                        let chunk = token_buf.trim().to_string();
+                        if !chunk.is_empty() {
+                            // Detect language for voice selection
+                            voice_sid = if is_devanagari(&chunk) { 1 } else { 0 };
+                             let _ = tts_tx.send((session_id, voice_sid, chunk));
+                             token_buf.clear();
+                         }
+                     }
+                     
+                     let target = {
+                         let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
+                         let owner = state.owner.blocking_lock();
+                         match *owner {
+                             crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                             crate::core::state::InteractionOwner::Tray => "tray",
+                         }
+                     };
+                     let _ = app_handle.emit_to(target, "llm_token", &token);
+                 }
+
+                VoxEvent::LlmFinished { session_id } => {
+                    if session_id != current_sid { continue; }
+                    thinking = false;
+                    let remainder = token_buf.trim().to_string();
+                    if !remainder.is_empty() {
+                        let _ = tts_tx.send((session_id, voice_sid, remainder));
+                    }
+                    token_buf.clear();
+                }
+
+                VoxEvent::TtsChunk { session_id, samples } => {
+                    if session_id != current_sid { continue; }
+                    if metrics.first_audio.is_none() {
+                        metrics.mark(MetricField::FirstAudio);
+                    }
+                    playback_engine.ingest_chunk(&samples);
+                    if metrics.playback_start.is_none() && !playback_engine.is_idle() {
+                        metrics.mark(MetricField::PlaybackStart);
+                        self.update_interaction_state(crate::core::state::InteractionState::AssistantSpeaking, &app_handle);
+                    }
+                }
+
+                VoxEvent::PlaybackFinished { session_id } => {
+                    if session_id != current_sid { continue; }
+                    metrics.mark(MetricField::PlaybackFinish);
+                    let report = metrics.latency_report();
+                    log::info!("[Pipeline] Turn complete. Latencies: {}", report);
+                    self.update_interaction_state(crate::core::state::InteractionState::Idle, &app_handle);
+                    
+                    let target = {
+                        let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
+                        let owner = state.owner.blocking_lock();
+                        match *owner {
+                            crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                            crate::core::state::InteractionOwner::Tray => "tray",
+                        }
+                    };
+                    let _ = app_handle.emit_to(target, "playback_finished", &report);
+                    metrics.reset();
+                }
+
+                VoxEvent::Cancelled { session_id } => {
+                    log::info!("[Pipeline] Cancelled (session {})", session_id);
+                    playback_engine.cancel();
+                    token_buf.clear();
+                    self.update_interaction_state(crate::core::state::InteractionState::Interrupted, &app_handle);
+                }
+
+                VoxEvent::Error { session_id, message } => {
+                    log::error!("[Pipeline] Error (session {}): {}", session_id, message);
+                    let target = {
+                        let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
+                        let owner = state.owner.blocking_lock();
+                        match *owner {
+                            crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                            crate::core::state::InteractionOwner::Tray => "tray",
+                        }
+                    };
+                    let _ = app_handle.emit_to(target, "pipeline_error", &message);
+                }
+                _ => {} 
             }
-        });
+        }
     }
 }

@@ -14,12 +14,15 @@ pub const SAMPLE_RATE: i32 = 16000;
 /// Commands sent from the VAD/Router thread to the STT worker thread.
 pub enum SttCommand {
     /// Partial audio buffer sent during an active speech segment for real-time feedback.
-    /// Format: (Session ID, Samples)
-    Partial(u32, Vec<f32>),
+    /// Format: (Session ID, Owner, Samples)
+    Partial(u32, crate::core::state::InteractionOwner, Vec<f32>),
     
     /// Complete audio buffer sent when VAD detects the end of a speech segment.
-    /// Format: (Session ID, Samples)
-    Final(u32, Vec<f32>),
+    /// Format: (Session ID, Owner, Samples)
+    Final(u32, crate::core::state::InteractionOwner, Vec<f32>),
+
+    /// Resets the internal acoustic and contextual states.
+    ResetStream,
 }
 
 // ─── Engine ───────────────────────────────────────────────────────────────────

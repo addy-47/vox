@@ -1,0 +1,7 @@
+faster-whisper
+ffmpeg-python
+pydub
+tqdm
+requests
+torch
+numpy

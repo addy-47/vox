@@ -163,6 +163,24 @@ body.is-tray #root {
     -webkit-text-fill-color: transparent;
     animation: shimmer 4s linear infinite;
   }
+
+  .premium-card {
+    @apply bg-[rgb(var(--card))] border border-[rgba(var(--border),0.05)] rounded-2xl shadow-xl backdrop-blur-md transition-all duration-300;
+  }
+  
+  .shimmer-text {
+    background: linear-gradient(
+      90deg, 
+      rgba(var(--foreground), 0.4) 0%, 
+      rgba(var(--foreground), 0.9) 50%, 
+      rgba(var(--foreground), 0.4) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 4s linear infinite;
+  }
 }
 
 /* Tray HUD Visibility & Layout - Fullscreen Layer Shell Simulation */

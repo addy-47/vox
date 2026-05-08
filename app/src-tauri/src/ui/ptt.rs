@@ -26,6 +26,14 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     log::info!("[PTT] >>> Recording started (session: {})", *session);
     let _ = app.emit("ptt_status", json!({ "state": "RECORDING", "session_id": *session }));
     
+    // Phase 5: Update interaction state for unified UI
+    {
+        let state_atomic = &state.pipeline.state;
+        let mut state_lock = state_atomic.lock().unwrap();
+        *state_lock = crate::core::state::InteractionState::UserSpeaking;
+    }
+    let _ = app.emit("state_changed", crate::core::state::InteractionState::UserSpeaking);
+    
     Ok(())
 }
 
@@ -35,7 +43,7 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
     
     // Extract everything we need and drop the locks immediately to prevent 
     // pipeline freezes while waiting for the STT channel.
-    let (session, buffer_clone) = {
+    let (session, owner, buffer_clone) = {
         let mut recording = state.ptt.is_recording.lock().await;
         if !*recording {
             return Ok(());
@@ -49,10 +57,19 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
         *mode = InteractionMode::Passive;
         log::info!("[PTT] <<< Recording stopped. Finalizing {} samples...", buffer.len());
         
-        (*session, buffer.clone())
+        let owner = *state.owner.lock().await;
+        (*session, owner, buffer.clone())
     }; 
 
     let _ = app.emit("ptt_status", json!({ "state": "PROCESSING", "session_id": session }));
+
+    // Phase 5: Update interaction state for unified UI
+    {
+        let state_atomic = &state.pipeline.state;
+        let mut state_lock = state_atomic.lock().unwrap();
+        *state_lock = crate::core::state::InteractionState::Thinking;
+    }
+    let _ = app.emit("state_changed", crate::core::state::InteractionState::Thinking);
 
     // Send the full buffer to STT for finalization
     let engine_lock = state.engine.lock().await;
@@ -60,8 +77,8 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
         // We use .send().await here because it's the final buffer; we MUST ensure it's delivered.
         // Since we dropped the ptt locks above, the VAD thread can continue processing 
         // other tasks even if this send blocks temporarily.
-        let _ = engine.stt_tx.send(SttCommand::Final(session, buffer_clone)).await;
-        log::info!("[PTT] Sent final buffer to STT worker (session: {})", session);
+        let _ = engine.stt_tx.send(SttCommand::Final(session, owner, buffer_clone));
+        log::info!("[PTT] Sent final buffer to STT worker (session: {}, owner: {:?})", session, owner);
     } else {
         log::error!("[PTT] Engine not running, cannot finalize transcription.");
     }
@@ -83,6 +100,14 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
 
     log::info!("[PTT] ❌ Recording cancelled.");
     let _ = app.emit("ptt_status", json!({ "state": "IDLE" }));
+
+    // Phase 5: Update interaction state for unified UI
+    {
+        let state_atomic = &state.pipeline.state;
+        let mut state_lock = state_atomic.lock().unwrap();
+        *state_lock = crate::core::state::InteractionState::Idle;
+    }
+    let _ = app.emit("state_changed", crate::core::state::InteractionState::Idle);
     
     Ok(())
 }
@@ -132,8 +157,9 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
             if let Some(engine) = lock.as_ref() {
                 // For partial transcripts, only send the last 15 seconds to keep CPU/Memory low
                 // 15 seconds * 16,000 samples/sec = 240,000 samples
+                let owner = *state.owner.blocking_lock();
                 let start_idx = buffer.len().saturating_sub(240000);
-                let _ = engine.stt_tx.try_send(SttCommand::Partial(*session, buffer[start_idx..].to_vec()));
+                let _ = engine.stt_tx.send(SttCommand::Partial(*session, owner, buffer[start_idx..].to_vec()));
                 log::debug!("[PTT] Sent partial buffer window ({} samples) to STT worker", buffer[start_idx..].len());
             }
         }
@@ -149,15 +175,14 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
         let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
         let rms = (sum_sq / samples.len() as f32).sqrt();
 
-        // Noise Gate: Use setting or default
-        let gate = 0.005; // TODO: pull from settings if needed
-        let amplitude = if rms < gate {
-            0.0
-        } else {
-            (rms * 7.5).min(1.0)
-        };
-
-        let _ = app.emit("audio_amplitude", json!({ "amplitude": amplitude }));
+        if let Ok(lock) = state.engine.try_lock() {
+            if let Some(engine) = lock.as_ref() {
+                let _ = engine.telemetry_tx.send(crate::core::state::TelemetryData {
+                    energy: rms,
+                    vad_prob: 0.0,
+                });
+            }
+        }
         *samples_waveform = 0;
     }
 }

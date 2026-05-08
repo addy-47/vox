@@ -58,7 +58,7 @@ impl Default for VoxSettings {
             vad_threshold:    0.6,
             ptt_noise_gate:   0.005,
             theme:            "dark".into(),
-            llm_model_path:   PathBuf::from("assets/gemma4/google_gemma-4-E2B-it-IQ2_M.gguf"),
+            llm_model_path:   PathBuf::from("assets/gemma4/google_gemma-4-E2B-it-Q4_K_M.gguf"),
             tts_model_dir:    PathBuf::from("assets/kokoro"),
             tts_hindi_model_dir: PathBuf::from("assets/piper_hi"),
             llm_ctx_size:     2048,
@@ -72,11 +72,22 @@ impl VoxSettings {
     pub fn load(config_dir: &PathBuf) -> Self {
         let path = config_dir.join("settings.json");
         if let Ok(content) = fs::read_to_string(&path) {
-            if let Ok(settings) = serde_json::from_str(&content) {
+            if let Ok(mut settings) = serde_json::from_str::<Self>(&content) {
+                log::info!("[Settings] Loaded configuration from {:?}", path);
+                
+                // ── Phase 5 migration: Force Q4_K_M if stale IQ2_M is found ─────
+                let model_str = settings.llm_model_path.to_string_lossy();
+                if model_str.contains("IQ2_M") {
+                    log::warn!("[Settings] Stale IQ2_M model detected in config. Migrating to Q4_K_M...");
+                    settings.llm_model_path = PathBuf::from("assets/gemma4/google_gemma-4-E2B-it-Q4_K_M.gguf");
+                    // We don't save here, it will be saved next time app state is saved
+                }
+                
                 return settings;
             }
         }
 
+        log::info!("[Settings] No valid settings.json found. Using system defaults.");
         // Return default if file doesn't exist or is invalid
         let settings = Self::default();
         let _ = settings.save(config_dir);

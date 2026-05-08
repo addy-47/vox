@@ -4,8 +4,6 @@ import { Settings, Database, Monitor, Sun, Moon } from "lucide-react";
 import { cn } from "../shared/lib/utils";
 import logo from "../assets/logo.webp";
 import logoLight from "../assets/logo-light.webp";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { invoke } from "@tauri-apps/api/core";
 
 const topNavItems = [
   { icon: Monitor, label: "HOME", path: "/" },
@@ -19,8 +17,14 @@ export const Sidebar: React.FC = () => {
   React.useEffect(() => {
     const initTheme = async () => {
       try {
-        const settings = await invoke<any>("get_settings");
-        setTheme(settings.theme as 'dark' | 'light');
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const settings = await invoke<any>("get_settings");
+          setTheme(settings.theme as 'dark' | 'light');
+        } else {
+          const stored = localStorage.getItem('theme') as 'dark' | 'light';
+          if (stored) setTheme(stored);
+        }
       } catch (e) {
         const stored = localStorage.getItem('theme') as 'dark' | 'light';
         if (stored) setTheme(stored);
@@ -34,26 +38,36 @@ export const Sidebar: React.FC = () => {
     localStorage.setItem('theme', theme);
     
     // Sync Tauri window theme
-    try {
-      if ((window as any).__TAURI_INTERNALS__) {
-        getCurrentWindow().setTheme(theme);
-        // Only invoke update_theme if it's different from what's likely already in the backend
-        // to avoid infinite loops, though update_theme itself is idempotent.
-        invoke("update_theme", { theme });
+    const syncTheme = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          const { invoke } = await import("@tauri-apps/api/core");
+          getCurrentWindow().setTheme(theme);
+          invoke("update_theme", { theme });
+        }
+      } catch (e) {
+        console.warn("Could not set Tauri window theme", e);
       }
-    } catch (e) {
-      console.warn("Could not set Tauri window theme", e);
-    }
+    };
+    syncTheme();
   }, [theme]);
 
   React.useEffect(() => {
     let unlisten: (() => void) | undefined;
     
     const setup = async () => {
-      const appWindow = getCurrentWindow();
-      unlisten = await appWindow.listen<string>("theme-changed", (event) => {
-        setTheme(event.payload as 'dark' | 'light');
-      });
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          const appWindow = getCurrentWindow();
+          unlisten = await appWindow.listen<string>("theme-changed", (event) => {
+            setTheme(event.payload as 'dark' | 'light');
+          });
+        }
+      } catch (err) {
+        console.error("[Sidebar] Failed to setup listeners:", err);
+      }
     };
     
     setup();

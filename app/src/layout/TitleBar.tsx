@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
 // Removed unused import
 
@@ -9,34 +8,38 @@ export const TitleBar: React.FC = () => {
 
   useEffect(() => {
     // Check if we are running in Tauri
-    setIsTauri(!!(window as any).__TAURI_INTERNALS__);
+    const hasTauri = !!(window as any).__TAURI_INTERNALS__;
+    setIsTauri(hasTauri);
 
-    if ((window as any).__TAURI_INTERNALS__) {
-      const win = getCurrentWindow();
-      
-      // Clear hover state on any focus change
+    if (hasTauri) {
+      let unlistenFocus: (() => void) | undefined;
+      let unlistenBlur: (() => void) | undefined;
+
       const setupListeners = async () => {
-        const unlistenFocus = await win.listen("tauri://focus", () => {
-          setIsCloseHovered(false);
-        });
-        const unlistenBlur = await win.listen("tauri://blur", () => {
-          setIsCloseHovered(false);
-        });
-        
-        return () => {
-          unlistenFocus();
-          unlistenBlur();
-        };
+        try {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          const win = getCurrentWindow();
+          
+          unlistenFocus = await win.listen("tauri://focus", () => {
+            setIsCloseHovered(false);
+          });
+          unlistenBlur = await win.listen("tauri://blur", () => {
+            setIsCloseHovered(false);
+          });
+        } catch (err) {
+          console.error("[TitleBar] Failed to setup listeners:", err);
+        }
       };
 
-      const cleanupPromise = setupListeners();
+      setupListeners();
       
       // Also use standard web focus event for redundancy
       const handleWebFocus = () => setIsCloseHovered(false);
       window.addEventListener('focus', handleWebFocus);
       
       return () => {
-        cleanupPromise.then(cleanup => cleanup());
+        if (unlistenFocus) unlistenFocus();
+        if (unlistenBlur) unlistenBlur();
         window.removeEventListener('focus', handleWebFocus);
       };
     }
@@ -45,12 +48,14 @@ export const TitleBar: React.FC = () => {
 
   const handleMinimize = async () => {
     try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().minimize();
     } catch (e) {}
   };
 
   const handleMaximize = async () => {
     try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().toggleMaximize();
     } catch (e) {}
   };
@@ -58,6 +63,7 @@ export const TitleBar: React.FC = () => {
   const handleClose = async () => {
     setIsCloseHovered(false);
     try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().close();
     } catch (e) {}
   };

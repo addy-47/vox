@@ -12,9 +12,33 @@ pub enum InteractionMode {
     Ptt,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub enum InteractionOwner {
+    Tray,
+    MainWindow,
+    Ptt,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub enum InteractionState {
+    Idle,
+    Listening,
+    UserSpeaking,
+    Thinking,
+    AssistantSpeaking,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TelemetryData {
+    pub energy: f32,
+    pub vad_prob: f32,
+}
+
 pub struct VoxEngine {
     pub audio_stream: AudioStream,
-    pub stt_tx: tokio::sync::mpsc::Sender<SttCommand>,
+    pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
+    pub telemetry_tx: std::sync::mpsc::Sender<TelemetryData>,
 }
 
 pub struct PttState {
@@ -41,6 +65,11 @@ pub struct PipelineAtomics {
     pub tts_generating:  Arc<AtomicBool>,
     /// Monotonically increasing turn counter. Used to reject stale pipeline events.
     pub session_id:      Arc<AtomicU32>,
+    /// Current interaction state (Idle, Listening, etc.)
+    pub state:           Arc<std::sync::Mutex<InteractionState>>,
+    /// `true` if the main application is "engaged" (active interaction).
+    /// If false, the pipeline remains in a dormant, STT-only state.
+    pub is_engaged:      Arc<AtomicBool>,
 }
 
 impl PipelineAtomics {
@@ -51,6 +80,8 @@ impl PipelineAtomics {
             llm_generating:  Arc::new(AtomicBool::new(false)),
             tts_generating:  Arc::new(AtomicBool::new(false)),
             session_id:      Arc::new(AtomicU32::new(0)),
+            state:           Arc::new(std::sync::Mutex::new(InteractionState::Idle)),
+            is_engaged:      Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -58,6 +89,7 @@ impl PipelineAtomics {
 pub struct AppState {
     pub engine:       Mutex<Option<VoxEngine>>,
     pub interaction:  Mutex<InteractionMode>,
+    pub owner:        Mutex<InteractionOwner>,
     pub hud_visible:  Mutex<bool>,
     pub settings:     Mutex<VoxSettings>,
     pub hud_menu_item: Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>,
@@ -84,6 +116,7 @@ impl AppState {
         Self {
             engine:    Mutex::new(None),
             interaction: Mutex::new(InteractionMode::Passive),
+            owner:     Mutex::new(InteractionOwner::Tray),
             hud_visible: Mutex::new(true),
             settings:  Mutex::new(settings),
             hud_menu_item: Mutex::new(None),
