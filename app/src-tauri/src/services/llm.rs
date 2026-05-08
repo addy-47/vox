@@ -207,7 +207,7 @@ impl LlmWorker {
                 .unwrap_or_default();
 
             let cleaned = Self::strip_tags(&token_str);
-            if !cleaned.trim().is_empty() {
+            if !cleaned.is_empty() {
                 let _ = tx.send(VoxEvent::LlmToken {
                     session_id,
                     token: cleaned,
@@ -260,16 +260,17 @@ impl LlmWorker {
 
     fn strip_tags(text: &str) -> String {
         // Gemma 4 uses <|turn>role, <turn|>, and <|channel>thought blocks.
-        // This function is still called per-token in the LLM worker, which is 
-        // suboptimal for multi-token tags, but we handle the most obvious leaks here.
+        // We do NOT strip <|channel> here because pipeline.rs uses it to detect "Thinking" vs "Speaking" state.
         let mut cleaned = text.to_string();
         
-        // 1. Remove markers and common role labels
-        let re_tags = regex::Regex::new(r"<\|turn>|<turn\|>|<\|channel>|<channel\|>|system\n|user\n|model\n").unwrap();
+        // 1. Remove markers and common role labels (except <|channel>)
+        let re_tags = regex::Regex::new(r"<\|turn>|<turn\|>|<channel\|>|system\n|user\n|model\n").unwrap();
         cleaned = re_tags.replace_all(&cleaned, "").to_string();
         
-        if cleaned.contains("<|") || cleaned.contains("<start") || cleaned.contains("<end") {
-             log::warn!("[LLM] Possible leaked partial tag detected: {:?}", cleaned);
+        // DO NOT drop tokens just because they have `<|` or `<start` because `<|channel>` is a valid token we need!
+        // We only strip `<end>` or `<eos>` if they somehow leak
+        if cleaned.contains("<end") || cleaned.contains("<eos>") {
+             log::warn!("[LLM] Possible leaked eos tag detected: {:?}", cleaned);
              return "".to_string();
         }
         

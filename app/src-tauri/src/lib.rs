@@ -152,7 +152,7 @@ async fn update_theme(app: tauri::AppHandle, theme: String) -> Result<(), String
 }
 
 #[tauri::command]
-async fn engage(state: State<'_, AppState>) -> Result<(), String> {
+async fn engage(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
     let current = state.pipeline.is_engaged.load(Ordering::Relaxed);
     let new_state = !current;
     
@@ -176,6 +176,15 @@ async fn engage(state: State<'_, AppState>) -> Result<(), String> {
         if let Some(engine) = state.engine.lock().await.as_ref() {
             let _ = engine.stt_tx.send(crate::services::stt::SttCommand::ResetStream);
         }
+
+        // Reset InteractionState to Idle and notify UI
+        {
+            let mut state_lock = state.pipeline.state.lock().unwrap();
+            *state_lock = crate::core::state::InteractionState::Idle;
+        }
+        // Emit to both as we are switching back to tray ownership
+        let _ = app.emit_to("main", "state_changed", crate::core::state::InteractionState::Idle);
+        let _ = app.emit_to("tray", "state_changed", crate::core::state::InteractionState::Idle);
     }
     
     Ok(())
@@ -295,7 +304,7 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                 }
                 
                 let target = {
-                    let owner = app_state.owner.blocking_lock();
+                    let owner = app_state.owner.lock().await;
                     match *owner {
                         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                         crate::core::state::InteractionOwner::Tray => "tray",
