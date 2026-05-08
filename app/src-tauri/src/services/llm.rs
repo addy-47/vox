@@ -126,6 +126,10 @@ impl LlmWorker {
         cancel_flag: &Arc<AtomicBool>,
         tx: &Sender<VoxEvent>,
     ) -> Result<()> {
+        let start_time = std::time::Instant::now();
+        let mut ttft: Option<std::time::Duration> = None;
+        let mut tokens_generated = 0;
+
         // Gemma 2/4 Instruct Format:
         // <start_of_turn>user\n{system}\n\n{user}<end_of_turn>\n<start_of_turn>model\n
         let prompt = self.format_prompt(user_text);
@@ -163,21 +167,20 @@ impl LlmWorker {
             .map_err(|e| anyhow!("[LLM] Prefill decode failed: {}", e))?;
 
         let mut n_cur = tokens.len() as i32;
-
         let mut decoder = encoding_rs::UTF_8.new_decoder();
 
         log::info!("[LLM] >>> Generating (session: {})...", session_id);
 
         // ── Decode loop ───────────────────────────────────────────────────────
         loop {
-            // Atomic cancellation check — first thing every iteration
+            // Atomic cancellation check
             if cancel_flag.load(Ordering::Relaxed) {
                 log::info!("[LLM] Cancelled at token {} (session: {})", n_cur, session_id);
                 let _ = tx.blocking_send(VoxEvent::Cancelled { session_id });
                 return Ok(());
             }
 
-            // Sample next token (greedy) from the last evaluated batch
+            // Sample next token
             let candidates = ctx.candidates_ith(batch.n_tokens() as i32 - 1);
             let mut candidates_p = LlamaTokenDataArray::from_iter(candidates, false);
             let token = candidates_p.sample_token_greedy();
@@ -188,24 +191,28 @@ impl LlmWorker {
                 break;
             }
 
-            // Decode token to string using a fresh decoder or existing one if we tracked it
+            // Record TTFT
+            if ttft.is_none() {
+                ttft = Some(start_time.elapsed());
+            }
+
+            // Decode token to string
             let token_str = self.model
                 .token_to_piece(token, &mut decoder, false, None)
                 .unwrap_or_default();
 
             let cleaned = Self::strip_tags(&token_str);
-            log::debug!("[LLM] raw: {:?} -> cleaned: {:?}", token_str, cleaned);
-
             if !cleaned.trim().is_empty() {
                 let _ = tx.blocking_send(VoxEvent::LlmToken {
                     session_id,
                     token: cleaned,
                 });
             }
+            tokens_generated += 1;
 
             // Advance
             if n_cur >= self.ctx_size as i32 {
-                log::warn!("[LLM] Context limit reached ({} tokens). Stopping generation.", self.ctx_size);
+                log::warn!("[LLM] Context limit reached ({} tokens).", self.ctx_size);
                 break;
             }
 
@@ -215,7 +222,7 @@ impl LlmWorker {
             n_cur += 1;
 
             if n_cur > (tokens.len() as i32 + 512) {
-                log::warn!("[LLM] Safety limit reached (512 tokens). stopping.");
+                log::warn!("[LLM] Safety limit reached (512 tokens).");
                 break;
             }
 
@@ -223,8 +230,15 @@ impl LlmWorker {
                 .map_err(|e| anyhow!("[LLM] Decode step failed: {}", e))?;
         }
 
+        let elapsed = start_time.elapsed().as_secs_f32();
+        let tps = tokens_generated as f32 / elapsed;
+        
+        log::info!(
+            "[LLM] Generation complete (session: {}). Tokens: {}, TTFT: {:?}, TPS: {:.2}",
+            session_id, tokens_generated, ttft.unwrap_or_default(), tps
+        );
+
         let _ = tx.blocking_send(VoxEvent::LlmFinished { session_id });
-        log::info!("[LLM] Generation complete (session: {}, tokens: {})", session_id, n_cur);
         Ok(())
     }
 

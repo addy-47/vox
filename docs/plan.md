@@ -23,3 +23,10 @@
 * agentic features : x.x.x
 * mcp and connectors : x.x.x
 * rag integration : x.x.x
+* agent orhcestration for complex tasks myabe delegate to openclaw or hermes or codes or claudeocde instead of building ourselves : x.x.x
+
+
+## POST v 3.0 : features or ideas for release after stable
+
+* Android App : x.x.x
+* IOS App : x.x.x
