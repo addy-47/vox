@@ -87,6 +87,8 @@ impl SttEngine {
             return Ok(String::new());
         }
 
+        let start = std::time::Instant::now();
+
         // We create a fresh stream for every request to ensure KV-cache is cleared 
         // and no state leaks between utterances.
         let stream = self.recognizer.create_stream();
@@ -99,6 +101,15 @@ impl SttEngine {
         let result = stream.get_result()
             .ok_or_else(|| anyhow!("STT decode failed (no result returned)"))?;
             
+        let elapsed = start.elapsed().as_secs_f32();
+        let audio_duration = audio.len() as f32 / SAMPLE_RATE as f32;
+        let rtf = if audio_duration > 0.0 { elapsed / audio_duration } else { 0.0 };
+
+        log::info!(
+            "[STT] Transcribed: {:?}. (Audio: {:.2}s, Latency: {:.2}s, RTF: {:.3})",
+            result.text.trim(), audio_duration, elapsed, rtf
+        );
+
         Ok(result.text.trim().to_string())
     }
 }
