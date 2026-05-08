@@ -41,5 +41,7 @@ encoding_rs = "0.8.35"
 regex = "1.12.3"
 
 [dev-dependencies]
+hound = "3.5"
 # Helpers for integration tests
 chrono = "0.4"
+sysinfo = "0.29"
