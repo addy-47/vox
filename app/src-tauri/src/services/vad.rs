@@ -97,6 +97,8 @@ impl VadEngine {
         let mut current_session_id: u32 = 0;
         let mut utterance_buffer: Vec<f32> = Vec::new();
         let mut samples_since_partial = 0;
+        let mut pre_roll_buffer: Vec<f32> = Vec::with_capacity(8000); // 500ms pre-roll
+
         
         // 16ms chunks (256 samples at 16kHz) — matches TenVAD window_size default
         let mut chunk = vec![0.0f32; 256];
@@ -183,7 +185,11 @@ impl VadEngine {
                             "session_id": current_session_id 
                         }));
                         utterance_buffer.clear();
-                        samples_since_partial = 0;
+                        
+                        // Inject the pre-roll audio so we don't drop the start of the speech
+                        utterance_buffer.extend_from_slice(&pre_roll_buffer);
+                        samples_since_partial = utterance_buffer.len();
+                        pre_roll_buffer.clear();
                     }
 
                     utterance_buffer.extend_from_slice(&chunk);
@@ -248,6 +254,15 @@ impl VadEngine {
                         // Critical: Reset VAD state for the next utterance to prevent 
                         // history leaking between sessions.
                         self.detector.reset();
+                    }
+                    
+                    // Maintain a sliding window of recent audio during silence
+                    if !in_speech {
+                        pre_roll_buffer.extend_from_slice(&chunk);
+                        if pre_roll_buffer.len() > 8000 {
+                            let excess = pre_roll_buffer.len() - 8000;
+                            pre_roll_buffer.drain(0..excess);
+                        }
                     }
                 }
             } else {
