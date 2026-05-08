@@ -7,8 +7,8 @@ pub enum VoxEvent {
     SpeechStart  { session_id: u32 },
     SpeechEnd    { session_id: u32 },
 
-    TranscriptDelta { session_id: u32, text: String },
-    TranscriptFinal { session_id: u32, text: String },
+    TranscriptPartial { session_id: u32, owner: crate::core::state::InteractionOwner, text: String },
+    TranscriptFinal   { session_id: u32, owner: crate::core::state::InteractionOwner, text: String },
 
     LlmToken    { session_id: u32, token: String },
     LlmFinished { session_id: u32 },

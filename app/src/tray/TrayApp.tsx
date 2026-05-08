@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "./components/Header";
 import { TranscriptRenderer } from "./components/TranscriptRenderer";
 import { Footer } from "./components/Footer";
-import { useInteraction } from "./hooks/useInteraction";
-import { useVisibility } from "./hooks/useVisibility";
-import { useStreamingRenderer } from "./hooks/useStreamingRenderer";
+import { useVisibility } from "../shared/hooks/useVisibility";
+import { useInteraction } from "../shared/hooks/useInteraction";
+import { useStreamingRenderer } from "../shared/hooks/useStreamingRenderer";
+import { useTelemetry } from "../shared/hooks/useTelemetry";
 import { CircularBuffer } from "./utils/CircularBuffer";
 
 interface SystemStats {
@@ -26,6 +25,7 @@ export const TrayApp: React.FC = () => {
     interactionId, committedText, partialText, 
     startNewInteraction, endSpeechSegment, updatePartial, commitFinal 
   } = useInteraction();
+  const telemetryRef = useTelemetry();
   
   const liveTargetText = useMemo(() => {
     const separator = committedText && partialText ? " " : "";
@@ -47,26 +47,35 @@ export const TrayApp: React.FC = () => {
     state: visibilityState, setIsHovered, show, startHold, hideImmediately 
   } = useVisibility({ holdDuration: 3000, fadeDuration: 2000 });
 
-  const [isListening, setIsListening] = useState(false);
+  const [interactionState, setInteractionState] = useState<string>("Idle");
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
 
   // ─── PTT & Mode State ──────────────────────────────────────────────────────
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
-  const [amplitudeBuffer, setAmplitudeBuffer] = useState<number[]>(new Array(40).fill(0));
 
   // Sync React state to OS Window and Backend state
   useEffect(() => {
-    if (visibilityState === 'HIDDEN') {
-      invoke("hide_tray_window");
-      invoke("sync_hud_visibility", { visible: false });
-      invoke("set_hud_ignore_cursor", { ignore: true });
-    } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
-      invoke("sync_hud_visibility", { visible: true });
-      invoke("set_hud_ignore_cursor", { ignore: false });
-    } else if (visibilityState === 'FADING') {
-      invoke("set_hud_ignore_cursor", { ignore: true });
-    }
+    const syncVisibility = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          if (visibilityState === 'HIDDEN') {
+            invoke("hide_tray_window");
+            invoke("sync_hud_visibility", { visible: false });
+            invoke("set_hud_ignore_cursor", { ignore: true });
+          } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
+            invoke("sync_hud_visibility", { visible: true });
+            invoke("set_hud_ignore_cursor", { ignore: false });
+          } else if (visibilityState === 'FADING') {
+            invoke("set_hud_ignore_cursor", { ignore: true });
+          }
+        }
+      } catch (e) {
+        console.warn("[TrayApp] Failed to sync visibility:", e);
+      }
+    };
+    syncVisibility();
   }, [visibilityState]);
 
   // ─── IPC Event Listeners ───────────────────────────────────────────────────
@@ -75,78 +84,89 @@ export const TrayApp: React.FC = () => {
     let unlisteners: (() => void)[] = [];
 
     const setupListeners = async () => {
-      const appWindow = getCurrentWindow();
-      
-      const u1 = await appWindow.listen("speech_start", () => {
-        if (!isMounted) return;
-        setIsListening(true);
-        setViewingHistory(false);
-        startNewInteraction();
-        show();
-      });
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          const appWindow = getCurrentWindow();
+          
+          const u1 = await appWindow.listen("speech_start", () => {
+            if (!isMounted) return;
+            setViewingHistory(false);
+            startNewInteraction();
+            show();
+          });
 
-      const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
-        if (!isMounted) return;
-        // Deferred UI: Ignore partials during PTT recording
-        if (pttStatus === 'RECORDING') return;
-        updatePartial(event.payload.text);
-      });
+          const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
+            if (!isMounted) return;
+            // Deferred UI: Ignore partials during PTT recording
+            if (pttStatus === 'RECORDING') return;
+            updatePartial(event.payload.text);
+          });
 
-      const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
-        if (!isMounted) return;
-        if (event.payload.text) {
-          commitFinal(event.payload.text);
-          history.push(event.payload.text);
+          const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
+            if (!isMounted) return;
+            if (event.payload.text) {
+              commitFinal(event.payload.text);
+              history.push(event.payload.text);
+            }
+          });
+
+          const u4 = await appWindow.listen("speech_end", () => {
+            if (!isMounted) return;
+            endSpeechSegment();
+            startHold();
+          });
+
+          const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
+            if (!isMounted) return;
+            setStats(event.payload);
+          });
+
+          const u6 = await appWindow.listen("toggle_hud", () => {
+            if (!isMounted) return;
+            if (visibilityState === 'HIDDEN') show();
+            else hideImmediately();
+          });
+
+          const u7 = await appWindow.listen<string>("state_changed", (event) => {
+            if (!isMounted) return;
+            setInteractionState(event.payload);
+          });
+
+          const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
+            if (!isMounted) return;
+            setPttStatus(event.payload.state as any);
+          });
+
+          const u9 = await appWindow.listen<string>("theme-changed", (event) => {
+            if (!isMounted) return;
+            document.documentElement.setAttribute('data-theme', event.payload);
+          });
+
+          unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
         }
-      });
-
-      const u4 = await appWindow.listen("speech_end", () => {
-        if (!isMounted) return;
-        setIsListening(false);
-        endSpeechSegment();
-        startHold();
-      });
-
-      const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
-        if (!isMounted) return;
-        setStats(event.payload);
-      });
-
-      const u6 = await appWindow.listen("toggle_hud", () => {
-        if (!isMounted) return;
-        if (visibilityState === 'HIDDEN') show();
-        else hideImmediately();
-      });
-
-      const u7 = await appWindow.listen<{ amplitude: number }>("audio_amplitude", (event) => {
-        if (!isMounted) return;
-        setAmplitudeBuffer(prev => {
-          const next = [...prev.slice(1), event.payload.amplitude];
-          return next;
-        });
-      });
-
-      const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
-        if (!isMounted) return;
-        setPttStatus(event.payload.state as any);
-      });
-
-      const u9 = await appWindow.listen<string>("theme-changed", (event) => {
-        if (!isMounted) return;
-        document.documentElement.setAttribute('data-theme', event.payload);
-      });
-
-      unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
+      } catch (err) {
+        console.error("[TrayApp] Failed to setup listeners:", err);
+      }
     };
 
     setupListeners();
 
     // Initial theme setup
-    invoke<any>("get_settings").then(settings => {
-      if (isMounted && settings?.theme) {
-        document.documentElement.setAttribute('data-theme', settings.theme);
+    const fetchSettings = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const settings = await invoke<any>("get_settings");
+          if (isMounted && settings?.theme) {
+            document.documentElement.setAttribute('data-theme', settings.theme);
+          }
+        }
+      } catch (e) {
+        console.warn("[TrayApp] Failed to fetch settings:", e);
       }
-    });
+    };
+    fetchSettings();
 
     return () => {
       isMounted = false;
@@ -181,11 +201,18 @@ export const TrayApp: React.FC = () => {
     });
   }, [history]);
 
-  const togglePtt = () => {
-    if (pttStatus === 'IDLE') {
-      invoke("ptt_start");
-    } else {
-      invoke("ptt_stop");
+  const togglePtt = async () => {
+    try {
+      if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        if (pttStatus === 'IDLE') {
+          invoke("ptt_start");
+        } else {
+          invoke("ptt_stop");
+        }
+      }
+    } catch (e) {
+      console.error("[TrayApp] Failed to toggle PTT:", e);
     }
   };
 
@@ -214,7 +241,7 @@ export const TrayApp: React.FC = () => {
             onMouseLeave={() => setIsHovered(false)}
           >
             <Header 
-              isListening={isListening || pttStatus === 'RECORDING'} 
+              isListening={interactionState === "Listening" || interactionState === "UserSpeaking" || pttStatus === 'RECORDING'} 
               hasContent={!!currentTargetText} 
               copied={copied} 
               isPttActive={pttStatus !== 'IDLE'}
@@ -226,9 +253,9 @@ export const TrayApp: React.FC = () => {
             <div className="flex-1 flex flex-col relative overflow-hidden group">
               <TranscriptRenderer 
                 displayText={displayText} 
-                isListening={isListening || pttStatus === 'RECORDING'} 
+                interactionState={interactionState}
                 pttStatus={pttStatus}
-                amplitudeBuffer={amplitudeBuffer}
+                telemetryRef={telemetryRef}
               />
             </div>
 

@@ -4,7 +4,8 @@ import { cn } from "../lib/utils";
 interface LiveWaveformProps {
   active?: boolean;
   processing?: boolean;
-  amplitude?: number; // New: provided from backend telemetry
+  telemetryRef?: React.MutableRefObject<{ energy: number; vad_prob: number }>;
+  amplitude?: number; // Keep for backward compatibility
   height?: string | number;
   width?: string | number;
   className?: string;
@@ -18,6 +19,7 @@ const mapRange = (val: number, in_min: number, in_max: number, out_min: number, 
 export const LiveWaveform: React.FC<LiveWaveformProps> = ({
   active = false,
   processing = false,
+  telemetryRef,
   amplitude = 0.04,
   height = 60,
   width = "100%",
@@ -59,9 +61,11 @@ export const LiveWaveform: React.FC<LiveWaveformProps> = ({
         const bars = 40;
         const barWidth = (width / 2) / bars;
         
+        const currentAmplitude = telemetryRef ? telemetryRef.current.energy : amplitude;
+        
         for (let i = 0; i < bars; i++) {
           const noise = Math.sin(time * 10 + i * 0.5) * 0.1;
-          const v = mapRange(amplitude + noise, 0, 1, 0.1, 1.0);
+          const v = mapRange(currentAmplitude + noise, 0, 1, 0.1, 1.0);
           const h = (v * heightVal * 0.8);
           const x_right = centerX + (i * barWidth);
           const x_left = centerX - (i * barWidth);

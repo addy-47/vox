@@ -10,7 +10,6 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
 
 use llama_cpp_2::{
     context::params::LlamaContextParams,
@@ -71,7 +70,9 @@ impl LlmWorker {
         // Initialize global backend exactly once
         static BACKEND: std::sync::OnceLock<LlamaBackend> = std::sync::OnceLock::new();
         let backend = BACKEND.get_or_init(|| {
-            LlamaBackend::init().expect("[LLM] Failed to initialize global llama.cpp backend")
+            let mut b = LlamaBackend::init().expect("[LLM] Failed to initialize global llama.cpp backend");
+            b.void_logs();
+            b
         });
 
         let model_params = LlamaModelParams::default()
@@ -89,17 +90,17 @@ impl LlmWorker {
     /// Listens for `LlmCommand` and executes them.
     pub fn run_loop(
         &self,
-        mut rx: tokio::sync::mpsc::Receiver<LlmCommand>,
-        tx: Sender<VoxEvent>,
+        rx: std::sync::mpsc::Receiver<LlmCommand>,
+        tx: std::sync::mpsc::Sender<VoxEvent>,
     ) {
         log::info!("[LLM Worker] Persistent loop started.");
         
-        while let Some(cmd) = rx.blocking_recv() {
+        while let Ok(cmd) = rx.recv() {
             match cmd {
                 LlmCommand::Generate { text, session_id, cancel_flag } => {
                     if let Err(e) = self.generate(&text, session_id, &cancel_flag, &tx) {
                         log::error!("[LLM Worker] Generation error (sid {}): {}", session_id, e);
-                        let _ = tx.blocking_send(VoxEvent::Error { 
+                        let _ = tx.send(VoxEvent::Error { 
                             session_id, 
                             message: e.to_string() 
                         });
@@ -124,7 +125,7 @@ impl LlmWorker {
         user_text: &str,
         session_id: u32,
         cancel_flag: &Arc<AtomicBool>,
-        tx: &Sender<VoxEvent>,
+        tx: &std::sync::mpsc::Sender<VoxEvent>,
     ) -> Result<()> {
         let start_time = std::time::Instant::now();
         let mut ttft: Option<std::time::Duration> = None;
@@ -153,6 +154,9 @@ impl LlmWorker {
             .new_context(&self.backend, ctx_params)
             .map_err(|e| anyhow!("[LLM] Context creation failed: {}", e))?;
 
+        // Explicitly clear KV cache to prevent memory leaks from accumulation
+        ctx.clear_kv_cache();
+
         // Prefill batch
         let max_tokens = tokens.len() + 512;
         let mut batch = LlamaBatch::new(max_tokens, 1);
@@ -176,7 +180,8 @@ impl LlmWorker {
             // Atomic cancellation check
             if cancel_flag.load(Ordering::Relaxed) {
                 log::info!("[LLM] Cancelled at token {} (session: {})", n_cur, session_id);
-                let _ = tx.blocking_send(VoxEvent::Cancelled { session_id });
+                ctx.clear_kv_cache();
+                let _ = tx.send(VoxEvent::Cancelled { session_id });
                 return Ok(());
             }
 
@@ -203,7 +208,7 @@ impl LlmWorker {
 
             let cleaned = Self::strip_tags(&token_str);
             if !cleaned.trim().is_empty() {
-                let _ = tx.blocking_send(VoxEvent::LlmToken {
+                let _ = tx.send(VoxEvent::LlmToken {
                     session_id,
                     token: cleaned,
                 });
@@ -230,6 +235,8 @@ impl LlmWorker {
                 .map_err(|e| anyhow!("[LLM] Decode step failed: {}", e))?;
         }
 
+        ctx.clear_kv_cache();
+
         let elapsed = start_time.elapsed().as_secs_f32();
         let tps = tokens_generated as f32 / elapsed;
         
@@ -238,7 +245,7 @@ impl LlmWorker {
             session_id, tokens_generated, ttft.unwrap_or_default(), tps
         );
 
-        let _ = tx.blocking_send(VoxEvent::LlmFinished { session_id });
+        let _ = tx.send(VoxEvent::LlmFinished { session_id });
         Ok(())
     }
 

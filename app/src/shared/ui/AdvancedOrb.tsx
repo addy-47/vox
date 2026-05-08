@@ -7,18 +7,27 @@ interface AudioTelemetry {
 }
 
 interface VoxOrbProps {
-  amplitude?: number;
+  telemetryRef?: React.MutableRefObject<{ energy: number; vad_prob: number }>;
+  amplitude?: number; // Keep for backward compatibility/static usage
   frequency?: number;
+  interactionState?: "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Interrupted";
 }
 
-export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0 }) => {
+export const VoxOrb: React.FC<VoxOrbProps> = ({ telemetryRef, amplitude = 0.0, frequency = 1.0, interactionState = "Idle" }) => {
   const mountRef = useRef<HTMLDivElement>(null);
-  const telemetryRef = useRef<AudioTelemetry>({ amplitude, frequency });
+  const internalTelemetryRef = useRef<AudioTelemetry>({ amplitude, frequency });
+  const stateRef = useRef(interactionState);
 
-  // Update telemetry via ref so animation loop always has latest value
   useEffect(() => {
-    telemetryRef.current = { amplitude, frequency };
-  }, [amplitude, frequency]);
+    stateRef.current = interactionState;
+  }, [interactionState]);
+
+  // Update internal ref if props are used
+  useEffect(() => {
+    if (!telemetryRef) {
+      internalTelemetryRef.current = { amplitude, frequency };
+    }
+  }, [amplitude, frequency, telemetryRef]);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -123,20 +132,52 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ amplitude = 0.0, frequency = 1.0
 
     // Animation loop
     let animationFrameId: number;
-    const clock = new THREE.Clock();
+    const startTime = performance.now();
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-      const t = clock.getElapsedTime();
+      const t = (performance.now() - startTime) / 1000; // Convert to seconds
+
+      const state = stateRef.current;
+      const target = {
+        Idle: { a: new THREE.Color('#00dbe9'), b: new THREE.Color('#008c96'), amp: 0.0, freq: 1.0, speed: 1.0 },
+        Listening: { a: new THREE.Color('#00dbe9'), b: new THREE.Color('#008c96'), amp: 0.1, freq: 1.5, speed: 1.5 },
+        UserSpeaking: { a: new THREE.Color('#00dbe9'), b: new THREE.Color('#008c96'), amp: 0.2, freq: 2.0, speed: 2.0 },
+        Thinking: { a: new THREE.Color('#b500e9'), b: new THREE.Color('#7a0096'), amp: 0.15, freq: 3.0, speed: 3.0 },
+        AssistantSpeaking: { a: new THREE.Color('#00e98c'), b: new THREE.Color('#00965a'), amp: 0.25, freq: 2.0, speed: 2.0 },
+        Interrupted: { a: new THREE.Color('#e90000'), b: new THREE.Color('#960000'), amp: 0.05, freq: 0.5, speed: 0.5 },
+      }[state] || { a: new THREE.Color('#00dbe9'), b: new THREE.Color('#008c96'), amp: 0.0, freq: 1.0, speed: 1.0 };
+
+      // Smoothly interpolate colors
+      uniforms.u_color_a.value.lerp(target.a, 0.05);
+      uniforms.u_color_b.value.lerp(target.b, 0.05);
+
+      // Determine telemetry impact
+      let teleAmp = 0;
+      let teleFreq = 0;
+      
+      if (state === 'UserSpeaking' && telemetryRef) {
+        teleAmp = telemetryRef.current.energy * 0.5;
+        teleFreq = telemetryRef.current.energy * 2.0;
+      } else if (state === 'AssistantSpeaking' && telemetryRef) {
+        // Actual audio telemetry from TTS playback
+        teleAmp = telemetryRef.current.energy * 0.6; 
+        teleFreq = telemetryRef.current.energy * 3.0;
+      } else if (state === 'Thinking') {
+        // Precomputed pulse for Thinking
+        teleAmp = Math.sin(t * 4.0) * 0.1 + 0.1;
+      } else if (state === 'Listening' && telemetryRef) {
+        teleAmp = telemetryRef.current.energy * 0.2;
+      }
 
       uniforms.u_time.value = t;
       uniforms.u_amplitude.value +=
-        (telemetryRef.current.amplitude - uniforms.u_amplitude.value) * 0.1;
+        ((target.amp + teleAmp) - uniforms.u_amplitude.value) * 0.1;
       uniforms.u_frequency.value +=
-        (telemetryRef.current.frequency - uniforms.u_frequency.value) * 0.05;
+        ((target.freq + teleFreq) - uniforms.u_frequency.value) * 0.05;
 
-      mesh.rotation.y += 0.004;
-      mesh.rotation.x += 0.0015;
+      mesh.rotation.y += 0.004 * target.speed;
+      mesh.rotation.x += 0.0015 * target.speed;
 
       renderer.render(scene, camera);
     };

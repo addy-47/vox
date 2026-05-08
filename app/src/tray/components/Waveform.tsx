@@ -7,7 +7,7 @@ import {
   type HTMLAttributes,
 } from "react"
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/shared/lib/utils"
 
 export type WaveformProps = HTMLAttributes<HTMLDivElement> & {
   data?: number[]
@@ -613,8 +613,9 @@ export const MicrophoneWaveform = ({
         }
         fadeToIdle()
       }
-      return
+      return undefined
     }
+    return undefined
   }, [processing, active])
 
   useEffect(() => {
