@@ -151,25 +151,30 @@ impl PipelineOrchestrator {
 
     /// Update internal state and emit IPC event to frontend.
     pub fn update_interaction_state(&self, new_state: crate::core::state::InteractionState, app_handle: &tauri::AppHandle) {
-        {
-            let mut state_lock = self.state.lock().unwrap();
-            if *state_lock == new_state {
-                return;
-            }
+        let mut state_lock = self.state.lock().unwrap();
+        if *state_lock != new_state {
+            log::debug!("[Pipeline] State changed -> {:?}", new_state);
             *state_lock = new_state;
+            
+            // Phase 4: Push state to UI layer
+            let target = {
+                let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
+                let owner = state.owner.blocking_lock();
+                match *owner {
+                    crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                    crate::core::state::InteractionOwner::Tray => "tray",
+                }
+            };
+            let _ = app_handle.emit_to(target, "state_changed", new_state);
         }
-        log::debug!("[Pipeline] State changed -> {:?}", new_state);
-        
-        let target = {
-            let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
-            let owner = state.owner.blocking_lock();
-            match *owner {
-                crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
-                crate::core::state::InteractionOwner::Tray => "tray",
-            }
-        };
-        
-        let _ = app_handle.emit_to(target, "state_changed", new_state);
+    }
+
+    fn get_idle_state(&self) -> crate::core::state::InteractionState {
+        if self.is_engaged.load(Ordering::Relaxed) {
+            crate::core::state::InteractionState::Listening
+        } else {
+            crate::core::state::InteractionState::Idle
+        }
     }
 
     /// Shutdown the LLM worker and release memory.
@@ -378,6 +383,9 @@ impl PipelineOrchestrator {
                     let remainder = token_buf.trim().to_string();
                     if !remainder.is_empty() {
                         let _ = tts_tx.send((session_id, voice_sid, remainder));
+                    } else if playback_engine.is_idle() && !self.tts_generating.load(Ordering::Relaxed) {
+                        // If LLM finished with no remainder and no audio is playing/generating, go back to Idle/Listening
+                        self.update_interaction_state(self.get_idle_state(), &app_handle);
                     }
                     token_buf.clear();
                 }
@@ -399,7 +407,7 @@ impl PipelineOrchestrator {
                     metrics.mark(MetricField::PlaybackFinish);
                     let report = metrics.latency_report();
                     log::info!("[Pipeline] Turn complete. Latencies: {}", report);
-                    self.update_interaction_state(crate::core::state::InteractionState::Idle, &app_handle);
+                    self.update_interaction_state(self.get_idle_state(), &app_handle);
                     
                     let target = {
                         let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
@@ -431,6 +439,7 @@ impl PipelineOrchestrator {
                         }
                     };
                     let _ = app_handle.emit_to(target, "pipeline_error", &message);
+                    self.update_interaction_state(self.get_idle_state(), &app_handle);
                 }
                 _ => {} 
             }
