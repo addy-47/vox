@@ -33,8 +33,8 @@ impl VadEngine {
                 // Official TenVAD defaults from sherpa-onnx/csrc/ten-vad-model-config.h
                 // threshold=0.5, window_size=256 (16ms at 16kHz), min_silence=0.5, min_speech=0.25
                 // Using 0.6 caused first 3s of speech to be dropped (warm-up frames below threshold)
-                threshold: 0.5,
-                min_silence_duration: 0.5,
+                threshold: 0.4,
+                min_silence_duration: 0.2, // Decreased to 200ms for faster endpointing
                 min_speech_duration: 0.25,
                 window_size: 256, // 16ms at 16kHz — TenVAD default (NOT 160 which is SileroVAD)
                 max_speech_duration: 30.0,
@@ -84,7 +84,9 @@ impl VadEngine {
         app: tauri::AppHandle,
         mut consumer: C,
         event_tx: mpsc::Sender<serde_json::Value>,
-        stt_tx: mpsc::Sender<crate::services::stt::SttCommand>,
+        stt_tx: std::sync::mpsc::Sender<crate::services::stt::SttCommand>,
+        telemetry_tx: std::sync::mpsc::Sender<crate::core::state::TelemetryData>,
+        vox_event_tx: Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>,
     ) -> Result<()> 
     where 
         C: ringbuf::traits::Consumer<Item = f32> 
@@ -103,6 +105,17 @@ impl VadEngine {
             // Check if we have at least 16ms of audio available (256 samples at 16kHz)
             if consumer.occupied_len() >= 256 {
                 consumer.pop_slice(&mut chunk);
+
+                // ── Phase 5: High-Frequency Telemetry ────────────────────────
+                // Calculate RMS energy for the 16ms chunk
+                let raw_energy = (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt();
+                let energy = (raw_energy * 15.0).clamp(0.0, 1.0);
+                
+                // Send to aggregator (non-blocking)
+                let _ = telemetry_tx.send(crate::core::state::TelemetryData {
+                    energy,
+                    vad_prob: 0.0, // Placeholder: Sherpa detector doesn't expose raw prob yet
+                });
 
                 // Mode-based routing
                 let mode = {
@@ -158,6 +171,13 @@ impl VadEngine {
                         current_session_id += 1;
                         log::info!("[VAD] >>> SPEECH START (session: {})", current_session_id);
                         
+                        // Phase 5: Reset STT decoder state for the new session
+                        let _ = stt_tx.send(crate::services::stt::SttCommand::ResetStream);
+
+                        if let Some(ref tx) = vox_event_tx {
+                            let _ = tx.send(crate::core::events::VoxEvent::SpeechStart { session_id: current_session_id });
+                        }
+
                         let _ = event_tx.try_send(json!({ 
                             "type": "speech_start", 
                             "session_id": current_session_id 
@@ -169,14 +189,22 @@ impl VadEngine {
                     utterance_buffer.extend_from_slice(&chunk);
                     samples_since_partial += chunk.len();
 
+                    // ── Phase 5: Interaction Ownership ───────────────────────────
+                    let owner = {
+                        let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+                        let lock = state.owner.blocking_lock();
+                        *lock
+                    };
+
                     // Partial Emit: Every 800ms (12,800 samples), send the current 
                     // buffer to STT for intermediate transcription.
                     if samples_since_partial >= 12800 {
                         // For partial transcripts, only send the last 15 seconds to keep CPU low
                         // 15 seconds * 16,000 samples/sec = 240,000 samples
                         let start_idx = utterance_buffer.len().saturating_sub(240000);
-                        let _ = stt_tx.try_send(crate::services::stt::SttCommand::Partial(
+                        let _ = stt_tx.send(crate::services::stt::SttCommand::Partial(
                             current_session_id, 
+                            owner,
                             utterance_buffer[start_idx..].to_vec()
                         ));
                         samples_since_partial = 0;
@@ -186,6 +214,10 @@ impl VadEngine {
                     if in_speech {
                         in_speech = false;
                         log::info!("[VAD] <<< SPEECH END (session: {})", current_session_id);
+                        
+                        if let Some(ref tx) = vox_event_tx {
+                            let _ = tx.send(crate::core::events::VoxEvent::SpeechEnd { session_id: current_session_id });
+                        }
                         
                         let _ = event_tx.try_send(json!({ 
                             "type": "speech_end",
@@ -198,8 +230,14 @@ impl VadEngine {
                         // Routing: Only send to STT if the segment meets a minimum 
                         // duration threshold (e.g., 0.2s) to filter out clicks/noise.
                         if utterance_buffer.len() >= 3200 { 
-                            let _ = stt_tx.try_send(crate::services::stt::SttCommand::Final(
+                            let owner = {
+                                let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+                                let lock = state.owner.blocking_lock();
+                                *lock
+                            };
+                            let _ = stt_tx.send(crate::services::stt::SttCommand::Final(
                                 current_session_id, 
+                                owner,
                                 utterance_buffer.clone()
                             ));
                         }

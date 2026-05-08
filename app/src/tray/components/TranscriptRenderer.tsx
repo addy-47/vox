@@ -1,20 +1,20 @@
 import React, { useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Activity } from 'lucide-react';
-import { Waveform } from './Waveform';
+import { LiveWaveform } from '../../shared/ui/LiveWaveform';
 
 interface TranscriptRendererProps {
   displayText: string;
-  isListening: boolean;
+  interactionState: string;
   pttStatus?: 'IDLE' | 'RECORDING' | 'PROCESSING';
-  amplitudeBuffer?: number[];
+  telemetryRef: React.MutableRefObject<{ energy: number; vad_prob: number }>;
 }
 
 export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({ 
   displayText, 
-  isListening,
+  interactionState,
   pttStatus = 'IDLE',
-  amplitudeBuffer = []
+  telemetryRef
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -39,11 +39,10 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
             className="h-full flex flex-col items-center justify-center w-full px-4"
           >
             <div className="w-full flex flex-col items-center gap-4">
-               <Waveform 
-                data={amplitudeBuffer} 
+               <LiveWaveform 
+                active={true}
+                telemetryRef={telemetryRef}
                 height={60} 
-                barWidth={3} 
-                barGap={2}
                 className="w-full"
               />
               <span className="text-[9px] font-black uppercase tracking-[0.4em] text-cyan-400/60 animate-pulse">
@@ -60,7 +59,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
           >
             <div className="text-[17px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 drop-shadow-sm">
               {displayText}
-              {(isListening || pttStatus === 'PROCESSING') && (
+              {(interactionState === "Listening" || interactionState === "UserSpeaking" || pttStatus === 'PROCESSING') && (
                 <motion.span 
                   animate={{ opacity: [0, 1, 0] }}
                   transition={{ repeat: Infinity, duration: 0.8 }}

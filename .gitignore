@@ -27,3 +27,5 @@ dist-ssr
 *pycache*
 *.onnx
 **/src-tauri/assets/
+output/
+data/

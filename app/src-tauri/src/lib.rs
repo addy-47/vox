@@ -6,7 +6,7 @@ use crate::services::audio::AudioStream;
 use crate::services::vad::VadEngine;
 use crate::services::stt::{SttEngine, SttCommand};
 use crate::ui::tray::position_tray_window;
-use crate::core::state::{AppState, VoxEngine};
+use crate::core::state::{AppState, VoxEngine, InteractionOwner};
 use crate::core::settings::VoxSettings;
 use crate::core::events::VoxEvent;
 use crate::services::pipeline::PipelineOrchestrator;
@@ -18,16 +18,17 @@ use tauri::{Manager, Emitter, State, WebviewWindow};
 use ringbuf::traits::Split;
 use std::time::{Duration, Instant};
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
 
 // ─── STT Worker (Dedicated OS Thread) ────────────────────────────────────────
 
 fn spawn_stt_worker(
     app: tauri::AppHandle,
-    mut rx: tokio::sync::mpsc::Receiver<SttCommand>,
+    rx: std::sync::mpsc::Receiver<SttCommand>,
     model_path: PathBuf,
     // Optional pipeline event channel — `Some` when Phase 4 pipeline is active.
-    pipeline_event_tx: Option<tokio::sync::mpsc::Sender<VoxEvent>>,
+    pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
 ) {
     std::thread::spawn(move || {
         log::info!("[STT] >>> Dedicated worker thread started.");
@@ -43,52 +44,64 @@ fn spawn_stt_worker(
         let mut last_emit_time = Instant::now();
         let mut last_transcript = String::new();
 
-        while let Some(cmd) = rx.blocking_recv() {
+        while let Ok(cmd) = rx.recv() {
             match cmd {
-                SttCommand::Partial(sid, utterance) => {
+                SttCommand::Partial(sid, owner, utterance) => {
                     // UX Throttling: Only run inference if 800ms passed to save CPU
                     if last_emit_time.elapsed() >= Duration::from_millis(800) {
                         match engine.transcribe(&utterance) {
                             Ok(text) => {
                                 let text_str: String = text;
                                 if !text_str.is_empty() && text_str != last_transcript {
-                                    let _ = app.emit("transcript_partial", serde_json::json!({ 
-                                        "text": text_str.clone(),
-                                        "session_id": sid 
-                                    }));
+                                    // Phase 5: Forward to pipeline orchestrator for validated emission
+                                    if let Some(ref pipeline_tx) = pipeline_event_tx {
+                                        let _ = pipeline_tx.send(VoxEvent::TranscriptPartial {
+                                            session_id: sid,
+                                            owner,
+                                            text: text_str.clone(),
+                                        });
+                                    }
+                                    
                                     last_transcript = text_str;
                                 }
                                 last_emit_time = Instant::now();
                             }
-                            Err(e) => log::error!("[STT] Partial decode error: {}", e),
+                            Err(e) => log::error!("[STT] Partial transcription failed: {}", e),
                         }
                     }
                 }
-                SttCommand::Final(sid, utterance) => {
-                    log::info!("[STT] >>> Finalizing utterance (session: {})", sid);
+                SttCommand::Final(sid, owner, utterance) => {
                     match engine.transcribe(&utterance) {
                         Ok(text) => {
-                            log::info!("[STT] Result ({}): {:?}", sid, text);
-                            // Emit to frontend for transcript display
-                            let _ = app.emit("transcript_final", serde_json::json!({
-                                "text": text.clone(),
-                                "session_id": sid
-                            }));
-                            // Phase 4: forward to pipeline orchestrator for LLM→TTS→Playback
-                            if let Some(ref pipeline_tx) = pipeline_event_tx {
-                                let _ = pipeline_tx.blocking_send(VoxEvent::TranscriptFinal {
-                                    session_id: sid,
-                                    text: text.clone(),
-                                });
+                            let text_str: String = text;
+                            if !text_str.is_empty() {
+                                // Phase 4 pipeline Hand-off
+                                if let Some(ref pipeline_tx) = pipeline_event_tx {
+                                    let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
+                                        session_id: sid,
+                                        owner,
+                                        text: text_str,
+                                    });
+                                }
                             }
                         }
-                        Err(e) => log::error!("[STT] Final decode error: {}", e),
+                        Err(e) => log::error!("[STT] Final transcription failed: {}", e),
                     }
-
+                    
                     // Signal UI that processing is complete for PTT
-                    let _ = app.emit("ptt_status", serde_json::json!({ "state": "IDLE" }));
+                    let target = match owner {
+                        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                        crate::core::state::InteractionOwner::Tray => "tray",
+                    };
+                    let _ = app.emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }));
+                    
                     last_transcript.clear();
                     last_emit_time = Instant::now();
+                }
+                SttCommand::ResetStream => {
+                    // Currently transcribe() creates a new stream every time, so this is a no-op 
+                    // for the functional logic but we acknowledge it.
+                    log::info!("[STT] ResetStream received.");
                 }
             }
         }
@@ -139,6 +152,36 @@ async fn update_theme(app: tauri::AppHandle, theme: String) -> Result<(), String
 }
 
 #[tauri::command]
+async fn engage(state: State<'_, AppState>) -> Result<(), String> {
+    let current = state.pipeline.is_engaged.load(Ordering::Relaxed);
+    let new_state = !current;
+    
+    if new_state {
+        log::info!("[Pipeline] Engaging main application pipeline...");
+        state.pipeline.is_engaged.store(true, Ordering::Relaxed);
+        let mut owner = state.owner.lock().await;
+        *owner = InteractionOwner::MainWindow;
+    } else {
+        log::info!("[Pipeline] Disengaging pipeline (Stopping session)...");
+        state.pipeline.is_engaged.store(false, Ordering::Relaxed);
+        
+        // Cancel any ongoing generation/playback
+        state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+        
+        // Revert ownership to Tray (passive mode)
+        let mut owner = state.owner.lock().await;
+        *owner = InteractionOwner::Tray;
+        
+        // Reset STT state to clear any partial transcripts
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let _ = engine.stt_tx.send(crate::services::stt::SttCommand::ResetStream);
+        }
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
 async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let state: State<'_, AppState> = app.state();
     let mut lock = state.engine.lock().await;
@@ -177,21 +220,53 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 
     // ── 2. Channels ──────────────────────────────────────────────────────────
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
-    let (stt_tx, stt_rx) = tokio::sync::mpsc::channel::<SttCommand>(10);
+    
+    // Internal STT command channel remains tokio for now or we can switch to std
+    let (stt_tx_internal, stt_rx_internal) = std::sync::mpsc::channel::<SttCommand>();
 
     // ── 3. Tier 3: STT Worker (Dedicated OS Thread) ─────────────────────────
-    // Create the internal pipeline event channel (VoxEvent bus)
-    let (vox_event_tx, vox_event_rx) = tokio::sync::mpsc::channel::<VoxEvent>(128);
-    spawn_stt_worker(app.clone(), stt_rx, stt_model_path, Some(vox_event_tx.clone()));
+    // Create the internal pipeline event channel (VoxEvent bus) - Phase 5: must be std::sync::mpsc
+    let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel::<VoxEvent>();
+    spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()));
 
     // ── 4. Tier 2: VAD & Router (Dedicated OS Thread) ───────────────────────
     let mut vad = VadEngine::new(&vad_model_path).map_err(|e| e.to_string())?;
     let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split(); // 4s buffer
     
-    let stt_tx_for_vad = stt_tx.clone();
-    let app_handle_vad = app.clone();
+    // ── Phase 5: High-Frequency Telemetry Aggregator ────────────────────────
+    let (telemetry_tx, telemetry_rx) = std::sync::mpsc::channel::<crate::core::state::TelemetryData>();
+    let app_handle_telemetry = app.clone();
     std::thread::spawn(move || {
-        if let Err(e) = vad.run_sync_loop(app_handle_vad, consumer, event_tx, stt_tx_for_vad) {
+        // Throttled aggregator (15-20Hz)
+        let interval = Duration::from_millis(60); // ~16.6Hz
+        loop {
+            let mut latest = None;
+            // Drain the channel to get the latest value
+            while let Ok(data) = telemetry_rx.try_recv() {
+                latest = Some(data);
+            }
+            
+            if let Some(data) = latest {
+                let target = {
+                    let state: tauri::State<'_, crate::core::state::AppState> = app_handle_telemetry.state();
+                    let owner = state.owner.blocking_lock();
+                    match *owner {
+                        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                        crate::core::state::InteractionOwner::Tray => "tray",
+                    }
+                };
+                let _ = app_handle_telemetry.emit_to(target, "telemetry", data);
+            }
+            std::thread::sleep(interval);
+        }
+    });
+
+    let stt_tx_for_vad = stt_tx_internal.clone();
+    let app_handle_vad = app.clone();
+    let telemetry_tx_for_vad = telemetry_tx.clone();
+    let vox_event_tx_for_vad = vox_event_tx.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = vad.run_sync_loop(app_handle_vad, consumer, event_tx, stt_tx_for_vad, telemetry_tx_for_vad, Some(vox_event_tx_for_vad)) {
             log::error!("[VAD] CRITICAL: Worker thread crashed: {}", e);
         }
     });
@@ -208,9 +283,6 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                         *hud_lock
                     };
 
-                    // Only show the tray when the user has "Vox Live" enabled.
-                    // Explicitly call show() so the first speech_start works
-                    // (position_tray_window alone does not guarantee visibility).
                     if hud_visible {
                         if let Some(window) = app_handle_emit.get_webview_window("tray") {
                             let w = window.clone();
@@ -221,7 +293,15 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                         }
                     }
                 }
-                let _ = app_handle_emit.emit(msg_type, &event);
+                
+                let target = {
+                    let owner = app_state.owner.blocking_lock();
+                    match *owner {
+                        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                        crate::core::state::InteractionOwner::Tray => "tray",
+                    }
+                };
+                let _ = app_handle_emit.emit_to(target, msg_type, &event);
             }
         }
     });
@@ -261,14 +341,16 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             std::sync::Arc::clone(&s.pipeline.llm_generating),
             std::sync::Arc::clone(&s.pipeline.tts_generating),
             std::sync::Arc::clone(&s.pipeline.session_id),
+            std::sync::Arc::clone(&s.pipeline.state),
+            std::sync::Arc::clone(&s.pipeline.is_engaged),
         )
     };
-    let (cancel_flag, playback_active, llm_gen, tts_gen, session_id) = pipeline_atomics;
+    let (cancel_flag, playback_active, llm_gen, tts_gen, session_id, state_atomic, is_engaged) = pipeline_atomics;
 
-    // Playback engine (CPAL stream starts idle)
     let playback_engine = match PlaybackEngine::new(
         std::sync::Arc::clone(&playback_active),
         std::sync::Arc::clone(&cancel_flag),
+        telemetry_tx.clone(),
     ) {
         Ok(pe) => std::sync::Arc::new(pe),
         Err(e) => {
@@ -285,8 +367,10 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         llm_gen,
         tts_gen,
         session_id,
+        state_atomic,
         vox_event_tx.clone(),
         vox_settings,
+        is_engaged,
     );
 
     let playback_for_orch = std::sync::Arc::clone(&playback_engine);
@@ -309,7 +393,8 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     // ── 8. Store in state ────────────────────────────────────────────────────
     *lock = Some(VoxEngine {
         audio_stream,
-        stt_tx,
+        stt_tx: stt_tx_internal,
+        telemetry_tx,
     });
 
     // ── 8. System Telemetry (CPU/RAM) ────────────────────────────────────────
@@ -488,6 +573,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             crate::ui::tray::hide_tray_window,
             launch_engine,
+            engage,
             check_engine_status,
             get_settings,
             update_theme,

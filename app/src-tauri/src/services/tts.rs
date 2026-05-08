@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::mpsc::Sender;
+use std::sync::mpsc::Sender;
 
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
@@ -129,7 +129,7 @@ impl TtsEngine {
                 }
 
                 if !samples.is_empty() {
-                    if let Err(e) = event_tx_closure.blocking_send(VoxEvent::TtsChunk {
+                    if let Err(e) = event_tx_closure.send(VoxEvent::TtsChunk {
                         session_id,
                         samples: samples.to_vec(),
                     }) {
@@ -163,7 +163,7 @@ impl TtsEngine {
                 if is_hi { "HI" } else { "EN" }, session_id, audio_duration, rtf
             );
 
-            let _ = event_tx.blocking_send(VoxEvent::TtsFinished { session_id });
+            let _ = event_tx.send(VoxEvent::TtsFinished { session_id });
         }
 
         Ok(())

@@ -63,6 +63,7 @@ impl PlaybackEngine {
     pub fn new(
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
+        telemetry_tx: std::sync::mpsc::Sender<crate::core::state::TelemetryData>,
     ) -> Result<Self> {
         let buffer: Arc<Mutex<VecDeque<f32>>> =
             Arc::new(Mutex::new(VecDeque::with_capacity(JITTER_PREBUFFER_SAMPLES * 4)));
@@ -71,6 +72,7 @@ impl PlaybackEngine {
             Arc::clone(&buffer),
             Arc::clone(&playback_active),
             Arc::clone(&cancel_flag),
+            telemetry_tx,
         )?;
 
         Ok(Self {
@@ -127,6 +129,7 @@ impl PlaybackEngine {
         buffer: Arc<Mutex<VecDeque<f32>>>,
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
+        telemetry_tx: std::sync::mpsc::Sender<crate::core::state::TelemetryData>,
     ) -> Result<cpal::Stream> {
         let host   = cpal::default_host();
         let device = host.default_output_device()
@@ -179,11 +182,21 @@ impl PlaybackEngine {
                 // The ring buffer is mono 48kHz. CPAL output is stereo.
                 // Write each mono sample to both L and R channels.
                 let frames = output.len() / 2; // stereo → frames
+                let mut sum_sq = 0.0;
                 for frame in 0..frames {
                     let sample = buf.pop_front().unwrap_or(0.0);
+                    sum_sq += sample * sample;
                     output[frame * 2]     = sample; // L
                     output[frame * 2 + 1] = sample; // R
                 }
+                
+                // Emit telemetry for the AI voice so UI can animate properly
+                let raw_energy = (sum_sq / frames as f32).sqrt();
+                let energy = (raw_energy * 15.0).clamp(0.0, 1.0);
+                let _ = telemetry_tx.send(crate::core::state::TelemetryData {
+                    energy,
+                    vad_prob: 0.0,
+                });
 
                 // Buffer exhausted — signal idle
                 if buf.is_empty() {

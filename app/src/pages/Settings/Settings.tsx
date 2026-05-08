@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Brain, ChevronDown, Activity, Volume2, Shield, Save, Sun, Moon } from "lucide-react";
 import { cn } from "../../shared/lib/utils";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"core" | "tray">("core");
@@ -15,8 +13,14 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     const initTheme = async () => {
       try {
-        const settings = await invoke<any>("get_settings");
-        setTheme(settings.theme as 'dark' | 'light');
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const settings = await invoke<any>("get_settings");
+          setTheme(settings.theme as 'dark' | 'light');
+        } else {
+          const stored = localStorage.getItem('theme') as 'dark' | 'light';
+          if (stored) setTheme(stored);
+        }
       } catch (e) {
         const stored = localStorage.getItem('theme') as 'dark' | 'light';
         if (stored) setTheme(stored);
@@ -29,22 +33,33 @@ export const Settings: React.FC = () => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
     
-    try {
-      if ((window as any).__TAURI_INTERNALS__) {
-        invoke("update_theme", { theme });
+    const syncTheme = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          invoke("update_theme", { theme });
+        }
+      } catch (e) {
+        console.warn("Could not sync theme to backend", e);
       }
-    } catch (e) {
-      console.warn("Could not sync theme to backend", e);
-    }
+    };
+    syncTheme();
   }, [theme]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     const setup = async () => {
-      const appWindow = getCurrentWindow();
-      unlisten = await appWindow.listen<string>("theme-changed", (event) => {
-        setTheme(event.payload as 'dark' | 'light');
-      });
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          const appWindow = getCurrentWindow();
+          unlisten = await appWindow.listen<string>("theme-changed", (event) => {
+            setTheme(event.payload as 'dark' | 'light');
+          });
+        }
+      } catch (err) {
+        console.error("[Settings] Failed to setup listeners:", err);
+      }
     };
     setup();
     return () => { if (unlisten) unlisten(); };
