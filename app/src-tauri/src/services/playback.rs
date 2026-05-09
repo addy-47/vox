@@ -52,7 +52,7 @@ pub struct PlaybackEngine {
     /// The active CPAL stream — kept alive until cancelled.
     _stream:        Option<cpal::Stream>,
     /// RCA Fix: Real-time safe energy telemetry (Atomic f32 via bit storage)
-    playback_energy: Arc<AtomicU32>,
+    _playback_energy: Arc<AtomicU32>,
 }
 
 // Safety: cpal::Stream is not Send/Sync on some platforms (macOS), but is
@@ -82,7 +82,7 @@ impl PlaybackEngine {
             playback_active,
             cancel_flag,
             _stream: Some(stream),
-            playback_energy,
+            _playback_energy: playback_energy,
         })
     }
 

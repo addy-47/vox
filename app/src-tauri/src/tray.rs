@@ -51,26 +51,37 @@ pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
     }
 }
 
-/// Updates the interaction mode (Passive vs PTT).
+/// Updates the interaction mode (Passive vs PTT) for a specific target window.
 #[tauri::command]
-pub async fn update_interaction_mode(app: AppHandle, mode: String) -> Result<(), String> {
+pub async fn update_interaction_mode(app: AppHandle, target: String, mode: String) -> Result<(), String> {
     let state: State<'_, AppState> = app.state();
     let mut settings = state.settings.lock().await;
     
-    match mode.to_uppercase().as_str() {
-        "PASSIVE" => {
-            settings.interaction_mode = InteractionMode::Passive;
-            log::info!("[MODE] Switched to PASSIVE mode.");
-        }
-        "PTT" => {
-            settings.interaction_mode = InteractionMode::PTT;
-            log::info!("[MODE] Switched to PTT mode.");
-        }
+    let new_mode = match mode.to_uppercase().as_str() {
+        "PASSIVE" => InteractionMode::Passive,
+        "PTT" => InteractionMode::PTT,
         _ => return Err(format!("Invalid interaction mode: {}", mode)),
+    };
+
+    match target.to_lowercase().as_str() {
+        "main" => {
+            settings.main_app_mode = new_mode.clone();
+            log::info!("[MODE] Main App interaction mode set to {:?}.", new_mode);
+        }
+        "tray" => {
+            settings.tray_mode = new_mode.clone();
+            log::info!("[MODE] Tray HUD interaction mode set to {:?}.", new_mode);
+        }
+        _ => return Err(format!("Invalid target window: {}", target)),
     }
     
     let _ = settings.save(&state.config_dir);
+    
+    // Emit both window-specific and generic events
+    let event_name = format!("mode_changed_{}", target.to_lowercase());
+    let _ = app.emit(&event_name, mode.clone());
     let _ = app.emit("mode_changed", mode);
+    
     Ok(())
 }
 

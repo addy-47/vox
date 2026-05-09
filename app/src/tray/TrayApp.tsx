@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "./components/Header";
 import { TranscriptRenderer } from "./components/TranscriptRenderer";
 import { Footer } from "./components/Footer";
-import { useVisibility } from "../shared/hooks/useVisibility";
-import { useInteraction } from "../shared/hooks/useInteraction";
-import { useStreamingRenderer } from "../shared/hooks/useStreamingRenderer";
-import { useTelemetry } from "../shared/hooks/useTelemetry";
+import { useVisibility } from "@/shared/hooks/useVisibility";
+import { useInteraction } from "@/shared/hooks/useInteraction";
+import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
+import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { CircularBuffer } from "./utils/CircularBuffer";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useTheme } from "@/shared/context/ThemeContext";
 
 interface SystemStats {
   cpu_usage: number;
@@ -26,6 +29,7 @@ export const TrayApp: React.FC = () => {
     startNewInteraction, endSpeechSegment, updatePartial, commitFinal, reset 
   } = useInteraction();
   const telemetryRef = useTelemetry();
+  useTheme();
   
   const liveTargetText = useMemo(() => {
     const separator = committedText && partialText ? " " : "";
@@ -53,7 +57,7 @@ export const TrayApp: React.FC = () => {
 
   // ─── PTT & Mode State ──────────────────────────────────────────────────────
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
-  const [interactionMode, setInteractionMode] = useState<string>('Passive');
+  const [interactionMode, setInteractionMode] = useState<string>('PASSIVE');
 
   // Bug 5a: Reset stale transcript state when tray hides
   useEffect(() => {
@@ -68,18 +72,15 @@ export const TrayApp: React.FC = () => {
   useEffect(() => {
     const syncVisibility = async () => {
       try {
-        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-          const { invoke } = await import("@tauri-apps/api/core");
-          if (visibilityState === 'HIDDEN') {
-            invoke("hide_tray_window");
-            invoke("sync_hud_visibility", { visible: false });
-            invoke("set_hud_ignore_cursor", { ignore: true });
-          } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
-            invoke("sync_hud_visibility", { visible: true });
-            invoke("set_hud_ignore_cursor", { ignore: false });
-          } else if (visibilityState === 'FADING') {
-            invoke("set_hud_ignore_cursor", { ignore: true });
-          }
+        if (visibilityState === 'HIDDEN') {
+          invoke("hide_tray_window");
+          invoke("sync_hud_visibility", { visible: false });
+          invoke("set_hud_ignore_cursor", { ignore: true });
+        } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
+          invoke("sync_hud_visibility", { visible: true });
+          invoke("set_hud_ignore_cursor", { ignore: false });
+        } else if (visibilityState === 'FADING') {
+          invoke("set_hud_ignore_cursor", { ignore: true });
         }
       } catch (e) {
         console.warn("[TrayApp] Failed to sync visibility:", e);
@@ -89,7 +90,7 @@ export const TrayApp: React.FC = () => {
   }, [visibilityState]);
 
   // ─── Stable Refs for Listeners ───────────────────────────────────────────
-  const stateRef = React.useRef({
+  const stateRef = useRef({
     pttStatus,
     interactionMode,
     visibilityState,
@@ -107,61 +108,53 @@ export const TrayApp: React.FC = () => {
 
     const setupListeners = async () => {
       try {
-        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
-          const appWindow = getCurrentWindow();
-          
-          const u1 = await appWindow.listen("speech_start", () => {
-            setViewingHistory(false);
-            startNewInteraction();
-            show();
-          });
+        const appWindow = getCurrentWindow();
+        
+        const u1 = await appWindow.listen("speech_start", () => {
+          setViewingHistory(false);
+          startNewInteraction();
+          show();
+        });
 
-          const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
-            // Use ref to avoid closure staleness without re-registering effect
-            if (stateRef.current.pttStatus === 'RECORDING') return;
-            updatePartial(event.payload.text);
-          });
+        const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
+          if (stateRef.current.pttStatus === 'RECORDING') return;
+          updatePartial(event.payload.text);
+        });
 
-          const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
-            if (event.payload.text) {
-              commitFinal(event.payload.text);
-              history.push(event.payload.text);
-            }
-          });
+        const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
+          if (event.payload.text) {
+            commitFinal(event.payload.text);
+            history.push(event.payload.text);
+          }
+        });
 
-          const u4 = await appWindow.listen("speech_end", () => {
-            endSpeechSegment();
-            startHold();
-          });
+        const u4 = await appWindow.listen("speech_end", () => {
+          endSpeechSegment();
+          startHold();
+        });
 
-          const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
-            setStats(event.payload);
-          });
+        const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
+          setStats(event.payload);
+        });
 
-          const u6 = await appWindow.listen("toggle_hud", () => {
-            if (stateRef.current.visibilityState === 'HIDDEN') show();
-            else hideImmediately();
-          });
+        const u6 = await appWindow.listen("toggle_hud", () => {
+          if (stateRef.current.visibilityState === 'HIDDEN') show();
+          else hideImmediately();
+        });
 
-          const u7 = await appWindow.listen<string>("state_changed", (event) => {
-            setInteractionState(event.payload);
-          });
+        const u7 = await appWindow.listen<string>("state_changed", (event) => {
+          setInteractionState(event.payload);
+        });
 
-          const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
-            setPttStatus(event.payload.state as any);
-          });
+        const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
+          setPttStatus(event.payload.state as any);
+        });
 
-          const u9 = await appWindow.listen<string>("theme-changed", (event) => {
-            document.documentElement.setAttribute('data-theme', event.payload);
-          });
+        const u9 = await appWindow.listen<string>("mode_changed_tray", (event) => {
+          setInteractionMode(event.payload.toUpperCase());
+        });
 
-          const u10 = await appWindow.listen<string>("mode_changed", (event) => {
-            setInteractionMode(event.payload);
-          });
-
-          unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9, u10];
-        }
+        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
       } catch (err) {
         console.error("[TrayApp] Failed to setup listeners:", err);
       }
@@ -169,21 +162,15 @@ export const TrayApp: React.FC = () => {
 
     setupListeners();
 
-    // Initial theme setup (sync with backend)
+    // Initial Interaction Mode setup (sync with backend)
     const fetchSettings = async () => {
       try {
-        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-          const { invoke } = await import("@tauri-apps/api/core");
-          const settings = await invoke<any>("get_settings");
-          if (settings?.appearance?.theme) {
-            document.documentElement.setAttribute('data-theme', settings.appearance.theme);
-          }
-          if (settings?.interaction_mode) {
-            setInteractionMode(settings.interaction_mode);
-          }
+        const settings = await invoke<any>("get_settings");
+        if (settings?.tray_mode) {
+          setInteractionMode(settings.tray_mode.toUpperCase());
         }
       } catch (e) {
-        console.warn("[TrayApp] Failed to fetch settings:", e);
+        console.warn("[TrayApp] Failed to fetch interaction mode:", e);
       }
     };
     fetchSettings();
@@ -222,13 +209,10 @@ export const TrayApp: React.FC = () => {
 
   const togglePtt = async () => {
     try {
-      if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-        const { invoke } = await import("@tauri-apps/api/core");
-        if (pttStatus === 'IDLE') {
-          invoke("ptt_start");
-        } else {
-          invoke("ptt_stop");
-        }
+      if (pttStatus === 'IDLE') {
+        invoke("ptt_start", { owner: "Tray" });
+      } else {
+        invoke("ptt_stop", { owner: "Tray" });
       }
     } catch (e) {
       console.error("[TrayApp] Failed to toggle PTT:", e);
@@ -293,3 +277,4 @@ export const TrayApp: React.FC = () => {
     </div>
   );
 };
+

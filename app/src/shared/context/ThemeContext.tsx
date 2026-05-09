@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type Theme = "dark" | "light";
 
@@ -16,18 +17,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [theme, setThemeState] = useState<Theme>("dark");
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize theme from backend
+  // 1. Initialize theme from backend settings
   useEffect(() => {
     const initTheme = async () => {
       try {
         const settings: any = await invoke("get_settings");
-        if (settings?.theme) {
-          const loadedTheme = settings.theme as Theme;
-          setThemeState(loadedTheme);
-          document.documentElement.setAttribute("data-theme", loadedTheme);
-        }
+        // Structure is usually { appearance: { theme: 'dark' } } or { theme: 'dark' }
+        const loadedTheme = (settings?.appearance?.theme || settings?.theme || "dark") as Theme;
+        setThemeState(loadedTheme);
+        document.documentElement.setAttribute("data-theme", loadedTheme);
       } catch (error) {
-        console.error("Failed to initialize theme:", error);
+        console.error("[ThemeContext] Failed to initialize theme:", error);
       } finally {
         setIsLoading(false);
       }
@@ -35,13 +35,35 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     initTheme();
   }, []);
 
+  // 2. Listen for theme changes from other windows via backend broadcast
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    
+    const setupListener = async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        unlisten = await appWindow.listen<string>("theme-changed", (event) => {
+          const newTheme = event.payload as Theme;
+          setThemeState(newTheme);
+          document.documentElement.setAttribute("data-theme", newTheme);
+        });
+      } catch (error) {
+        console.error("[ThemeContext] Failed to setup theme listener:", error);
+      }
+    };
+
+    setupListener();
+    return () => { if (unlisten) unlisten(); };
+  }, []);
+
   const setTheme = async (newTheme: Theme) => {
     setThemeState(newTheme);
     document.documentElement.setAttribute("data-theme", newTheme);
     try {
+      // This command should update settings.json and emit "theme-changed" globally
       await invoke("update_theme", { theme: newTheme });
     } catch (error) {
-      console.error("Failed to update theme in backend:", error);
+      console.error("[ThemeContext] Failed to update theme:", error);
     }
   };
 
@@ -63,4 +85,5 @@ export const useTheme = () => {
   }
   return context;
 };
+
 

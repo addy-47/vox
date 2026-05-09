@@ -27,23 +27,24 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     *samples_since = 0;
     *samples_waveform = 0;
 
+    let owner = *state.owner.lock().await;
+
     // Phase 5: Notify pipeline to cancel any ongoing playback (barge-in)
     if let Some(engine) = state.engine.lock().await.as_ref() {
-        let _ = engine.pipeline_tx.send(VoxEvent::SpeechStart { session_id: session });
+        let _ = engine.pipeline_tx.send(VoxEvent::SpeechStart { session_id: session, owner });
     }
 
     // Determine the owning window target
-    let target = if state.pipeline.is_engaged.load(Ordering::Relaxed) { "main" } else { "tray" };
+    let target = match owner {
+        crate::core::state::InteractionOwner::Tray => "tray",
+        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+    };
 
-    log::info!("[PTT] >>> Recording started (session: {}, target: {})", session, target);
+    log::info!("[PTT] >>> Recording started (session: {}, target: {}, owner: {:?})", session, target, owner);
     let _ = app.emit_to(target, "ptt_status", json!({ "state": "RECORDING", "session_id": session }));
     
-    // Update interaction state — emit only to the owning window
-    {
-        let mut state_lock = state.pipeline.state.lock().unwrap();
-        *state_lock = crate::core::state::InteractionState::UserSpeaking;
-    }
-    let _ = app.emit_to(target, "state_changed", crate::core::state::InteractionState::UserSpeaking);
+    // Update interaction state via centralized pipeline logic
+    state.pipeline.update_interaction_state(crate::core::state::InteractionState::UserSpeaking, owner, &app);
     
     Ok(())
 }
@@ -71,16 +72,15 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
     }; 
 
     // Determine the owning window target
-    let target = if state.pipeline.is_engaged.load(Ordering::Relaxed) { "main" } else { "tray" };
+    let target = match owner {
+        crate::core::state::InteractionOwner::Tray => "tray",
+        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+    };
 
     let _ = app.emit_to(target, "ptt_status", json!({ "state": "PROCESSING", "session_id": session }));
 
-    // Update interaction state — emit only to the owning window
-    {
-        let mut state_lock = state.pipeline.state.lock().unwrap();
-        *state_lock = crate::core::state::InteractionState::Thinking;
-    }
-    let _ = app.emit_to(target, "state_changed", crate::core::state::InteractionState::Thinking);
+    // Update interaction state via centralized pipeline logic
+    state.pipeline.update_interaction_state(crate::core::state::InteractionState::Thinking, owner, &app);
 
     // Send the full buffer to STT for finalization
     let engine_lock = state.engine.lock().await;
@@ -107,18 +107,19 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
     *recording = false;
     buffer.clear();
 
-    // Determine the owning window target
-    let target = if state.pipeline.is_engaged.load(Ordering::Relaxed) { "main" } else { "tray" };
+    let owner = *state.owner.lock().await;
 
-    log::info!("[PTT] ❌ Recording cancelled (target: {})", target);
+    // Determine the owning window target
+    let target = match owner {
+        crate::core::state::InteractionOwner::Tray => "tray",
+        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+    };
+
+    log::info!("[PTT] ❌ Recording cancelled (target: {}, owner: {:?})", target, owner);
     let _ = app.emit_to(target, "ptt_status", json!({ "state": "IDLE" }));
 
-    // Update interaction state — emit only to the owning window
-    {
-        let mut state_lock = state.pipeline.state.lock().unwrap();
-        *state_lock = crate::core::state::InteractionState::Idle;
-    }
-    let _ = app.emit_to(target, "state_changed", crate::core::state::InteractionState::Idle);
+    // Update interaction state via centralized pipeline logic
+    state.pipeline.update_interaction_state(crate::core::state::InteractionState::Idle, owner, &app);
     
     Ok(())
 }

@@ -4,8 +4,8 @@
 /// They are NOT Tauri IPC events — IPC is a bridge layer above this.
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
-    SpeechStart  { session_id: u32 },
-    SpeechEnd    { session_id: u32 },
+    SpeechStart  { session_id: u32, owner: crate::core::state::InteractionOwner },
+    SpeechEnd    { session_id: u32, owner: crate::core::state::InteractionOwner },
 
     TranscriptPartial { session_id: u32, owner: crate::core::state::InteractionOwner, text: String },
     TranscriptFinal   { session_id: u32, owner: crate::core::state::InteractionOwner, text: String },

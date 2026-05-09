@@ -1,12 +1,11 @@
 import React, { Suspense, lazy } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { ResponsiveLayout } from "./layout/ResponsiveLayout";
+import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 
 // Lazy load pages for performance
-const Home = lazy(() => import("./pages/Home").then(m => ({ default: m.Home })));
-const History = lazy(() => import("./pages/History").then(m => ({ default: m.History })));
-const Settings = lazy(() => import("./pages/Settings").then(m => ({ default: m.Settings })));
-const TrayApp = lazy(() => import("./tray/TrayApp").then(m => ({ default: m.TrayApp })));
+const Home = lazy(() => import("@/pages/Home").then(m => ({ default: m.Home })));
+const History = lazy(() => import("@/pages/History").then(m => ({ default: m.History })));
+const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 
 // Premium Loading Overlay
 const PageLoader = () => (
@@ -23,29 +22,21 @@ const PageLoader = () => (
   </div>
 );
 
-import { ThemeProvider } from "./shared/context/ThemeContext";
-
 const App: React.FC = () => {
-  React.useEffect(() => {
-    // Phase 5: Window visibility is now handled by Home.tsx to avoid white screen
-  }, []);
-
   return (
-    <ThemeProvider>
-      <Router>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route element={<ResponsiveLayout />}>
-              <Route path="/" element={<Home />} />
-              <Route path="/history" element={<History />} />
-              <Route path="/settings" element={<Settings />} />
-            </Route>
-            <Route path="/tray" element={<TrayApp />} />
-          </Routes>
-        </Suspense>
-      </Router>
-    </ThemeProvider>
+    <Router>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route element={<ResponsiveLayout />}>
+            <Route path="/" element={<Home />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+        </Routes>
+      </Suspense>
+    </Router>
   );
 };
 
 export default App;
+

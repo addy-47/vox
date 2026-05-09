@@ -11,7 +11,8 @@ export const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"core" | "tray">("core");
   const [selectedModel] = useState("VOX-ENGINE-8B (LATEST)");
   const [selectedVoice, setSelectedVoice] = useState("ETHER");
-  const [interactionMode, setInteractionMode] = useState<"PASSIVE" | "PTT">("PASSIVE");
+  const [mainMode, setMainMode] = useState<"PASSIVE" | "PTT">("PASSIVE");
+  const [trayMode, setTrayMode] = useState<"PASSIVE" | "PTT">("PASSIVE");
 
   // Tray Settings State
   const [trayEnabled, setTrayEnabled] = useState(() => localStorage.getItem('isTrayEnabled') !== 'false');
@@ -25,8 +26,11 @@ export const Settings: React.FC = () => {
     const initSettings = async () => {
       try {
         const settings = await invoke<any>("get_settings");
-        if (settings.interaction_mode) {
-          setInteractionMode(settings.interaction_mode.toUpperCase() as "PASSIVE" | "PTT");
+        if (settings.main_app_mode) {
+          setMainMode(settings.main_app_mode.toUpperCase() as "PASSIVE" | "PTT");
+        }
+        if (settings.tray_mode) {
+          setTrayMode(settings.tray_mode.toUpperCase() as "PASSIVE" | "PTT");
         }
       } catch (e) {
         console.error("Failed to load settings", e);
@@ -35,12 +39,14 @@ export const Settings: React.FC = () => {
     initSettings();
   }, []);
 
-  const handleInteractionModeChange = async (mode: "PASSIVE" | "PTT") => {
-    setInteractionMode(mode);
+  const handleInteractionModeChange = async (target: "main" | "tray", mode: "PASSIVE" | "PTT") => {
+    if (target === "main") setMainMode(mode);
+    else setTrayMode(mode);
+    
     try {
-      await invoke("update_interaction_mode", { mode });
+      await invoke("update_interaction_mode", { target, mode });
     } catch (e) {
-      console.error("Failed to update interaction mode", e);
+      console.error(`Failed to update ${target} interaction mode`, e);
     }
   };
 
@@ -116,8 +122,8 @@ export const Settings: React.FC = () => {
               selectedModel={selectedModel}
               selectedVoice={selectedVoice}
               setSelectedVoice={setSelectedVoice}
-              interactionMode={interactionMode}
-              handleInteractionModeChange={handleInteractionModeChange}
+              interactionMode={mainMode}
+              handleInteractionModeChange={(mode) => handleInteractionModeChange("main", mode)}
               voices={voices}
             />
           ) : (
@@ -134,8 +140,8 @@ export const Settings: React.FC = () => {
               setTrayHideDuration={setTrayHideDuration}
               trayFadeTransition={trayFadeTransition}
               setTrayFadeTransition={setTrayFadeTransition}
-              interactionMode={interactionMode}
-              handleInteractionModeChange={handleInteractionModeChange}
+              interactionMode={trayMode}
+              handleInteractionModeChange={(mode) => handleInteractionModeChange("tray", mode)}
             />
           )}
         </div>

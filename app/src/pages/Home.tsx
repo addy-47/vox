@@ -4,13 +4,15 @@ import { LiveWaveform } from "@/shared/components/LiveWaveform";
 import { Activity, Mic, Shield } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type InteractionState = "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Interrupted";
-type InteractionMode = "Passive" | "PTT";
+type InteractionMode = "PASSIVE" | "PTT";
 
 export const Home: React.FC = () => {
   const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>("Passive");
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>("PASSIVE");
   const [isEngaged, setIsEngaged] = useState(false);
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
   const [transcript, setTranscript] = useState("");
@@ -23,19 +25,15 @@ export const Home: React.FC = () => {
 
   const handleEngage = async () => {
     try {
-      if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("engage");
-        setIsEngaged(!isEngaged);
-        if (!isEngaged) {
-          setTranscript("");
-          setAssistantText("");
-          setShouldShowWaveform(true);
-        }
-        console.log(!isEngaged ? "[Home] Pipeline engaged." : "[Home] Pipeline disengaged.");
-      } else {
-        setIsEngaged(!isEngaged);
+      await invoke("engage");
+      const newEngaged = !isEngaged;
+      setIsEngaged(newEngaged);
+      if (newEngaged) {
+        setTranscript("");
+        setAssistantText("");
+        setShouldShowWaveform(true);
       }
+      console.log(newEngaged ? "[Home] Pipeline engaged." : "[Home] Pipeline disengaged.");
     } catch (err) {
       console.error("[Home] Engagement failed:", err);
     }
@@ -44,11 +42,10 @@ export const Home: React.FC = () => {
   const togglePtt = async () => {
     if (!isEngaged) return;
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
       if (pttStatus === 'IDLE') {
-        await invoke("ptt_start");
+        await invoke("ptt_start", { owner: "MainWindow" });
       } else {
-        await invoke("ptt_stop");
+        await invoke("ptt_stop", { owner: "MainWindow" });
       }
     } catch (err) {
       console.error("[Home] PTT toggle failed:", err);
@@ -60,58 +57,47 @@ export const Home: React.FC = () => {
 
     const setup = async () => {
       try {
-        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
-          const { invoke } = await import("@tauri-apps/api/core");
-          const appWindow = getCurrentWindow();
-          
-          // Initial Settings
-          const settings = await invoke<any>("get_settings");
-          if (settings?.interaction_mode) {
-            setInteractionMode(settings.interaction_mode);
-          }
-
-          unlisteners.push(await appWindow.listen<InteractionState>("state_changed", (event) => {
-            const newState = event.payload;
-            setInteractionState(newState);
-            
-            if (newState === "AssistantSpeaking") {
-              // Stay active for orb but maybe fade waveform if we want
-              // setShouldShowWaveform(false); 
-            } else if (newState === "Listening" || newState === "UserSpeaking") {
-              setShouldShowWaveform(true);
-            }
-          }));
-
-          unlisteners.push(await appWindow.listen<{text: string}>("transcript_partial", (event) => {
-            setTranscript(event.payload.text);
-          }));
-
-          unlisteners.push(await appWindow.listen<{text: string}>("transcript_final", (event) => {
-            setTranscript(event.payload.text);
-          }));
-
-          unlisteners.push(await appWindow.listen<{text: string}>("llm_chunk", (event) => {
-            setAssistantText(prev => prev + event.payload.text);
-          }));
-
-          unlisteners.push(await appWindow.listen<string>("mode_changed", (event) => {
-            setInteractionMode(event.payload as InteractionMode);
-          }));
-
-          unlisteners.push(await appWindow.listen<{ state: string }>("ptt_status", (event) => {
-            setPttStatus(event.payload.state as any);
-            if (event.payload.state === 'RECORDING') {
-              setAssistantText(""); // Clear previous on new turn
-              setTranscript("");
-            }
-          }));
-
-          // Phase 5: Show window only after listeners are ready
-          setTimeout(async () => {
-            await invoke("show_main_window");
-          }, 300);
+        const appWindow = getCurrentWindow();
+        
+        // Initial Settings - Fix: use main_app_mode
+        const settings = await invoke<any>("get_settings");
+        if (settings?.main_app_mode) {
+          setInteractionMode(settings.main_app_mode.toUpperCase() as InteractionMode);
         }
+
+        unlisteners.push(await appWindow.listen<InteractionState>("state_changed", (event) => {
+          const newState = event.payload;
+          setInteractionState(newState);
+        }));
+
+        unlisteners.push(await appWindow.listen<{text: string}>("transcript_partial", (event) => {
+          setTranscript(event.payload.text);
+        }));
+
+        unlisteners.push(await appWindow.listen<{text: string}>("transcript_final", (event) => {
+          setTranscript(event.payload.text);
+        }));
+
+        unlisteners.push(await appWindow.listen<{text: string}>("llm_chunk", (event) => {
+          setAssistantText(prev => prev + event.payload.text);
+        }));
+
+        unlisteners.push(await appWindow.listen<string>("mode_changed_main", (event) => {
+          setInteractionMode(event.payload.toUpperCase() as InteractionMode);
+        }));
+
+        unlisteners.push(await appWindow.listen<{ state: string }>("ptt_status", (event) => {
+          setPttStatus(event.payload.state as any);
+          if (event.payload.state === 'RECORDING') {
+            setAssistantText(""); // Clear previous on new turn
+            setTranscript("");
+          }
+        }));
+
+        // Phase 5: Show window only after listeners are ready
+        setTimeout(async () => {
+          await invoke("show_main_window");
+        }, 300);
       } catch (err) {
         console.error("[Home] Failed to setup Tauri listeners:", err);
       }
@@ -122,6 +108,7 @@ export const Home: React.FC = () => {
       unlisteners.forEach(u => u());
     };
   }, []);
+
 
   return (
     <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-colors duration-300">
@@ -194,7 +181,7 @@ export const Home: React.FC = () => {
                     "flex items-center justify-center w-16 h-16 rounded-full transition-all duration-500 border-2",
                     isEngaged
                       ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_30px_rgba(var(--accent),0.1)] text-[rgb(var(--accent))]"
-                      : "bg-[rgb(var(--accent))] border-transparent  text-[rgb(var(--accent-foreground))] hover:scale-105"
+                      : "bg-[rgb(var(--accent))] border-transparent  text-[rgb(var(--accent-foreground))] hover:scale-105 shadow-[0_0_30px_rgba(var(--accent),0.5)]"
                   )}
                 >
                   <Activity size={22} className={cn("transition-transform duration-700", isEngaged && "rotate-180")} />
@@ -251,11 +238,11 @@ export const Home: React.FC = () => {
             <div className="flex-1 flex flex-col">
               <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] mb-6 opacity-50">Live Dialogue</h3>
               
-              <div className="space-y-8 flex-1">
+              <div className="flex-1 flex flex-col gap-6">
                 {/* User Bubble */}
                 <div className={cn(
                   "transition-all duration-500 transform",
-                  transcript ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 pointer-events-none"
+                  transcript ? "opacity-100 translate-x-0" : "h-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden"
                 )}>
                   <div className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-2">You</div>
                   <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
@@ -268,7 +255,7 @@ export const Home: React.FC = () => {
                 {/* Assistant Bubble */}
                 <div className={cn(
                   "transition-all duration-700 delay-200 transform",
-                  assistantText ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
+                  assistantText ? "opacity-100 translate-y-0" : "h-0 opacity-0 translate-y-4 pointer-events-none overflow-hidden"
                 )}>
                   <div className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2">Vox</div>
                   <div className="p-4 rounded-2xl bg-[rgb(var(--accent))]/[0.03] border border-[rgb(var(--accent))]/10">
@@ -279,11 +266,11 @@ export const Home: React.FC = () => {
                 </div>
 
                 {!transcript && !assistantText && (
-                  <div className="h-full flex flex-col items-center justify-center text-center px-6 opacity-30 mt-20">
+                  <div className="flex-1 flex flex-col items-center justify-center text-center px-6 opacity-30">
                     <Activity size={32} className="mb-4 animate-pulse" />
                     <p className="text-sm font-medium italic">
                       {isEngaged 
-                        ? (interactionMode === "PTT" ? "Hold the Mic button to speak" : "Listening for your voice...") 
+                        ? (interactionMode === "PTT" ? "Click the Mic button to start recording" : "Listening for your voice...") 
                         : "System dormant. Click Engage to start."}
                     </p>
                   </div>
