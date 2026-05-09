@@ -127,14 +127,14 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ telemetryRef, amplitude = 0.0, f
           return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
         }
 
-        // FBM for unified, complex fluid flow
+        // FBM for unified, complex fluid flow - Simplified to 2 octaves for 'merged' look
         float fbm(vec3 p) {
           float v = 0.0;
-          float a = 0.5;
-          for (int i = 0; i < 3; i++) {
+          float a = 0.6; // Slightly more persistence for the first octave
+          for (int i = 0; i < 2; i++) {
             v += a * snoise(p);
-            p *= 2.1;
-            a *= 0.5;
+            p *= 2.0;
+            a *= 0.4;
           }
           return v;
         }
@@ -152,12 +152,16 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ telemetryRef, amplitude = 0.0, f
             -s, 0.0, c
           );
           
-          vec3 noisePos = rot * position * u_frequency + vec3(u_time * 0.1, u_time * 0.3, -u_time * 0.2);
+          vec3 noisePos = rot * position * u_frequency + vec3(u_time * 0.1, u_time * 0.2, -u_time * 0.1);
           float n = fbm(noisePos);
           vNoise = n;
 
+          // Low-frequency 'blob mask' to merge areas randomly
+          float mask = snoise(rot * position * 0.4 + u_time * 0.1);
+          float combinedNoise = n * (mask * 0.4 + 0.6);
+
           // Scaled down displacement slightly to prevent extreme oval distortion
-          float displacement = n * (u_amplitude * 0.4 + 0.05);
+          float displacement = combinedNoise * (u_amplitude * 0.4 + 0.05);
           vec3 newPosition = position + normal * displacement;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
         }
@@ -173,17 +177,17 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ telemetryRef, amplitude = 0.0, f
           vec3 viewDirection = normalize(cameraPosition - vPosition);
           float fresnel = 1.0 - abs(dot(viewDirection, vNormal));
           
-          // Layer 1: Base hollow shell (the "dormant" look)
-          float alpha1 = smoothstep(0.7, 1.0, fresnel);
+          // Layer 1: Base hollow shell (the "dormant" look) - Broadened rim
+          float alpha1 = smoothstep(0.4, 1.0, fresnel);
           
-          // Layer 2: Unified asymmetric flow overlay
-          float alpha2 = smoothstep(0.3, 1.0, fresnel * (vNoise * 0.5 + 0.5));
+          // Layer 2: Unified asymmetric flow overlay - Broadened flow
+          float alpha2 = smoothstep(0.2, 1.0, fresnel * (vNoise * 0.5 + 0.5));
           
           // Layer 3: High-energy liquid peaks
-          float alpha3 = smoothstep(0.7, 1.0, vNoise) * (u_amplitude + 0.1);
+          float alpha3 = smoothstep(0.65, 1.0, vNoise) * (u_amplitude + 0.1);
 
           // Superimpose layers for a volumetric unified flow
-          float finalAlpha = (alpha1 * 0.4 + alpha2 * 0.5 + alpha3 * 0.4) * 0.7;
+          float finalAlpha = (alpha1 * 0.5 + alpha2 * 0.4 + alpha3 * 0.4) * 0.7;
 
           // Unified cyan color with intensity variation based on noise flow
           vec3 color = u_color * (1.0 + vNoise * 0.4);
@@ -223,13 +227,13 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ telemetryRef, amplitude = 0.0, f
 
       const state = stateRef.current;
       const target = {
-        Idle: { amp: 0.05, freq: 1.0, speed: 0.1 },
-        Listening: { amp: 0.15, freq: 1.5, speed: 0.4 },
-        UserSpeaking: { amp: 0.4, freq: 2.0, speed: 1.2 },
-        Thinking: { amp: 0.35, freq: 3.5, speed: 1.8 },
-        AssistantSpeaking: { amp: 0.55, freq: 3.0, speed: 1.5 },
-        Interrupted: { amp: 0.05, freq: 0.5, speed: 0.1 },
-      }[state] || { amp: 0.05, freq: 1.0, speed: 0.1 };
+        Idle: { amp: 0.05, freq: 0.5, speed: 0.1 },
+        Listening: { amp: 0.15, freq: 0.8, speed: 0.4 },
+        UserSpeaking: { amp: 0.4, freq: 1.0, speed: 1.2 },
+        Thinking: { amp: 0.35, freq: 1.2, speed: 1.8 },
+        AssistantSpeaking: { amp: 0.55, freq: 1.1, speed: 1.5 },
+        Interrupted: { amp: 0.05, freq: 0.4, speed: 0.1 },
+      }[state] || { amp: 0.05, freq: 0.5, speed: 0.1 };
 
       // Determine telemetry impact
       let teleAmp = 0;
@@ -251,12 +255,18 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({ telemetryRef, amplitude = 0.0, f
 
       uniforms.u_time.value = t;
 
-      uniforms.u_amplitude.value +=
-        ((target.amp + teleAmp) - uniforms.u_amplitude.value) * 0.1;
-      uniforms.u_frequency.value +=
-        ((target.freq + teleFreq) - uniforms.u_frequency.value) * 0.05;
+      // Asymmetric attack/release envelope on amplitude
+      // Attack fast: orb reacts instantly to audio
+      // Release slow: orb doesn't collapse between TTS chunks
+      const currentAmp = uniforms.u_amplitude.value;
+      const targetAmpFinal = target.amp + teleAmp;
+      const rate = targetAmpFinal > currentAmp ? 0.12 : 0.025;
+      uniforms.u_amplitude.value += (targetAmpFinal - currentAmp) * rate;
 
-      // Note: Removed rigid mesh.rotation here. Fluidity is now purely shader-driven.
+      uniforms.u_frequency.value +=
+        ((target.freq + teleFreq) - uniforms.u_frequency.value) * 0.04;
+
+      // Note: Fluidity is shader-driven via noise coordinate swirling.
 
       renderer.render(scene, camera);
     };

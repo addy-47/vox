@@ -23,6 +23,9 @@ pub enum SttCommand {
 
     /// Resets the internal acoustic and contextual states.
     ResetStream,
+
+    /// Gracefully shutdown the worker thread.
+    Shutdown,
 }
 
 // ─── Engine ───────────────────────────────────────────────────────────────────

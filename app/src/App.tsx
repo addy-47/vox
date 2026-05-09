@@ -24,6 +24,10 @@ const PageLoader = () => (
 );
 
 const App: React.FC = () => {
+  React.useEffect(() => {
+    // Phase 5: Window visibility is now handled by Home.tsx to avoid white screen
+  }, []);
+
   return (
     <Router>
       <Suspense fallback={<PageLoader />}>

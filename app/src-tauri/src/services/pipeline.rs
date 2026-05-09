@@ -45,7 +45,9 @@ pub fn should_flush(buf: &str, word_count: usize) -> bool {
     }
 
     // Word count gate — prevent long-sentence lag (Directive 2)
-    word_count >= 6
+    // Threshold set to 12 words: at RTF 4x, ~2s of audio takes ~8s synthesis.
+    // Larger chunks = fewer gaps between playback segments on slow hardware.
+    word_count >= 12
 }
 
 /// Count words in the accumulated buffer.
@@ -156,16 +158,19 @@ impl PipelineOrchestrator {
             log::debug!("[Pipeline] State changed -> {:?}", new_state);
             *state_lock = new_state;
             
-            // Phase 4: Push state to UI layer
-            let target = {
-                let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
-                let owner = state.owner.blocking_lock();
-                match *owner {
-                    crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
-                    crate::core::state::InteractionOwner::Tray => "tray",
-                }
-            };
-            let _ = app_handle.emit_to(target, "state_changed", new_state);
+            let is_engaged = self.is_engaged.load(Ordering::Relaxed);
+            
+            // Phase 5: Targeted state emission
+            // 1. If engaged, always send to main
+            if is_engaged {
+                let _ = app_handle.emit_to("main", "state_changed", new_state);
+            } else {
+                // If not engaged, main should be forced to IDLE unless it's the owner (unlikely in dormant mode)
+                let _ = app_handle.emit_to("main", "state_changed", crate::core::state::InteractionState::Idle);
+            }
+            
+            // 2. Always send to tray if it's the owner or if we're in a global thinking/speaking state
+            let _ = app_handle.emit_to("tray", "state_changed", new_state);
         }
     }
 
@@ -188,14 +193,19 @@ impl PipelineOrchestrator {
 
     /// Handle a `TranscriptFinal` event: ensure LLM is warm and send generation command.
     pub fn on_transcript_final(&self, text: String, owner: InteractionOwner, _app_handle: tauri::AppHandle) {
-        // Cancel any existing turn
+        // Get the current session_id before bumping so we can cancel it
+        let old_session = self.session_id.load(Ordering::Relaxed);
+
+        // Cancel any existing turn — emit Cancelled event so the event loop
+        // resets awaiting_playback_finish and drains any stale state.
         self.cancel_flag.store(true, Ordering::Relaxed);
+        let _ = self.event_tx.send(VoxEvent::Cancelled { session_id: old_session });
 
         // Bump session ID
         let new_session = self.session_id.fetch_add(1, Ordering::Relaxed) + 1;
         log::info!("[Pipeline] New session {} (owner: {:?}) — transcript: {:?}", new_session, owner, text);
 
-        // Reset cancellation flag
+        // Reset cancellation flag AFTER the Cancelled event is queued
         self.cancel_flag.store(false, Ordering::Relaxed);
 
         // ── Phase 5 Dormancy Check ──────────────────────────────────────────
@@ -272,6 +282,7 @@ impl PipelineOrchestrator {
                     }
                     tts_flag.store(false, Ordering::Relaxed);
                 }
+                log::info!("[TTS Worker] Channel closed. Exiting thread.");
             })
             .expect("[Pipeline] Failed to spawn TTS thread");
 
@@ -282,11 +293,38 @@ impl PipelineOrchestrator {
         let mut thinking     = false;
         let mut metrics      = PipelineMetrics::new();
         let audio_mode       = self.settings.audio_output_mode.clone();
+        // True after LlmFinished: we're waiting for TTS+Playback to drain
+        let mut awaiting_playback_finish = false;
 
-        // Process events synchronously — this runs on the pipeline coordinator thread
+        // Use recv_timeout so we can poll playback state to detect when audio drains.
+        // 150ms is frequent enough for responsive state transitions without CPU waste.
         log::info!("[Pipeline] Event loop starting...");
-        while let Ok(event) = rx.recv() {
+        loop {
+            let event = match rx.recv_timeout(std::time::Duration::from_millis(150)) {
+                Ok(e) => e,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Poll: if LLM+TTS are done and playback just drained → finalize turn
+                    if awaiting_playback_finish
+                        && playback_engine.is_idle()
+                        && !self.tts_generating.load(Ordering::Relaxed)
+                    {
+                        awaiting_playback_finish = false;
+                        metrics.mark(MetricField::PlaybackFinish);
+                        let report = metrics.latency_report();
+                        log::info!("[Pipeline] Turn complete (polled). Latencies: {}", report);
+                        self.update_interaction_state(self.get_idle_state(), &app_handle);
+                        metrics.reset();
+                    }
+                    continue;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            };
             match event {
+                VoxEvent::Shutdown => {
+                    log::info!("[Pipeline] Shutdown signal received. Exiting event loop.");
+                    drop(tts_tx);
+                    break;
+                }
                 // ── Speech start: headset barge-in cancellation ───────────
                 VoxEvent::SpeechStart { session_id } => {
                     if audio_mode == AudioOutputMode::Headset
@@ -295,6 +333,7 @@ impl PipelineOrchestrator {
                         log::info!("[Pipeline] Barge-in detected (headset) — cancelling turn {}", session_id);
                         self.cancel_flag.store(true, Ordering::Relaxed);
                         playback_engine.cancel();
+                        awaiting_playback_finish = false;
                         self.update_interaction_state(crate::core::state::InteractionState::Interrupted, &app_handle);
                     } else {
                         self.update_interaction_state(crate::core::state::InteractionState::UserSpeaking, &app_handle);
@@ -383,11 +422,11 @@ impl PipelineOrchestrator {
                     let remainder = token_buf.trim().to_string();
                     if !remainder.is_empty() {
                         let _ = tts_tx.send((session_id, voice_sid, remainder));
-                    } else if playback_engine.is_idle() && !self.tts_generating.load(Ordering::Relaxed) {
-                        // If LLM finished with no remainder and no audio is playing/generating, go back to Idle/Listening
-                        self.update_interaction_state(self.get_idle_state(), &app_handle);
                     }
                     token_buf.clear();
+                    // Signal that all text has been dispatched. The polling loop
+                    // will detect when TTS+Playback drains and finalize the turn.
+                    awaiting_playback_finish = true;
                 }
 
                 VoxEvent::TtsChunk { session_id, samples } => {
@@ -425,7 +464,10 @@ impl PipelineOrchestrator {
                     log::info!("[Pipeline] Cancelled (session {})", session_id);
                     playback_engine.cancel();
                     token_buf.clear();
-                    self.update_interaction_state(crate::core::state::InteractionState::Interrupted, &app_handle);
+                    awaiting_playback_finish = false;
+                    // Reset cancel flag so new sessions can proceed
+                    self.cancel_flag.store(false, Ordering::Relaxed);
+                    self.update_interaction_state(self.get_idle_state(), &app_handle);
                 }
 
                 VoxEvent::Error { session_id, message } => {

@@ -39,11 +39,12 @@ pub struct VoxEngine {
     pub audio_stream: AudioStream,
     pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
     pub telemetry_tx: std::sync::mpsc::Sender<TelemetryData>,
+    pub pipeline_tx: std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
 }
 
 pub struct PttState {
     pub is_recording:          Mutex<bool>,
-    pub session_id:            Mutex<u32>,
+    pub session_id:            Arc<AtomicU32>,
     pub audio_buffer:          Mutex<Vec<f32>>,
     pub samples_since_partial: Mutex<usize>,
     pub samples_since_waveform: Mutex<usize>,
@@ -122,7 +123,7 @@ impl AppState {
             hud_menu_item: Mutex::new(None),
             ptt: PttState {
                 is_recording:           Mutex::new(false),
-                session_id:             Mutex::new(0),
+                session_id:             Arc::new(AtomicU32::new(0)),
                 audio_buffer:           Mutex::new(Vec::new()),
                 samples_since_partial:  Mutex::new(0),
                 samples_since_waveform: Mutex::new(0),
