@@ -6,12 +6,6 @@ use crate::services::audio::AudioStream;
 use crate::services::stt::SttCommand;
 use crate::core::settings::VoxSettings;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum InteractionMode {
-    Passive,
-    Ptt,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub enum InteractionOwner {
     Tray,
@@ -89,7 +83,6 @@ impl PipelineAtomics {
 
 pub struct AppState {
     pub engine:       Mutex<Option<VoxEngine>>,
-    pub interaction:  Mutex<InteractionMode>,
     pub owner:        Mutex<InteractionOwner>,
     pub hud_visible:  Mutex<bool>,
     pub settings:     Mutex<VoxSettings>,
@@ -116,7 +109,6 @@ impl AppState {
 
         Self {
             engine:    Mutex::new(None),
-            interaction: Mutex::new(InteractionMode::Passive),
             owner:     Mutex::new(InteractionOwner::Tray),
             hud_visible: Mutex::new(true),
             settings:  Mutex::new(settings),

@@ -165,7 +165,7 @@ body.is-tray #root {
   }
 
   .premium-card {
-    @apply bg-[rgb(var(--card))] border border-[rgba(var(--border),0.05)] rounded-2xl shadow-xl backdrop-blur-md transition-all duration-300;
+    @apply bg-[rgb(var(--card))] border border-[rgba(var(--border),0.05)] rounded-2xl shadow-xl backdrop-blur-md ;
   }
   
   .shimmer-text {

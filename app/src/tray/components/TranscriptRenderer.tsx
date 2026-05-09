@@ -1,7 +1,8 @@
 import React, { useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Activity } from 'lucide-react';
-import { LiveWaveform } from '../../shared/ui/LiveWaveform';
+import { LiveWaveform } from '../../shared/components/LiveWaveform';
+import { cn } from '../../shared/lib/utils';
 
 interface TranscriptRendererProps {
   displayText: string;
@@ -30,41 +31,46 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
       ref={scrollRef} 
       className="flex-1 overflow-y-auto px-5 py-4 custom-scrollbar relative z-10"
     >
-      <AnimatePresence mode="wait">
-        {pttStatus === 'RECORDING' ? (
+      <div className="min-h-full flex flex-col items-center justify-center relative">
+        {/* Waveform Layer (Recording or Processing) */}
+        {(pttStatus !== 'IDLE' || interactionState === "Thinking") && !displayText && (
           <motion.div 
-            key="waveform"
-            initial={{ opacity: 0, scale: 0.95 }}
+            key="waveform-layer"
+            initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="h-full flex flex-col items-center justify-center w-full px-4 overflow-hidden"
+            exit={{ opacity: 0, scale: 0.98 }}
+            className="w-full flex flex-col items-center gap-6 px-4"
           >
-            <div className="w-full flex flex-col items-center gap-6">
-              <LiveWaveform
-                active={true}
-                mode="scrolling"
-                telemetryRef={telemetryRef}
-                updateRate={30} // 30fps for smooth scrolling
-                historySize={60}
-                barWidth={3}
-                barGap={2}
-                barRadius={2}
-                height={64}
-                fadeEdges={true}
-                fadeWidth={40}
-                className="w-full"
-              />
-              <span className="text-[10px] font-black uppercase tracking-[0.4em] text-cyan-400/80 animate-pulse">
-                Recording
-              </span>
-            </div>
+            <LiveWaveform
+              active={pttStatus === 'RECORDING'}
+              processing={pttStatus === 'PROCESSING' || interactionState === "Thinking"}
+              mode="scrolling"
+              telemetryRef={telemetryRef}
+              updateRate={50}
+              historySize={80}
+              barWidth={2}
+              barGap={2}
+              height={64}
+              fadeEdges={true}
+              fadeWidth={40}
+              className="w-full"
+            />
+            <span className={cn(
+              "text-[10px] font-black uppercase tracking-[0.4em] transition-colors duration-500",
+              pttStatus === 'RECORDING' ? "text-cyan-400/80 animate-pulse" : "text-[rgb(var(--accent))]/80"
+            )}>
+              {pttStatus === 'RECORDING' ? "Recording" : "Processing"}
+            </span>
           </motion.div>
-        ) : displayText ? (
+        )}
+
+        {/* Text Layer */}
+        {displayText && (
           <motion.div 
-            key="text"
-            initial={{ opacity: 0, y: 5 }}
+            key="text-layer"
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-2"
+            className="w-full space-y-2"
           >
             <div className="text-[17px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 drop-shadow-sm">
               {displayText}
@@ -77,39 +83,24 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
               )}
             </div>
           </motion.div>
-        ) : (
+        )}
+
+        {/* Idle Layer */}
+        {!displayText && pttStatus === 'IDLE' && interactionState !== "Thinking" && (
           <motion.div 
-            key="empty"
+            key="idle-layer"
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="h-full flex flex-col items-center justify-center opacity-40 overflow-hidden"
+            animate={{ opacity: 0.4 }}
+            className="flex flex-col items-center justify-center"
           >
-            {pttStatus === 'PROCESSING' || interactionState === "Thinking" ? (
-              <div className="w-full flex flex-col items-center gap-6 px-4">
-                <LiveWaveform
-                  active={false}
-                  processing={true}
-                  mode="scrolling"
-                  height={64}
-                  barWidth={3}
-                  barGap={2}
-                  fadeEdges={true}
-                  fadeWidth={40}
-                  className="w-full"
-                />
-                <span className="text-[10px] text-[rgb(var(--accent))]/80 font-bold uppercase tracking-[0.3em]">Processing</span>
-              </div>
-            ) : (
-              <>
-                <Activity size={24} className="mb-2 text-[rgb(var(--accent))]/40 animate-pulse" />
-                <p className="text-[9px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/40">
-                  Standby
-                </p>
-              </>
-            )}
+            <Activity size={24} className="mb-2 text-[rgb(var(--accent))]/40 animate-pulse" />
+            <p className="text-[9px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/40">
+              Standby
+            </p>
           </motion.div>
         )}
-      </AnimatePresence>
+      </div>
     </div>
   );
 };
+

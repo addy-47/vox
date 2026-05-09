@@ -122,11 +122,11 @@ impl VadEngine {
                 // Mode-based routing
                 let mode = {
                     let state: tauri::State<'_, crate::core::state::AppState> = app.state();
-                    let lock = state.interaction.blocking_lock();
-                    *lock
+                    let settings = state.settings.blocking_lock();
+                    settings.interaction_mode.clone()
                 };
 
-                if mode == crate::core::state::InteractionMode::Ptt {
+                if mode == crate::core::settings::InteractionMode::PTT {
                     // PTT mode: user explicitly controls recording — skip VAD classification.
                     // Passing all audio regardless of VAD state ensures no onset frames are lost.
                     // The VAD model is NOT called to avoid corrupting its RNN hidden state;

@@ -23,7 +23,7 @@ export const TrayApp: React.FC = () => {
   // ─── Interaction & Text State ──────────────────────────────────────────────
   const { 
     interactionId, committedText, partialText, 
-    startNewInteraction, endSpeechSegment, updatePartial, commitFinal 
+    startNewInteraction, endSpeechSegment, updatePartial, commitFinal, reset 
   } = useInteraction();
   const telemetryRef = useTelemetry();
   
@@ -53,6 +53,16 @@ export const TrayApp: React.FC = () => {
 
   // ─── PTT & Mode State ──────────────────────────────────────────────────────
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
+  const [interactionMode, setInteractionMode] = useState<string>('Passive');
+
+  // Bug 5a: Reset stale transcript state when tray hides
+  useEffect(() => {
+    if (visibilityState === 'HIDDEN') {
+      reset();
+      setPttStatus('IDLE');
+      setInteractionState('Idle');
+    }
+  }, [visibilityState, reset]);
 
   // Sync React state to OS Window and Backend state
   useEffect(() => {
@@ -78,9 +88,21 @@ export const TrayApp: React.FC = () => {
     syncVisibility();
   }, [visibilityState]);
 
+  // ─── Stable Refs for Listeners ───────────────────────────────────────────
+  const stateRef = React.useRef({
+    pttStatus,
+    interactionMode,
+    visibilityState,
+    interactionId,
+    interactionState
+  });
+
+  useEffect(() => {
+    stateRef.current = { pttStatus, interactionMode, visibilityState, interactionId, interactionState };
+  }, [pttStatus, interactionMode, visibilityState, interactionId, interactionState]);
+
   // ─── IPC Event Listeners ───────────────────────────────────────────────────
   useEffect(() => {
-    let isMounted = true;
     let unlisteners: (() => void)[] = [];
 
     const setupListeners = async () => {
@@ -90,21 +112,18 @@ export const TrayApp: React.FC = () => {
           const appWindow = getCurrentWindow();
           
           const u1 = await appWindow.listen("speech_start", () => {
-            if (!isMounted) return;
             setViewingHistory(false);
             startNewInteraction();
             show();
           });
 
           const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
-            if (!isMounted) return;
-            // Deferred UI: Ignore partials during PTT recording
-            if (pttStatus === 'RECORDING') return;
+            // Use ref to avoid closure staleness without re-registering effect
+            if (stateRef.current.pttStatus === 'RECORDING') return;
             updatePartial(event.payload.text);
           });
 
           const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
-            if (!isMounted) return;
             if (event.payload.text) {
               commitFinal(event.payload.text);
               history.push(event.payload.text);
@@ -112,38 +131,36 @@ export const TrayApp: React.FC = () => {
           });
 
           const u4 = await appWindow.listen("speech_end", () => {
-            if (!isMounted) return;
             endSpeechSegment();
             startHold();
           });
 
           const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
-            if (!isMounted) return;
             setStats(event.payload);
           });
 
           const u6 = await appWindow.listen("toggle_hud", () => {
-            if (!isMounted) return;
-            if (visibilityState === 'HIDDEN') show();
+            if (stateRef.current.visibilityState === 'HIDDEN') show();
             else hideImmediately();
           });
 
           const u7 = await appWindow.listen<string>("state_changed", (event) => {
-            if (!isMounted) return;
             setInteractionState(event.payload);
           });
 
           const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
-            if (!isMounted) return;
             setPttStatus(event.payload.state as any);
           });
 
           const u9 = await appWindow.listen<string>("theme-changed", (event) => {
-            if (!isMounted) return;
             document.documentElement.setAttribute('data-theme', event.payload);
           });
 
-          unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
+          const u10 = await appWindow.listen<string>("mode_changed", (event) => {
+            setInteractionMode(event.payload);
+          });
+
+          unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9, u10];
         }
       } catch (err) {
         console.error("[TrayApp] Failed to setup listeners:", err);
@@ -152,14 +169,17 @@ export const TrayApp: React.FC = () => {
 
     setupListeners();
 
-    // Initial theme setup
+    // Initial theme setup (sync with backend)
     const fetchSettings = async () => {
       try {
         if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
           const { invoke } = await import("@tauri-apps/api/core");
           const settings = await invoke<any>("get_settings");
-          if (isMounted && settings?.theme) {
-            document.documentElement.setAttribute('data-theme', settings.theme);
+          if (settings?.appearance?.theme) {
+            document.documentElement.setAttribute('data-theme', settings.appearance.theme);
+          }
+          if (settings?.interaction_mode) {
+            setInteractionMode(settings.interaction_mode);
           }
         }
       } catch (e) {
@@ -169,10 +189,9 @@ export const TrayApp: React.FC = () => {
     fetchSettings();
 
     return () => {
-      isMounted = false;
       unlisteners.forEach(u => u());
     };
-  }, [pttStatus, startNewInteraction, updatePartial, commitFinal, show, endSpeechSegment, startHold, history, visibilityState, hideImmediately]);
+  }, [startNewInteraction, updatePartial, commitFinal, show, endSpeechSegment, startHold, history, hideImmediately]);
 
   // ─── Actions ───────────────────────────────────────────────────────────────
   const copyToClipboard = () => {
@@ -245,6 +264,7 @@ export const TrayApp: React.FC = () => {
               hasContent={!!currentTargetText} 
               copied={copied} 
               isPttActive={pttStatus !== 'IDLE'}
+              interactionMode={interactionMode}
               onCopy={copyToClipboard} 
               onClose={hideImmediately}
               onTogglePtt={togglePtt}

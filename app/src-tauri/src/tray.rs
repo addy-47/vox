@@ -4,7 +4,8 @@ use std::time::Duration;
 #[cfg(target_os = "linux")]
 use gtk::prelude::WidgetExt;
 
-use crate::core::state::{AppState, InteractionMode};
+use crate::core::state::AppState;
+use crate::core::settings::InteractionMode;
 
 
 // ─── Commands ────────────────────────────────────────────────────────────────
@@ -54,20 +55,21 @@ pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
 #[tauri::command]
 pub async fn update_interaction_mode(app: AppHandle, mode: String) -> Result<(), String> {
     let state: State<'_, AppState> = app.state();
-    let mut lock = state.interaction.lock().await;
+    let mut settings = state.settings.lock().await;
     
     match mode.to_uppercase().as_str() {
         "PASSIVE" => {
-            *lock = InteractionMode::Passive;
+            settings.interaction_mode = InteractionMode::Passive;
             log::info!("[MODE] Switched to PASSIVE mode.");
         }
         "PTT" => {
-            *lock = InteractionMode::Ptt;
+            settings.interaction_mode = InteractionMode::PTT;
             log::info!("[MODE] Switched to PTT mode.");
         }
         _ => return Err(format!("Invalid interaction mode: {}", mode)),
     }
     
+    let _ = settings.save(&state.config_dir);
     let _ = app.emit("mode_changed", mode);
     Ok(())
 }

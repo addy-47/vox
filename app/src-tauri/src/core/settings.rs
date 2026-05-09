@@ -18,6 +18,13 @@ pub enum AudioOutputMode {
     Headset,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+pub enum InteractionMode {
+    #[default]
+    Passive,
+    PTT,
+}
+
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -42,6 +49,8 @@ pub struct VoxSettings {
     pub llm_threads:    u32,
     /// Acoustic echo mitigation mode.
     pub audio_output_mode: AudioOutputMode,
+    /// Interaction mode (Passive or PTT).
+    pub interaction_mode: InteractionMode,
 }
 
 impl Default for VoxSettings {
@@ -64,6 +73,7 @@ impl Default for VoxSettings {
             llm_ctx_size:     2048,
             llm_threads,
             audio_output_mode: AudioOutputMode::Speaker,
+            interaction_mode: InteractionMode::Passive,
         }
     }
 }
