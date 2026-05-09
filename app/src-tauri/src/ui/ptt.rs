@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Manager, Emitter, State};
 use serde_json::json;
+use std::sync::atomic::Ordering;
 use crate::services::stt::SttCommand;
 use crate::core::state::{AppState, InteractionMode};
 
@@ -10,7 +11,6 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     let state: State<'_, AppState> = app.state();
     
     let mut recording = state.ptt.is_recording.lock().await;
-    let mut session = state.ptt.session_id.lock().await;
     let mut buffer = state.ptt.audio_buffer.lock().await;
     let mut samples_since = state.ptt.samples_since_partial.lock().await;
     let mut samples_waveform = state.ptt.samples_since_waveform.lock().await;
@@ -18,13 +18,23 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
 
     *recording = true;
     *mode = InteractionMode::Ptt;
-    *session += 1;
+    
+    // Sync PTT session with global pipeline session to ensure transcripts aren't rejected as stale
+    let current_global = state.pipeline.session_id.load(Ordering::Relaxed);
+    state.ptt.session_id.store(current_global, Ordering::Relaxed);
+    let session = current_global;
+
     buffer.clear();
     *samples_since = 0;
     *samples_waveform = 0;
 
-    log::info!("[PTT] >>> Recording started (session: {})", *session);
-    let _ = app.emit("ptt_status", json!({ "state": "RECORDING", "session_id": *session }));
+    log::info!("[PTT] >>> Recording started (session: {})", session);
+    let owner = *state.owner.lock().await;
+    let target = match owner {
+        crate::core::state::InteractionOwner::Tray => "tray",
+        _ => "main",
+    };
+    let _ = app.emit_to(target, "ptt_status", json!({ "state": "RECORDING", "session_id": session }));
     
     // Phase 5: Update interaction state for unified UI
     {
@@ -32,7 +42,7 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
         let mut state_lock = state_atomic.lock().unwrap();
         *state_lock = crate::core::state::InteractionState::UserSpeaking;
     }
-    let _ = app.emit("state_changed", crate::core::state::InteractionState::UserSpeaking);
+    let _ = app.emit_to(target, "state_changed", crate::core::state::InteractionState::UserSpeaking);
     
     Ok(())
 }
@@ -50,7 +60,7 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
         }
 
         let buffer = state.ptt.audio_buffer.lock().await;
-        let session = state.ptt.session_id.lock().await;
+        let session = state.ptt.session_id.load(Ordering::Relaxed);
         let mut mode = state.interaction.lock().await;
 
         *recording = false;
@@ -58,10 +68,14 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
         log::info!("[PTT] <<< Recording stopped. Finalizing {} samples...", buffer.len());
         
         let owner = *state.owner.lock().await;
-        (*session, owner, buffer.clone())
+        (session, owner, buffer.clone())
     }; 
 
-    let _ = app.emit("ptt_status", json!({ "state": "PROCESSING", "session_id": session }));
+    let target = match owner {
+        crate::core::state::InteractionOwner::Tray => "tray",
+        _ => "main",
+    };
+    let _ = app.emit_to(target, "ptt_status", json!({ "state": "PROCESSING", "session_id": session }));
 
     // Phase 5: Update interaction state for unified UI
     {
@@ -69,7 +83,7 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
         let mut state_lock = state_atomic.lock().unwrap();
         *state_lock = crate::core::state::InteractionState::Thinking;
     }
-    let _ = app.emit("state_changed", crate::core::state::InteractionState::Thinking);
+    let _ = app.emit_to(target, "state_changed", crate::core::state::InteractionState::Thinking);
 
     // Send the full buffer to STT for finalization
     let engine_lock = state.engine.lock().await;
@@ -99,7 +113,12 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
     buffer.clear();
 
     log::info!("[PTT] ❌ Recording cancelled.");
-    let _ = app.emit("ptt_status", json!({ "state": "IDLE" }));
+    let owner = *state.owner.lock().await;
+    let target = match owner {
+        crate::core::state::InteractionOwner::Tray => "tray",
+        _ => "main",
+    };
+    let _ = app.emit_to(target, "ptt_status", json!({ "state": "IDLE" }));
 
     // Phase 5: Update interaction state for unified UI
     {
@@ -107,7 +126,7 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
         let mut state_lock = state_atomic.lock().unwrap();
         *state_lock = crate::core::state::InteractionState::Idle;
     }
-    let _ = app.emit("state_changed", crate::core::state::InteractionState::Idle);
+    let _ = app.emit_to(target, "state_changed", crate::core::state::InteractionState::Idle);
     
     Ok(())
 }
@@ -152,14 +171,14 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
 
     // BACKGROUND STT: Every 800ms, send partial buffer to worker
     if *samples_since >= 12800 {
-        let session = state.ptt.session_id.blocking_lock();
+        let session = state.ptt.session_id.load(Ordering::Relaxed);
         if let Ok(lock) = state.engine.try_lock() {
             if let Some(engine) = lock.as_ref() {
                 // For partial transcripts, only send the last 15 seconds to keep CPU/Memory low
                 // 15 seconds * 16,000 samples/sec = 240,000 samples
                 let owner = *state.owner.blocking_lock();
                 let start_idx = buffer.len().saturating_sub(240000);
-                let _ = engine.stt_tx.send(SttCommand::Partial(*session, owner, buffer[start_idx..].to_vec()));
+                let _ = engine.stt_tx.send(SttCommand::Partial(session, owner, buffer[start_idx..].to_vec()));
                 log::debug!("[PTT] Sent partial buffer window ({} samples) to STT worker", buffer[start_idx..].len());
             }
         }

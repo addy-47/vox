@@ -21,4 +21,7 @@ pub enum VoxEvent {
 
     Cancelled { session_id: u32 },
     Error     { session_id: u32, message: String },
+    
+    /// Gracefully shutdown the pipeline orchestrator.
+    Shutdown,
 }

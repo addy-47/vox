@@ -10,6 +10,7 @@ interface TranscriptRendererProps {
   telemetryRef: React.MutableRefObject<{ energy: number; vad_prob: number }>;
 }
 
+
 export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({ 
   displayText, 
   interactionState,
@@ -39,10 +40,17 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
             className="h-full flex flex-col items-center justify-center w-full px-4"
           >
             <div className="w-full flex flex-col items-center gap-4">
-               <LiveWaveform 
+              <LiveWaveform
                 active={true}
+                mode="scrolling"
                 telemetryRef={telemetryRef}
-                height={60} 
+                updateRate={80} // Slower scroll
+                historySize={50}
+                barWidth={3}
+                barGap={2}
+                barRadius={2}
+                height={60}
+                fadeEdges={true}
                 className="w-full"
               />
               <span className="text-[9px] font-black uppercase tracking-[0.4em] text-cyan-400/60 animate-pulse">
@@ -75,9 +83,17 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
             animate={{ opacity: 1 }}
             className="h-full flex flex-col items-center justify-center opacity-40"
           >
-            {pttStatus === 'PROCESSING' ? (
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-8 h-8 border-2 border-[rgb(var(--accent))]/30 border-t-[rgb(var(--accent))] rounded-full animate-spin" />
+            {pttStatus === 'PROCESSING' || interactionState === "Thinking" ? (
+              <div className="w-full flex flex-col items-center gap-4 px-4">
+                <LiveWaveform
+                  active={false}
+                  processing={true}
+                  mode="scrolling"
+                  height={60}
+                  barWidth={3}
+                  barGap={2}
+                  className="w-full"
+                />
                 <span className="text-[10px] text-[rgb(var(--accent))]/60 font-bold uppercase tracking-[0.2em]">Processing</span>
               </div>
             ) : (
