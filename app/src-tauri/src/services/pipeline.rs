@@ -13,7 +13,7 @@ use tauri::{Emitter, Manager};
 
 use crate::core::events::VoxEvent;
 use crate::core::metrics::{MetricField, PipelineMetrics};
-use crate::core::settings::{AudioOutputMode, VoxSettings};
+use crate::core::settings::{VoxSettings};
 use crate::core::state::InteractionOwner;
 
 // ─── Directive 2: Sub-Sentence Chunker ───────────────────────────────────────
@@ -151,26 +151,25 @@ impl PipelineOrchestrator {
         Ok(())
     }
 
-    /// Update internal state and emit IPC event to frontend.
+    /// Update internal state and emit IPC event to the **owning** window only.
+    ///
+    /// Routing rules:
+    /// - `is_engaged == true`  → main window owns the interaction → emit to "main" only
+    /// - `is_engaged == false` → tray owns the interaction → emit to "tray" only
+    ///
+    /// This prevents state coupling where tray PTT bleeds state into the main app.
     pub fn update_interaction_state(&self, new_state: crate::core::state::InteractionState, app_handle: &tauri::AppHandle) {
         let mut state_lock = self.state.lock().unwrap();
         if *state_lock != new_state {
             log::debug!("[Pipeline] State changed -> {:?}", new_state);
             *state_lock = new_state;
             
-            let is_engaged = self.is_engaged.load(Ordering::Relaxed);
-            
-            // Phase 5: Targeted state emission
-            // 1. If engaged, always send to main
-            if is_engaged {
-                let _ = app_handle.emit_to("main", "state_changed", new_state);
+            let target = if self.is_engaged.load(Ordering::Relaxed) {
+                "main"
             } else {
-                // If not engaged, main should be forced to IDLE unless it's the owner (unlikely in dormant mode)
-                let _ = app_handle.emit_to("main", "state_changed", crate::core::state::InteractionState::Idle);
-            }
-            
-            // 2. Always send to tray if it's the owner or if we're in a global thinking/speaking state
-            let _ = app_handle.emit_to("tray", "state_changed", new_state);
+                "tray"
+            };
+            let _ = app_handle.emit_to(target, "state_changed", new_state);
         }
     }
 
@@ -297,7 +296,7 @@ impl PipelineOrchestrator {
         let mut voice_sid    = 0i32; // Default to English Female
         let mut thinking     = false;
         let mut metrics      = PipelineMetrics::new();
-        let audio_mode       = self.settings.audio_output_mode.clone();
+        let _audio_mode       = self.settings.audio_output_mode.clone();
         // True after LlmFinished: we're waiting for TTS+Playback to drain
         let mut awaiting_playback_finish = false;
 
@@ -330,12 +329,10 @@ impl PipelineOrchestrator {
                     drop(tts_tx);
                     break;
                 }
-                // ── Speech start: headset barge-in cancellation ───────────
+                // ── Speech start: barge-in cancellation ───────────
                 VoxEvent::SpeechStart { session_id } => {
-                    if audio_mode == AudioOutputMode::Headset
-                        && playback_engine.is_idle() == false
-                    {
-                        log::info!("[Pipeline] Barge-in detected (headset) — cancelling turn {}", session_id);
+                    if playback_engine.is_idle() == false {
+                        log::info!("[Pipeline] Barge-in detected — cancelling turn {}", session_id);
                         self.cancel_flag.store(true, Ordering::Relaxed);
                         playback_engine.cancel();
                         awaiting_playback_finish = false;

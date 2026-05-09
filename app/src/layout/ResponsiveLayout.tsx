@@ -23,6 +23,17 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       <TitleBar />
       {/* ── Content Area ──────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative", minHeight: 0 }}>
+        {/* Resize Handles (Invisible, for cursor hit-testing on Linux) */}
+        <div className="absolute top-0 left-0 w-full h-[3px] cursor-ns-resize z-[100]" />
+        <div className="absolute bottom-0 left-0 w-full h-[3px] cursor-ns-resize z-[100]" />
+        <div className="absolute top-0 left-0 h-full w-[3px] cursor-ew-resize z-[100]" />
+        <div className="absolute top-0 right-0 h-full w-[3px] cursor-ew-resize z-[100]" />
+        
+        {/* Corner Handles */}
+        <div className="absolute top-0 left-0 w-2 h-2 cursor-nwse-resize z-[110]" />
+        <div className="absolute top-0 right-0 w-2 h-2 cursor-nesw-resize z-[110]" />
+        <div className="absolute bottom-0 left-0 w-2 h-2 cursor-nesw-resize z-[110]" />
+        <div className="absolute bottom-0 right-0 w-2 h-2 cursor-nwse-resize z-[110]" />
 
         {/* Background atmospheric orbs — fixed to viewport, pointer-events none */}
         <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0 }}>

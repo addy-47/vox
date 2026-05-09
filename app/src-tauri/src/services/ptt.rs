@@ -2,7 +2,8 @@ use tauri::{AppHandle, Manager, Emitter, State};
 use serde_json::json;
 use std::sync::atomic::Ordering;
 use crate::services::stt::SttCommand;
-use crate::core::state::{AppState, InteractionMode};
+use crate::core::state::AppState;
+use crate::core::events::VoxEvent;
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
@@ -14,12 +15,10 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     let mut buffer = state.ptt.audio_buffer.lock().await;
     let mut samples_since = state.ptt.samples_since_partial.lock().await;
     let mut samples_waveform = state.ptt.samples_since_waveform.lock().await;
-    let mut mode = state.interaction.lock().await;
 
     *recording = true;
-    *mode = InteractionMode::Ptt;
     
-    // Sync PTT session with global pipeline session to ensure transcripts aren't rejected as stale
+    // Sync PTT session with global pipeline session
     let current_global = state.pipeline.session_id.load(Ordering::Relaxed);
     state.ptt.session_id.store(current_global, Ordering::Relaxed);
     let session = current_global;
@@ -28,18 +27,20 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     *samples_since = 0;
     *samples_waveform = 0;
 
-    log::info!("[PTT] >>> Recording started (session: {})", session);
-    let owner = *state.owner.lock().await;
-    let target = match owner {
-        crate::core::state::InteractionOwner::Tray => "tray",
-        _ => "main",
-    };
+    // Phase 5: Notify pipeline to cancel any ongoing playback (barge-in)
+    if let Some(engine) = state.engine.lock().await.as_ref() {
+        let _ = engine.pipeline_tx.send(VoxEvent::SpeechStart { session_id: session });
+    }
+
+    // Determine the owning window target
+    let target = if state.pipeline.is_engaged.load(Ordering::Relaxed) { "main" } else { "tray" };
+
+    log::info!("[PTT] >>> Recording started (session: {}, target: {})", session, target);
     let _ = app.emit_to(target, "ptt_status", json!({ "state": "RECORDING", "session_id": session }));
     
-    // Phase 5: Update interaction state for unified UI
+    // Update interaction state — emit only to the owning window
     {
-        let state_atomic = &state.pipeline.state;
-        let mut state_lock = state_atomic.lock().unwrap();
+        let mut state_lock = state.pipeline.state.lock().unwrap();
         *state_lock = crate::core::state::InteractionState::UserSpeaking;
     }
     let _ = app.emit_to(target, "state_changed", crate::core::state::InteractionState::UserSpeaking);
@@ -61,26 +62,22 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
 
         let buffer = state.ptt.audio_buffer.lock().await;
         let session = state.ptt.session_id.load(Ordering::Relaxed);
-        let mut mode = state.interaction.lock().await;
 
         *recording = false;
-        *mode = InteractionMode::Passive;
         log::info!("[PTT] <<< Recording stopped. Finalizing {} samples...", buffer.len());
         
         let owner = *state.owner.lock().await;
         (session, owner, buffer.clone())
     }; 
 
-    let target = match owner {
-        crate::core::state::InteractionOwner::Tray => "tray",
-        _ => "main",
-    };
+    // Determine the owning window target
+    let target = if state.pipeline.is_engaged.load(Ordering::Relaxed) { "main" } else { "tray" };
+
     let _ = app.emit_to(target, "ptt_status", json!({ "state": "PROCESSING", "session_id": session }));
 
-    // Phase 5: Update interaction state for unified UI
+    // Update interaction state — emit only to the owning window
     {
-        let state_atomic = &state.pipeline.state;
-        let mut state_lock = state_atomic.lock().unwrap();
+        let mut state_lock = state.pipeline.state.lock().unwrap();
         *state_lock = crate::core::state::InteractionState::Thinking;
     }
     let _ = app.emit_to(target, "state_changed", crate::core::state::InteractionState::Thinking);
@@ -106,24 +103,19 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
     
     let mut recording = state.ptt.is_recording.lock().await;
     let mut buffer = state.ptt.audio_buffer.lock().await;
-    let mut mode = state.interaction.lock().await;
 
     *recording = false;
-    *mode = InteractionMode::Passive;
     buffer.clear();
 
-    log::info!("[PTT] ❌ Recording cancelled.");
-    let owner = *state.owner.lock().await;
-    let target = match owner {
-        crate::core::state::InteractionOwner::Tray => "tray",
-        _ => "main",
-    };
+    // Determine the owning window target
+    let target = if state.pipeline.is_engaged.load(Ordering::Relaxed) { "main" } else { "tray" };
+
+    log::info!("[PTT] ❌ Recording cancelled (target: {})", target);
     let _ = app.emit_to(target, "ptt_status", json!({ "state": "IDLE" }));
 
-    // Phase 5: Update interaction state for unified UI
+    // Update interaction state — emit only to the owning window
     {
-        let state_atomic = &state.pipeline.state;
-        let mut state_lock = state_atomic.lock().unwrap();
+        let mut state_lock = state.pipeline.state.lock().unwrap();
         *state_lock = crate::core::state::InteractionState::Idle;
     }
     let _ = app.emit_to(target, "state_changed", crate::core::state::InteractionState::Idle);

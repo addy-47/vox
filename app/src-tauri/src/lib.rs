@@ -30,6 +30,8 @@ fn spawn_stt_worker(
     model_path: PathBuf,
     // Optional pipeline event channel — `Some` when Phase 4 pipeline is active.
     pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
+    // Phase 5: Owner-aware routing — determines which window receives ptt_status
+    is_engaged: Arc<std::sync::atomic::AtomicBool>,
 ) {
     std::thread::spawn(move || {
         log::info!("[STT] >>> Dedicated worker thread started.");
@@ -94,16 +96,9 @@ fn spawn_stt_worker(
                     }
                     
                     // Signal UI that processing is complete for PTT
-                    // Phase 5: Emit to the owner window specifically
-                    let target = match owner {
-                        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
-                        crate::core::state::InteractionOwner::Tray => "tray",
-                    };
+                    // Phase 5: Emit only to the owning window
+                    let target = if is_engaged.load(std::sync::atomic::Ordering::Relaxed) { "main" } else { "tray" };
                     let _ = app.emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }));
-                    
-                    // Also clear on the other window just in case of state desync
-                    let other = if target == "main" { "tray" } else { "main" };
-                    let _ = app.emit_to(other, "ptt_status", serde_json::json!({ "state": "IDLE" }));
 
                     last_transcript.clear();
                     last_emit_time = Instant::now();
@@ -267,7 +262,7 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     // ── 3. Tier 3: STT Worker (Dedicated OS Thread) ─────────────────────────
     // Create the internal pipeline event channel (VoxEvent bus) - Phase 5: must be std::sync::mpsc
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel::<VoxEvent>();
-    spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()));
+    spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone());
 
     // ── 4. Tier 2: VAD & Router (Dedicated OS Thread) ───────────────────────
     let mut vad = VadEngine::new(&vad_model_path).map_err(|e| e.to_string())?;
