@@ -7,13 +7,14 @@ interface HeaderProps {
   hasContent: boolean;
   copied: boolean;
   isPttActive: boolean;
+  interactionMode: string;
   onCopy: () => void;
   onClose: () => void;
   onTogglePtt: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
-  isListening, hasContent, copied, isPttActive,
+  isListening, hasContent, copied, isPttActive, interactionMode,
   onCopy, onClose, onTogglePtt
 }) => {
   return (
@@ -36,12 +37,14 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
       
       <div className="flex items-center gap-2">
-        <button 
-          onClick={(e) => { e.stopPropagation(); onTogglePtt(); }}
-          className={`p-2 rounded-lg transition-all active:scale-90 ${isPttActive ? 'text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10' : 'text-[rgb(var(--foreground))]/40 hover:bg-[rgb(var(--foreground))]/10 hover:text-[rgb(var(--foreground))]/80'}`}
-        >
-          <Mic size={16} />
-        </button>
+        {interactionMode?.toUpperCase() === 'PTT' && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onTogglePtt(); }}
+            className={`p-2 rounded-lg transition-all active:scale-90 ${isPttActive ? 'text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10' : 'text-[rgb(var(--foreground))]/40 hover:bg-[rgb(var(--foreground))]/10 hover:text-[rgb(var(--foreground))]/80'}`}
+          >
+            <Mic size={16} />
+          </button>
+        )}
 
         {hasContent && (
           <button 

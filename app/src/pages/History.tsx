@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Filter, Search, Trash2, ChevronRight, Activity, Clock, MessageSquare, ChevronDown } from "lucide-react";
-import { cn } from "../../shared/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 const sttHistory = [
   { id: 1, text: "The architectural synthesis of neural networks requires high-fidelity data.", time: "12:45 PM", duration: "1.2s", confidence: "98%" },
