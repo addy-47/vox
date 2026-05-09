@@ -1,16 +1,16 @@
 pub mod core;
 pub mod services;
-pub mod ui;
+pub mod tray;
 
 use crate::services::audio::AudioStream;
 use crate::services::vad::VadEngine;
 use crate::services::stt::{SttEngine, SttCommand};
-use crate::ui::tray::position_tray_window;
 use crate::core::state::{AppState, VoxEngine, InteractionOwner};
 use crate::core::settings::VoxSettings;
 use crate::core::events::VoxEvent;
 use crate::services::pipeline::PipelineOrchestrator;
 use crate::services::playback::PlaybackEngine;
+use crate::tray::*;
 
 use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
@@ -18,7 +18,8 @@ use tauri::{Manager, Emitter, State, WebviewWindow};
 use ringbuf::traits::Split;
 use std::time::{Duration, Instant};
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 
 // ─── STT Worker (Dedicated OS Thread) ────────────────────────────────────────
@@ -108,9 +109,19 @@ fn spawn_stt_worker(
                     last_emit_time = Instant::now();
                 }
                 SttCommand::ResetStream => {
-                    // Currently transcribe() creates a new stream every time, so this is a no-op 
-                    // for the functional logic but we acknowledge it.
-                    log::info!("[STT] ResetStream received.");
+                    log::info!("[STT] ResetStream received. Aggressively clearing state.");
+                    last_transcript.clear();
+                    // RCA Fix: Drain pending transcripts from the channel to prevent "stale" bleed
+                    while let Ok(pending_cmd) = rx.try_recv() {
+                        match pending_cmd {
+                            SttCommand::Partial(..) | SttCommand::Final(..) => continue,
+                            SttCommand::ResetStream => continue,
+                            SttCommand::Shutdown => {
+                                log::info!("[STT] Shutdown detected during ResetStream drain.");
+                                return;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -264,15 +275,29 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     
     // ── Phase 5: High-Frequency Telemetry Aggregator ────────────────────────
     let (telemetry_tx, telemetry_rx) = std::sync::mpsc::channel::<crate::core::state::TelemetryData>();
+    let playback_energy = Arc::new(AtomicU32::new(0f32.to_bits()));
+    let playback_energy_agg = Arc::clone(&playback_energy);
     let app_handle_telemetry = app.clone();
     std::thread::spawn(move || {
         // Throttled aggregator (15-20Hz)
         let interval = Duration::from_millis(60); // ~16.6Hz
         loop {
             let mut latest = None;
-            // Drain the channel to get the latest value
+            // 1. Drain the VAD channel to get the latest mic energy
             while let Ok(data) = telemetry_rx.try_recv() {
                 latest = Some(data);
+            }
+
+            // 2. Poll the playback atomic for AI energy (RCA Fix for Real-time safety)
+            let p_bits = playback_energy_agg.load(Ordering::Relaxed);
+            let p_energy = f32::from_bits(p_bits);
+            
+            // If AI is speaking, its energy takes precedence in the visualizer
+            if p_energy > 0.001 {
+                latest = Some(crate::core::state::TelemetryData {
+                    energy: p_energy,
+                    vad_prob: 0.0,
+                });
             }
             
             if let Some(data) = latest {
@@ -389,7 +414,7 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let playback_engine = match PlaybackEngine::new(
         std::sync::Arc::clone(&playback_active),
         std::sync::Arc::clone(&cancel_flag),
-        telemetry_tx.clone(),
+        Arc::clone(&playback_energy),
     ) {
         Ok(pe) => std::sync::Arc::new(pe),
         Err(e) => {
@@ -597,7 +622,7 @@ pub fn run() {
                 if let tauri::WindowEvent::Resized(size) = event {
                     if size.width > 0 && size.height > 0 {
                         #[cfg(target_os = "linux")]
-                        crate::ui::tray::setup_linux_virtual_layer(window.app_handle(), window.label());
+                        setup_linux_virtual_layer(window.app_handle(), window.label());
                     }
                 }
             }
@@ -611,19 +636,19 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            crate::ui::tray::hide_tray_window,
+            hide_tray_window,
             launch_engine,
             engage,
             check_engine_status,
             get_settings,
             update_theme,
             show_main_window,
-            crate::ui::tray::set_hud_ignore_cursor,
-            crate::ui::tray::sync_hud_visibility,
-            crate::ui::tray::update_interaction_mode,
-            crate::ui::ptt::ptt_start,
-            crate::ui::ptt::ptt_stop,
-            crate::ui::ptt::ptt_cancel
+            set_hud_ignore_cursor,
+            sync_hud_visibility,
+            update_interaction_mode,
+            crate::services::ptt::ptt_start,
+            crate::services::ptt::ptt_stop,
+            crate::services::ptt::ptt_cancel
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

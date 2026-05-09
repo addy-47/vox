@@ -11,7 +11,7 @@ use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 // ─── Resampling (Directive 3) ─────────────────────────────────────────────────
@@ -51,6 +51,8 @@ pub struct PlaybackEngine {
     cancel_flag:    Arc<AtomicBool>,
     /// The active CPAL stream — kept alive until cancelled.
     _stream:        Option<cpal::Stream>,
+    /// RCA Fix: Real-time safe energy telemetry (Atomic f32 via bit storage)
+    playback_energy: Arc<AtomicU32>,
 }
 
 // Safety: cpal::Stream is not Send/Sync on some platforms (macOS), but is
@@ -63,7 +65,7 @@ impl PlaybackEngine {
     pub fn new(
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
-        telemetry_tx: std::sync::mpsc::Sender<crate::core::state::TelemetryData>,
+        playback_energy: Arc<AtomicU32>,
     ) -> Result<Self> {
         let buffer: Arc<Mutex<VecDeque<f32>>> =
             Arc::new(Mutex::new(VecDeque::with_capacity(JITTER_PREBUFFER_SAMPLES * 4)));
@@ -72,7 +74,7 @@ impl PlaybackEngine {
             Arc::clone(&buffer),
             Arc::clone(&playback_active),
             Arc::clone(&cancel_flag),
-            telemetry_tx,
+            Arc::clone(&playback_energy),
         )?;
 
         Ok(Self {
@@ -80,6 +82,7 @@ impl PlaybackEngine {
             playback_active,
             cancel_flag,
             _stream: Some(stream),
+            playback_energy,
         })
     }
 
@@ -129,7 +132,7 @@ impl PlaybackEngine {
         buffer: Arc<Mutex<VecDeque<f32>>>,
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
-        telemetry_tx: std::sync::mpsc::Sender<crate::core::state::TelemetryData>,
+        playback_energy: Arc<AtomicU32>,
     ) -> Result<cpal::Stream> {
         let host   = cpal::default_host();
         let device = host.default_output_device()
@@ -190,17 +193,16 @@ impl PlaybackEngine {
                     output[frame * 2 + 1] = sample; // R
                 }
                 
-                // Emit telemetry for the AI voice so UI can animate properly
+                // RCA Fix: Use AtomicU32 (f32::to_bits) instead of mpsc::send to avoid
+                // memory allocation/blocking in the high-priority audio callback.
                 let raw_energy = (sum_sq / frames as f32).sqrt();
                 let energy = (raw_energy * 15.0).clamp(0.0, 1.0);
-                let _ = telemetry_tx.send(crate::core::state::TelemetryData {
-                    energy,
-                    vad_prob: 0.0,
-                });
+                playback_energy.store(energy.to_bits(), Ordering::Relaxed);
 
                 // Buffer exhausted — signal idle
                 if buf.is_empty() {
                     playback_active.store(false, Ordering::Relaxed);
+                    playback_energy.store(0f32.to_bits(), Ordering::Relaxed);
                     log::info!("[Playback] Buffer drained — playback_active = false");
                 }
             },

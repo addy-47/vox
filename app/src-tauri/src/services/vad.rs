@@ -131,7 +131,7 @@ impl VadEngine {
                     // Passing all audio regardless of VAD state ensures no onset frames are lost.
                     // The VAD model is NOT called to avoid corrupting its RNN hidden state;
                     // we preserve it so passive mode resumes cleanly after PTT ends.
-                    crate::ui::ptt::handle_ptt_audio_sync(&app, &chunk);
+                    crate::services::ptt::handle_ptt_audio_sync(&app, &chunk);
                     
                     // If we were mid-utterance in passive mode, cleanly exit that state
                     if in_speech {
