@@ -152,22 +152,15 @@ impl PipelineOrchestrator {
     }
 
     /// Update internal state and emit IPC event to the **owning** window only.
-    ///
-    /// Routing rules:
-    /// - `is_engaged == true`  → main window owns the interaction → emit to "main" only
-    /// - `is_engaged == false` → tray owns the interaction → emit to "tray" only
-    ///
-    /// This prevents state coupling where tray PTT bleeds state into the main app.
-    pub fn update_interaction_state(&self, new_state: crate::core::state::InteractionState, app_handle: &tauri::AppHandle) {
+    pub fn update_interaction_state(&self, new_state: crate::core::state::InteractionState, owner: InteractionOwner, app_handle: &tauri::AppHandle) {
         let mut state_lock = self.state.lock().unwrap();
         if *state_lock != new_state {
-            log::debug!("[Pipeline] State changed -> {:?}", new_state);
+            log::debug!("[Pipeline] State changed -> {:?} (Owner: {:?})", new_state, owner);
             *state_lock = new_state;
             
-            let target = if self.is_engaged.load(Ordering::Relaxed) {
-                "main"
-            } else {
-                "tray"
+            let target = match owner {
+                InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
+                InteractionOwner::Tray => "tray",
             };
             let _ = app_handle.emit_to(target, "state_changed", new_state);
         }
@@ -179,6 +172,12 @@ impl PipelineOrchestrator {
         } else {
             crate::core::state::InteractionState::Idle
         }
+    }
+
+    fn get_current_owner(&self, app: &tauri::AppHandle) -> InteractionOwner {
+        let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+        let owner = state.owner.blocking_lock();
+        *owner
     }
 
     /// Shutdown the LLM worker and release memory.
@@ -217,7 +216,7 @@ impl PipelineOrchestrator {
         if !should_trigger_pipeline {
             log::info!("[Pipeline] System is dormant. Skipping LLM/TTS for Tray interaction.");
             // Reset UI state to idle since we won't be "Thinking" or "Speaking"
-            self.update_interaction_state(crate::core::state::InteractionState::Idle, &_app_handle);
+            self.update_interaction_state(crate::core::state::InteractionState::Idle, owner, &_app_handle);
             return;
         }
 
@@ -316,7 +315,8 @@ impl PipelineOrchestrator {
                         metrics.mark(MetricField::PlaybackFinish);
                         let report = metrics.latency_report();
                         log::info!("[Pipeline] Turn complete (polled). Latencies: {}", report);
-                        self.update_interaction_state(self.get_idle_state(), &app_handle);
+                        let owner = self.get_current_owner(&app_handle);
+                        self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                         metrics.reset();
                     }
                     continue;
@@ -330,15 +330,15 @@ impl PipelineOrchestrator {
                     break;
                 }
                 // ── Speech start: barge-in cancellation ───────────
-                VoxEvent::SpeechStart { session_id } => {
+                VoxEvent::SpeechStart { session_id, owner } => {
                     if playback_engine.is_idle() == false {
                         log::info!("[Pipeline] Barge-in detected — cancelling turn {}", session_id);
                         self.cancel_flag.store(true, Ordering::Relaxed);
                         playback_engine.cancel();
                         awaiting_playback_finish = false;
-                        self.update_interaction_state(crate::core::state::InteractionState::Interrupted, &app_handle);
+                        self.update_interaction_state(crate::core::state::InteractionState::Interrupted, owner, &app_handle);
                     } else {
-                        self.update_interaction_state(crate::core::state::InteractionState::UserSpeaking, &app_handle);
+                        self.update_interaction_state(crate::core::state::InteractionState::UserSpeaking, owner, &app_handle);
                     }
                 }
 
@@ -365,7 +365,7 @@ impl PipelineOrchestrator {
                     thinking = false;
                     metrics.mark(MetricField::FinalTranscript);
                     
-                    self.update_interaction_state(crate::core::state::InteractionState::Thinking, &app_handle);
+                    self.update_interaction_state(crate::core::state::InteractionState::Thinking, owner, &app_handle);
 
                     let target = match owner {
                         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
@@ -439,7 +439,8 @@ impl PipelineOrchestrator {
                     playback_engine.ingest_chunk(&samples);
                     if metrics.playback_start.is_none() && !playback_engine.is_idle() {
                         metrics.mark(MetricField::PlaybackStart);
-                        self.update_interaction_state(crate::core::state::InteractionState::AssistantSpeaking, &app_handle);
+                        let owner = self.get_current_owner(&app_handle);
+                        self.update_interaction_state(crate::core::state::InteractionState::AssistantSpeaking, owner, &app_handle);
                     }
                 }
 
@@ -448,7 +449,8 @@ impl PipelineOrchestrator {
                     metrics.mark(MetricField::PlaybackFinish);
                     let report = metrics.latency_report();
                     log::info!("[Pipeline] Turn complete. Latencies: {}", report);
-                    self.update_interaction_state(self.get_idle_state(), &app_handle);
+                    let owner = self.get_current_owner(&app_handle);
+                    self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                     
                     let target = {
                         let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
@@ -469,7 +471,8 @@ impl PipelineOrchestrator {
                     awaiting_playback_finish = false;
                     // Reset cancel flag so new sessions can proceed
                     self.cancel_flag.store(false, Ordering::Relaxed);
-                    self.update_interaction_state(self.get_idle_state(), &app_handle);
+                    let owner = self.get_current_owner(&app_handle);
+                    self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                 }
 
                 VoxEvent::Error { session_id, message } => {
@@ -483,7 +486,8 @@ impl PipelineOrchestrator {
                         }
                     };
                     let _ = app_handle.emit_to(target, "pipeline_error", &message);
-                    self.update_interaction_state(self.get_idle_state(), &app_handle);
+                    let owner = self.get_current_owner(&app_handle);
+                    self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                 }
                 _ => {} 
             }

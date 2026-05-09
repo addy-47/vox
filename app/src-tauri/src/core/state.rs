@@ -79,6 +79,21 @@ impl PipelineAtomics {
             is_engaged:      Arc::new(AtomicBool::new(false)),
         }
     }
+
+    /// Update internal state and emit IPC event to the **owning** window only.
+    pub fn update_interaction_state(&self, new_state: InteractionState, owner: InteractionOwner, app_handle: &tauri::AppHandle) {
+        let mut state_lock = self.state.lock().unwrap();
+        if *state_lock != new_state {
+            log::debug!("[Pipeline] State changed -> {:?} (Owner: {:?})", new_state, owner);
+            *state_lock = new_state;
+            
+            let target = match owner {
+                InteractionOwner::Tray => "tray",
+                InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
+            };
+            let _ = tauri::Emitter::emit_to(app_handle, target, "state_changed", new_state);
+        }
+    }
 }
 
 pub struct AppState {

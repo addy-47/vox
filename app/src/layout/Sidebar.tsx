@@ -1,9 +1,10 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import { Settings, Database, Monitor, Sun, Moon } from "lucide-react";
-import { cn } from "../shared/lib/utils";
-import logo from "../assets/logo.webp";
-import logoLight from "../assets/logo-light.webp";
+import { cn } from "@/shared/lib/utils";
+import logo from "@/assets/logo.webp";
+import logoLight from "@/assets/logo-light.webp";
+import { useTheme } from "@/shared/context/ThemeContext";
 
 const topNavItems = [
   { icon: Monitor, label: "HOME", path: "/" },
@@ -12,69 +13,7 @@ const topNavItems = [
 ];
 
 export const Sidebar: React.FC = () => {
-  const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
-
-  React.useEffect(() => {
-    const initTheme = async () => {
-      try {
-        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-          const { invoke } = await import("@tauri-apps/api/core");
-          const settings = await invoke<any>("get_settings");
-          setTheme(settings.theme as 'dark' | 'light');
-        } else {
-          const stored = localStorage.getItem('theme') as 'dark' | 'light';
-          if (stored) setTheme(stored);
-        }
-      } catch (e) {
-        const stored = localStorage.getItem('theme') as 'dark' | 'light';
-        if (stored) setTheme(stored);
-      }
-    };
-    initTheme();
-  }, []);
-
-  React.useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-    
-    // Sync Tauri window theme
-    const syncTheme = async () => {
-      try {
-        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
-          const { invoke } = await import("@tauri-apps/api/core");
-          getCurrentWindow().setTheme(theme);
-          invoke("update_theme", { theme });
-        }
-      } catch (e) {
-        console.warn("Could not set Tauri window theme", e);
-      }
-    };
-    syncTheme();
-  }, [theme]);
-
-  React.useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    
-    const setup = async () => {
-      try {
-        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
-          const appWindow = getCurrentWindow();
-          unlisten = await appWindow.listen<string>("theme-changed", (event) => {
-            setTheme(event.payload as 'dark' | 'light');
-          });
-        }
-      } catch (err) {
-        console.error("[Sidebar] Failed to setup listeners:", err);
-      }
-    };
-    
-    setup();
-    return () => { if (unlisten) unlisten(); };
-  }, []);
-
-  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <aside className="fixed left-0 top-0 h-full z-40 flex flex-col bg-[rgb(var(--sidebar))] border-r border-[rgba(var(--border),0.05)] transition-colors duration-300" style={{ width: "96px" }}>
@@ -151,3 +90,4 @@ export const Sidebar: React.FC = () => {
     </aside>
   );
 };
+

@@ -28,6 +28,7 @@ pub enum InteractionMode {
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct VoxSettings {
     // ── Phase 0.2/0.3 (existing) ─────────────────────────────────────────────
     pub stt_model_dir:  PathBuf,
@@ -49,8 +50,12 @@ pub struct VoxSettings {
     pub llm_threads:    u32,
     /// Acoustic echo mitigation mode.
     pub audio_output_mode: AudioOutputMode,
-    /// Interaction mode (Passive or PTT).
-    pub interaction_mode: InteractionMode,
+    
+    // ── Phase 5 additions ─────────────────────────────────────────────────────
+    /// Interaction mode for the Main Application window.
+    pub main_app_mode: InteractionMode,
+    /// Interaction mode for the Tray HUD window.
+    pub tray_mode: InteractionMode,
 }
 
 impl Default for VoxSettings {
@@ -73,7 +78,8 @@ impl Default for VoxSettings {
             llm_ctx_size:     2048,
             llm_threads,
             audio_output_mode: AudioOutputMode::Speaker,
-            interaction_mode: InteractionMode::Passive,
+            main_app_mode:    InteractionMode::Passive,
+            tray_mode:        InteractionMode::Passive,
         }
     }
 }
@@ -90,7 +96,6 @@ impl VoxSettings {
                 if model_str.contains("IQ2_M") {
                     log::warn!("[Settings] Stale IQ2_M model detected in config. Migrating to Q4_K_M...");
                     settings.llm_model_path = PathBuf::from("assets/gemma4/google_gemma-4-E2B-it-Q4_K_M.gguf");
-                    // We don't save here, it will be saved next time app state is saved
                 }
                 
                 return settings;
@@ -114,3 +119,4 @@ impl VoxSettings {
         Ok(())
     }
 }
+

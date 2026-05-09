@@ -120,10 +120,16 @@ impl VadEngine {
                 });
 
                 // Mode-based routing
-                let mode = {
+                let (mode, owner) = {
                     let state: tauri::State<'_, crate::core::state::AppState> = app.state();
                     let settings = state.settings.blocking_lock();
-                    settings.interaction_mode.clone()
+                    let owner = state.owner.blocking_lock();
+                    let mode = match *owner {
+                        crate::core::state::InteractionOwner::Tray => settings.tray_mode.clone(),
+                        crate::core::state::InteractionOwner::MainWindow => settings.main_app_mode.clone(),
+                        crate::core::state::InteractionOwner::Ptt => crate::core::settings::InteractionMode::PTT,
+                    };
+                    (mode, *owner)
                 };
 
                 if mode == crate::core::settings::InteractionMode::PTT {
@@ -171,13 +177,13 @@ impl VadEngine {
                     if !in_speech {
                         in_speech = true;
                         current_session_id += 1;
-                        log::info!("[VAD] >>> SPEECH START (session: {})", current_session_id);
+                        log::info!("[VAD] >>> SPEECH START (session: {}, owner: {:?})", current_session_id, owner);
                         
                         // Phase 5: Reset STT decoder state for the new session
                         let _ = stt_tx.send(crate::services::stt::SttCommand::ResetStream);
 
                         if let Some(ref tx) = vox_event_tx {
-                            let _ = tx.send(crate::core::events::VoxEvent::SpeechStart { session_id: current_session_id });
+                            let _ = tx.send(crate::core::events::VoxEvent::SpeechStart { session_id: current_session_id, owner });
                         }
 
                         let _ = event_tx.try_send(json!({ 
@@ -219,10 +225,10 @@ impl VadEngine {
                     // Transition: Speech -> Silence
                     if in_speech {
                         in_speech = false;
-                        log::info!("[VAD] <<< SPEECH END (session: {})", current_session_id);
+                        log::info!("[VAD] <<< SPEECH END (session: {}, owner: {:?})", current_session_id, owner);
                         
                         if let Some(ref tx) = vox_event_tx {
-                            let _ = tx.send(crate::core::events::VoxEvent::SpeechEnd { session_id: current_session_id });
+                            let _ = tx.send(crate::core::events::VoxEvent::SpeechEnd { session_id: current_session_id, owner });
                         }
                         
                         let _ = event_tx.try_send(json!({ 
