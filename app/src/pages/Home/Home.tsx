@@ -11,8 +11,10 @@ export const Home: React.FC = () => {
   const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
   const [isEngaged, setIsEngaged] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [assistantText, setAssistantText] = useState("");
+  const [shouldShowWaveform, setShouldShowWaveform] = useState(true);
   const telemetryRef = useTelemetry();
-  
+
   const isListening = interactionState === "Listening" || interactionState === "UserSpeaking";
   const isThinking = interactionState === "Thinking";
 
@@ -22,6 +24,9 @@ export const Home: React.FC = () => {
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("engage");
         setIsEngaged(!isEngaged);
+        setTranscript("");
+        setAssistantText("");
+        setShouldShowWaveform(true);
         console.log(isEngaged ? "[Home] Pipeline disengaged." : "[Home] Pipeline engaged.");
       } else {
         // Web fallback
@@ -36,6 +41,8 @@ export const Home: React.FC = () => {
     let unlistenState: (() => void) | null = null;
     let unlistenPartial: (() => void) | null = null;
     let unlistenFinal: (() => void) | null = null;
+    let unlistenLLMChunk: (() => void) | null = null;
+    let unlistenLLMFinal: (() => void) | null = null;
 
     const setup = async () => {
       try {
@@ -44,7 +51,16 @@ export const Home: React.FC = () => {
           const appWindow = getCurrentWindow();
           
           unlistenState = await appWindow.listen<InteractionState>("state_changed", (event) => {
-            setInteractionState(event.payload);
+            const newState = event.payload;
+            setInteractionState(newState);
+            
+            // Fade out waveform when assistant starts speaking
+            if (newState === "AssistantSpeaking") {
+              setShouldShowWaveform(false);
+            } else if (newState === "Listening" || newState === "UserSpeaking") {
+              setShouldShowWaveform(true);
+              setAssistantText(""); // Reset for new turn
+            }
           });
 
           unlistenPartial = await appWindow.listen<{text: string}>("transcript_partial", (event) => {
@@ -54,6 +70,21 @@ export const Home: React.FC = () => {
           unlistenFinal = await appWindow.listen<{text: string}>("transcript_final", (event) => {
             setTranscript(event.payload.text);
           });
+
+          unlistenLLMChunk = await appWindow.listen<{text: string}>("llm_chunk", (event) => {
+            setAssistantText(prev => prev + event.payload.text);
+          });
+
+          unlistenLLMFinal = await appWindow.listen<{text: string}>("llm_final", () => {
+            // Final text already handled by chunks or can be synced here
+          });
+
+          // Phase 5: Show window only after listeners are ready and React has painted
+          // This eliminates the "white screen" on startup
+          setTimeout(async () => {
+            const { invoke } = await import("@tauri-apps/api/core");
+            await invoke("show_main_window");
+          }, 300);
         }
       } catch (err) {
         console.error("[Home] Failed to setup Tauri listeners:", err);
@@ -65,6 +96,8 @@ export const Home: React.FC = () => {
       if (unlistenState) unlistenState();
       if (unlistenPartial) unlistenPartial();
       if (unlistenFinal) unlistenFinal();
+      if (unlistenLLMChunk) unlistenLLMChunk();
+      if (unlistenLLMFinal) unlistenLLMFinal();
     };
   }, []);
 
@@ -109,52 +142,49 @@ export const Home: React.FC = () => {
 
         {/* Interaction Zone */}
         <div className="p-6 md:p-12 pt-0 w-full flex flex-col items-center shrink-0">
-          <div className="w-full max-w-4xl flex flex-col items-center justify-center relative h-40 md:h-48 mb-8 md:mb-0">
-            {/* Waveform Layer */}
+          <div className="w-full max-w-2xl flex items-center justify-center relative h-32 mb-8 md:mb-0">
+            {/* Flanking Waveform Container */}
             <div className={cn(
-              "absolute inset-0 flex items-center justify-center transition-all duration-1000",
-              isListening ? "opacity-100 scale-100" : "opacity-20 scale-95 blur-sm"
+              "absolute inset-0 flex items-center justify-center transition-all duration-700",
+              (isListening || isThinking) && shouldShowWaveform ? "opacity-100 scale-100" : "opacity-0 scale-95 blur-md"
             )}>
               <LiveWaveform
                 active={isListening}
                 processing={isThinking}
                 telemetryRef={telemetryRef}
-                height={120}
+                height={80}
                 className="w-full"
+                mode="static"
+                barWidth={4}
+                barGap={2}
               />
             </div>
 
-            {/* Visual Indicator Layer (Engage Button) */}
+            {/* Opaque Engage Button */}
             <button
               onClick={handleEngage}
               className={cn(
-                "group relative z-20 flex items-center justify-center w-24 h-24 rounded-full transition-all duration-700",
+                "group relative z-20 flex items-center justify-center w-20 h-20 rounded-full transition-all duration-700 border-2",
                 isEngaged
-                  ? "bg-[rgb(var(--background))] border-2 border-[rgb(var(--accent))] shadow-[0_0_50px_rgba(var(--accent),0.2)]"
-                  : "bg-[rgb(var(--accent))] shadow-[0_0_60px_rgba(var(--accent),0.4)] hover:scale-110 active:scale-90"
+                  ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_40px_rgba(var(--accent),0.2)]"
+                  : "bg-[rgb(var(--accent))] border-transparent shadow-[0_0_50px_rgba(var(--accent),0.4)] hover:scale-110 active:scale-90"
               )}
             >
               <Activity
-                size={36}
+                size={32}
                 className={cn(
                   "transition-all duration-700",
                   isEngaged ? "text-[rgb(var(--accent))] rotate-180" : "text-[rgb(var(--accent-foreground))]"
                 )}
               />
-              {isEngaged && (
-                <div className="absolute -bottom-16 flex flex-col items-center gap-1 animate-pulse text-center">
-                  <span className="text-[11px] font-extrabold tracking-[0.5em] text-[rgb(var(--foreground-muted))] uppercase">
-                    Stop
-                  </span>
-                </div>
-              )}
-              {!isEngaged && (
-                <div className="absolute -bottom-16 flex flex-col items-center gap-1 animate-bounce text-center">
-                  <span className="text-[11px] font-extrabold tracking-[0.5em] text-[rgb(var(--accent))] uppercase">
-                    Engage
-                  </span>
-                </div>
-              )}
+              <div className="absolute -bottom-14 w-32 text-center pointer-events-none">
+                <span className={cn(
+                  "text-[10px] font-extrabold tracking-[0.5em] uppercase transition-colors duration-500",
+                  isEngaged ? "text-[rgb(var(--foreground-muted))]" : "text-[rgb(var(--accent))]"
+                )}>
+                  {isEngaged ? "Stop" : "Engage"}
+                </span>
+              </div>
             </button>
           </div>
         </div>
@@ -174,13 +204,36 @@ export const Home: React.FC = () => {
 
           <div className="space-y-8 min-h-[200px]">
             <div>
-              <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] mb-4 opacity-50">Current Stream</h3>
-              <p className={cn(
-                "text-xl font-medium leading-relaxed transition-all duration-500",
-                transcript ? "text-[rgb(var(--foreground))]" : "text-[rgb(var(--foreground-muted))] italic"
-              )}>
-                {transcript || (isEngaged ? "Listening for speech..." : "System dormant. Engage to start transcription.")}
-              </p>
+              <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] mb-4 opacity-50">Transcription Flow</h3>
+              <div className="space-y-6">
+                {/* User Bubble */}
+                <div className={cn(
+                  "transition-all duration-500",
+                  transcript ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 h-0"
+                )}>
+                  <div className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-1">User</div>
+                  <p className="text-lg font-medium text-[rgb(var(--foreground))] leading-relaxed">
+                    {transcript}
+                  </p>
+                </div>
+
+                {/* Assistant Bubble */}
+                <div className={cn(
+                  "transition-all duration-700 delay-200",
+                  assistantText ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 h-0"
+                )}>
+                  <div className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-1">Assistant</div>
+                  <p className="text-lg font-medium text-[rgb(var(--accent))] leading-relaxed">
+                    {assistantText}
+                  </p>
+                </div>
+
+                {!transcript && !assistantText && (
+                  <p className="text-xl font-medium text-[rgb(var(--foreground-muted))] italic">
+                    {isEngaged ? "Listening for speech..." : "System dormant. Engage to start transcription."}
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="pt-8 border-t border-[rgba(var(--border),0.1)] grid grid-cols-2 gap-8">

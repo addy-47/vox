@@ -46,6 +46,10 @@ fn spawn_stt_worker(
 
         while let Ok(cmd) = rx.recv() {
             match cmd {
+                SttCommand::Shutdown => {
+                    log::info!("[STT] Shutdown signal received. Exiting worker thread.");
+                    break;
+                }
                 SttCommand::Partial(sid, owner, utterance) => {
                     // UX Throttling: Only run inference if 800ms passed to save CPU
                     if last_emit_time.elapsed() >= Duration::from_millis(800) {
@@ -89,12 +93,17 @@ fn spawn_stt_worker(
                     }
                     
                     // Signal UI that processing is complete for PTT
+                    // Phase 5: Emit to the owner window specifically
                     let target = match owner {
                         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                         crate::core::state::InteractionOwner::Tray => "tray",
                     };
                     let _ = app.emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }));
                     
+                    // Also clear on the other window just in case of state desync
+                    let other = if target == "main" { "tray" } else { "main" };
+                    let _ = app.emit_to(other, "ptt_status", serde_json::json!({ "state": "IDLE" }));
+
                     last_transcript.clear();
                     last_emit_time = Instant::now();
                 }
@@ -107,6 +116,15 @@ fn spawn_stt_worker(
         }
         log::info!("[STT] Worker thread exiting.");
     });
+}
+
+#[tauri::command]
+async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    Ok(())
 }
 
 // ─── Commands ────────────────────────────────────────────────────────────────
@@ -168,14 +186,16 @@ async fn engage(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(),
         // Cancel any ongoing generation/playback
         state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
         
+        // Phase 5: Reset the pipeline loop state by sending a Cancelled event
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let session_id = state.pipeline.session_id.load(Ordering::Relaxed);
+            let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::Cancelled { session_id });
+            let _ = engine.stt_tx.send(crate::services::stt::SttCommand::ResetStream);
+        }
+
         // Revert ownership to Tray (passive mode)
         let mut owner = state.owner.lock().await;
         *owner = InteractionOwner::Tray;
-        
-        // Reset STT state to clear any partial transcripts
-        if let Some(engine) = state.engine.lock().await.as_ref() {
-            let _ = engine.stt_tx.send(crate::services::stt::SttCommand::ResetStream);
-        }
 
         // Reset InteractionState to Idle and notify UI
         {
@@ -256,15 +276,25 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             }
             
             if let Some(data) = latest {
-                let target = {
-                    let state: tauri::State<'_, crate::core::state::AppState> = app_handle_telemetry.state();
-                    let owner = state.owner.blocking_lock();
-                    match *owner {
-                        crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
-                        crate::core::state::InteractionOwner::Tray => "tray",
-                    }
+                let state: tauri::State<'_, crate::core::state::AppState> = app_handle_telemetry.state();
+                let is_engaged = state.pipeline.is_engaged.load(Ordering::Relaxed);
+                let owner = state.owner.blocking_lock();
+                
+                // Telemetry routing:
+                // 1. If engaged, always send to main (for orb/waveform)
+                // 2. If PTT or Tray owner, send to tray
+                if is_engaged {
+                    let _ = app_handle_telemetry.emit_to("main", "telemetry", data.clone());
+                }
+                
+                let target_tray = match *owner {
+                    crate::core::state::InteractionOwner::Tray | crate::core::state::InteractionOwner::Ptt => true,
+                    _ => false,
                 };
-                let _ = app_handle_telemetry.emit_to(target, "telemetry", data);
+                
+                if target_tray {
+                    let _ = app_handle_telemetry.emit_to("tray", "telemetry", data);
+                }
             }
             std::thread::sleep(interval);
         }
@@ -404,6 +434,7 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         audio_stream,
         stt_tx: stt_tx_internal,
         telemetry_tx,
+        pipeline_tx: vox_event_tx.clone(),
     });
 
     // ── 8. System Telemetry (CPU/RAM) ────────────────────────────────────────
@@ -458,7 +489,7 @@ async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 /// engine on startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
         .setup(|app| {
@@ -586,6 +617,7 @@ pub fn run() {
             check_engine_status,
             get_settings,
             update_theme,
+            show_main_window,
             crate::ui::tray::set_hud_ignore_cursor,
             crate::ui::tray::sync_hud_visibility,
             crate::ui::tray::update_interaction_mode,
@@ -593,6 +625,27 @@ pub fn run() {
             crate::ui::ptt::ptt_stop,
             crate::ui::ptt::ptt_cancel
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle: &tauri::AppHandle, event| match event {
+        tauri::RunEvent::Exit => {
+            log::info!("[Vox] Shutting down engine...");
+            let state: State<'_, AppState> = app_handle.state();
+            
+            // Clear engine (this will drop VoxEngine and close channels)
+            let mut engine_lock = state.engine.blocking_lock();
+            let engine_opt: Option<crate::core::state::VoxEngine> = engine_lock.take();
+            if let Some(engine) = engine_opt {
+                // 1. Send shutdown to orchestrator
+                let _ = engine.pipeline_tx.send(VoxEvent::Shutdown);
+                // 2. Send shutdown to STT worker
+                let _ = engine.stt_tx.send(SttCommand::Shutdown);
+            }
+            
+            // Allow a tiny bit of time for threads to join if needed
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        _ => {}
+    });
 }
