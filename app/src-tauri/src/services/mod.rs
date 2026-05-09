@@ -5,3 +5,4 @@ pub mod playback;
 pub mod stt;
 pub mod tts;
 pub mod vad;
+pub mod ptt;
