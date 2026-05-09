@@ -37,23 +37,24 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="h-full flex flex-col items-center justify-center w-full px-4"
+            className="h-full flex flex-col items-center justify-center w-full px-4 overflow-hidden"
           >
-            <div className="w-full flex flex-col items-center gap-4">
+            <div className="w-full flex flex-col items-center gap-6">
               <LiveWaveform
                 active={true}
                 mode="scrolling"
                 telemetryRef={telemetryRef}
-                updateRate={80} // Slower scroll
-                historySize={50}
+                updateRate={30} // 30fps for smooth scrolling
+                historySize={60}
                 barWidth={3}
                 barGap={2}
                 barRadius={2}
-                height={60}
+                height={64}
                 fadeEdges={true}
+                fadeWidth={40}
                 className="w-full"
               />
-              <span className="text-[9px] font-black uppercase tracking-[0.4em] text-cyan-400/60 animate-pulse">
+              <span className="text-[10px] font-black uppercase tracking-[0.4em] text-cyan-400/80 animate-pulse">
                 Recording
               </span>
             </div>
@@ -81,20 +82,22 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
             key="empty"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="h-full flex flex-col items-center justify-center opacity-40"
+            className="h-full flex flex-col items-center justify-center opacity-40 overflow-hidden"
           >
             {pttStatus === 'PROCESSING' || interactionState === "Thinking" ? (
-              <div className="w-full flex flex-col items-center gap-4 px-4">
+              <div className="w-full flex flex-col items-center gap-6 px-4">
                 <LiveWaveform
                   active={false}
                   processing={true}
                   mode="scrolling"
-                  height={60}
+                  height={64}
                   barWidth={3}
                   barGap={2}
+                  fadeEdges={true}
+                  fadeWidth={40}
                   className="w-full"
                 />
-                <span className="text-[10px] text-[rgb(var(--accent))]/60 font-bold uppercase tracking-[0.2em]">Processing</span>
+                <span className="text-[10px] text-[rgb(var(--accent))]/80 font-bold uppercase tracking-[0.3em]">Processing</span>
               </div>
             ) : (
               <>

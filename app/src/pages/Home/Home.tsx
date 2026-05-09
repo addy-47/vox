@@ -26,7 +26,8 @@ export const Home: React.FC = () => {
         setIsEngaged(!isEngaged);
         setTranscript("");
         setAssistantText("");
-        setShouldShowWaveform(true);
+        // show waveform immediately on engage
+        setShouldShowWaveform(true); 
         console.log(isEngaged ? "[Home] Pipeline disengaged." : "[Home] Pipeline engaged.");
       } else {
         // Web fallback
@@ -146,17 +147,18 @@ export const Home: React.FC = () => {
             {/* Flanking Waveform Container */}
             <div className={cn(
               "absolute inset-0 flex items-center justify-center transition-all duration-700",
-              (isListening || isThinking) && shouldShowWaveform ? "opacity-100 scale-100" : "opacity-0 scale-95 blur-md"
+              isEngaged && shouldShowWaveform ? "opacity-100 scale-100" : "opacity-0 scale-95 blur-md"
             )}>
               <LiveWaveform
                 active={isListening}
                 processing={isThinking}
                 telemetryRef={telemetryRef}
-                height={80}
+                height={85}
                 className="w-full"
                 mode="static"
                 barWidth={4}
                 barGap={2}
+                fadeWidth={80} // Broad fade behind button
               />
             </div>
 
@@ -166,7 +168,7 @@ export const Home: React.FC = () => {
               className={cn(
                 "group relative z-20 flex items-center justify-center w-20 h-20 rounded-full transition-all duration-700 border-2",
                 isEngaged
-                  ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_40px_rgba(var(--accent),0.2)]"
+                  ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_40px_rgba(var(--accent),0.3)]"
                   : "bg-[rgb(var(--accent))] border-transparent shadow-[0_0_50px_rgba(var(--accent),0.4)] hover:scale-110 active:scale-90"
               )}
             >

@@ -231,6 +231,11 @@ impl PipelineOrchestrator {
 
         let lock = self.llm_tx.lock().unwrap();
         if let Some(tx) = &*lock {
+            // RCA Fix: Ensure cancel_flag is false right before generation starts.
+            // If SpeechStart set it to true but no playback was active to emit
+            // a Cancelled event (which usually resets this), the LLM would stall.
+            self.cancel_flag.store(false, Ordering::Relaxed);
+
             let cmd = crate::services::llm::LlmCommand::Generate {
                 text,
                 session_id: new_session,

@@ -68,7 +68,6 @@ export const LiveWaveform = ({
   const barGradientCacheRef = useRef<CanvasGradient | null>(null)
   const lastWidthRef = useRef(0)
   const lastHeightRef = useRef(0)
-  const lastColorRef = useRef<string | null>(null)
 
   const heightStyle = typeof height === "number" ? `${height}px` : height
 
@@ -80,8 +79,9 @@ export const LiveWaveform = ({
 
     const resizeObserver = new ResizeObserver(() => {
       const rect = container.getBoundingClientRect()
-      const dpr = window.devicePixelRatio || 1
+      if (rect.width === 0 || rect.height === 0) return
 
+      const dpr = window.devicePixelRatio || 1
       canvas.width = rect.width * dpr
       canvas.height = rect.height * dpr
       canvas.style.width = `${rect.width}px`
@@ -109,29 +109,27 @@ export const LiveWaveform = ({
       transitionProgressRef.current = 0
 
       const animateProcessing = () => {
-        time += 0.03
+        time += 0.04 // Faster fluid motion
         transitionProgressRef.current = Math.min(
           1,
           transitionProgressRef.current + 0.02
         )
 
         const processingData = []
-        const barCount = Math.floor(
-          (containerRef.current?.getBoundingClientRect().width || 200) /
-            (barWidth + barGap)
-        )
+        const containerWidth = containerRef.current?.getBoundingClientRect().width || 200
+        const step = barWidth + barGap
+        const barCount = Math.floor(containerWidth / step)
 
         if (mode === "static") {
           const halfCount = Math.floor(barCount / 2)
 
           for (let i = 0; i < barCount; i++) {
             const normalizedPosition = (i - halfCount) / halfCount
-            const centerWeight = 1 - Math.abs(normalizedPosition) * 0.5
+            const centerWeight = 1 - Math.abs(normalizedPosition) * 0.4
 
-            // Synchronized fluid waves
-            const wave1 = Math.sin(time * 2.0 + normalizedPosition * 2) * 0.3
-            const wave2 = Math.sin(time * 1.2 - normalizedPosition * 4) * 0.2
-            const processingValue = (0.3 + wave1 + wave2) * centerWeight
+            const wave1 = Math.sin(time * 2.5 + normalizedPosition * 2) * 0.35
+            const wave2 = Math.sin(time * 1.5 - normalizedPosition * 4) * 0.25
+            const processingValue = (0.35 + wave1 + wave2) * centerWeight
 
             let finalValue = processingValue
             if (
@@ -148,13 +146,13 @@ export const LiveWaveform = ({
                 processingValue * transitionProgressRef.current
             }
 
-            processingData[i] = Math.max(0.05, Math.min(1, finalValue))
+            processingData[i] = Math.max(0.08, Math.min(1, finalValue))
           }
         } else {
           for (let i = 0; i < barCount; i++) {
-            const wave1 = Math.sin(time * 2.0 + i * 0.1) * 0.25
-            const wave2 = Math.sin(time * 0.8 - i * 0.05) * 0.15
-            const processingValue = (0.25 + wave1 + wave2)
+            const wave1 = Math.sin(time * 2.5 + i * 0.15) * 0.3
+            const wave2 = Math.sin(time * 1.0 - i * 0.07) * 0.2
+            const processingValue = (0.3 + wave1 + wave2)
 
             let finalValue = processingValue
             if (
@@ -170,7 +168,7 @@ export const LiveWaveform = ({
                 processingValue * transitionProgressRef.current
             }
 
-            processingData[i] = Math.max(0.05, Math.min(1, finalValue))
+            processingData[i] = Math.max(0.08, Math.min(1, finalValue))
           }
         }
 
@@ -201,25 +199,27 @@ export const LiveWaveform = ({
       if (hasData) {
         let fadeProgress = 0
         const fadeToIdle = () => {
-          fadeProgress += 0.03
+          fadeProgress += 0.04
           if (fadeProgress < 1) {
             if (mode === "static") {
               staticBarsRef.current = staticBarsRef.current.map(
-                (value) => value * (1 - fadeProgress)
+                (value) => Math.max(0.05, value * (1 - fadeProgress))
               )
             } else {
               historyRef.current = historyRef.current.map(
-                (value) => value * (1 - fadeProgress)
+                (value) => Math.max(0.05, value * (1 - fadeProgress))
               )
             }
             needsRedrawRef.current = true
             requestAnimationFrame(fadeToIdle)
           } else {
+            // Keep at minimum height for baseline
             if (mode === "static") {
-              staticBarsRef.current = []
+              staticBarsRef.current = staticBarsRef.current.map(() => 0.05)
             } else {
-              historyRef.current = []
+              historyRef.current = historyRef.current.map(() => 0.05)
             }
+            needsRedrawRef.current = true
           }
         }
         fadeToIdle()
@@ -326,55 +326,46 @@ export const LiveWaveform = ({
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const ctx = canvas.getContext("2d")
+    const ctx = canvas.getContext("2d", { alpha: true })
     if (!ctx) return
 
     let rafId: number
 
     const animate = (currentTime: number) => {
-      // Render waveform
       const rect = canvas.getBoundingClientRect()
+      if (rect.width === 0) {
+        rafId = requestAnimationFrame(animate)
+        return
+      }
 
       // Update audio data if active
       if (active && currentTime - lastUpdateRef.current > updateRate) {
         lastUpdateRef.current = currentTime
 
-        if (analyserRef.current) {
-          const dataArray = new Uint8Array(
-            analyserRef.current.frequencyBinCount
-          )
-          analyserRef.current.getByteFrequencyData(dataArray)
-        }
-
         const externalData = telemetryRef?.current
 
         if (analyserRef.current || externalData) {
           if (mode === "static") {
-            // For static mode, update bars in place
             let relevantData: number[] = []
             if (externalData) {
               if (Array.isArray(externalData)) {
                 relevantData = externalData
               } else {
                 const energy = typeof externalData === 'number' ? externalData : (externalData.energy || 0)
-                // Spread single energy value across bars with some symmetric variation
                 const barCount = Math.floor(rect.width / (barWidth + barGap))
                 const halfCount = Math.floor(barCount / 2)
                 for (let i = 0; i < halfCount; i++) {
-                  // Merge 'amps' by using a lower-frequency sine and more synchronized variation
-                  const groupIndex = Math.floor(i / 4) // Synchronize every 4 bars
-                  const variation = (0.7 + Math.sin(groupIndex * 0.8 + currentTime * 0.002) * 0.2) * 
+                  const groupIndex = Math.floor(i / 3) 
+                  const variation = (0.7 + Math.sin(groupIndex * 0.8 + currentTime * 0.003) * 0.25) * 
                                   (0.9 + Math.random() * 0.1)
                   relevantData.push(energy * variation)
                 }
               }
             } else if (analyserRef.current) {
-              const dataArray = new Uint8Array(
-                analyserRef.current.frequencyBinCount
-              )
+              const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
               analyserRef.current.getByteFrequencyData(dataArray)
               const startFreq = Math.floor(dataArray.length * 0.05)
-              const endFreq = Math.floor(dataArray.length * 0.4)
+              const endFreq = Math.floor(dataArray.length * 0.45)
               const slicedData = dataArray.slice(startFreq, endFreq)
               relevantData = Array.from(slicedData).map(v => v / 255)
             }
@@ -383,18 +374,14 @@ export const LiveWaveform = ({
             const halfCount = Math.floor(barCount / 2)
             const newBars: number[] = new Array(barCount)
 
-            // Symmetric synchronized spreading
             for (let i = 0; i < halfCount; i++) {
               const dataIndex = Math.floor((i / halfCount) * relevantData.length)
               const baseValue = relevantData[dataIndex] || 0
-              
-              // Coherent variation across groups of bars
-              const groupIndex = Math.floor(i / 3) 
-              const variation = (0.8 + Math.sin(groupIndex * 0.5 + currentTime * 0.003) * 0.2)
+              const groupIndex = Math.floor(i / 2) 
+              const variation = (0.85 + Math.sin(groupIndex * 0.6 + currentTime * 0.004) * 0.15)
               const value = Math.min(1, baseValue * variation * sensitivity)
-              const finalVal = Math.max(0.05, value)
+              const finalVal = Math.max(0.08, value)
               
-              // Mirror to both sides
               newBars[halfCount - 1 - i] = finalVal
               newBars[halfCount + i] = finalVal
             }
@@ -402,15 +389,12 @@ export const LiveWaveform = ({
             staticBarsRef.current = newBars
             lastActiveDataRef.current = newBars
           } else {
-            // Scrolling mode - original behavior
             let average = 0
             if (externalData) {
               average = typeof externalData === 'number' ? externalData : (externalData.energy || 0)
               average *= sensitivity
             } else if (analyserRef.current) {
-              const dataArray = new Uint8Array(
-                analyserRef.current.frequencyBinCount
-              )
+              const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
               analyserRef.current.getByteFrequencyData(dataArray)
               let sum = 0
               const startFreq = Math.floor(dataArray.length * 0.05)
@@ -423,21 +407,16 @@ export const LiveWaveform = ({
               average = (sum / relevantData.length / 255) * sensitivity
             }
 
-            // Add to history
-            historyRef.current.push(Math.min(1, Math.max(0.05, average)))
-            
-            // Maintain history size
+            historyRef.current.push(Math.min(1, Math.max(0.08, average)))
             if (historyRef.current.length > historySize) {
               historyRef.current.shift()
             }
-            
             lastActiveDataRef.current = historyRef.current
           }
           needsRedrawRef.current = true
         }
       }
 
-      // Only redraw if needed
       if (!needsRedrawRef.current && !active) {
         rafId = requestAnimationFrame(animate)
         return
@@ -449,97 +428,78 @@ export const LiveWaveform = ({
       const step = barWidth + barGap
       const barCount = Math.floor(rect.width / step)
       const centerY = rect.height / 2
+      
+      // Fix: Exact centering offset calculation
+      const totalBarWidth = barCount * step - barGap
+      const offsetX = (rect.width - totalBarWidth) / 2
 
-      const computedBarColor =
-        barColor ||
-        (() => {
-          if (barGradientCacheRef.current && lastHeightRef.current === rect.height) {
-            return barGradientCacheRef.current
-          }
+      if (!barGradientCacheRef.current || lastHeightRef.current !== rect.height) {
+        const gradient = ctx.createLinearGradient(0, 0, 0, rect.height)
+        gradient.addColorStop(0, "rgba(0, 255, 255, 0.1)")
+        gradient.addColorStop(0.3, "rgba(0, 255, 255, 0.8)")
+        gradient.addColorStop(0.5, "#00f7ff") 
+        gradient.addColorStop(0.7, "rgba(0, 255, 255, 0.8)")
+        gradient.addColorStop(1, "rgba(0, 255, 255, 0.1)")
+        barGradientCacheRef.current = gradient
+        lastHeightRef.current = rect.height
+      }
+      
+      const computedBarColor = barColor || barGradientCacheRef.current
 
-          // Create a premium cyan-blue gradient with better depth
-          const gradient = ctx.createLinearGradient(0, centerY - rect.height/2, 0, centerY + rect.height/2)
-          gradient.addColorStop(0, "rgba(0, 242, 255, 0.2)") // Top fade
-          gradient.addColorStop(0.3, "rgba(0, 242, 255, 0.9)") // Bright cyan
-          gradient.addColorStop(0.5, "#00d2ff") // Sky blue core
-          gradient.addColorStop(0.7, "rgba(0, 242, 255, 0.9)") // Bright cyan
-          gradient.addColorStop(1, "rgba(0, 242, 255, 0.2)") // Bottom fade
-          
-          barGradientCacheRef.current = gradient
-          lastHeightRef.current = rect.height
-          lastColorRef.current = "cyan-gradient"
-          return gradient
-        })()
-
-      // Draw bars based on mode
       if (mode === "static") {
-        // Static mode - bars in fixed positions
-        const dataToRender = processing
-          ? staticBarsRef.current
-          : active
-            ? staticBarsRef.current
-            : staticBarsRef.current.length > 0
-              ? staticBarsRef.current
-              : []
+        const dataToRender = staticBarsRef.current.length > 0 
+          ? staticBarsRef.current 
+          : new Array(barCount).fill(0.05)
 
         for (let i = 0; i < barCount && i < dataToRender.length; i++) {
-          const value = dataToRender[i] || 0.1
-          const x = i * step
-          const barHeight = Math.max(baseBarHeight, value * rect.height * 0.8)
-          const y = centerY - barHeight / 2
+          const value = dataToRender[i] || 0.05
+          const x = offsetX + i * step
+          const bH = Math.max(baseBarHeight, value * rect.height * 0.85)
+          const y = centerY - bH / 2
 
           ctx.fillStyle = computedBarColor
-          ctx.globalAlpha = 0.4 + value * 0.6
-
-          if (barRadius > 0) {
+          ctx.globalAlpha = 0.3 + value * 0.7
+          
+          // Optimization: Use fillRect for small widths or when speed is critical
+          if (barRadius > 0 && barWidth > 2) {
             ctx.beginPath()
-            ctx.roundRect(x, y, barWidth, barHeight, barRadius)
+            ctx.roundRect(x, y, barWidth, bH, barRadius)
             ctx.fill()
           } else {
-            ctx.fillRect(x, y, barWidth, barHeight)
+            ctx.fillRect(x, y, barWidth, bH)
           }
         }
       } else {
-        // Scrolling mode - original behavior
-        for (let i = 0; i < barCount && i < historyRef.current.length; i++) {
-          const dataIndex = historyRef.current.length - 1 - i
-          const value = historyRef.current[dataIndex] || 0.1
+        // Scrolling mode - Draw from right with proper centering
+        const dataToRender = historyRef.current.length > 0
+          ? historyRef.current
+          : new Array(barCount).fill(0.05)
+
+        for (let i = 0; i < barCount; i++) {
+          const dataIndex = dataToRender.length - 1 - i
+          if (dataIndex < 0) break
+
+          const value = dataToRender[dataIndex] || 0.05
+          const x = rect.width - offsetX - (i + 1) * step + barGap/2
           
-          // Fix: Fill the entire width even if history is short, but scroll from right
-          // To make it look "centered" or "scrolling through", we use historySize
-          const x = rect.width - (i + 1) * step
-          
-          const barHeight = Math.max(baseBarHeight, value * rect.height * 0.8)
-          const y = centerY - barHeight / 2
+          const bH = Math.max(baseBarHeight, value * rect.height * 0.85)
+          const y = centerY - bH / 2
 
           ctx.fillStyle = computedBarColor
-          ctx.globalAlpha = 0.4 + value * 0.6
+          ctx.globalAlpha = 0.3 + value * 0.7
 
-          if (barRadius > 0) {
-            ctx.fillRect(x, y, barWidth, barHeight) // Optimized for speed, roundRect is expensive
-          } else {
-            ctx.fillRect(x, y, barWidth, barHeight)
-          }
+          ctx.fillRect(x, y, barWidth, bH)
         }
       }
 
-      // Apply edge fading
-      if (fadeEdges && fadeWidth > 0 && rect.width > 0) {
-        // Cache gradient if width hasn't changed
+      if (fadeEdges && fadeWidth > 0) {
         if (!gradientCacheRef.current || lastWidthRef.current !== rect.width) {
           const gradient = ctx.createLinearGradient(0, 0, rect.width, 0)
-          const fadePercent = Math.min(0.3, fadeWidth / rect.width)
-
-          // destination-out: removes destination where source alpha is high
-          // We want: fade edges out, keep center solid
-          // Left edge: start opaque (1) = remove, fade to transparent (0) = keep
+          const fadePercent = Math.min(0.4, fadeWidth / rect.width)
           gradient.addColorStop(0, "rgba(255,255,255,1)")
           gradient.addColorStop(fadePercent, "rgba(255,255,255,0)")
-          // Center stays transparent = keep everything
           gradient.addColorStop(1 - fadePercent, "rgba(255,255,255,0)")
-          // Right edge: fade from transparent (0) = keep to opaque (1) = remove
           gradient.addColorStop(1, "rgba(255,255,255,1)")
-
           gradientCacheRef.current = gradient
           lastWidthRef.current = rect.width
         }
@@ -551,16 +511,13 @@ export const LiveWaveform = ({
       }
 
       ctx.globalAlpha = 1
-
       rafId = requestAnimationFrame(animate)
     }
 
     rafId = requestAnimationFrame(animate)
 
     return () => {
-      if (rafId) {
-        cancelAnimationFrame(rafId)
-      }
+      if (rafId) cancelAnimationFrame(rafId)
     }
   }, [
     active,
@@ -580,22 +537,13 @@ export const LiveWaveform = ({
 
   return (
     <div
-      className={cn("relative h-full w-full", className)}
+      className={cn("relative h-full w-full overflow-hidden", className)}
       ref={containerRef}
       style={{ height: heightStyle }}
-      aria-label={
-        active
-          ? "Live audio waveform"
-          : processing
-            ? "Processing audio"
-            : "Audio waveform idle"
-      }
+      aria-label={active ? "Live waveform" : processing ? "Processing" : "Idle"}
       role="img"
       {...props}
     >
-      {!active && !processing && (
-        <div className="border-muted-foreground/20 absolute top-1/2 right-0 left-0 -translate-y-1/2 border-t-2 border-dotted" />
-      )}
       <canvas
         className="block h-full w-full"
         ref={canvasRef}
