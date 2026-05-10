@@ -12,12 +12,16 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     let state: State<'_, AppState> = app.state();
     
     let mut recording = state.ptt.is_recording.lock().await;
+    if *recording {
+        log::warn!("[PTT] ptt_start called while already recording. Ignoring.");
+        return Ok(());
+    }
+    *recording = true;
+    
     let mut buffer = state.ptt.audio_buffer.lock().await;
     let mut samples_since = state.ptt.samples_since_partial.lock().await;
     let mut samples_waveform = state.ptt.samples_since_waveform.lock().await;
 
-    *recording = true;
-    
     // Sync PTT session with global pipeline session
     let current_global = state.pipeline.session_id.load(Ordering::Relaxed);
     state.ptt.session_id.store(current_global, Ordering::Relaxed);
@@ -187,10 +191,16 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
         let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
         let rms = (sum_sq / samples.len() as f32).sqrt();
 
+        // Noise gate: Only emit telemetry if energy is above ambient noise floor.
+        // Typical room noise RMS is 0.002–0.005. Speech starts around 0.015.
+        // We gate at 0.01 so the waveform stays flat during silence.
+        const NOISE_GATE_RMS: f32 = 0.01;
+        let gated_energy = if rms > NOISE_GATE_RMS { rms } else { 0.0 };
+
         if let Ok(lock) = state.engine.try_lock() {
             if let Some(engine) = lock.as_ref() {
                 let _ = engine.telemetry_tx.send(crate::core::state::TelemetryData {
-                    energy: rms,
+                    energy: gated_energy,
                     vad_prob: 0.0,
                 });
             }
