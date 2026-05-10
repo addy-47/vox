@@ -3,6 +3,15 @@ use std::path::Path;
 use sherpa_onnx::{
     OfflineRecognizer, OfflineRecognizerConfig, OfflineQwen3ASRModelConfig,
 };
+use tauri::{AppHandle, Manager, Emitter};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use crate::core::state::{InteractionOwner, InteractionState};
+use crate::core::events::VoxEvent;
+use crate::core::constants::{
+    STT_THROTTLE_MS, MODEL_FILE_ASR_FRONTEND, MODEL_FILE_ASR_ENCODER, 
+    MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_TOKENIZER
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -55,10 +64,10 @@ impl SttEngine {
         // 3. decoder: Auto-regressive text generation.
         // 4. tokenizer: BPE-based token mapping.
         config.model_config.qwen3_asr = OfflineQwen3ASRModelConfig {
-            conv_frontend: Some(model_dir.join("conv_frontend.onnx").to_string_lossy().into()),
-            encoder: Some(model_dir.join("encoder.int8.onnx").to_string_lossy().into()),
-            decoder: Some(model_dir.join("decoder.int8.onnx").to_string_lossy().into()),
-            tokenizer: Some(model_dir.join("tokenizer").to_string_lossy().into()),
+            conv_frontend: Some(model_dir.join(MODEL_FILE_ASR_FRONTEND).to_string_lossy().into()),
+            encoder: Some(model_dir.join(MODEL_FILE_ASR_ENCODER).to_string_lossy().into()),
+            decoder: Some(model_dir.join(MODEL_FILE_ASR_DECODER).to_string_lossy().into()),
+            tokenizer: Some(model_dir.join(MODEL_FILE_ASR_TOKENIZER).to_string_lossy().into()),
             max_total_len: 2048,
             max_new_tokens: 512,
             ..Default::default()
@@ -118,4 +127,114 @@ impl SttEngine {
 
         Ok(result.text.trim().to_string())
     }
+}
+
+// ─── Worker ───────────────────────────────────────────────────────────────────
+
+pub fn spawn_stt_worker(
+    app: AppHandle,
+    rx: std::sync::mpsc::Receiver<SttCommand>,
+    model_path: std::path::PathBuf,
+    pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
+    _is_engaged: Arc<std::sync::atomic::AtomicBool>,
+) {
+    std::thread::spawn(move || {
+        log::info!("[STT] >>> Dedicated worker thread started.");
+        
+        let engine = match SttEngine::new(&model_path) {
+            Ok(e) => e,
+            Err(err) => {
+                log::error!("[STT] CRITICAL: Failed to initialize Sherpa engine: {}", err);
+                return;
+            }
+        };
+
+        let mut last_emit_time = Instant::now();
+        let mut last_transcript = String::new();
+
+        while let Ok(cmd) = rx.recv() {
+            match cmd {
+                SttCommand::Shutdown => {
+                    log::info!("[STT] Shutdown signal received. Exiting worker thread.");
+                    break;
+                }
+                SttCommand::Partial(sid, owner, utterance) => {
+                    // UX Throttling: Only run inference if STT_THROTTLE_MS passed to save CPU
+                    if last_emit_time.elapsed() >= Duration::from_millis(STT_THROTTLE_MS) {
+                        match engine.transcribe(&utterance) {
+                            Ok(text) => {
+                                let text_str: String = text;
+                                if !text_str.is_empty() && text_str != last_transcript {
+                                    if let Some(ref pipeline_tx) = pipeline_event_tx {
+                                        let _ = pipeline_tx.send(VoxEvent::TranscriptPartial {
+                                            session_id: sid,
+                                            owner,
+                                            text: text_str.clone(),
+                                        });
+                                    }
+                                    
+                                    last_transcript = text_str;
+                                }
+                                last_emit_time = Instant::now();
+                            }
+                            Err(e) => log::error!("[STT] Partial transcription failed: {}", e),
+                        }
+                    }
+                }
+                SttCommand::Final(sid, owner, utterance) => {
+                    match engine.transcribe(&utterance) {
+                        Ok(text) => {
+                            let text_str: String = text;
+                            // RCA Fix: Always notify the pipeline of a final transcript,
+                            // even if it's empty. This ensures the session ID bumps and 
+                            // the UI resets its state/clears old text.
+                            if let Some(ref pipeline_tx) = pipeline_event_tx {
+                                let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
+                                    session_id: sid,
+                                    owner,
+                                    text: text_str,
+                                });
+                            }
+                        }
+                        Err(e) => log::error!("[STT] Final transcription failed: {}", e),
+                    }
+                    
+                    // Signal UI that processing is complete for PTT
+                    let target = match owner {
+                        InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
+                        InteractionOwner::Tray => "tray",
+                    };
+                    let _ = app.emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }));
+
+                    // Reset interaction state
+                    let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+                    let idle_state = if state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed) {
+                        InteractionState::Listening
+                    } else {
+                        InteractionState::Idle
+                    };
+                    state.pipeline.update_interaction_state(idle_state, owner, &app);
+
+                    last_transcript.clear();
+                    last_emit_time = Instant::now();
+                }
+                SttCommand::ResetStream => {
+                    log::info!("[STT] ResetStream received. Aggressively clearing state.");
+                    last_transcript.clear();
+                    // Drain pending transcripts
+                    while let Ok(pending_cmd) = rx.try_recv() {
+                        match pending_cmd {
+                            SttCommand::Partial(..) | SttCommand::Final(..) => continue,
+                            SttCommand::ResetStream => continue,
+                            SttCommand::Shutdown => {
+                                log::info!("[STT] Shutdown detected during ResetStream drain.");
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        log::info!("[STT] Worker thread exiting.");
+    });
 }

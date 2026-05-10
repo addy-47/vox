@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32};
 use crate::services::audio::AudioStream;
 use crate::services::stt::SttCommand;
 use crate::core::settings::VoxSettings;
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub enum InteractionOwner {
@@ -65,6 +66,8 @@ pub struct PipelineAtomics {
     /// `true` if the main application is "engaged" (active interaction).
     /// If false, the pipeline remains in a dormant, STT-only state.
     pub is_engaged:      Arc<AtomicBool>,
+    /// In-memory history of recent transcripts. Bridge to Phase 6.3 persistence.
+    pub transcript_history: Arc<std::sync::Mutex<VecDeque<String>>>,
 }
 
 impl PipelineAtomics {
@@ -77,6 +80,7 @@ impl PipelineAtomics {
             session_id:      Arc::new(AtomicU32::new(0)),
             state:           Arc::new(std::sync::Mutex::new(InteractionState::Idle)),
             is_engaged:      Arc::new(AtomicBool::new(false)),
+            transcript_history: Arc::new(std::sync::Mutex::new(VecDeque::with_capacity(crate::core::constants::TRANSCRIPT_HISTORY_LIMIT))),
         }
     }
 

@@ -10,6 +10,10 @@ use sherpa_onnx::{
 };
 
 use crate::core::events::VoxEvent;
+use crate::core::constants::{
+    MODEL_FILE_TTS_ONNX, MODEL_FILE_TTS_VOICES, MODEL_FILE_TTS_TOKENS, 
+    MODEL_FILE_TTS_ESPEAK, MODEL_FILE_TTS_HI_ONNX
+};
 
 // ─── TTS Engine (Multi-Model Routing) ─────────────────────────────────────────
 
@@ -27,10 +31,10 @@ impl TtsEngine {
         let en_config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 kokoro: OfflineTtsKokoroModelConfig {
-                    model: Some(en_model_dir.join("model.onnx").to_string_lossy().into()),
-                    voices: Some(en_model_dir.join("voices.bin").to_string_lossy().into()),
-                    tokens: Some(en_model_dir.join("tokens.txt").to_string_lossy().into()),
-                    data_dir: Some(en_model_dir.join("espeak-ng-data").to_string_lossy().into()),
+                    model: Some(en_model_dir.join(MODEL_FILE_TTS_ONNX).to_string_lossy().into()),
+                    voices: Some(en_model_dir.join(MODEL_FILE_TTS_VOICES).to_string_lossy().into()),
+                    tokens: Some(en_model_dir.join(MODEL_FILE_TTS_TOKENS).to_string_lossy().into()),
+                    data_dir: Some(en_model_dir.join(MODEL_FILE_TTS_ESPEAK).to_string_lossy().into()),
                     length_scale: 1.0,
                     ..Default::default()
                 },
@@ -49,9 +53,9 @@ impl TtsEngine {
         let hi_config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 vits: OfflineTtsVitsModelConfig {
-                    model: Some(hi_model_dir.join("hi_IN-priyamvada-medium.onnx").to_string_lossy().into()),
-                    tokens: Some(hi_model_dir.join("tokens.txt").to_string_lossy().into()),
-                    data_dir: Some(hi_model_dir.join("espeak-ng-data").to_string_lossy().into()),
+                    model: Some(hi_model_dir.join(MODEL_FILE_TTS_HI_ONNX).to_string_lossy().into()),
+                    tokens: Some(hi_model_dir.join(MODEL_FILE_TTS_TOKENS).to_string_lossy().into()),
+                    data_dir: Some(hi_model_dir.join(MODEL_FILE_TTS_ESPEAK).to_string_lossy().into()),
                     noise_scale: 0.667,
                     noise_scale_w: 0.8,
                     length_scale: 1.0,

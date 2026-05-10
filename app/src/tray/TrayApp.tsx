@@ -7,7 +7,6 @@ import { useVisibility } from "@/shared/hooks/useVisibility";
 import { useInteraction } from "@/shared/hooks/useInteraction";
 import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
-import { CircularBuffer } from "./utils/CircularBuffer";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTheme } from "@/shared/context/ThemeContext";
@@ -18,8 +17,8 @@ interface SystemStats {
 }
 
 export const TrayApp: React.FC = () => {
-  // ─── History System ────────────────────────────────────────────────────────
-  const history = useMemo(() => new CircularBuffer<string>(10), []);
+  // ─── History System (Backend Backed) ──────────────────────────────────────
+  const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [viewingHistory, setViewingHistory] = useState(false);
 
@@ -38,8 +37,7 @@ export const TrayApp: React.FC = () => {
 
   const currentTargetText = useMemo(() => {
     if (viewingHistory && historyIndex >= 0) {
-      const allHistory = history.getAll();
-      return allHistory[historyIndex] || "";
+      return history[historyIndex] || "";
     }
     return liveTargetText;
   }, [viewingHistory, historyIndex, history, liveTargetText]);
@@ -95,12 +93,13 @@ export const TrayApp: React.FC = () => {
     interactionMode,
     visibilityState,
     interactionId,
-    interactionState
+    interactionState,
+    history
   });
 
   useEffect(() => {
-    stateRef.current = { pttStatus, interactionMode, visibilityState, interactionId, interactionState };
-  }, [pttStatus, interactionMode, visibilityState, interactionId, interactionState]);
+    stateRef.current = { pttStatus, interactionMode, visibilityState, interactionId, interactionState, history };
+  }, [pttStatus, interactionMode, visibilityState, interactionId, interactionState, history]);
 
   // ─── IPC Event Listeners ───────────────────────────────────────────────────
   useEffect(() => {
@@ -124,7 +123,8 @@ export const TrayApp: React.FC = () => {
         const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
           if (event.payload.text) {
             commitFinal(event.payload.text);
-            history.push(event.payload.text);
+            // Re-fetch history from backend to ensure synchronization
+            invoke<string[]>("get_transcript_history").then(setHistory);
           }
         });
 
@@ -162,23 +162,28 @@ export const TrayApp: React.FC = () => {
 
     setupListeners();
 
-    // Initial Interaction Mode setup (sync with backend)
-    const fetchSettings = async () => {
+    // Initial Sync
+    const initSync = async () => {
       try {
-        const settings = await invoke<any>("get_settings");
+        const [settings, historyData] = await Promise.all([
+          invoke<any>("get_settings"),
+          invoke<string[]>("get_transcript_history")
+        ]);
+        
         if (settings?.tray_mode) {
           setInteractionMode(settings.tray_mode.toUpperCase());
         }
+        setHistory(historyData);
       } catch (e) {
-        console.warn("[TrayApp] Failed to fetch interaction mode:", e);
+        console.warn("[TrayApp] Initial sync failed:", e);
       }
     };
-    fetchSettings();
+    initSync();
 
     return () => {
       unlisteners.forEach(u => u());
     };
-  }, [startNewInteraction, updatePartial, commitFinal, show, endSpeechSegment, startHold, history, hideImmediately]);
+  }, [startNewInteraction, updatePartial, commitFinal, show, endSpeechSegment, startHold, hideImmediately]);
 
   // ─── Actions ───────────────────────────────────────────────────────────────
   const copyToClipboard = () => {
@@ -190,16 +195,14 @@ export const TrayApp: React.FC = () => {
   };
 
   const handlePrev = useCallback(() => {
-    const all = history.getAll();
-    if (all.length === 0) return;
+    if (history.length === 0) return;
     setViewingHistory(true);
-    setHistoryIndex(prev => (prev === -1 ? all.length - 1 : Math.max(0, prev - 1)));
+    setHistoryIndex(prev => (prev === -1 ? history.length - 1 : Math.max(0, prev - 1)));
   }, [history]);
 
   const handleNext = useCallback(() => {
-    const all = history.getAll();
     setHistoryIndex(prev => {
-      if (prev === -1 || prev >= all.length - 1) {
+      if (prev === -1 || prev >= history.length - 1) {
         setViewingHistory(false);
         return -1;
       }
@@ -269,7 +272,7 @@ export const TrayApp: React.FC = () => {
               onNext={handleNext}
               historyIndex={historyIndex}
               viewingHistory={viewingHistory}
-              historyCount={history.getAll().length}
+              historyCount={history.length}
             />
           </motion.div>
         )}

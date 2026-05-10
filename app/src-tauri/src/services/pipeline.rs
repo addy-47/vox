@@ -78,6 +78,7 @@ pub struct PipelineOrchestrator {
     event_tx:         std::sync::mpsc::Sender<VoxEvent>,
     settings:         VoxSettings,
     is_engaged:       Arc<AtomicBool>,
+    pub transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
     
     // Lifecycle management
     llm_tx:           Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
@@ -95,6 +96,7 @@ impl PipelineOrchestrator {
         event_tx:        std::sync::mpsc::Sender<VoxEvent>,
         settings:        VoxSettings,
         is_engaged:      Arc<AtomicBool>,
+        transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
     ) -> Self {
         Self {
             cancel_flag,
@@ -106,6 +108,7 @@ impl PipelineOrchestrator {
             event_tx,
             settings,
             is_engaged,
+            transcript_history,
             llm_tx: Arc::new(std::sync::Mutex::new(None)),
             tts_tx: Arc::new(std::sync::Mutex::new(None)),
         }
@@ -248,6 +251,15 @@ impl PipelineOrchestrator {
         // Bump session ID
         let new_session = self.session_id.fetch_add(1, Ordering::Relaxed) + 1;
         log::info!("[Pipeline] New session {} (owner: {:?}) — transcript: {:?}", new_session, owner, text);
+
+        // Store in ephemeral in-memory history if owner is Tray (skipping empty results)
+        if owner == InteractionOwner::Tray && !text.trim().is_empty() {
+            let mut history = self.transcript_history.lock().unwrap();
+            history.push_back(text.clone());
+            if history.len() > crate::core::constants::TRANSCRIPT_HISTORY_LIMIT {
+                history.pop_front();
+            }
+        }
 
         // Reset cancellation flag AFTER the Cancelled event is queued
         self.cancel_flag.store(false, Ordering::Relaxed);
