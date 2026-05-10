@@ -5,7 +5,7 @@ use crate::tray::{setup_linux_virtual_layer, position_tray_window};
 
 /// Toggles the tray window visibility and updates the menu checkmark state.
 pub async fn toggle_hud_visibility(app: AppHandle) {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let mut hud_lock = state.hud_visible.lock().await;
     let new_state = !*hud_lock;
     *hud_lock = new_state;
@@ -36,7 +36,7 @@ pub fn hide_tray_window(app: AppHandle) {
 
 #[tauri::command]
 pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let mut hud_lock = state.hud_visible.lock().await;
     *hud_lock = visible;
 
@@ -66,7 +66,7 @@ pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
 
 #[tauri::command]
 pub async fn update_interaction_mode(app: AppHandle, target: String, mode: String) -> Result<(), String> {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
         
