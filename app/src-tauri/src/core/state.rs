@@ -1,6 +1,6 @@
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tokio::sync::Mutex;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use crate::services::audio::AudioStream;
 use crate::services::stt::SttCommand;
@@ -30,24 +30,52 @@ pub struct TelemetryData {
     pub vad_prob: f32,
 }
 
+// ─── VadCommand ───────────────────────────────────────────────────────────────
+
+/// Hot-update commands sent to the VAD worker thread via a dedicated channel.
+///
+/// This avoids locking `AppState.settings` on the real-time audio path.
+/// The VAD thread holds its own local copies of threshold values and updates
+/// them only when it receives a command here.
+pub enum VadCommand {
+    /// Update the VAD speech/silence classification threshold (0.0–1.0).
+    UpdateThreshold(f32),
+    /// Update the PTT noise gate floor to suppress sub-threshold RMS.
+    UpdateNoiseGate(f32),
+    /// Update the interaction mode (Passive, PTT, etc.)
+    UpdateMode(crate::core::settings::InteractionMode),
+    /// Update the interaction owner (Tray, MainWindow, Ptt)
+    UpdateOwner(InteractionOwner),
+    /// Gracefully shutdown the VAD worker.
+    Shutdown,
+}
+
+// ─── VoxEngine ────────────────────────────────────────────────────────────────
+
 pub struct VoxEngine {
     pub audio_stream: AudioStream,
     pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
+    /// Channel to send hot-updates to the VAD worker without locking AppState.
+    pub vad_tx: std::sync::mpsc::Sender<VadCommand>,
     pub telemetry_tx: std::sync::mpsc::Sender<TelemetryData>,
     pub pipeline_tx: std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
 }
 
+// ─── PttState ─────────────────────────────────────────────────────────────────
+
 pub struct PttState {
-    pub is_recording:          Mutex<bool>,
-    pub session_id:            Arc<AtomicU32>,
-    pub audio_buffer:          Mutex<Vec<f32>>,
-    pub samples_since_partial: Mutex<usize>,
+    pub is_recording:           Mutex<bool>,
+    pub session_id:             Arc<AtomicU32>,
+    pub audio_buffer:           Mutex<Vec<f32>>,
+    pub samples_since_partial:  Mutex<usize>,
     pub samples_since_waveform: Mutex<usize>,
 }
 
+// ─── PipelineAtomics ──────────────────────────────────────────────────────────
+
 /// Phase 4 shared atomics — checked on every inference iteration for cancellation.
 ///
-/// Using Arc<AtomicBool> (not channels or async) because llama.cpp and onnxruntime
+/// Using `Arc<AtomicBool>` (not channels or async) because llama.cpp and onnxruntime
 /// execute in blocking C++ loops that cannot be interrupted via Rust async primitives.
 pub struct PipelineAtomics {
     /// Set to `true` to abort the current LLM + TTS + Playback turn immediately.
@@ -73,14 +101,16 @@ pub struct PipelineAtomics {
 impl PipelineAtomics {
     pub fn new() -> Self {
         Self {
-            cancel_flag:     Arc::new(AtomicBool::new(false)),
-            playback_active: Arc::new(AtomicBool::new(false)),
-            llm_generating:  Arc::new(AtomicBool::new(false)),
-            tts_generating:  Arc::new(AtomicBool::new(false)),
-            session_id:      Arc::new(AtomicU32::new(0)),
-            state:           Arc::new(std::sync::Mutex::new(InteractionState::Idle)),
-            is_engaged:      Arc::new(AtomicBool::new(false)),
-            transcript_history: Arc::new(std::sync::Mutex::new(VecDeque::with_capacity(crate::core::constants::TRANSCRIPT_HISTORY_LIMIT))),
+            cancel_flag:        Arc::new(AtomicBool::new(false)),
+            playback_active:    Arc::new(AtomicBool::new(false)),
+            llm_generating:     Arc::new(AtomicBool::new(false)),
+            tts_generating:     Arc::new(AtomicBool::new(false)),
+            session_id:         Arc::new(AtomicU32::new(0)),
+            state:              Arc::new(std::sync::Mutex::new(InteractionState::Idle)),
+            is_engaged:         Arc::new(AtomicBool::new(false)),
+            transcript_history: Arc::new(std::sync::Mutex::new(
+                VecDeque::with_capacity(crate::core::constants::TRANSCRIPT_HISTORY_LIMIT)
+            )),
         }
     }
 
@@ -90,7 +120,7 @@ impl PipelineAtomics {
         if *state_lock != new_state {
             log::debug!("[Pipeline] State changed -> {:?} (Owner: {:?})", new_state, owner);
             *state_lock = new_state;
-            
+
             let target = match owner {
                 InteractionOwner::Tray => "tray",
                 InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
@@ -100,37 +130,43 @@ impl PipelineAtomics {
     }
 }
 
+// ─── AppState ─────────────────────────────────────────────────────────────────
+
 pub struct AppState {
-    pub engine:       Mutex<Option<VoxEngine>>,
-    pub owner:        Mutex<InteractionOwner>,
-    pub hud_visible:  Mutex<bool>,
-    pub settings:     Mutex<VoxSettings>,
+    pub engine:        Mutex<Option<VoxEngine>>,
+    pub owner:         Mutex<InteractionOwner>,
+    pub hud_visible:   Mutex<bool>,
+
+    /// Settings protected by RwLock for concurrent read access.
+    ///
+    /// # Concurrency Contract
+    /// - IPC handlers acquire `write()` only when mutating settings
+    /// - NO real-time thread (VAD, STT, LLM, TTS, Playback callback) may call `read()` on the hot path
+    /// - Hot-path settings (VAD threshold, noise gate) are snapshotted into worker-local variables
+    ///   at startup and updated via `VadCommand` / other worker channels on change
+    pub settings:      Arc<RwLock<VoxSettings>>,
+
     pub hud_menu_item: Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>,
-    pub ptt:          PttState,
-    pub config_dir:   std::path::PathBuf,
+    pub ptt:           PttState,
+
     /// Phase 4: shared pipeline cancellation and status atomics.
-    pub pipeline:     PipelineAtomics,
+    pub pipeline:      PipelineAtomics,
+
+    /// Debounce handle for settings disk writes.
+    /// Cancelled and respawned on each `update_setting` IPC call.
+    pub save_debounce: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
 
-
 impl AppState {
-    pub fn new(app: &AppHandle) -> Self {
-        let config_dir = app.path().home_dir().map(|mut p| {
-            p.push(".vox");
-            p
-        }).unwrap_or_else(|_| {
-            let mut p = std::env::current_dir().unwrap_or_default();
-            p.push(".vox");
-            p
-        });
-
-        let settings = VoxSettings::load(&config_dir);
+    pub fn new(_app: &AppHandle) -> Self {
+        // paths::init() must have been called before AppState::new()
+        let settings = VoxSettings::load();
 
         Self {
-            engine:    Mutex::new(None),
-            owner:     Mutex::new(InteractionOwner::Tray),
-            hud_visible: Mutex::new(true),
-            settings:  Mutex::new(settings),
+            engine:        Mutex::new(None),
+            owner:         Mutex::new(InteractionOwner::Tray),
+            hud_visible:   Mutex::new(true),
+            settings:      Arc::new(RwLock::new(settings)),
             hud_menu_item: Mutex::new(None),
             ptt: PttState {
                 is_recording:           Mutex::new(false),
@@ -139,16 +175,8 @@ impl AppState {
                 samples_since_partial:  Mutex::new(0),
                 samples_since_waveform: Mutex::new(0),
             },
-            config_dir,
-            pipeline: PipelineAtomics::new(),
+            pipeline:      PipelineAtomics::new(),
+            save_debounce: Mutex::new(None),
         }
-    }
-
-    pub async fn save_settings(&self) -> anyhow::Result<()> {
-        let settings = self.settings.lock().await;
-        let json = serde_json::to_string_pretty(&*settings)?;
-        let path = self.config_dir.join("settings.json");
-        tokio::fs::write(path, json).await?;
-        Ok(())
     }
 }

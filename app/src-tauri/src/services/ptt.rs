@@ -192,8 +192,8 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
         let rms = (sum_sq / samples.len() as f32).sqrt();
         
         let noise_gate = {
-            let settings = state.settings.blocking_lock();
-            settings.ptt_noise_gate
+            let settings = state.settings.read().unwrap();
+            settings.vad.ptt_noise_gate
         };
 
         // Apply noise gate and consistent 8.0x multiplier

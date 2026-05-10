@@ -14,6 +14,7 @@ use tauri::{Emitter, Manager};
 use crate::core::events::VoxEvent;
 use crate::core::metrics::{MetricField, PipelineMetrics};
 use crate::core::settings::{VoxSettings};
+use std::sync::RwLock;
 use crate::core::state::InteractionOwner;
 
 // ─── Directive 2: Sub-Sentence Chunker ───────────────────────────────────────
@@ -76,7 +77,7 @@ pub struct PipelineOrchestrator {
     session_id:       Arc<AtomicU32>,
     state:            Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
     event_tx:         std::sync::mpsc::Sender<VoxEvent>,
-    settings:         VoxSettings,
+    settings:         Arc<RwLock<VoxSettings>>,
     is_engaged:       Arc<AtomicBool>,
     pub transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
     
@@ -94,7 +95,7 @@ impl PipelineOrchestrator {
         session_id:      Arc<AtomicU32>,
         state:           Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
         event_tx:        std::sync::mpsc::Sender<VoxEvent>,
-        settings:        VoxSettings,
+        settings:        Arc<RwLock<VoxSettings>>,
         is_engaged:      Arc<AtomicBool>,
         transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
     ) -> Self {
@@ -124,9 +125,11 @@ impl PipelineOrchestrator {
         log::info!("[Pipeline] Warming up LLM worker...");
         let (tx, rx) = std::sync::mpsc::channel();
         
-        let llm_path    = self.settings.llm_model_path.clone();
-        let ctx_size    = self.settings.llm_ctx_size;
-        let n_threads   = self.settings.llm_threads;
+        let (llm_path, ctx_size, n_threads) = {
+            let s = self.settings.read().map_err(|e| e.to_string())?;
+            let path = crate::utils::paths::get().models.join(&s.llm.model);
+            (path, s.llm.ctx_size, s.llm.threads)
+        };
         let event_tx    = self.event_tx.clone();
         let llm_flag    = Arc::clone(&self.llm_generating);
 
@@ -326,7 +329,10 @@ impl PipelineOrchestrator {
         let mut voice_sid    = 0i32; // Default to English Female
         let mut thinking     = false;
         let mut metrics      = PipelineMetrics::new();
-        let _audio_mode       = self.settings.audio_output_mode.clone();
+        let _audio_mode = {
+            let s = self.settings.read().unwrap();
+            s.audio.output_mode.clone()
+        };
         // True after LlmFinished: we're waiting for TTS+Playback to drain
         let mut awaiting_playback_finish = false;
 
