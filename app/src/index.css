@@ -244,3 +244,13 @@ body.is-tray #root {
   to { background-position: -200% 0; }
 }
 
+
+/* Resize Handles Helper */
+[class*="cursor-"] {
+    pointer-events: auto !important;
+    background: transparent;
+}
+
+[class*="cursor-"]:hover {
+    background: rgba(var(--accent), 0.1) !important;
+}
