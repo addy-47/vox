@@ -110,18 +110,7 @@ impl VadEngine {
                 consumer.pop_slice(&mut chunk);
 
                 // ── Phase 5: High-Frequency Telemetry ────────────────────────
-                // Calculate RMS energy for the 16ms chunk
-                let raw_energy = (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt();
-                let energy = (raw_energy * 15.0).clamp(0.0, 1.0);
-                
-                // Send to aggregator (non-blocking)
-                let _ = telemetry_tx.send(crate::core::state::TelemetryData {
-                    energy,
-                    vad_prob: 0.0, // Placeholder: Sherpa detector doesn't expose raw prob yet
-                });
-
-                // Mode-based routing
-                let (mode, owner) = {
+                let (mode, owner, noise_gate) = {
                     let state: tauri::State<'_, crate::core::state::AppState> = app.state();
                     let settings = state.settings.blocking_lock();
                     let owner = state.owner.blocking_lock();
@@ -130,8 +119,23 @@ impl VadEngine {
                         crate::core::state::InteractionOwner::MainWindow => settings.main_app_mode.clone(),
                         crate::core::state::InteractionOwner::Ptt => crate::core::settings::InteractionMode::PTT,
                     };
-                    (mode, *owner)
+                    (mode, *owner, settings.ptt_noise_gate)
                 };
+
+                // Calculate RMS energy for the 16ms chunk
+                let raw_energy = (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt();
+                
+                // Apply noise gate: if below threshold, send 0 to keep waveform flat
+                let gated_raw = if raw_energy > noise_gate { raw_energy } else { 0.0 };
+                
+                // Balanced multiplier: 8.0x provides good visibility without clipping on normal speech
+                let energy = (gated_raw * 8.0).clamp(0.0, 1.0);
+                
+                // Send to aggregator (non-blocking)
+                let _ = telemetry_tx.send(crate::core::state::TelemetryData {
+                    energy,
+                    vad_prob: 0.0,
+                });
 
                 if mode == crate::core::settings::InteractionMode::PTT {
                     // PTT mode: user explicitly controls recording — skip VAD classification.

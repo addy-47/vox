@@ -190,12 +190,14 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
         // Calculate RMS on the actual samples for live waveform feedback
         let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
         let rms = (sum_sq / samples.len() as f32).sqrt();
+        
+        let noise_gate = {
+            let settings = state.settings.blocking_lock();
+            settings.ptt_noise_gate
+        };
 
-        // Noise gate: Only emit telemetry if energy is above ambient noise floor.
-        // Typical room noise RMS is 0.002–0.005. Speech starts around 0.015.
-        // We gate at 0.01 so the waveform stays flat during silence.
-        const NOISE_GATE_RMS: f32 = 0.01;
-        let gated_energy = if rms > NOISE_GATE_RMS { rms } else { 0.0 };
+        // Apply noise gate and consistent 8.0x multiplier
+        let gated_energy = if rms > noise_gate { (rms * 8.0).min(1.0) } else { 0.0 };
 
         if let Ok(lock) = state.engine.try_lock() {
             if let Some(engine) = lock.as_ref() {
