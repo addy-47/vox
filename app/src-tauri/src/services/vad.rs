@@ -3,9 +3,11 @@ use std::path::Path;
 use sherpa_onnx::{
     VoiceActivityDetector, VadModelConfig, TenVadModelConfig,
 };
-use serde_json::json;
-use tokio::sync::mpsc;
 use tauri::Manager;
+use tokio::sync::mpsc;
+use serde_json::json;
+use crate::core::state::{VadCommand, InteractionOwner};
+use crate::core::settings::InteractionMode;
 
 /// Wrapper for the Sherpa-ONNX Voice Activity Detection (VAD) engine.
 /// 
@@ -13,31 +15,31 @@ use tauri::Manager;
 /// classification with low latency.
 pub struct VadEngine {
     detector: VoiceActivityDetector,
+    model_path: std::path::PathBuf,
 }
-
 impl VadEngine {
-    /// Initializes the VAD engine using a TenVAD ONNX model.
-    /// 
-    /// # Arguments
-    /// * `model_path` - Path to the ten_vad.onnx file.
-    /// 
-    /// # Errors
-    /// Returns an error if the model file is not found or fails to load.
-    pub fn new(model_path: &Path) -> Result<Self> {
-        log::info!("[VAD] >>> Initializing Sherpa-ONNX TenVAD Engine...");
+    pub fn new(model_path: &Path, threshold: f32) -> Result<Self> {
+        let model_path_buf = model_path.to_path_buf();
+        let detector = Self::create_detector(&model_path_buf, threshold)?;
+        
+        log::info!("[VAD] TenVAD Engine loaded successfully.");
+        Ok(Self { 
+            detector,
+            model_path: model_path_buf,
+        })
+    }
+
+    fn create_detector(model_path: &Path, threshold: f32) -> Result<VoiceActivityDetector> {
+        log::info!("[VAD] >>> Initializing Sherpa-ONNX TenVAD Engine (threshold={})...", threshold);
         
         let config = VadModelConfig {
             silero_vad: Default::default(),
             ten_vad: TenVadModelConfig {
                 model: Some(model_path.to_string_lossy().into()),
-                // Official TenVAD defaults from sherpa-onnx/csrc/ten-vad-model-config.h
-                // threshold=0.5, window_size=256 (16ms at 16kHz), min_silence=0.5, min_speech=0.25
-                // threshold 0.4 catches more speech but at 0.2s min_silence fragments phrases.
-                // RCA: raised threshold to 0.45, min_silence to 0.5s to prevent over-segmentation.
-                threshold: 0.45,
-                min_silence_duration: 0.5, // 500ms = TenVAD default — prevents phrase fragmentation
+                threshold,
+                min_silence_duration: 0.5,
                 min_speech_duration: 0.25,
-                window_size: 256, // 16ms at 16kHz — TenVAD default (NOT 160 which is SileroVAD)
+                window_size: 256,
                 max_speech_duration: 30.0,
             },
             sample_rate: 16000,
@@ -46,12 +48,8 @@ impl VadEngine {
             provider: Some("cpu".into()),
         };
         
-        // buffer_size_in_seconds = 60.0 allows the detector to track long segments.
-        let detector = VoiceActivityDetector::create(&config, 60.0)
-            .ok_or_else(|| anyhow!("Failed to create Sherpa VoiceActivityDetector. Check model path: {:?}", model_path))?;
-            
-    log::info!("[VAD] TenVAD Engine loaded successfully.");
-        Ok(Self { detector })
+        VoiceActivityDetector::create(&config, 60.0)
+            .ok_or_else(|| anyhow!("Failed to create Sherpa VoiceActivityDetector. Check model path: {:?}", model_path))
     }
 
     /// Predicts if the given 10ms chunk contains speech.
@@ -86,6 +84,7 @@ impl VadEngine {
         mut consumer: C,
         event_tx: mpsc::Sender<serde_json::Value>,
         stt_tx: std::sync::mpsc::Sender<crate::services::stt::SttCommand>,
+        vad_rx: std::sync::mpsc::Receiver<VadCommand>,
         telemetry_tx: std::sync::mpsc::Sender<crate::core::state::TelemetryData>,
         vox_event_tx: Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>,
     ) -> Result<()> 
@@ -100,27 +99,72 @@ impl VadEngine {
         let mut samples_since_partial = 0;
         let mut pre_roll_buffer: Vec<f32> = Vec::with_capacity(8000); // 500ms pre-roll
 
+        // Local state initialized once, updated via vad_rx to avoid hot-path locks
+        let (threshold_init, noise_gate_init, mode_init, owner_init) = {
+            let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+            let settings = state.settings.read().unwrap();
+            let owner = *state.owner.blocking_lock();
+            let mode = match owner {
+                InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+                InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
+                InteractionOwner::Ptt => InteractionMode::PTT,
+            };
+            (settings.vad.threshold, settings.vad.ptt_noise_gate, mode, owner)
+        };
+        
+        let mut threshold = threshold_init;
+        let mut noise_gate = noise_gate_init;
+        let mut mode = mode_init;
+        let mut owner = owner_init;
+
+        log::info!("[VAD] Entering sync loop: threshold={}, noise_gate={}, mode={:?}", threshold, noise_gate, mode);
+
         
         // 16ms chunks (256 samples at 16kHz) — matches TenVAD window_size default
         let mut chunk = vec![0.0f32; 256];
 
         loop {
+            // ── 0. Process hot-updates (Lock-Free) ───────────────────────────
+            while let Ok(cmd) = vad_rx.try_recv() {
+                match cmd {
+                    VadCommand::UpdateThreshold(v) => {
+                        log::info!("[VAD] Updating threshold to {} (Hot-Reloading)...", v);
+                        threshold = v;
+                        match Self::create_detector(&self.model_path, threshold) {
+                            Ok(new_detector) => {
+                                self.detector = new_detector;
+                                log::info!("[VAD] Detector hot-reloaded successfully.");
+                            }
+                            Err(e) => {
+                                log::error!("[VAD] Failed to hot-reload detector: {}", e);
+                            }
+                        }
+                    }
+                    VadCommand::UpdateNoiseGate(v) => {
+                        log::info!("[VAD] Updating noise gate to {}", v);
+                        noise_gate = v;
+                    }
+                    VadCommand::UpdateMode(m) => {
+                        log::info!("[VAD] Updating interaction mode to {:?}", m);
+                        mode = m;
+                    }
+                    VadCommand::UpdateOwner(o) => {
+                        log::info!("[VAD] Updating interaction owner to {:?}", o);
+                        owner = o;
+                    }
+                    VadCommand::Shutdown => {
+                        log::info!("[VAD] Shutdown signal received. Exiting loop.");
+                        return Ok(());
+                    }
+                }
+            }
+
             // Check if we have at least 16ms of audio available (256 samples at 16kHz)
             if consumer.occupied_len() >= 256 {
                 consumer.pop_slice(&mut chunk);
 
                 // ── Phase 5: High-Frequency Telemetry ────────────────────────
-                let (mode, owner, noise_gate) = {
-                    let state: tauri::State<'_, crate::core::state::AppState> = app.state();
-                    let settings = state.settings.blocking_lock();
-                    let owner = state.owner.blocking_lock();
-                    let mode = match *owner {
-                        crate::core::state::InteractionOwner::Tray => settings.tray_mode.clone(),
-                        crate::core::state::InteractionOwner::MainWindow => settings.main_app_mode.clone(),
-                        crate::core::state::InteractionOwner::Ptt => crate::core::settings::InteractionMode::PTT,
-                    };
-                    (mode, *owner, settings.ptt_noise_gate)
-                };
+                // (No locks used here anymore — all local state)
 
                 // Calculate RMS energy for the 16ms chunk
                 let raw_energy = (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt();
@@ -162,8 +206,8 @@ impl VadEngine {
                     let is_playing = state.pipeline.playback_active.load(std::sync::atomic::Ordering::Relaxed);
                     if is_playing {
                         let audio_mode = {
-                            let settings = state.settings.blocking_lock();
-                            settings.audio_output_mode.clone()
+                            let settings = state.settings.read().unwrap();
+                            settings.audio.output_mode.clone()
                         };
                         if audio_mode == crate::core::settings::AudioOutputMode::Speaker {
                             // Drop this frame — do NOT advance utterance buffer or VAD state
@@ -207,11 +251,7 @@ impl VadEngine {
                     samples_since_partial += chunk.len();
 
                     // ── Phase 5: Interaction Ownership ───────────────────────────
-                    let owner = {
-                        let state: tauri::State<'_, crate::core::state::AppState> = app.state();
-                        let lock = state.owner.blocking_lock();
-                        *lock
-                    };
+                    // (owner is now tracked locally via VadCommand)
 
                     // Partial Emit: Every 800ms (12,800 samples), send the current 
                     // buffer to STT for intermediate transcription.
@@ -247,11 +287,6 @@ impl VadEngine {
                         // Routing: Only send to STT if the segment meets a minimum 
                         // duration threshold (e.g., 0.2s) to filter out clicks/noise.
                         if utterance_buffer.len() >= 3200 { 
-                            let owner = {
-                                let state: tauri::State<'_, crate::core::state::AppState> = app.state();
-                                let lock = state.owner.blocking_lock();
-                                *lock
-                            };
                             let _ = stt_tx.send(crate::services::stt::SttCommand::Final(
                                 current_session_id, 
                                 owner,

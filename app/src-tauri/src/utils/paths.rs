@@ -1,47 +1,74 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use crate::core::constants::*;
 
-/// Returns the base directory for Vox data: ~/.vox/
-pub fn vox_dir() -> PathBuf {
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            let mut p = PathBuf::from(home);
-            p.push(".vox");
-            return p;
-        }
-    }
+// ─── Path Singleton ───────────────────────────────────────────────────────────
 
-    // Fallback or non-linux (though project is linux-focused)
-    let mut p = std::env::current_dir().unwrap_or_default();
-    p.push(".vox");
-    p
+/// Fully-resolved filesystem layout for the Vox application.
+///
+/// Initialized ONCE at startup via `paths::init(app_handle)`.
+/// After init, `paths::get()` is safe to call from any thread without locks.
+pub struct VoxPaths {
+    /// ~/.vox/ (base) — or Tauri's app_data_dir fallback
+    pub root:     PathBuf,
+    /// ~/.vox/models/
+    pub models:   PathBuf,
+    /// ~/.vox/logs/
+    pub logs:     PathBuf,
+    /// ~/.vox/vox.db
+    pub db:       PathBuf,
+    /// ~/.vox/settings.json
+    pub settings: PathBuf,
 }
 
-/// Returns the directory where models are stored: ~/.vox/models/
-pub fn models_dir() -> PathBuf {
-    vox_dir().join(MODELS_DIRNAME)
+static PATHS: OnceLock<VoxPaths> = OnceLock::new();
+
+/// Initialize the path singleton. Must be called ONCE at startup with the AppHandle,
+/// before any call to `paths::get()`.
+///
+/// Uses `app.path().app_data_dir()` for platform-correct resolution (respects macOS
+/// sandboxing, Windows %APPDATA%, and Linux XDG). Falls back to `$HOME/.vox` on failure.
+pub fn init(_app: &tauri::AppHandle) {
+    // User Directive: strictly use ~/.vox for all model and config persistence.
+    // This overrides Tauri's default app_data_dir() behavior on Linux.
+    let root = std::env::var("HOME")
+        .map(|h| PathBuf::from(h).join(".vox"))
+        .unwrap_or_else(|_| {
+            std::env::current_dir().unwrap_or_default().join(".vox")
+        });
+
+    let paths = VoxPaths {
+        models:   root.join(MODELS_DIRNAME),
+        logs:     root.join(LOG_DIRNAME),
+        db:       root.join(DB_FILENAME),
+        settings: root.join(SETTINGS_FILENAME),
+        root,
+    };
+
+    // Ignore error if already initialized (idempotent in tests)
+    let _ = PATHS.set(paths);
 }
 
-/// Returns the directory where logs are stored: ~/.vox/logs/
-pub fn logs_dir() -> PathBuf {
-    vox_dir().join(LOG_DIRNAME)
+/// Returns the initialized `VoxPaths` singleton.
+///
+/// # Panics
+/// Panics if `paths::init()` was not called before this. This is intentional —
+/// it enforces correct startup ordering.
+pub fn get() -> &'static VoxPaths {
+    PATHS.get().expect("[FATAL] paths::init() was not called before paths::get(). Check app startup order.")
 }
 
-/// Returns the path to the SQLite database: ~/.vox/vox.db
-pub fn db_path() -> PathBuf {
-    vox_dir().join(DB_FILENAME)
-}
-
-/// Returns the path to the settings file: ~/.vox/settings.json
-pub fn settings_path() -> PathBuf {
-    vox_dir().join(SETTINGS_FILENAME)
-}
-
-/// Ensures all required directories exist.
+/// Ensures all required directories exist on disk. Called once at startup.
 pub fn ensure_dirs() -> std::io::Result<()> {
-    std::fs::create_dir_all(vox_dir())?;
-    std::fs::create_dir_all(models_dir())?;
-    std::fs::create_dir_all(logs_dir())?;
+    let p = get();
+    std::fs::create_dir_all(&p.root)?;
+    std::fs::create_dir_all(&p.models)?;
+    std::fs::create_dir_all(&p.logs)?;
     Ok(())
+}
+
+/// Returns the absolute path to a specific model subdirectory.
+/// e.g. `model_dir("kokoro")` → `~/.vox/models/kokoro/`
+pub fn model_dir(name: &str) -> PathBuf {
+    get().models.join(name)
 }
