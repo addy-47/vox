@@ -198,6 +198,11 @@ async fn engage(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(),
         state.pipeline.is_engaged.store(true, Ordering::Relaxed);
         let mut owner = state.owner.lock().await;
         *owner = InteractionOwner::MainWindow;
+
+        // Pre-warm the LLM in background so model is ready before first transcript
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::WarmUp);
+        }
     } else {
         log::info!("[Pipeline] Disengaging pipeline (Stopping session)...");
         state.pipeline.is_engaged.store(false, Ordering::Relaxed);
