@@ -19,6 +19,90 @@ pub enum InteractionMode {
     PTT,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModelMetadata {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub ram_usage: String,
+    pub parameters: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VoiceProfile {
+    pub id: i32,
+    pub name: String,
+}
+
+pub fn get_voice_profiles() -> Vec<VoiceProfile> {
+    vec![
+        VoiceProfile { id: 0, name: "Bella".to_string() },
+        VoiceProfile { id: 1, name: "Sarah".to_string() },
+        VoiceProfile { id: 2, name: "Sky".to_string() },
+        VoiceProfile { id: 3, name: "Adam".to_string() },
+        VoiceProfile { id: 4, name: "Michael".to_string() },
+        VoiceProfile { id: 5, name: "Eric".to_string() },
+        VoiceProfile { id: 6, name: "Emma".to_string() },
+        VoiceProfile { id: 7, name: "Isabella".to_string() },
+        VoiceProfile { id: 8, name: "Jessica".to_string() },
+        VoiceProfile { id: 9, name: "Nicole".to_string() },
+        VoiceProfile { id: 10, name: "William".to_string() },
+    ]
+}
+
+pub fn get_preset_colors() -> Vec<String> {
+    vec![
+        "#00DBE9".to_string(),
+        "#8B5CF6".to_string(),
+        "#EC4899".to_string(),
+        "#F59E0B".to_string(),
+        "#10B981".to_string(),
+    ]
+}
+
+pub fn get_llm_metadata() -> Vec<ModelMetadata> {
+    vec![
+        ModelMetadata {
+            id: "gemma4".to_string(),
+            name: "Gemma 4".to_string(),
+            description: "Fast and smart core for general conversation and tasks.".to_string(),
+            ram_usage: " ~1.4GB".to_string(),
+            parameters: "2.4B (Q4_K_M)".to_string(),
+        }
+    ]
+}
+
+pub fn get_asr_metadata() -> Vec<ModelMetadata> {
+    vec![
+        ModelMetadata {
+            id: "qwen3-asr".to_string(),
+            name: "Qwen3-ASR".to_string(),
+            description: "Reliable speech recognition with multi-language support.".to_string(),
+            ram_usage: " ~800MB".to_string(),
+            parameters: "Sherpa-ONNX".to_string(),
+        }
+    ]
+}
+
+pub fn get_tts_metadata() -> Vec<ModelMetadata> {
+    vec![
+        ModelMetadata {
+            id: "kokoro".to_string(),
+            name: "Kokoro".to_string(),
+            description: "High-quality voice output with multiple profiles.".to_string(),
+            ram_usage: " ~150MB".to_string(),
+            parameters: "82M".to_string(),
+        },
+        ModelMetadata {
+            id: "piper_hi".to_string(),
+            name: "Piper Hindi".to_string(),
+            description: "Natural Hindi speech optimized for low power devices.".to_string(),
+            ram_usage: " ~100MB".to_string(),
+            parameters: "VITS (Medium)".to_string(),
+        }
+    ]
+}
+
 // ─── Reload Policy ────────────────────────────────────────────────────────────
 // NOTE: This is CODE-SIDE metadata only. It is NEVER stored in settings.json.
 // It informs the IPC layer what action is required after a setting changes.
@@ -102,13 +186,27 @@ pub struct UiSettings {
     /// Seed color for the theme engine. Frontend derives full palette dynamically.
     /// Store only the seed — NOT generated gradients, shades, or glow colors.
     pub accent_seed: String,
+
+    // Tray HUD Aesthetics
+    pub tray_enabled: bool,
+    pub tray_blur_density: u32,
+    pub tray_glass_tint: bool,
+    pub tray_hide_delay: f32,
+    pub tray_fade_transition: String,
+    pub tray_history_limit: u32,
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
             theme: "dark".into(),
-            accent_seed: "#8B5CF6".into(), // Default violet
+            accent_seed: "#00DBE9".into(), // Default Cyan
+            tray_enabled: true,
+            tray_blur_density: 40,
+            tray_glass_tint: true,
+            tray_hide_delay: 5.0,
+            tray_fade_transition: "Smooth".into(),
+            tray_history_limit: 10,
         }
     }
 }
@@ -175,6 +273,7 @@ impl Default for LlmSettings {
 pub struct TtsSettings {
     pub en_model: String, // e.g., "kokoro"
     pub hi_model: String, // e.g., "piper_hi"
+    pub voice_id: i32,    // Kokoro voice index (0-10)
 }
 
 impl Default for TtsSettings {
@@ -182,6 +281,7 @@ impl Default for TtsSettings {
         Self {
             en_model: "kokoro".to_string(),
             hi_model: "piper_hi".to_string(),
+            voice_id: 0, // Default voice (af_bella)
         }
     }
 }

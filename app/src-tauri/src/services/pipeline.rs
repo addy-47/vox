@@ -253,7 +253,7 @@ impl PipelineOrchestrator {
     }
 
     fn get_current_owner(&self, app: &tauri::AppHandle) -> InteractionOwner {
-        let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
         let owner = state.owner.blocking_lock();
         *owner
     }
@@ -329,8 +329,10 @@ impl PipelineOrchestrator {
             // a Cancelled event (which usually resets this), the LLM would stall.
             self.cancel_flag.store(false, Ordering::Relaxed);
 
+            let system_prompt = self.settings.read().unwrap().assistant.system_prompt.clone();
             let cmd = crate::services::llm::LlmCommand::Generate {
                 text,
+                system_prompt,
                 turn_id: new_turn,
                 cancel_flag: Arc::clone(&self.cancel_flag),
             };
@@ -354,7 +356,7 @@ impl PipelineOrchestrator {
         // Directive 2: Sub-sentence token accumulator ───────────────────────
         let mut token_buf    = String::new();
         let mut current_tid  = 0u32;
-        let mut voice_sid    = 0i32; // Default to English Female
+        let mut voice_sid    = self.settings.read().unwrap().tts.voice_id; 
         let mut thinking     = false;
         let mut metrics      = PipelineMetrics::new();
         let _audio_mode = {
@@ -465,7 +467,7 @@ impl PipelineOrchestrator {
                 VoxEvent::TranscriptFinal { turn_id, owner, text } => {
                     if turn_id < current_tid { continue; }
                     token_buf.clear();
-                    voice_sid = 0;   
+                    voice_sid = self.settings.read().unwrap().tts.voice_id;   
                     thinking = false;
                     metrics.mark(MetricField::FinalTranscript);
                     
@@ -509,7 +511,11 @@ impl PipelineOrchestrator {
                         let chunk = token_buf.trim().to_string();
                         if !chunk.is_empty() {
                             // Detect language for voice selection
-                            voice_sid = if is_devanagari(&chunk) { 1 } else { 0 };
+                            let voice_sid = if is_devanagari(&chunk) { 
+                                1 // Piper Hindi (Fixed index for now)
+                            } else { 
+                                self.settings.read().unwrap().tts.voice_id 
+                            };
                             if let Ok(lock) = self.tts_tx.lock() {
                                 if let Some(tx) = lock.as_ref() {
                                     let _ = tx.send((turn_id, voice_sid, chunk));
@@ -520,7 +526,7 @@ impl PipelineOrchestrator {
                     }
                      
                      let target = {
-                         let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
+                         let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app_handle.state();
                          let owner = state.owner.blocking_lock();
                          match *owner {
                              crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
@@ -567,7 +573,7 @@ impl PipelineOrchestrator {
                     tracing::info!("[Pipeline] Turn complete. Latencies: {}", report);
                     
                     // Emit structured telemetry
-                    let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
+                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app_handle.state();
                     let stt_ms = match (metrics.speech_start, metrics.final_transcript) {
                         (Some(s), Some(e)) => e.duration_since(s).as_millis() as u32,
                         _ => 0,
@@ -650,7 +656,7 @@ impl PipelineOrchestrator {
                 VoxEvent::Error { turn_id, message } => {
                     log::error!("[Pipeline] Error (turn {}): {}", turn_id, message);
                     let target = {
-                        let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
+                        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app_handle.state();
                         let owner = state.owner.blocking_lock();
                         match *owner {
                             crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",

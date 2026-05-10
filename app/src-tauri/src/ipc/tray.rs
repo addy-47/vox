@@ -92,6 +92,7 @@ pub async fn update_interaction_mode(app: AppHandle, target: String, mode: Strin
     let event_name = format!("mode_changed_{}", target.to_lowercase());
     let _ = app.emit(&event_name, mode.clone());
     let _ = app.emit("mode_changed", mode);
+    let _ = app.emit("settings-updated", ());
     
     Ok(())
 }

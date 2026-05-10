@@ -1,7 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
-import { ThemeProvider } from "./shared/context/ThemeContext";
+import { SettingsProvider } from "./shared/context/SettingsContext";
 
 // Lazy load entry points to separate chunks
 const App = lazy(() => import("./App"));
@@ -26,11 +26,10 @@ const WindowLoader = () => (
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ThemeProvider>
+    <SettingsProvider>
       <Suspense fallback={<WindowLoader />}>
         {isTray ? <TrayApp /> : <App />}
       </Suspense>
-    </ThemeProvider>
+    </SettingsProvider>
   </React.StrictMode>
 );
-
