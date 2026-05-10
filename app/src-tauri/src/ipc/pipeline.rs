@@ -14,13 +14,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 #[tauri::command]
-pub async fn check_engine_status(state: State<'_, AppState>) -> Result<bool, String> {
+pub async fn check_engine_status(state: State<'_, std::sync::Arc<AppState>>) -> Result<bool, String> {
     let lock = state.engine.lock().await;
     Ok(lock.is_some())
 }
 
 #[tauri::command]
-pub async fn engage(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) -> Result<(), String> {
     let current = state.pipeline.is_engaged.load(Ordering::Relaxed);
     let new_state = !current;
     
@@ -40,10 +40,12 @@ pub async fn engage(state: State<'_, AppState>, app: AppHandle) -> Result<(), St
 
             // Persist Session Start
             if let Some(ref tx) = state.persist_tx {
-                let _ = tx.try_send(crate::persistence::events::PersistenceEvent::SessionStarted {
+                if let Err(_) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionStarted {
                     id: conv_id,
                     timestamp_ms: conv_id,
-                });
+                }) {
+                    state.dropped_persistence_events.fetch_add(1, Ordering::Relaxed);
+                }
             }
 
             let _ = engine.pipeline_tx.send(VoxEvent::WarmUp);
@@ -68,10 +70,12 @@ pub async fn engage(state: State<'_, AppState>, app: AppHandle) -> Result<(), St
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64;
-                    let _ = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                    if let Err(_) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
                         id: conv_id,
                         timestamp_ms: now,
-                    });
+                    }) {
+                        state.dropped_persistence_events.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
         }
@@ -92,7 +96,7 @@ pub async fn engage(state: State<'_, AppState>, app: AppHandle) -> Result<(), St
 
 #[tauri::command]
 pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let mut lock = state.engine.lock().await;
     
     if lock.is_some() {
@@ -141,7 +145,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 
     let app_handle_emit = app.clone();
     tauri::async_runtime::spawn(async move {
-        let app_state: State<'_, AppState> = app_handle_emit.state();
+        let app_state: State<'_, std::sync::Arc<AppState>> = app_handle_emit.state();
         while let Some(event) = event_rx.recv().await {
             if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
                 if msg_type == "speech_start" {
@@ -192,6 +196,8 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         std::sync::Arc::clone(&state.pipeline.playback_active),
         std::sync::Arc::clone(&state.pipeline.cancel_flag),
         Arc::clone(&playback_energy),
+        std::sync::Arc::clone(&state.pipeline.playback_underruns),
+        std::sync::Arc::clone(&state.pipeline.is_assistant_speaking),
     ) {
         Ok(pe) => std::sync::Arc::new(pe),
         Err(e) => {
@@ -214,6 +220,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         std::sync::Arc::clone(&state.pipeline.transcript_history),
         std::sync::Arc::clone(&state.conversation_id),
         state.persist_tx.clone(),
+        std::sync::Arc::clone(&state.dropped_persistence_events),
     );
 
     let playback_for_orch = std::sync::Arc::clone(&playback_engine);

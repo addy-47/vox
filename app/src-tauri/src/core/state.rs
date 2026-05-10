@@ -1,7 +1,7 @@
-use tauri::AppHandle;
+// use tauri::AppHandle;
 use tokio::sync::Mutex;
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use crate::services::audio::AudioStream;
 use crate::services::stt::SttCommand;
 use crate::core::settings::VoxSettings;
@@ -98,6 +98,12 @@ pub struct PipelineAtomics {
     pub is_engaged:      Arc<AtomicBool>,
     /// In-memory history of recent transcripts. Bridge to Phase 6.3 persistence.
     pub transcript_history: Arc<std::sync::Mutex<VecDeque<String>>>,
+    /// Track playback underruns for monitoring.
+    pub playback_underruns: Arc<std::sync::atomic::AtomicU64>,
+    /// `true` while the system is in AssistantSpeaking state.
+    pub is_assistant_speaking: Arc<AtomicBool>,
+    /// Atomic representation of InteractionState for lock-free monitoring.
+    pub current_state_atomic: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl PipelineAtomics {
@@ -113,6 +119,9 @@ impl PipelineAtomics {
             transcript_history: Arc::new(std::sync::Mutex::new(
                 VecDeque::with_capacity(crate::core::constants::TRANSCRIPT_HISTORY_LIMIT)
             )),
+            playback_underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            is_assistant_speaking: Arc::new(AtomicBool::new(false)),
+            current_state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(InteractionState::Idle as u32)),
         }
     }
 
@@ -122,6 +131,10 @@ impl PipelineAtomics {
         if *state_lock != new_state {
             log::debug!("[Pipeline] State changed -> {:?} (Owner: {:?})", new_state, owner);
             *state_lock = new_state;
+
+            // Update atomic flags for lock-free access in monitoring and audio callback
+            self.is_assistant_speaking.store(new_state == InteractionState::AssistantSpeaking, Ordering::Relaxed);
+            self.current_state_atomic.store(new_state as u32, Ordering::Relaxed);
 
             let target = match owner {
                 InteractionOwner::Tray => "tray",
@@ -165,12 +178,35 @@ pub struct AppState {
     /// Long-lived conversation session ID. 0 = no active session (Tray mode).
     /// Created on Engage, destroyed on Disengage. Persistence worker ignores events with id == 0.
     pub conversation_id: Arc<AtomicU64>,
+    
+    /// Latest VAD characteristics for monitoring (Atomic f32 via bit storage).
+    pub latest_energy: Arc<AtomicU32>,
+    pub latest_vad_prob: Arc<AtomicU32>,
+    pub latest_cpu: Arc<AtomicU32>,
+    pub latest_ram: Arc<AtomicU32>,
+    pub latest_stt_ms: Arc<AtomicU32>,
+    pub latest_ttft_ms: Arc<AtomicU32>,
+
     /// Persistence worker channel. None if persistence is disabled.
     pub persist_tx: Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
+    /// Track dropped persistence events for monitoring.
+    pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
+    /// Monitoring state (snapshots + history).
+    pub monitoring: Arc<crate::monitoring::runtime_state::MonitoringState>,
 }
 
 impl AppState {
-    pub fn new(_app: &AppHandle, log_guard: Option<tracing_appender::non_blocking::WorkerGuard>, telemetry_tx: crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>) -> Self {
+    pub fn new(
+        _app: &tauri::AppHandle,
+        log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
+        telemetry_tx: crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>,
+        latest_energy: Arc<AtomicU32>,
+        latest_vad_prob: Arc<AtomicU32>,
+        latest_cpu: Arc<AtomicU32>,
+        latest_ram: Arc<AtomicU32>,
+        latest_stt_ms: Arc<AtomicU32>,
+        latest_ttft_ms: Arc<AtomicU32>,
+    ) -> Self {
         // paths::init() must have been called before AppState::new()
         let settings = VoxSettings::load();
 
@@ -192,7 +228,15 @@ impl AppState {
             _log_guard:    log_guard,
             telemetry_tx,
             conversation_id: Arc::new(AtomicU64::new(0)),
+            latest_energy,
+            latest_vad_prob,
+            latest_cpu,
+            latest_ram,
+            latest_stt_ms,
+            latest_ttft_ms,
             persist_tx: None,
+            dropped_persistence_events: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
         }
     }
 }

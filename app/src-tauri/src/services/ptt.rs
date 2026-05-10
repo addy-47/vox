@@ -9,7 +9,7 @@ use crate::core::events::VoxEvent;
 
 #[tauri::command]
 pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
     let mut recording = state.ptt.is_recording.lock().await;
     if *recording {
@@ -55,7 +55,7 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
     // Extract everything we need and drop the locks immediately to prevent 
     // pipeline freezes while waiting for the STT channel.
@@ -103,7 +103,7 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
     let mut recording = state.ptt.is_recording.lock().await;
     let mut buffer = state.ptt.audio_buffer.lock().await;
@@ -140,7 +140,7 @@ const MAX_PTT_SAMPLES: usize = 16000 * 60 * 10;
 /// causes onset frames (first ~300ms of speech) to be lost during VAD warm-up,
 /// producing empty or truncated transcripts.
 pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
     let recording = state.ptt.is_recording.blocking_lock();
     if !*recording { return; }

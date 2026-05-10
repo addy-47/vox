@@ -53,6 +53,10 @@ pub struct PlaybackEngine {
     _stream:        Option<cpal::Stream>,
     /// RCA Fix: Real-time safe energy telemetry (Atomic f32 via bit storage)
     _playback_energy: Arc<AtomicU32>,
+    /// Track underruns specifically when AssistantSpeaking is true.
+    _playback_underruns: Arc<std::sync::atomic::AtomicU64>,
+    /// Ref to the state atomic for lock-free checks.
+    _is_assistant_speaking: Arc<AtomicBool>,
 }
 
 // Safety: cpal::Stream is not Send/Sync on some platforms (macOS), but is
@@ -66,6 +70,8 @@ impl PlaybackEngine {
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
         playback_energy: Arc<AtomicU32>,
+        playback_underruns: Arc<std::sync::atomic::AtomicU64>,
+        is_assistant_speaking: Arc<AtomicBool>,
     ) -> Result<Self> {
         let buffer: Arc<Mutex<VecDeque<f32>>> =
             Arc::new(Mutex::new(VecDeque::with_capacity(JITTER_PREBUFFER_SAMPLES * 4)));
@@ -75,6 +81,8 @@ impl PlaybackEngine {
             Arc::clone(&playback_active),
             Arc::clone(&cancel_flag),
             Arc::clone(&playback_energy),
+            Arc::clone(&playback_underruns),
+            Arc::clone(&is_assistant_speaking),
         )?;
 
         Ok(Self {
@@ -83,6 +91,8 @@ impl PlaybackEngine {
             cancel_flag,
             _stream: Some(stream),
             _playback_energy: playback_energy,
+            _playback_underruns: playback_underruns,
+            _is_assistant_speaking: is_assistant_speaking,
         })
     }
 
@@ -142,6 +152,8 @@ impl PlaybackEngine {
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
         playback_energy: Arc<AtomicU32>,
+        playback_underruns: Arc<std::sync::atomic::AtomicU64>,
+        is_assistant_speaking: Arc<AtomicBool>,
     ) -> Result<cpal::Stream> {
         let host   = cpal::default_host();
         let device = host.default_output_device()
@@ -210,6 +222,11 @@ impl PlaybackEngine {
 
                 // Buffer exhausted — signal idle
                 if buf.is_empty() {
+                    // If we are supposed to be in AssistantSpeaking state but buffer is empty,
+                    // this is an underrun (either a stall in TTS or end of turn).
+                    if is_assistant_speaking.load(Ordering::Relaxed) {
+                        playback_underruns.fetch_add(1, Ordering::Relaxed);
+                    }
                     playback_active.store(false, Ordering::Relaxed);
                     playback_energy.store(0f32.to_bits(), Ordering::Relaxed);
                     log::info!("[Playback] Buffer drained — playback_active = false");
