@@ -39,7 +39,7 @@ fn test_kokoro_assets_exist() {
 #[test]
 #[ignore]
 fn test_tts_engine_loads() {
-    use vox_ui_lib::services::tts::TtsEngine;
+    use vox_lib::services::tts::TtsEngine;
 
     let dir = model_dir();
     let engine = TtsEngine::new(&dir);
@@ -53,8 +53,8 @@ fn test_tts_synthesises_audio() {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use tokio::sync::mpsc;
-    use vox_ui_lib::services::tts::TtsEngine;
-    use vox_ui_lib::core::events::VoxEvent;
+    use vox_lib::services::tts::TtsEngine;
+    use vox_lib::core::events::VoxEvent;
 
     let mut engine = TtsEngine::new(&model_dir()).expect("TtsEngine load failed");
     let cancel = Arc::new(AtomicBool::new(false));
@@ -99,7 +99,7 @@ fn test_tts_cancels_mid_synthesis() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use tokio::sync::mpsc;
-    use vox_ui_lib::services::tts::TtsEngine;
+    use vox_lib::services::tts::TtsEngine;
 
 
     let mut engine = TtsEngine::new(&model_dir()).expect("TtsEngine load failed");

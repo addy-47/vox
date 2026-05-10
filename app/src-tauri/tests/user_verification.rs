@@ -2,10 +2,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
-use vox_ui_lib::services::llm::LlmWorker;
-use vox_ui_lib::services::tts::TtsEngine;
-use vox_ui_lib::services::playback::PlaybackEngine;
-use vox_ui_lib::core::events::VoxEvent;
+use vox_lib::services::llm::LlmWorker;
+use vox_lib::services::tts::TtsEngine;
+use vox_lib::services::playback::PlaybackEngine;
+use vox_lib::core::events::VoxEvent;
 
 #[tokio::test]
 async fn test_full_pipeline_responses() {

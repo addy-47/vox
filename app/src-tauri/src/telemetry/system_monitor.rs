@@ -1,10 +1,13 @@
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use std::time::Instant;
 use crate::core::constants::SYSTEM_STATS_INTERVAL;
 
 pub fn spawn_system_monitor(app: AppHandle) {
+    let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+    let telemetry_tx = state.telemetry_tx.clone();
+
     tauri::async_runtime::spawn(async move {
-        log::info!("[Telemetry] System monitor started.");
+        tracing::info!("[Telemetry] System monitor started.");
         let mut last_cpu_time: u64 = 0;
         let mut last_check = Instant::now();
         
@@ -36,10 +39,17 @@ pub fn spawn_system_monitor(app: AppHandle) {
                     .unwrap_or(0)
             } else { 0 };
 
+            // Emit to IPC for real-time dashboard
             let _ = app.emit("system_stats", serde_json::json!({
                 "cpu_usage": cpu_usage,
                 "memory_used_mb": mem_rss_mb,
             }));
+
+            // Send to aggregator for structured logging/persistence
+            let _ = telemetry_tx.send(crate::telemetry::aggregator::TelemetryEvent::SystemHealth {
+                cpu_usage,
+                ram_mb: mem_rss_mb as u32,
+            });
         }
     });
 }
