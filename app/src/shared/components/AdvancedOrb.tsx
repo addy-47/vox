@@ -2,285 +2,331 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 
 interface AudioTelemetry {
-  amplitude: number;
-  frequency: number;
+  energy: number;
+  vad_prob: number;
 }
 
 interface VoxOrbProps {
   telemetryRef?: React.MutableRefObject<{ energy: number; vad_prob: number }>;
-  amplitude?: number; // Keep for backward compatibility/static usage
+  amplitude?: number;
   frequency?: number;
   interactionState?: "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Interrupted";
 }
 
-export const VoxOrb: React.FC<VoxOrbProps> = ({ telemetryRef, amplitude = 0.0, frequency = 1.0, interactionState = "Idle" }) => {
+// ─── 4 big, slow waves — enough to feel organic, never chaotic ─────────────
+const WAVE_COUNT = 4;
+
+interface WaveParams {
+  anchor: [number, number, number];   // direction vector on the sphere
+  speed: number;                       // orbit speed (rad/sec base)
+  phase: number;                       // initial phase offset
+  ampScale: number;                    // relative wave height
+  width: number;                       // lateral spread (smaller = wider)
+}
+
+const WAVE_PARAMS: WaveParams[] = [
+  { anchor: [ 0.7,  0.3,  0.6],  speed: 0.25, phase: 0.0,  ampScale: 1.0,  width: 0.35 },
+  { anchor: [-0.4,  0.8, -0.4],  speed: 0.31, phase: 1.8,  ampScale: 0.8,  width: 0.40 },
+  { anchor: [ 0.1, -0.95, 0.2],  speed: 0.20, phase: 3.2,  ampScale: 0.9,  width: 0.38 },
+  { anchor: [-0.7, -0.4,  0.5],  speed: 0.28, phase: 5.0,  ampScale: 0.75, width: 0.42 },
+];
+
+export const VoxOrb: React.FC<VoxOrbProps> = ({
+  telemetryRef,
+  amplitude = 0.0,
+  interactionState = "Idle",
+}) => {
   const mountRef = useRef<HTMLDivElement>(null);
-  const internalTelemetryRef = useRef<AudioTelemetry>({ amplitude, frequency });
   const stateRef = useRef(interactionState);
+  const internalTelemetryRef = useRef<AudioTelemetry>({ energy: 0, vad_prob: 0 });
 
-  useEffect(() => {
-    stateRef.current = interactionState;
-  }, [interactionState]);
+  useEffect(() => { stateRef.current = interactionState; }, [interactionState]);
 
-  // Update internal ref if props are used
   useEffect(() => {
     if (!telemetryRef) {
-      internalTelemetryRef.current = { amplitude, frequency };
+      internalTelemetryRef.current = { energy: amplitude, vad_prob: 0 };
     }
-  }, [amplitude, frequency, telemetryRef]);
+  }, [amplitude, telemetryRef]);
 
   useEffect(() => {
     if (!mountRef.current) return;
 
     const container = mountRef.current;
-    const width = container.clientWidth;
-    const height = container.clientHeight;
+    let width = container.clientWidth;
+    let height = container.clientHeight;
 
-    // Scene
+    // ── Scene setup ────────────────────────────────────────────────────────
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.z = 6; // Move back slightly to prevent cutoff
-
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
-    renderer.domElement.style.position = 'absolute';
-    renderer.domElement.style.top = '0';
-    renderer.domElement.style.left = '0';
-    renderer.domElement.style.width = '100%';
-    renderer.domElement.style.height = '100%';
+    renderer.domElement.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;';
     container.appendChild(renderer.domElement);
 
-    // Geometry
-    const geometry = new THREE.SphereGeometry(2.0, 64, 64);
+    // Outer shell: perfect static sphere, never deforms
+    const outerGeo = new THREE.SphereGeometry(2.0, 72, 72);
+    // Inner surface: slightly smaller, displaced inward only
+    const innerGeo = new THREE.SphereGeometry(1.96, 72, 72);
 
-    // Uniforms
+    // ── Pack wave parameters into uniforms ─────────────────────────────────
+    const anchors   = new Float32Array(WAVE_PARAMS.flatMap(w => w.anchor));
+    const speeds    = new Float32Array(WAVE_PARAMS.map(w => w.speed));
+    const phases    = new Float32Array(WAVE_PARAMS.map(w => w.phase));
+    const ampScales = new Float32Array(WAVE_PARAMS.map(w => w.ampScale));
+    const widths    = new Float32Array(WAVE_PARAMS.map(w => w.width));
+
     const uniforms = {
-      u_time: { value: 0.0 },
-      u_amplitude: { value: 0.0 },
-      u_frequency: { value: 1.0 },
-      u_color: { value: new THREE.Color('#00dbe9') },
+      u_time:        { value: 0.0 },
+      u_amplitude:   { value: 0.0 },
+      u_frequency:   { value: 1.0 },
+      u_color:       { value: new THREE.Color('#00dbe9') },
+      u_colorGlow:   { value: new THREE.Color('#40f0ff') },
+      u_anchors:     { value: anchors },
+      u_speeds:      { value: speeds },
+      u_phases:      { value: phases },
+      u_ampScales:   { value: ampScales },
+      u_widths:      { value: widths },
+      u_waveCount:   { value: WAVE_COUNT },
     };
 
-    const material = new THREE.ShaderMaterial({
+    // ── Inner surface (wave-displaced, additive glow) ──────────────────────
+    const innerMat = new THREE.ShaderMaterial({
       uniforms,
-      wireframe: false,
       transparent: true,
       depthWrite: false,
-      side: THREE.DoubleSide,
+      depthTest: true,
+      side: THREE.FrontSide,
       blending: THREE.AdditiveBlending,
-      vertexShader: `
+      vertexShader: /* glsl */ `
         uniform float u_time;
         uniform float u_amplitude;
         uniform float u_frequency;
-        varying vec3 vNormal;
-        varying vec3 vPosition;
-        varying float vNoise;
-
-        // Simplex 3D Noise
-        vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        vec4 permute(vec4 x) { return mod289(((x*34.0)+10.0)*x); }
-        vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-
-        float snoise(vec3 v) {
-          const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
-          const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
-          vec3 i  = floor(v + dot(v, C.yyy) );
-          vec3 x0 = v - i + dot(i, C.xxx) ;
-          vec3 g = step(x0.yzx, x0.xyz);
-          vec3 l = 1.0 - g;
-          vec3 i1 = min( g.xyz, l.zxy );
-          vec3 i2 = max( g.xyz, l.zxy );
-          vec3 x1 = x0 - i1 + C.xxx;
-          vec3 x2 = x0 - i2 + C.yyy; 
-          vec3 x3 = x0 - D.yyy;      
-          i = mod289(i);
-          vec4 p = permute( permute( permute(
-                     i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
-                   + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
-                   + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
-          float n_ = 0.142857142857;
-          vec3  ns = n_ * D.wyz - D.xzx;
-          vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-          vec4 x_ = floor(j * ns.z);
-          vec4 y_ = floor(j - 7.0 * x_ );
-          vec4 x = x_ *ns.x + ns.yyyy;
-          vec4 y = y_ *ns.x + ns.yyyy;
-          vec4 h = 1.0 - abs(x) - abs(y);
-          vec4 b0 = vec4( x.xy, y.xy );
-          vec4 b1 = vec4( x.zw, y.zw );
-          vec4 s0 = floor(b0)*2.0 + 1.0;
-          vec4 s1 = floor(b1)*2.0 + 1.0;
-          vec4 sh = -step(h, vec4(0.0));
-          vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
-          vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
-          vec3 p0 = vec3(a0.xy,h.x);
-          vec3 p1 = vec3(a0.zw,h.y);
-          vec3 p2 = vec3(a1.xy,h.z);
-          vec3 p3 = vec3(a1.zw,h.w);
-          vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
-          p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
-          vec4 m = max(0.5 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-          m = m * m;
-          return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
-        }
-
-        // FBM for unified, complex fluid flow - Simplified to 2 octaves for 'merged' look
-        float fbm(vec3 p) {
-          float v = 0.0;
-          float a = 0.6; // Slightly more persistence for the first octave
-          for (int i = 0; i < 2; i++) {
-            v += a * snoise(p);
-            p *= 2.0;
-            a *= 0.4;
-          }
-          return v;
-        }
+        uniform vec3  u_anchors[4];
+        uniform float u_speeds[4];
+        uniform float u_phases[4];
+        uniform float u_ampScales[4];
+        uniform float u_widths[4];
+        uniform int   u_waveCount;
+        varying vec3  vWorldPos;
+        varying vec3  vNormal;
+        varying float vWaveHeight;
 
         void main() {
-          vNormal = normalize(normalMatrix * normal);
-          vPosition = position;
+          vec3 n = normalize(normalMatrix * normal);
+          vNormal = n;
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
 
-          // Random, asymmetrical swirling of noise coordinates instead of rotating the whole mesh
-          float s = sin(u_time * 0.15);
-          float c = cos(u_time * 0.15);
-          mat3 rot = mat3(
-             c, 0.0, s,
-            0.0, 1.0, 0.0,
-            -s, 0.0, c
-          );
-          
-          vec3 noisePos = rot * position * u_frequency + vec3(u_time * 0.1, u_time * 0.2, -u_time * 0.1);
-          float n = fbm(noisePos);
-          vNoise = n;
+          // Smooth frequency clamping to keep orbit speeds sane
+          float f = clamp(u_frequency, 0.4, 2.5);
 
-          // Low-frequency 'blob mask' to merge areas randomly
-          float mask = snoise(rot * position * 0.4 + u_time * 0.1);
-          float combinedNoise = n * (mask * 0.4 + 0.6);
+          float totalDisp = 0.0;
+          vec3 posNorm = normalize(position);
 
-          // Scaled down displacement slightly to prevent extreme oval distortion
-          float displacement = combinedNoise * (u_amplitude * 0.4 + 0.05);
-          vec3 newPosition = position + normal * displacement;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+          for (int i = 0; i < 4; i++) {
+            if (i >= u_waveCount) break;
+
+            // Orbit anchor around Y and X axes independently
+            float a1 = u_time * u_speeds[i] * f + u_phases[i];
+            vec3 anchor = u_anchors[i];
+            // Rotate around Y
+            float cy = cos(a1), sy = sin(a1);
+            vec3 r1 = vec3(anchor.x * cy - anchor.z * sy, anchor.y, anchor.x * sy + anchor.z * cy);
+            // Rotate around X
+            float a2 = u_time * u_speeds[i] * 0.7 * f + u_phases[i] + 1.0;
+            float cx = cos(a2), sx = sin(a2);
+            vec3 r2 = vec3(r1.x, r1.y * cx - r1.z * sx, r1.y * sx + r1.z * cx);
+            vec3 dir = normalize(r2);
+
+            // Cosine‑lobe wave: smooth, wide, non‑zero over a large area
+            float d = dot(posNorm, dir);
+            // Rescale to [-1,1] then map to lobe
+            float lobe = smoothstep(-0.15, 0.5, d) * smoothstep(1.1, 0.3, d);
+            // Gentle breathing
+            float pulse = 0.7 + 0.3 * sin(u_time * 0.8 * u_speeds[i] + u_phases[i]);
+
+            totalDisp += lobe * pulse * u_ampScales[i] * u_widths[i] * 1.8;
+          }
+
+          // Normalise across waves so we never exceed ~1.2
+          totalDisp = totalDisp / float(u_waveCount) * 1.2;
+
+          // Scale by global amplitude (idle base always present)
+          float finalDisp = totalDisp * (u_amplitude * 0.7 + 0.06);
+
+          // PUSH INWARD ONLY — outer silhouette stays untouched
+          vec3 newPos = position - n * finalDisp;
+          vWaveHeight = finalDisp;
+
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(newPos, 1.0);
         }
       `,
-      fragmentShader: `
+      fragmentShader: /* glsl */ `
         uniform vec3 u_color;
-        uniform float u_amplitude;
+        uniform vec3 u_colorGlow;
+        varying vec3 vWorldPos;
         varying vec3 vNormal;
-        varying vec3 vPosition;
-        varying float vNoise;
+        varying float vWaveHeight;
 
         void main() {
-          vec3 viewDirection = normalize(cameraPosition - vPosition);
-          float fresnel = 1.0 - abs(dot(viewDirection, vNormal));
-          
-          // Layer 1: Base hollow shell (the "dormant" look) - Broadened rim
-          float alpha1 = smoothstep(0.4, 1.0, fresnel);
-          
-          // Layer 2: Unified asymmetric flow overlay - Broadened flow
-          float alpha2 = smoothstep(0.2, 1.0, fresnel * (vNoise * 0.5 + 0.5));
-          
-          // Layer 3: High-energy liquid peaks
-          float alpha3 = smoothstep(0.65, 1.0, vNoise) * (u_amplitude + 0.1);
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          float fresnel = 1.0 - abs(dot(viewDir, vNormal));
 
-          // Superimpose layers for a volumetric unified flow
-          float finalAlpha = (alpha1 * 0.5 + alpha2 * 0.4 + alpha3 * 0.4) * 0.7;
+          float waveGlow = smoothstep(0.02, 0.35, vWaveHeight);
+          float rim      = smoothstep(0.35, 0.85, fresnel);
 
-          // Unified cyan color with intensity variation based on noise flow
-          vec3 color = u_color * (1.0 + vNoise * 0.4);
+          // Reduced alpha: inner surface is a faint, glowing internal state.
+          // Outer rim (outerMat) is the sharp, opaque boundary — inner should feel recessed.
+          float alpha = rim * 0.3 + waveGlow * 0.35;
+          vec3 color  = mix(u_color, u_colorGlow, waveGlow * 0.3 + rim * 0.15);
+          alpha *= 0.3 + vWaveHeight * 0.12;
 
-          gl_FragColor = vec4(color, finalAlpha);
+          gl_FragColor = vec4(color, alpha);
         }
       `,
     });
 
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
+    // ── Outer shell (perfect rim mask) ─────────────────────────────────────
+    const outerMat = new THREE.ShaderMaterial({
+      uniforms: { u_color: { value: new THREE.Color('#00dbe9') } },
+      transparent: true,
+      depthWrite: true,           // write depth so inner fragments behind it are discarded
+      depthTest: true,
+      side: THREE.FrontSide,
+      blending: THREE.NormalBlending,
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        void main() {
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 u_color;
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        void main() {
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          float fresnel = 1.0 - abs(dot(viewDir, vNormal));
 
-    // Resize handler using ResizeObserver for better reliability in flex/grid layouts
-    const resizeObserver = new ResizeObserver((entries) => {
-      if (!entries[0]) return;
-      const { width: w, height: h } = entries[0].contentRect;
+          // Broad, opaque rim that fully covers the sphere edge
+          float rim = smoothstep(0.35, 0.8, fresnel);
+          float alpha = rim * 0.85;  // nearly opaque at the edge
 
-      // Prevent division by zero and unnecessary updates
-      if (w <= 0 || h <= 0) return;
+          if (alpha < 0.03) discard; // discard centre – transparent
 
+          gl_FragColor = vec4(u_color * (0.9 + rim * 0.1), alpha);
+        }
+      `,
+    });
+
+    const innerMesh = new THREE.Mesh(innerGeo, innerMat);
+    const outerMesh = new THREE.Mesh(outerGeo, outerMat);
+
+    // Render order: outer first to write depth, then inner
+    outerMesh.renderOrder = 0;
+    innerMesh.renderOrder = 1;
+
+    const group = new THREE.Group();
+    group.add(outerMesh);
+    group.add(innerMesh);
+    scene.add(group);
+
+    // ── Dynamic camera distance (avoids clipping on narrow screens) ────────
+    function updateCamera(w: number, h: number) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
 
-      // Force a re-render immediately on resize to prevent black flashes
-      renderer.render(scene, camera);
+      const halfFovV = Math.tan((Math.PI * 45 / 180) * 0.5);
+      const distV = 2.2 / halfFovV;                 // vertical fit
+      const distH = 2.2 / (halfFovV * w / h);       // horizontal fit
+      camera.position.z = Math.max(distV, distH, 5.5);
+    }
+
+    updateCamera(width, height);
+
+    const resizeObs = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width: w, height: h } = entry.contentRect;
+      if (w > 0 && h > 0) {
+        updateCamera(w, h);
+        renderer.render(scene, camera); // immediate re-draw
+      }
     });
-    resizeObserver.observe(container);
+    resizeObs.observe(container);
 
-    // Animation loop
-    let animationFrameId: number;
-    const startTime = performance.now();
+    // ── Animation loop ─────────────────────────────────────────────────────
+    let raf: number;
+    const t0 = performance.now();
 
-    const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
-      const t = (performance.now() - startTime) / 1000; // Convert to seconds
+    function animate() {
+      raf = requestAnimationFrame(animate);
+      const t = (performance.now() - t0) / 1000;
 
       const state = stateRef.current;
       const target = {
-        Idle: { amp: 0.05, freq: 0.5, speed: 0.1 },
-        Listening: { amp: 0.15, freq: 0.8, speed: 0.4 },
-        UserSpeaking: { amp: 0.4, freq: 1.0, speed: 1.2 },
-        Thinking: { amp: 0.35, freq: 1.2, speed: 1.8 },
-        AssistantSpeaking: { amp: 0.55, freq: 1.1, speed: 1.5 },
-        Interrupted: { amp: 0.05, freq: 0.4, speed: 0.1 },
-      }[state] || { amp: 0.05, freq: 0.5, speed: 0.1 };
+        Idle:              { amp: 0.06, freq: 0.5 },
+        Listening:         { amp: 0.18, freq: 0.7 },
+        UserSpeaking:      { amp: 0.42, freq: 1.0 },
+        Thinking:          { amp: 0.35, freq: 1.2 },
+        AssistantSpeaking: { amp: 0.52, freq: 1.0 },
+        Interrupted:       { amp: 0.06, freq: 0.4 },
+      }[state] || { amp: 0.06, freq: 0.5 };
 
-      // Determine telemetry impact
-      let teleAmp = 0;
-      let teleFreq = 0;
-      
-      if (state === 'UserSpeaking' && telemetryRef) {
-        teleAmp = telemetryRef.current.energy * 0.5;
-        teleFreq = telemetryRef.current.energy * 2.0;
-      } else if (state === 'AssistantSpeaking' && telemetryRef) {
-        // Actual audio telemetry from TTS playback
-        teleAmp = telemetryRef.current.energy * 0.6; 
-        teleFreq = telemetryRef.current.energy * 3.0;
-      } else if (state === 'Thinking') {
-        // Precomputed pulse for Thinking
-        teleAmp = Math.sin(t * 4.0) * 0.1 + 0.1;
-      } else if (state === 'Listening' && telemetryRef) {
-        teleAmp = telemetryRef.current.energy * 0.2;
+      let telemAmp = 0, telemFreq = 0;
+      if (telemetryRef) {
+        const e = telemetryRef.current.energy;
+        // vad_prob intentionally unused for structural timing; mapping based on state energy
+        switch (state) {
+          case 'UserSpeaking':
+            telemAmp = e * 0.4;
+            telemFreq = e * 0.2;
+            break;
+          case 'AssistantSpeaking':
+            telemAmp = e * 0.5;
+            telemFreq = e * 0.15;
+            break;
+          case 'Listening':
+            telemAmp = e * 0.15;
+            break;
+        }
       }
+      if (state === 'Thinking') {
+        telemAmp = Math.sin(t * 2.5) * 0.08 + 0.08;
+      }
+
+      // Asymmetric envelope (fast attack, slow release)
+      const curAmp = uniforms.u_amplitude.value;
+      const targetAmp = Math.min(target.amp + telemAmp, 0.85);
+      const rate = targetAmp > curAmp ? 0.12 : 0.015;
+      uniforms.u_amplitude.value += (targetAmp - curAmp) * rate;
+
+      // Smooth frequency (the modulation you see)
+      uniforms.u_frequency.value +=
+        ((target.freq + telemFreq) - uniforms.u_frequency.value) * 0.05;
 
       uniforms.u_time.value = t;
 
-      // Asymmetric attack/release envelope on amplitude
-      // Attack fast: orb reacts instantly to audio
-      // Release slow: orb doesn't collapse between TTS chunks
-      const currentAmp = uniforms.u_amplitude.value;
-      const targetAmpFinal = target.amp + teleAmp;
-      const rate = targetAmpFinal > currentAmp ? 0.12 : 0.025;
-      uniforms.u_amplitude.value += (targetAmpFinal - currentAmp) * rate;
-
-      uniforms.u_frequency.value +=
-        ((target.freq + teleFreq) - uniforms.u_frequency.value) * 0.04;
-
-      // Note: Fluidity is shader-driven via noise coordinate swirling.
+      // Very slow group rotation for a subtle drift
+      group.rotation.y += 0.002;
+      group.rotation.x += 0.001;
 
       renderer.render(scene, camera);
-    };
-
+    }
     animate();
 
     return () => {
-      resizeObserver.disconnect();
-      cancelAnimationFrame(animationFrameId);
-      if (container.contains(renderer.domElement)) {
-        container.removeChild(renderer.domElement);
-      }
-      geometry.dispose();
-      material.dispose();
+      resizeObs.disconnect();
+      cancelAnimationFrame(raf);
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
+      outerGeo.dispose(); innerGeo.dispose();
+      outerMat.dispose(); innerMat.dispose();
       renderer.dispose();
     };
   }, []);

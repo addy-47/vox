@@ -81,6 +81,7 @@ pub struct PipelineOrchestrator {
     
     // Lifecycle management
     llm_tx:           Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
+    tts_tx:           Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<(u32, i32, String)>>>>,
 }
 
 impl PipelineOrchestrator {
@@ -106,6 +107,7 @@ impl PipelineOrchestrator {
             settings,
             is_engaged,
             llm_tx: Arc::new(std::sync::Mutex::new(None)),
+            tts_tx: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -144,6 +146,50 @@ impl PipelineOrchestrator {
                         llm_flag.store(false, Ordering::Relaxed);
                     }
                 }
+            })
+            .map_err(|e| e.to_string())?;
+
+        *lock = Some(tx);
+        Ok(())
+    }
+
+    /// Initialize the TTS worker if it's not already running.
+    pub fn warm_up_tts(&self, en_tts_dir: PathBuf, hi_tts_dir: PathBuf) -> Result<(), String> {
+        let mut lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
+        if lock.is_some() {
+            return Ok(());
+        }
+
+        log::info!("[Pipeline] Warming up TTS worker...");
+        let (tx, rx) = std::sync::mpsc::channel::<(u32, i32, String)>();
+        
+        let cancel_tts = Arc::clone(&self.cancel_flag);
+        let tts_flag = Arc::clone(&self.tts_generating);
+        let event_tx = self.event_tx.clone();
+
+        std::thread::Builder::new()
+            .name("vox-tts-persistent".to_string())
+            .spawn(move || {
+                let mut engine = match crate::services::tts::TtsEngine::new(&en_tts_dir, &hi_tts_dir) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        log::error!("[TTS Worker] Init failed: {}", e);
+                        return;
+                    }
+                };
+
+                log::info!("[TTS Worker] Persistent loop started.");
+                while let Ok((session_id, voice_sid, text)) = rx.recv() {
+                    if cancel_tts.load(Ordering::Relaxed) {
+                        continue;
+                    }
+                    tts_flag.store(true, Ordering::Relaxed);
+                    if let Err(e) = engine.synthesize_chunk(&text, voice_sid, session_id, cancel_tts.clone(), event_tx.clone()) {
+                        log::error!("[TTS] Synthesis error (session {}): {}", session_id, e);
+                    }
+                    tts_flag.store(false, Ordering::Relaxed);
+                }
+                log::info!("[TTS Worker] Channel closed. Exiting thread.");
             })
             .map_err(|e| e.to_string())?;
 
@@ -220,6 +266,13 @@ impl PipelineOrchestrator {
             return;
         }
 
+        // RCA Fix: Empty transcript handling
+        if text.trim().is_empty() {
+            log::info!("[Pipeline] Empty transcript received. Resetting to Listening.");
+            self.update_interaction_state(crate::core::state::InteractionState::Listening, owner, &_app_handle);
+            return;
+        }
+
         // ── Active Pipeline ──────────────────────────────────────────────────
         // Ensure LLM is warm
         if let Err(e) = self.warm_up_llm() {
@@ -255,41 +308,7 @@ impl PipelineOrchestrator {
         playback_engine: Arc<crate::services::playback::PlaybackEngine>,
         app_handle: tauri::AppHandle,
     ) {
-        // TTS runs on its own thread, receives text chunks via a channel
-        let (tts_tx, tts_rx) = std::sync::mpsc::channel::<(u32, i32, String)>();
-
-        // Spawn the TTS worker thread
-        let cancel_tts   = Arc::clone(&self.cancel_flag);
-        let tts_flag     = Arc::clone(&self.tts_generating);
-        let event_tx     = self.event_tx.clone();
-
-        std::thread::Builder::new()
-            .name("vox-tts".to_string())
-            .spawn(move || {
-                let mut engine = match crate::services::tts::TtsEngine::new(&en_tts_dir, &hi_tts_dir) {
-                    Ok(e) => e,
-                    Err(e) => {
-                        log::error!("[TTS Thread] Init failed: {}", e);
-                        return;
-                    }
-                };
-
-                log::info!("[TTS Worker] Persistent loop started.");
-                while let Ok((session_id, voice_sid, text)) = tts_rx.recv() {
-                    if cancel_tts.load(Ordering::Relaxed) {
-                        continue;
-                    }
-                    tts_flag.store(true, Ordering::Relaxed);
-                    if let Err(e) = engine.synthesize_chunk(&text, voice_sid, session_id, cancel_tts.clone(), event_tx.clone()) {
-                        log::error!("[TTS] Synthesis error (session {}): {}", session_id, e);
-                    }
-                    tts_flag.store(false, Ordering::Relaxed);
-                }
-                log::info!("[TTS Worker] Channel closed. Exiting thread.");
-            })
-            .expect("[Pipeline] Failed to spawn TTS thread");
-
-        // ── Directive 2: Sub-sentence token accumulator ───────────────────────
+        // Directive 2: Sub-sentence token accumulator ───────────────────────
         let mut token_buf    = String::new();
         let mut current_sid  = 0u32;
         let mut voice_sid    = 0i32; // Default to English Female
@@ -326,17 +345,36 @@ impl PipelineOrchestrator {
             match event {
                 VoxEvent::Shutdown => {
                     log::info!("[Pipeline] Shutdown signal received. Exiting event loop.");
-                    drop(tts_tx);
+                    if let Ok(mut lock) = self.tts_tx.lock() {
+                        *lock = None; // Dropping the sender will close the worker thread
+                    }
                     break;
+                }
+                // ── Pre-warm: load LLM and TTS in background on engage ───────
+                VoxEvent::WarmUp => {
+                    if let Err(e) = self.warm_up_llm() {
+                        log::error!("[Pipeline] WarmUp (LLM): failed: {}", e);
+                    }
+                    if let Err(e) = self.warm_up_tts(en_tts_dir.clone(), hi_tts_dir.clone()) {
+                        log::error!("[Pipeline] WarmUp (TTS): failed: {}", e);
+                    }
+                    log::info!("[Pipeline] WarmUp: workers started in background.");
                 }
                 // ── Speech start: barge-in cancellation ───────────
                 VoxEvent::SpeechStart { session_id, owner } => {
-                    if playback_engine.is_idle() == false {
-                        log::info!("[Pipeline] Barge-in detected — cancelling turn {}", session_id);
+                    let buffer_len = playback_engine.buffer_len();
+                    // Only log as "Barge-in" if there is significant audio left (>50ms at 48kHz)
+                    if buffer_len > 2400 {
+                        log::info!("[Pipeline] Barge-in detected — cancelling turn {} ({} samples left)", session_id, buffer_len);
                         self.cancel_flag.store(true, Ordering::Relaxed);
                         playback_engine.cancel();
                         awaiting_playback_finish = false;
                         self.update_interaction_state(crate::core::state::InteractionState::Interrupted, owner, &app_handle);
+                    } else if !playback_engine.is_idle() {
+                        // Trailing silence or very short audio — cancel silently
+                        playback_engine.cancel();
+                        awaiting_playback_finish = false;
+                        self.update_interaction_state(crate::core::state::InteractionState::UserSpeaking, owner, &app_handle);
                     } else {
                         self.update_interaction_state(crate::core::state::InteractionState::UserSpeaking, owner, &app_handle);
                     }
@@ -397,15 +435,19 @@ impl PipelineOrchestrator {
                     token_buf.push_str(&token);
                     let word_count = count_words(&token_buf);
 
-                    if should_flush(&token_buf, word_count) {
+                    if word_count >= 6 || should_flush(&token_buf, word_count) {
                         let chunk = token_buf.trim().to_string();
                         if !chunk.is_empty() {
                             // Detect language for voice selection
                             voice_sid = if is_devanagari(&chunk) { 1 } else { 0 };
-                             let _ = tts_tx.send((session_id, voice_sid, chunk));
-                             token_buf.clear();
-                         }
-                     }
+                            if let Ok(lock) = self.tts_tx.lock() {
+                                if let Some(tx) = lock.as_ref() {
+                                    let _ = tx.send((session_id, voice_sid, chunk));
+                                }
+                            }
+                            token_buf.clear();
+                        }
+                    }
                      
                      let target = {
                          let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
@@ -423,7 +465,11 @@ impl PipelineOrchestrator {
                     thinking = false;
                     let remainder = token_buf.trim().to_string();
                     if !remainder.is_empty() {
-                        let _ = tts_tx.send((session_id, voice_sid, remainder));
+                        if let Ok(lock) = self.tts_tx.lock() {
+                            if let Some(tx) = lock.as_ref() {
+                                let _ = tx.send((session_id, voice_sid, remainder));
+                            }
+                        }
                     }
                     token_buf.clear();
                     // Signal that all text has been dispatched. The polling loop
@@ -466,7 +512,12 @@ impl PipelineOrchestrator {
 
                 VoxEvent::Cancelled { session_id } => {
                     log::info!("[Pipeline] Cancelled (session {})", session_id);
-                    playback_engine.cancel();
+                    // Only cancel playback if it's actually active — avoid phantom
+                    // "Playback Cancelled" logs when there's nothing playing.
+                    if !playback_engine.is_idle() {
+                        playback_engine.cancel();
+                        log::info!("[Pipeline] Playback stopped (was active).");
+                    }
                     token_buf.clear();
                     awaiting_playback_finish = false;
                     // Reset cancel flag so new sessions can proceed
