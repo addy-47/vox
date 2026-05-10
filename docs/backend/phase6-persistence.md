@@ -12,6 +12,7 @@ Phase 6 must preserve:
 - dedicated realtime threads
 - non-blocking inference
 - event-driven architecture
+- **Model assets localized to `~/.vox/models/`**
 
 Persistence and monitoring systems must remain async observers/sinks and must NEVER enter hot audio paths.
 
@@ -231,15 +232,13 @@ At minimum support:
 
 ## Model Path Migration
 
-Move runtime model paths to, currently they are at app/src-tauri/assets/ :
+All runtime model paths will now refer to:
 
 ```text
 ~/.vox/models/
 ```
 
-No installer/downloader logic in this phase.
-
-Only runtime adaptation.
+The user has already moved the models to this location. Phase 6.0 will update all code references to use this new authoritative path via `utils::paths`.
 
 ---
 
@@ -777,6 +776,7 @@ Backend owns:
 - settings
 - persistence
 - runtime state
+- **Model file paths**
 
 Frontend reflects backend state only.
 
