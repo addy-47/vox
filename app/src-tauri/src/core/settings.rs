@@ -67,14 +67,14 @@ impl Default for VoxSettings {
         let llm_threads = (total_cores.saturating_sub(2)).max(1) as u32;
 
         Self {
-            stt_model_dir:    PathBuf::from("assets/qwen3-asr"),
-            vad_model_path:   PathBuf::from("assets/ten_vad.onnx"),
+            stt_model_dir:    PathBuf::from(crate::core::constants::MODEL_DIR_ASR),
+            vad_model_path:   PathBuf::from(crate::core::constants::MODEL_FILE_VAD),
             vad_threshold:    0.6,
             ptt_noise_gate:   0.005,
             theme:            "dark".into(),
-            llm_model_path:   PathBuf::from("assets/gemma4/google_gemma-4-E2B-it-Q4_K_M.gguf"),
-            tts_model_dir:    PathBuf::from("assets/kokoro"),
-            tts_hindi_model_dir: PathBuf::from("assets/piper_hi"),
+            llm_model_path:   PathBuf::from(crate::core::constants::MODEL_DIR_LLM).join(crate::core::constants::MODEL_FILE_LLM_GGUF),
+            tts_model_dir:    PathBuf::from(crate::core::constants::MODEL_DIR_TTS_EN),
+            tts_hindi_model_dir: PathBuf::from(crate::core::constants::MODEL_DIR_TTS_HI),
             llm_ctx_size:     2048,
             llm_threads,
             audio_output_mode: AudioOutputMode::Speaker,
@@ -93,9 +93,13 @@ impl VoxSettings {
                 
                 // ── Phase 5 migration: Force Q4_K_M if stale IQ2_M is found ─────
                 let model_str = settings.llm_model_path.to_string_lossy();
-                if model_str.contains("IQ2_M") {
-                    log::warn!("[Settings] Stale IQ2_M model detected in config. Migrating to Q4_K_M...");
-                    settings.llm_model_path = PathBuf::from("assets/gemma4/google_gemma-4-E2B-it-Q4_K_M.gguf");
+                if model_str.contains("IQ2_M") || model_str.contains("assets/") {
+                    log::warn!("[Settings] Legacy model path detected in config. Migrating to standardized path...");
+                    settings.llm_model_path = PathBuf::from(crate::core::constants::MODEL_DIR_LLM).join(crate::core::constants::MODEL_FILE_LLM_GGUF);
+                    settings.stt_model_dir = PathBuf::from(crate::core::constants::MODEL_DIR_ASR);
+                    settings.vad_model_path = PathBuf::from(crate::core::constants::MODEL_FILE_VAD);
+                    settings.tts_model_dir = PathBuf::from(crate::core::constants::MODEL_DIR_TTS_EN);
+                    settings.tts_hindi_model_dir = PathBuf::from(crate::core::constants::MODEL_DIR_TTS_HI);
                 }
                 
                 return settings;
