@@ -1,8 +1,11 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
-import { TrayApp } from "./tray/TrayApp";
 import "./index.css";
+import { ThemeProvider } from "./shared/context/ThemeContext";
+
+// Lazy load entry points to separate chunks
+const App = lazy(() => import("./App"));
+const TrayApp = lazy(() => import("./tray/TrayApp").then(m => ({ default: m.TrayApp })));
 
 // Basic window detection for Tauri
 const isTray = window.location.pathname.includes("tray") || 
@@ -14,8 +17,20 @@ if (isTray) {
   document.body.classList.add("is-tray");
 }
 
+// Global Loading State for Window Initialization
+const WindowLoader = () => (
+  <div className="flex h-screen w-full items-center justify-center bg-[#050505]">
+    <div className="w-10 h-10 border-2 border-white/5 border-t-white/40 rounded-full animate-spin" />
+  </div>
+);
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    {isTray ? <TrayApp /> : <App />}
+    <ThemeProvider>
+      <Suspense fallback={<WindowLoader />}>
+        {isTray ? <TrayApp /> : <App />}
+      </Suspense>
+    </ThemeProvider>
   </React.StrictMode>
 );
+

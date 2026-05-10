@@ -31,7 +31,7 @@ fn spawn_stt_worker(
     // Optional pipeline event channel — `Some` when Phase 4 pipeline is active.
     pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
     // Phase 5: Owner-aware routing — determines which window receives ptt_status
-    is_engaged: Arc<std::sync::atomic::AtomicBool>,
+    _is_engaged: Arc<std::sync::atomic::AtomicBool>,
 ) {
     std::thread::spawn(move || {
         log::info!("[STT] >>> Dedicated worker thread started.");
@@ -97,8 +97,21 @@ fn spawn_stt_worker(
                     
                     // Signal UI that processing is complete for PTT
                     // Phase 5: Emit only to the owning window
-                    let target = if is_engaged.load(std::sync::atomic::Ordering::Relaxed) { "main" } else { "tray" };
+                    let target = match owner {
+                        InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
+                        InteractionOwner::Tray => "tray",
+                    };
                     let _ = app.emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }));
+
+                    // RCA Fix: Ensure interaction state is reset (e.g. from Thinking back to Idle/Listening)
+                    // This prevents the "Processing" animation from hanging when transcripts are empty.
+                    let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+                    let idle_state = if state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed) {
+                        crate::core::state::InteractionState::Listening
+                    } else {
+                        crate::core::state::InteractionState::Idle
+                    };
+                    state.pipeline.update_interaction_state(idle_state, owner, &app);
 
                     last_transcript.clear();
                     last_emit_time = Instant::now();
