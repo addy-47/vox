@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 use crate::core::state::AppState;
 
 /// Retrieves the current in-memory transcript history.

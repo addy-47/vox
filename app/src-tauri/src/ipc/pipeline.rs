@@ -1,4 +1,5 @@
 use tauri::{State, Manager, AppHandle, Emitter};
+use crate::utils::paths;
 use crate::core::state::{AppState, VoxEngine, InteractionOwner, InteractionState};
 use crate::core::events::VoxEvent;
 use crate::services::stt::{spawn_stt_worker, SttCommand};
@@ -32,6 +33,7 @@ pub async fn engage(state: State<'_, AppState>, app: AppHandle) -> Result<(), St
 
         if let Some(engine) = state.engine.lock().await.as_ref() {
             let _ = engine.pipeline_tx.send(VoxEvent::WarmUp);
+            let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(InteractionOwner::MainWindow));
         }
     } else {
         log::info!("[Pipeline] Disengaging pipeline (Stopping session)...");
@@ -42,6 +44,7 @@ pub async fn engage(state: State<'_, AppState>, app: AppHandle) -> Result<(), St
             let session_id = state.pipeline.session_id.load(Ordering::Relaxed);
             let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { session_id });
             let _ = engine.stt_tx.send(SttCommand::ResetStream);
+            let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(InteractionOwner::Tray));
         }
 
         let mut owner = state.owner.lock().await;
@@ -74,52 +77,38 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     log::info!("[PIPELINE] >>> Launching 3-Tier Audio Engine...");
 
     let (stt_model_path, vad_model_path) = {
-        let settings = state.settings.lock().await;
-        let resource_dir = app.path().resource_dir().unwrap_or_default();
-        let models_dir = state.config_dir.join(crate::core::constants::MODELS_DIRNAME);
+        let settings = state.settings.read().unwrap();
+        let models_dir = paths::get().models.clone();
         
-        let stt = if settings.stt_model_dir.is_absolute() {
-            settings.stt_model_dir.clone()
-        } else {
-            // Priority: ~/.vox/models -> assets/ -> current_dir
-            let p_persisted = models_dir.join(&settings.stt_model_dir);
-            let p_resource = resource_dir.join(&settings.stt_model_dir);
-            if p_persisted.exists() { p_persisted } 
-            else if p_resource.exists() { p_resource }
-            else { std::env::current_dir().unwrap_or_default().join(&settings.stt_model_dir) }
-        };
+        let stt = models_dir.join(&settings.asr.model);
 
-        let vad = if settings.vad_model_path.is_absolute() {
-            settings.vad_model_path.clone()
-        } else {
-            let p_persisted = models_dir.join(&settings.vad_model_path);
-            let p_resource = resource_dir.join(&settings.vad_model_path);
-            if p_persisted.exists() { p_persisted }
-            else if p_resource.exists() { p_resource }
-            else { std::env::current_dir().unwrap_or_default().join(&settings.vad_model_path) }
-        };
+        // VAD model is fixed in constants, not user configurable
+        let vad = models_dir.join(crate::core::constants::MODEL_FILE_VAD);
 
         (stt, vad)
     };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
     let (stt_tx_internal, stt_rx_internal) = std::sync::mpsc::channel::<SttCommand>();
+    let (vad_tx_internal, vad_rx_internal) = std::sync::mpsc::channel::<crate::core::state::VadCommand>();
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
     spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone());
 
-    let mut vad = VadEngine::new(&vad_model_path).map_err(|e| e.to_string())?;
+    let threshold = state.settings.read().unwrap().vad.threshold;
+    let mut vad = VadEngine::new(&vad_model_path, threshold).map_err(|e| e.to_string())?;
     let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split(); 
     
     let playback_energy = Arc::new(AtomicU32::new(0f32.to_bits()));
     let telemetry_tx = spawn_telemetry_aggregator(app.clone(), Arc::clone(&playback_energy));
 
     let stt_tx_for_vad = stt_tx_internal.clone();
+    let vad_rx_for_vad = vad_rx_internal;
     let app_handle_vad = app.clone();
     let telemetry_tx_for_vad = telemetry_tx.clone();
     let vox_event_tx_for_vad = vox_event_tx.clone();
     std::thread::spawn(move || {
-        if let Err(e) = vad.run_sync_loop(app_handle_vad, consumer, event_tx, stt_tx_for_vad, telemetry_tx_for_vad, Some(vox_event_tx_for_vad)) {
+        if let Err(e) = vad.run_sync_loop(app_handle_vad, consumer, event_tx, stt_tx_for_vad, vad_rx_for_vad, telemetry_tx_for_vad, Some(vox_event_tx_for_vad)) {
             log::error!("[VAD] CRITICAL: Worker thread crashed: {}", e);
         }
     });
@@ -162,29 +151,11 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     audio_stream.start().map_err(|e| e.to_string())?;
 
     let (en_tts_dir, hi_tts_dir) = {
-        let settings = state.settings.lock().await;
-        let resource_dir = app.path().resource_dir().unwrap_or_default();
-        let models_dir = state.config_dir.join(crate::core::constants::MODELS_DIRNAME);
+        let settings = state.settings.read().unwrap();
+        let models_dir = paths::get().models.clone();
         
-        let en_tts = if settings.tts_model_dir.is_absolute() {
-            settings.tts_model_dir.clone()
-        } else {
-            let p_persisted = models_dir.join(&settings.tts_model_dir);
-            let p_resource = resource_dir.join(&settings.tts_model_dir);
-            if p_persisted.exists() { p_persisted }
-            else if p_resource.exists() { p_resource }
-            else { std::env::current_dir().unwrap_or_default().join(&settings.tts_model_dir) }
-        };
-
-        let hi_tts = if settings.tts_hindi_model_dir.is_absolute() {
-            settings.tts_hindi_model_dir.clone()
-        } else {
-            let p_persisted = models_dir.join(&settings.tts_hindi_model_dir);
-            let p_resource = resource_dir.join(&settings.tts_hindi_model_dir);
-            if p_persisted.exists() { p_persisted }
-            else if p_resource.exists() { p_resource }
-            else { std::env::current_dir().unwrap_or_default().join(&settings.tts_hindi_model_dir) }
-        };
+        let en_tts = models_dir.join(&settings.tts.en_model);
+        let hi_tts = models_dir.join(&settings.tts.hi_model);
 
         (en_tts, hi_tts)
     };
@@ -201,23 +172,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         }
     };
 
-    let mut vox_settings = state.settings.lock().await.clone();
-    
-    // Resolve LLM path
-    let models_dir = state.config_dir.join(crate::core::constants::MODELS_DIRNAME);
-    let resource_dir = app.path().resource_dir().unwrap_or_default();
-    if !vox_settings.llm_model_path.is_absolute() {
-        let p_persisted = models_dir.join(&vox_settings.llm_model_path);
-        let p_resource = resource_dir.join(&vox_settings.llm_model_path);
-        if p_persisted.exists() {
-            vox_settings.llm_model_path = p_persisted;
-        } else if p_resource.exists() {
-            vox_settings.llm_model_path = p_resource;
-        } else {
-            vox_settings.llm_model_path = std::env::current_dir().unwrap_or_default().join(&vox_settings.llm_model_path);
-        }
-    }
-
+    // Pipeline Orchestrator now takes Arc<RwLock<VoxSettings>>
     let orchestrator = PipelineOrchestrator::new(
         std::sync::Arc::clone(&state.pipeline.cancel_flag),
         std::sync::Arc::clone(&state.pipeline.playback_active),
@@ -226,7 +181,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         std::sync::Arc::clone(&state.pipeline.session_id),
         std::sync::Arc::clone(&state.pipeline.state),
         vox_event_tx.clone(),
-        vox_settings,
+        Arc::clone(&state.settings),
         std::sync::Arc::clone(&state.pipeline.is_engaged),
         std::sync::Arc::clone(&state.pipeline.transcript_history),
     );
@@ -251,6 +206,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     *lock = Some(VoxEngine {
         audio_stream,
         stt_tx: stt_tx_internal,
+        vad_tx: vad_tx_internal,
         telemetry_tx,
         pipeline_tx: vox_event_tx.clone(),
     });
