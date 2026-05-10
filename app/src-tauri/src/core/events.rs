@@ -22,6 +22,9 @@ pub enum VoxEvent {
     Cancelled { session_id: u32 },
     Error     { session_id: u32, message: String },
     
+    /// Pre-warm the LLM worker (load model in background on engage).
+    WarmUp,
+
     /// Gracefully shutdown the pipeline orchestrator.
     Shutdown,
 }

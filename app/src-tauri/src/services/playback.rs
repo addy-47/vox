@@ -126,6 +126,15 @@ impl PlaybackEngine {
         !self.playback_active.load(Ordering::Relaxed)
     }
 
+    /// Returns the number of samples remaining in the playback buffer.
+    pub fn buffer_len(&self) -> usize {
+        if let Ok(buf) = self.buffer.lock() {
+            buf.len()
+        } else {
+            0
+        }
+    }
+
     // ── Private ───────────────────────────────────────────────────────────────
 
     fn build_cpal_stream(

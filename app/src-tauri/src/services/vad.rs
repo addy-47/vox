@@ -32,9 +32,10 @@ impl VadEngine {
                 model: Some(model_path.to_string_lossy().into()),
                 // Official TenVAD defaults from sherpa-onnx/csrc/ten-vad-model-config.h
                 // threshold=0.5, window_size=256 (16ms at 16kHz), min_silence=0.5, min_speech=0.25
-                // Using 0.6 caused first 3s of speech to be dropped (warm-up frames below threshold)
-                threshold: 0.4,
-                min_silence_duration: 0.2, // Decreased to 200ms for faster endpointing
+                // threshold 0.4 catches more speech but at 0.2s min_silence fragments phrases.
+                // RCA: raised threshold to 0.45, min_silence to 0.5s to prevent over-segmentation.
+                threshold: 0.45,
+                min_silence_duration: 0.5, // 500ms = TenVAD default — prevents phrase fragmentation
                 min_speech_duration: 0.25,
                 window_size: 256, // 16ms at 16kHz — TenVAD default (NOT 160 which is SileroVAD)
                 max_speech_duration: 30.0,
@@ -257,9 +258,10 @@ impl VadEngine {
                         utterance_buffer.clear();
                         samples_since_partial = 0;
                         
-                        // Critical: Reset VAD state for the next utterance to prevent 
-                        // history leaking between sessions.
-                        self.detector.reset();
+                        // RCA Fix: Do NOT reset() RNN state between natural speech segments.
+                        // reset() wipes the hidden state, causing slow re-trigger on phrase continuations.
+                        // Only reset on explicit ResetStream (new session, PTT stop, etc.).
+                        // self.detector.reset(); — REMOVED
                     }
                     
                     // Maintain a sliding window of recent audio during silence

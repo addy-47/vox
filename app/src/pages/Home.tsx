@@ -17,11 +17,14 @@ export const Home: React.FC = () => {
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
   const [transcript, setTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
-  const [shouldShowWaveform, setShouldShowWaveform] = useState(true);
   const telemetryRef = useTelemetry();
 
-  const isListening = interactionState === "Listening" || interactionState === "UserSpeaking" || pttStatus === 'RECORDING';
+  const isUserSpeaking = interactionState === "UserSpeaking" || pttStatus === 'RECORDING';
   const isThinking = interactionState === "Thinking" || pttStatus === 'PROCESSING';
+
+  // Waveform only reflects user speech activity.
+  // Fades out during Thinking/Processing/AssistantSpeaking.
+  const activeSpeaking = isUserSpeaking;
 
   const handleEngage = async () => {
     try {
@@ -31,7 +34,10 @@ export const Home: React.FC = () => {
       if (newEngaged) {
         setTranscript("");
         setAssistantText("");
-        setShouldShowWaveform(true);
+      } else {
+        // Clear dialogue on session stop so glass card resets
+        setTranscript("");
+        setAssistantText("");
       }
       console.log(newEngaged ? "[Home] Pipeline engaged." : "[Home] Pipeline disengaged.");
     } catch (err) {
@@ -156,11 +162,11 @@ export const Home: React.FC = () => {
             {/* Flanking Waveform Container */}
             <div className={cn(
               "absolute inset-0 flex items-center justify-center transition-all duration-700 pointer-events-none",
-              isEngaged && shouldShowWaveform ? "opacity-100 scale-100" : "opacity-0 scale-95 blur-md"
+              activeSpeaking ? "opacity-100 scale-100" : "opacity-0 scale-95 blur-md"
             )}>
               <LiveWaveform
-                active={isEngaged && (isListening || interactionState === "AssistantSpeaking")}
-                processing={isThinking}
+                active={activeSpeaking}
+                processing={false}
                 telemetryRef={telemetryRef}
                 height={60}
                 className="w-full"
@@ -173,13 +179,15 @@ export const Home: React.FC = () => {
 
             {/* Buttons Container — Opaque Background Mask */}
             <div className="flex items-center gap-6 relative z-20 px-8 py-5 rounded-full bg-[rgb(var(--background))] border border-white/[0.03]">
-              {/* Engage / Stop Button */}
               <div className="relative">
                 <button
                   onClick={handleEngage}
                   className={cn(
                     "flex items-center justify-center w-16 h-16 rounded-full transition-all duration-500 border-2",
-                    isEngaged
+                    isEngaged && isThinking && "engage-btn-loading",
+                    isEngaged && isThinking
+                      ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.3)] text-[rgb(var(--accent))]"
+                      : isEngaged
                       ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_30px_rgba(var(--accent),0.1)] text-[rgb(var(--accent))]"
                       : "bg-[rgb(var(--accent))] border-transparent  text-[rgb(var(--accent-foreground))] hover:scale-105 shadow-[0_0_30px_rgba(var(--accent),0.5)]"
                   )}
