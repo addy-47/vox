@@ -4,7 +4,7 @@ use crate::core::constants::SYSTEM_STATS_INTERVAL;
 
 pub fn spawn_system_monitor(app: AppHandle) {
     let state: tauri::State<'_, crate::core::state::AppState> = app.state();
-    let telemetry_tx = state.telemetry_tx.clone();
+    let telemetry_tx: crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent> = state.telemetry_tx.clone();
 
     tauri::async_runtime::spawn(async move {
         tracing::info!("[Telemetry] System monitor started.");
