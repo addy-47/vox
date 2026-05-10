@@ -85,7 +85,7 @@ impl VadEngine {
         event_tx: mpsc::Sender<serde_json::Value>,
         stt_tx: std::sync::mpsc::Sender<crate::services::stt::SttCommand>,
         vad_rx: std::sync::mpsc::Receiver<VadCommand>,
-        telemetry_tx: std::sync::mpsc::Sender<crate::core::state::TelemetryData>,
+        telemetry_tx: tokio::sync::mpsc::UnboundedSender<crate::telemetry::aggregator::TelemetryEvent>,
         vox_event_tx: Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>,
     ) -> Result<()> 
     where 
@@ -176,9 +176,9 @@ impl VadEngine {
                 let energy = (gated_raw * 8.0).clamp(0.0, 1.0);
                 
                 // Send to aggregator (non-blocking)
-                let _ = telemetry_tx.send(crate::core::state::TelemetryData {
+                let _ = telemetry_tx.send(crate::telemetry::aggregator::TelemetryEvent::AudioEnergy {
                     energy,
-                    vad_prob: 0.0,
+                    vad_prob: 0.0, // VAD prob will be available after self.detector.accept_waveform
                 });
 
                 if mode == crate::core::settings::InteractionMode::PTT {

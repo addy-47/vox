@@ -117,7 +117,7 @@ impl PipelineOrchestrator {
 
     /// Initialize the LLM worker if it's not already running.
     pub fn warm_up_llm(&self) -> Result<(), String> {
-        let mut lock = self.llm_tx.lock().map_err(|e| e.to_string())?;
+        let lock = self.llm_tx.lock().map_err(|e| e.to_string())?;
         if lock.is_some() {
             return Ok(());
         }
@@ -125,13 +125,20 @@ impl PipelineOrchestrator {
         log::info!("[Pipeline] Warming up LLM worker...");
         let (tx, rx) = std::sync::mpsc::channel();
         
-        let (llm_path, ctx_size, n_threads) = {
+        let (mut llm_path, ctx_size, n_threads) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
             let path = crate::utils::paths::get().models.join(&s.llm.model);
             (path, s.llm.ctx_size, s.llm.threads)
         };
+
+        // If the path is a directory, append the standard GGUF filename
+        if llm_path.is_dir() {
+            llm_path = llm_path.join(crate::core::constants::MODEL_FILE_LLM_GGUF);
+        }
+
         let event_tx    = self.event_tx.clone();
         let llm_flag    = Arc::clone(&self.llm_generating);
+        let llm_tx_handle = Arc::clone(&self.llm_tx);
 
         std::thread::Builder::new()
             .name("vox-llm-persistent".to_string())
@@ -144,6 +151,10 @@ impl PipelineOrchestrator {
 
                 match crate::services::llm::LlmWorker::new(&resolved, ctx_size, n_threads) {
                     Ok(worker) => {
+                        // Only store the transmitter if the worker started successfully
+                        if let Ok(mut l) = llm_tx_handle.lock() {
+                            *l = Some(tx);
+                        }
                         llm_flag.store(false, Ordering::Relaxed);
                         worker.run_loop(rx, event_tx);
                     }
@@ -155,13 +166,12 @@ impl PipelineOrchestrator {
             })
             .map_err(|e| e.to_string())?;
 
-        *lock = Some(tx);
         Ok(())
     }
 
     /// Initialize the TTS worker if it's not already running.
     pub fn warm_up_tts(&self, en_tts_dir: PathBuf, hi_tts_dir: PathBuf) -> Result<(), String> {
-        let mut lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
+        let lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
         if lock.is_some() {
             return Ok(());
         }
@@ -172,6 +182,7 @@ impl PipelineOrchestrator {
         let cancel_tts = Arc::clone(&self.cancel_flag);
         let tts_flag = Arc::clone(&self.tts_generating);
         let event_tx = self.event_tx.clone();
+        let tts_tx_handle = Arc::clone(&self.tts_tx);
 
         std::thread::Builder::new()
             .name("vox-tts-persistent".to_string())
@@ -185,6 +196,12 @@ impl PipelineOrchestrator {
                 };
 
                 log::info!("[TTS Worker] Persistent loop started.");
+                
+                // Only store the transmitter if the worker started successfully
+                if let Ok(mut l) = tts_tx_handle.lock() {
+                    *l = Some(tx);
+                }
+
                 while let Ok((session_id, voice_sid, text)) = rx.recv() {
                     if cancel_tts.load(Ordering::Relaxed) {
                         continue;
@@ -199,7 +216,6 @@ impl PipelineOrchestrator {
             })
             .map_err(|e| e.to_string())?;
 
-        *lock = Some(tx);
         Ok(())
     }
 
@@ -512,12 +528,30 @@ impl PipelineOrchestrator {
                     if session_id != current_sid { continue; }
                     metrics.mark(MetricField::PlaybackFinish);
                     let report = metrics.latency_report();
-                    log::info!("[Pipeline] Turn complete. Latencies: {}", report);
+                    tracing::info!("[Pipeline] Turn complete. Latencies: {}", report);
+                    
+                    // Emit structured telemetry
+                    let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
+                    let stt_ms = match (metrics.speech_start, metrics.final_transcript) {
+                        (Some(s), Some(e)) => e.duration_since(s).as_millis() as u32,
+                        _ => 0,
+                    };
+                    let ttft_ms = match (metrics.speech_start, metrics.first_audio) {
+                        (Some(s), Some(e)) => e.duration_since(s).as_millis() as u32,
+                        _ => 0,
+                    };
+                    
+                    let _ = state.telemetry_tx.send(crate::telemetry::aggregator::TelemetryEvent::InteractionMetric {
+                        session_id: session_id.to_string(),
+                        stt_latency_ms: stt_ms,
+                        ttft_ms,
+                        tts_rtf: 0.0, // Placeholder until RTF calculation is implemented
+                    });
+
                     let owner = self.get_current_owner(&app_handle);
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                     
                     let target = {
-                        let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
                         let owner = state.owner.blocking_lock();
                         match *owner {
                             crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",

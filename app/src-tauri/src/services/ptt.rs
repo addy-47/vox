@@ -201,7 +201,7 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
 
         if let Ok(lock) = state.engine.try_lock() {
             if let Some(engine) = lock.as_ref() {
-                let _ = engine.telemetry_tx.send(crate::core::state::TelemetryData {
+                let _ = engine.telemetry_tx.send(crate::telemetry::aggregator::TelemetryEvent::AudioEnergy {
                     energy: gated_energy,
                     vad_prob: 0.0,
                 });
