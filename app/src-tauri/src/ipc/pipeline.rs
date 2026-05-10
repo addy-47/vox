@@ -31,6 +31,21 @@ pub async fn engage(state: State<'_, AppState>, app: AppHandle) -> Result<(), St
         *owner = InteractionOwner::MainWindow;
 
         if let Some(engine) = state.engine.lock().await.as_ref() {
+            // Generate conversation ID based on epoch ms
+            let conv_id = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            state.conversation_id.store(conv_id, Ordering::Relaxed);
+
+            // Persist Session Start
+            if let Some(ref tx) = state.persist_tx {
+                let _ = tx.try_send(crate::persistence::events::PersistenceEvent::SessionStarted {
+                    id: conv_id,
+                    timestamp_ms: conv_id,
+                });
+            }
+
             let _ = engine.pipeline_tx.send(VoxEvent::WarmUp);
             let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(InteractionOwner::MainWindow));
         }
@@ -40,10 +55,25 @@ pub async fn engage(state: State<'_, AppState>, app: AppHandle) -> Result<(), St
         state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
         
         if let Some(engine) = state.engine.lock().await.as_ref() {
-            let session_id = state.pipeline.session_id.load(Ordering::Relaxed);
-            let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { session_id });
+            let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
+            let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id });
             let _ = engine.stt_tx.send(SttCommand::ResetStream);
             let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(InteractionOwner::Tray));
+
+            // Persist Session End
+            let conv_id = state.conversation_id.swap(0, Ordering::Relaxed);
+            if conv_id != 0 {
+                if let Some(ref tx) = state.persist_tx {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let _ = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                        id: conv_id,
+                        timestamp_ms: now,
+                    });
+                }
+            }
         }
 
         let mut owner = state.owner.lock().await;
@@ -176,12 +206,14 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         std::sync::Arc::clone(&state.pipeline.playback_active),
         std::sync::Arc::clone(&state.pipeline.llm_generating),
         std::sync::Arc::clone(&state.pipeline.tts_generating),
-        std::sync::Arc::clone(&state.pipeline.session_id),
+        std::sync::Arc::clone(&state.pipeline.turn_id),
         std::sync::Arc::clone(&state.pipeline.state),
         vox_event_tx.clone(),
         Arc::clone(&state.settings),
         std::sync::Arc::clone(&state.pipeline.is_engaged),
         std::sync::Arc::clone(&state.pipeline.transcript_history),
+        std::sync::Arc::clone(&state.conversation_id),
+        state.persist_tx.clone(),
     );
 
     let playback_for_orch = std::sync::Arc::clone(&playback_engine);

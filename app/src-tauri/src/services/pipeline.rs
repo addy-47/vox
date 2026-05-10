@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use crossbeam_channel::Sender;
 use tauri::{Emitter, Manager};
 
 use crate::core::events::VoxEvent;
@@ -74,12 +75,14 @@ pub struct PipelineOrchestrator {
     _playback_active:  Arc<AtomicBool>,
     llm_generating:   Arc<AtomicBool>,
     tts_generating:   Arc<AtomicBool>,
-    session_id:       Arc<AtomicU32>,
+    turn_id:          Arc<AtomicU32>,
     state:            Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
     event_tx:         std::sync::mpsc::Sender<VoxEvent>,
     settings:         Arc<RwLock<VoxSettings>>,
     is_engaged:       Arc<AtomicBool>,
     pub transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+    pub conversation_id:    Arc<std::sync::atomic::AtomicU64>,
+    pub persist_tx:         Option<Sender<crate::persistence::events::PersistenceEvent>>,
     
     // Lifecycle management
     llm_tx:           Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
@@ -92,24 +95,28 @@ impl PipelineOrchestrator {
         playback_active: Arc<AtomicBool>,
         llm_generating:  Arc<AtomicBool>,
         tts_generating:  Arc<AtomicBool>,
-        session_id:      Arc<AtomicU32>,
+        turn_id:         Arc<AtomicU32>,
         state:           Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
         event_tx:        std::sync::mpsc::Sender<VoxEvent>,
         settings:        Arc<RwLock<VoxSettings>>,
         is_engaged:      Arc<AtomicBool>,
         transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+        conversation_id: Arc<std::sync::atomic::AtomicU64>,
+        persist_tx:      Option<Sender<crate::persistence::events::PersistenceEvent>>,
     ) -> Self {
         Self {
             cancel_flag,
             _playback_active: playback_active,
             llm_generating,
             tts_generating,
-            session_id,
+            turn_id,
             state,
             event_tx,
             settings,
             is_engaged,
             transcript_history,
+            conversation_id,
+            persist_tx,
             llm_tx: Arc::new(std::sync::Mutex::new(None)),
             tts_tx: Arc::new(std::sync::Mutex::new(None)),
         }
@@ -202,13 +209,13 @@ impl PipelineOrchestrator {
                     *l = Some(tx);
                 }
 
-                while let Ok((session_id, voice_sid, text)) = rx.recv() {
+                while let Ok((turn_id, voice_sid, text)) = rx.recv() {
                     if cancel_tts.load(Ordering::Relaxed) {
                         continue;
                     }
                     tts_flag.store(true, Ordering::Relaxed);
-                    if let Err(e) = engine.synthesize_chunk(&text, voice_sid, session_id, cancel_tts.clone(), event_tx.clone()) {
-                        log::error!("[TTS] Synthesis error (session {}): {}", session_id, e);
+                    if let Err(e) = engine.synthesize_chunk(&text, voice_sid, turn_id, cancel_tts.clone(), event_tx.clone()) {
+                        log::error!("[TTS] Synthesis error (turn {}): {}", turn_id, e);
                     }
                     tts_flag.store(false, Ordering::Relaxed);
                 }
@@ -258,18 +265,19 @@ impl PipelineOrchestrator {
     }
 
     /// Handle a `TranscriptFinal` event: ensure LLM is warm and send generation command.
-    pub fn on_transcript_final(&self, text: String, owner: InteractionOwner, _app_handle: tauri::AppHandle) {
+    pub fn on_transcript_final(&self, text: String, owner: InteractionOwner, _app_handle: tauri::AppHandle) -> u32 {
         // Get the current session_id before bumping so we can cancel it
-        let old_session = self.session_id.load(Ordering::Relaxed);
+        // Get the current turn_id before bumping so we can cancel it
+        let old_turn = self.turn_id.load(Ordering::Relaxed);
 
         // Cancel any existing turn — emit Cancelled event so the event loop
         // resets awaiting_playback_finish and drains any stale state.
         self.cancel_flag.store(true, Ordering::Relaxed);
-        let _ = self.event_tx.send(VoxEvent::Cancelled { session_id: old_session });
+        let _ = self.event_tx.send(VoxEvent::Cancelled { turn_id: old_turn });
 
-        // Bump session ID
-        let new_session = self.session_id.fetch_add(1, Ordering::Relaxed) + 1;
-        log::info!("[Pipeline] New session {} (owner: {:?}) — transcript: {:?}", new_session, owner, text);
+        // Bump turn ID
+        let new_turn = self.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
+        log::info!("[Pipeline] New turn {} (owner: {:?}) — transcript: {:?}", new_turn, owner, text);
 
         // Store in ephemeral in-memory history if owner is Tray (skipping empty results)
         if owner == InteractionOwner::Tray && !text.trim().is_empty() {
@@ -294,21 +302,21 @@ impl PipelineOrchestrator {
             log::info!("[Pipeline] System is dormant. Skipping LLM/TTS for Tray interaction.");
             // Reset UI state to idle since we won't be "Thinking" or "Speaking"
             self.update_interaction_state(crate::core::state::InteractionState::Idle, owner, &_app_handle);
-            return;
+            return new_turn;
         }
 
         // RCA Fix: Empty transcript handling
         if text.trim().is_empty() {
             log::info!("[Pipeline] Empty transcript received. Resetting to Listening.");
             self.update_interaction_state(crate::core::state::InteractionState::Listening, owner, &_app_handle);
-            return;
+            return new_turn;
         }
 
         // ── Active Pipeline ──────────────────────────────────────────────────
         // Ensure LLM is warm
         if let Err(e) = self.warm_up_llm() {
             log::error!("[Pipeline] Failed to warm up LLM: {}", e);
-            return;
+            return new_turn;
         }
 
         let lock = self.llm_tx.lock().unwrap();
@@ -320,7 +328,7 @@ impl PipelineOrchestrator {
 
             let cmd = crate::services::llm::LlmCommand::Generate {
                 text,
-                session_id: new_session,
+                turn_id: new_turn,
                 cancel_flag: Arc::clone(&self.cancel_flag),
             };
             
@@ -328,6 +336,7 @@ impl PipelineOrchestrator {
                 log::error!("[Pipeline] Failed to send generate command to LLM: {}", e);
             }
         }
+        new_turn
     }
 
     /// Process the internal event bus in a blocking loop.
@@ -341,7 +350,7 @@ impl PipelineOrchestrator {
     ) {
         // Directive 2: Sub-sentence token accumulator ───────────────────────
         let mut token_buf    = String::new();
-        let mut current_sid  = 0u32;
+        let mut current_tid  = 0u32;
         let mut voice_sid    = 0i32; // Default to English Female
         let mut thinking     = false;
         let mut metrics      = PipelineMetrics::new();
@@ -351,6 +360,12 @@ impl PipelineOrchestrator {
         };
         // True after LlmFinished: we're waiting for TTS+Playback to drain
         let mut awaiting_playback_finish = false;
+
+        // Turn persistence buffers
+        let mut turn_user_text = String::new();
+        let mut turn_assistant_text = String::new();
+        let mut turn_stt_ms = 0u32;
+        let mut turn_ttft_ms = 0u32;
 
         // Use recv_timeout so we can poll playback state to detect when audio drains.
         // 150ms is frequent enough for responsive state transitions without CPU waste.
@@ -370,7 +385,22 @@ impl PipelineOrchestrator {
                         log::info!("[Pipeline] Turn complete (polled). Latencies: {}", report);
                         let owner = self.get_current_owner(&app_handle);
                         self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
+
+                        // Persist Turn
+                        if let Some(ref tx) = self.persist_tx {
+                            let _ = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
+                                conversation_id: self.conversation_id.load(Ordering::Relaxed),
+                                turn_id: current_tid,
+                                user_text: turn_user_text.clone(),
+                                assistant_text: turn_assistant_text.clone(),
+                                stt_latency_ms: turn_stt_ms,
+                                ttft_ms: turn_ttft_ms,
+                            });
+                        }
+
                         metrics.reset();
+                        turn_user_text.clear();
+                        turn_assistant_text.clear();
                     }
                     continue;
                 }
@@ -395,11 +425,11 @@ impl PipelineOrchestrator {
                     log::info!("[Pipeline] WarmUp: workers started in background.");
                 }
                 // ── Speech start: barge-in cancellation ───────────
-                VoxEvent::SpeechStart { session_id, owner } => {
+                VoxEvent::SpeechStart { turn_id, owner } => {
                     let buffer_len = playback_engine.buffer_len();
                     // Only log as "Barge-in" if there is significant audio left (>50ms at 48kHz)
                     if buffer_len > 2400 {
-                        log::info!("[Pipeline] Barge-in detected — cancelling turn {} ({} samples left)", session_id, buffer_len);
+                        log::info!("[Pipeline] Barge-in detected — cancelling turn {} ({} samples left)", turn_id, buffer_len);
                         self.cancel_flag.store(true, Ordering::Relaxed);
                         playback_engine.cancel();
                         awaiting_playback_finish = false;
@@ -415,27 +445,29 @@ impl PipelineOrchestrator {
                 }
 
                 // ── Transcript partial: update HUD UI ─────────────────────
-                VoxEvent::TranscriptPartial { session_id, owner, text } => {
-                    if session_id < current_sid { continue; }
+                VoxEvent::TranscriptPartial { turn_id, owner, text } => {
+                    if turn_id < current_tid { continue; }
                     let target = match owner {
                         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                         crate::core::state::InteractionOwner::Tray => "tray",
                     };
                     let _ = app_handle.emit_to(target, "transcript_partial", serde_json::json!({
                         "text": text,
-                        "session_id": session_id,
+                        "turn_id": turn_id,
                         "owner": owner
                     }));
                 }
 
                 // ── Transcript final: hand off to LLM ────────────────────
-                VoxEvent::TranscriptFinal { session_id, owner, text } => {
-                    if session_id < current_sid { continue; }
-                    current_sid = session_id;
+                VoxEvent::TranscriptFinal { turn_id, owner, text } => {
+                    if turn_id < current_tid { continue; }
                     token_buf.clear();
                     voice_sid = 0;   
                     thinking = false;
                     metrics.mark(MetricField::FinalTranscript);
+                    
+                    turn_user_text = text.clone();
+                    turn_assistant_text.clear();
                     
                     self.update_interaction_state(crate::core::state::InteractionState::Thinking, owner, &app_handle);
 
@@ -445,16 +477,16 @@ impl PipelineOrchestrator {
                     };
                     let _ = app_handle.emit_to(target, "transcript_final", serde_json::json!({
                         "text": text.clone(),
-                        "session_id": session_id,
+                        "turn_id": turn_id,
                         "owner": owner
                     }));
 
-                    self.on_transcript_final(text, owner, app_handle.clone());
+                    current_tid = self.on_transcript_final(text, owner, app_handle.clone());
                 }
 
                 // ── LLM token: accumulate + sub-sentence chunking ─────────
-                VoxEvent::LlmToken { session_id, token } => {
-                    if session_id != current_sid { continue; }
+                VoxEvent::LlmToken { turn_id, token } => {
+                    if turn_id != current_tid { continue; }
                     
                     if token.contains("<|channel>thought") {
                         thinking = true;
@@ -467,6 +499,7 @@ impl PipelineOrchestrator {
                     if thinking { continue; }
 
                     token_buf.push_str(&token);
+                    turn_assistant_text.push_str(&token);
                     let word_count = count_words(&token_buf);
 
                     if word_count >= 6 || should_flush(&token_buf, word_count) {
@@ -476,7 +509,7 @@ impl PipelineOrchestrator {
                             voice_sid = if is_devanagari(&chunk) { 1 } else { 0 };
                             if let Ok(lock) = self.tts_tx.lock() {
                                 if let Some(tx) = lock.as_ref() {
-                                    let _ = tx.send((session_id, voice_sid, chunk));
+                                    let _ = tx.send((turn_id, voice_sid, chunk));
                                 }
                             }
                             token_buf.clear();
@@ -494,14 +527,14 @@ impl PipelineOrchestrator {
                      let _ = app_handle.emit_to(target, "llm_token", &token);
                  }
 
-                VoxEvent::LlmFinished { session_id } => {
-                    if session_id != current_sid { continue; }
+                VoxEvent::LlmFinished { turn_id } => {
+                    if turn_id != current_tid { continue; }
                     thinking = false;
                     let remainder = token_buf.trim().to_string();
                     if !remainder.is_empty() {
                         if let Ok(lock) = self.tts_tx.lock() {
                             if let Some(tx) = lock.as_ref() {
-                                let _ = tx.send((session_id, voice_sid, remainder));
+                                let _ = tx.send((turn_id, voice_sid, remainder));
                             }
                         }
                     }
@@ -511,8 +544,8 @@ impl PipelineOrchestrator {
                     awaiting_playback_finish = true;
                 }
 
-                VoxEvent::TtsChunk { session_id, samples } => {
-                    if session_id != current_sid { continue; }
+                VoxEvent::TtsChunk { turn_id, samples } => {
+                    if turn_id != current_tid { continue; }
                     if metrics.first_audio.is_none() {
                         metrics.mark(MetricField::FirstAudio);
                     }
@@ -524,8 +557,8 @@ impl PipelineOrchestrator {
                     }
                 }
 
-                VoxEvent::PlaybackFinished { session_id } => {
-                    if session_id != current_sid { continue; }
+                VoxEvent::PlaybackFinished { turn_id } => {
+                    if turn_id != current_tid { continue; }
                     metrics.mark(MetricField::PlaybackFinish);
                     let report = metrics.latency_report();
                     tracing::info!("[Pipeline] Turn complete. Latencies: {}", report);
@@ -542,11 +575,14 @@ impl PipelineOrchestrator {
                     };
                     
                     let _ = state.telemetry_tx.send(crate::telemetry::aggregator::TelemetryEvent::InteractionMetric {
-                        session_id: session_id.to_string(),
+                        session_id: turn_id.to_string(),
                         stt_latency_ms: stt_ms,
                         ttft_ms,
                         tts_rtf: 0.0, // Placeholder until RTF calculation is implemented
                     });
+
+                    turn_stt_ms = stt_ms;
+                    turn_ttft_ms = ttft_ms;
 
                     let owner = self.get_current_owner(&app_handle);
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
@@ -559,11 +595,26 @@ impl PipelineOrchestrator {
                         }
                     };
                     let _ = app_handle.emit_to(target, "playback_finished", &report);
+
+                    // Persist Turn
+                    if let Some(ref tx) = self.persist_tx {
+                        let _ = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
+                            conversation_id: self.conversation_id.load(Ordering::Relaxed),
+                            turn_id: turn_id,
+                            user_text: turn_user_text.clone(),
+                            assistant_text: turn_assistant_text.clone(),
+                            stt_latency_ms: turn_stt_ms,
+                            ttft_ms: turn_ttft_ms,
+                        });
+                    }
+
                     metrics.reset();
+                    turn_user_text.clear();
+                    turn_assistant_text.clear();
                 }
 
-                VoxEvent::Cancelled { session_id } => {
-                    log::info!("[Pipeline] Cancelled (session {})", session_id);
+                VoxEvent::Cancelled { turn_id } => {
+                    log::info!("[Pipeline] Cancelled (turn {})", turn_id);
                     // Only cancel playback if it's actually active — avoid phantom
                     // "Playback Cancelled" logs when there's nothing playing.
                     if !playback_engine.is_idle() {
@@ -574,12 +625,21 @@ impl PipelineOrchestrator {
                     awaiting_playback_finish = false;
                     // Reset cancel flag so new sessions can proceed
                     self.cancel_flag.store(false, Ordering::Relaxed);
+
+                    // Persist Cancellation
+                    if let Some(ref tx) = self.persist_tx {
+                        let _ = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCancelled {
+                            conversation_id: self.conversation_id.load(Ordering::Relaxed),
+                            turn_id,
+                        });
+                    }
+
                     let owner = self.get_current_owner(&app_handle);
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                 }
 
-                VoxEvent::Error { session_id, message } => {
-                    log::error!("[Pipeline] Error (session {}): {}", session_id, message);
+                VoxEvent::Error { turn_id, message } => {
+                    log::error!("[Pipeline] Error (turn {}): {}", turn_id, message);
                     let target = {
                         let state: tauri::State<'_, crate::core::state::AppState> = app_handle.state();
                         let owner = state.owner.blocking_lock();

@@ -4,6 +4,7 @@ pub mod tray;
 pub mod ipc;
 pub mod telemetry;
 pub mod utils;
+pub mod persistence;
 
 use crate::core::state::AppState;
 use crate::ipc::pipeline::{check_engine_status, launch_engine, engage};
@@ -11,7 +12,8 @@ use crate::ipc::tray::{
     hide_tray_window, sync_hud_visibility, set_hud_ignore_cursor, 
     update_interaction_mode, show_main_window, toggle_hud_visibility
 };
-use crate::ipc::history::get_transcript_history;
+use crate::ipc::history::{get_transcript_history, get_sessions, get_turns, delete_session};
+use crate::ipc::test::debug_harden_test;
 use crate::ipc::settings::{get_settings, update_theme, update_setting, request_boot_state};
 use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
 use crate::tray::{setup_linux_virtual_layer, setup_tray_window, position_tray_window};
@@ -43,8 +45,14 @@ pub fn run() {
             let (telemetry_worker, telemetry_tx) = crate::telemetry::aggregator::TelemetryAggregator::new();
             telemetry_worker.start();
 
+            // ── 0.7 Persistence Worker ─────────────────────────────────────────────
+            let persist_tx = crate::persistence::worker::spawn_persistence_worker(
+                crate::utils::paths::get().db.clone()
+            );
+
             // ── 1. App State ────────────────────────────────────────────────────────
-            let app_state = AppState::new(app.handle(), Some(log_guard), telemetry_tx);
+            let mut app_state = AppState::new(app.handle(), Some(log_guard), telemetry_tx);
+            app_state.persist_tx = Some(persist_tx);
             app.manage(app_state);
 
             // ── 1. System Tray ───────────────────────────────────────────────────────
@@ -114,6 +122,30 @@ pub fn run() {
                 }
             });
 
+            // ── 4. E2E Hardening Test (CLI Triggered) ────────────────────────
+            let args: Vec<String> = std::env::args().collect();
+            if let Some(wav_path) = args.iter().position(|a| a == "--test-harden").and_then(|i| args.get(i + 1)) {
+                let wav_path = wav_path.clone();
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    log::info!("[Harden] CLI Test Triggered. Waiting for engine...");
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    
+                    match debug_harden_test(handle.clone(), wav_path).await {
+                        Ok(res) => {
+                            println!("HARDEN_TEST_SUCCESS: {}", res);
+                            log::info!("[Harden] Test successful: {}", res);
+                        }
+                        Err(e) => {
+                            println!("HARDEN_TEST_FAILURE: {}", e);
+                            log::error!("[Harden] Test failed: {}", e);
+                        }
+                    }
+                    // Exit the app after test
+                    std::process::exit(0);
+                });
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -151,6 +183,10 @@ pub fn run() {
             ptt_stop,
             ptt_cancel,
             get_transcript_history,
+            get_sessions,
+            get_turns,
+            delete_session,
+            debug_harden_test,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -23,11 +23,11 @@ pub const SAMPLE_RATE: i32 = 16000;
 /// Commands sent from the VAD/Router thread to the STT worker thread.
 pub enum SttCommand {
     /// Partial audio buffer sent during an active speech segment for real-time feedback.
-    /// Format: (Session ID, Owner, Samples)
+    /// Format: (Turn ID, Owner, Samples)
     Partial(u32, crate::core::state::InteractionOwner, Vec<f32>),
     
     /// Complete audio buffer sent when VAD detects the end of a speech segment.
-    /// Format: (Session ID, Owner, Samples)
+    /// Format: (Turn ID, Owner, Samples)
     Final(u32, crate::core::state::InteractionOwner, Vec<f32>),
 
     /// Resets the internal acoustic and contextual states.
@@ -158,7 +158,7 @@ pub fn spawn_stt_worker(
                     log::info!("[STT] Shutdown signal received. Exiting worker thread.");
                     break;
                 }
-                SttCommand::Partial(sid, owner, utterance) => {
+                SttCommand::Partial(tid, owner, utterance) => {
                     // UX Throttling: Only run inference if STT_THROTTLE_MS passed to save CPU
                     if last_emit_time.elapsed() >= Duration::from_millis(STT_THROTTLE_MS) {
                         match engine.transcribe(&utterance) {
@@ -167,7 +167,7 @@ pub fn spawn_stt_worker(
                                 if !text_str.is_empty() && text_str != last_transcript {
                                     if let Some(ref pipeline_tx) = pipeline_event_tx {
                                         let _ = pipeline_tx.send(VoxEvent::TranscriptPartial {
-                                            session_id: sid,
+                                            turn_id: tid,
                                             owner,
                                             text: text_str.clone(),
                                         });
@@ -181,7 +181,7 @@ pub fn spawn_stt_worker(
                         }
                     }
                 }
-                SttCommand::Final(sid, owner, utterance) => {
+                SttCommand::Final(tid, owner, utterance) => {
                     match engine.transcribe(&utterance) {
                         Ok(text) => {
                             let text_str: String = text;
@@ -190,7 +190,7 @@ pub fn spawn_stt_worker(
                             // the UI resets its state/clears old text.
                             if let Some(ref pipeline_tx) = pipeline_event_tx {
                                 let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
-                                    session_id: sid,
+                                    turn_id: tid,
                                     owner,
                                     text: text_str,
                                 });

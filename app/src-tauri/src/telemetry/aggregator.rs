@@ -1,4 +1,4 @@
-use tokio::sync::mpsc;
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use serde::Serialize;
 
 /// Structured telemetry events emitted by various engine subsystems.
@@ -26,39 +26,48 @@ pub enum TelemetryEvent {
 
 /// A dedicated background worker that aggregates telemetry events.
 ///
+/// Uses crossbeam_channel for lock-free, zero-async-overhead operation.
+/// Critical: the sender is cloned into VAD and audio hot-path threads.
+///
 /// In Phase 6.2: Events are logged to the tracing file.
 /// In Phase 6.3: Events will be persisted to SQLite.
 pub struct TelemetryAggregator {
-    rx: mpsc::UnboundedReceiver<TelemetryEvent>,
+    rx: Receiver<TelemetryEvent>,
 }
 
 impl TelemetryAggregator {
-    pub fn new() -> (Self, mpsc::UnboundedSender<TelemetryEvent>) {
-        let (tx, rx) = mpsc::unbounded_channel();
+    pub fn new() -> (Self, Sender<TelemetryEvent>) {
+        let (tx, rx) = unbounded();
         (Self { rx }, tx)
     }
 
-    /// Spawns the aggregator loop on a dedicated Tokio task.
-    pub fn start(mut self) {
-        tauri::async_runtime::spawn(async move {
-            tracing::info!("[Telemetry] Aggregator worker started.");
-            
-            while let Some(event) = self.rx.recv().await {
-                match &event {
-                    TelemetryEvent::InteractionMetric { session_id, .. } => {
-                        tracing::info!(target: "telemetry", session_id = %session_id, "Interaction metrics: {:?}", event);
-                    }
-                    TelemetryEvent::SystemHealth { .. } => {
-                        tracing::info!(target: "telemetry", "System Health: {:?}", event);
-                    }
-                    TelemetryEvent::AudioEnergy { .. } => {
-                        // High-frequency debug only
-                        tracing::debug!(target: "telemetry", "Audio Energy: {:?}", event);
+    /// Spawns the aggregator loop on a dedicated OS thread.
+    ///
+    /// Using a standard OS thread with a blocking recv() is more efficient than
+    /// an async task for this workload, as it consumes 0% CPU while idle and
+    /// eliminates the overhead of a sleep/poll loop.
+    pub fn start(self) {
+        std::thread::Builder::new()
+            .name("vox-telemetry".to_string())
+            .spawn(move || {
+                tracing::info!("[Telemetry] Aggregator worker started.");
+
+                while let Ok(event) = self.rx.recv() {
+                    match &event {
+                        TelemetryEvent::InteractionMetric { session_id, .. } => {
+                            tracing::info!(target: "telemetry", session_id = %session_id, "Interaction metrics: {:?}", event);
+                        }
+                        TelemetryEvent::SystemHealth { .. } => {
+                            tracing::info!(target: "telemetry", "System Health: {:?}", event);
+                        }
+                        TelemetryEvent::AudioEnergy { .. } => {
+                            // High-frequency debug only
+                            tracing::debug!(target: "telemetry", "Audio Energy: {:?}", event);
+                        }
                     }
                 }
-            }
-            
-            tracing::info!("[Telemetry] Aggregator worker shutting down.");
-        });
+                tracing::info!("[Telemetry] Channel disconnected. Aggregator exiting.");
+            })
+            .expect("[Telemetry] Failed to spawn aggregator thread");
     }
 }
