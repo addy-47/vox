@@ -36,8 +36,15 @@ pub fn run() {
             crate::utils::paths::init(app.handle());
             crate::utils::paths::ensure_dirs().ok();
 
+            // ── 0.5 Logging (must be second, relies on paths) ───────────────────────
+            let log_guard = crate::utils::logging::init(crate::utils::paths::get().logs.clone());
+
+            // ── 0.6 Telemetry Aggregator ───────────────────────────────────────────
+            let (telemetry_worker, telemetry_tx) = crate::telemetry::aggregator::TelemetryAggregator::new();
+            telemetry_worker.start();
+
             // ── 1. App State ────────────────────────────────────────────────────────
-            let app_state = AppState::new(app.handle());
+            let app_state = AppState::new(app.handle(), Some(log_guard), telemetry_tx);
             app.manage(app_state);
 
             // ── 1. System Tray ───────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-use vox_ui_lib::core::settings::VoxSettings;
+use vox_lib::core::settings::VoxSettings;
 use std::path::PathBuf;
 
 #[test]

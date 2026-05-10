@@ -57,7 +57,7 @@ pub struct VoxEngine {
     pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
     /// Channel to send hot-updates to the VAD worker without locking AppState.
     pub vad_tx: std::sync::mpsc::Sender<VadCommand>,
-    pub telemetry_tx: std::sync::mpsc::Sender<TelemetryData>,
+    pub telemetry_tx: tokio::sync::mpsc::UnboundedSender<crate::telemetry::aggregator::TelemetryEvent>,
     pub pipeline_tx: std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
 }
 
@@ -155,10 +155,15 @@ pub struct AppState {
     /// Debounce handle for settings disk writes.
     /// Cancelled and respawned on each `update_setting` IPC call.
     pub save_debounce: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+
+    /// Async log writer guard. Must be held to ensure logs are flushed.
+    pub _log_guard:    Option<tracing_appender::non_blocking::WorkerGuard>,
+    /// Structured telemetry bus.
+    pub telemetry_tx:  tokio::sync::mpsc::UnboundedSender<crate::telemetry::aggregator::TelemetryEvent>,
 }
 
 impl AppState {
-    pub fn new(_app: &AppHandle) -> Self {
+    pub fn new(_app: &AppHandle, log_guard: Option<tracing_appender::non_blocking::WorkerGuard>, telemetry_tx: tokio::sync::mpsc::UnboundedSender<crate::telemetry::aggregator::TelemetryEvent>) -> Self {
         // paths::init() must have been called before AppState::new()
         let settings = VoxSettings::load();
 
@@ -177,6 +182,8 @@ impl AppState {
             },
             pipeline:      PipelineAtomics::new(),
             save_debounce: Mutex::new(None),
+            _log_guard:    log_guard,
+            telemetry_tx,
         }
     }
 }

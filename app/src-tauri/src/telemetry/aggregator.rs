@@ -1,74 +1,64 @@
-use tauri::{AppHandle, Manager, Emitter};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use crate::core::state::{TelemetryData, AppState, InteractionOwner};
-use crate::core::constants::TELEMETRY_INTERVAL;
+use tokio::sync::mpsc;
+use serde::Serialize;
 
+/// Structured telemetry events emitted by various engine subsystems.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "data")]
+pub enum TelemetryEvent {
+    /// Performance metrics for a completed interaction turn
+    InteractionMetric {
+        session_id: String,
+        stt_latency_ms: u32,
+        ttft_ms: u32,
+        tts_rtf: f32,
+    },
+    /// Periodic system resource utilization
+    SystemHealth {
+        cpu_usage: f32,
+        ram_mb: u32,
+    },
+    /// Real-time audio signal characteristics (VAD hot-path)
+    AudioEnergy {
+        energy: f32,
+        vad_prob: f32,
+    },
+}
+
+/// A dedicated background worker that aggregates telemetry events.
+///
+/// In Phase 6.2: Events are logged to the tracing file.
+/// In Phase 6.3: Events will be persisted to SQLite.
 pub struct TelemetryAggregator {
-    app: AppHandle,
-    rx: std::sync::mpsc::Receiver<TelemetryData>,
-    playback_energy: Arc<AtomicU32>,
+    rx: mpsc::UnboundedReceiver<TelemetryEvent>,
 }
 
 impl TelemetryAggregator {
-    pub fn new(app: AppHandle, rx: std::sync::mpsc::Receiver<TelemetryData>, playback_energy: Arc<AtomicU32>) -> Self {
-        Self { app, rx, playback_energy }
+    pub fn new() -> (Self, mpsc::UnboundedSender<TelemetryEvent>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (Self { rx }, tx)
     }
 
-    pub fn run(self) {
-        let app = self.app;
-        let rx = self.rx;
-        let playback_energy = self.playback_energy;
-
-        std::thread::spawn(move || {
-            log::info!("[Telemetry] Aggregator thread started.");
+    /// Spawns the aggregator loop on a dedicated Tokio task.
+    pub fn start(mut self) {
+        tauri::async_runtime::spawn(async move {
+            tracing::info!("[Telemetry] Aggregator worker started.");
             
-            loop {
-                let mut latest = None;
-                // 1. Drain the VAD channel to get the latest mic energy
-                while let Ok(data) = rx.try_recv() {
-                    latest = Some(data);
-                }
-
-                // 2. Poll the playback atomic for AI energy
-                let p_bits = playback_energy.load(Ordering::Relaxed);
-                let p_energy = f32::from_bits(p_bits);
-                
-                if p_energy > 0.001 {
-                    latest = Some(TelemetryData {
-                        energy: p_energy,
-                        vad_prob: 0.0,
-                    });
-                }
-                
-                if let Some(data) = latest {
-                    let state: tauri::State<'_, AppState> = app.state();
-                    let is_engaged = state.pipeline.is_engaged.load(Ordering::Relaxed);
-                    let owner = state.owner.blocking_lock();
-                    
-                    // Telemetry routing:
-                    if is_engaged {
-                        let _ = app.emit_to("main", "telemetry", data.clone());
+            while let Some(event) = self.rx.recv().await {
+                match &event {
+                    TelemetryEvent::InteractionMetric { session_id, .. } => {
+                        tracing::info!(target: "telemetry", session_id = %session_id, "Interaction metrics: {:?}", event);
                     }
-                    
-                    let target_tray = match *owner {
-                        InteractionOwner::Tray | InteractionOwner::Ptt => true,
-                        _ => false,
-                    };
-                    
-                    if target_tray {
-                        let _ = app.emit_to("tray", "telemetry", data);
+                    TelemetryEvent::SystemHealth { .. } => {
+                        tracing::info!(target: "telemetry", "System Health: {:?}", event);
+                    }
+                    TelemetryEvent::AudioEnergy { .. } => {
+                        // High-frequency debug only
+                        tracing::debug!(target: "telemetry", "Audio Energy: {:?}", event);
                     }
                 }
-                std::thread::sleep(TELEMETRY_INTERVAL);
             }
+            
+            tracing::info!("[Telemetry] Aggregator worker shutting down.");
         });
     }
-}
-
-pub fn spawn_telemetry_aggregator(app: AppHandle, playback_energy: Arc<AtomicU32>) -> std::sync::mpsc::Sender<TelemetryData> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let aggregator = TelemetryAggregator::new(app, rx, playback_energy);
-    aggregator.run();
-    tx
 }

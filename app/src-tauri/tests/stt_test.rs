@@ -3,7 +3,7 @@
 /// Run with: cargo test --test stt_test -- --nocapture
 
 use std::path::PathBuf;
-use vox_ui_lib::services::stt::SttEngine;
+use vox_lib::services::stt::SttEngine;
 
 /// Resolve path to model dir relative to the cargo manifest.
 fn model_dir() -> PathBuf {
