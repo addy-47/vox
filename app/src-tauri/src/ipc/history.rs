@@ -4,7 +4,7 @@ use serde::Serialize;
 
 /// Retrieves the current in-memory transcript history (tray ephemeral buffer).
 #[tauri::command]
-pub async fn get_transcript_history(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+pub async fn get_transcript_history(state: State<'_, std::sync::Arc<AppState>>) -> Result<Vec<String>, String> {
     let history = state.pipeline.transcript_history.lock().unwrap();
     Ok(history.iter().cloned().collect())
 }
@@ -33,7 +33,7 @@ pub struct TurnRow {
 
 /// Returns all sessions ordered by most recent first.
 #[tauri::command]
-pub async fn get_sessions(_state: State<'_, AppState>) -> Result<Vec<SessionRow>, String> {
+pub async fn get_sessions(_state: State<'_, std::sync::Arc<AppState>>) -> Result<Vec<SessionRow>, String> {
     let db_path = crate::utils::paths::get().db.clone();
 
     tokio::task::spawn_blocking(move || {
@@ -61,7 +61,7 @@ pub async fn get_sessions(_state: State<'_, AppState>) -> Result<Vec<SessionRow>
 
 /// Returns all turns for a given session, oldest first.
 #[tauri::command]
-pub async fn get_turns(session_id: i64, state: State<'_, AppState>) -> Result<Vec<TurnRow>, String> {
+pub async fn get_turns(session_id: i64, state: State<'_, std::sync::Arc<AppState>>) -> Result<Vec<TurnRow>, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let _ = state; // holds the managed state lifetime
 
@@ -95,7 +95,7 @@ pub async fn get_turns(session_id: i64, state: State<'_, AppState>) -> Result<Ve
 
 /// Deletes a session and all its turns (CASCADE).
 #[tauri::command]
-pub async fn delete_session(id: i64, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn delete_session(id: i64, state: State<'_, std::sync::Arc<AppState>>) -> Result<(), String> {
     let db_path = crate::utils::paths::get().db.clone();
     let _ = state; // holds the managed state lifetime
 

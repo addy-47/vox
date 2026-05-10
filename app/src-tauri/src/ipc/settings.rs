@@ -35,7 +35,7 @@ pub struct SettingUpdateResult {
 /// after this resolves successfully.
 #[tauri::command]
 pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let settings = state.settings.read().map_err(|e| e.to_string())?.clone();
     let models_dir_exists = paths::get().models.exists();
     let settings_path = paths::get().settings.to_string_lossy().to_string();
@@ -51,7 +51,7 @@ pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
 
 /// Returns the current settings snapshot.
 #[tauri::command]
-pub async fn get_settings(state: State<'_, AppState>) -> Result<VoxSettings, String> {
+pub async fn get_settings(state: State<'_, std::sync::Arc<AppState>>) -> Result<VoxSettings, String> {
     state.settings.read().map_err(|e| e.to_string()).map(|s| s.clone())
 }
 
@@ -70,7 +70,7 @@ pub async fn update_setting(
     value: serde_json::Value,
     app: AppHandle,
 ) -> Result<SettingUpdateResult, String> {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let policy = reload_policy_for(&domain, &key);
 
     let applied = {
@@ -112,7 +112,7 @@ pub async fn update_setting(
 /// Convenience command for theme changes (kept for backward compat with existing frontend).
 #[tauri::command]
 pub async fn update_theme(app: AppHandle, theme: String) -> Result<(), String> {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
         if settings.ui.theme == theme {
@@ -204,7 +204,7 @@ fn apply_setting_mutation(
 /// Dispatches a hot-update command to the appropriate worker thread.
 /// Called only for `WorkerCommand` policy settings.
 async fn dispatch_worker_command(app: &AppHandle, domain: &str, key: &str, value: &serde_json::Value) {
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let engine_lock = state.engine.lock().await;
 
     if let Some(engine) = engine_lock.as_ref() {
@@ -232,7 +232,7 @@ async fn dispatch_worker_command(app: &AppHandle, domain: &str, key: &str, value
 
 /// Schedules a debounced settings save: cancels any pending save, spawns a new
 /// task that waits `SETTINGS_SAVE_DEBOUNCE_MS` then writes to disk.
-async fn schedule_debounced_save(_app: AppHandle, state: State<'_, AppState>) {
+async fn schedule_debounced_save(_app: AppHandle, state: State<'_, std::sync::Arc<AppState>>) {
     let mut debounce = state.save_debounce.lock().await;
 
     // Cancel the previous pending write

@@ -9,7 +9,7 @@ use std::path::Path;
 pub async fn debug_harden_test(app: AppHandle, wav_path: String) -> Result<serde_json::Value, String> {
     log::info!("[HardenTest] Starting E2E persistence hardening test with: {}", wav_path);
     
-    let state: State<'_, AppState> = app.state();
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
     // 1. Verify DB existence and schema
     let db_path = crate::utils::paths::get().db.clone();
