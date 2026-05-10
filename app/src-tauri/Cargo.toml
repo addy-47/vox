@@ -28,6 +28,7 @@ serde_json = "1"
 cpal = "0.15"
 ringbuf = "0.4"
 sherpa-onnx = "1.12.39"
+hound = "3.5"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
@@ -35,6 +36,10 @@ env_logger = "0.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
+crossbeam-channel = "0.5"
+
+# Phase 6.3 — Session persistence
+rusqlite = { version = "0.31", features = ["bundled"] }
 gtk = { version = "0.18", features = ["v3_24"] }
 cairo-rs = "0.18"
 
@@ -46,7 +51,6 @@ encoding_rs = "0.8.35"
 regex = "1.12.3"
 
 [dev-dependencies]
-hound = "3.5"
 # Helpers for integration tests
 chrono = "0.4"
 sysinfo = "0.29"

@@ -36,7 +36,7 @@ pub enum LlmCommand {
     /// Start generating a response to `text`.
     Generate {
         text: String,
-        session_id: u32,
+        turn_id: u32,
         cancel_flag: Arc<AtomicBool>,
     },
     /// Stop the background thread and deallocate the model.
@@ -97,11 +97,11 @@ impl LlmWorker {
         
         while let Ok(cmd) = rx.recv() {
             match cmd {
-                LlmCommand::Generate { text, session_id, cancel_flag } => {
-                    if let Err(e) = self.generate(&text, session_id, &cancel_flag, &tx) {
-                        log::error!("[LLM Worker] Generation error (sid {}): {}", session_id, e);
+                LlmCommand::Generate { text, turn_id, cancel_flag } => {
+                    if let Err(e) = self.generate(&text, turn_id, &cancel_flag, &tx) {
+                        log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
                         let _ = tx.send(VoxEvent::Error { 
-                            session_id, 
+                            turn_id, 
                             message: e.to_string() 
                         });
                     }
@@ -123,7 +123,7 @@ impl LlmWorker {
     pub fn generate(
         &self,
         user_text: &str,
-        session_id: u32,
+        turn_id: u32,
         cancel_flag: &Arc<AtomicBool>,
         tx: &std::sync::mpsc::Sender<VoxEvent>,
     ) -> Result<()> {
@@ -173,15 +173,15 @@ impl LlmWorker {
         let mut n_cur = tokens.len() as i32;
         let mut decoder = encoding_rs::UTF_8.new_decoder();
 
-        log::info!("[LLM] >>> Generating (session: {})...", session_id);
+        log::info!("[LLM] >>> Generating (turn: {})...", turn_id);
 
         // ── Decode loop ───────────────────────────────────────────────────────
         loop {
             // Atomic cancellation check
             if cancel_flag.load(Ordering::Relaxed) {
-                log::info!("[LLM] Cancelled at token {} (session: {})", n_cur, session_id);
+                log::info!("[LLM] Cancelled at token {} (turn: {})", n_cur, turn_id);
                 ctx.clear_kv_cache();
-                let _ = tx.send(VoxEvent::Cancelled { session_id });
+                let _ = tx.send(VoxEvent::Cancelled { turn_id });
                 return Ok(());
             }
 
@@ -192,7 +192,7 @@ impl LlmWorker {
 
             // End of generation
             if self.model.is_eog_token(token) {
-                log::info!("[LLM] EOS reached (session: {})", session_id);
+                log::info!("[LLM] EOS reached (turn: {})", turn_id);
                 break;
             }
 
@@ -209,7 +209,7 @@ impl LlmWorker {
             let cleaned = Self::strip_tags(&token_str);
             if !cleaned.is_empty() {
                 let _ = tx.send(VoxEvent::LlmToken {
-                    session_id,
+                    turn_id,
                     token: cleaned,
                 });
             }
@@ -241,11 +241,11 @@ impl LlmWorker {
         let tps = tokens_generated as f32 / elapsed;
         
         log::info!(
-            "[LLM] Generation complete (session: {}). Tokens: {}, TTFT: {:?}, TPS: {:.2}",
-            session_id, tokens_generated, ttft.unwrap_or_default(), tps
+            "[LLM] Generation complete (turn: {}). Tokens: {}, TTFT: {:?}, TPS: {:.2}",
+            turn_id, tokens_generated, ttft.unwrap_or_default(), tps
         );
 
-        let _ = tx.send(VoxEvent::LlmFinished { session_id });
+        let _ = tx.send(VoxEvent::LlmFinished { turn_id });
         Ok(())
     }
 

@@ -85,7 +85,7 @@ impl VadEngine {
         event_tx: mpsc::Sender<serde_json::Value>,
         stt_tx: std::sync::mpsc::Sender<crate::services::stt::SttCommand>,
         vad_rx: std::sync::mpsc::Receiver<VadCommand>,
-        telemetry_tx: tokio::sync::mpsc::UnboundedSender<crate::telemetry::aggregator::TelemetryEvent>,
+        telemetry_tx: crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>,
         vox_event_tx: Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>,
     ) -> Result<()> 
     where 
@@ -94,7 +94,7 @@ impl VadEngine {
         log::info!("[VAD] Starting synchronous VAD loop on dedicated thread.");
         
         let mut in_speech = false;
-        let mut current_session_id: u32 = 0;
+        let mut current_turn_id: u32 = 0;
         let mut utterance_buffer: Vec<f32> = Vec::new();
         let mut samples_since_partial = 0;
         let mut pre_roll_buffer: Vec<f32> = Vec::with_capacity(8000); // 500ms pre-roll
@@ -225,19 +225,19 @@ impl VadEngine {
                     // Transition: Silence -> Speech
                     if !in_speech {
                         in_speech = true;
-                        current_session_id += 1;
-                        log::info!("[VAD] >>> SPEECH START (session: {}, owner: {:?})", current_session_id, owner);
+                        current_turn_id += 1;
+                        log::info!("[VAD] >>> SPEECH START (session: {}, owner: {:?})", current_turn_id, owner);
                         
                         // Phase 5: Reset STT decoder state for the new session
                         let _ = stt_tx.send(crate::services::stt::SttCommand::ResetStream);
 
                         if let Some(ref tx) = vox_event_tx {
-                            let _ = tx.send(crate::core::events::VoxEvent::SpeechStart { session_id: current_session_id, owner });
+                            let _ = tx.send(crate::core::events::VoxEvent::SpeechStart { turn_id: current_turn_id, owner });
                         }
 
                         let _ = event_tx.try_send(json!({ 
                             "type": "speech_start", 
-                            "session_id": current_session_id 
+                            "session_id": current_turn_id 
                         }));
                         utterance_buffer.clear();
                         
@@ -260,7 +260,7 @@ impl VadEngine {
                         // 15 seconds * 16,000 samples/sec = 240,000 samples
                         let start_idx = utterance_buffer.len().saturating_sub(240000);
                         let _ = stt_tx.send(crate::services::stt::SttCommand::Partial(
-                            current_session_id, 
+                            current_turn_id, 
                             owner,
                             utterance_buffer[start_idx..].to_vec()
                         ));
@@ -270,15 +270,15 @@ impl VadEngine {
                     // Transition: Speech -> Silence
                     if in_speech {
                         in_speech = false;
-                        log::info!("[VAD] <<< SPEECH END (session: {}, owner: {:?})", current_session_id, owner);
+                        log::info!("[VAD] <<< SPEECH END (session: {}, owner: {:?})", current_turn_id, owner);
                         
                         if let Some(ref tx) = vox_event_tx {
-                            let _ = tx.send(crate::core::events::VoxEvent::SpeechEnd { session_id: current_session_id, owner });
+                            let _ = tx.send(crate::core::events::VoxEvent::SpeechEnd { turn_id: current_turn_id, owner });
                         }
                         
                         let _ = event_tx.try_send(json!({ 
                             "type": "speech_end",
-                            "session_id": current_session_id 
+                            "session_id": current_turn_id 
                         }));
 
                         // Flush the internal detector state to capture any trailing samples
@@ -288,7 +288,7 @@ impl VadEngine {
                         // duration threshold (e.g., 0.2s) to filter out clicks/noise.
                         if utterance_buffer.len() >= 3200 { 
                             let _ = stt_tx.send(crate::services::stt::SttCommand::Final(
-                                current_session_id, 
+                                current_turn_id, 
                                 owner,
                                 utterance_buffer.clone()
                             ));

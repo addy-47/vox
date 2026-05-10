@@ -1,7 +1,7 @@
 use tauri::AppHandle;
 use tokio::sync::Mutex;
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use crate::services::audio::AudioStream;
 use crate::services::stt::SttCommand;
 use crate::core::settings::VoxSettings;
@@ -57,7 +57,7 @@ pub struct VoxEngine {
     pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
     /// Channel to send hot-updates to the VAD worker without locking AppState.
     pub vad_tx: std::sync::mpsc::Sender<VadCommand>,
-    pub telemetry_tx: tokio::sync::mpsc::UnboundedSender<crate::telemetry::aggregator::TelemetryEvent>,
+    pub telemetry_tx: crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>,
     pub pipeline_tx: std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
 }
 
@@ -65,7 +65,7 @@ pub struct VoxEngine {
 
 pub struct PttState {
     pub is_recording:           Mutex<bool>,
-    pub session_id:             Arc<AtomicU32>,
+    pub turn_id:                Arc<AtomicU32>,
     pub audio_buffer:           Mutex<Vec<f32>>,
     pub samples_since_partial:  Mutex<usize>,
     pub samples_since_waveform: Mutex<usize>,
@@ -87,8 +87,10 @@ pub struct PipelineAtomics {
     pub llm_generating:  Arc<AtomicBool>,
     /// `true` while the TTS worker is synthesizing audio.
     pub tts_generating:  Arc<AtomicBool>,
-    /// Monotonically increasing turn counter. Used to reject stale pipeline events.
-    pub session_id:      Arc<AtomicU32>,
+    /// Monotonically increasing turn counter. Increments on every TranscriptFinal.
+    /// Used to reject stale pipeline events. NEVER persisted.
+    /// Persistence identity is AppState::conversation_id.
+    pub turn_id:      Arc<AtomicU32>,
     /// Current interaction state (Idle, Listening, etc.)
     pub state:           Arc<std::sync::Mutex<InteractionState>>,
     /// `true` if the main application is "engaged" (active interaction).
@@ -105,7 +107,7 @@ impl PipelineAtomics {
             playback_active:    Arc::new(AtomicBool::new(false)),
             llm_generating:     Arc::new(AtomicBool::new(false)),
             tts_generating:     Arc::new(AtomicBool::new(false)),
-            session_id:         Arc::new(AtomicU32::new(0)),
+            turn_id:            Arc::new(AtomicU32::new(0)),
             state:              Arc::new(std::sync::Mutex::new(InteractionState::Idle)),
             is_engaged:         Arc::new(AtomicBool::new(false)),
             transcript_history: Arc::new(std::sync::Mutex::new(
@@ -158,12 +160,17 @@ pub struct AppState {
 
     /// Async log writer guard. Must be held to ensure logs are flushed.
     pub _log_guard:    Option<tracing_appender::non_blocking::WorkerGuard>,
-    /// Structured telemetry bus.
-    pub telemetry_tx:  tokio::sync::mpsc::UnboundedSender<crate::telemetry::aggregator::TelemetryEvent>,
+    /// Structured telemetry bus (crossbeam — lock-free, safe for hot-path threads).
+    pub telemetry_tx:  crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>,
+    /// Long-lived conversation session ID. 0 = no active session (Tray mode).
+    /// Created on Engage, destroyed on Disengage. Persistence worker ignores events with id == 0.
+    pub conversation_id: Arc<AtomicU64>,
+    /// Persistence worker channel. None if persistence is disabled.
+    pub persist_tx: Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
 }
 
 impl AppState {
-    pub fn new(_app: &AppHandle, log_guard: Option<tracing_appender::non_blocking::WorkerGuard>, telemetry_tx: tokio::sync::mpsc::UnboundedSender<crate::telemetry::aggregator::TelemetryEvent>) -> Self {
+    pub fn new(_app: &AppHandle, log_guard: Option<tracing_appender::non_blocking::WorkerGuard>, telemetry_tx: crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>) -> Self {
         // paths::init() must have been called before AppState::new()
         let settings = VoxSettings::load();
 
@@ -175,7 +182,7 @@ impl AppState {
             hud_menu_item: Mutex::new(None),
             ptt: PttState {
                 is_recording:           Mutex::new(false),
-                session_id:             Arc::new(AtomicU32::new(0)),
+                turn_id:                Arc::new(AtomicU32::new(0)),
                 audio_buffer:           Mutex::new(Vec::new()),
                 samples_since_partial:  Mutex::new(0),
                 samples_since_waveform: Mutex::new(0),
@@ -184,6 +191,8 @@ impl AppState {
             save_debounce: Mutex::new(None),
             _log_guard:    log_guard,
             telemetry_tx,
+            conversation_id: Arc::new(AtomicU64::new(0)),
+            persist_tx: None,
         }
     }
 }

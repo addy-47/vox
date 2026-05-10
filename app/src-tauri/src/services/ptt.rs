@@ -22,10 +22,10 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     let mut samples_since = state.ptt.samples_since_partial.lock().await;
     let mut samples_waveform = state.ptt.samples_since_waveform.lock().await;
 
-    // Sync PTT session with global pipeline session
-    let current_global = state.pipeline.session_id.load(Ordering::Relaxed);
-    state.ptt.session_id.store(current_global, Ordering::Relaxed);
-    let session = current_global;
+    // Sync PTT turn with global pipeline turn
+    let current_global = state.pipeline.turn_id.load(Ordering::Relaxed);
+    state.ptt.turn_id.store(current_global, Ordering::Relaxed);
+    let turn = current_global;
 
     buffer.clear();
     *samples_since = 0;
@@ -35,7 +35,7 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
 
     // Phase 5: Notify pipeline to cancel any ongoing playback (barge-in)
     if let Some(engine) = state.engine.lock().await.as_ref() {
-        let _ = engine.pipeline_tx.send(VoxEvent::SpeechStart { session_id: session, owner });
+        let _ = engine.pipeline_tx.send(VoxEvent::SpeechStart { turn_id: turn, owner });
     }
 
     // Determine the owning window target
@@ -44,8 +44,8 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
     };
 
-    log::info!("[PTT] >>> Recording started (session: {}, target: {}, owner: {:?})", session, target, owner);
-    let _ = app.emit_to(target, "ptt_status", json!({ "state": "RECORDING", "session_id": session }));
+    log::info!("[PTT] >>> Recording started (turn: {}, target: {}, owner: {:?})", turn, target, owner);
+    let _ = app.emit_to(target, "ptt_status", json!({ "state": "RECORDING", "session_id": turn }));
     
     // Update interaction state via centralized pipeline logic
     state.pipeline.update_interaction_state(crate::core::state::InteractionState::UserSpeaking, owner, &app);
@@ -59,20 +59,20 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
     
     // Extract everything we need and drop the locks immediately to prevent 
     // pipeline freezes while waiting for the STT channel.
-    let (session, owner, buffer_clone) = {
+    let (turn, owner, buffer_clone) = {
         let mut recording = state.ptt.is_recording.lock().await;
         if !*recording {
             return Ok(());
         }
 
         let buffer = state.ptt.audio_buffer.lock().await;
-        let session = state.ptt.session_id.load(Ordering::Relaxed);
+        let turn = state.ptt.turn_id.load(Ordering::Relaxed);
 
         *recording = false;
         log::info!("[PTT] <<< Recording stopped. Finalizing {} samples...", buffer.len());
         
         let owner = *state.owner.lock().await;
-        (session, owner, buffer.clone())
+        (turn, owner, buffer.clone())
     }; 
 
     // Determine the owning window target
@@ -81,7 +81,7 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
     };
 
-    let _ = app.emit_to(target, "ptt_status", json!({ "state": "PROCESSING", "session_id": session }));
+    let _ = app.emit_to(target, "ptt_status", json!({ "state": "PROCESSING", "session_id": turn }));
 
     // Update interaction state via centralized pipeline logic
     state.pipeline.update_interaction_state(crate::core::state::InteractionState::Thinking, owner, &app);
@@ -92,8 +92,8 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
         // We use .send().await here because it's the final buffer; we MUST ensure it's delivered.
         // Since we dropped the ptt locks above, the VAD thread can continue processing 
         // other tasks even if this send blocks temporarily.
-        let _ = engine.stt_tx.send(SttCommand::Final(session, owner, buffer_clone));
-        log::info!("[PTT] Sent final buffer to STT worker (session: {}, owner: {:?})", session, owner);
+        let _ = engine.stt_tx.send(SttCommand::Final(turn, owner, buffer_clone));
+        log::info!("[PTT] Sent final buffer to STT worker (turn: {}, owner: {:?})", turn, owner);
     } else {
         log::error!("[PTT] Engine not running, cannot finalize transcription.");
     }
@@ -168,14 +168,14 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
 
     // BACKGROUND STT: Every 800ms, send partial buffer to worker
     if *samples_since >= 12800 {
-        let session = state.ptt.session_id.load(Ordering::Relaxed);
+        let turn = state.ptt.turn_id.load(Ordering::Relaxed);
         if let Ok(lock) = state.engine.try_lock() {
             if let Some(engine) = lock.as_ref() {
                 // For partial transcripts, only send the last 15 seconds to keep CPU/Memory low
                 // 15 seconds * 16,000 samples/sec = 240,000 samples
                 let owner = *state.owner.blocking_lock();
                 let start_idx = buffer.len().saturating_sub(240000);
-                let _ = engine.stt_tx.send(SttCommand::Partial(session, owner, buffer[start_idx..].to_vec()));
+                let _ = engine.stt_tx.send(SttCommand::Partial(turn, owner, buffer[start_idx..].to_vec()));
                 log::debug!("[PTT] Sent partial buffer window ({} samples) to STT worker", buffer[start_idx..].len());
             }
         }
