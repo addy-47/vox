@@ -2,10 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "debug");
-    }
-    env_logger::init();
-    
-    vox_ui_lib::run()
+    vox_lib::run()
 }

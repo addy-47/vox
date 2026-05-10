@@ -8,7 +8,6 @@ use crate::services::vad::VadEngine;
 use crate::services::pipeline::PipelineOrchestrator;
 use crate::services::playback::PlaybackEngine;
 use crate::tray::position_tray_window;
-use crate::telemetry::aggregator::spawn_telemetry_aggregator;
 use crate::telemetry::system_monitor::spawn_system_monitor;
 use ringbuf::traits::Split;
 use std::sync::Arc;
@@ -99,13 +98,10 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let mut vad = VadEngine::new(&vad_model_path, threshold).map_err(|e| e.to_string())?;
     let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split(); 
     
-    let playback_energy = Arc::new(AtomicU32::new(0f32.to_bits()));
-    let telemetry_tx = spawn_telemetry_aggregator(app.clone(), Arc::clone(&playback_energy));
-
     let stt_tx_for_vad = stt_tx_internal.clone();
     let vad_rx_for_vad = vad_rx_internal;
     let app_handle_vad = app.clone();
-    let telemetry_tx_for_vad = telemetry_tx.clone();
+    let telemetry_tx_for_vad = state.telemetry_tx.clone();
     let vox_event_tx_for_vad = vox_event_tx.clone();
     std::thread::spawn(move || {
         if let Err(e) = vad.run_sync_loop(app_handle_vad, consumer, event_tx, stt_tx_for_vad, vad_rx_for_vad, telemetry_tx_for_vad, Some(vox_event_tx_for_vad)) {
@@ -160,6 +156,8 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         (en_tts, hi_tts)
     };
 
+    let playback_energy = Arc::new(AtomicU32::new(0f32.to_bits()));
+
     let playback_engine = match PlaybackEngine::new(
         std::sync::Arc::clone(&state.pipeline.playback_active),
         std::sync::Arc::clone(&state.pipeline.cancel_flag),
@@ -207,7 +205,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         audio_stream,
         stt_tx: stt_tx_internal,
         vad_tx: vad_tx_internal,
-        telemetry_tx,
+        telemetry_tx: state.telemetry_tx.clone(),
         pipeline_tx: vox_event_tx.clone(),
     });
 

@@ -58,7 +58,7 @@ fn test_gguf_file_exists() {
 #[test]
 #[ignore]
 fn test_llm_model_loads() {
-    use vox_ui_lib::services::llm::LlmWorker;
+    use vox_lib::services::llm::LlmWorker;
 
     let path = gguf_path();
     let worker = LlmWorker::new(&path, 512, 2);
@@ -68,8 +68,8 @@ fn test_llm_model_loads() {
 #[test]
 #[ignore]
 fn test_llm_generates_tokens() {
-    use vox_ui_lib::services::llm::{LlmWorker, LlmCommand};
-    use vox_ui_lib::core::events::VoxEvent;
+    use vox_lib::services::llm::{LlmWorker, LlmCommand};
+    use vox_lib::core::events::VoxEvent;
 
     let path = gguf_path();
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
@@ -123,8 +123,8 @@ fn test_llm_generates_tokens() {
 #[test]
 #[ignore]
 fn test_llm_cancels_mid_generation() {
-    use vox_ui_lib::services::llm::{LlmWorker, LlmCommand};
-    use vox_ui_lib::core::events::VoxEvent;
+    use vox_lib::services::llm::{LlmWorker, LlmCommand};
+    use vox_lib::core::events::VoxEvent;
 
     let path = gguf_path();
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
