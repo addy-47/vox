@@ -91,7 +91,7 @@ impl TtsEngine {
         &mut self,
         text: &str,
         voice_sid: i32,
-        session_id: u32,
+        turn_id: u32,
         cancel: Arc<AtomicBool>,
         event_tx: Sender<VoxEvent>,
     ) -> Result<()> {
@@ -114,8 +114,8 @@ impl TtsEngine {
         };
 
         log::debug!(
-            "[TTS] Synthesizing ({}) session {}: {:?}", 
-            if is_hi { "HI" } else { "EN" }, session_id, text
+            "[TTS] Synthesizing ({}) turn {}: {:?}", 
+            if is_hi { "HI" } else { "EN" }, turn_id, text
         );
 
         let start = std::time::Instant::now();
@@ -134,7 +134,7 @@ impl TtsEngine {
 
                 if !samples.is_empty() {
                     if let Err(e) = event_tx_closure.send(VoxEvent::TtsChunk {
-                        session_id,
+                        turn_id,
                         samples: samples.to_vec(),
                     }) {
                         log::error!("[TTS] Failed to send TtsChunk: {}", e);
@@ -149,7 +149,7 @@ impl TtsEngine {
 
         if audio.is_none() {
             if cancel.load(Ordering::Relaxed) {
-                log::info!("[TTS] Synthesis stopped (session {})", session_id);
+                log::info!("[TTS] Synthesis stopped (turn {})", turn_id);
             } else {
                 return Err(anyhow!("[TTS] Generation failed"));
             }
@@ -163,11 +163,11 @@ impl TtsEngine {
             let rtf = if audio_duration > 0.0 { elapsed / audio_duration } else { 0.0 };
 
             log::info!(
-                "[TTS] {} Synthesis complete (session {}). Duration: {:.2}s, RTF: {:.3}",
-                if is_hi { "HI" } else { "EN" }, session_id, audio_duration, rtf
+                "[TTS] {} Synthesis complete (turn {}). Duration: {:.2}s, RTF: {:.3}",
+                if is_hi { "HI" } else { "EN" }, turn_id, audio_duration, rtf
             );
 
-            let _ = event_tx.send(VoxEvent::TtsFinished { session_id });
+            let _ = event_tx.send(VoxEvent::TtsFinished { turn_id });
         }
 
         Ok(())
