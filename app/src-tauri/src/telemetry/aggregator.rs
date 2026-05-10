@@ -7,7 +7,8 @@ use serde::Serialize;
 pub enum TelemetryEvent {
     /// Performance metrics for a completed interaction turn
     InteractionMetric {
-        session_id: String,
+        conversation_id: u64,
+        turn_id: u32,
         stt_latency_ms: u32,
         ttft_ms: u32,
         tts_rtf: f32,
@@ -33,12 +34,25 @@ pub enum TelemetryEvent {
 /// In Phase 6.3: Events will be persisted to SQLite.
 pub struct TelemetryAggregator {
     rx: Receiver<TelemetryEvent>,
+    latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    latest_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    latest_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    latest_stt_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    latest_ttft_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl TelemetryAggregator {
-    pub fn new() -> (Self, Sender<TelemetryEvent>) {
+    pub fn new(
+        latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        latest_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        latest_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        latest_stt_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        latest_ttft_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    ) -> (Self, Sender<TelemetryEvent>) {
         let (tx, rx) = unbounded();
-        (Self { rx }, tx)
+        (Self { rx, latest_energy, latest_vad_prob, latest_cpu, latest_ram, latest_stt_ms, latest_ttft_ms }, tx)
     }
 
     /// Spawns the aggregator loop on a dedicated OS thread.
@@ -53,16 +67,25 @@ impl TelemetryAggregator {
                 tracing::info!("[Telemetry] Aggregator worker started.");
 
                 while let Ok(event) = self.rx.recv() {
+                    use std::sync::atomic::Ordering;
                     match &event {
-                        TelemetryEvent::InteractionMetric { session_id, .. } => {
-                            tracing::info!(target: "telemetry", session_id = %session_id, "Interaction metrics: {:?}", event);
+                        TelemetryEvent::InteractionMetric { conversation_id, turn_id, stt_latency_ms, ttft_ms, .. } => {
+                            tracing::info!(target: "telemetry", conversation_id = %conversation_id, turn_id = %turn_id, "Interaction metrics: {:?}", event);
+                            self.latest_stt_ms.store(*stt_latency_ms, Ordering::Relaxed);
+                            self.latest_ttft_ms.store(*ttft_ms, Ordering::Relaxed);
                         }
-                        TelemetryEvent::SystemHealth { .. } => {
+                        TelemetryEvent::SystemHealth { cpu_usage, ram_mb } => {
                             tracing::info!(target: "telemetry", "System Health: {:?}", event);
+                            self.latest_cpu.store(cpu_usage.to_bits(), Ordering::Relaxed);
+                            self.latest_ram.store(*ram_mb, Ordering::Relaxed);
                         }
-                        TelemetryEvent::AudioEnergy { .. } => {
+                        TelemetryEvent::AudioEnergy { energy, vad_prob } => {
                             // High-frequency debug only
                             tracing::debug!(target: "telemetry", "Audio Energy: {:?}", event);
+                            // Update shared atomics for monitoring collector
+                            use std::sync::atomic::Ordering;
+                            self.latest_energy.store(energy.to_bits(), Ordering::Relaxed);
+                            self.latest_vad_prob.store(vad_prob.to_bits(), Ordering::Relaxed);
                         }
                     }
                 }

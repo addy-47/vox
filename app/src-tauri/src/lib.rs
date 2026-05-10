@@ -5,6 +5,7 @@ pub mod ipc;
 pub mod telemetry;
 pub mod utils;
 pub mod persistence;
+pub mod monitoring;
 
 use crate::core::state::AppState;
 use crate::ipc::pipeline::{check_engine_status, launch_engine, engage};
@@ -42,7 +43,21 @@ pub fn run() {
             let log_guard = crate::utils::logging::init(crate::utils::paths::get().logs.clone());
 
             // ── 0.6 Telemetry Aggregator ───────────────────────────────────────────
-            let (telemetry_worker, telemetry_tx) = crate::telemetry::aggregator::TelemetryAggregator::new();
+            let latest_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_vad_prob = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_ram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let latest_stt_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let latest_ttft_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+            let (telemetry_worker, telemetry_tx) = crate::telemetry::aggregator::TelemetryAggregator::new(
+                std::sync::Arc::clone(&latest_energy),
+                std::sync::Arc::clone(&latest_vad_prob),
+                std::sync::Arc::clone(&latest_cpu),
+                std::sync::Arc::clone(&latest_ram),
+                std::sync::Arc::clone(&latest_stt_ms),
+                std::sync::Arc::clone(&latest_ttft_ms),
+            );
             telemetry_worker.start();
 
             // ── 0.7 Persistence Worker ─────────────────────────────────────────────
@@ -51,9 +66,23 @@ pub fn run() {
             );
 
             // ── 1. App State ────────────────────────────────────────────────────────
-            let mut app_state = AppState::new(app.handle(), Some(log_guard), telemetry_tx);
+            let mut app_state = AppState::new(
+                app.handle(),
+                Some(log_guard),
+                telemetry_tx,
+                latest_energy,
+                latest_vad_prob,
+                latest_cpu,
+                latest_ram,
+                latest_stt_ms,
+                latest_ttft_ms,
+            );
             app_state.persist_tx = Some(persist_tx);
-            app.manage(app_state);
+
+            // ── 1.5 Monitoring Collector ──────────────────────────────────────────
+            let state_arc = std::sync::Arc::new(app_state);
+            crate::monitoring::collector::spawn_monitoring_collector(std::sync::Arc::clone(&state_arc));
+            app.manage(state_arc);
 
             // ── 1. System Tray ───────────────────────────────────────────────────────
             let tray_menu = Menu::new(app)?;
@@ -68,7 +97,7 @@ pub fn run() {
 
             // Store live_i handle in state for synchronization
             {
-                let state: State<'_, AppState> = app.state();
+                let state: State<'_, std::sync::Arc<AppState>> = app.state();
                 let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
                 *menu_item_lock = Some(live_i.clone());
                 // Reflect the default hud_visible=true in the menu UI
@@ -187,13 +216,17 @@ pub fn run() {
             get_turns,
             delete_session,
             debug_harden_test,
+            // Monitoring
+            crate::monitoring::ipc::get_runtime_snapshot,
+            crate::monitoring::ipc::get_runtime_history,
+            crate::monitoring::ipc::clear_runtime_history,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 log::info!("[Vox] Shutting down engine...");
-                let state: State<'_, AppState> = app_handle.state();
+                let state: State<'_, std::sync::Arc<AppState>> = app_handle.state();
                 
                 // Clear engine (this will drop VoxEngine and close channels)
                 let mut engine_lock = state.engine.blocking_lock();

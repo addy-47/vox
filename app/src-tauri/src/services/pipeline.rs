@@ -83,6 +83,7 @@ pub struct PipelineOrchestrator {
     pub transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
     pub conversation_id:    Arc<std::sync::atomic::AtomicU64>,
     pub persist_tx:         Option<Sender<crate::persistence::events::PersistenceEvent>>,
+    pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
     
     // Lifecycle management
     llm_tx:           Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
@@ -103,6 +104,7 @@ impl PipelineOrchestrator {
         transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
         conversation_id: Arc<std::sync::atomic::AtomicU64>,
         persist_tx:      Option<Sender<crate::persistence::events::PersistenceEvent>>,
+        dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
     ) -> Self {
         Self {
             cancel_flag,
@@ -117,6 +119,7 @@ impl PipelineOrchestrator {
             transcript_history,
             conversation_id,
             persist_tx,
+            dropped_persistence_events,
             llm_tx: Arc::new(std::sync::Mutex::new(None)),
             tts_tx: Arc::new(std::sync::Mutex::new(None)),
         }
@@ -574,8 +577,10 @@ impl PipelineOrchestrator {
                         _ => 0,
                     };
                     
+                    let conv_id = self.conversation_id.load(Ordering::Relaxed);
                     let _ = state.telemetry_tx.send(crate::telemetry::aggregator::TelemetryEvent::InteractionMetric {
-                        session_id: turn_id.to_string(),
+                        conversation_id: conv_id,
+                        turn_id,
                         stt_latency_ms: stt_ms,
                         ttft_ms,
                         tts_rtf: 0.0, // Placeholder until RTF calculation is implemented
@@ -598,14 +603,16 @@ impl PipelineOrchestrator {
 
                     // Persist Turn
                     if let Some(ref tx) = self.persist_tx {
-                        let _ = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
+                        if let Err(_) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
                             conversation_id: self.conversation_id.load(Ordering::Relaxed),
                             turn_id: turn_id,
                             user_text: turn_user_text.clone(),
                             assistant_text: turn_assistant_text.clone(),
                             stt_latency_ms: turn_stt_ms,
                             ttft_ms: turn_ttft_ms,
-                        });
+                        }) {
+                            self.dropped_persistence_events.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
 
                     metrics.reset();
@@ -628,10 +635,12 @@ impl PipelineOrchestrator {
 
                     // Persist Cancellation
                     if let Some(ref tx) = self.persist_tx {
-                        let _ = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCancelled {
+                        if let Err(_) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCancelled {
                             conversation_id: self.conversation_id.load(Ordering::Relaxed),
                             turn_id,
-                        });
+                        }) {
+                            self.dropped_persistence_events.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
 
                     let owner = self.get_current_owner(&app_handle);
