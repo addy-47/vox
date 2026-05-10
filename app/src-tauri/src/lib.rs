@@ -12,7 +12,7 @@ use crate::ipc::tray::{
     update_interaction_mode, show_main_window, toggle_hud_visibility
 };
 use crate::ipc::history::get_transcript_history;
-use crate::ipc::settings::{get_settings, update_theme};
+use crate::ipc::settings::{get_settings, update_theme, update_setting, request_boot_state};
 use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
 use crate::tray::{setup_linux_virtual_layer, setup_tray_window, position_tray_window};
 
@@ -32,7 +32,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
         .setup(|app| {
-            // ── 0. App State ────────────────────────────────────────────────────────
+            // ── 0. Paths Singleton (must be first) ──────────────────────────────────
+            crate::utils::paths::init(app.handle());
+            crate::utils::paths::ensure_dirs().ok();
+
+            // ── 1. App State ────────────────────────────────────────────────────────
             let app_state = AppState::new(app.handle());
             app.manage(app_state);
 
@@ -132,8 +136,10 @@ pub fn run() {
             set_hud_ignore_cursor,
             update_interaction_mode,
             show_main_window,
+            request_boot_state,
             get_settings,
             update_theme,
+            update_setting,
             ptt_start,
             ptt_stop,
             ptt_cancel,
@@ -151,6 +157,7 @@ pub fn run() {
                 if let Some(engine) = engine_lock.take() {
                     let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::Shutdown);
                     let _ = engine.stt_tx.send(crate::services::stt::SttCommand::Shutdown);
+                    let _ = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown);
                 }
                 
                 // Allow time for threads to join
