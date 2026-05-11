@@ -12,6 +12,7 @@
   --card: 10, 10, 10;
   --border: 255, 255, 255;
   --sidebar: 5, 5, 5;
+  --vh: 100vh;
 }
 
 [data-theme='light'] {
@@ -28,11 +29,11 @@
 }
 
 @layer base {
-html, body {
+  html, body {
     margin: 0;
     padding: 0;
     width: 100%;
-    height: 100vh;
+    height: var(--vh);
     overflow: hidden;
     @apply bg-[rgb(var(--background))] text-[rgb(var(--foreground))] font-sans selection:bg-[rgb(var(--accent))]/30;
     -webkit-font-smoothing: antialiased;
@@ -43,7 +44,7 @@ html, body {
 
   #root {
     width: 100%;
-    height: 100vh;
+    height: var(--vh);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -78,6 +79,22 @@ body.is-tray #root {
     box-shadow: 
       0 8px 32px rgba(0, 0, 0, 0.4),
       inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
+
+  /* Dynamic Logo Masking */
+  .vox-logo-theme {
+    width: 24px;
+    height: 24px;
+    background-color: rgb(var(--accent));
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z'/%3E%3C/svg%3E");
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z'/%3E%3C/svg%3E");
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    transition: background-color 0.3s ease;
   }
 
   [data-theme='light'] .liquid-glass {
@@ -145,25 +162,6 @@ body.is-tray #root {
     z-index: 2;
   }
 
-  .cyan-glow-text {
-    color: rgb(0, 219, 233);
-    text-shadow: 0 0 12px rgba(0, 219, 233, 0.4);
-  }
-
-  .shimmer-cyan {
-    background: linear-gradient(
-      90deg, 
-      rgba(0, 219, 233, 0.5) 0%, 
-      rgba(0, 219, 233, 1) 50%, 
-      rgba(0, 219, 233, 0.5) 100%
-    );
-    background-size: 200% auto;
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: shimmer 4s linear infinite;
-  }
-
   .premium-card {
     @apply bg-[rgb(var(--card))] border border-[rgba(var(--border),0.05)] rounded-2xl shadow-xl backdrop-blur-md ;
   }
@@ -208,14 +206,53 @@ body.is-tray #root {
   visibility: visible;
 }
 
-/* Ensure the HUD box itself is interactive */
 .liquid-glass {
   pointer-events: auto !important;
 }
 
+/* Range Slider - High Contrast & Liquid Polish */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(var(--foreground), 0.15);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+[data-theme='light'] input[type="range"]::-webkit-slider-runnable-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+input[type="range"]:hover::-webkit-slider-runnable-track {
+  background: rgba(var(--foreground), 0.25);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 14px;
+  width: 14px;
+  border-radius: 50%;
+  background: rgb(var(--accent));
+  margin-top: -4px; /* Centers thumb on track */
+  box-shadow: 0 0 12px rgba(var(--accent), 0.4);
+  border: 2px solid rgb(var(--background));
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+
 /* Custom Scrollbar - Ultra Minimal (Cyan) */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 2px;
+  width: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -223,8 +260,12 @@ body.is-tray #root {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0, 219, 233, 0.2);
+  background: rgba(var(--accent), 0.5);
   border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--accent), 0.8);
 }
 
 /* Telemetry Stats Bar */
@@ -234,9 +275,9 @@ body.is-tray #root {
 
 /* Animations */
 @keyframes pulse-cyan {
-  0% { box-shadow: 0 0 0 0 rgba(0, 219, 233, 0.4); }
-  70% { box-shadow: 0 0 0 10px rgba(0, 219, 233, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 219, 233, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(var(--accent), 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(var(--accent), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--accent), 0); }
 }
 
 @keyframes shimmer {
@@ -295,4 +336,51 @@ body.is-tray #root {
   mask-composite: exclude;
   animation: border-rotate 1.5s linear infinite;
   pointer-events: none;
+}
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+/* Premium Color Picker Overrides */
+.custom-color-picker-v2 {
+  width: 100% !important;
+  height: 160px !important;
+}
+
+.custom-color-picker-v2 .react-colorful {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 1.5rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  overflow: hidden !important;
+}
+
+.custom-color-picker-v2 .react-colorful__saturation {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 0 !important;
+}
+
+.custom-color-picker-v2 .react-colorful__hue {
+  height: 12px !important;
+  border-radius: 0 !important;
+}
+
+.custom-color-picker-v2 .react-colorful__pointer {
+  width: 16px !important;
+  height: 16px !important;
+  border: 2px solid white !important;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5) !important;
 }

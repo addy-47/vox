@@ -9,7 +9,7 @@ import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useTheme } from "@/shared/context/ThemeContext";
+import { useSettings } from "@/shared/context/SettingsContext";
 
 interface SystemStats {
   cpu_usage: number;
@@ -17,6 +17,8 @@ interface SystemStats {
 }
 
 export const TrayApp: React.FC = () => {
+  const { settings, isLoading } = useSettings();
+  
   // ─── History System (Backend Backed) ──────────────────────────────────────
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
@@ -28,7 +30,6 @@ export const TrayApp: React.FC = () => {
     startNewInteraction, endSpeechSegment, updatePartial, commitFinal, reset 
   } = useInteraction();
   const telemetryRef = useTelemetry();
-  useTheme();
   
   const liveTargetText = useMemo(() => {
     const separator = committedText && partialText ? " " : "";
@@ -47,15 +48,17 @@ export const TrayApp: React.FC = () => {
   // ─── Visibility & UX State ────────────────────────────────────────────────
   const { 
     state: visibilityState, setIsHovered, show, startHold, hideImmediately 
-  } = useVisibility({ holdDuration: 3000, fadeDuration: 2000 });
+  } = useVisibility({ 
+    holdDuration: (settings?.ui.tray_hide_delay || 3) * 1000, 
+    fadeDuration: settings?.ui.tray_fade_transition === 'Snappy' ? 500 : 1500 
+  });
 
   const [interactionState, setInteractionState] = useState<string>("Idle");
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
 
-  // ─── PTT & Mode State ──────────────────────────────────────────────────────
+  // ─── PTT & Status State ──────────────────────────────────────────────────────
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
-  const [interactionMode, setInteractionMode] = useState<string>('PASSIVE');
 
   // Bug 5a: Reset stale transcript state when tray hides
   useEffect(() => {
@@ -90,16 +93,23 @@ export const TrayApp: React.FC = () => {
   // ─── Stable Refs for Listeners ───────────────────────────────────────────
   const stateRef = useRef({
     pttStatus,
-    interactionMode,
     visibilityState,
     interactionId,
     interactionState,
-    history
+    history,
+    historyLimit: settings?.ui.tray_history_limit || 10
   });
 
   useEffect(() => {
-    stateRef.current = { pttStatus, interactionMode, visibilityState, interactionId, interactionState, history };
-  }, [pttStatus, interactionMode, visibilityState, interactionId, interactionState, history]);
+    stateRef.current = { 
+      pttStatus, 
+      visibilityState, 
+      interactionId, 
+      interactionState, 
+      history,
+      historyLimit: settings?.ui.tray_history_limit || 10
+    };
+  }, [pttStatus, visibilityState, interactionId, interactionState, history, settings?.ui.tray_history_limit]);
 
   // ─── IPC Event Listeners ───────────────────────────────────────────────────
   useEffect(() => {
@@ -123,8 +133,9 @@ export const TrayApp: React.FC = () => {
         const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
           if (event.payload.text) {
             commitFinal(event.payload.text);
-            // Re-fetch history from backend to ensure synchronization
-            invoke<string[]>("get_transcript_history").then(setHistory);
+            invoke<string[]>("get_transcript_history").then(h => {
+              setHistory(h.slice(0, stateRef.current.historyLimit));
+            });
           }
         });
 
@@ -150,11 +161,7 @@ export const TrayApp: React.FC = () => {
           setPttStatus(event.payload.state as any);
         });
 
-        const u9 = await appWindow.listen<string>("mode_changed_tray", (event) => {
-          setInteractionMode(event.payload.toUpperCase());
-        });
-
-        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
+        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8];
       } catch (err) {
         console.error("[TrayApp] Failed to setup listeners:", err);
       }
@@ -162,23 +169,10 @@ export const TrayApp: React.FC = () => {
 
     setupListeners();
 
-    // Initial Sync
-    const initSync = async () => {
-      try {
-        const [settings, historyData] = await Promise.all([
-          invoke<any>("get_settings"),
-          invoke<string[]>("get_transcript_history")
-        ]);
-        
-        if (settings?.tray_mode) {
-          setInteractionMode(settings.tray_mode.toUpperCase());
-        }
-        setHistory(historyData);
-      } catch (e) {
-        console.warn("[TrayApp] Initial sync failed:", e);
-      }
-    };
-    initSync();
+    // Initial History Sync
+    invoke<string[]>("get_transcript_history").then(h => {
+      setHistory(h.slice(0, stateRef.current.historyLimit));
+    });
 
     return () => {
       unlisteners.forEach(u => u());
@@ -230,6 +224,8 @@ export const TrayApp: React.FC = () => {
     FADING: { opacity: 0, x: 10, scale: 0.99, transition: { duration: 2 }, pointerEvents: "none" as const }
   };
 
+  if (isLoading || !settings) return null;
+
   return (
     <div 
       className="tray-container w-full h-full select-none overflow-hidden relative flex flex-col"
@@ -242,16 +238,29 @@ export const TrayApp: React.FC = () => {
             initial="HIDDEN"
             animate={visibilityState}
             exit="HIDDEN"
+            transition={
+              settings.ui.tray_fade_transition === 'Snappy' 
+                ? { duration: 0.1, ease: "easeOut" }
+                : settings.ui.tray_fade_transition === 'Smooth'
+                ? { duration: 0.4, ease: "easeInOut" }
+                : { type: "spring", damping: 20, stiffness: 100 }
+            }
             className="w-[380px] h-[250px] flex flex-col liquid-glass overflow-hidden rounded-2xl"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
+            style={{ 
+               // Dynamically apply blur from settings
+               backdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
+               WebkitBackdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
+               backgroundColor: settings.ui.tray_glass_tint ? `rgba(var(--accent), 0.1)` : undefined,
+            }}
           >
             <Header 
               isListening={interactionState === "Listening" || interactionState === "UserSpeaking" || pttStatus === 'RECORDING'} 
               hasContent={!!currentTargetText} 
               copied={copied} 
               isPttActive={pttStatus !== 'IDLE'}
-              interactionMode={interactionMode}
+              interactionMode={settings.interaction.tray_mode.toUpperCase()}
               onCopy={copyToClipboard} 
               onClose={hideImmediately}
               onTogglePtt={togglePtt}
@@ -280,4 +289,3 @@ export const TrayApp: React.FC = () => {
     </div>
   );
 };
-

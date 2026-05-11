@@ -101,7 +101,7 @@ impl VadEngine {
 
         // Local state initialized once, updated via vad_rx to avoid hot-path locks
         let (threshold_init, noise_gate_init, mode_init, owner_init) = {
-            let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+            let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
             let settings = state.settings.read().unwrap();
             let owner = *state.owner.blocking_lock();
             let mode = match owner {
@@ -202,7 +202,7 @@ impl VadEngine {
                 // Prevents TTS audio from looping back through the mic and re-triggering VAD.
                 // In Headset mode, mic stays live for barge-in (pipeline cancellation handles it).
                 {
-                    let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
                     let is_playing = state.pipeline.playback_active.load(std::sync::atomic::Ordering::Relaxed);
                     if is_playing {
                         let audio_mode = {
