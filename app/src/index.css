@@ -18,7 +18,7 @@
 [data-theme='light'] {
   --background: 248, 250, 252;
   --foreground: 15, 23, 42;
-  --foreground-muted: 100, 116, 139;
+  --foreground-muted: 71, 85, 105;
   --accent: 8, 145, 178; /* Darker cyan for contrast */
   --accent-dark: 21, 94, 117;
   --accent-muted: 8, 145, 178;
@@ -270,7 +270,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 
 /* Telemetry Stats Bar */
 .stats-badge {
-  @apply px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-[9px] font-mono text-white/40 flex items-center gap-1.5;
+  @apply px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-[11px] font-mono text-white/40 flex items-center gap-1.5;
 }
 
 /* Animations */

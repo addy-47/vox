@@ -12,7 +12,7 @@ use sherpa_onnx::{
 use crate::core::events::VoxEvent;
 use crate::core::constants::{
     MODEL_FILE_TTS_ONNX, MODEL_FILE_TTS_VOICES, MODEL_FILE_TTS_TOKENS, 
-    MODEL_FILE_TTS_ESPEAK, MODEL_FILE_TTS_HI_ONNX
+    MODEL_FILE_TTS_ESPEAK,
 };
 
 // ─── TTS Engine (Multi-Model Routing) ─────────────────────────────────────────
@@ -24,8 +24,11 @@ pub struct TtsEngine {
 
 impl TtsEngine {
     /// Initialize the TTS engine with both English and Hindi models.
-    pub fn new(en_model_dir: &Path, hi_model_dir: &Path) -> Result<Self> {
+    pub fn new(en_model_dir: &Path, hi_model_path: &Path) -> Result<Self> {
         log::info!("[TTS] Initializing Multi-Model TTS engine...");
+        
+        let hi_model_dir = hi_model_path.parent()
+            .ok_or_else(|| anyhow!("[TTS] Invalid Hindi model path"))?;
 
         // 1. English (Kokoro-82M)
         let en_config = OfflineTtsConfig {
@@ -53,7 +56,7 @@ impl TtsEngine {
         let hi_config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 vits: OfflineTtsVitsModelConfig {
-                    model: Some(hi_model_dir.join(MODEL_FILE_TTS_HI_ONNX).to_string_lossy().into()),
+                    model: Some(hi_model_path.to_string_lossy().into()),
                     tokens: Some(hi_model_dir.join(MODEL_FILE_TTS_TOKENS).to_string_lossy().into()),
                     data_dir: Some(hi_model_dir.join(MODEL_FILE_TTS_ESPEAK).to_string_lossy().into()),
                     noise_scale: 0.667,

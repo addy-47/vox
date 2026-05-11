@@ -13,10 +13,11 @@ pub async fn get_transcript_history(state: State<'_, std::sync::Arc<AppState>>) 
 
 #[derive(Debug, Serialize, Clone)]
 pub struct SessionRow {
-    pub id:         i64,
-    pub started_at: i64,
-    pub ended_at:   Option<i64>,
-    pub turn_count: i64,
+    pub id:            i64,
+    pub started_at:    i64,
+    pub ended_at:      Option<i64>,
+    pub turn_count:    i64,
+    pub first_message: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -41,15 +42,19 @@ pub async fn get_sessions(_state: State<'_, std::sync::Arc<AppState>>) -> Result
             .map_err(|e| format!("DB open failed: {}", e))?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, started_at, ended_at, turn_count FROM sessions ORDER BY started_at DESC LIMIT 100"
+            "SELECT s.id, s.started_at, s.ended_at, s.turn_count,
+                    (SELECT user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
+             FROM sessions s
+             ORDER BY s.started_at DESC LIMIT 100"
         ).map_err(|e| e.to_string())?;
 
         let rows = stmt.query_map([], |row| {
             Ok(SessionRow {
-                id:         row.get(0)?,
-                started_at: row.get(1)?,
-                ended_at:   row.get(2)?,
-                turn_count: row.get(3)?,
+                id:            row.get(0)?,
+                started_at:    row.get(1)?,
+                ended_at:      row.get(2)?,
+                turn_count:    row.get(3)?,
+                first_message: row.get(4)?,
             })
         }).map_err(|e| e.to_string())?
           .filter_map(|r| r.ok())

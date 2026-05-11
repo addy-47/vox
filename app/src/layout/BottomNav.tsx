@@ -22,7 +22,7 @@ export const BottomNav: React.FC = () => {
           className={({ isActive }) =>
             cn(
               "flex flex-col items-center justify-center flex-1 h-full transition-all duration-500 relative",
-              isActive ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] opacity-40 hover:opacity-80"
+              isActive ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] opacity-60 hover:opacity-80"
             )
           }
         >

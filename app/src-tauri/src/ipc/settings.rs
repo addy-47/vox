@@ -243,11 +243,14 @@ fn apply_setting_mutation(
         ("tts", "en_model") => {
             settings.tts.en_model = value.as_str().ok_or("en_model must be a string")?.to_string();
         }
+        ("tts", "en_voice") => {
+            settings.tts.en_voice = value.as_i64().ok_or("en_voice must be an integer")? as i32;
+        }
         ("tts", "hi_model") => {
             settings.tts.hi_model = value.as_str().ok_or("hi_model must be a string")?.to_string();
         }
-        ("tts", "voice_id") => {
-            settings.tts.voice_id = value.as_i64().ok_or("voice_id must be an integer")? as i32;
+        ("tts", "hi_voice") => {
+            settings.tts.hi_voice = value.as_str().ok_or("hi_voice must be a string")?.to_string();
         }
         ("persistence", "enabled") => {
             settings.persistence.enabled = value.as_bool().ok_or("enabled must be a boolean")?;

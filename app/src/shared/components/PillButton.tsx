@@ -15,7 +15,7 @@ export const PillButton: React.FC<PillButtonProps> = ({
   return (
     <button
       className={cn(
-        "rounded-full font-display font-semibold transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:pointer-events-none",
+        "rounded-full font-display font-semibold transition-all duration-300 active:scale-95 disabled:opacity-60 disabled:pointer-events-none",
         variant === "primary" && "bg-gradient-to-r from-primary-container to-blue-600 text-on-primary shadow-lg shadow-primary-container/20 hover:shadow-primary-container/40",
         variant === "secondary" && "bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10",
         variant === "ghost" && "bg-transparent text-white/40 hover:text-white",
