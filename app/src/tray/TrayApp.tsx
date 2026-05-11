@@ -10,10 +10,14 @@ import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettings } from "@/shared/context/SettingsContext";
+import { cn } from "@/shared/lib/utils";
 
 interface SystemStats {
-  cpu_usage: number;
-  memory_used_mb: number;
+  system_cpu: number;
+  system_ram_pct: number;
+  vox_cpu: number;
+  vox_ram_mb: number;
+  threads: number;
 }
 
 export const TrayApp: React.FC = () => {
@@ -56,6 +60,7 @@ export const TrayApp: React.FC = () => {
   const [interactionState, setInteractionState] = useState<string>("Idle");
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
+  const [isSleeping, setIsSleeping] = useState(false);
 
   // ─── PTT & Status State ──────────────────────────────────────────────────────
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
@@ -97,7 +102,16 @@ export const TrayApp: React.FC = () => {
     interactionId,
     interactionState,
     history,
-    historyLimit: settings?.ui.tray_history_limit || 10
+    historyLimit: settings?.ui.tray_history_limit || 10,
+    callbacks: {
+      startNewInteraction,
+      updatePartial,
+      commitFinal,
+      endSpeechSegment,
+      show,
+      startHold,
+      hideImmediately
+    }
   });
 
   useEffect(() => {
@@ -107,9 +121,19 @@ export const TrayApp: React.FC = () => {
       interactionId, 
       interactionState, 
       history,
-      historyLimit: settings?.ui.tray_history_limit || 10
+      historyLimit: settings?.ui.tray_history_limit || 10,
+      callbacks: {
+        startNewInteraction,
+        updatePartial,
+        commitFinal,
+        endSpeechSegment,
+        show,
+        startHold,
+        hideImmediately
+      }
     };
-  }, [pttStatus, visibilityState, interactionId, interactionState, history, settings?.ui.tray_history_limit]);
+  }, [pttStatus, visibilityState, interactionId, interactionState, history, settings?.ui.tray_history_limit, 
+      startNewInteraction, updatePartial, commitFinal, endSpeechSegment, show, startHold, hideImmediately]);
 
   // ─── IPC Event Listeners ───────────────────────────────────────────────────
   useEffect(() => {
@@ -121,18 +145,18 @@ export const TrayApp: React.FC = () => {
         
         const u1 = await appWindow.listen("speech_start", () => {
           setViewingHistory(false);
-          startNewInteraction();
-          show();
+          stateRef.current.callbacks.startNewInteraction();
+          stateRef.current.callbacks.show();
         });
 
         const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
           if (stateRef.current.pttStatus === 'RECORDING') return;
-          updatePartial(event.payload.text);
+          stateRef.current.callbacks.updatePartial(event.payload.text);
         });
 
         const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
           if (event.payload.text) {
-            commitFinal(event.payload.text);
+            stateRef.current.callbacks.commitFinal(event.payload.text);
             invoke<string[]>("get_transcript_history").then(h => {
               setHistory(h.slice(0, stateRef.current.historyLimit));
             });
@@ -140,8 +164,8 @@ export const TrayApp: React.FC = () => {
         });
 
         const u4 = await appWindow.listen("speech_end", () => {
-          endSpeechSegment();
-          startHold();
+          stateRef.current.callbacks.endSpeechSegment();
+          stateRef.current.callbacks.startHold();
         });
 
         const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
@@ -149,8 +173,8 @@ export const TrayApp: React.FC = () => {
         });
 
         const u6 = await appWindow.listen("toggle_hud", () => {
-          if (stateRef.current.visibilityState === 'HIDDEN') show();
-          else hideImmediately();
+          if (stateRef.current.visibilityState === 'HIDDEN') stateRef.current.callbacks.show();
+          else stateRef.current.callbacks.hideImmediately();
         });
 
         const u7 = await appWindow.listen<string>("state_changed", (event) => {
@@ -161,7 +185,11 @@ export const TrayApp: React.FC = () => {
           setPttStatus(event.payload.state as any);
         });
 
-        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8];
+        const u9 = await appWindow.listen<boolean>("auto_sleep_state", (event) => {
+          setIsSleeping(event.payload);
+        });
+
+        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
       } catch (err) {
         console.error("[TrayApp] Failed to setup listeners:", err);
       }
@@ -177,7 +205,7 @@ export const TrayApp: React.FC = () => {
     return () => {
       unlisteners.forEach(u => u());
     };
-  }, [startNewInteraction, updatePartial, commitFinal, show, endSpeechSegment, startHold, hideImmediately]);
+  }, []); // Stable Listeners
 
   // ─── Actions ───────────────────────────────────────────────────────────────
   const copyToClipboard = () => {
@@ -233,7 +261,6 @@ export const TrayApp: React.FC = () => {
       <AnimatePresence>
         {visibilityState !== 'HIDDEN' && (
           <motion.div 
-            key={`hud-${interactionId}`}
             variants={containerVariants}
             initial="HIDDEN"
             animate={visibilityState}
@@ -245,7 +272,10 @@ export const TrayApp: React.FC = () => {
                 ? { duration: 0.4, ease: "easeInOut" }
                 : { type: "spring", damping: 20, stiffness: 100 }
             }
-            className="w-[380px] h-[250px] flex flex-col liquid-glass overflow-hidden rounded-2xl"
+            className={cn(
+              "w-[380px] h-[250px] flex flex-col liquid-glass overflow-hidden rounded-2xl transition-all duration-1000",
+              isSleeping && "grayscale-[0.8] opacity-50"
+            )}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             style={{ 

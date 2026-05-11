@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread;
+use sysinfo::SystemExt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::core::state::AppState;
 use crate::monitoring::snapshot::RuntimeSnapshot;
@@ -13,9 +14,20 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
         .spawn(move || {
             tracing::info!("[Monitoring] Collector worker started (10Hz).");
             
+            // Fetch static hardware context once
+            let sys = sysinfo::System::new_with_specifics(
+                sysinfo::RefreshKind::new()
+                    .with_memory()
+                    .with_cpu(sysinfo::CpuRefreshKind::new())
+            );
+            let total_ram_mb = (sys.total_memory() / 1024 / 1024) as u32;
+            let cpu_cores = sys.cpus().len() as u32;
+            
             loop {
-                // 1. Collect data from various atomics and state handles
-                let snapshot = collect_snapshot(&state);
+                // Read current thread count from atomic (updated by system_monitor.rs at 1Hz)
+                let threads = state.latest_threads.load(Ordering::Relaxed);
+                
+                let snapshot = collect_snapshot(&state, threads, total_ram_mb, cpu_cores);
                 
                 // 2. Push to ringbuffer history
                 state.monitoring.push(snapshot);
@@ -27,7 +39,7 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
         .expect("Failed to spawn monitoring collector thread");
 }
 
-fn collect_snapshot(state: &AppState) -> RuntimeSnapshot {
+fn collect_snapshot(state: &AppState, threads: u32, total_ram_mb: u32, cpu_cores: u32) -> RuntimeSnapshot {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -48,16 +60,19 @@ fn collect_snapshot(state: &AppState) -> RuntimeSnapshot {
     };
 
     // Get interaction owner
-    let owner = {
-        // We use a try_lock here to avoid blocking if the orchestrator is busy.
-        // If locked, we'll just use the last known atomic state if we had one,
-        // but for now let's just get it from the mutex as it's not the audio hot path.
-        // However, Directive says "Monitoring must never stall".
-        match state.owner.try_lock() {
-            Ok(o) => format!("{:?}", *o),
-            Err(_) => "Locked".to_string(),
-        }
+    let owner_enum: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+    let owner = format!("{:?}", owner_enum);
+
+    // Get buffer length from playback engine if it exists
+    let buffer_samples = {
+        if let Ok(lock) = state.engine.try_lock() {
+            if let Some(engine) = lock.as_ref() {
+                engine.playback_engine.buffer_len()
+            } else { 0 }
+        } else { 0 }
     };
+
+    let sys_ram_pct = f32::from_bits(state.latest_sys_ram.load(Ordering::Relaxed));
 
     RuntimeSnapshot {
         pipeline_state,
@@ -65,26 +80,46 @@ fn collect_snapshot(state: &AppState) -> RuntimeSnapshot {
         conversation_id: state.conversation_id.load(Ordering::Relaxed),
 
         playback_active: pa.playback_active.load(Ordering::Relaxed),
-        llm_generating: pa.llm_generating.load(Ordering::Relaxed),
         tts_generating: pa.tts_generating.load(Ordering::Relaxed),
 
-        cpu_usage: f32::from_bits(state.latest_cpu.load(Ordering::Relaxed)),
-        ram_mb: state.latest_ram.load(Ordering::Relaxed),
+        system_cpu_usage: f32::from_bits(state.latest_sys_cpu.load(Ordering::Relaxed)),
+        system_ram_mb: (sys_ram_pct * 0.01 * total_ram_mb as f32) as u32,
+        vox_cpu_usage: f32::from_bits(state.latest_vox_cpu.load(Ordering::Relaxed)),
+        vox_ram_mb: state.latest_vox_ram.load(Ordering::Relaxed),
+        total_ram_mb,
+        cpu_cores,
 
         vad_energy: f32::from_bits(state.latest_energy.load(Ordering::Relaxed)),
         vad_probability: f32::from_bits(state.latest_vad_prob.load(Ordering::Relaxed)),
 
         stt_latency_ms: Some(state.latest_stt_ms.load(Ordering::Relaxed)).filter(|&v| v > 0),
         ttft_ms: Some(state.latest_ttft_ms.load(Ordering::Relaxed)).filter(|&v| v > 0),
-        total_voice_latency_ms: None, // Will be calculated in future phases
+        total_voice_latency_ms: Some(state.latest_voice_latency_ms.load(Ordering::Relaxed)).filter(|&v| v > 0),
 
         persistence_queue_depth: state.persist_tx.as_ref().map(|tx| tx.len()).unwrap_or(0),
         dropped_persistence_events: state.dropped_persistence_events.load(Ordering::Relaxed),
 
-        playback_buffer_samples: 0, // Need to expose this from PlaybackEngine if needed
+        playback_buffer_samples: buffer_samples,
         playback_underruns: pa.playback_underruns.load(Ordering::Relaxed),
 
         active_owner: owner,
+
+        active_threads: threads,
+        tts_rtf: {
+            let bits = state.latest_tts_rtf.load(Ordering::Relaxed);
+            let val = f32::from_bits(bits);
+            if val > 0.0 { Some(val) } else { None }
+        },
+        playback_start_ms: Some(state.latest_playback_start_ms.load(Ordering::Relaxed)).filter(|&v| v > 0),
+        persistence_writes_per_sec: f32::from_bits(state.latest_persistence_rate.load(Ordering::Relaxed)),
+        is_db_healthy: state.is_db_healthy.load(Ordering::Relaxed),
+        
+        is_llm_loaded: state.is_llm_loaded.load(Ordering::Relaxed),
+        is_tts_loaded: state.is_tts_loaded.load(Ordering::Relaxed),
+        is_stt_loaded: state.is_stt_loaded.load(Ordering::Relaxed),
+        is_vad_loaded: state.is_vad_loaded.load(Ordering::Relaxed),
+        is_sleeping: state.is_sleeping.load(Ordering::Relaxed),
+        is_engaged: state.pipeline.is_engaged.load(Ordering::Relaxed),
         timestamp_ms: now,
     }
 }

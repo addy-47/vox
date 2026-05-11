@@ -21,6 +21,12 @@ export const useVisibility = (config: VisibilityConfig = {}) => {
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
   const fadeTimer = useRef<NodeJS.Timeout | null>(null);
 
+  const isHoveredRef = useRef(false);
+  const setIsHoveredWithRef = useCallback((hovered: boolean) => {
+    isHoveredRef.current = hovered;
+    setIsHovered(hovered);
+  }, []);
+
   const clearTimers = useCallback(() => {
     if (holdTimer.current) clearTimeout(holdTimer.current);
     if (fadeTimer.current) clearTimeout(fadeTimer.current);
@@ -31,18 +37,19 @@ export const useVisibility = (config: VisibilityConfig = {}) => {
   // Transition to ACTIVE (e.g. on speech_start)
   const show = useCallback(() => {
     clearTimers();
-    if (state === 'HIDDEN' || state === 'FADING') {
-      setState('APPEARING');
-      // Small delay to allow transition
-      setTimeout(() => setState('ACTIVE'), 50);
-    } else {
-      setState('ACTIVE');
-    }
-  }, [state, clearTimers]);
+    setState(prev => {
+      if (prev === 'HIDDEN' || prev === 'FADING') {
+        // We use a nested timeout for state sequencing to keep callback stable
+        setTimeout(() => setState(s => s === 'APPEARING' ? 'ACTIVE' : s), 50);
+        return 'APPEARING';
+      }
+      return 'ACTIVE';
+    });
+  }, [clearTimers]);
 
   // Transition to HOLD (e.g. on speech_end)
   const startHold = useCallback(() => {
-    if (isHovered) {
+    if (isHoveredRef.current) {
       setState('ACTIVE'); // Stay active if hovered
       return;
     }
@@ -56,7 +63,7 @@ export const useVisibility = (config: VisibilityConfig = {}) => {
         setState('HIDDEN');
       }, fadeDuration);
     }, holdDuration);
-  }, [isHovered, holdDuration, fadeDuration, clearTimers]);
+  }, [holdDuration, fadeDuration, clearTimers]);
 
   const hideImmediately = useCallback(() => {
     clearTimers();
@@ -80,7 +87,7 @@ export const useVisibility = (config: VisibilityConfig = {}) => {
   return {
     state,
     isHovered,
-    setIsHovered,
+    setIsHovered: setIsHoveredWithRef,
     show,
     startHold,
     hideImmediately
