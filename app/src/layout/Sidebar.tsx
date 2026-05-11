@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Settings, Database, Monitor, Sun, Moon } from "lucide-react";
+import { Settings, Database, Monitor, Sun, Moon, Activity } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import logo from "@/assets/logo.webp";
 import logoLight from "@/assets/logo-light.webp";
@@ -9,6 +9,7 @@ import { useSettings } from "@/shared/context/SettingsContext";
 const topNavItems = [
   { icon: Monitor, label: "HOME", path: "/" },
   { icon: Database, label: "memory", path: "/history" },
+  { icon: Activity, label: "HEALTH", path: "/monitoring" },
   { icon: Settings, label: "SYSTEM", path: "/settings" },
 ];
 
@@ -17,9 +18,9 @@ export const Sidebar: React.FC = () => {
   const theme = draftSettings?.ui.theme || 'dark';
 
   return (
-    <aside className="fixed left-0 top-0 h-full z-40 flex flex-col bg-[rgb(var(--sidebar))] border-r border-[rgba(var(--border),0.05)] transition-colors duration-300" style={{ width: "96px" }}>
+    <aside className="fixed left-0 top-0 h-full z-40 flex flex-col bg-[rgb(var(--sidebar))] border-r border-[rgba(var(--border),0.05)] transition-all duration-400 ease-in-out" style={{ width: "96px" }}>
       {/* Top logo area */}
-      <div className="flex flex-col items-center justify-center py-10">
+      <div className="flex flex-col items-center justify-center py-20">
         <div
           className="relative transition-all duration-300 hover:scale-110 active:scale-95"
           style={{ width: 32, height: 32 }}
@@ -39,7 +40,7 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Main Navigation */}
-      <nav className="flex flex-col items-center gap-1 py-4 flex-1">
+      <nav className="flex flex-col items-center gap-1  flex-1">
         {topNavItems.map((item) => (
           <NavLink
             key={item.label}

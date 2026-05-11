@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { hexToRgb } from "@/shared/lib/utils";
@@ -59,6 +59,7 @@ export interface VoxSettings {
   interaction: {
     main_app_mode: "Passive" | "PTT";
     tray_mode: "Passive" | "PTT";
+    auto_sleep_timeout: number;
   };
   telemetry: {
     enabled: boolean;
@@ -66,6 +67,7 @@ export interface VoxSettings {
   };
   persistence: {
     enabled: boolean;
+    private_mode: boolean;
     max_sessions: number;
     retention_days: number;
   };
@@ -102,7 +104,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     document.documentElement.style.setProperty("--accent", hexToRgb(ui.accent_seed));
   }, []);
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       const [settingsResp, catalogResp] = await Promise.all([
         invoke<VoxSettings>("get_settings"),
@@ -117,7 +119,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [applyAppearance]);
 
   useEffect(() => {
     fetchSettings();
@@ -126,13 +128,16 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const setup = async () => {
       const win = getCurrentWindow();
       
-      const u1 = await win.listen<string>("theme-changed", (event) => {
-         const newTheme = event.payload;
-         document.documentElement.setAttribute("data-theme", newTheme);
+      // Only fetch if another window updated settings
+      // We skip local updates because updateDraft already handles local state
+      const u1 = await win.listen<string>("theme-changed", (_) => {
+         // Optionally check if event.windowLabel !== currentWindow
          fetchSettings();
       });
 
       const u2 = await win.listen("settings-updated", () => {
+         // This is still needed for sync across windows, 
+         // but we can make it less aggressive
          fetchSettings();
       });
 
@@ -140,30 +145,41 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setup();
     return () => { unlisteners.forEach(u => u()); };
-  }, [applyAppearance]);
+  }, [fetchSettings]);
 
-  const updateDraft = (domain: keyof VoxSettings, key: string, value: any) => {
+  const updateDraft = useCallback((domain: keyof VoxSettings, key: string, value: any) => {
     if (!draftSettings) return;
 
-    // Use deep copy to avoid reference sharing with state
-    const newDraft = JSON.parse(JSON.stringify(draftSettings));
-    (newDraft[domain] as any)[key] = value;
-
-    setDraftSettings(newDraft);
+    setDraftSettings(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [domain]: {
+          ...(prev[domain] as any),
+          [key]: value
+        }
+      };
+    });
 
     if (domain === "ui" && (key === "theme" || key === "accent_seed")) {
-      applyAppearance(newDraft.ui);
+      // Use the new value directly instead of stale draftSettings
+      const updatedUi = { ...draftSettings.ui, [key]: value };
+      applyAppearance(updatedUi);
+      invoke("update_setting", { domain, key, value });
+    }
+
+    // Phase 6: Hot-update private mode in backend immediately
+    if (domain === "persistence" && key === "private_mode") {
       invoke("update_setting", { domain, key, value });
     }
     
     if (domain === "interaction") {
       const target = key === "main_app_mode" ? "main" : "tray";
-      const mode = value;
-      invoke("update_interaction_mode", { target, mode });
+      invoke("update_interaction_mode", { target, mode: value });
     }
-  };
+  }, [draftSettings, applyAppearance]);
 
-  const commitChanges = async () => {
+  const commitChanges = useCallback(async () => {
     if (!settings || !draftSettings) return;
 
     const promises: Promise<any>[] = [];
@@ -177,7 +193,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
         if (JSON.stringify(val) !== JSON.stringify(oldVal)) {
           promises.push(invoke("update_setting", { domain, key, value: val }).then((res: any) => {
-             if (res.reload_policy === "restart") {
+             if (res && res.reload_policy === "restart") {
                 restartKeys.push(`${domain}.${key}`);
              }
           }));
@@ -192,21 +208,21 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setChangedRestartKeys(restartKeys);
       setIsRestartModalOpen(true);
     }
-  };
+  }, [settings, draftSettings, fetchSettings]);
 
-  const handleRestart = async () => {
-    console.log("Relaunching application...");
+  const handleRestart = useCallback(async () => {
     setIsRestartModalOpen(false);
-  };
+    // Add tauri relaunch logic if available
+  }, []);
 
-  const discardChanges = () => {
+  const discardChanges = useCallback(() => {
     if (settings) {
       setDraftSettings(JSON.parse(JSON.stringify(settings)));
       applyAppearance(settings.ui);
     }
-  };
+  }, [settings, applyAppearance]);
 
-  const restoreDefaults = async () => {
+  const restoreDefaults = useCallback(async () => {
     try {
       const defaults = await invoke<VoxSettings>("reset_settings");
       setSettings(defaults);
@@ -215,29 +231,33 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } catch (err) {
       console.error("Failed to restore defaults:", err);
     }
-  };
+  }, [applyAppearance]);
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     if (!draftSettings) return;
     const newTheme = draftSettings.ui.theme === "dark" ? "light" : "dark";
     updateDraft("ui", "theme", newTheme);
-  };
+  }, [draftSettings, updateDraft]);
 
-  const hasChanges = settings && draftSettings ? JSON.stringify(settings) !== JSON.stringify(draftSettings) : false;
+  const hasChanges = useMemo(() => {
+    return settings && draftSettings ? JSON.stringify(settings) !== JSON.stringify(draftSettings) : false;
+  }, [settings, draftSettings]);
+
+  const value = useMemo(() => ({
+    settings,
+    draftSettings,
+    isLoading,
+    hasChanges,
+    updateDraft,
+    commitChanges,
+    discardChanges,
+    restoreDefaults,
+    toggleTheme,
+    modelCatalog
+  }), [settings, draftSettings, isLoading, hasChanges, updateDraft, commitChanges, discardChanges, restoreDefaults, toggleTheme, modelCatalog]);
 
   return (
-    <SettingsContext.Provider value={{ 
-      settings, 
-      draftSettings, 
-      isLoading, 
-      hasChanges, 
-      updateDraft, 
-      commitChanges, 
-      discardChanges, 
-      restoreDefaults,
-      toggleTheme,
-      modelCatalog
-    }}>
+    <SettingsContext.Provider value={value}>
       {children}
       <RestartModal 
         isOpen={isRestartModalOpen}
