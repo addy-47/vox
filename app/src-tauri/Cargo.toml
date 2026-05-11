@@ -37,6 +37,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 crossbeam-channel = "0.5"
+thread-priority = "1.1"
 
 # Phase 6.3 — Session persistence
 rusqlite = { version = "0.31", features = ["bundled"] }

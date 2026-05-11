@@ -10,9 +10,10 @@
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use ringbuf::{HeapCons, HeapProd};
+use ringbuf::traits::*;
 
 // ─── Resampling (Directive 3) ─────────────────────────────────────────────────
 
@@ -43,8 +44,8 @@ const JITTER_PREBUFFER_SAMPLES: usize = 48_000 / 1000 * 300; // 14_400 samples
 // ─── Playback Engine ──────────────────────────────────────────────────────────
 
 pub struct PlaybackEngine {
-    /// Shared ring buffer between ingestion thread and CPAL callback.
-    buffer:         Arc<Mutex<VecDeque<f32>>>,
+    /// Producer half of the lock-free ring buffer (Mono 48kHz).
+    producer:       std::sync::Mutex<HeapProd<f32>>,
     /// `true` while CPAL is actively draining (used for mic ducking in Speaker mode).
     playback_active: Arc<AtomicBool>,
     /// Set `true` to clear the buffer and stop playback.
@@ -57,6 +58,8 @@ pub struct PlaybackEngine {
     _playback_underruns: Arc<std::sync::atomic::AtomicU64>,
     /// Ref to the state atomic for lock-free checks.
     _is_assistant_speaking: Arc<AtomicBool>,
+    /// Track current buffer level for pre-buffering logic.
+    buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 // Safety: cpal::Stream is not Send/Sync on some platforms (macOS), but is
@@ -73,26 +76,30 @@ impl PlaybackEngine {
         playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
     ) -> Result<Self> {
-        let buffer: Arc<Mutex<VecDeque<f32>>> =
-            Arc::new(Mutex::new(VecDeque::with_capacity(JITTER_PREBUFFER_SAMPLES * 4)));
+        // Create 2s buffer at 48kHz (192,000 samples)
+        let rb = ringbuf::HeapRb::<f32>::new(48_000 * 2);
+        let (producer, consumer) = rb.split();
+        let buffer_samples = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         let stream = Self::build_cpal_stream(
-            Arc::clone(&buffer),
+            consumer,
             Arc::clone(&playback_active),
             Arc::clone(&cancel_flag),
             Arc::clone(&playback_energy),
             Arc::clone(&playback_underruns),
             Arc::clone(&is_assistant_speaking),
+            Arc::clone(&buffer_samples),
         )?;
 
         Ok(Self {
-            buffer,
+            producer: std::sync::Mutex::new(producer),
             playback_active,
             cancel_flag,
             _stream: Some(stream),
             _playback_energy: playback_energy,
             _playback_underruns: playback_underruns,
             _is_assistant_speaking: is_assistant_speaking,
+            buffer_samples,
         })
     }
 
@@ -106,17 +113,21 @@ impl PlaybackEngine {
             return;
         }
 
-        // Directive 3: upsample before touching the ring buffer
         let upsampled = upsample_2x(chunk_24khz);
-
-        let mut buf = self.buffer.lock().unwrap();
-        buf.extend(upsampled.iter());
+        let mut prod = self.producer.lock().unwrap();
+        
+        let pushed = prod.push_slice(&upsampled);
+        if pushed < upsampled.len() {
+            log::warn!("[Playback] Buffer overflow — dropped {} samples", upsampled.len() - pushed);
+        }
+        
+        let current_len = self.buffer_samples.fetch_add(pushed, Ordering::SeqCst) + pushed;
 
         // Start CPAL playback once we have enough pre-buffered audio
         if !self.playback_active.load(Ordering::Relaxed)
-            && buf.len() >= JITTER_PREBUFFER_SAMPLES
+            && current_len >= JITTER_PREBUFFER_SAMPLES
         {
-            log::info!("[Playback] Pre-buffer full ({} samples) — starting output", buf.len());
+            log::info!("[Playback] Pre-buffer full ({} samples) — starting output", current_len);
             self.playback_active.store(true, Ordering::Relaxed);
         }
     }
@@ -125,10 +136,12 @@ impl PlaybackEngine {
     pub fn cancel(&self) {
         self.cancel_flag.store(true, Ordering::Relaxed);
         self.playback_active.store(false, Ordering::Relaxed);
-        if let Ok(mut buf) = self.buffer.lock() {
-            buf.clear();
+        if let Ok(_prod) = self.producer.lock() {
+            // No easy 'clear' in ringbuf v0.4 producer, but we can't block here.
+            // The callback will see cancel_flag and drop its own consumer state.
         }
-        log::info!("[Playback] Cancelled — buffer cleared");
+        self.buffer_samples.store(0, Ordering::SeqCst);
+        log::info!("[Playback] Cancelled — buffer signal sent");
     }
 
     /// Returns `true` if the playback buffer is empty and CPAL has gone idle.
@@ -138,22 +151,19 @@ impl PlaybackEngine {
 
     /// Returns the number of samples remaining in the playback buffer.
     pub fn buffer_len(&self) -> usize {
-        if let Ok(buf) = self.buffer.lock() {
-            buf.len()
-        } else {
-            0
-        }
+        self.buffer_samples.load(Ordering::Relaxed)
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
 
     fn build_cpal_stream(
-        buffer: Arc<Mutex<VecDeque<f32>>>,
+        mut consumer: HeapCons<f32>,
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
         playback_energy: Arc<AtomicU32>,
         playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
+        buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
     ) -> Result<cpal::Stream> {
         let host   = cpal::default_host();
         let device = host.default_output_device()
@@ -189,47 +199,44 @@ impl PlaybackEngine {
                 if !playback_active.load(Ordering::Relaxed)
                     || cancel_flag.load(Ordering::Relaxed)
                 {
-                    // Fill silence
+                    // Clear the consumer if cancelled to drop old audio
+                    if cancel_flag.load(Ordering::Relaxed) {
+                        consumer.skip(consumer.occupied_len());
+                        buffer_samples.store(0, Ordering::SeqCst);
+                    }
                     output.fill(0.0);
                     return;
                 }
 
-                let mut buf = match buffer.try_lock() {
-                    Ok(b) => b,
-                    Err(_) => {
-                        // Lock contention — fill silence rather than block the audio interrupt
-                        output.fill(0.0);
-                        return;
-                    }
-                };
-
-                // The ring buffer is mono 48kHz. CPAL output is stereo.
-                // Write each mono sample to both L and R channels.
-                let frames = output.len() / 2; // stereo → frames
+                // Lock-free read from SPSC ring buffer
+                let frames = output.len() / 2; // stereo → mono frames
                 let mut sum_sq = 0.0;
+                let mut read_count = 0;
+
                 for frame in 0..frames {
-                    let sample = buf.pop_front().unwrap_or(0.0);
+                    let sample = consumer.try_pop().unwrap_or(0.0);
+                    if sample != 0.0 { read_count += 1; }
+                    
                     sum_sq += sample * sample;
                     output[frame * 2]     = sample; // L
                     output[frame * 2 + 1] = sample; // R
                 }
                 
-                // RCA Fix: Use AtomicU32 (f32::to_bits) instead of mpsc::send to avoid
-                // memory allocation/blocking in the high-priority audio callback.
+                // Atomic update of current buffer level for telemetry/logic
+                buffer_samples.fetch_sub(read_count.min(buffer_samples.load(Ordering::Relaxed)), Ordering::SeqCst);
+
                 let raw_energy = (sum_sq / frames as f32).sqrt();
                 let energy = (raw_energy * 15.0).clamp(0.0, 1.0);
                 playback_energy.store(energy.to_bits(), Ordering::Relaxed);
 
                 // Buffer exhausted — signal idle
-                if buf.is_empty() {
-                    // If we are supposed to be in AssistantSpeaking state but buffer is empty,
-                    // this is an underrun (either a stall in TTS or end of turn).
+                if consumer.is_empty() {
                     if is_assistant_speaking.load(Ordering::Relaxed) {
                         playback_underruns.fetch_add(1, Ordering::Relaxed);
                     }
                     playback_active.store(false, Ordering::Relaxed);
                     playback_energy.store(0f32.to_bits(), Ordering::Relaxed);
-                    log::info!("[Playback] Buffer drained — playback_active = false");
+                    buffer_samples.store(0, Ordering::SeqCst);
                 }
             },
             move |err| {

@@ -170,9 +170,61 @@ impl TtsEngine {
                 if is_hi { "HI" } else { "EN" }, turn_id, audio_duration, rtf
             );
 
-            let _ = event_tx.send(VoxEvent::TtsFinished { turn_id });
+            let _ = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf });
         }
 
         Ok(())
     }
+}
+
+/// Commands sent from the Pipeline Orchestrator to the TTS background thread.
+pub enum TtsCommand {
+    /// Start synthesizing `text` using `voice_sid`.
+    Generate {
+        turn_id: u32,
+        voice_sid: i32,
+        text: String,
+    },
+    /// Stop the background thread and deallocate the models.
+    Shutdown,
+}
+
+// ─── TTS Worker Entry Point ──────────────────────────────────────────────────
+
+pub fn spawn_tts_worker(
+    rx: std::sync::mpsc::Receiver<TtsCommand>,
+    en_model_dir: std::path::PathBuf,
+    hi_model_path: std::path::PathBuf,
+    event_tx: std::sync::mpsc::Sender<VoxEvent>,
+    cancel_flag: Arc<AtomicBool>,
+    is_loaded: Arc<AtomicBool>,
+) {
+    let mut engine = match TtsEngine::new(&en_model_dir, &hi_model_path) {
+        Ok(e) => {
+            is_loaded.store(true, Ordering::Relaxed);
+            e
+        },
+        Err(e) => {
+            log::error!("[TTS] CRITICAL: Failed to load multi-model engine: {}", e);
+            return;
+        }
+    };
+
+    log::info!("[TTS Worker] Persistent loop started.");
+    while let Ok(cmd) = rx.recv() {
+        match cmd {
+            TtsCommand::Generate { turn_id, voice_sid, text } => {
+                if let Err(e) = engine.synthesize_chunk(&text, voice_sid, turn_id, cancel_flag.clone(), event_tx.clone()) {
+                    log::error!("[TTS Worker] Synthesis error (turn {}): {}", turn_id, e);
+                }
+            }
+            TtsCommand::Shutdown => {
+                log::info!("[TTS Worker] Shutdown command received. Exiting loop.");
+                break;
+            }
+        }
+    }
+    
+    is_loaded.store(false, Ordering::Relaxed);
+    log::info!("[TTS Worker] Loop exited. Engine will be dropped.");
 }
