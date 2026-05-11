@@ -133,22 +133,17 @@ pub async fn update_setting(
             }
             
             let is_engaged = state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed);
-            let main_app_mode = {
-                 let s = state.settings.read().unwrap();
-                 s.interaction.main_app_mode.clone()
-            };
-            let main_app_passive = main_app_mode == crate::core::settings::InteractionMode::Passive;
 
-            log::info!("[Settings] Offload evaluation: engaged={}, main_app_mode={:?}, passive={}", is_engaged, main_app_mode, main_app_passive);
+            log::info!("[Settings] Offload evaluation: engaged={}", is_engaged);
 
-            if !is_engaged && !main_app_passive {
-                log::info!("[Settings] No active consumers (Engage=OFF, Passive=OFF). Offloading models...");
+            if !is_engaged {
+                log::info!("[Settings] No active consumers (Engage=OFF). Offloading models...");
                 let app_clone = app.clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = stop_engine(app_clone).await;
                 });
             } else {
-                log::info!("[Settings] Engine retention: {} consumer(s) active.", if is_engaged { "Engagement" } else { "Passive Listening" });
+                log::info!("[Settings] Engine retention: Active consumer(s) engaged.");
             }
         } else {
             // Enable Tray: Launch engine if needed
@@ -223,6 +218,12 @@ pub async fn update_setting(
 
     if domain == "ui" && key == "theme" {
         let _ = app.emit("theme-changed", value.as_str().unwrap_or("dark"));
+    }
+
+    // Notify Pipeline Orchestrator of settings change for local caching
+    if let Some(engine) = state.engine.lock().await.as_ref() {
+        let current_settings = state.settings.read().unwrap().clone();
+        let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::SettingsUpdated(current_settings));
     }
 
     let _ = app.emit("settings-updated", ());

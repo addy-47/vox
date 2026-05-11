@@ -21,6 +21,37 @@ use llama_cpp_2::{
 
 use crate::core::events::VoxEvent;
 
+// ─── LLM Worker Entry Point ──────────────────────────────────────────────────
+
+pub fn spawn_llm_worker(
+    rx: std::sync::mpsc::Receiver<LlmCommand>,
+    model_path: std::path::PathBuf,
+    event_tx: std::sync::mpsc::Sender<VoxEvent>,
+    is_loaded: Arc<AtomicBool>,
+) {
+    let settings = {
+        // We need to know ctx_size and threads
+        // This is a bit awkward as we don't have AppState here.
+        // We'll use defaults if not provided, or better, the orchestrator should provide them.
+        // For now, we'll keep the existing LlmWorker::new logic.
+        (2048, 4) // Defaults
+    };
+
+    let worker = match LlmWorker::new(&model_path, settings.0, settings.1) {
+        Ok(w) => {
+            is_loaded.store(true, Ordering::Relaxed);
+            w
+        },
+        Err(e) => {
+            log::error!("[LLM] CRITICAL: Failed to load model: {}", e);
+            return;
+        }
+    };
+
+    worker.run_loop(rx, event_tx);
+    is_loaded.store(false, Ordering::Relaxed);
+}
+
 // ─── LLM Worker ───────────────────────────────────────────────────────────────
 
 /// Commands sent from the Pipeline Orchestrator to the LLM background thread.
@@ -41,8 +72,8 @@ pub enum LlmCommand {
 /// Must live on the same OS thread where it was created (llama.cpp is not Send).
 /// Spawn with `std::thread::spawn` — never tokio.
 pub struct LlmWorker {
-    model:   LlamaModel,
-    backend: &'static LlamaBackend,
+    model:    LlamaModel,
+    backend:  &'static LlamaBackend,
     ctx_size: u32,
     n_threads: u32,
 }
@@ -76,7 +107,12 @@ impl LlmWorker {
             .map_err(|e| anyhow!("[LLM] Failed to load model: {}", e))?;
 
         log::info!("[LLM] Model loaded. ctx_size={} n_threads={}", ctx_size, n_threads);
-        Ok(Self { model, backend, ctx_size, n_threads })
+        Ok(Self { 
+            model, 
+            backend, 
+            ctx_size, 
+            n_threads,
+        })
     }
 
     /// Persistent loop running on a dedicated OS thread.
@@ -138,7 +174,7 @@ impl LlmWorker {
             return Err(anyhow!("[LLM] Empty token list for prompt"));
         }
 
-        // Build context
+        // Build context (Directive: Optimized 8GB Memory Baseline)
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(Some(NonZeroU32::new(self.ctx_size).unwrap()))
             .with_n_threads(self.n_threads as i32)

@@ -2,13 +2,12 @@ pub mod core;
 pub mod services;
 pub mod tray;
 pub mod ipc;
-pub mod telemetry;
 pub mod utils;
 pub mod persistence;
 pub mod monitoring;
 
 use crate::core::state::AppState;
-use crate::ipc::pipeline::{check_engine_status, launch_engine, engage};
+use crate::ipc::pipeline::{check_engine_status, launch_engine, stop_engine, engage};
 use crate::ipc::tray::{
     hide_tray_window, sync_hud_visibility, set_hud_ignore_cursor, 
     update_interaction_mode, show_main_window, toggle_hud_visibility
@@ -18,6 +17,7 @@ use crate::ipc::test::debug_harden_test;
 use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog};
 use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
 use crate::tray::{setup_linux_virtual_layer, setup_tray_window, position_tray_window};
+use crate::monitoring::system_monitor::spawn_system_monitor;
 
 use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
@@ -45,24 +45,40 @@ pub fn run() {
             // ── 0.6 Telemetry Aggregator ───────────────────────────────────────────
             let latest_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_vad_prob = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_ram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let latest_sys_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_sys_ram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_vox_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_vox_ram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
             let latest_stt_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
             let latest_ttft_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let latest_voice_latency_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let latest_threads = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let latest_tts_rtf = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_playback_start_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let latest_persistence_rate = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let is_db_healthy = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+            let is_private_mode = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let dropped_telemetry_events = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 
-            let (telemetry_worker, telemetry_tx) = crate::telemetry::aggregator::TelemetryAggregator::new(
+            let (telemetry_worker, telemetry_tx) = crate::monitoring::aggregator::TelemetryAggregator::new(
                 std::sync::Arc::clone(&latest_energy),
                 std::sync::Arc::clone(&latest_vad_prob),
-                std::sync::Arc::clone(&latest_cpu),
-                std::sync::Arc::clone(&latest_ram),
+                std::sync::Arc::clone(&latest_sys_cpu),
+                std::sync::Arc::clone(&latest_sys_ram),
+                std::sync::Arc::clone(&latest_vox_cpu),
+                std::sync::Arc::clone(&latest_vox_ram),
                 std::sync::Arc::clone(&latest_stt_ms),
                 std::sync::Arc::clone(&latest_ttft_ms),
+                std::sync::Arc::clone(&dropped_telemetry_events),
             );
             telemetry_worker.start();
 
             // ── 0.7 Persistence Worker ─────────────────────────────────────────────
             let persist_tx = crate::persistence::worker::spawn_persistence_worker(
-                crate::utils::paths::get().db.clone()
+                crate::utils::paths::get().db.clone(),
+                std::sync::Arc::clone(&is_db_healthy),
+                std::sync::Arc::clone(&latest_persistence_rate),
+                std::sync::Arc::clone(&is_private_mode),
             );
 
             // ── 1. App State ────────────────────────────────────────────────────────
@@ -72,17 +88,29 @@ pub fn run() {
                 telemetry_tx,
                 latest_energy,
                 latest_vad_prob,
-                latest_cpu,
-                latest_ram,
+                latest_sys_cpu,
+                latest_sys_ram,
+                latest_vox_cpu,
+                latest_vox_ram,
                 latest_stt_ms,
                 latest_ttft_ms,
+                latest_voice_latency_ms,
+                latest_threads,
+                latest_tts_rtf,
+                latest_playback_start_ms,
+                latest_persistence_rate,
+                is_db_healthy,
+                is_private_mode,
+                dropped_telemetry_events,
             );
             app_state.persist_tx = Some(persist_tx);
 
             // ── 1.5 Monitoring Collector ──────────────────────────────────────────
             let state_arc = std::sync::Arc::new(app_state);
+            app.manage(state_arc.clone());
+            
             crate::monitoring::collector::spawn_monitoring_collector(std::sync::Arc::clone(&state_arc));
-            app.manage(state_arc);
+            spawn_system_monitor(app.handle().clone());
 
             // ── 1. System Tray ───────────────────────────────────────────────────────
             let tray_menu = Menu::new(app)?;
@@ -100,8 +128,19 @@ pub fn run() {
                 let state: State<'_, std::sync::Arc<AppState>> = app.state();
                 let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
                 *menu_item_lock = Some(live_i.clone());
-                // Reflect the default hud_visible=true in the menu UI
-                let _ = live_i.set_checked(true);
+                
+                let tray_enabled = {
+                    let s = state.settings.read().unwrap();
+                    s.ui.tray_enabled
+                };
+                let hud_visible = {
+                    let v = tauri::async_runtime::block_on(state.hud_visible.lock());
+                    *v
+                };
+
+                // Reflect tray_enabled setting in menu UI
+                let _ = live_i.set_enabled(tray_enabled);
+                let _ = live_i.set_checked(hud_visible);
             }
 
             let _tray = TrayIconBuilder::new()
@@ -109,7 +148,10 @@ pub fn run() {
                 .menu(&tray_menu)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "launch" => {
-                        let _ = show_main_window(app.clone());
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = show_main_window(handle).await;
+                        });
                     }
                     "live" => {
                         let handle = app.clone();
@@ -123,9 +165,16 @@ pub fn run() {
                 .on_tray_icon_event(|tray, event| {
                     if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
                         let app = tray.app_handle().clone();
-                        tauri::async_runtime::spawn(async move {
-                            let _ = launch_engine(app).await;
-                        });
+                        let tray_enabled = {
+                            let state: State<'_, std::sync::Arc<AppState>> = app.state();
+                            let s = state.settings.read().unwrap();
+                            s.ui.tray_enabled
+                        };
+                        if tray_enabled {
+                            tauri::async_runtime::spawn(async move {
+                                let _ = launch_engine(app).await;
+                            });
+                        }
                     }
                 })
                 .build(app)?;
@@ -143,11 +192,21 @@ pub fn run() {
                 });
             }
 
-            // ── 3. Auto-launch engine on startup ─────────────────────────────
+            // ── 3. Conditional auto-launch engine on startup ─────────────────────────────
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = launch_engine(handle).await {
-                    log::error!("[BOOTSTRAP] Engine auto-launch failed: {}", e);
+                let launch_needed = {
+                    let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
+                    let s = state.settings.read().unwrap();
+                    s.ui.tray_enabled || s.interaction.main_app_mode == crate::core::settings::InteractionMode::Passive
+                };
+
+                if launch_needed {
+                    if let Err(e) = launch_engine(handle).await {
+                        log::error!("[BOOTSTRAP] Engine auto-launch failed: {}", e);
+                    }
+                } else {
+                    log::info!("[BOOTSTRAP] Tray disabled and Main App is non-passive. Skipping engine auto-launch to save resources.");
                 }
             });
 
@@ -198,6 +257,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             check_engine_status,
             launch_engine,
+            stop_engine,
             engage,
             hide_tray_window,
             sync_hud_visibility,
