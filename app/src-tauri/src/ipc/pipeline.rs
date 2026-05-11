@@ -45,6 +45,16 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
             let _ = h.join();
         }
         log::info!("[PIPELINE] Audio Engine threads joined. Resources freed.");
+
+        // 3. Gracefully shutdown Persistence Worker (Architect's requirement)
+        // This closes the SQLite connection and flushes the WAL.
+        {
+            let mut persist_lock = state.persist_tx.lock().unwrap();
+            if let Some(tx) = persist_lock.take() {
+                let _ = tx.send(crate::persistence::events::PersistenceEvent::Shutdown);
+                log::info!("[PIPELINE] Persistence worker signaled to shutdown/flush.");
+            }
+        }
     }
     
     Ok(())
@@ -75,12 +85,15 @@ pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) 
             state.conversation_id.store(conv_id, Ordering::Relaxed);
 
             // Persist Session Start
-            if let Some(ref tx) = state.persist_tx {
-                if let Err(_) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionStarted {
-                    id: conv_id,
-                    timestamp_ms: conv_id,
-                }) {
-                    state.dropped_persistence_events.fetch_add(1, Ordering::Relaxed);
+            {
+                let persist_tx = state.persist_tx.lock().unwrap();
+                if let Some(ref tx) = *persist_tx {
+                    if let Err(_) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionStarted {
+                        id: conv_id,
+                        timestamp_ms: conv_id,
+                    }) {
+                        state.dropped_persistence_events.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
 
@@ -101,7 +114,8 @@ pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) 
             // Persist Session End
             let conv_id = state.conversation_id.swap(0, Ordering::Relaxed);
             if conv_id != 0 {
-                if let Some(ref tx) = state.persist_tx {
+                let persist_tx = state.persist_tx.lock().unwrap();
+                if let Some(ref tx) = *persist_tx {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
@@ -145,11 +159,26 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 
     log::info!("[PIPELINE] >>> Launching 3-Tier Audio Engine...");
 
-    // ── Reset Lifecycle Atomics ─────────────────────────────────────────────
-    // If the engine was previously shut down, these flags might still be 'true'.
     // We MUST reset them before spawning workers, otherwise they exit immediately.
     state.pipeline.engine_shutdown.store(false, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
+
+    // ── Re-spawn Persistence Worker if needed ──────────────────────────────
+    // If the app was idle, the persistence worker was shut down to free the DB lock.
+    {
+        let mut persist_lock = state.persist_tx.lock().unwrap();
+        if persist_lock.is_none() {
+            log::info!("[PIPELINE] Re-spawning Persistence Worker...");
+            let tx = crate::persistence::worker::spawn_persistence_worker(
+                crate::utils::paths::get().db.clone(),
+                std::sync::Arc::clone(&state.is_db_healthy),
+                std::sync::Arc::clone(&state.latest_persistence_rate),
+                std::sync::Arc::clone(&state.is_private_mode),
+            );
+            *persist_lock = Some(tx);
+        }
+    }
+    // ────────────────────────────────────────────────────────────────────────
     let (stt_model_path, vad_model_path, pre_load) = {
         let settings = state.settings.read().unwrap();
         let models_dir = paths::get().models.clone();
@@ -246,7 +275,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         std::sync::Arc::clone(&state.pipeline.is_engaged),
         std::sync::Arc::clone(&state.pipeline.transcript_history),
         std::sync::Arc::clone(&state.conversation_id),
-        state.persist_tx.clone(),
+        state.persist_tx.lock().unwrap().clone(),
         std::sync::Arc::clone(&state.dropped_persistence_events),
         std::sync::Arc::clone(&state.latest_voice_latency_ms),
         std::sync::Arc::clone(&state.latest_tts_rtf),
