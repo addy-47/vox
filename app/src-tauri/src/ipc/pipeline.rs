@@ -145,16 +145,19 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 
     log::info!("[PIPELINE] >>> Launching 3-Tier Audio Engine...");
 
-    let (stt_model_path, vad_model_path) = {
+    // ── Reset Lifecycle Atomics ─────────────────────────────────────────────
+    // If the engine was previously shut down, these flags might still be 'true'.
+    // We MUST reset them before spawning workers, otherwise they exit immediately.
+    state.pipeline.engine_shutdown.store(false, Ordering::Relaxed);
+    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
+    let (stt_model_path, vad_model_path, pre_load) = {
         let settings = state.settings.read().unwrap();
         let models_dir = paths::get().models.clone();
         
         let stt = models_dir.join(&settings.asr.model);
-
-        // VAD model is fixed in constants, not user configurable
         let vad = models_dir.join(crate::core::constants::MODEL_FILE_VAD);
 
-        (stt, vad)
+        (stt, vad, settings.ui.tray_enabled)
     };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
@@ -162,7 +165,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let (vad_tx_internal, vad_rx_internal) = std::sync::mpsc::channel::<crate::core::state::VadCommand>();
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
-    let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone(), state.is_stt_loaded.clone(), state.pipeline.engine_shutdown.clone())?;
+    let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone(), state.is_stt_loaded.clone(), state.pipeline.engine_shutdown.clone(), pre_load)?;
 
     let threshold = state.settings.read().unwrap().vad.threshold;
     let mut vad = VadEngine::new(&vad_model_path, threshold).map_err(|e| e.to_string())?;
