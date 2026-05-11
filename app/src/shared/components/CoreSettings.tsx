@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { Brain, Volume2, Palette, Cpu, MemoryStick, ChevronRight, ChevronLeft } from "lucide-react";
+import { Brain, Volume2, Palette, Cpu, MemoryStick, ChevronRight, ChevronLeft, MousePointerClick } from "lucide-react";
 import { HexColorPicker } from "react-colorful";
 import { cn } from "@/shared/lib/utils";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettings, VoiceProfile } from "@/shared/context/SettingsContext";
 
 // ─── Sub-Components (Isolated Cards) ──────────────────────────────────────────
 
@@ -30,25 +30,25 @@ const EngineCard: React.FC = () => {
           style={{ backfaceVisibility: 'hidden' }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between mb-8 shrink-0">
+          <div className="flex items-center gap-3 mb-8 shrink-0">
+            <Brain className="text-[rgb(var(--accent))]" size={20} />
             <div className="space-y-1">
               <h2 className="text-lg font-bold text-[rgb(var(--foreground))]">Core Engine</h2>
-              <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-60">Brain & Reasoning</p>
+              <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Brain & Reasoning</p>
             </div>
-            <Brain className="text-[rgb(var(--accent))]" size={20} />
           </div>
 
           {/* Body */}
           <div className="space-y-8 overflow-y-auto custom-scrollbar pr-1 -mr-1">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-40">Active Model</label>
+                  <label className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-80">Active Model</label>
                   <div className="flex gap-4">
-                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-[rgb(var(--accent))] opacity-60">
+                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--accent))] opacity-60">
                         <Cpu size={12} />
                         {activeLlm.parameters}
                     </div>
-                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-[rgb(var(--foreground))] opacity-40">
+                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--foreground))] opacity-80">
                         <MemoryStick size={12} />
                         {activeLlm.ram_usage}
                     </div>
@@ -63,12 +63,12 @@ const EngineCard: React.FC = () => {
                         updateDraft("llm", "model", m.id);
                         setFlippedView('llm');
                       }}
-                      className="w-full text-left p-5 rounded-2xl transition-all duration-300 border bg-white/[0.02] border-[rgba(var(--border),0.05)] hover:bg-white/[0.05]"
+                      className="w-full text-left p-5 rounded-2xl transition-all duration-300 border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/[0.05]"
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-bold tracking-tight text-[rgb(var(--foreground))] opacity-80">{m.name}</span>
+                        <span className="text-l font-bold tracking-tight text-[rgb(var(--foreground))] opacity-80">{m.name}</span>
                       </div>
-                      <p className="text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))] opacity-50 font-medium">
+                      <p className="text-[12px] leading-relaxed text-[rgb(var(--foreground-muted))] opacity-80">
                         {m.description}
                       </p>
                     </button>
@@ -78,23 +78,23 @@ const EngineCard: React.FC = () => {
 
             <div className="grid md:grid-cols-2 gap-6 pb-2">
               <div className="space-y-3">
-                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-40">Speech Recognition</div>
+                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-80">Speech Recognition</div>
                 <button 
                   onClick={() => setFlippedView('asr')}
-                  className="w-full text-left p-4 rounded-xl bg-white/[0.03] border border-[rgba(var(--border),0.05)] hover:bg-white/[0.05] transition-colors"
+                  className="w-full text-left p-4 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/[0.05] transition-colors"
                 >
-                  <div className="text-sm font-bold text-[rgb(var(--foreground))] opacity-80 mb-1">{activeAsr.name}</div>
-                  <div className="text-[10px] text-[rgb(var(--foreground-muted))] opacity-40">{activeAsr.description}</div>
+                  <div className="text-l font-bold text-[rgb(var(--foreground))] opacity-80 mb-1">{activeAsr.name}</div>
+                  <div className="text-[12px] text-[rgb(var(--foreground-muted))] opacity-80">{activeAsr.description}</div>
                 </button>
               </div>
               <div className="space-y-3">
-                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-40">Voice Detection</div>
+                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-80">Voice Detection</div>
                 <button 
                   onClick={() => setFlippedView('vad')}
-                  className="w-full text-left p-4 rounded-xl bg-white/[0.03] border border-[rgba(var(--border),0.05)] hover:bg-white/[0.05] transition-colors"
+                  className="w-full text-left p-4 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/[0.05] transition-colors"
                 >
-                  <div className="text-sm font-bold text-[rgb(var(--foreground))] opacity-80 mb-1">TenVAD</div>
-                  <div className="text-[10px] text-[rgb(var(--foreground-muted))] opacity-40">Filters background noise for clear triggers</div>
+                  <div className="text-l font-bold text-[rgb(var(--foreground))] opacity-80 mb-1">TenVAD</div>
+                  <div className="text-[12px] text-[rgb(var(--foreground-muted))] opacity-80 ">Filters background noise for clear triggers</div>
                 </button>
               </div>
             </div>
@@ -110,7 +110,7 @@ const EngineCard: React.FC = () => {
           <div className="flex items-center gap-4 mb-8 shrink-0">
             <button 
               onClick={() => setFlippedView(null)}
-              className="w-8 h-8 rounded-full bg-white/[0.03] border border-white/5 flex items-center justify-center hover:bg-white/10 transition-colors"
+              className="w-8 h-8 rounded-full bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] flex items-center justify-center hover:bg-[rgb(var(--foreground))]/10 transition-colors"
             >
               <ChevronLeft size={16} className="text-[rgb(var(--foreground))]" />
             </button>
@@ -129,11 +129,11 @@ const EngineCard: React.FC = () => {
             {flippedView === 'llm' && (
               <div className="space-y-6">
                 <div className="space-y-3">
-                  <label className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-40">System Prompt</label>
+                  <label className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-80">System Prompt</label>
                   <textarea 
                     value={draftSettings.assistant?.system_prompt || ""}
                     onChange={(e) => updateDraft("assistant", "system_prompt", e.target.value)}
-                    className="w-full h-24 p-4 rounded-xl bg-white/[0.03] border border-[rgba(var(--border),0.05)] text-[11px] text-[rgb(var(--foreground))] opacity-80 focus:opacity-100 focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all resize-none custom-scrollbar leading-relaxed"
+                    className="w-full h-24 p-4 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] text-[11px] text-[rgb(var(--foreground))] opacity-80 focus:opacity-600 focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all resize-none custom-scrollbar leading-relaxed"
                     placeholder="You are a helpful AI assistant..."
                   />
                 </div>
@@ -141,8 +141,8 @@ const EngineCard: React.FC = () => {
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-40">Context Size</span>
-                      <span className="text-[10px] font-mono opacity-60">{draftSettings.llm.ctx_size}</span>
+                      <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-80">Context Size</span>
+                      <span className="text-[11px] font-mono opacity-60">{draftSettings.llm.ctx_size}</span>
                     </div>
                     <input 
                       type="range" 
@@ -154,8 +154,8 @@ const EngineCard: React.FC = () => {
                   </div>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-40">CPU Threads</span>
-                      <span className="text-[10px] font-mono opacity-60">{draftSettings.llm.threads}</span>
+                      <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-80">CPU Threads</span>
+                      <span className="text-[11px] font-mono opacity-60">{draftSettings.llm.threads}</span>
                     </div>
                     <input 
                       type="range" 
@@ -171,7 +171,7 @@ const EngineCard: React.FC = () => {
 
             {flippedView === 'asr' && (
               <div className="space-y-4">
-                <label className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-40">Recognition Model</label>
+                <label className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-80">Recognition Model</label>
                 <div className="grid grid-cols-1 gap-3">
                     {modelCatalog.asr.map(m => (
                       <button
@@ -181,7 +181,7 @@ const EngineCard: React.FC = () => {
                           "w-full text-left p-5 rounded-2xl transition-all duration-300 border",
                           draftSettings.asr.model === m.id
                             ? "bg-[rgb(var(--accent))]/[0.03] border-[rgb(var(--accent))]/30 shadow-sm"
-                            : "bg-white/[0.02] border-[rgba(var(--border),0.05)] hover:bg-white/[0.05]"
+                            : "bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/[0.05]"
                         )}
                       >
                         <div className="flex items-center justify-between mb-2">
@@ -193,7 +193,7 @@ const EngineCard: React.FC = () => {
                             <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgb(var(--accent))]" />
                           )}
                         </div>
-                        <p className="text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))] opacity-50 font-medium">
+                        <p className="text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))] opacity-60 font-medium">
                           {m.description}
                         </p>
                       </button>
@@ -206,8 +206,8 @@ const EngineCard: React.FC = () => {
               <div className="space-y-6">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-40">Activation Threshold</span>
-                    <span className="text-[10px] font-mono opacity-60">{draftSettings.vad.threshold.toFixed(2)}</span>
+                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-80">Activation Threshold</span>
+                    <span className="text-[11px] font-mono opacity-60">{draftSettings.vad.threshold.toFixed(2)}</span>
                   </div>
                   <input 
                     type="range" 
@@ -219,8 +219,8 @@ const EngineCard: React.FC = () => {
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-40">Noise Gate (PTT)</span>
-                    <span className="text-[10px] font-mono opacity-60">{draftSettings.vad.ptt_noise_gate.toFixed(3)}</span>
+                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-80">Noise Gate (PTT)</span>
+                    <span className="text-[11px] font-mono opacity-60">{draftSettings.vad.ptt_noise_gate.toFixed(3)}</span>
                   </div>
                   <input 
                     type="range" 
@@ -241,42 +241,103 @@ const EngineCard: React.FC = () => {
 
 const VoiceCard: React.FC = () => {
   const { draftSettings, updateDraft, modelCatalog } = useSettings();
+  const voices = modelCatalog?.voices || [];
+  const [activeTab, setActiveTab] = useState<"en" | "hi">("en");
+
   if (!draftSettings || !modelCatalog) return null;
 
-  const VOICE_PROFILES = modelCatalog.voices || [];
+  const filteredVoices = voices.filter(v => v.language === activeTab);
+
+  const isSelected = (v: VoiceProfile) => {
+    if (v.language === "en") return draftSettings.tts.en_voice === v.id;
+    if (v.language === "hi") return draftSettings.tts.hi_voice === v.model_file;
+    return false;
+  };
+
+  const handleSelect = (v: VoiceProfile) => {
+    if (v.language === "en") {
+      updateDraft("tts", "en_voice", v.id);
+    } else if (v.language === "hi" && v.model_file) {
+      updateDraft("tts", "hi_voice", v.model_file);
+    }
+  };
+
+  // Helper for dynamic wave
+  const getHeights = () => {
+    const activeVoice = activeTab === "en" 
+        ? voices.find(v => v.id === draftSettings.tts.en_voice)
+        : voices.find(v => v.model_file === draftSettings.tts.hi_voice);
+    
+    const seed = activeVoice ? (activeVoice.id * 1337) % 100 : 42;
+    const base = [12, 28, 48, 64, 52, 36, 72, 56, 28, 12];
+    return base.map(h => Math.max(8, (h + seed) % 72));
+  };
+
+  const currentHeights = getHeights();
 
   return (
-    <div className="premium-card p-6 md:p-8 flex flex-col">
+    <div className="premium-card p-6 md:p-8 flex flex-col h-full">
       <div className="flex items-center justify-between mb-8 shrink-0">
-        <div className="space-y-1">
-          <h2 className="text-lg font-bold text-[rgb(var(--foreground))]">Assistant Voice</h2>
-          <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-60">Select your preferred voice</p>
+        <div className="flex items-center gap-3">
+          <Volume2 className="text-[rgb(var(--accent))]" size={20} />
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold text-[rgb(var(--foreground))]">Assistant Voice</h2>
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Select your preferred voice</p>
+          </div>
         </div>
-        <Volume2 className="text-[rgb(var(--accent))]" size={20} />
+
+        {/* Language Tabs */}
+        <div className="flex bg-[rgb(var(--foreground))]/[0.05] p-1 rounded-xl border border-[rgba(var(--border),0.05)]">
+          {(["en", "hi"] as const).map((lang) => (
+            <button
+              key={lang}
+              onClick={() => setActiveTab(lang)}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                activeTab === lang 
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg shadow-[rgb(var(--accent))]/20" 
+                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/5"
+              )}
+            >
+              {lang}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="overflow-y-auto custom-scrollbar pr-1 -mr-1">
-        <div className="flex flex-wrap gap-3 mb-8">
-          {VOICE_PROFILES.map((v) => (
+      <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 -mr-1">
+        <div className="flex flex-wrap gap-2.5 mb-8">
+          {filteredVoices.map((v) => (
             <button
               key={v.id}
-              onClick={() => updateDraft("tts", "voice_id", v.id)}
+              onClick={() => handleSelect(v)}
               className={cn(
-                "px-5 py-2 rounded-xl text-[11px] font-bold tracking-[0.15em] uppercase transition-colors duration-300",
-                draftSettings.tts.voice_id === v.id 
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm" 
-                  : "bg-white/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-white/10"
+                "px-5 py-2.5 rounded-xl text-[11px] font-bold tracking-[0.15em] uppercase transition-all duration-300",
+                isSelected(v)
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md scale-[1.02]" 
+                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10 hover:border-[rgba(var(--border),0.1)]"
               )}
             >
               {v.name}
             </button>
           ))}
         </div>
+      </div>
 
-        <div className="h-20 w-full bg-white/[0.02] border border-[rgba(var(--border),0.03)] rounded-2xl flex items-center justify-center overflow-hidden mb-2">
-          <div className="flex items-center gap-1.5">
-            {[4, 12, 24, 42, 32, 18, 48, 36, 12, 6].map((h, i) => (
-              <div key={i} className="w-1 rounded-full bg-[rgb(var(--accent))]/40 animate-pulse" style={{ height: h, animationDelay: `${i * 0.1}s` }} />
+      <div className="mt-auto pt-6">
+        <div className="h-24 w-full bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.03)] rounded-2xl flex items-center justify-center overflow-hidden">
+          <div className="flex items-center gap-2">
+            {currentHeights.map((h, i) => (
+              <div 
+                key={i} 
+                className="w-2 rounded-full bg-[rgb(var(--accent))] transition-all duration-500 ease-out" 
+                style={{ 
+                  height: h, 
+                  opacity: 0.4 + (h / 120),
+                  animation: `pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite`,
+                  animationDelay: `${i * 0.15}s` 
+                }} 
+              />
             ))}
           </div>
         </div>
@@ -294,9 +355,9 @@ const AppearanceCard: React.FC = () => {
 
   return (
     <div className="premium-card p-6 md:p-8 flex flex-col">
-      <div className="flex items-center justify-between mb-8 shrink-0">
-        <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-40">Look & Feel</h3>
-        <Palette className="text-[rgb(var(--accent))]" size={16} />
+      <div className="flex items-center gap-3 mb-8 shrink-0">
+        <Palette className="text-[rgb(var(--accent))]" size={20} />
+        <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Look & Feel</h3>
       </div>
       
       <div className="space-y-8 overflow-y-auto custom-scrollbar pr-1 -mr-1 pt-4">
@@ -314,7 +375,7 @@ const AppearanceCard: React.FC = () => {
               )}
               style={{ backgroundColor: color }}
             >
-              <div className="absolute inset-0 rounded-full bg-white opacity-0 group-hover:opacity-20 transition-opacity" />
+              <div className="absolute inset-0 rounded-full bg-white opacity-0 group-hover:opacity-60 transition-opacity" />
             </button>
           ))}
           <button 
@@ -323,18 +384,18 @@ const AppearanceCard: React.FC = () => {
               "px-3 py-2 rounded-xl flex lg:hidden items-center justify-center border border-dashed transition-all duration-300",
               showCustomPicker 
                 ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5" 
-                : "border-white/10 text-white/40 hover:border-white/20 hover:text-white/60"
+                : "border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground))]/40 hover:border-[rgba(var(--border),0.2)] hover:text-[rgb(var(--foreground))]/60"
             )}
             title="Custom Color"
           >
             <ChevronRight className={cn("transition-transform duration-300", showCustomPicker ? "rotate-90" : "")} size={16} />
-            <span className="text-[10px] font-bold uppercase ml-2">Custom</span>
+            <span className="text-[11px] font-bold uppercase ml-2">Custom</span>
           </button>
         </div>
 
         {/* Custom Picker Section */}
         <div className={cn(
-          "space-y-4 pt-4 border-t border-white/5",
+          "space-y-4 pt-4 border-t border-[rgba(var(--border),0.05)]",
           "lg:block",
           showCustomPicker ? "block animate-in fade-in slide-in-from-top-2 duration-300" : "hidden lg:block"
         )}>
@@ -348,8 +409,8 @@ const AppearanceCard: React.FC = () => {
           </div>
         </div>
 
-        <div className="pt-4 border-t border-white/5 pb-2">
-          <div className="flex items-center justify-between text-[10px] text-[rgb(var(--foreground-muted))] opacity-40 uppercase tracking-widest font-bold">
+        <div className="pt-4 border-t border-[rgba(var(--border),0.05)] pb-2">
+          <div className="flex items-center justify-between text-[11px] text-[rgb(var(--foreground-muted))] opacity-80 uppercase tracking-widest font-bold">
             <span>Active Accent</span>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full shadow-[0_0_8px_rgb(var(--accent))]" style={{ backgroundColor: draftSettings.ui.accent_seed }} />
@@ -368,17 +429,20 @@ const InteractionCard: React.FC = () => {
 
   return (
     <div className="premium-card p-6 md:p-8 flex flex-col">
-      <div className="space-y-1 mb-8 shrink-0">
-        <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-40">Interaction</h3>
-        <p className="text-[10px] text-[rgb(var(--foreground-muted))] opacity-30">How Vox engages with you</p>
+      <div className="flex items-center gap-3 mb-8 shrink-0">
+        <MousePointerClick className="text-[rgb(var(--accent))]" size={20} />
+        <div className="space-y-1">
+          <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Interaction</h3>
+          <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-80">How Vox engages with you</p>
+        </div>
       </div>
       
       <div className="space-y-6 overflow-y-auto custom-scrollbar pr-1 -mr-1">
-        <div className="flex items-center justify-between p-1 bg-white/[0.03] border border-white/5 rounded-2xl">
+        <div className="flex items-center justify-between p-1 bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] rounded-2xl">
           <button 
             onClick={() => updateDraft("interaction", "main_app_mode", "Passive")}
             className={cn(
-              "flex-1 px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all duration-300",
+              "flex-1 px-4 py-2 rounded-xl text-[11px] font-bold uppercase transition-all duration-300",
               draftSettings.interaction.main_app_mode === "Passive" 
                 ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
                 : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
@@ -389,7 +453,7 @@ const InteractionCard: React.FC = () => {
           <button 
             onClick={() => updateDraft("interaction", "main_app_mode", "PTT")}
             className={cn(
-              "flex-1 px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all duration-300",
+              "flex-1 px-4 py-2 rounded-xl text-[11px] font-bold uppercase transition-all duration-300",
               draftSettings.interaction.main_app_mode === "PTT" 
                 ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
                 : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
@@ -399,7 +463,7 @@ const InteractionCard: React.FC = () => {
           </button>
         </div>
         
-        <p className="text-[10px] text-[rgb(var(--foreground-muted))] leading-relaxed opacity-40 italic pb-2">
+        <p className="text-[11px] text-[rgb(var(--foreground-muted))] leading-relaxed opacity-80 italic pb-2">
           {draftSettings.interaction.main_app_mode === "Passive" 
             ? "Vox listens continuously and responds when you speak."
             : "Vox only processes speech when you click the record button."}

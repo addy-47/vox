@@ -180,12 +180,14 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let audio_stream = AudioStream::new(producer).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
-    let (en_tts_dir, hi_tts_dir) = {
+    let (en_tts_dir, hi_tts_path) = {
         let settings = state.settings.read().unwrap();
         let models_dir = paths::get().models.clone();
         
         let en_tts = models_dir.join(&settings.tts.en_model);
-        let hi_tts = models_dir.join(&settings.tts.hi_model);
+        
+        // Hindi is always in MODEL_DIR_TTS_HI folder, but filename is dynamic
+        let hi_tts = models_dir.join(crate::core::constants::MODEL_DIR_TTS_HI).join(&settings.tts.hi_voice);
 
         (en_tts, hi_tts)
     };
@@ -231,7 +233,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             orchestrator.run_event_loop(
                 vox_event_rx,
                 en_tts_dir,
-                hi_tts_dir,
+                hi_tts_path,
                 playback_for_orch,
                 app_for_orch,
             );

@@ -22,22 +22,22 @@ export const Settings: React.FC = () => {
             <div className="space-y-2">
               <div className="flex items-center gap-2 mb-1">
                 <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-                <span className="text-[10px] font-bold tracking-[0.2em] text-[rgb(var(--accent))] uppercase">Configuration</span>
+                <span className="text-[11px] font-bold tracking-[0.2em] text-[rgb(var(--accent))] uppercase">Configuration</span>
               </div>
-              <h1 className="text-2xl md:text-3xl font-bold text-[rgb(var(--foreground))] tracking-tight">System <span className="text-[rgb(var(--foreground-muted))] opacity-40 font-medium">Core</span></h1>
+              <h1 className="text-2xl md:text-3xl font-bold text-[rgb(var(--foreground))] tracking-tight">System <span className="text-[rgb(var(--foreground-muted))] opacity-60 font-medium">Core</span></h1>
             </div>
 
             <div className="flex items-center gap-1 md:hidden">
               <button 
                 onClick={restoreDefaults}
-                className="p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-white/[0.03] transition-colors duration-300"
+                className="p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-[rgb(var(--foreground))]/[0.03] transition-colors duration-300"
                 title="Restore Defaults"
               >
                 <RotateCcw size={18} strokeWidth={1.5} />
               </button>
               <button
                 onClick={toggleTheme}
-                className="p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-white/[0.03] transition-colors duration-300"
+                className="p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/[0.03] transition-colors duration-300"
                 title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
               >
                 {theme === 'dark'
@@ -48,11 +48,11 @@ export const Settings: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 p-1 bg-white/[0.03] border border-[rgba(var(--border),0.05)] rounded-2xl">
+            <div className="flex items-center gap-1.5 p-1 bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] rounded-2xl">
               <button 
                 onClick={() => setActiveTab("core")}
                 className={cn(
-                  "px-5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all duration-300",
+                  "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
                   activeTab === "core" 
                     ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
                     : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
@@ -63,7 +63,7 @@ export const Settings: React.FC = () => {
               <button 
                 onClick={() => setActiveTab("tray")}
                 className={cn(
-                  "px-5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all duration-300",
+                  "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
                   activeTab === "tray" 
                     ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
                     : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
@@ -92,7 +92,7 @@ export const Settings: React.FC = () => {
         <div className="max-w-7xl mx-auto px-6 md:px-10 py-6 md:py-8 flex items-center justify-between gap-4">
           <button 
             onClick={restoreDefaults}
-            className="hidden md:flex items-center gap-2 text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-red-400 transition-colors duration-300 opacity-50 hover:opacity-100"
+            className="hidden md:flex items-center gap-2 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-red-400 transition-colors duration-300 opacity-60 hover:opacity-600"
             title="Restore Defaults"
           >
              <RotateCcw size={16} />
@@ -103,10 +103,10 @@ export const Settings: React.FC = () => {
                onClick={discardChanges}
                disabled={!hasChanges}
                className={cn(
-                 "flex-1 md:flex-none px-4 md:px-8 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-all duration-300",
+                 "flex-1 md:flex-none px-4 md:px-8 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.2em] transition-all duration-300",
                  hasChanges 
-                  ? "text-[rgb(var(--foreground))] hover:bg-white/[0.05]" 
-                  : "text-[rgb(var(--foreground-muted))] opacity-20 cursor-not-allowed"
+                  ? "text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/[0.05]" 
+                  : "text-[rgb(var(--foreground-muted))] opacity-60 cursor-not-allowed"
                )}
              >
                <span className="hidden sm:inline">Discard Changes</span>
@@ -116,10 +116,10 @@ export const Settings: React.FC = () => {
                onClick={commitChanges}
                disabled={!hasChanges}
                className={cn(
-                 "flex-1 md:flex-none px-6 md:px-10 py-2.5 rounded-xl font-bold text-[10px] tracking-[0.2em] uppercase flex items-center justify-center gap-2 transition-all duration-300 shadow-lg",
+                 "flex-1 md:flex-none px-6 md:px-10 py-2.5 rounded-xl font-bold text-[11px] tracking-[0.2em] uppercase flex items-center justify-center gap-2 transition-all duration-300 shadow-lg",
                  hasChanges
                   ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-105 active:scale-95 shadow-[rgb(var(--accent))]/20"
-                  : "bg-white/[0.03] text-[rgb(var(--foreground-muted))] opacity-40 cursor-not-allowed shadow-none"
+                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] opacity-60 cursor-not-allowed shadow-none"
                )}
              >
                <Save size={14} /> 
