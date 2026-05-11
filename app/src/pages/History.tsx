@@ -1,205 +1,303 @@
-import React, { useState } from "react";
-import { Filter, Search, Trash2, ChevronRight, Activity, Clock, MessageSquare, ChevronDown } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { MessageSquare, Trash2, Check, X, Clock, CalendarDays, Hash } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { invoke } from "@tauri-apps/api/core";
 
-const sttHistory = [
-  { id: 1, text: "The architectural synthesis of neural networks requires high-fidelity data.", time: "12:45 PM", duration: "1.2s", confidence: "98%" },
-  { id: 2, text: "Initiate system purge of local biometric signatures.", time: "11:20 AM", duration: "0.8s", confidence: "99%" },
-  { id: 3, text: "Increase the hollow space within the central orb visualizer.", time: "10:15 AM", duration: "2.1s", confidence: "94%" },
-  { id: 4, text: "Enable distributed neural indexing for gateway 0.1.", time: "09:30 AM", duration: "1.5s", confidence: "97%" },
-  { id: 5, text: "Switch vocal profile to ETHER synthesis.", time: "08:12 AM", duration: "0.9s", confidence: "96%" },
-];
+interface SessionRow {
+  id: number;
+  started_at: number;
+  ended_at: number | null;
+  turn_count: number;
+  first_message: string | null;
+}
 
-const conversationHistory = [
-  { 
-    id: "conv-1", 
-    title: "System Architecture Discussion", 
-    time: "Apr 29, 02:30 PM", 
-    messages: [
-      { role: "user", text: "How does the neural engine handle real-time STT?" },
-      { role: "vox", text: "The VOX engine utilizes a low-latency transformer model optimized for edge inference." },
-      { role: "user", text: "What about the VAD logic?" },
-      { role: "vox", text: "VAD is handled via a dedicated passive monitor layer that triggers the neural link." }
-    ]
-  },
-  { 
-    id: "conv-2", 
-    title: "Biometric Purge Protocol", 
-    time: "Apr 28, 11:00 AM", 
-    messages: [
-      { role: "user", text: "Start the purge protocol." },
-      { role: "vox", text: "Biometric data purging initiated. All local signatures cleared." }
-    ]
-  }
-];
+interface TurnRow {
+  id: number;
+  session_id: number;
+  turn_id: number;
+  user_text: string;
+  assistant_text: string;
+  stt_latency_ms: number | null;
+  ttft_ms: number | null;
+  created_at: number;
+}
 
 export const History: React.FC = () => {
-  const [activeTab, setTab] = useState<"stt" | "chat">("stt");
-  const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
+  const [turns, setTurns] = useState<TurnRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+  const fetchSessions = useCallback(async () => {
+    try {
+      const data = await invoke<SessionRow[]>("get_sessions");
+      setSessions(data);
+      // Removed auto-select so it doesn't force selectedSession on every poll if we implement one
+    } catch (e) {
+      console.error("Failed to fetch sessions:", e);
+    }
+  }, []);
+
+  // Initial fetch and auto-select first session
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const data = await invoke<SessionRow[]>("get_sessions");
+        setSessions(data);
+        if (data.length > 0 && !selectedSession) {
+          setSelectedSession(data[0]);
+        }
+      } catch (e) {
+        console.error("Failed to fetch sessions on init:", e);
+      }
+    };
+    init();
+  }, [selectedSession]);
+
+  useEffect(() => {
+    if (!selectedSession) {
+      setTurns([]);
+      return;
+    }
+    const fetchTurns = async () => {
+      setLoading(true);
+      try {
+        const data = await invoke<TurnRow[]>("get_turns", { sessionId: selectedSession.id });
+        setTurns(data);
+      } catch (e) {
+        console.error("Failed to fetch turns:", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTurns();
+  }, [selectedSession]);
+
+  const handleDelete = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (confirmDeleteId === id) {
+      // Confirm deletion
+      try {
+        await invoke("delete_session", { id });
+        setConfirmDeleteId(null);
+        if (selectedSession?.id === id) {
+          setSelectedSession(null);
+        }
+        fetchSessions();
+      } catch (e) {
+        console.error("Failed to delete session:", e);
+      }
+    } else {
+      setConfirmDeleteId(id);
+      // Auto cancel after 3 seconds
+      setTimeout(() => {
+        setConfirmDeleteId(current => current === id ? null : current);
+      }, 3000);
+    }
+  };
+
+  const handleCancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDeleteId(null);
+  };
+  
+  const formatDate = (ms: number) => {
+    return new Date(ms).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  const formatTime = (ms: number) => {
+    return new Date(ms).toLocaleTimeString(undefined, {
+      hour: '2-digit', minute: '2-digit'
+    });
+  };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative">
+    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-[rgb(var(--background))]">
       
-      {/* Page header - Identical to Settings */}
-      <header className="p-6 md:p-12 border-b border-[rgba(var(--border),0.05)] glass-panel shrink-0">
-        <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div className="space-y-4">
+      {/* Page header - Matches Settings Header */}
+      <header className="border-b border-[rgba(var(--border),0.05)] glass-panel shrink-0">
+        <div className="max-w-7xl mx-auto w-full px-6 md:px-10 py-6 md:py-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-              <span className="text-[11px] font-bold tracking-[0.2em] text-[rgb(var(--accent))] uppercase">Telemetry</span>
+              <span className="text-[11px] font-bold tracking-[0.2em] text-[rgb(var(--accent))] uppercase">History</span>
             </div>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[rgb(var(--foreground))]">
-              Activity <span className="text-[rgb(var(--foreground-muted))] opacity-40">Logs</span>
+            <h1 className="text-2xl md:text-3xl font-bold text-[rgb(var(--foreground))] tracking-tight">
+              Session <span className="text-[rgb(var(--foreground-muted))] opacity-60 font-medium">Conversations</span>
             </h1>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <button 
-              onClick={() => setTab("stt")}
-              className={cn(
-                "px-6 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all",
-                activeTab === "stt" 
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg shadow-[rgb(var(--accent))]/20" 
-                  : "bg-white/[0.03] text-[rgb(var(--foreground-muted))] border border-white/10 hover:bg-white/10"
-              )}
-            >
-              STT History
-            </button>
-            <button 
-              onClick={() => setTab("chat")}
-              className={cn(
-                "px-6 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all",
-                activeTab === "chat" 
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg shadow-[rgb(var(--accent))]/20" 
-                  : "bg-white/[0.03] text-[rgb(var(--foreground-muted))] border border-white/10 hover:bg-white/10"
-              )}
-            >
-              Conversations
-            </button>
           </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 pb-32 md:pb-12">
-        <div className="max-w-7xl mx-auto space-y-8">
-          {/* Controls */}
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            <div className="relative w-full md:w-96">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[rgb(var(--foreground-muted))] opacity-40" size={16} />
-              <input 
-                type="text" 
-                placeholder={activeTab === "stt" ? "SEARCH TRANSCIPTS..." : "SEARCH SESSIONS..."} 
-                className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-[11px] font-bold uppercase tracking-widest focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all"
-              />
-            </div>
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-white/[0.03] border border-white/10 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest hover:text-[rgb(var(--foreground))] transition-all">
-                <Filter size={14} /> Filter
-              </button>
-              <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-red-500/5 border border-red-500/10 text-[11px] font-bold text-red-400 uppercase tracking-widest hover:bg-red-500/10 transition-all">
-                <Trash2 size={14} /> Clear
-              </button>
-            </div>
-          </div>
-
-          {/* List Area */}
-          <div className="grid gap-4">
-            {activeTab === "stt" ? (
-              sttHistory.map((item) => (
-                <div 
-                  key={item.id}
-                  className="premium-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 group hover:border-[rgb(var(--accent))]/30 transition-all cursor-pointer"
-                >
-                  <div className="flex gap-6 items-start flex-1">
-                    <div className="p-3 rounded-xl bg-white/[0.03] text-[rgb(var(--accent))] shrink-0">
-                      <Activity size={18} />
-                    </div>
-                    <div className="space-y-3">
-                      <p className="text-sm md:text-base leading-relaxed text-[rgb(var(--foreground))] font-medium">
-                        {item.text}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-40">
-                          <Clock size={12} /> {item.time}
-                        </div>
-                        <div className="text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--accent))]">
-                          Duration: {item.duration}
-                        </div>
-                        <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-400">
-                          Confidence: {item.confidence}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 shrink-0 md:border-l border-white/5 md:pl-6">
-                    <button className="p-3 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-red-400 transition-colors">
-                      <Trash2 size={16} />
-                    </button>
-                    <button className="flex items-center justify-center w-10 h-10 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] group-hover:bg-[rgb(var(--accent))] group-hover:text-[rgb(var(--accent-foreground))] transition-all">
-                      <ChevronRight size={18} />
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              conversationHistory.map((session) => (
-                <div 
-                  key={session.id}
-                  className={cn(
-                    "premium-card transition-all duration-500 overflow-hidden",
-                    expandedSession === session.id ? "ring-1 ring-[rgb(var(--accent))]/30" : "hover:border-[rgb(var(--accent))]/30"
-                  )}
-                >
+      {/* Main Content Area: Horizontal Layout with same proportions as Settings */}
+      <div className="flex-1 overflow-hidden relative">
+        <div className="h-full max-w-7xl mx-auto px-6 md:px-10 py-6 md:py-8">
+          <div className="grid lg:grid-cols-3 gap-8 h-full items-start pb-4">
+            
+            {/* Left Column: Sessions List (1/3 Width) */}
+            <div className="lg:col-span-1 flex flex-col h-full overflow-hidden">
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-1 space-y-3">
+                {sessions.map(session => (
                   <div 
-                    onClick={() => setExpandedSession(expandedSession === session.id ? null : session.id)}
-                    className="p-6 flex items-center justify-between cursor-pointer group"
+                    key={session.id}
+                    onClick={() => setSelectedSession(session)}
+                    className={cn(
+                      "group relative p-4 rounded-2xl cursor-pointer transition-all duration-300 border",
+                      selectedSession?.id === session.id 
+                        ? "bg-[rgb(var(--foreground))]/[0.04] border-[rgb(var(--accent))]/30 shadow-[0_4px_24px_-4px_rgba(var(--accent),0.1)]" 
+                        : "bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/[0.03] hover:border-[rgb(var(--accent))]/20"
+                    )}
                   >
-                    <div className="flex items-center gap-6">
-                      <div className="p-3 rounded-xl bg-white/[0.03] text-[rgb(var(--accent))]">
-                        <MessageSquare size={18} />
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <MessageSquare size={14} className={cn(
+                          "shrink-0",
+                          selectedSession?.id === session.id ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] opacity-60"
+                        )} />
+                        <h3 className={cn(
+                          "text-sm font-bold truncate transition-colors",
+                          selectedSession?.id === session.id ? "text-[rgb(var(--foreground))]" : "text-[rgb(var(--foreground))] opacity-80"
+                        )}>
+                          {session.first_message || "New Session"}
+                        </h3>
                       </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-[rgb(var(--foreground))] group-hover:text-[rgb(var(--accent))] transition-colors">{session.title}</h3>
-                        <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-40 mt-1">{session.time}</p>
+                      
+                      <div className="shrink-0 transition-opacity">
+                        {confirmDeleteId === session.id ? (
+                          <div className="flex items-center gap-2 bg-[rgb(var(--foreground))]/[0.05] p-1 rounded-lg animate-in fade-in zoom-in duration-200">
+                            <button 
+                              onClick={(e) => handleDelete(e, session.id)}
+                              className="p-1.5 rounded-md text-emerald-400 hover:bg-emerald-400/10 transition-colors"
+                              title="Confirm Delete"
+                            >
+                              <Check size={14} strokeWidth={3} />
+                            </button>
+                            <button 
+                              onClick={handleCancelDelete}
+                              className="p-1.5 rounded-md text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                              title="Cancel"
+                            >
+                              <X size={14} strokeWidth={3} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={(e) => handleDelete(e, session.id)}
+                            className={cn(
+                              "p-2 rounded-lg transition-all",
+                              selectedSession?.id === session.id
+                                ? "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-400/10"
+                                : "opacity-0 group-hover:opacity-600 text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-400/10"
+                            )}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div className={cn(
-                      "transition-transform duration-500",
-                      expandedSession === session.id ? "rotate-180" : ""
-                    )}>
-                      <ChevronDown size={20} className="text-[rgb(var(--foreground-muted))]" />
+
+                    <div className="flex items-center gap-4 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
+                      <div className="flex items-center gap-1.5">
+                        <CalendarDays size={12} />
+                        {formatDate(session.started_at)}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Hash size={12} />
+                        {session.turn_count} {session.turn_count === 1 ? 'Turn' : 'Turns'}
+                      </div>
                     </div>
                   </div>
-                  
-                  {expandedSession === session.id && (
-                    <div className="px-6 pb-6 pt-2 space-y-6 animate-in fade-in slide-in-from-top-2 duration-500">
-                      <div className="h-px bg-white/5 w-full" />
-                      <div className="space-y-4">
-                        {session.messages.map((msg, idx) => (
-                          <div key={idx} className={cn(
-                            "flex flex-col gap-2",
-                            msg.role === "user" ? "items-end" : "items-start"
-                          )}>
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-30">
-                              {msg.role}
+                ))}
+                {sessions.length === 0 && (
+                  <div className="text-center p-8 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
+                    No sessions found
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Chat/Turns List (2/3 Width) */}
+            <div className="lg:col-span-2 flex flex-col h-full bg-[rgb(var(--background))] relative overflow-hidden rounded-3xl border border-[rgba(var(--border),0.05)] shadow-sm">
+              {!selectedSession ? (
+                <div className="flex-1 flex items-center justify-center text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
+                  Select a session to view conversation
+                </div>
+              ) : loading ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="w-6 h-6 border-2 border-[rgb(var(--accent))]/20 border-t-[rgb(var(--accent))] rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10">
+                  <div className="max-w-3xl mx-auto space-y-8 pb-12">
+                    
+                    <div className="text-center pb-8 border-b border-[rgba(var(--border),0.05)] mb-8">
+                      <h2 className="text-xl font-bold text-[rgb(var(--foreground))] mb-3">
+                         {selectedSession.first_message || "Session Started"}
+                      </h2>
+                      <div className="inline-flex items-center gap-4 px-4 py-2 rounded-full bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)] text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-80">
+                        <div className="flex items-center gap-1.5">
+                          <Clock size={12} />
+                          {formatDate(selectedSession.started_at)}
+                        </div>
+                        {selectedSession.ended_at && (
+                           <>
+                             <div className="w-1 h-1 rounded-full bg-[rgb(var(--foreground-muted))]/30" />
+                             <div className="flex items-center gap-1.5">
+                               Duration: {((selectedSession.ended_at - selectedSession.started_at) / 1000).toFixed(1)}s
+                             </div>
+                           </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-6">
+                      {turns.map((turn) => (
+                        <div key={turn.id} className="space-y-6">
+                          {/* User Message */}
+                          <div className="flex flex-col items-end gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))] opacity-60">
+                              User • {formatTime(turn.created_at)}
                             </span>
-                            <div className={cn(
-                              "max-w-[80%] p-4 rounded-2xl text-xs leading-relaxed",
-                              msg.role === "user" 
-                                ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--foreground))] border border-[rgb(var(--accent))]/20" 
-                                : "bg-white/[0.03] text-[rgb(var(--foreground-muted))] border border-white/5"
-                            )}>
-                              {msg.text}
+                            <div className="max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-sm bg-[rgb(var(--accent))]/10 text-[rgb(var(--foreground))] border border-[rgb(var(--accent))]/20 shadow-[0_4px_24px_-4px_rgba(var(--accent),0.05)] text-sm md:text-base leading-relaxed">
+                              {turn.user_text}
                             </div>
                           </div>
-                        ))}
-                      </div>
+
+                          {/* Assistant Message */}
+                          <div className="flex flex-col items-start gap-2">
+                            <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))] opacity-80">
+                              <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgb(var(--accent))]" />
+                              Vox
+                            </span>
+                            <div className="max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tl-sm bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] text-[rgb(var(--foreground-muted))] text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                              {turn.assistant_text}
+                            </div>
+                            {/* Turn Metadata */}
+                            <div className="flex items-center gap-4 text-[10px] font-mono tracking-wider text-[rgb(var(--foreground-muted))] opacity-60 pl-2">
+                              {turn.stt_latency_ms !== null && (
+                                <span>STT: {turn.stt_latency_ms}ms</span>
+                              )}
+                              {turn.ttft_ms !== null && (
+                                <span>TTFT: {turn.ttft_ms}ms</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {turns.length === 0 && (
+                        <div className="text-center p-8 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-40">
+                          No conversation data
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                  </div>
                 </div>
-              ))
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

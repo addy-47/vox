@@ -15,6 +15,8 @@ export interface ModelMetadata {
 export interface VoiceProfile {
   id: number;
   name: string;
+  language: string;
+  model_file?: string;
 }
 
 export interface ModelCatalog {
@@ -50,8 +52,9 @@ export interface VoxSettings {
   };
   tts: {
     en_model: string;
+    en_voice: number;
     hi_model: string;
-    voice_id: number;
+    hi_voice: string;
   };
   interaction: {
     main_app_mode: "Passive" | "PTT";
@@ -145,6 +148,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // Use deep copy to avoid reference sharing with state
     const newDraft = JSON.parse(JSON.stringify(draftSettings));
     (newDraft[domain] as any)[key] = value;
+
     setDraftSettings(newDraft);
 
     if (domain === "ui" && (key === "theme" || key === "accent_seed")) {

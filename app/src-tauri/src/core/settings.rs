@@ -32,22 +32,46 @@ pub struct ModelMetadata {
 pub struct VoiceProfile {
     pub id: i32,
     pub name: String,
+    pub language: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_file: Option<String>,
 }
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
-    vec![
-        VoiceProfile { id: 0, name: "Bella".to_string() },
-        VoiceProfile { id: 1, name: "Sarah".to_string() },
-        VoiceProfile { id: 2, name: "Sky".to_string() },
-        VoiceProfile { id: 3, name: "Adam".to_string() },
-        VoiceProfile { id: 4, name: "Michael".to_string() },
-        VoiceProfile { id: 5, name: "Eric".to_string() },
-        VoiceProfile { id: 6, name: "Emma".to_string() },
-        VoiceProfile { id: 7, name: "Isabella".to_string() },
-        VoiceProfile { id: 8, name: "Jessica".to_string() },
-        VoiceProfile { id: 9, name: "Nicole".to_string() },
-        VoiceProfile { id: 10, name: "William".to_string() },
-    ]
+    let mut voices = vec![
+        VoiceProfile { id: 0, name: "Bella".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 1, name: "Sarah".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 2, name: "Sky".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 3, name: "Adam".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 4, name: "Michael".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 5, name: "Eric".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 6, name: "Emma".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 7, name: "Isabella".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 8, name: "Jessica".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 9, name: "Nicole".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile { id: 10, name: "William".to_string(), language: "en".into(), model_file: None },
+    ];
+
+    voices.push(VoiceProfile { 
+        id: 100, 
+        name: "Priyamvada".to_string(), 
+        language: "hi".into(), 
+        model_file: Some("hi_IN-priyamvada-medium.onnx".into()) 
+    });
+    voices.push(VoiceProfile { 
+        id: 101, 
+        name: "Pratham".to_string(), 
+        language: "hi".into(), 
+        model_file: Some("hi_IN-pratham-medium.onnx".into()) 
+    });
+    voices.push(VoiceProfile { 
+        id: 102, 
+        name: "Rohan".to_string(), 
+        language: "hi".into(), 
+        model_file: Some("hi_IN-rohan-medium.onnx".into()) 
+    });
+
+    voices
 }
 
 pub fn get_preset_colors() -> Vec<String> {
@@ -77,7 +101,7 @@ pub fn get_asr_metadata() -> Vec<ModelMetadata> {
         ModelMetadata {
             id: "qwen3-asr".to_string(),
             name: "Qwen3-ASR".to_string(),
-            description: "Reliable speech recognition with multi-language support.".to_string(),
+            description: "Multi-lingual speech recognition.".to_string(),
             ram_usage: " ~800MB".to_string(),
             parameters: "Sherpa-ONNX".to_string(),
         }
@@ -153,9 +177,11 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("llm", "ctx_size")              => SettingReloadPolicy::Restart,
         ("llm", "threads")               => SettingReloadPolicy::Restart,
 
-        // TTS — model change requires restart
+        // TTS — model and voice changes require restart
         ("tts", "en_model")              => SettingReloadPolicy::Restart,
+        ("tts", "en_voice")              => SettingReloadPolicy::Restart,
         ("tts", "hi_model")              => SettingReloadPolicy::Restart,
+        ("tts", "hi_voice")              => SettingReloadPolicy::Restart,
 
         // Interaction — sent as mode-changed event immediately
         ("interaction", _)               => SettingReloadPolicy::Hot,
@@ -272,16 +298,18 @@ impl Default for LlmSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsSettings {
     pub en_model: String, // e.g., "kokoro"
+    pub en_voice: i32,    // Kokoro voice index (0-10)
     pub hi_model: String, // e.g., "piper_hi"
-    pub voice_id: i32,    // Kokoro voice index (0-10)
+    pub hi_voice: String, // Specific Piper .onnx filename
 }
 
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
             en_model: "kokoro".to_string(),
+            en_voice: 0, // Bella
             hi_model: "piper_hi".to_string(),
-            voice_id: 0, // Default voice (af_bella)
+            hi_voice: "hi_IN-priyamvada-medium.onnx".to_string(),
         }
     }
 }

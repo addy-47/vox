@@ -77,7 +77,7 @@ export const TitleBar: React.FC = () => {
     >
       <div className="flex items-center gap-2 pl-4 pointer-events-none" data-tauri-drag-region>
         <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.6)]" />
-        <span className="text-[10px] font-bold tracking-[0.2em] text-[rgb(var(--foreground-muted))] uppercase">Vox</span>
+        <span className="text-[11px] font-bold tracking-[0.2em] text-[rgb(var(--foreground-muted))] uppercase">Vox</span>
       </div>
 
       <div className="flex items-center h-full">
