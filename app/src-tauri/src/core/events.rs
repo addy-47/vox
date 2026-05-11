@@ -20,7 +20,7 @@ pub enum VoxEvent {
     LlmFinished { turn_id: u32 },
 
     TtsChunk    { turn_id: u32, samples: Vec<f32> },
-    TtsFinished { turn_id: u32 },
+    TtsFinished { turn_id: u32, rtf: f32 },
 
     PlaybackStarted  { turn_id: u32 },
     PlaybackFinished { turn_id: u32 },
