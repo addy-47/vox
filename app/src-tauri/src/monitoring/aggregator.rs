@@ -44,6 +44,7 @@ pub struct TelemetryAggregator {
     latest_vox_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
     latest_stt_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
     latest_ttft_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    dropped_events: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl TelemetryAggregator {
@@ -56,6 +57,7 @@ impl TelemetryAggregator {
         latest_vox_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
         latest_stt_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
         latest_ttft_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        dropped_events: std::sync::Arc<std::sync::atomic::AtomicU64>,
     ) -> (Self, Sender<TelemetryEvent>) {
         let (tx, rx) = bounded(4096);
         (Self { 
@@ -67,7 +69,8 @@ impl TelemetryAggregator {
             latest_vox_cpu, 
             latest_vox_ram, 
             latest_stt_ms, 
-            latest_ttft_ms 
+            latest_ttft_ms,
+            dropped_events
         }, tx)
     }
 
@@ -96,6 +99,12 @@ impl TelemetryAggregator {
                             self.latest_sys_ram.store(system_ram_pct.to_bits(), Ordering::Relaxed);
                             self.latest_vox_cpu.store(vox_cpu.to_bits(), Ordering::Relaxed);
                             self.latest_vox_ram.store(*vox_ram_mb, Ordering::Relaxed);
+
+                            // Periodically log dropped events (Architect correction: avoid hot-path logging)
+                            let dropped = self.dropped_events.load(Ordering::Relaxed);
+                            if dropped > 0 {
+                                tracing::warn!(target: "telemetry", "Dropped {} telemetry events due to channel saturation.", dropped);
+                            }
                         }
                         TelemetryEvent::AudioEnergy { energy, vad_prob } => {
                             // High-frequency debug only
