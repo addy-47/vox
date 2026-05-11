@@ -1,545 +1,662 @@
-# 📄 `ptt-ux-hardening.md`
+# 📄 `ptt.md` — Push-To-Talk (PTT) Feature
 
 ---
 
-# 1. Purpose
+## 1. Purpose
 
-Define a **Push-To-Talk (PTT) interaction mode** for Vox that:
-
-* uses **explicit user control** (mic button)
-* provides **live waveform feedback (no live text)**
-* performs **incremental background STT**
-* returns **instant full transcript on finalize**
-* respects **real-time, low-latency constraints**
-* avoids memory/CPU spikes on long recordings
+Define a **Push-To-Talk (PTT) interaction mode** for Vox that provides **explicit user control** over recording, with **live waveform feedback** and **incremental background STT processing**.
 
 ---
 
-# 2. Core Principle
+## 2. Core Principle
 
-> ❗ PTT = **capture-first UX, transcript-second UX**
+> **PTT = Capture-first UX, transcript-second UX**
 
-* During recording → **waveform only**
-* After stop → **final transcript appears instantly**
-* Backend → **already preprocessed most audio**
-
----
-
-# 3. Mode Separation (CRITICAL)
+* **During recording**: Waveform only (no live text)
+* **After stop**: Full transcript appears instantly
+* **Background**: System pre-processes audio during capture
 
 ---
 
-## 3.1 Modes
+## 3. Mode Separation (CRITICAL)
 
-```ts
-mode = "PASSIVE" | "PTT"
+### Interaction Modes
+
+```typescript
+enum InteractionMode {
+  Passive = "Passive",  // VAD-triggered, always listening
+  PTT = "PTT"          // Button-controlled, explicit recording
+}
+```
+
+### Mode Configuration
+
+```typescript
+interface InteractionSettings {
+  main_app_mode: InteractionMode;  // Main window behavior
+  tray_mode: InteractionMode;      // Tray overlay behavior
+  auto_sleep_timeout: number;      // Dormancy timeout
+}
+```
+
+### Behavioral Differences
+
+| Aspect | Passive Mode | PTT Mode |
+|--------|-------------|----------|
+| Trigger | VAD speech detection | User button press |
+| Feedback | Live streaming transcript | Live waveform only |
+| Control | Automatic start/stop | Explicit user control |
+| Continuity | Session merging | Discrete recordings |
+| VAD State | Active listening | Preserved but bypassed |
+
+---
+
+## 4. PTT State Machine
+
+### States
+
+```typescript
+enum PttState {
+  IDLE = "IDLE",          // Ready to record
+  RECORDING = "RECORDING", // Actively capturing audio
+  PROCESSING = "PROCESSING" // Post-processing audio
+}
+```
+
+### Transitions
+
+```typescript
+// Start recording
+IDLE → RECORDING (user presses PTT button)
+
+// Stop recording
+RECORDING → PROCESSING (user releases PTT button)
+
+// Processing complete
+PROCESSING → IDLE (transcript ready, state reset)
+```
+
+### Error Transitions
+
+```typescript
+// Cancel during recording
+RECORDING → IDLE (discard buffer, no transcript)
+
+// Processing timeout
+PROCESSING → IDLE (fallback message, state reset)
 ```
 
 ---
 
-## 3.2 Rules
+## 5. User Experience Flow
 
-```text
-PTT start:
-  → disable VAD routing
-  → pause passive pipeline
+### Recording Phase
 
-PTT end:
-  → restore passive mode
+```typescript
+User clicks PTT button
+  ↓
+Waveform appears + animates
+  ↓
+Recording starts immediately
+  ↓
+NO transcript shown (waveform only)
+  ↓
+User speaks freely
+```
+
+### Stop Phase
+
+```typescript
+User clicks PTT button again
+  ↓
+Waveform stops animating
+  ↓
+Short processing indicator (200-400ms)
+  ↓
+Full transcript appears instantly
+  ↓
+Transcript saved to history
+```
+
+### Display Phase
+
+```typescript
+Transcript visible + selectable
+  ↓
+Stored in ephemeral history (last 10)
+  ↓
+Read-only interface
+  ↓
+Ready for next interaction
 ```
 
 ---
 
-## ❗ Must Ensure
+## 6. Technical Implementation
 
-* No double STT processing
-* No conflicting events (`speech_start`, etc.)
-* Clean isolation of buffers
+### PTT Command Handlers
 
----
+#### Start Recording (`ptt_start`)
 
-# 4. PTT State Machine
+```rust
+#[tauri::command]
+pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
----
+    // Prevent double-start
+    let mut recording = state.ptt.is_recording.lock().await;
+    if *recording {
+        log::warn!("[PTT] ptt_start called while already recording");
+        return Ok(());
+    }
+    *recording = true;
 
-## 4.1 States
+    // Initialize buffers
+    let mut buffer = state.ptt.audio_buffer.lock().await;
+    let mut samples_since = state.ptt.samples_since_partial.lock().await;
+    let mut samples_waveform = state.ptt.samples_since_waveform.lock().await;
 
-```text
-IDLE
-RECORDING
-PROCESSING
-DISPLAY
+    // Sync with global turn ID
+    let current_global = state.pipeline.turn_id.load(Ordering::Relaxed);
+    state.ptt.turn_id.store(current_global, Ordering::Relaxed);
+    let turn = current_global;
+
+    buffer.clear();
+    *samples_since = 0;
+    *samples_waveform = 0;
+
+    // Determine target window
+    let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+    let target = match owner {
+        InteractionOwner::Tray => "tray",
+        _ => "main"
+    };
+
+    log::info!("[PTT] Recording started (turn: {}, target: {})", turn, target);
+
+    // Notify UI
+    let _ = app.emit_to(target, "ptt_status", json!({
+        "state": "RECORDING",
+        "session_id": turn
+    }));
+
+    // Update pipeline state
+    state.pipeline.update_interaction_state(
+        InteractionState::UserSpeaking,
+        owner,
+        &app
+    );
+
+    // Send SpeechStart to trigger barge-in cancellation
+    if let Some(engine) = state.engine.lock().await.as_ref() {
+        let _ = engine.pipeline_tx.send(VoxEvent::SpeechStart { turn_id: turn, owner });
+    }
+
+    Ok(())
+}
+```
+
+#### Stop Recording (`ptt_stop`)
+
+```rust
+#[tauri::command]
+pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+
+    // Extract state without holding locks during STT send
+    let (turn, owner, buffer_clone) = {
+        let mut recording = state.ptt.is_recording.lock().await;
+        if !*recording {
+            return Ok(());
+        }
+        *recording = false;
+
+        let buffer = state.ptt.audio_buffer.lock().await;
+        let turn = state.ptt.turn_id.load(Ordering::Relaxed);
+        let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+
+        log::info!("[PTT] Recording stopped. Finalizing {} samples", buffer.len());
+
+        (turn, owner, buffer.clone())
+    };
+
+    let target = match owner {
+        InteractionOwner::Tray => "tray",
+        _ => "main"
+    };
+
+    // Update UI state
+    let _ = app.emit_to(target, "ptt_status", json!({
+        "state": "PROCESSING",
+        "session_id": turn
+    }));
+
+    state.pipeline.update_interaction_state(
+        InteractionState::Thinking,
+        owner,
+        &app
+    );
+
+    // Send final audio buffer to STT
+    let engine_lock = state.engine.lock().await;
+    if let Some(engine) = engine_lock.as_ref() {
+        let _ = engine.stt_tx.send(SttCommand::Final(turn, owner, buffer_clone));
+        log::info!("[PTT] Sent final buffer to STT worker");
+    } else {
+        log::error!("[PTT] Engine not running, cannot finalize");
+    }
+
+    Ok(())
+}
+```
+
+#### Cancel Recording (`ptt_cancel`)
+
+```rust
+#[tauri::command]
+pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+
+    let mut recording = state.ptt.is_recording.lock().await;
+    let mut buffer = state.ptt.audio_buffer.lock().await;
+
+    *recording = false;
+    buffer.clear();
+
+    let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+    let target = match owner {
+        InteractionOwner::Tray => "tray",
+        _ => "main"
+    };
+
+    log::info!("[PTT] Recording cancelled (target: {})", target);
+
+    let _ = app.emit_to(target, "ptt_status", json!({ "state": "IDLE" }));
+
+    state.pipeline.update_interaction_state(
+        InteractionState::Idle,
+        owner,
+        &app
+    );
+
+    Ok(())
+}
 ```
 
 ---
 
-## 4.2 Transitions
+## 7. Audio Processing Logic
 
-```text
-Mic Click:
-  IDLE → RECORDING
+### Buffer Management
 
-Mic Click (again):
-  RECORDING → PROCESSING
+#### PTT Audio Buffer
 
-Processing complete:
-  PROCESSING → DISPLAY
+```rust
+pub struct PttState {
+    pub is_recording: Mutex<bool>,
+    pub turn_id: Arc<AtomicU32>,
+    pub audio_buffer: Mutex<Vec<f32>>,              // Raw 16kHz mono samples
+    pub samples_since_partial: Mutex<usize>,        // Counter for partial sends
+    pub samples_since_waveform: Mutex<usize>,       // Counter for waveform updates
+}
+```
 
-Timeout / next interaction:
-  DISPLAY → IDLE
+#### Continuous Capture
+
+```rust
+pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+
+    let recording = state.ptt.is_recording.blocking_lock();
+    if !*recording { return; }
+
+    let mut buffer = state.ptt.audio_buffer.blocking_lock();
+
+    // Append ALL audio (no VAD filtering)
+    if buffer.len() < MAX_PTT_SAMPLES {
+        buffer.extend_from_slice(samples);
+    } else {
+        // Safety cap: Auto-stop if >10 minutes
+        log::warn!("[PTT] Hard limit reached. Auto-stopping.");
+        drop(buffer);
+        drop(recording);
+        tauri::async_runtime::spawn(async move {
+            let _ = ptt_stop(app.clone()).await;
+        });
+        return;
+    }
+}
+```
+
+### Background STT Processing
+
+#### Partial Transcripts
+
+```rust
+// Every 800ms during recording
+if *samples_since >= 12800 {
+    let turn = state.ptt.turn_id.load(Ordering::Relaxed);
+    let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+
+    // Send last 15 seconds for partial transcription
+    let start_idx = buffer.len().saturating_sub(240000); // 15s * 16kHz
+    let _ = engine.stt_tx.send(SttCommand::Partial(
+        turn,
+        owner,
+        buffer[start_idx..].to_vec()
+    ));
+
+    *samples_since = 0;
+}
+```
+
+#### Final Transcript
+
+```rust
+// On ptt_stop: Send complete buffer
+let _ = engine.stt_tx.send(SttCommand::Final(
+    turn,
+    owner,
+    buffer_clone // Full recording
+));
+```
+
+### Waveform Feedback
+
+#### RMS Energy Calculation
+
+```rust
+// Every 60ms during recording
+if *samples_waveform >= 960 {
+    let sum_sq: f32 = samples.iter().map(|s| s * s).sum();
+    let rms = (sum_sq / samples.len() as f32).sqrt();
+
+    let noise_gate = settings.vad.ptt_noise_gate;
+    let gated_energy = if rms > noise_gate { (rms * 8.0).min(1.0) } else { 0.0 };
+
+    // Send to telemetry for waveform rendering
+    let _ = engine.telemetry_tx.send(TelemetryEvent::AudioEnergy {
+        energy: gated_energy,
+        vad_prob: 0.0
+    });
+
+    *samples_waveform = 0;
+}
 ```
 
 ---
 
-## 4.3 Cancel (❌)
+## 8. UI Integration
 
-```text
-During RECORDING:
-  → discard buffers
-  → stop STT
-  → IDLE
+### Tray Interface
+
+#### Header Controls
+
+```typescript
+const Header: React.FC = () => {
+  const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
+
+  const togglePtt = async () => {
+    try {
+      if (pttStatus === 'IDLE') {
+        await invoke("ptt_start", { owner: "Tray" });
+      } else {
+        await invoke("ptt_stop", { owner: "Tray" });
+      }
+    } catch (error) {
+      console.error("[PTT] Toggle failed:", error);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between">
+      <StatusDot status={pttStatus === 'RECORDING' ? 'recording' : 'idle'} />
+      <PillButton
+        onClick={togglePtt}
+        variant={pttStatus === 'IDLE' ? 'primary' : 'destructive'}
+      >
+        {pttStatus === 'IDLE' ? '🎙️ Record' : '⏹️ Stop'}
+      </PillButton>
+    </div>
+  );
+};
+```
+
+#### Waveform Display
+
+```typescript
+const LiveWaveform: React.FC<{ energy: number }> = ({ energy }) => {
+  return (
+    <ElevenLabsWaveform
+      energy={energy}
+      isRecording={pttStatus === 'RECORDING'}
+      className="w-full h-16"
+    />
+  );
+};
+```
+
+#### Processing Indicator
+
+```typescript
+const ProcessingIndicator: React.FC = () => {
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots(prev => prev.length >= 3 ? '' : prev + '.');
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      <span>Processing{dots}</span>
+    </div>
+  );
+};
+```
+
+### Main Window Integration
+
+#### PTT Button in Main UI
+
+```typescript
+const PttControls: React.FC = () => {
+  const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
+
+  // Same toggle logic as tray
+  const togglePtt = async () => { /* ... */ };
+
+  return (
+    <div className="fixed bottom-4 right-4">
+      <PillButton
+        onClick={togglePtt}
+        variant={pttStatus === 'IDLE' ? 'primary' : 'destructive'}
+        size="lg"
+      >
+        {pttStatus === 'IDLE' ? '🎙️ PTT' : '⏹️ Stop'}
+      </PillButton>
+    </div>
+  );
+};
 ```
 
 ---
 
-# 5. UX Flow
+## 9. Interaction Model
 
----
+### Session Management
 
-## 5.1 Recording Phase
+#### No Continuity Merging
 
-```text
-User clicks mic
-→ waveform appears
-→ recording starts
-→ NO transcript shown
+Unlike passive mode, PTT recordings are **discrete**:
+
+```typescript
+// Each PTT press creates new interaction
+const startNewInteraction = () => {
+  currentIdRef.current += 1;
+  setInteractionId(currentIdRef.current);
+  setCommittedText("");
+  setPartialText("");
+};
+```
+
+#### Turn ID Synchronization
+
+```rust
+// PTT uses global turn counter
+let current_global = state.pipeline.turn_id.load(Ordering::Relaxed);
+state.ptt.turn_id.store(current_global, Ordering::Relaxed);
+```
+
+### History Integration
+
+#### Ephemeral Storage
+
+```typescript
+// Add to in-memory history
+const addToHistory = (transcript: string) => {
+  setHistory(prev => [transcript, ...prev.slice(0, MAX_HISTORY - 1)]);
+};
+
+// Triggered by transcript_final event
+useEffect(() => {
+  const handleFinal = ({ payload }: { payload: { text: string } }) => {
+    if (payload.text) {
+      addToHistory(payload.text);
+    }
+  };
+
+  const unlistener = window.listen("transcript_final", handleFinal);
+  return () => unlistener();
+}, []);
 ```
 
 ---
 
-## 5.2 Stop Phase
+## 10. Performance Optimizations
 
-```text
-User clicks mic again
-→ waveform stops
-→ small loader (200–400ms)
-→ full transcript appears instantly
+### Memory Management
+
+#### Buffer Limits
+
+```rust
+const MAX_PTT_SAMPLES: usize = 16000 * 60 * 10; // 10 minutes at 16kHz
 ```
 
+#### Chunked Processing
+
+* **Partial sends**: 15-second windows every 800ms
+* **Rolling buffer**: Only last 15s kept in memory for partials
+* **Final send**: Complete buffer (up to 10min limit)
+
+### CPU Efficiency
+
+#### Throttled Updates
+
+* **Partial STT**: Every 800ms (not every audio chunk)
+* **Waveform**: Every 60ms (960 samples)
+* **UI updates**: Debounced state changes
+
+#### Background Processing
+
+* **STT**: Asynchronous, non-blocking
+* **Waveform**: GPU-accelerated rendering
+* **UI**: Minimal re-renders during recording
+
 ---
 
-## 5.3 Display Phase
+## 11. Error Handling
 
-```text
-→ transcript visible
-→ stored in history (last 10)
-→ read-only
+### Recording Failures
+
+```rust
+// Buffer overflow protection
+if buffer.len() >= MAX_PTT_SAMPLES {
+    log::warn!("[PTT] Buffer limit reached. Auto-stopping.");
+    // Trigger ptt_stop automatically
+}
 ```
 
----
+### STT Processing Errors
 
-# 6. Waveform (MANDATORY)
+```typescript
+// UI fallback for failed transcriptions
+const [error, setError] = useState<string | null>(null);
 
----
+useEffect(() => {
+  const handleError = ({ payload }: { payload: string }) => {
+    setError("Transcription failed. Please try again.");
+    setPttStatus('IDLE');
+  };
 
-## 6.1 Implementation
-
-Use ElevenLabs waveform component:
-
-```bash
-pnpm dlx @elevenlabs/cli@latest components add waveform
+  const unlistener = window.listen("pipeline_error", handleError);
+  return () => unlistener();
+}, []);
 ```
 
-Reference:
-https://ui.elevenlabs.io/docs/components/waveform
+### IPC Timeouts
 
----
-
-## 6.2 Requirements
-
-* Driven by **raw audio amplitude (RMS)**
-* Must be **real-time (frame-level updates)**
-* Must NOT depend on STT
-
----
-
-## 6.3 Behavior
-
-```text
-RECORDING:
-  waveform active + animated
-
-PROCESSING:
-  waveform stops
-
-IDLE:
-  hidden
+```typescript
+// Command invocation with timeout
+const togglePtt = async () => {
+  try {
+    await invoke(pttStatus === 'IDLE' ? "ptt_start" : "ptt_stop", {
+      owner: "Tray"
+    });
+  } catch (error) {
+    console.error("[PTT] Command failed:", error);
+    setPttStatus('IDLE'); // Reset to safe state
+  }
+};
 ```
 
----
 
-# 7. Audio Chunking Strategy (CRITICAL)
 
 ---
 
-## 7.1 Chunk Config
+## 15. Success Metrics
 
-```ts
-chunk_size = 2–4 seconds
-overlap = 200–300ms
-max_duration = 60 seconds
-max_inflight_chunks = 2–3
-```
+### User Experience
 
----
+- **Recording reliability**: >99% successful captures
+- **Processing speed**: <500ms perceived latency
+- **User satisfaction**: Positive feedback on control
 
-## 7.2 Flow
+### Technical Performance
 
-```text
-Audio Stream
-→ Chunker
-→ STT Worker (async)
-→ Result Buffer
-```
+- **Memory efficiency**: No leaks during extended recording
+- **CPU usage**: <10% during active processing
+- **Audio quality**: Transparent capture (no artifacts)
 
----
+### Feature Adoption
 
-## 7.3 Why
-
-* Prevents long blocking decode
-* Keeps latency bounded
-* Protects memory
+- **Usage rate**: >30% of interactions use PTT mode
+- **Mode switching**: Seamless transitions between Passive/PTT
+- **Error rate**: <1% failed recordings
 
 ---
 
-# 8. Background STT Processing
+## 16. Architectural Integration
 
----
+### Relationship to Passive Mode
 
-## 8.1 During Recording
+PTT mode **coexists** with passive mode:
 
-```text
-audio_chunk → STT → text_chunk → store
-```
+- **Shared infrastructure**: Same STT engine, same buffers
+- **Mode isolation**: Clean separation of VAD vs button control
+- **State preservation**: VAD state maintained during PTT sessions
 
----
+### Backend Dependencies
 
-## 8.2 Data Structure
+- **STT worker**: Reused for both partial and final transcription
+- **Audio ingestion**: Same CPAL stream, different processing logic
+- **Pipeline events**: Integrated with main event bus
 
-```ts
-pttBuffer = Map<chunk_id, text>
-```
+### UI Coordination
 
----
-
-## 8.3 Ordering (MANDATORY)
-
-```ts
-on finalize:
-  sort chunk_id
-  join text
-```
-
----
-
-## ❗ Prevent
-
-* Out-of-order transcripts
-* Missing segments
-
----
-
-# 9. Finalization Logic
-
----
-
-## 9.1 On Stop
-
-```text
-1. Stop recording
-2. Flush remaining audio
-3. Send final chunk to STT
-4. Wait for last decode (~100–200ms)
-5. Assemble transcript
-6. Emit to UI
-```
-
----
-
-## 9.2 Constraint
-
-```text
-<300ms perceived delay
-```
-
----
-
-# 10. Memory Management
-
----
-
-## 10.1 Required
-
-```text
-After chunk processed:
-  → discard raw audio
-  → keep only text
-```
-
----
-
-## 10.2 Prevent
-
-* RAM spikes
-* long-session accumulation
-
----
-
-# 11. Interaction Model
-
----
-
-## 11.1 Rules
-
-```text
-Mic Start:
-  → ALWAYS new interaction
-
-Mic Stop:
-  → finalize interaction
-```
-
----
-
-## 11.2 No Continuity
-
-Unlike passive mode:
-
-* NO merging across sessions
-* NO time-based grouping
-
----
-
-# 12. History Integration
-
----
-
-## 12.1 Storage
-
-```ts
-history.push({
-  type: "ptt",
-  text: finalTranscript
-})
-```
-
----
-
-## 12.2 Rules
-
-* max 10 entries
-* read-only
-* no partials
-
----
-
-# 13. Error Handling
-
----
-
-## 13.1 STT Failure
-
-```text
-→ show fallback text:
-  "Transcription failed"
-→ keep UI stable
-```
-
----
-
-## 13.2 Buffer Overflow
-
-```text
-→ drop oldest pending chunk
-→ log warning
-```
-
----
-
-## 13.3 Timeout
-
-```text
-if processing >500ms:
-  → show loader
-```
-
----
-
-# 14. Performance Constraints
-
----
-
-## Must Ensure
-
-* No blocking STT calls
-* No large audio buffers
-* Smooth waveform rendering
-* Minimal re-renders
-
----
-
-## Techniques
-
-* async chunk processing
-* bounded queues
-* requestAnimationFrame for waveform
-
----
-
-# 15. Backend Integration (IMPORTANT)
-
----
-
-## 15.1 Reuse STT Worker
-
-Add new commands:
-
-```ts
-PTT_PARTIAL(chunk_id, audio)
-PTT_FINAL(chunk_id, audio)
-```
-
----
-
-## 15.2 Do NOT
-
-* create separate STT engine
-* duplicate pipelines
-
----
-
-# 16. Event Flow (Frontend ↔ Backend)
-
----
-
-## 16.1 From UI
-
-```text
-ptt_start
-ptt_stop
-ptt_cancel
-```
-
----
-
-## 16.2 From Backend
-
-```text
-ptt_chunk_result
-ptt_final_result
-ptt_error
-```
-
----
-
-# 17. Edge Cases
-
----
-
-## 17.1 Rapid Toggle
-
-```text
-start → stop → start quickly
-→ must reset buffers cleanly
-```
-
----
-
-## 17.2 Long Recording
-
-```text
-> max_duration
-→ auto-stop
-→ finalize
-```
-
----
-
-## 17.3 Slow STT
-
-```text
-recording continues
-→ limit inflight chunks
-→ avoid queue explosion
-```
-
----
-
-# 18. Final UX Summary
-
----
-
-```text
-User clicks mic
-→ waveform appears
-
-User speaks
-→ system records + processes silently
-
-User clicks mic again
-→ waveform stops
-→ short loader
-→ full transcript appears instantly
-
-Transcript saved
-→ ready for next interaction
-```
-
----
-
-# 19. Final Principle
-
-> PTT is NOT real-time UI.
-
-It is:
-→ **real-time capture**
-→ **background processing**
-→ **instant final output**
-
----
-
-# 🧠 Evaluation
-
----
-
-### 🐛 BUG (avoided)
-
-Full audio decode at end
-→ replaced with incremental chunking
-**Confidence: 100%**
-
----
-
-### ⚖️ TRADEOFF
-
-No live transcript
-→ cleaner UX vs less feedback
-**Confidence: 85%**
-
----
-
-### 💡 IMPROVEMENT
-
-Waveform-first interaction
-→ removes perceived latency
-**Confidence: 95%**
-
----
-
-# ✅ Ready for Implementation
-
----
-
-If needed next:
-→ I can convert this into **Antigravity step-by-step prompts**
-→ or define **exact frontend + Rust event contracts**
+- **Mode indicators**: Clear visual distinction between modes
+- **Seamless switching**: No restart required when changing modes
+- **State synchronization**: Consistent state across main/tray windows
