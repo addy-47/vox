@@ -221,8 +221,8 @@ pub struct AppState {
     pub is_vad_loaded: Arc<AtomicBool>,
     pub is_sleeping: Arc<AtomicBool>,
 
-    /// Persistence worker channel. None if persistence is disabled.
-    pub persist_tx: Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
+    /// Persistence worker channel. None if persistence is disabled or hibernating.
+    pub persist_tx: std::sync::Mutex<Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>>,
     /// Track dropped persistence events for monitoring.
     pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
     /// Track dropped telemetry events to prevent I/O blocking on hot-paths.
@@ -295,7 +295,7 @@ impl AppState {
             is_stt_loaded: Arc::new(AtomicBool::new(false)),
             is_vad_loaded: Arc::new(AtomicBool::new(false)),
             is_sleeping: Arc::new(AtomicBool::new(false)),
-            persist_tx: None,
+            persist_tx: std::sync::Mutex::new(None),
             dropped_persistence_events: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             dropped_telemetry_events,
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
