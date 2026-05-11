@@ -56,7 +56,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
               className="w-full"
             />
                 <span className={cn(
-              "text-[10px] font-black uppercase tracking-[0.4em] transition-colors duration-500",
+              "text-[11px] font-black uppercase tracking-[0.4em] transition-colors duration-500",
               pttStatus === 'RECORDING' ? "text-[rgb(var(--accent))]/80 animate-pulse" : "text-[rgb(var(--accent))]/80"
             )}>
               {pttStatus === 'RECORDING' ? "Recording" : "Processing"}
@@ -94,7 +94,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
             className="flex flex-col items-center justify-center"
           >
             <Activity size={24} className="mb-2 text-[rgb(var(--accent))]/40 animate-pulse" />
-            <p className="text-[9px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/40">
+            <p className="text-[11px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/40">
               Standby
             </p>
           </motion.div>

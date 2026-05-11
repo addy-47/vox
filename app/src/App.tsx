@@ -15,7 +15,7 @@ const PageLoader = () => (
         <div className="absolute inset-0 border-2 border-[rgb(var(--accent))]/20 rounded-full" />
         <div className="absolute inset-0 border-2 border-t-[rgb(var(--accent))] rounded-full animate-spin" />
       </div>
-      <span className="text-[10px] font-bold tracking-[0.5em] text-[rgb(var(--accent))] uppercase animate-pulse">
+      <span className="text-[11px] font-bold tracking-[0.5em] text-[rgb(var(--accent))] uppercase animate-pulse">
         Synchronizing
       </span>
     </div>

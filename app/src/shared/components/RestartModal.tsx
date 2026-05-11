@@ -45,7 +45,7 @@ export const RestartModal: React.FC<RestartModalProps> = ({
             </p>
           </div>
 
-          <div className="w-full bg-white/[0.03] border border-[rgba(var(--border),0.05)] rounded-xl p-4 space-y-2">
+          <div className="w-full bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] rounded-xl p-4 space-y-2">
             {changedSettings.map((setting) => (
               <div key={setting} className="flex items-center gap-3 text-[11px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest">
                 <div className="w-1 h-1 rounded-full bg-[rgb(var(--accent))]" />
@@ -57,7 +57,7 @@ export const RestartModal: React.FC<RestartModalProps> = ({
           <div className="flex items-center gap-3 w-full pt-4">
             <button 
               onClick={onClose}
-              className="flex-1 px-6 py-3.5 rounded-xl text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest hover:bg-white/[0.05] transition-colors"
+              className="flex-1 px-6 py-3.5 rounded-xl text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest hover:bg-[rgb(var(--foreground))]/[0.05] transition-colors"
             >
               Later
             </button>
@@ -72,7 +72,7 @@ export const RestartModal: React.FC<RestartModalProps> = ({
 
         <div className="flex items-start gap-3 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-xl">
           <AlertTriangle size={16} className="text-yellow-500 shrink-0 mt-0.5" />
-          <p className="text-[10px] text-yellow-500/80 leading-relaxed font-medium">
+          <p className="text-[11px] text-yellow-500/80 leading-relaxed font-medium">
             Active sessions and unsaved transcripts will be cleared upon relaunch. Ensure all tasks are completed.
           </p>
         </div>

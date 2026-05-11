@@ -17,24 +17,24 @@ export const TraySettings: React.FC = () => {
           {/* HUD Setup */}
           <div className="lg:col-span-2 space-y-8">
             <div className="premium-card p-6 md:p-8">
-              <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3 mb-8 shrink-0">
+                <Monitor className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">
                   <h2 className="text-lg font-bold text-[rgb(var(--foreground))]">Display HUD</h2>
-                  <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-60">Control Vox Live window</p>
+                  <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Control Vox Live window</p>
                 </div>
-                <Monitor className="text-[rgb(var(--accent))]" size={20} />
               </div>
 
-              <div className="flex items-center justify-between p-6 bg-white/[0.02] border border-[rgba(var(--border),0.03)] rounded-2xl">
+              <div className="flex items-center justify-between p-6 bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.03)] rounded-2xl">
                 <div className="space-y-1">
                   <div className="text-sm font-bold text-[rgb(var(--foreground))] opacity-80">Enable HUD</div>
-                  <p className="text-[10px] text-[rgb(var(--foreground-muted))] opacity-40 uppercase tracking-widest">Show or hide the always-on-top window</p>
+                  <p className="text-[11px] text-[rgb(var(--foreground-muted))] opacity-60 uppercase tracking-widest">Show or hide the always-on-top window</p>
                 </div>
                 <button 
                   onClick={() => updateDraft("ui", "tray_enabled", !ui.tray_enabled)}
                   className={cn(
                     "w-12 h-6 rounded-full relative transition-all duration-300",
-                    ui.tray_enabled ? "bg-[rgb(var(--accent))]" : "bg-white/10"
+                    ui.tray_enabled ? "bg-[rgb(var(--accent))]" : "bg-[rgb(var(--foreground))]/10"
                   )}
                 >
                   <div className={cn(
@@ -48,16 +48,19 @@ export const TraySettings: React.FC = () => {
             {/* Look & Feel */}
             <div className="grid md:grid-cols-2 gap-8">
               <div className="premium-card p-6 md:p-8 space-y-8">
-                <div className="flex items-center gap-3">
-                  <Layers size={16} className="text-[rgb(var(--accent))]" />
-                  <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-40">Appearance</h3>
+                <div className="flex items-center gap-3 mb-8 shrink-0">
+                  <Layers className="text-[rgb(var(--accent))]" size={20} />
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Appearance</h3>
+                    <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Customize look & feel</p>
+                  </div>
                 </div>
 
                 <div className="space-y-6">
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Blur Density</span>
-                      <span className="text-[10px] font-mono opacity-40">{ui.tray_blur_density}px</span>
+                      <span className="text-[11px] font-mono opacity-60">{ui.tray_blur_density}px</span>
                     </div>
                     <div className="relative h-6 flex items-center">
                       <input 
@@ -73,13 +76,13 @@ export const TraySettings: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
                       <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Glass Tint</span>
-                      <p className="text-[10px] opacity-30 uppercase tracking-widest">Adds a subtle color glow</p>
+                      <p className="text-[11px] opacity-60 uppercase tracking-widest">Adds a subtle color glow</p>
                     </div>
                     <button 
                       onClick={() => updateDraft("ui", "tray_glass_tint", !ui.tray_glass_tint)}
                       className={cn(
                         "w-10 h-5 rounded-full relative transition-all duration-300",
-                        ui.tray_glass_tint ? "bg-[rgb(var(--accent))]" : "bg-white/10"
+                        ui.tray_glass_tint ? "bg-[rgb(var(--accent))]" : "bg-[rgb(var(--foreground))]/10"
                       )}
                     >
                       <div className={cn(
@@ -92,16 +95,19 @@ export const TraySettings: React.FC = () => {
               </div>
 
               <div className="premium-card p-6 md:p-8 space-y-8">
-                <div className="flex items-center gap-3">
-                  <Zap size={16} className="text-[rgb(var(--accent))]" />
-                  <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-40">Behavior</h3>
+                <div className="flex items-center gap-3 mb-8 shrink-0">
+                  <Zap className="text-[rgb(var(--accent))]" size={20} />
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Behavior</h3>
+                    <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">HUD automation rules</p>
+                  </div>
                 </div>
 
                 <div className="space-y-6">
                   <div className="space-y-4">
                     <div className="flex justify-between">
                       <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Hide After</span>
-                      <span className="text-[10px] font-mono opacity-40">{ui.tray_hide_delay}s</span>
+                      <span className="text-[11px] font-mono opacity-60">{ui.tray_hide_delay}s</span>
                     </div>
                     <div className="grid grid-cols-5 gap-2">
                       {[1, 2, 3, 5, 10].map(s => (
@@ -109,10 +115,10 @@ export const TraySettings: React.FC = () => {
                           key={s}
                           onClick={() => updateDraft("ui", "tray_hide_delay", s)}
                           className={cn(
-                            "py-2 rounded-lg text-[10px] font-bold transition-all duration-300",
+                            "py-2 rounded-lg text-[11px] font-bold transition-all duration-300",
                             ui.tray_hide_delay === s 
                               ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
-                              : "bg-white/5 border border-[rgba(var(--border),0.03)] hover:bg-white/10 text-white/60"
+                              : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.03)] hover:bg-[rgb(var(--foreground))]/10 text-[rgb(var(--foreground))]/60"
                           )}
                         >
                           {s}s
@@ -131,10 +137,10 @@ export const TraySettings: React.FC = () => {
                           key={f}
                           onClick={() => updateDraft("ui", "tray_fade_transition", f)}
                           className={cn(
-                            "py-2 rounded-lg text-[10px] font-bold uppercase transition-all duration-300",
+                            "py-2 rounded-lg text-[11px] font-bold uppercase transition-all duration-300",
                             ui.tray_fade_transition === f 
                               ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
-                              : "bg-white/5 border border-[rgba(var(--border),0.03)] hover:bg-white/10 text-white/60"
+                              : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.03)] hover:bg-[rgb(var(--foreground))]/10 text-[rgb(var(--foreground))]/60"
                           )}
                         >
                           {f}
@@ -150,23 +156,26 @@ export const TraySettings: React.FC = () => {
           {/* Tray Interaction */}
           <div className="space-y-8">
             <div className="premium-card p-6 md:p-8 space-y-8">
-              <div className="flex items-center gap-3">
-                <Sliders size={16} className="text-[rgb(var(--accent))]" />
-                <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-40">HUD Interaction</h3>
+              <div className="flex items-center gap-3 mb-8 shrink-0">
+                <Sliders className="text-[rgb(var(--accent))]" size={20} />
+                <div className="space-y-1">
+                  <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">HUD Interaction</h3>
+                  <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Activation methods</p>
+                </div>
               </div>
               
               <div className="flex items-center justify-between">
                 <div className="space-y-1">
                   <div className="text-sm font-bold text-[rgb(var(--foreground))] opacity-80">HUD Method</div>
-                  <div className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-50">
+                  <div className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-60">
                     {interaction.tray_mode === "Passive" ? "Auto Show" : "Manual Only"}
                   </div>
                 </div>
-                <div className="flex p-1 bg-white/[0.05] border border-[rgba(var(--border),0.05)] rounded-xl">
+                <div className="flex p-1 bg-[rgb(var(--foreground))]/[0.05] border border-[rgba(var(--border),0.05)] rounded-xl">
                   <button 
                     onClick={() => updateDraft("interaction", "tray_mode", "Passive")}
                     className={cn(
-                      "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all duration-300",
+                      "px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase transition-all duration-300",
                       interaction.tray_mode === "Passive" 
                         ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
                         : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
@@ -177,7 +186,7 @@ export const TraySettings: React.FC = () => {
                   <button 
                     onClick={() => updateDraft("interaction", "tray_mode", "PTT")}
                     className={cn(
-                      "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all duration-300",
+                      "px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase transition-all duration-300",
                       interaction.tray_mode === "PTT" 
                         ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
                         : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
@@ -190,15 +199,18 @@ export const TraySettings: React.FC = () => {
             </div>
 
             <div className="premium-card p-6 md:p-8 space-y-8">
-              <div className="flex items-center gap-3">
-                <History size={16} className="text-[rgb(var(--accent))]" />
-                <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-40">Context Window</h3>
+              <div className="flex items-center gap-3 mb-8 shrink-0">
+                <History className="text-[rgb(var(--accent))]" size={20} />
+                <div className="space-y-1">
+                  <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Context Window</h3>
+                  <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Memory depth</p>
+                </div>
               </div>
               
               <div className="space-y-4">
                 <div className="flex justify-between">
                   <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">History Depth</span>
-                  <span className="text-[10px] font-mono text-[rgb(var(--accent))] font-bold">{ui.tray_history_limit} items</span>
+                  <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">{ui.tray_history_limit} items</span>
                 </div>
                 <div className="relative h-6 flex items-center">
                   <input 
@@ -209,7 +221,7 @@ export const TraySettings: React.FC = () => {
                     className="w-full" 
                   />
                 </div>
-                <p className="text-[10px] text-[rgb(var(--foreground-muted))] opacity-30 italic leading-relaxed">
+                <p className="text-[11px] text-[rgb(var(--foreground-muted))] opacity-60 italic leading-relaxed">
                   Controls how many previous transcripts are stored in the Tray HUD's session memory.
                 </p>
               </div>

@@ -25,7 +25,7 @@ export const Body: React.FC<TypographyProps> = ({ children, className }) => (
 );
 
 export const Label: React.FC<TypographyProps> = ({ children, className }) => (
-  <span className={cn("font-display text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase text-white/40", className)}>
+  <span className={cn("font-display text-[11px] md:text-xs font-bold tracking-[0.2em] uppercase text-[rgb(var(--foreground))]/40", className)}>
     {children}
   </span>
 );

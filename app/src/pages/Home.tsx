@@ -128,7 +128,7 @@ export const Home: React.FC = () => {
               "w-2 md:w-2.5 h-2 md:h-2.5 rounded-full transition-all duration-500",
               interactionState !== "Idle" || isEngaged
                 ? "bg-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.6)] animate-pulse"
-                : "bg-[rgb(var(--foreground-muted))] opacity-20"
+                : "bg-[rgb(var(--foreground-muted))] opacity-60"
             )} />
             <span className="text-[11px] font-bold tracking-[0.3em] md:tracking-[0.4em] uppercase shimmer-text">
               {!isEngaged && interactionState === "Idle" && "System Dormant"}
@@ -145,11 +145,11 @@ export const Home: React.FC = () => {
 
         {/* Dynamic Orb Area */}
         <div className="flex-1 w-full flex items-center justify-center relative min-h-0 overflow-visible">
-          <div className="absolute inset-0 bg-gradient-radial from-[rgb(var(--accent))]/5 to-transparent pointer-events-none opacity-40" />
+          <div className="absolute inset-0 bg-gradient-radial from-[rgb(var(--accent))]/5 to-transparent pointer-events-none opacity-60" />
           <div className="w-full h-full max-h-[60vh] min-h-[300px] flex items-center justify-center">
             <div className={cn(
               "w-full h-full scale-100 transition-all duration-1000 flex items-center justify-center",
-              !isEngaged ? "grayscale-[0.8] opacity-50 blur-[2px]" : "grayscale-0 opacity-100 blur-0"
+              !isEngaged ? "grayscale-[0.8] opacity-60 blur-[2px]" : "grayscale-0 opacity-600 blur-0"
             )}>
               <VoxOrb telemetryRef={telemetryRef} interactionState={interactionState} />
             </div>
@@ -162,7 +162,7 @@ export const Home: React.FC = () => {
             {/* Flanking Waveform Container */}
             <div className={cn(
               "absolute inset-0 flex items-center justify-center transition-all duration-700 pointer-events-none",
-              activeSpeaking ? "opacity-100 scale-100" : "opacity-0 scale-95 blur-md"
+              activeSpeaking ? "opacity-600 scale-100" : "opacity-0 scale-95 blur-md"
             )}>
               <LiveWaveform
                 active={activeSpeaking}
@@ -178,7 +178,7 @@ export const Home: React.FC = () => {
             </div>
 
             {/* Buttons Container — Opaque Background Mask */}
-            <div className="flex items-center gap-6 relative z-20 px-8 py-5 rounded-full bg-[rgb(var(--background))] border border-white/[0.03]">
+            <div className="flex items-center gap-6 relative z-20 px-8 py-5 rounded-full bg-[rgb(var(--background))]">
               <div className="relative">
                 <button
                   onClick={handleEngage}
@@ -195,7 +195,7 @@ export const Home: React.FC = () => {
                   <Activity size={22} className={cn("transition-transform duration-700", isEngaged && "rotate-180")} />
                 </button>
                 <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-24 text-center">
-                  <span className="text-[9px] font-bold tracking-[0.2em] uppercase opacity-40">
+                  <span className="text-[11px] font-bold tracking-[0.2em] uppercase opacity-60">
                     {isEngaged ? "Stop" : "Engage"}
                   </span>
                 </div>
@@ -217,8 +217,8 @@ export const Home: React.FC = () => {
                   </button>
                   <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-24 text-center">
                     <span className={cn(
-                      "text-[9px] font-black tracking-[0.3em] uppercase transition-colors",
-                      pttStatus === 'RECORDING' ? "text-[rgb(var(--accent))]" : "opacity-40"
+                      "text-[11px] font-black tracking-[0.3em] uppercase transition-colors",
+                      pttStatus === 'RECORDING' ? "text-[rgb(var(--accent))]" : "opacity-60"
                     )}>
                       {pttStatus === 'RECORDING' ? "Live" : "MIC"}
                     </span>
@@ -233,7 +233,7 @@ export const Home: React.FC = () => {
       {/* ===== RIGHT SIDEBAR BRIEF (Desktop Only) ===== */}
       <div className="hidden xl:flex flex-col gap-6 py-16 pr-12 w-[420px] shrink-0 z-10">
         <div className="premium-card p-10 min-h-[500px] flex flex-col relative group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+          <div className="absolute top-0 right-0 p-4 opacity-60 group-hover:opacity-60 transition-opacity">
             <Mic size={48} />
           </div>
 
@@ -244,16 +244,16 @@ export const Home: React.FC = () => {
 
           <div className="flex-1 flex flex-col gap-8">
             <div className="flex-1 flex flex-col">
-              <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] mb-6 opacity-50">Live Dialogue</h3>
+              <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] mb-6 opacity-60">Live Dialogue</h3>
               
               <div className="flex-1 flex flex-col gap-6">
                 {/* User Bubble */}
                 <div className={cn(
                   "transition-all duration-500 transform",
-                  transcript ? "opacity-100 translate-x-0" : "h-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden"
+                  transcript ? "opacity-600 translate-x-0" : "h-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden"
                 )}>
-                  <div className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-2">You</div>
-                  <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
+                  <div className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-2">You</div>
+                  <div className="p-4 rounded-2xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),[0.05]">
                     <p className="text-lg font-medium text-[rgb(var(--foreground))] leading-relaxed">
                       {transcript}
                     </p>
@@ -263,9 +263,9 @@ export const Home: React.FC = () => {
                 {/* Assistant Bubble */}
                 <div className={cn(
                   "transition-all duration-700 delay-200 transform",
-                  assistantText ? "opacity-100 translate-y-0" : "h-0 opacity-0 translate-y-4 pointer-events-none overflow-hidden"
+                  assistantText ? "opacity-600 translate-y-0" : "h-0 opacity-0 translate-y-4 pointer-events-none overflow-hidden"
                 )}>
-                  <div className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2">Vox</div>
+                  <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2">Vox</div>
                   <div className="p-4 rounded-2xl bg-[rgb(var(--accent))]/[0.03] border border-[rgb(var(--accent))]/10">
                     <p className="text-lg font-medium text-[rgb(var(--accent))] leading-relaxed">
                       {assistantText}
@@ -274,7 +274,7 @@ export const Home: React.FC = () => {
                 </div>
 
                 {!transcript && !assistantText && (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center px-6 opacity-30">
+                  <div className="flex-1 flex flex-col items-center justify-center text-center px-6 opacity-60">
                     <Activity size={32} className="mb-4 animate-pulse" />
                     <p className="text-sm font-medium italic">
                       {isEngaged 
@@ -286,15 +286,15 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-8 border-t border-white/[0.05] grid grid-cols-2 gap-8 shrink-0">
+            <div className="pt-8 border-t border-[rgba(var(--border),[0.05] grid grid-cols-2 gap-8 shrink-0">
               <div>
-                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2 opacity-40">Pipeline</div>
+                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2 opacity-60">Pipeline</div>
                 <div className="text-lg font-mono text-[rgb(var(--accent))] uppercase">
                   {isEngaged ? "Active" : "Locked"}
                 </div>
               </div>
               <div>
-                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2 opacity-40">Protocol</div>
+                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2 opacity-60">Protocol</div>
                 <div className="text-lg font-mono text-[rgb(var(--accent))] uppercase">
                   {interactionMode}
                 </div>
@@ -305,11 +305,11 @@ export const Home: React.FC = () => {
 
         <div className="premium-card p-6 flex items-center justify-between group hover:border-[rgb(var(--accent))]/30 transition-colors">
           <div className="flex items-center gap-4">
-            <div className="p-3 rounded-xl bg-white/[0.03] text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--accent))] transition-colors">
+            <div className="p-3 rounded-xl bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--accent))] transition-colors">
               <Shield size={18} />
             </div>
             <div>
-              <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-40">Security</div>
+              <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-60">Security</div>
               <div className="text-sm font-bold text-[rgb(var(--foreground))]">End-to-End Vault</div>
             </div>
           </div>

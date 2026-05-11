@@ -180,7 +180,7 @@ impl PipelineOrchestrator {
     }
 
     /// Initialize the TTS worker if it's not already running.
-    pub fn warm_up_tts(&self, en_tts_dir: PathBuf, hi_tts_dir: PathBuf) -> Result<(), String> {
+    pub fn warm_up_tts(&self, en_tts_dir: PathBuf, hi_tts_path: PathBuf) -> Result<(), String> {
         let lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
         if lock.is_some() {
             return Ok(());
@@ -197,7 +197,7 @@ impl PipelineOrchestrator {
         std::thread::Builder::new()
             .name("vox-tts-persistent".to_string())
             .spawn(move || {
-                let mut engine = match crate::services::tts::TtsEngine::new(&en_tts_dir, &hi_tts_dir) {
+                let mut engine = match crate::services::tts::TtsEngine::new(&en_tts_dir, &hi_tts_path) {
                     Ok(e) => e,
                     Err(e) => {
                         log::error!("[TTS Worker] Init failed: {}", e);
@@ -349,14 +349,14 @@ impl PipelineOrchestrator {
         &self,
         rx: std::sync::mpsc::Receiver<VoxEvent>,
         en_tts_dir: PathBuf,
-        hi_tts_dir: PathBuf,
+        hi_tts_path: PathBuf,
         playback_engine: Arc<crate::services::playback::PlaybackEngine>,
         app_handle: tauri::AppHandle,
     ) {
         // Directive 2: Sub-sentence token accumulator ───────────────────────
         let mut token_buf    = String::new();
         let mut current_tid  = 0u32;
-        let mut voice_sid    = self.settings.read().unwrap().tts.voice_id; 
+        let mut voice_sid    = self.settings.read().unwrap().tts.en_voice; 
         let mut thinking     = false;
         let mut metrics      = PipelineMetrics::new();
         let _audio_mode = {
@@ -424,7 +424,7 @@ impl PipelineOrchestrator {
                     if let Err(e) = self.warm_up_llm() {
                         log::error!("[Pipeline] WarmUp (LLM): failed: {}", e);
                     }
-                    if let Err(e) = self.warm_up_tts(en_tts_dir.clone(), hi_tts_dir.clone()) {
+                    if let Err(e) = self.warm_up_tts(en_tts_dir.clone(), hi_tts_path.clone()) {
                         log::error!("[Pipeline] WarmUp (TTS): failed: {}", e);
                     }
                     log::info!("[Pipeline] WarmUp: workers started in background.");
@@ -467,7 +467,7 @@ impl PipelineOrchestrator {
                 VoxEvent::TranscriptFinal { turn_id, owner, text } => {
                     if turn_id < current_tid { continue; }
                     token_buf.clear();
-                    voice_sid = self.settings.read().unwrap().tts.voice_id;   
+                    voice_sid = self.settings.read().unwrap().tts.en_voice;   
                     thinking = false;
                     metrics.mark(MetricField::FinalTranscript);
                     
@@ -514,7 +514,7 @@ impl PipelineOrchestrator {
                             let voice_sid = if is_devanagari(&chunk) { 
                                 1 // Piper Hindi (Fixed index for now)
                             } else { 
-                                self.settings.read().unwrap().tts.voice_id 
+                                self.settings.read().unwrap().tts.en_voice
                             };
                             if let Ok(lock) = self.tts_tx.lock() {
                                 if let Some(tx) = lock.as_ref() {
