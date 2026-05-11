@@ -25,6 +25,11 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
     
     if let Some(mut engine) = lock.take() {
         log::info!("[PIPELINE] >>> Shutting down 3-Tier Audio Engine (Deterministic)...");
+        
+        // 1. Signal all threads to exit via Atomic flag (Secondary exit path)
+        state.pipeline.engine_shutdown.store(true, Ordering::Relaxed);
+
+        // 2. Signal threads via channels (Primary exit path)
         let _ = engine.pipeline_tx.send(VoxEvent::Shutdown);
         let _ = engine.stt_tx.send(SttCommand::Shutdown);
         let _ = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown);
@@ -157,7 +162,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let (vad_tx_internal, vad_rx_internal) = std::sync::mpsc::channel::<crate::core::state::VadCommand>();
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
-    let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone(), state.is_stt_loaded.clone())?;
+    let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone(), state.is_stt_loaded.clone(), state.pipeline.engine_shutdown.clone())?;
 
     let threshold = state.settings.read().unwrap().vad.threshold;
     let mut vad = VadEngine::new(&vad_model_path, threshold).map_err(|e| e.to_string())?;
@@ -183,24 +188,6 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let app_state: State<'_, std::sync::Arc<AppState>> = app_handle_emit.state();
         while let Some(event) = event_rx.recv().await {
             if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
-                if msg_type == "speech_start" {
-                    let (hud_visible, tray_enabled) = {
-                        let hud_lock = app_state.hud_visible.lock().await;
-                        let settings = app_state.settings.read().unwrap();
-                        (*hud_lock, settings.ui.tray_enabled)
-                    };
-
-                    if hud_visible && tray_enabled {
-                        if let Some(window) = app_handle_emit.get_webview_window("tray") {
-                            let w = window.clone();
-                            tauri::async_runtime::spawn(async move {
-                                let _ = w.show();
-                                position_tray_window(&w).await;
-                            });
-                        }
-                    }
-                }
-                
                 let target = {
                     let owner: InteractionOwner = app_state.owner.load(Ordering::Relaxed).into();
                     match owner {

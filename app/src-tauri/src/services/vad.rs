@@ -8,6 +8,8 @@ use tokio::sync::mpsc;
 use serde_json::json;
 use crate::core::state::{VadCommand, InteractionOwner};
 use crate::core::settings::InteractionMode;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Wrapper for the Sherpa-ONNX Voice Activity Detection (VAD) engine.
 /// 
@@ -85,12 +87,19 @@ impl VadEngine {
         event_tx: mpsc::Sender<serde_json::Value>,
         stt_tx: std::sync::mpsc::Sender<crate::services::stt::SttCommand>,
         vad_rx: std::sync::mpsc::Receiver<VadCommand>,
-        telemetry_tx: crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>,
+        telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
         vox_event_tx: Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>,
+        is_loaded: Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<()> 
     where 
         C: ringbuf::traits::Consumer<Item = f32> 
     {
+        // ── Phase 1: Thread Prioritization (Tier 1 - Realtime) ───────────────
+        use thread_priority::*;
+        if let Err(e) = set_current_thread_priority(ThreadPriority::Max) {
+            log::warn!("[VAD] Failed to set max priority (likely non-root/cap_sys_nice): {:?}", e);
+        }
+
         log::info!("[VAD] Starting synchronous VAD loop on dedicated thread.");
         
         let mut in_speech = false;
@@ -103,7 +112,7 @@ impl VadEngine {
         let (threshold_init, noise_gate_init, mode_init, owner_init) = {
             let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
             let settings = state.settings.read().unwrap();
-            let owner = *state.owner.blocking_lock();
+            let owner: InteractionOwner = state.owner.load(std::sync::atomic::Ordering::Relaxed).into();
             let mode = match owner {
                 InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
                 InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
@@ -116,7 +125,13 @@ impl VadEngine {
         let mut noise_gate = noise_gate_init;
         let mut mode = mode_init;
         let mut owner = owner_init;
+        
+        let (dropped_counter, engine_shutdown) = {
+            let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+            (state.dropped_telemetry_events.clone(), state.pipeline.engine_shutdown.clone())
+        };
 
+        is_loaded.store(true, Ordering::Relaxed);
         log::info!("[VAD] Entering sync loop: threshold={}, noise_gate={}, mode={:?}", threshold, noise_gate, mode);
 
         
@@ -124,7 +139,15 @@ impl VadEngine {
         let mut chunk = vec![0.0f32; 256];
 
         loop {
+            // Check for global engine shutdown signal
+            if engine_shutdown.load(Ordering::Relaxed) {
+                log::info!("[VAD] Engine shutdown flag detected. Exiting loop.");
+                is_loaded.store(false, Ordering::Relaxed);
+                return Ok(());
+            }
+
             // ── 0. Process hot-updates (Lock-Free) ───────────────────────────
+            let mut should_exit = false;
             while let Ok(cmd) = vad_rx.try_recv() {
                 match cmd {
                     VadCommand::UpdateThreshold(v) => {
@@ -154,9 +177,24 @@ impl VadEngine {
                     }
                     VadCommand::Shutdown => {
                         log::info!("[VAD] Shutdown signal received. Exiting loop.");
-                        return Ok(());
+                        should_exit = true;
+                        break;
                     }
                 }
+            }
+
+            // Check for channel disconnection (Sender dropped in stop_engine)
+            // Note: try_recv() above only handles Ok() results. We need to catch Disconnected.
+            if !should_exit {
+                if let Err(std::sync::mpsc::TryRecvError::Disconnected) = vad_rx.try_recv() {
+                    log::info!("[VAD] Command channel disconnected. Exiting loop.");
+                    should_exit = true;
+                }
+            }
+
+            if should_exit {
+                is_loaded.store(false, Ordering::Relaxed);
+                return Ok(());
             }
 
             // Check if we have at least 16ms of audio available (256 samples at 16kHz)
@@ -175,11 +213,13 @@ impl VadEngine {
                 // Balanced multiplier: 8.0x provides good visibility without clipping on normal speech
                 let energy = (gated_raw * 8.0).clamp(0.0, 1.0);
                 
-                // Send to aggregator (non-blocking)
-                let _ = telemetry_tx.send(crate::telemetry::aggregator::TelemetryEvent::AudioEnergy {
+                // Send to aggregator (non-blocking try_send to avoid deadlock/latency)
+                if let Err(_) = telemetry_tx.try_send(crate::monitoring::aggregator::TelemetryEvent::AudioEnergy {
                     energy,
-                    vad_prob: 0.0, // VAD prob will be available after self.detector.accept_waveform
-                });
+                    vad_prob: 0.0,
+                }) {
+                    dropped_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
 
                 if mode == crate::core::settings::InteractionMode::PTT {
                     // PTT mode: user explicitly controls recording — skip VAD classification.

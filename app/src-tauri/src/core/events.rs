@@ -33,4 +33,7 @@ pub enum VoxEvent {
 
     /// Gracefully shutdown the pipeline orchestrator.
     Shutdown,
+
+    /// Propagate global settings updates to the orchestrator's local cache.
+    SettingsUpdated(crate::core::settings::VoxSettings),
 }

@@ -31,7 +31,7 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     *samples_since = 0;
     *samples_waveform = 0;
 
-    let owner = *state.owner.lock().await;
+    let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
 
     // Phase 5: Notify pipeline to cancel any ongoing playback (barge-in)
     if let Some(engine) = state.engine.lock().await.as_ref() {
@@ -71,7 +71,7 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
         *recording = false;
         log::info!("[PTT] <<< Recording stopped. Finalizing {} samples...", buffer.len());
         
-        let owner = *state.owner.lock().await;
+        let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
         (turn, owner, buffer.clone())
     }; 
 
@@ -111,7 +111,7 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
     *recording = false;
     buffer.clear();
 
-    let owner = *state.owner.lock().await;
+    let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
 
     // Determine the owning window target
     let target = match owner {
@@ -173,7 +173,7 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
             if let Some(engine) = lock.as_ref() {
                 // For partial transcripts, only send the last 15 seconds to keep CPU/Memory low
                 // 15 seconds * 16,000 samples/sec = 240,000 samples
-                let owner = *state.owner.blocking_lock();
+                let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
                 let start_idx = buffer.len().saturating_sub(240000);
                 let _ = engine.stt_tx.send(SttCommand::Partial(turn, owner, buffer[start_idx..].to_vec()));
                 log::debug!("[PTT] Sent partial buffer window ({} samples) to STT worker", buffer[start_idx..].len());
@@ -201,7 +201,7 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
 
         if let Ok(lock) = state.engine.try_lock() {
             if let Some(engine) = lock.as_ref() {
-                let _ = engine.telemetry_tx.send(crate::telemetry::aggregator::TelemetryEvent::AudioEnergy {
+                let _ = engine.telemetry_tx.send(crate::monitoring::aggregator::TelemetryEvent::AudioEnergy {
                     energy: gated_energy,
                     vad_prob: 0.0,
                 });

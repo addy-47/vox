@@ -9,9 +9,19 @@ use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub enum InteractionOwner {
-    Tray,
-    MainWindow,
-    Ptt,
+    Tray = 0,
+    MainWindow = 1,
+    Ptt = 2,
+}
+
+impl From<u32> for InteractionOwner {
+    fn from(v: u32) -> Self {
+        match v {
+            1 => InteractionOwner::MainWindow,
+            2 => InteractionOwner::Ptt,
+            _ => InteractionOwner::Tray,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
@@ -57,8 +67,14 @@ pub struct VoxEngine {
     pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
     /// Channel to send hot-updates to the VAD worker without locking AppState.
     pub vad_tx: std::sync::mpsc::Sender<VadCommand>,
-    pub telemetry_tx: crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>,
+    pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
     pub pipeline_tx: std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
+    pub playback_engine: Arc<crate::services::playback::PlaybackEngine>,
+
+    // Lifecycle handles for deterministic cleanup
+    pub stt_handle: Option<std::thread::JoinHandle<()>>,
+    pub vad_handle: Option<std::thread::JoinHandle<()>>,
+    pub orchestrator_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 // ─── PttState ─────────────────────────────────────────────────────────────────
@@ -104,6 +120,9 @@ pub struct PipelineAtomics {
     pub is_assistant_speaking: Arc<AtomicBool>,
     /// Atomic representation of InteractionState for lock-free monitoring.
     pub current_state_atomic: Arc<std::sync::atomic::AtomicU32>,
+    /// Set to `true` when the entire engine is shutting down.
+    /// All background threads must exit their main loops when this is set.
+    pub engine_shutdown: Arc<AtomicBool>,
 }
 
 impl PipelineAtomics {
@@ -122,6 +141,7 @@ impl PipelineAtomics {
             playback_underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             is_assistant_speaking: Arc::new(AtomicBool::new(false)),
             current_state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(InteractionState::Idle as u32)),
+            engine_shutdown:    Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -149,7 +169,7 @@ impl PipelineAtomics {
 
 pub struct AppState {
     pub engine:        Mutex<Option<VoxEngine>>,
-    pub owner:         Mutex<InteractionOwner>,
+    pub owner:         Arc<AtomicU32>,
     pub hud_visible:   Mutex<bool>,
 
     /// Settings protected by RwLock for concurrent read access.
@@ -174,7 +194,7 @@ pub struct AppState {
     /// Async log writer guard. Must be held to ensure logs are flushed.
     pub _log_guard:    Option<tracing_appender::non_blocking::WorkerGuard>,
     /// Structured telemetry bus (crossbeam — lock-free, safe for hot-path threads).
-    pub telemetry_tx:  crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>,
+    pub telemetry_tx:  crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
     /// Long-lived conversation session ID. 0 = no active session (Tray mode).
     /// Created on Engage, destroyed on Disengage. Persistence worker ignores events with id == 0.
     pub conversation_id: Arc<AtomicU64>,
@@ -182,15 +202,31 @@ pub struct AppState {
     /// Latest VAD characteristics for monitoring (Atomic f32 via bit storage).
     pub latest_energy: Arc<AtomicU32>,
     pub latest_vad_prob: Arc<AtomicU32>,
-    pub latest_cpu: Arc<AtomicU32>,
-    pub latest_ram: Arc<AtomicU32>,
+    pub latest_sys_cpu: Arc<AtomicU32>,
+    pub latest_sys_ram: Arc<AtomicU32>,
+    pub latest_vox_cpu: Arc<AtomicU32>,
+    pub latest_vox_ram: Arc<AtomicU32>,
     pub latest_stt_ms: Arc<AtomicU32>,
     pub latest_ttft_ms: Arc<AtomicU32>,
+    pub latest_voice_latency_ms: Arc<AtomicU32>,
+    pub latest_threads: Arc<AtomicU32>,
+    pub latest_tts_rtf: Arc<AtomicU32>, // f32 bits
+    pub latest_playback_start_ms: Arc<AtomicU32>,
+    pub latest_persistence_rate: Arc<AtomicU32>, // f32 bits
+    pub is_db_healthy: Arc<AtomicBool>,
+    pub is_private_mode: Arc<AtomicBool>,
+    pub is_llm_loaded: Arc<AtomicBool>,
+    pub is_tts_loaded: Arc<AtomicBool>,
+    pub is_stt_loaded: Arc<AtomicBool>,
+    pub is_vad_loaded: Arc<AtomicBool>,
+    pub is_sleeping: Arc<AtomicBool>,
 
     /// Persistence worker channel. None if persistence is disabled.
     pub persist_tx: Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
     /// Track dropped persistence events for monitoring.
     pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
+    /// Track dropped telemetry events to prevent I/O blocking on hot-paths.
+    pub dropped_telemetry_events: Arc<std::sync::atomic::AtomicU64>,
     /// Monitoring state (snapshots + history).
     pub monitoring: Arc<crate::monitoring::runtime_state::MonitoringState>,
 }
@@ -199,20 +235,31 @@ impl AppState {
     pub fn new(
         _app: &tauri::AppHandle,
         log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
-        telemetry_tx: crossbeam_channel::Sender<crate::telemetry::aggregator::TelemetryEvent>,
+        telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
         latest_energy: Arc<AtomicU32>,
         latest_vad_prob: Arc<AtomicU32>,
-        latest_cpu: Arc<AtomicU32>,
-        latest_ram: Arc<AtomicU32>,
+        latest_sys_cpu: Arc<AtomicU32>,
+        latest_sys_ram: Arc<AtomicU32>,
+        latest_vox_cpu: Arc<AtomicU32>,
+        latest_vox_ram: Arc<AtomicU32>,
         latest_stt_ms: Arc<AtomicU32>,
         latest_ttft_ms: Arc<AtomicU32>,
+        latest_voice_latency_ms: Arc<AtomicU32>,
+        latest_threads: Arc<AtomicU32>,
+        latest_tts_rtf: Arc<AtomicU32>,
+        latest_playback_start_ms: Arc<AtomicU32>,
+        latest_persistence_rate: Arc<AtomicU32>,
+        is_db_healthy: Arc<AtomicBool>,
+        is_private_mode: Arc<AtomicBool>,
+        dropped_telemetry_events: Arc<AtomicU64>,
     ) -> Self {
         // paths::init() must have been called before AppState::new()
         let settings = VoxSettings::load();
+        is_private_mode.store(settings.persistence.private_mode, Ordering::Relaxed);
 
         Self {
             engine:        Mutex::new(None),
-            owner:         Mutex::new(InteractionOwner::Tray),
+            owner:         Arc::new(AtomicU32::new(InteractionOwner::Tray as u32)),
             hud_visible:   Mutex::new(true),
             settings:      Arc::new(RwLock::new(settings)),
             hud_menu_item: Mutex::new(None),
@@ -230,12 +277,27 @@ impl AppState {
             conversation_id: Arc::new(AtomicU64::new(0)),
             latest_energy,
             latest_vad_prob,
-            latest_cpu,
-            latest_ram,
+            latest_sys_cpu,
+            latest_sys_ram,
+            latest_vox_cpu,
+            latest_vox_ram,
             latest_stt_ms,
             latest_ttft_ms,
+            latest_voice_latency_ms,
+            latest_threads,
+            latest_tts_rtf,
+            latest_playback_start_ms,
+            latest_persistence_rate,
+            is_db_healthy,
+            is_private_mode,
+            is_llm_loaded: Arc::new(AtomicBool::new(false)),
+            is_tts_loaded: Arc::new(AtomicBool::new(false)),
+            is_stt_loaded: Arc::new(AtomicBool::new(false)),
+            is_vad_loaded: Arc::new(AtomicBool::new(false)),
+            is_sleeping: Arc::new(AtomicBool::new(false)),
             persist_tx: None,
             dropped_persistence_events: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            dropped_telemetry_events,
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
         }
     }

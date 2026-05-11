@@ -167,6 +167,10 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
           // Normalise across waves so we never exceed ~1.2
           totalDisp = totalDisp / float(u_waveCount) * 1.2;
 
+          // Add a high-frequency secondary noise for organic texture
+          float noise = sin(posNorm.x * 20.0 + u_time) * cos(posNorm.y * 25.0 - u_time * 0.5) * 0.04;
+          totalDisp += noise * (u_amplitude + 0.1);
+
           // Scale by global amplitude (idle base always present)
           float finalDisp = totalDisp * (u_amplitude * 0.7 + 0.06);
 
@@ -188,14 +192,13 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float fresnel = 1.0 - abs(dot(viewDir, vNormal));
 
-          float waveGlow = smoothstep(0.02, 0.35, vWaveHeight);
-          float rim      = smoothstep(0.35, 0.85, fresnel);
+          float waveGlow = smoothstep(0.01, 0.4, vWaveHeight);
+          float rim      = smoothstep(0.4, 0.9, fresnel);
 
           // Reduced alpha: inner surface is a faint, glowing internal state.
-          // Outer rim (outerMat) is the sharp, opaque boundary — inner should feel recessed.
-          float alpha = rim * 0.3 + waveGlow * 0.35;
-          vec3 color  = mix(u_color, u_colorGlow, waveGlow * 0.3 + rim * 0.15);
-          alpha *= 0.3 + vWaveHeight * 0.12;
+          float alpha = rim * 0.25 + waveGlow * 0.3;
+          vec3 color  = mix(u_color, u_colorGlow, waveGlow * 0.4 + rim * 0.1);
+          alpha *= 0.25 + vWaveHeight * 0.1;
 
           gl_FragColor = vec4(color, alpha);
         }
@@ -228,13 +231,13 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float fresnel = 1.0 - abs(dot(viewDir, vNormal));
 
-          // Broad, opaque rim that fully covers the sphere edge
-          float rim = smoothstep(0.35, 0.8, fresnel);
-          float alpha = rim * 0.85;  // nearly opaque at the edge
+          // Thinner, dimmer rim for a more premium "glassy" feel
+          float rim = smoothstep(0.45, 0.85, fresnel);
+          float alpha = rim * 0.5;  // dimmed from 0.85
 
-          if (alpha < 0.03) discard; // discard centre – transparent
+          if (alpha < 0.02) discard; 
 
-          gl_FragColor = vec4(u_color * (0.9 + rim * 0.1), alpha);
+          gl_FragColor = vec4(u_color * (0.85 + rim * 0.15), alpha);
         }
       `,
     });

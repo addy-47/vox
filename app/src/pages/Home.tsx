@@ -27,7 +27,10 @@ export const Home: React.FC = () => {
   // Fades out during Thinking/Processing/AssistantSpeaking.
   const activeSpeaking = isUserSpeaking;
 
+  const [isLaunching, setIsLaunching] = useState(false);
+
   const handleEngage = async () => {
+    setIsLaunching(true);
     try {
       await invoke("engage");
       const newEngaged = !isEngaged;
@@ -43,6 +46,8 @@ export const Home: React.FC = () => {
       console.log(newEngaged ? "[Home] Pipeline engaged." : "[Home] Pipeline disengaged.");
     } catch (err) {
       console.error("[Home] Engagement failed:", err);
+    } finally {
+      setIsLaunching(false);
     }
   };
 
@@ -202,7 +207,8 @@ export const Home: React.FC = () => {
                   onClick={handleEngage}
                   className={cn(
                     "flex items-center justify-center w-16 h-16 rounded-full transition-all duration-500 border-2",
-                    isEngaged && isThinking && "engage-btn-loading",
+                    (isEngaged && isThinking || isLaunching) && "engage-btn-loading",
+                    isLaunching && "animate-spin",
                     isEngaged && isThinking
                       ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.3)] text-[rgb(var(--accent))]"
                       : isEngaged
@@ -210,7 +216,11 @@ export const Home: React.FC = () => {
                       : "bg-[rgb(var(--accent))] border-transparent  text-[rgb(var(--accent-foreground))] hover:scale-105 shadow-[0_0_30px_rgba(var(--accent),0.5)]"
                   )}
                 >
-                  <Activity size={22} className={cn("transition-transform duration-700", isEngaged && "rotate-180")} />
+                  {isLaunching ? (
+                    <Activity size={22} className="animate-pulse" />
+                  ) : (
+                    <Activity size={22} className={cn("transition-transform duration-700", isEngaged && "rotate-180")} />
+                  )}
                 </button>
                 <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-24 text-center">
                   <span className="text-[11px] font-bold tracking-[0.2em] uppercase opacity-60">

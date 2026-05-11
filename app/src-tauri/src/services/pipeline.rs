@@ -11,7 +11,6 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use crossbeam_channel::Sender;
 use tauri::{Emitter, Manager};
-
 use crate::core::events::VoxEvent;
 use crate::core::metrics::{MetricField, PipelineMetrics};
 use crate::core::settings::{VoxSettings};
@@ -47,9 +46,8 @@ pub fn should_flush(buf: &str, word_count: usize) -> bool {
     }
 
     // Word count gate — prevent long-sentence lag (Directive 2)
-    // Threshold set to 12 words: at RTF 4x, ~2s of audio takes ~8s synthesis.
-    // Larger chunks = fewer gaps between playback segments on slow hardware.
-    word_count >= 12
+    // Threshold set to 6 words as requested for maximum responsiveness.
+    word_count >= 6
 }
 
 /// Count words in the accumulated buffer.
@@ -73,7 +71,6 @@ pub enum PipelineState {
 pub struct PipelineOrchestrator {
     cancel_flag:      Arc<AtomicBool>,
     _playback_active:  Arc<AtomicBool>,
-    llm_generating:   Arc<AtomicBool>,
     tts_generating:   Arc<AtomicBool>,
     turn_id:          Arc<AtomicU32>,
     state:            Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
@@ -85,16 +82,27 @@ pub struct PipelineOrchestrator {
     pub persist_tx:         Option<Sender<crate::persistence::events::PersistenceEvent>>,
     pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
     
+    // Monitoring atomics
+    pub latest_voice_latency_ms: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_tts_rtf:          Arc<std::sync::atomic::AtomicU32>,
+    pub latest_playback_start_ms: Arc<std::sync::atomic::AtomicU32>,
+    
     // Lifecycle management
     llm_tx:           Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
-    tts_tx:           Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<(u32, i32, String)>>>>,
+    tts_tx:           Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::services::tts::TtsCommand>>>>,
+    pub llm_handle:   Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
+    pub tts_handle:   Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
+    
+    // Residency Flags
+    pub is_llm_loaded: Arc<AtomicBool>,
+    pub is_tts_loaded: Arc<AtomicBool>,
+    pub is_sleeping:   Arc<AtomicBool>,
 }
 
 impl PipelineOrchestrator {
     pub fn new(
         cancel_flag:     Arc<AtomicBool>,
         playback_active: Arc<AtomicBool>,
-        llm_generating:  Arc<AtomicBool>,
         tts_generating:  Arc<AtomicBool>,
         turn_id:         Arc<AtomicU32>,
         state:           Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
@@ -105,11 +113,16 @@ impl PipelineOrchestrator {
         conversation_id: Arc<std::sync::atomic::AtomicU64>,
         persist_tx:      Option<Sender<crate::persistence::events::PersistenceEvent>>,
         dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
+        latest_voice_latency_ms: Arc<std::sync::atomic::AtomicU32>,
+        latest_tts_rtf:          Arc<std::sync::atomic::AtomicU32>,
+        latest_playback_start_ms: Arc<std::sync::atomic::AtomicU32>,
+        is_llm_loaded: Arc<AtomicBool>,
+        is_tts_loaded: Arc<AtomicBool>,
+        is_sleeping:   Arc<AtomicBool>,
     ) -> Self {
         Self {
             cancel_flag,
             _playback_active: playback_active,
-            llm_generating,
             tts_generating,
             turn_id,
             state,
@@ -120,14 +133,22 @@ impl PipelineOrchestrator {
             conversation_id,
             persist_tx,
             dropped_persistence_events,
+            latest_voice_latency_ms,
+            latest_tts_rtf,
+            latest_playback_start_ms,
             llm_tx: Arc::new(std::sync::Mutex::new(None)),
             tts_tx: Arc::new(std::sync::Mutex::new(None)),
+            llm_handle: Arc::new(std::sync::Mutex::new(None)),
+            tts_handle: Arc::new(std::sync::Mutex::new(None)),
+            is_llm_loaded,
+            is_tts_loaded,
+            is_sleeping,
         }
     }
 
     /// Initialize the LLM worker if it's not already running.
     pub fn warm_up_llm(&self) -> Result<(), String> {
-        let lock = self.llm_tx.lock().map_err(|e| e.to_string())?;
+        let mut lock = self.llm_tx.lock().map_err(|e| e.to_string())?;
         if lock.is_some() {
             return Ok(());
         }
@@ -135,98 +156,80 @@ impl PipelineOrchestrator {
         log::info!("[Pipeline] Warming up LLM worker...");
         let (tx, rx) = std::sync::mpsc::channel();
         
-        let (mut llm_path, ctx_size, n_threads) = {
+        let (llm_path, _ctx_size, _n_threads) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
-            let path = crate::utils::paths::get().models.join(&s.llm.model);
+            let mut path = crate::utils::paths::get().models.join(&s.llm.model);
+            if path.is_dir() {
+                path = path.join(crate::core::constants::MODEL_FILE_LLM_GGUF);
+            }
             (path, s.llm.ctx_size, s.llm.threads)
         };
 
-        // If the path is a directory, append the standard GGUF filename
-        if llm_path.is_dir() {
-            llm_path = llm_path.join(crate::core::constants::MODEL_FILE_LLM_GGUF);
-        }
-
-        let event_tx    = self.event_tx.clone();
-        let llm_flag    = Arc::clone(&self.llm_generating);
-        let llm_tx_handle = Arc::clone(&self.llm_tx);
-
-        std::thread::Builder::new()
+        let event_tx = self.event_tx.clone();
+        let is_loaded = Arc::clone(&self.is_llm_loaded);
+        *lock = Some(tx);
+        
+        let handle = std::thread::Builder::new()
             .name("vox-llm-persistent".to_string())
             .spawn(move || {
-                llm_flag.store(true, Ordering::Relaxed);
-                
-                // Resolve symlinks for HuggingFace hub paths
-                let resolved = llm_path.canonicalize()
-                    .unwrap_or_else(|_| llm_path.clone());
-
-                match crate::services::llm::LlmWorker::new(&resolved, ctx_size, n_threads) {
-                    Ok(worker) => {
-                        // Only store the transmitter if the worker started successfully
-                        if let Ok(mut l) = llm_tx_handle.lock() {
-                            *l = Some(tx);
-                        }
-                        llm_flag.store(false, Ordering::Relaxed);
-                        worker.run_loop(rx, event_tx);
-                    }
-                    Err(e) => {
-                        log::error!("[LLM Init] Failed: {}", e);
-                        llm_flag.store(false, Ordering::Relaxed);
-                    }
-                }
+                crate::services::llm::spawn_llm_worker(rx, llm_path, event_tx, is_loaded);
             })
             .map_err(|e| e.to_string())?;
+
+        let mut handle_lock = self.llm_handle.lock().map_err(|e| e.to_string())?;
+        *handle_lock = Some(handle);
+
+        // Reset sleep state when warming up
+        self.is_sleeping.store(false, Ordering::Relaxed);
 
         Ok(())
     }
 
+    pub fn cool_down_llm(&self) {
+        if let Ok(mut lock) = self.llm_tx.lock() {
+            if let Some(tx) = lock.take() {
+                let _ = tx.send(crate::services::llm::LlmCommand::Shutdown);
+                log::info!("[Pipeline] LLM Shutdown sent (Offloading).");
+            }
+        }
+    }
+
     /// Initialize the TTS worker if it's not already running.
     pub fn warm_up_tts(&self, en_tts_dir: PathBuf, hi_tts_path: PathBuf) -> Result<(), String> {
-        let lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
+        let mut lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
         if lock.is_some() {
             return Ok(());
         }
 
         log::info!("[Pipeline] Warming up TTS worker...");
-        let (tx, rx) = std::sync::mpsc::channel::<(u32, i32, String)>();
+        let (tx, rx) = std::sync::mpsc::channel::<crate::services::tts::TtsCommand>();
         
         let cancel_tts = Arc::clone(&self.cancel_flag);
-        let tts_flag = Arc::clone(&self.tts_generating);
         let event_tx = self.event_tx.clone();
-        let tts_tx_handle = Arc::clone(&self.tts_tx);
+        let is_loaded = Arc::clone(&self.is_tts_loaded);
+        *lock = Some(tx);
 
-        std::thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .name("vox-tts-persistent".to_string())
             .spawn(move || {
-                let mut engine = match crate::services::tts::TtsEngine::new(&en_tts_dir, &hi_tts_path) {
-                    Ok(e) => e,
-                    Err(e) => {
-                        log::error!("[TTS Worker] Init failed: {}", e);
-                        return;
-                    }
-                };
-
-                log::info!("[TTS Worker] Persistent loop started.");
-                
-                // Only store the transmitter if the worker started successfully
-                if let Ok(mut l) = tts_tx_handle.lock() {
-                    *l = Some(tx);
-                }
-
-                while let Ok((turn_id, voice_sid, text)) = rx.recv() {
-                    if cancel_tts.load(Ordering::Relaxed) {
-                        continue;
-                    }
-                    tts_flag.store(true, Ordering::Relaxed);
-                    if let Err(e) = engine.synthesize_chunk(&text, voice_sid, turn_id, cancel_tts.clone(), event_tx.clone()) {
-                        log::error!("[TTS] Synthesis error (turn {}): {}", turn_id, e);
-                    }
-                    tts_flag.store(false, Ordering::Relaxed);
-                }
-                log::info!("[TTS Worker] Channel closed. Exiting thread.");
+                crate::services::tts::spawn_tts_worker(rx, en_tts_dir, hi_tts_path, event_tx, cancel_tts, is_loaded);
             })
             .map_err(|e| e.to_string())?;
 
+        let mut handle_lock = self.tts_handle.lock().map_err(|e| e.to_string())?;
+        *handle_lock = Some(handle);
+
+        // Reset sleep state when warming up
+        self.is_sleeping.store(false, Ordering::Relaxed);
+
         Ok(())
+    }
+
+    pub fn cool_down_tts(&self) {
+        if let Ok(mut lock) = self.tts_tx.lock() {
+            *lock = None; // Dropping sender closes worker
+            log::info!("[Pipeline] TTS Shutdown (Offloading).");
+        }
     }
 
     /// Update internal state and emit IPC event to the **owning** window only.
@@ -254,17 +257,7 @@ impl PipelineOrchestrator {
 
     fn get_current_owner(&self, app: &tauri::AppHandle) -> InteractionOwner {
         let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
-        let owner = state.owner.blocking_lock();
-        *owner
-    }
-
-    /// Shutdown the LLM worker and release memory.
-    pub fn cool_down_llm(&self) {
-        let mut lock = self.llm_tx.lock().unwrap();
-        if let Some(tx) = lock.take() {
-            log::info!("[Pipeline] Cooling down LLM worker (releasing memory)...");
-            let _ = tx.send(crate::services::llm::LlmCommand::Shutdown);
-        }
+        state.owner.load(std::sync::atomic::Ordering::Relaxed).into()
     }
 
     /// Handle a `TranscriptFinal` event: ensure LLM is warm and send generation command.
@@ -353,16 +346,31 @@ impl PipelineOrchestrator {
         playback_engine: Arc<crate::services::playback::PlaybackEngine>,
         app_handle: tauri::AppHandle,
     ) {
-        // Directive 2: Sub-sentence token accumulator ───────────────────────
+        let mut last_interaction = std::time::Instant::now();
+
+        // Local settings cache to avoid RwLock contention in the hot path (Directive: Real-Time Safety)
+        let mut local_en_voice = {
+            let s = self.settings.read().unwrap();
+            s.tts.en_voice
+        };
+        let mut local_sleep_timeout = {
+            let s = self.settings.read().unwrap();
+            std::time::Duration::from_secs(s.interaction.auto_sleep_timeout as u64)
+        };
+        let mut local_main_mode = {
+            let s = self.settings.read().unwrap();
+            s.interaction.main_app_mode.clone()
+        };
+
+        // Turn-Locked state (Directive 5: Language Detection Stability)
+        let mut turn_voice_id: Option<u32> = None;
+
+        // Directive 2: Sub-sentence token accumulator
         let mut token_buf    = String::new();
         let mut current_tid  = 0u32;
-        let mut voice_sid    = self.settings.read().unwrap().tts.en_voice; 
         let mut thinking     = false;
         let mut metrics      = PipelineMetrics::new();
-        let _audio_mode = {
-            let s = self.settings.read().unwrap();
-            s.audio.output_mode.clone()
-        };
+        
         // True after LlmFinished: we're waiting for TTS+Playback to drain
         let mut awaiting_playback_finish = false;
 
@@ -372,13 +380,43 @@ impl PipelineOrchestrator {
         let mut turn_stt_ms = 0u32;
         let mut turn_ttft_ms = 0u32;
 
-        // Use recv_timeout so we can poll playback state to detect when audio drains.
-        // 150ms is frequent enough for responsive state transitions without CPU waste.
         log::info!("[Pipeline] Event loop starting...");
+        let engine_shutdown = {
+            let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app_handle.state();
+            state.pipeline.engine_shutdown.clone()
+        };
+
         loop {
+            // Check for global engine shutdown signal
+            if engine_shutdown.load(Ordering::Relaxed) {
+                log::info!("[Pipeline] Engine shutdown flag detected. Exiting loop.");
+                break;
+            }
+
+            // Get timeout from local cache
+            let sleep_timeout = local_sleep_timeout;
+
             let event = match rx.recv_timeout(std::time::Duration::from_millis(150)) {
                 Ok(e) => e,
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Check for auto-sleep
+                    if last_interaction.elapsed() > sleep_timeout && !self.is_sleeping.load(Ordering::Relaxed) {
+                        log::info!("[Pipeline] Inactivity detected ({}s). Triggering Auto-Sleep...", last_interaction.elapsed().as_secs());
+                        self.is_sleeping.store(true, Ordering::Relaxed);
+                        
+                        // Tiered offloading
+                        self.cool_down_llm();
+                        self.cool_down_tts();
+
+                        // If in Passive mode, disengage entirely
+                        if self.is_engaged.load(Ordering::Relaxed) && local_main_mode == crate::core::settings::InteractionMode::Passive {
+                            log::info!("[Pipeline] Auto-Sleep: Disengaging passive session.");
+                            self.is_engaged.store(false, Ordering::Relaxed);
+                        }
+
+                        let _ = app_handle.emit("auto_sleep_state", true);
+                    }
+
                     // Poll: if LLM+TTS are done and playback just drained → finalize turn
                     if awaiting_playback_finish
                         && playback_engine.is_idle()
@@ -411,14 +449,15 @@ impl PipelineOrchestrator {
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             };
+
+            // Activity detected — update timer
+            last_interaction = std::time::Instant::now();
+            if self.is_sleeping.load(Ordering::Relaxed) {
+                self.is_sleeping.store(false, Ordering::Relaxed);
+                let _ = app_handle.emit("auto_sleep_state", false);
+            }
+
             match event {
-                VoxEvent::Shutdown => {
-                    log::info!("[Pipeline] Shutdown signal received. Exiting event loop.");
-                    if let Ok(mut lock) = self.tts_tx.lock() {
-                        *lock = None; // Dropping the sender will close the worker thread
-                    }
-                    break;
-                }
                 // ── Pre-warm: load LLM and TTS in background on engage ───────
                 VoxEvent::WarmUp => {
                     if let Err(e) = self.warm_up_llm() {
@@ -431,6 +470,31 @@ impl PipelineOrchestrator {
                 }
                 // ── Speech start: barge-in cancellation ───────────
                 VoxEvent::SpeechStart { turn_id, owner } => {
+                    // Directive: Auto-show Tray HUD on speech if enabled (Fixes Tray Lifecycle Bug)
+                    if owner == crate::core::state::InteractionOwner::Tray {
+                        let state_handle = app_handle.state::<std::sync::Arc<crate::core::state::AppState>>();
+                        let tray_enabled = state_handle.settings.read().unwrap().ui.tray_enabled;
+                        if tray_enabled {
+                            let app_clone = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let state = app_clone.state::<std::sync::Arc<crate::core::state::AppState>>();
+                                let mut hud_visible = state.hud_visible.lock().await;
+                                if !*hud_visible {
+                                    if let Some(window) = app_clone.get_webview_window("tray") {
+                                        let _ = window.show();
+                                        crate::tray::position_tray_window(&window).await;
+                                        *hud_visible = true;
+                                        let _ = app_clone.emit("toggle_hud", ());
+                                        let item_lock = state.hud_menu_item.lock().await;
+                                        if let Some(item) = &*item_lock {
+                                            let _ = item.set_checked(true);
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
+
                     let buffer_len = playback_engine.buffer_len();
                     // Only log as "Barge-in" if there is significant audio left (>50ms at 48kHz)
                     if buffer_len > 2400 {
@@ -467,7 +531,7 @@ impl PipelineOrchestrator {
                 VoxEvent::TranscriptFinal { turn_id, owner, text } => {
                     if turn_id < current_tid { continue; }
                     token_buf.clear();
-                    voice_sid = self.settings.read().unwrap().tts.en_voice;   
+                    turn_voice_id = None; // Reset language lock for new turn
                     thinking = false;
                     metrics.mark(MetricField::FinalTranscript);
                     
@@ -510,15 +574,24 @@ impl PipelineOrchestrator {
                     if word_count >= 6 || should_flush(&token_buf, word_count) {
                         let chunk = token_buf.trim().to_string();
                         if !chunk.is_empty() {
-                            // Detect language for voice selection
-                            let voice_sid = if is_devanagari(&chunk) { 
-                                1 // Piper Hindi (Fixed index for now)
-                            } else { 
-                                self.settings.read().unwrap().tts.en_voice
-                            };
+                            // Directive 5: Language Detection - Lock voice for the remainder of the turn
+                            if turn_voice_id.is_none() {
+                                turn_voice_id = Some(if is_devanagari(&chunk) { 
+                                    1 // Piper Hindi index
+                                } else { 
+                                    local_en_voice as u32
+                                });
+                                log::info!("[Pipeline] Language locked: turn_voice_id={:?}", turn_voice_id);
+                            }
+
+                            let voice_sid = turn_voice_id.unwrap_or(local_en_voice as u32);
                             if let Ok(lock) = self.tts_tx.lock() {
                                 if let Some(tx) = lock.as_ref() {
-                                    let _ = tx.send((turn_id, voice_sid, chunk));
+                                    let _ = tx.send(crate::services::tts::TtsCommand::Generate {
+                                        turn_id,
+                                        voice_sid: voice_sid as i32,
+                                        text: chunk,
+                                    });
                                 }
                             }
                             token_buf.clear();
@@ -527,8 +600,8 @@ impl PipelineOrchestrator {
                      
                      let target = {
                          let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app_handle.state();
-                         let owner = state.owner.blocking_lock();
-                         match *owner {
+                         let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+                         match owner {
                              crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                              crate::core::state::InteractionOwner::Tray => "tray",
                          }
@@ -543,7 +616,12 @@ impl PipelineOrchestrator {
                     if !remainder.is_empty() {
                         if let Ok(lock) = self.tts_tx.lock() {
                             if let Some(tx) = lock.as_ref() {
-                                let _ = tx.send((turn_id, voice_sid, remainder));
+                                let voice_sid = turn_voice_id.unwrap_or(local_en_voice as u32);
+                                let _ = tx.send(crate::services::tts::TtsCommand::Generate {
+                                    turn_id,
+                                    voice_sid: voice_sid as i32,
+                                    text: remainder,
+                                });
                             }
                         }
                     }
@@ -561,9 +639,22 @@ impl PipelineOrchestrator {
                     playback_engine.ingest_chunk(&samples);
                     if metrics.playback_start.is_none() && !playback_engine.is_idle() {
                         metrics.mark(MetricField::PlaybackStart);
+                        
+                        // Update monitoring for Playback Start Latency (SpeechStart -> PlaybackStart)
+                        if let (Some(s), Some(p)) = (metrics.speech_start, metrics.playback_start) {
+                            let ms = p.duration_since(s).as_millis() as u32;
+                            self.latest_playback_start_ms.store(ms, Ordering::Relaxed);
+                            self.latest_voice_latency_ms.store(ms, Ordering::Relaxed);
+                        }
+
                         let owner = self.get_current_owner(&app_handle);
                         self.update_interaction_state(crate::core::state::InteractionState::AssistantSpeaking, owner, &app_handle);
                     }
+                }
+
+                VoxEvent::TtsFinished { turn_id, rtf } => {
+                    if turn_id != current_tid { continue; }
+                    self.latest_tts_rtf.store(rtf.to_bits(), Ordering::Relaxed);
                 }
 
                 VoxEvent::PlaybackFinished { turn_id } => {
@@ -584,7 +675,7 @@ impl PipelineOrchestrator {
                     };
                     
                     let conv_id = self.conversation_id.load(Ordering::Relaxed);
-                    let _ = state.telemetry_tx.send(crate::telemetry::aggregator::TelemetryEvent::InteractionMetric {
+                    let _ = state.telemetry_tx.send(crate::monitoring::aggregator::TelemetryEvent::InteractionMetric {
                         conversation_id: conv_id,
                         turn_id,
                         stt_latency_ms: stt_ms,
@@ -599,8 +690,8 @@ impl PipelineOrchestrator {
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                     
                     let target = {
-                        let owner = state.owner.blocking_lock();
-                        match *owner {
+                        let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+                        match owner {
                             crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                             crate::core::state::InteractionOwner::Tray => "tray",
                         }
@@ -657,8 +748,8 @@ impl PipelineOrchestrator {
                     log::error!("[Pipeline] Error (turn {}): {}", turn_id, message);
                     let target = {
                         let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app_handle.state();
-                        let owner = state.owner.blocking_lock();
-                        match *owner {
+                        let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+                        match owner {
                             crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                             crate::core::state::InteractionOwner::Tray => "tray",
                         }
@@ -667,7 +758,50 @@ impl PipelineOrchestrator {
                     let owner = self.get_current_owner(&app_handle);
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                 }
-                _ => {} 
+                VoxEvent::Shutdown => {
+                    log::info!("[Pipeline] Shutdown signal received. Joining workers...");
+                    
+                    // Directive 3: ASSERT CANCELLATION before joining.
+                    // This forces C++ loops (llama.cpp) to abort instantly, unblocking the thread.
+                    self.cancel_flag.store(true, Ordering::Relaxed);
+
+                    // 1. Shutdown LLM Worker
+                    if let Ok(mut lock) = self.llm_tx.lock() {
+                        if let Some(tx) = lock.take() {
+                            let _ = tx.send(crate::services::llm::LlmCommand::Shutdown);
+                        }
+                    }
+                    if let Ok(mut lock) = self.llm_handle.lock() {
+                        if let Some(h) = lock.take() {
+                            let _ = h.join();
+                        }
+                    }
+
+                    // 2. Shutdown TTS Worker
+                    if let Ok(mut lock) = self.tts_tx.lock() {
+                        if let Some(tx) = lock.take() {
+                            let _ = tx.send(crate::services::tts::TtsCommand::Shutdown);
+                        }
+                    }
+                    if let Ok(mut lock) = self.tts_handle.lock() {
+                        if let Some(h) = lock.take() {
+                            let _ = h.join();
+                        }
+                    }
+
+                    log::info!("[Pipeline] Worker threads joined. Orchestrator exiting.");
+                    break;
+                }
+
+                VoxEvent::SettingsUpdated(new_settings) => {
+                    log::info!("[Pipeline] Local settings cache updated (Asynchronous).");
+                    local_en_voice = new_settings.tts.en_voice;
+                    local_sleep_timeout = std::time::Duration::from_secs(new_settings.interaction.auto_sleep_timeout as u64);
+                    local_main_mode = new_settings.interaction.main_app_mode;
+                }
+
+                // Handle remaining events that don't require orchestrator logic
+                _ => {}
             }
         }
     }

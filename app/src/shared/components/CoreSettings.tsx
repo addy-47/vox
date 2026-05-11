@@ -325,7 +325,7 @@ const VoiceCard: React.FC = React.memo(() => {
       </div>
 
       <div className="mt-auto pt-4">
-        <div className="h-16 w-full bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.03)] rounded-2xl flex items-center justify-center overflow-hidden">
+        <div className="h-16 w-full bg-transparent border border-[rgba(var(--border),0.03)] rounded-2xl flex items-center justify-center overflow-hidden">
           <div className="flex items-center gap-2">
             {currentHeights.map((h, i) => (
               <div 
