@@ -1,11 +1,12 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Mic, History, Settings } from "lucide-react";
+import { Mic, History, Settings, Activity } from "lucide-react";
 import { cn } from "../shared/lib/utils";
 
 const navItems = [
   { icon: Mic, label: "VOX", path: "/" },
   { icon: History, label: "LOGS", path: "/history" },
+  { icon: Activity, label: "HEALTH", path: "/monitoring" },
   { icon: Settings, label: "SYSTEM", path: "/settings" },
 ];
 

@@ -72,7 +72,7 @@ export const TitleBar: React.FC = () => {
 
   return (
     <div 
-      className="flex items-center justify-between h-8 shrink-0 select-none z-50 bg-[rgb(var(--background))] border-b border-[rgba(var(--border),0.00)] transition-colors duration-300"
+      className="flex items-center justify-between h-8 shrink-0 select-none z-50 bg-[rgb(var(--background))] border-b border-[rgba(var(--border),0.05)] transition-all duration-400 ease-in-out"
       data-tauri-drag-region
     >
       <div className="flex items-center gap-2 pl-4 pointer-events-none" data-tauri-drag-region>

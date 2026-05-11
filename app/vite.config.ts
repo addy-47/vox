@@ -45,6 +45,7 @@ export default defineConfig(async () => ({
       output: {
         manualChunks: {
           'vendor': ['react', 'react-dom', 'react-router-dom'],
+          'three': ['three'],
           'tauri-api': ['@tauri-apps/api'],
           'ui-core': ['lucide-react', 'framer-motion', 'clsx', 'tailwind-merge'],
         },

@@ -1,50 +1,30 @@
 import React, { useState } from "react";
-import { Save, Sun, Moon, RotateCcw } from "lucide-react";
+import { Save, RotateCcw, Settings as SettingsIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { CoreSettings } from "@/shared/components/CoreSettings";
 import { TraySettings } from "@/shared/components/TraySettings";
 
 export const Settings: React.FC = () => {
-  const { draftSettings, hasChanges, toggleTheme, commitChanges, discardChanges, restoreDefaults } = useSettings();
+  const { draftSettings, hasChanges, commitChanges, discardChanges, restoreDefaults } = useSettings();
   const [activeTab, setActiveTab] = useState<"core" | "tray">("core");
 
   if (!draftSettings) return null;
 
-  const theme = draftSettings.ui.theme;
-
   return (
     <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-[rgb(var(--background))]">
-      {/* Page header - Fixed */}
-      <header className="border-b border-[rgba(var(--border),0.05)] glass-panel shrink-0">
-        <div className="max-w-7xl mx-auto w-full px-6 md:px-10 py-6 md:py-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-start justify-between w-full md:w-auto">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-                <span className="text-[11px] font-bold tracking-[0.2em] text-[rgb(var(--accent))] uppercase">Configuration</span>
+      <header className="px-6 md:px-10 py-6 md:py-10 shrink-0">
+        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-[rgb(var(--accent))]/10">
+                <SettingsIcon className="text-[rgb(var(--accent))]" size={24} />
               </div>
-              <h1 className="text-2xl md:text-3xl font-bold text-[rgb(var(--foreground))] tracking-tight">System <span className="text-[rgb(var(--foreground-muted))] opacity-60 font-medium">Core</span></h1>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[rgb(var(--foreground))]">
+                System <span className="text-[rgb(var(--foreground-muted))] opacity-60 font-medium">Core</span>
+              </h1>
             </div>
-
-            <div className="flex items-center gap-1 md:hidden">
-              <button 
-                onClick={restoreDefaults}
-                className="p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-[rgb(var(--foreground))]/[0.03] transition-colors duration-300"
-                title="Restore Defaults"
-              >
-                <RotateCcw size={18} strokeWidth={1.5} />
-              </button>
-              <button
-                onClick={toggleTheme}
-                className="p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/[0.03] transition-colors duration-300"
-                title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-              >
-                {theme === 'dark'
-                  ? <Sun size={18} strokeWidth={1.5} />
-                  : <Moon size={18} strokeWidth={1.5} />}
-              </button>
-            </div>
+            <p className="text-sm text-[rgb(var(--foreground-muted))] max-w-md">Configure intelligence, interface, and assistant behavior.</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -77,8 +57,8 @@ export const Settings: React.FC = () => {
       </header>
 
       {/* Main Content Area - Fixed viewport, internal scrolling only */}
-      <div className="flex-1 overflow-hidden relative">
-        <div className="h-full max-w-7xl mx-auto px-6 md:px-10 py-6 md:py-8">
+      <div className="flex-1 overflow-hidden relative px-6 md:px-10">
+        <div className="h-full max-w-[1600px] mx-auto py-6 md:py-8">
           {activeTab === "core" ? (
             <CoreSettings />
           ) : (
@@ -88,8 +68,8 @@ export const Settings: React.FC = () => {
       </div>
 
       {/* Footer Actions - Fixed at bottom */}
-      <footer className="shrink-0 border-t border-[rgba(var(--border),0.05)] glass-panel bg-[rgb(var(--background))]/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 md:px-10 py-6 md:py-8 flex items-center justify-between gap-4">
+      <footer className="shrink-0 border-t border-[rgba(var(--border),0.05)] glass-panel bg-[rgb(var(--background))]/80 backdrop-blur-xl px-6 md:px-10">
+        <div className="max-w-[1600px] mx-auto py-6 md:py-8 flex items-center justify-between gap-4">
           <button 
             onClick={restoreDefaults}
             className="hidden md:flex items-center gap-2 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-red-400 transition-colors duration-300 opacity-60 hover:opacity-600"
