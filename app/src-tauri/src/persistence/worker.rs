@@ -82,6 +82,9 @@ pub fn spawn_persistence_worker(
                 }
 
                 if let Err(e) = process_event(&db.0, event) {
+                    if e.to_string() == "SHUTDOWN" {
+                        break;
+                    }
                     is_db_healthy.store(false, std::sync::atomic::Ordering::Relaxed);
                     // Log and continue — persistence errors must never crash the app
                     tracing::error!("[Persistence] Event processing error: {}", e);
@@ -181,9 +184,9 @@ fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow
         }
 
         PersistenceEvent::Shutdown => {
-            tracing::info!("[Persistence] Shutdown event received. Exiting worker.");
-            // The recv loop will exit naturally when the sender is dropped.
-            // This variant is here for explicit shutdown sequencing if needed.
+            tracing::info!("[Persistence] Shutdown event received. Flushing WAL and exiting.");
+            let _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)", []);
+            return Err(anyhow::anyhow!("SHUTDOWN"));
         }
     }
     Ok(())

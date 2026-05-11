@@ -124,3 +124,10 @@ impl AudioStream {
         Ok(())
     }
 }
+
+impl Drop for AudioStream {
+    fn drop(&mut self) {
+        log::info!("[AUDIO] Dropping hardware stream. Ensuring mic is released.");
+        let _ = self._stream.pause();
+    }
+}

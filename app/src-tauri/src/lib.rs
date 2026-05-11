@@ -103,7 +103,7 @@ pub fn run() {
                 is_private_mode,
                 dropped_telemetry_events,
             );
-            app_state.persist_tx = Some(persist_tx);
+            app_state.persist_tx = std::sync::Mutex::new(Some(persist_tx));
 
             // ── 1.5 Monitoring Collector ──────────────────────────────────────────
             let state_arc = std::sync::Arc::new(app_state);

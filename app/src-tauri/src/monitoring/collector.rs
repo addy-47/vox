@@ -96,7 +96,7 @@ fn collect_snapshot(state: &AppState, threads: u32, total_ram_mb: u32, cpu_cores
         ttft_ms: Some(state.latest_ttft_ms.load(Ordering::Relaxed)).filter(|&v| v > 0),
         total_voice_latency_ms: Some(state.latest_voice_latency_ms.load(Ordering::Relaxed)).filter(|&v| v > 0),
 
-        persistence_queue_depth: state.persist_tx.as_ref().map(|tx| tx.len()).unwrap_or(0),
+        persistence_queue_depth: state.persist_tx.lock().unwrap().as_ref().map(|tx| tx.len()).unwrap_or(0),
         dropped_persistence_events: state.dropped_persistence_events.load(Ordering::Relaxed),
 
         playback_buffer_samples: buffer_samples,
