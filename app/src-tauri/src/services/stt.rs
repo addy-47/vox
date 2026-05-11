@@ -5,6 +5,7 @@ use sherpa_onnx::{
 };
 use tauri::{AppHandle, Manager, Emitter};
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 use crate::core::state::{InteractionOwner, InteractionState};
 use crate::core::events::VoxEvent;
@@ -136,9 +137,10 @@ pub fn spawn_stt_worker(
     rx: std::sync::mpsc::Receiver<SttCommand>,
     model_path: std::path::PathBuf,
     pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
-    _is_engaged: Arc<std::sync::atomic::AtomicBool>,
-    is_loaded: Arc<std::sync::atomic::AtomicBool>,
-    engine_shutdown: Arc<std::sync::atomic::AtomicBool>,
+    _is_engaged: Arc<AtomicBool>,
+    is_loaded: Arc<AtomicBool>,
+    engine_shutdown: Arc<AtomicBool>,
+    pre_load: bool,
 ) -> Result<std::thread::JoinHandle<()>, String> {
     std::thread::Builder::new()
         .name("vox-stt-worker".to_string())
@@ -151,15 +153,20 @@ pub fn spawn_stt_worker(
 
         log::info!("[STT] >>> Dedicated worker thread started.");
         
-        let engine = match SttEngine::new(&model_path) {
-            Ok(e) => {
-                is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
-                e
-            },
-            Err(err) => {
-                log::error!("[STT] CRITICAL: Failed to initialize Sherpa engine: {}", err);
-                return;
+        let mut engine: Option<SttEngine> = if pre_load {
+            match SttEngine::new(&model_path) {
+                Ok(e) => {
+                    is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
+                    Some(e)
+                },
+                Err(err) => {
+                    log::error!("[STT] CRITICAL: Failed to initialize Sherpa engine: {}", err);
+                    return;
+                }
             }
+        } else {
+            log::info!("[STT] Lazy loading enabled. Waiting for engagement/audio to load engine.");
+            None
         };
 
         let mut last_emit_time = Instant::now();
@@ -181,38 +188,70 @@ pub fn spawn_stt_worker(
                         }
                         SttCommand::Partial(tid, owner, utterance) => {
                             if last_emit_time.elapsed() >= Duration::from_millis(STT_THROTTLE_MS) {
-                                match engine.transcribe(&utterance) {
-                                    Ok(text) => {
-                                        let text_str: String = text;
-                                        if !text_str.is_empty() && text_str != last_transcript {
-                                            if let Some(ref pipeline_tx) = pipeline_event_tx {
-                                                let _ = pipeline_tx.send(VoxEvent::TranscriptPartial {
-                                                    turn_id: tid,
-                                                    owner,
-                                                    text: text_str.clone(),
-                                                });
-                                            }
-                                            last_transcript = text_str;
+                                // Lazy load if needed
+                                if engine.is_none() {
+                                    match SttEngine::new(&model_path) {
+                                        Ok(e) => {
+                                            is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
+                                            engine = Some(e);
                                         }
-                                        last_emit_time = Instant::now();
+                                        Err(e) => {
+                                            log::error!("[STT] Lazy load failed: {}", e);
+                                            continue;
+                                        }
                                     }
-                                    Err(e) => log::error!("[STT] Partial transcription failed: {}", e),
+                                }
+
+                                if let Some(ref eng) = engine {
+                                    match eng.transcribe(&utterance) {
+                                        Ok(text) => {
+                                            let text_str: String = text;
+                                            if !text_str.is_empty() && text_str != last_transcript {
+                                                if let Some(ref pipeline_tx) = pipeline_event_tx {
+                                                    let _ = pipeline_tx.send(VoxEvent::TranscriptPartial {
+                                                        turn_id: tid,
+                                                        owner,
+                                                        text: text_str.clone(),
+                                                    });
+                                                }
+                                                last_transcript = text_str;
+                                            }
+                                            last_emit_time = Instant::now();
+                                        }
+                                        Err(e) => log::error!("[STT] Partial transcription failed: {}", e),
+                                    }
                                 }
                             }
                         }
                         SttCommand::Final(tid, owner, utterance) => {
-                            match engine.transcribe(&utterance) {
-                                Ok(text) => {
-                                    let text_str: String = text;
-                                    if let Some(ref pipeline_tx) = pipeline_event_tx {
-                                        let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
-                                            turn_id: tid,
-                                            owner,
-                                            text: text_str,
-                                        });
+                            // Lazy load if needed
+                            if engine.is_none() {
+                                match SttEngine::new(&model_path) {
+                                    Ok(e) => {
+                                        is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
+                                        engine = Some(e);
+                                    }
+                                    Err(e) => {
+                                        log::error!("[STT] Lazy load failed: {}", e);
+                                        // Still try to reset state even if engine fails
                                     }
                                 }
-                                Err(e) => log::error!("[STT] Final transcription failed: {}", e),
+                            }
+
+                            if let Some(ref eng) = engine {
+                                match eng.transcribe(&utterance) {
+                                    Ok(text) => {
+                                        let text_str: String = text;
+                                        if let Some(ref pipeline_tx) = pipeline_event_tx {
+                                            let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
+                                                turn_id: tid,
+                                                owner,
+                                                text: text_str,
+                                            });
+                                        }
+                                    }
+                                    Err(e) => log::error!("[STT] Final transcription failed: {}", e),
+                                }
                             }
                             
                             let target = match owner {

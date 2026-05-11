@@ -355,8 +355,8 @@ impl VadEngine {
             } else {
                 // Throttle: Prevent the loop from spinning and pinning a CPU core 
                 // when the ring buffer is empty.
-                // Throttle: 3ms sleep — enough to yield without adding perceptible latency
-                std::thread::sleep(std::time::Duration::from_millis(3));
+                // Throttle: 5ms sleep — enough to yield without adding perceptible latency
+                std::thread::sleep(std::time::Duration::from_millis(5));
             }
         }
     }
