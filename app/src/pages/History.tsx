@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { MessageSquare, Trash2, Check, X, Clock, CalendarDays, Hash } from "lucide-react";
+import { MessageSquare, Trash2, Check, X, Clock, CalendarDays, Hash, History as HistoryIcon, Ghost } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
+import { useSettings } from "@/shared/context/SettingsContext";
 
 interface SessionRow {
   id: number;
@@ -28,6 +29,7 @@ export const History: React.FC = () => {
   const [turns, setTurns] = useState<TurnRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const { draftSettings, updateDraft } = useSettings();
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -117,24 +119,51 @@ export const History: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-[rgb(var(--background))]">
       
-      {/* Page header - Matches Settings Header */}
-      <header className="border-b border-[rgba(var(--border),0.05)] glass-panel shrink-0">
-        <div className="max-w-7xl mx-auto w-full px-6 md:px-10 py-6 md:py-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <header className="px-6 md:px-10 py-6 md:py-10 shrink-0">
+        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-              <span className="text-[11px] font-bold tracking-[0.2em] text-[rgb(var(--accent))] uppercase">History</span>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-[rgb(var(--accent))]/10">
+                <HistoryIcon className="text-[rgb(var(--accent))]" size={24} />
+              </div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[rgb(var(--foreground))]">
+                Session <span className="text-[rgb(var(--foreground-muted))] opacity-60 font-medium">Conversations</span>
+              </h1>
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-[rgb(var(--foreground))] tracking-tight">
-              Session <span className="text-[rgb(var(--foreground-muted))] opacity-60 font-medium">Conversations</span>
-            </h1>
+            <p className="text-sm text-[rgb(var(--foreground-muted))] max-w-md">Review and manage past interactions and transcriptions.</p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))] opacity-60">
+              Privacy
+            </span>
+            <button
+              onClick={() => updateDraft("persistence", "private_mode", !(draftSettings?.persistence.private_mode))}
+              className={cn(
+                "group relative flex items-center h-8 w-14 px-1 rounded-full transition-all duration-500",
+                draftSettings?.persistence.private_mode 
+                  ? "bg-[rgb(var(--accent))] shadow-[0_0_15px_rgba(var(--accent),0.4)]" 
+                  : "bg-[rgb(var(--foreground))]/10 border border-[rgba(var(--border),0.05)]"
+              )}
+              title={draftSettings?.persistence.private_mode ? "Private Mode Active (No disk writes)" : "Enable Private Mode"}
+            >
+              <div className={cn(
+                "flex items-center justify-center w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-500 transform",
+                draftSettings?.persistence.private_mode ? "translate-x-6" : "translate-x-0"
+              )}>
+                {draftSettings?.persistence.private_mode 
+                  ? <Ghost className="text-[rgb(var(--accent))]" size={12} /> 
+                  : <Ghost className="text-slate-400" size={12} />
+                }
+              </div>
+            </button>
           </div>
         </div>
       </header>
 
       {/* Main Content Area: Horizontal Layout with same proportions as Settings */}
-      <div className="flex-1 overflow-hidden relative">
-        <div className="h-full max-w-7xl mx-auto px-6 md:px-10 py-6 md:py-8">
+      <div className="flex-1 overflow-hidden relative px-6 md:px-10">
+        <div className="h-full max-w-[1600px] mx-auto py-6 md:py-8">
           <div className="grid lg:grid-cols-3 gap-8 h-full items-start pb-4">
             
             {/* Left Column: Sessions List (1/3 Width) */}
@@ -231,7 +260,7 @@ export const History: React.FC = () => {
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10">
-                  <div className="max-w-3xl mx-auto space-y-8 pb-12">
+                  <div className="max-w-5xl mx-auto space-y-8 pb-12">
                     
                     <div className="text-center pb-8 border-b border-[rgba(var(--border),0.05)] mb-8">
                       <h2 className="text-xl font-bold text-[rgb(var(--foreground))] mb-3">

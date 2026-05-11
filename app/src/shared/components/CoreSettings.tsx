@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { Brain, Volume2, Palette, Cpu, MemoryStick, ChevronRight, ChevronLeft, MousePointerClick } from "lucide-react";
+import { Brain, Volume2, Palette, Cpu, MemoryStick, ChevronLeft, MousePointerClick, Sun, Moon, Shield } from "lucide-react";
 import { HexColorPicker } from "react-colorful";
 import { cn } from "@/shared/lib/utils";
 import { useSettings, VoiceProfile } from "@/shared/context/SettingsContext";
 
 // ─── Sub-Components (Isolated Cards) ──────────────────────────────────────────
 
-const EngineCard: React.FC = () => {
+const EngineCard: React.FC = React.memo(() => {
   const { draftSettings, updateDraft, modelCatalog } = useSettings();
   const [flippedView, setFlippedView] = useState<'llm' | 'asr' | 'vad' | null>(null);
   
@@ -16,9 +16,9 @@ const EngineCard: React.FC = () => {
   const activeAsr = modelCatalog.asr.find(m => m.id === draftSettings.asr.model) || modelCatalog.asr[0];
 
   return (
-    <div className="relative" style={{ perspective: '1000px' }}>
+    <div className="relative h-full" style={{ perspective: '1000px' }}>
       <div 
-        className="w-full relative transition-transform duration-500"
+        className="w-full h-full relative transition-transform duration-500"
         style={{ 
           transformStyle: 'preserve-3d', 
           transform: flippedView ? 'rotateY(180deg)' : 'rotateY(0deg)' 
@@ -26,7 +26,7 @@ const EngineCard: React.FC = () => {
       >
         {/* Front Face */}
         <div 
-          className="premium-card p-6 md:p-8 flex flex-col"
+          className="premium-card p-6 md:p-8 flex flex-col h-full"
           style={{ backfaceVisibility: 'hidden' }}
         >
           {/* Header */}
@@ -39,7 +39,7 @@ const EngineCard: React.FC = () => {
           </div>
 
           {/* Body */}
-          <div className="space-y-8 overflow-y-auto custom-scrollbar pr-1 -mr-1">
+          <div className="space-y-6 flex-1 min-h-0">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                   <label className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] opacity-80">Active Model</label>
@@ -125,7 +125,7 @@ const EngineCard: React.FC = () => {
           </div>
 
           {/* Body */}
-          <div className="space-y-8 overflow-y-auto custom-scrollbar pr-1 -mr-1 flex-1">
+          <div className="space-y-6 flex-1 min-h-0">
             {flippedView === 'llm' && (
               <div className="space-y-6">
                 <div className="space-y-3">
@@ -237,9 +237,9 @@ const EngineCard: React.FC = () => {
       </div>
     </div>
   );
-};
+});
 
-const VoiceCard: React.FC = () => {
+const VoiceCard: React.FC = React.memo(() => {
   const { draftSettings, updateDraft, modelCatalog } = useSettings();
   const voices = modelCatalog?.voices || [];
   const [activeTab, setActiveTab] = useState<"en" | "hi">("en");
@@ -305,14 +305,14 @@ const VoiceCard: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 -mr-1">
+      <div className="flex-1 min-h-0">
         <div className="flex flex-wrap gap-2.5 mb-8">
           {filteredVoices.map((v) => (
             <button
               key={v.id}
               onClick={() => handleSelect(v)}
               className={cn(
-                "px-5 py-2.5 rounded-xl text-[11px] font-bold tracking-[0.15em] uppercase transition-all duration-300",
+                "px-2 py-2.5 rounded-l text-[11px] font-bold tracking-[0.15em] uppercase transition-all duration-300",
                 isSelected(v)
                   ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md scale-[1.02]" 
                   : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10 hover:border-[rgba(var(--border),0.1)]"
@@ -324,8 +324,8 @@ const VoiceCard: React.FC = () => {
         </div>
       </div>
 
-      <div className="mt-auto pt-6">
-        <div className="h-24 w-full bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.03)] rounded-2xl flex items-center justify-center overflow-hidden">
+      <div className="mt-auto pt-4">
+        <div className="h-16 w-full bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.03)] rounded-2xl flex items-center justify-center overflow-hidden">
           <div className="flex items-center gap-2">
             {currentHeights.map((h, i) => (
               <div 
@@ -344,91 +344,84 @@ const VoiceCard: React.FC = () => {
       </div>
     </div>
   );
-};
+});
 
-const AppearanceCard: React.FC = () => {
+const AppearanceCard: React.FC = React.memo(() => {
   const { draftSettings, updateDraft, modelCatalog } = useSettings();
-  const [showCustomPicker, setShowCustomPicker] = useState(false);
-  if (!draftSettings || !modelCatalog) return null;
 
-  const PRESET_COLORS = modelCatalog.preset_colors || [];
+  if (!draftSettings || !modelCatalog) return null;
+  const theme = draftSettings.ui.theme;
 
   return (
-    <div className="premium-card p-6 md:p-8 flex flex-col">
-      <div className="flex items-center gap-3 mb-8 shrink-0">
-        <Palette className="text-[rgb(var(--accent))]" size={20} />
-        <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Look & Feel</h3>
-      </div>
-      
-      <div className="space-y-8 overflow-y-auto custom-scrollbar pr-1 -mr-1 pt-4">
-        {/* Presets Grid */}
-        <div className="flex flex-wrap justify-center gap-4">
-          {PRESET_COLORS.map((color) => (
-            <button 
-              key={color}
-              onClick={() => updateDraft("ui", "accent_seed", color)}
-              className={cn(
-                "w-10 h-10 rounded-full transition-all duration-300 relative group",
-                draftSettings.ui.accent_seed.toLowerCase() === color.toLowerCase() 
-                  ? "scale-110 ring-2 ring-[rgb(var(--accent))] ring-offset-4 ring-offset-transparent" 
-                  : "hover:scale-105"
-              )}
-              style={{ backgroundColor: color }}
-            >
-              <div className="absolute inset-0 rounded-full bg-white opacity-0 group-hover:opacity-60 transition-opacity" />
-            </button>
-          ))}
-          <button 
-            onClick={() => setShowCustomPicker(!showCustomPicker)}
-            className={cn(
-              "px-3 py-2 rounded-xl flex lg:hidden items-center justify-center border border-dashed transition-all duration-300",
-              showCustomPicker 
-                ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5" 
-                : "border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground))]/40 hover:border-[rgba(var(--border),0.2)] hover:text-[rgb(var(--foreground))]/60"
-            )}
-            title="Custom Color"
-          >
-            <ChevronRight className={cn("transition-transform duration-300", showCustomPicker ? "rotate-90" : "")} size={16} />
-            <span className="text-[11px] font-bold uppercase ml-2">Custom</span>
-          </button>
-        </div>
-
-        {/* Custom Picker Section */}
-        <div className={cn(
-          "space-y-4 pt-4 border-t border-[rgba(var(--border),0.05)]",
-          "lg:block",
-          showCustomPicker ? "block animate-in fade-in slide-in-from-top-2 duration-300" : "hidden lg:block"
-        )}>
-          <div className="flex justify-center">
-            <div className="custom-color-picker-v2 w-full max-w-[200px]">
-              <HexColorPicker 
-                color={draftSettings.ui.accent_seed} 
-                onChange={(color) => updateDraft("ui", "accent_seed", color)} 
-              />
-            </div>
+    <div className="premium-card p-6 md:p-8 flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between mb-8 shrink-0">
+        <div className="flex items-center gap-3">
+          <Palette className="text-[rgb(var(--accent))]" size={20} />
+          <div className="space-y-1">
+            <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Appearance</h3>
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Accent Protocol</p>
           </div>
         </div>
+        <div className="flex bg-[rgb(var(--foreground))]/[0.05] p-1 rounded-xl border border-[rgba(var(--border),0.05)]">
+          {[
+            { id: 'dark', icon: Moon },
+            { id: 'light', icon: Sun }
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => updateDraft("ui", "theme", t.id)}
+              className={cn(
+                "p-2 rounded-lg transition-all duration-300",
+                theme === t.id 
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
+                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+              )}
+            >
+              <t.icon size={14} />
+            </button>
+          ))}
+        </div>
+      </div>
 
-        <div className="pt-4 border-t border-[rgba(var(--border),0.05)] pb-2">
-          <div className="flex items-center justify-between text-[11px] text-[rgb(var(--foreground-muted))] opacity-80 uppercase tracking-widest font-bold">
-            <span>Active Accent</span>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full shadow-[0_0_8px_rgb(var(--accent))]" style={{ backgroundColor: draftSettings.ui.accent_seed }} />
-              <span className="text-[rgb(var(--accent))]">{draftSettings.ui.accent_seed.toUpperCase()}</span>
+      <div className="flex-1 min-h-0 flex flex-col gap-8">
+        {/* Accent Selection */}
+        <div className="flex-1 min-h-0 flex items-center justify-center">
+          <div className="animate-in fade-in zoom-in-95 duration-500 w-full">
+            <div className="custom-color-picker-v2">
+                <HexColorPicker 
+                  color={draftSettings.ui.accent_seed} 
+                  onChange={(color) => updateDraft("ui", "accent_seed", color)} 
+                />
+              </div>
             </div>
+          </div>
+
+        {/* Preview Section */}
+        <div className="mt-auto p-4 rounded-2xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg shadow-[rgb(var(--accent))]/20">
+                <Shield size={14} />
+             </div>
+             <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Accent System</span>
+                <span className="text-[9px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest">Active State</span>
+             </div>
+          </div>
+          <div className="text-[10px] font-mono font-bold text-[rgb(var(--accent))]">
+            {draftSettings.ui.accent_seed.toUpperCase()}
           </div>
         </div>
       </div>
     </div>
   );
-};
+});
 
-const InteractionCard: React.FC = () => {
+const InteractionCard: React.FC = React.memo(() => {
   const { draftSettings, updateDraft, modelCatalog } = useSettings();
   if (!draftSettings || !modelCatalog) return null;
 
   return (
-    <div className="premium-card p-6 md:p-8 flex flex-col">
+    <div className="premium-card p-6 md:p-8 flex flex-col h-full">
       <div className="flex items-center gap-3 mb-8 shrink-0">
         <MousePointerClick className="text-[rgb(var(--accent))]" size={20} />
         <div className="space-y-1">
@@ -437,7 +430,7 @@ const InteractionCard: React.FC = () => {
         </div>
       </div>
       
-      <div className="space-y-6 overflow-y-auto custom-scrollbar pr-1 -mr-1">
+      <div className="space-y-6 flex-1 min-h-0">
         <div className="flex items-center justify-between p-1 bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] rounded-2xl">
           <button 
             onClick={() => updateDraft("interaction", "main_app_mode", "Passive")}
@@ -463,7 +456,7 @@ const InteractionCard: React.FC = () => {
           </button>
         </div>
         
-        <p className="text-[11px] text-[rgb(var(--foreground-muted))] leading-relaxed opacity-80 italic pb-2">
+        <p className="text-[14px] text-[rgb(var(--foreground-muted))] leading-relaxed opacity-80 italic pb-2">
           {draftSettings.interaction.main_app_mode === "Passive" 
             ? "Vox listens continuously and responds when you speak."
             : "Vox only processes speech when you click the record button."}
@@ -471,7 +464,7 @@ const InteractionCard: React.FC = () => {
       </div>
     </div>
   );
-};
+});
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -481,19 +474,27 @@ export const CoreSettings: React.FC = () => {
   if (!draftSettings || !modelCatalog) return null;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 -mr-2">
-        <div className="grid lg:grid-cols-3 gap-8 items-start pb-8">
+    <div className="h-full overflow-y-auto lg:overflow-hidden custom-scrollbar pr-1 -mr-1">
+      <div className="lg:h-full flex flex-col">
+        <div className="grid lg:grid-cols-3 gap-8 h-full items-stretch pb-10">
           {/* Intelligence Layer */}
-          <div className="lg:col-span-2 space-y-8">
-            <EngineCard />
-            <VoiceCard />
+          <div className="lg:col-span-2 flex flex-col gap-8 min-h-0">
+            <div className="flex-[1.5] min-h-[400px] lg:min-h-0">
+              <EngineCard />
+            </div>
+            <div className="flex-1 min-h-[300px] lg:min-h-0">
+              <VoiceCard />
+            </div>
           </div>
 
           {/* Sidebar Settings Column */}
-          <div className="space-y-8 sticky top-0">
-            <AppearanceCard />
-            <InteractionCard />
+          <div className="flex flex-col gap-8 min-h-0">
+            <div className="flex-[2] min-h-[450px] lg:min-h-0">
+              <AppearanceCard />
+            </div>
+            <div className="flex-1 min-h-[250px] lg:min-h-0">
+              <InteractionCard />
+            </div>
           </div>
         </div>
       </div>
