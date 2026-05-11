@@ -13,7 +13,7 @@ interface HeaderProps {
   onTogglePtt: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ 
+export const Header: React.FC<HeaderProps> = React.memo(({ 
   isListening, hasContent, copied, isPttActive, interactionMode,
   onCopy, onClose, onTogglePtt
 }) => {
@@ -64,4 +64,4 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
     </div>
   );
-};
+});

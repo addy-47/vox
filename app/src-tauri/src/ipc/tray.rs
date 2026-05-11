@@ -6,12 +6,24 @@ use crate::tray::{setup_linux_virtual_layer, position_tray_window};
 /// Toggles the tray window visibility and updates the menu checkmark state.
 pub async fn toggle_hud_visibility(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    
+    // Check if tray is even enabled
+    let tray_enabled = {
+        let s = state.settings.read().unwrap();
+        s.ui.tray_enabled
+    };
+    if !tray_enabled {
+        log::warn!("[Tray] Blocked toggle_hud_visibility: Tray HUD is disabled in settings.");
+        return;
+    }
+
     let mut hud_lock = state.hud_visible.lock().await;
     let new_state = !*hud_lock;
     *hud_lock = new_state;
 
     if let Some(window) = app.get_webview_window("tray") {
         if new_state {
+            let _ = window.show();
             position_tray_window(&window).await;
         } else {
             let _ = window.hide();
@@ -37,6 +49,15 @@ pub fn hide_tray_window(app: AppHandle) {
 #[tauri::command]
 pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    
+    let tray_enabled = {
+        let s = state.settings.read().unwrap();
+        s.ui.tray_enabled
+    };
+    if !tray_enabled && visible {
+        return;
+    }
+
     let mut hud_lock = state.hud_visible.lock().await;
     *hud_lock = visible;
 
@@ -100,6 +121,7 @@ pub async fn update_interaction_mode(app: AppHandle, target: String, mode: Strin
 #[tauri::command]
 pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }

@@ -2,8 +2,11 @@ import React from 'react';
 import { Cpu, Zap } from 'lucide-react';
 
 interface SystemStats {
-  cpu_usage: number;
-  memory_used_mb: number;
+  system_cpu: number;
+  system_ram_pct: number;
+  vox_cpu: number;
+  vox_ram_mb: number;
+  threads: number;
 }
 
 interface FooterProps {
@@ -15,7 +18,7 @@ interface FooterProps {
   historyCount: number;
 }
 
-export const Footer: React.FC<FooterProps> = ({ 
+export const Footer: React.FC<FooterProps> = React.memo(({ 
   stats, 
   onPrev, 
   onNext, 
@@ -25,16 +28,16 @@ export const Footer: React.FC<FooterProps> = ({
 }) => {
   return (
     <div className="px-7 py-4 mt-auto flex items-center justify-between z-10 min-h-[60px]">
-       <div className="flex items-center gap-6 opacity-60 hover:opacity-600 transition-opacity">
+       <div className="flex items-center gap-6 opacity-60 hover:opacity-100 transition-opacity">
           {stats ? (
             <>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" title="Vox CPU Usage">
                 <Cpu size={12} className="text-[rgb(var(--accent))]" />
-                <span className="text-[11px] font-mono text-[rgb(var(--foreground))]/80 font-bold">{stats.cpu_usage.toFixed(1)}%</span>
+                <span className="text-[11px] font-mono text-[rgb(var(--foreground))]/80 font-bold">{stats.vox_cpu.toFixed(1)}%</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" title="Vox RAM Usage">
                 <Zap size={12} className="text-[rgb(var(--accent))]" />
-                <span className="text-[11px] font-mono text-[rgb(var(--foreground))]/80 font-bold">{stats.memory_used_mb}MB</span>
+                <span className="text-[11px] font-mono text-[rgb(var(--foreground))]/80 font-bold">{stats.vox_ram_mb}MB</span>
               </div>
             </>
           ) : (
@@ -62,4 +65,4 @@ export const Footer: React.FC<FooterProps> = ({
        </div>
     </div>
   );
-};
+});

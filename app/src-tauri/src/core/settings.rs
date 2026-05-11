@@ -184,6 +184,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("tts", "hi_voice")              => SettingReloadPolicy::Restart,
 
         // Interaction — sent as mode-changed event immediately
+        ("interaction", "auto_sleep_timeout") => SettingReloadPolicy::Hot,
         ("interaction", _)               => SettingReloadPolicy::Hot,
 
         // Telemetry toggle — hot
@@ -193,6 +194,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
 
         // Persistence — enabled flag requires restart; limits are hot
         ("persistence", "enabled")       => SettingReloadPolicy::Restart,
+        ("persistence", "private_mode")  => SettingReloadPolicy::Hot,
         ("persistence", "max_sessions")  => SettingReloadPolicy::Hot,
         ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
@@ -318,6 +320,7 @@ impl Default for TtsSettings {
 pub struct InteractionSettings {
     pub main_app_mode: InteractionMode,
     pub tray_mode: InteractionMode,
+    pub auto_sleep_timeout: u32,
 }
 
 impl Default for InteractionSettings {
@@ -325,6 +328,7 @@ impl Default for InteractionSettings {
         Self {
             main_app_mode: InteractionMode::Passive,
             tray_mode: InteractionMode::Passive,
+            auto_sleep_timeout: 300,
         }
     }
 }
@@ -349,6 +353,8 @@ impl Default for TelemetrySettings {
 pub struct PersistenceSettings {
     /// Enable/disable SQLite session persistence. Requires restart to take effect.
     pub enabled: bool,
+    /// Disable all database writes for the current session.
+    pub private_mode: bool,
     /// Maximum sessions retained. Older entries pruned at next startup.
     pub max_sessions: u32,
     /// Days to retain sessions. 0 = keep forever.
@@ -359,6 +365,7 @@ impl Default for PersistenceSettings {
     fn default() -> Self {
         Self {
             enabled: true,
+            private_mode: false,
             max_sessions: 500,
             retention_days: 30,
         }

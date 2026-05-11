@@ -12,7 +12,7 @@ interface TranscriptRendererProps {
 }
 
 
-export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({ 
+export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(({ 
   displayText, 
   interactionState,
   pttStatus = 'IDLE',
@@ -102,5 +102,5 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
       </div>
     </div>
   );
-};
+});
 

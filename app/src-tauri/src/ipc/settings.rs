@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::core::state::AppState;
 use crate::core::settings::{VoxSettings, SettingReloadPolicy, reload_policy_for};
 use crate::utils::paths;
+use crate::ipc::pipeline::{launch_engine, stop_engine};
 
 // ─── Debounce constant ────────────────────────────────────────────────────────
 
@@ -97,6 +98,104 @@ pub async fn update_setting(
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
         apply_setting_mutation(&mut settings, &domain, &key, &value)?
     };
+
+    if applied && domain == "persistence" && key == "private_mode" {
+        let is_private = value.as_bool().unwrap_or(false);
+        state.is_private_mode.store(is_private, std::sync::atomic::Ordering::Relaxed);
+        log::info!("[Settings] Privacy Mode updated: enabled={}", is_private);
+    }
+
+    if applied && domain == "ui" && key == "tray_enabled" {
+        let enabled = value.as_bool().unwrap_or(true);
+        log::info!("[Settings] Tray Lifecycle Event: enabled={}", enabled);
+
+        // Synchronize System Tray Menu Item (Vox Live)
+        {
+            let menu_item_lock = state.hud_menu_item.lock().await;
+            if let Some(ref live_i) = *menu_item_lock {
+                let _ = live_i.set_enabled(enabled);
+                // If disabling, also uncheck it to reflect it's offline
+                if !enabled {
+                    let _ = live_i.set_checked(false);
+                } else {
+                    // Restore checked state based on current visibility logic if needed
+                    let hud_visible = *state.hud_visible.lock().await;
+                    let _ = live_i.set_checked(hud_visible);
+                }
+            }
+        }
+
+        if !enabled {
+            // Disable Tray: Hide window and check if we can stop engine
+            log::info!("[Settings] Disabling Tray HUD: Hiding window and evaluating engine offload...");
+            if let Some(tray_win) = app.get_webview_window("tray") {
+                let _ = tray_win.hide();
+            }
+            
+            let is_engaged = state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed);
+            let main_app_mode = {
+                 let s = state.settings.read().unwrap();
+                 s.interaction.main_app_mode.clone()
+            };
+            let main_app_passive = main_app_mode == crate::core::settings::InteractionMode::Passive;
+
+            log::info!("[Settings] Offload evaluation: engaged={}, main_app_mode={:?}, passive={}", is_engaged, main_app_mode, main_app_passive);
+
+            if !is_engaged && !main_app_passive {
+                log::info!("[Settings] No active consumers (Engage=OFF, Passive=OFF). Offloading models...");
+                let app_clone = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = stop_engine(app_clone).await;
+                });
+            } else {
+                log::info!("[Settings] Engine retention: {} consumer(s) active.", if is_engaged { "Engagement" } else { "Passive Listening" });
+            }
+        } else {
+            // Enable Tray: Launch engine if needed
+            log::info!("[Settings] Enabling Tray HUD: Ensuring 3-Tier Engine is active...");
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = launch_engine(app_clone).await {
+                    log::error!("[Settings] Failed to launch engine for tray: {}", e);
+                }
+            });
+        }
+    }
+
+    if applied && domain == "interaction" && key == "main_app_mode" {
+        let tray_enabled = {
+            let s = state.settings.read().unwrap();
+            s.ui.tray_enabled
+        };
+        let is_passive = value.as_str() == Some("Passive");
+
+        if !is_passive && !tray_enabled {
+            let is_engaged = state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed);
+            if !is_engaged {
+                log::info!("[Settings] Main App mode changed to non-passive and Tray is disabled. Stopping engine...");
+                let app_clone = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = stop_engine(app_clone).await;
+                });
+            }
+        } else if is_passive {
+            log::info!("[Settings] Main App mode changed to Passive. Ensuring engine is launched...");
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = launch_engine(app_clone).await;
+            });
+        }
+
+        // Notify VAD of mode change if Main App is owner
+        let owner: crate::core::state::InteractionOwner = state.owner.load(std::sync::atomic::Ordering::Relaxed).into();
+        if owner == crate::core::state::InteractionOwner::MainWindow {
+            if let Some(engine) = state.engine.lock().await.as_ref() {
+                if let Ok(mode) = serde_json::from_value::<crate::core::settings::InteractionMode>(value.clone()) {
+                    let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateMode(mode));
+                }
+            }
+        }
+    }
 
     if !applied {
         return Ok(SettingUpdateResult {
@@ -230,6 +329,9 @@ fn apply_setting_mutation(
             settings.interaction.main_app_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid main_app_mode: {}", e))?;
         }
+        ("interaction", "auto_sleep_timeout") => {
+            settings.interaction.auto_sleep_timeout = value.as_u64().ok_or("auto_sleep_timeout must be a positive integer")? as u32;
+        }
         ("interaction", "tray_mode") => {
             settings.interaction.tray_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid tray_mode: {}", e))?;
@@ -254,6 +356,9 @@ fn apply_setting_mutation(
         }
         ("persistence", "enabled") => {
             settings.persistence.enabled = value.as_bool().ok_or("enabled must be a boolean")?;
+        }
+        ("persistence", "private_mode") => {
+            settings.persistence.private_mode = value.as_bool().ok_or("private_mode must be a boolean")?;
         }
         ("persistence", "max_sessions") => {
             settings.persistence.max_sessions = value.as_u64().ok_or("max_sessions must be a positive integer")? as u32;

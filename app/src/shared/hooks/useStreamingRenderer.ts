@@ -31,16 +31,23 @@ export const useStreamingRenderer = (targetText: string) => {
       const popped = queue.current.splice(0, charsToPop).join("");
       
       setDisplayText(prev => prev + popped);
+      animationFrame.current = requestAnimationFrame(tick);
+    } else {
+      animationFrame.current = null;
     }
-    animationFrame.current = requestAnimationFrame(tick);
   }, []);
 
   useEffect(() => {
-    animationFrame.current = requestAnimationFrame(tick);
+    if (queue.current.length > 0 && !animationFrame.current) {
+      animationFrame.current = requestAnimationFrame(tick);
+    }
+  }, [targetText, tick]);
+
+  useEffect(() => {
     return () => {
       if (animationFrame.current) cancelAnimationFrame(animationFrame.current);
     };
-  }, [tick]);
+  }, []);
 
   return displayText;
 };

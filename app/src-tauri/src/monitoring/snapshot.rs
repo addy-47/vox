@@ -13,12 +13,15 @@ pub struct RuntimeSnapshot {
 
     /// System activity flags.
     pub playback_active: bool,
-    pub llm_generating: bool,
     pub tts_generating: bool,
 
     /// System resource utilization.
-    pub cpu_usage: f32,
-    pub ram_mb: u32,
+    pub system_cpu_usage: f32,
+    pub system_ram_mb: u32,
+    pub vox_cpu_usage: f32,
+    pub vox_ram_mb: u32,
+    pub total_ram_mb: u32,
+    pub cpu_cores: u32,
 
     /// Real-time VAD characteristics.
     pub vad_energy: f32,
@@ -39,6 +42,21 @@ pub struct RuntimeSnapshot {
 
     /// Current interaction owner (Tray, MainWindow, Ptt).
     pub active_owner: String,
+
+    /// Extended Monitoring Metrics
+    pub active_threads: u32,
+    pub tts_rtf: Option<f32>,
+    pub playback_start_ms: Option<u32>,
+    pub persistence_writes_per_sec: f32,
+    pub is_db_healthy: bool,
+
+    // Tier Status (Model Residency)
+    pub is_llm_loaded: bool,
+    pub is_tts_loaded: bool,
+    pub is_stt_loaded: bool,
+    pub is_vad_loaded: bool,
+    pub is_sleeping: bool,
+    pub is_engaged: bool,
 
     /// Unix timestamp of the snapshot in milliseconds.
     pub timestamp_ms: u64,

@@ -62,7 +62,7 @@ interface RuntimeSnapshot {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_HISTORY_SAMPLES = 60; // ~6 seconds at 10Hz
-const POLL_INTERVAL_MS = 100;   // 10Hz
+const POLL_INTERVAL_MS = 1000;   // 1Hz
 
 // ─── Sub-Components ───────────────────────────────────────────────────────────
 
