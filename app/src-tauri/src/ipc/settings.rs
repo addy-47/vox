@@ -1,7 +1,7 @@
 use tauri::{AppHandle, State, Emitter, Manager};
 use std::time::Duration;
 use crate::core::state::AppState;
-use crate::core::settings::{VoxSettings, SettingReloadPolicy, reload_policy_for};
+use crate::core::settings::{VoxSettings, SettingReloadPolicy, reload_policy_for, InteractionMode};
 use crate::utils::paths;
 use crate::ipc::pipeline::{launch_engine, stop_engine};
 
@@ -158,21 +158,18 @@ pub async fn update_setting(
     }
 
     if applied && domain == "interaction" && key == "main_app_mode" {
-        let tray_enabled = {
+        // Evaluate offload: If switching to PTT and Tray is disabled, we might want to stop engine
+        let (tray_enabled, is_engaged, is_passive) = {
             let s = state.settings.read().unwrap();
-            s.ui.tray_enabled
+            (s.ui.tray_enabled, state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed), s.interaction.main_app_mode == InteractionMode::Passive)
         };
-        let is_passive = value.as_str() == Some("Passive");
 
-        if !is_passive && !tray_enabled {
-            let is_engaged = state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed);
-            if !is_engaged {
-                log::info!("[Settings] Main App mode changed to non-passive and Tray is disabled. Stopping engine...");
-                let app_clone = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = stop_engine(app_clone).await;
-                });
-            }
+        if !tray_enabled && !is_engaged && !is_passive {
+            log::info!("[Settings] Main App mode changed to non-passive and Tray is disabled. Stopping engine...");
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = stop_engine(app_clone).await;
+            });
         } else if is_passive {
             log::info!("[Settings] Main App mode changed to Passive. Ensuring engine is launched...");
             let app_clone = app.clone();

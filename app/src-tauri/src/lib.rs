@@ -181,15 +181,25 @@ pub fn run() {
 
             // ── 2. Position tray HUD ─────────────────────────────────────────
             if let Some(tray_win) = app.get_webview_window("tray") {
-                let tray_win_clone = tray_win.clone();
-                tauri::async_runtime::spawn(async move {
-                    // Give the window manager a moment to register the window
-                    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-                    setup_tray_window(&tray_win_clone);
-                    position_tray_window(&tray_win_clone).await;
-                    // Initial hide to ensure it's hidden on startup despite tauri.conf.json
-                    let _ = tray_win_clone.hide();
-                });
+                let tray_enabled = {
+                    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+                    let s = state.settings.read().unwrap();
+                    s.ui.tray_enabled
+                };
+
+                if tray_enabled {
+                    let tray_win_clone = tray_win.clone();
+                    tauri::async_runtime::spawn(async move {
+                        // Give the window manager a moment to register the window
+                        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                        setup_tray_window(&tray_win_clone);
+                        position_tray_window(&tray_win_clone).await;
+                        let _ = tray_win_clone.hide();
+                    });
+                } else {
+                    log::info!("[BOOTSTRAP] Tray HUD disabled. Closing tray window to save RAM.");
+                    let _ = tray_win.close();
+                }
             }
 
             // ── 3. Conditional auto-launch engine on startup ─────────────────────────────
@@ -198,7 +208,7 @@ pub fn run() {
                 let launch_needed = {
                     let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
                     let s = state.settings.read().unwrap();
-                    s.ui.tray_enabled || s.interaction.main_app_mode == crate::core::settings::InteractionMode::Passive
+                    s.ui.tray_enabled // Only auto-launch if the background Tray HUD is active
                 };
 
                 if launch_needed {
@@ -249,8 +259,26 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Instead of closing, just hide the window
                 if window.label() == "main" || window.label() == "tray" {
+                    let label = window.label().to_string();
                     let _ = window.hide();
                     api.prevent_close();
+                    
+                    // Evaluate engine offload if the main window is hidden
+                    if label == "main" {
+                        let handle = window.app_handle().clone();
+                        tauri::async_runtime::spawn(async move {
+                            let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
+                            let (tray_enabled, is_engaged) = {
+                                let s = state.settings.read().unwrap();
+                                (s.ui.tray_enabled, state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed))
+                            };
+                            
+                            if !tray_enabled && !is_engaged {
+                                log::info!("[Window] Main window hidden and Tray disabled. Offloading engine...");
+                                let _ = crate::ipc::pipeline::stop_engine(handle).await;
+                            }
+                        });
+                    }
                 }
             }
         })
