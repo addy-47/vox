@@ -8,7 +8,6 @@ use crate::services::vad::VadEngine;
 use crate::services::pipeline::PipelineOrchestrator;
 use crate::services::playback::PlaybackEngine;
 use crate::tray::position_tray_window;
-use crate::telemetry::system_monitor::spawn_system_monitor;
 use ringbuf::traits::Split;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -20,6 +19,33 @@ pub async fn check_engine_status(state: State<'_, std::sync::Arc<AppState>>) -> 
 }
 
 #[tauri::command]
+pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let mut lock = state.engine.lock().await;
+    
+    if let Some(mut engine) = lock.take() {
+        log::info!("[PIPELINE] >>> Shutting down 3-Tier Audio Engine (Deterministic)...");
+        let _ = engine.pipeline_tx.send(VoxEvent::Shutdown);
+        let _ = engine.stt_tx.send(SttCommand::Shutdown);
+        let _ = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown);
+        
+        // Wait for threads to join
+        if let Some(h) = engine.orchestrator_handle.take() {
+            let _ = h.join();
+        }
+        if let Some(h) = engine.stt_handle.take() {
+            let _ = h.join();
+        }
+        if let Some(h) = engine.vad_handle.take() {
+            let _ = h.join();
+        }
+        log::info!("[PIPELINE] Audio Engine threads joined. Resources freed.");
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) -> Result<(), String> {
     let current = state.pipeline.is_engaged.load(Ordering::Relaxed);
     let new_state = !current;
@@ -27,8 +53,13 @@ pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) 
     if new_state {
         log::info!("[Pipeline] Engaging main application pipeline...");
         state.pipeline.is_engaged.store(true, Ordering::Relaxed);
-        let mut owner = state.owner.lock().await;
-        *owner = InteractionOwner::MainWindow;
+        state.owner.store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
+
+        // Ensure engine is launched
+        if state.engine.lock().await.is_none() {
+            log::info!("[Pipeline] Engine not running. Launching for Engagement...");
+            launch_engine(app.clone()).await?;
+        }
 
         if let Some(engine) = state.engine.lock().await.as_ref() {
             // Generate conversation ID based on epoch ms
@@ -80,8 +111,7 @@ pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) 
             }
         }
 
-        let mut owner = state.owner.lock().await;
-        *owner = InteractionOwner::Tray;
+        state.owner.store(InteractionOwner::Tray as u32, Ordering::Relaxed);
 
         {
             let mut state_lock = state.pipeline.state.lock().unwrap();
@@ -101,6 +131,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     
     if lock.is_some() {
         if let Some(window) = app.get_webview_window("tray") {
+            let _ = window.show();
             position_tray_window(&window).await;
             let _ = window.set_focus();
         }
@@ -126,7 +157,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let (vad_tx_internal, vad_rx_internal) = std::sync::mpsc::channel::<crate::core::state::VadCommand>();
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
-    spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone());
+    let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone(), state.is_stt_loaded.clone())?;
 
     let threshold = state.settings.read().unwrap().vad.threshold;
     let mut vad = VadEngine::new(&vad_model_path, threshold).map_err(|e| e.to_string())?;
@@ -137,11 +168,15 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let app_handle_vad = app.clone();
     let telemetry_tx_for_vad = state.telemetry_tx.clone();
     let vox_event_tx_for_vad = vox_event_tx.clone();
-    std::thread::spawn(move || {
-        if let Err(e) = vad.run_sync_loop(app_handle_vad, consumer, event_tx, stt_tx_for_vad, vad_rx_for_vad, telemetry_tx_for_vad, Some(vox_event_tx_for_vad)) {
-            log::error!("[VAD] CRITICAL: Worker thread crashed: {}", e);
-        }
-    });
+    let state_vad = state.inner().clone();
+    let vad_handle = std::thread::Builder::new()
+        .name("vox-vad-worker".to_string())
+        .spawn(move || {
+            if let Err(e) = vad.run_sync_loop(app_handle_vad, consumer, event_tx, stt_tx_for_vad, vad_rx_for_vad, telemetry_tx_for_vad, Some(vox_event_tx_for_vad), state_vad.is_vad_loaded.clone()) {
+                log::error!("[VAD] CRITICAL: Worker thread crashed: {}", e);
+            }
+        })
+        .map_err(|e| e.to_string())?;
 
     let app_handle_emit = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -149,12 +184,13 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         while let Some(event) = event_rx.recv().await {
             if let Some(msg_type) = event.get("type").and_then(|v| v.as_str()) {
                 if msg_type == "speech_start" {
-                    let hud_visible = {
+                    let (hud_visible, tray_enabled) = {
                         let hud_lock = app_state.hud_visible.lock().await;
-                        *hud_lock
+                        let settings = app_state.settings.read().unwrap();
+                        (*hud_lock, settings.ui.tray_enabled)
                     };
 
-                    if hud_visible {
+                    if hud_visible && tray_enabled {
                         if let Some(window) = app_handle_emit.get_webview_window("tray") {
                             let w = window.clone();
                             tauri::async_runtime::spawn(async move {
@@ -166,8 +202,8 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                 }
                 
                 let target = {
-                    let owner = app_state.owner.lock().await;
-                    match *owner {
+                    let owner: InteractionOwner = app_state.owner.load(Ordering::Relaxed).into();
+                    match owner {
                         InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
                         InteractionOwner::Tray => "tray",
                     }
@@ -212,7 +248,6 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let orchestrator = PipelineOrchestrator::new(
         std::sync::Arc::clone(&state.pipeline.cancel_flag),
         std::sync::Arc::clone(&state.pipeline.playback_active),
-        std::sync::Arc::clone(&state.pipeline.llm_generating),
         std::sync::Arc::clone(&state.pipeline.tts_generating),
         std::sync::Arc::clone(&state.pipeline.turn_id),
         std::sync::Arc::clone(&state.pipeline.state),
@@ -223,11 +258,17 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         std::sync::Arc::clone(&state.conversation_id),
         state.persist_tx.clone(),
         std::sync::Arc::clone(&state.dropped_persistence_events),
+        std::sync::Arc::clone(&state.latest_voice_latency_ms),
+        std::sync::Arc::clone(&state.latest_tts_rtf),
+        std::sync::Arc::clone(&state.latest_playback_start_ms),
+        std::sync::Arc::clone(&state.is_llm_loaded),
+        std::sync::Arc::clone(&state.is_tts_loaded),
+        std::sync::Arc::clone(&state.is_sleeping),
     );
 
     let playback_for_orch = std::sync::Arc::clone(&playback_engine);
     let app_for_orch = app.clone();
-    std::thread::Builder::new()
+    let orchestrator_handle = std::thread::Builder::new()
         .name("vox-pipeline".to_string())
         .spawn(move || {
             orchestrator.run_event_loop(
@@ -248,9 +289,12 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         vad_tx: vad_tx_internal,
         telemetry_tx: state.telemetry_tx.clone(),
         pipeline_tx: vox_event_tx.clone(),
+        playback_engine: playback_engine,
+        stt_handle: Some(stt_handle),
+        vad_handle: Some(vad_handle),
+        orchestrator_handle: Some(orchestrator_handle),
     });
 
-    spawn_system_monitor(app.clone());
 
     Ok(())
 }
