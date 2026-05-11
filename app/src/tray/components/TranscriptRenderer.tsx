@@ -55,9 +55,9 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
               fadeWidth={40}
               className="w-full"
             />
-            <span className={cn(
+                <span className={cn(
               "text-[10px] font-black uppercase tracking-[0.4em] transition-colors duration-500",
-              pttStatus === 'RECORDING' ? "text-cyan-400/80 animate-pulse" : "text-[rgb(var(--accent))]/80"
+              pttStatus === 'RECORDING' ? "text-[rgb(var(--accent))]/80 animate-pulse" : "text-[rgb(var(--accent))]/80"
             )}>
               {pttStatus === 'RECORDING' ? "Recording" : "Processing"}
             </span>
@@ -78,7 +78,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = ({
                 <motion.span 
                   animate={{ opacity: [0, 1, 0] }}
                   transition={{ repeat: Infinity, duration: 0.8 }}
-                  className={`inline-block w-[2px] h-[1em] ml-1 align-middle shadow-[0_0_8px_rgba(var(--accent),0.8)] ${pttStatus === 'PROCESSING' ? 'bg-amber-400' : 'bg-[rgb(var(--accent))]'}`}
+                  className={`inline-block w-[2px] h-[1em] ml-1 align-middle shadow-[0_0_8px_rgba(var(--accent),0.8)] bg-[rgb(var(--accent))]`}
                 />
               )}
             </div>

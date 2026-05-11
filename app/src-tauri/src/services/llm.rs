@@ -21,14 +21,6 @@ use llama_cpp_2::{
 
 use crate::core::events::VoxEvent;
 
-// ─── System Prompt ────────────────────────────────────────────────────────────
-
-const SYSTEM_PROMPT: &str = "\
-You are Vox, a concise real-time voice assistant. \
-Respond in short, natural sentences. \
-Be direct and conversational. \
-Never use markdown, bullet points, or formatting.";
-
 // ─── LLM Worker ───────────────────────────────────────────────────────────────
 
 /// Commands sent from the Pipeline Orchestrator to the LLM background thread.
@@ -36,6 +28,7 @@ pub enum LlmCommand {
     /// Start generating a response to `text`.
     Generate {
         text: String,
+        system_prompt: String,
         turn_id: u32,
         cancel_flag: Arc<AtomicBool>,
     },
@@ -97,8 +90,8 @@ impl LlmWorker {
         
         while let Ok(cmd) = rx.recv() {
             match cmd {
-                LlmCommand::Generate { text, turn_id, cancel_flag } => {
-                    if let Err(e) = self.generate(&text, turn_id, &cancel_flag, &tx) {
+                LlmCommand::Generate { text, system_prompt, turn_id, cancel_flag } => {
+                    if let Err(e) = self.generate(&text, &system_prompt, turn_id, &cancel_flag, &tx) {
                         log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
                         let _ = tx.send(VoxEvent::Error { 
                             turn_id, 
@@ -123,6 +116,7 @@ impl LlmWorker {
     pub fn generate(
         &self,
         user_text: &str,
+        system_prompt: &str,
         turn_id: u32,
         cancel_flag: &Arc<AtomicBool>,
         tx: &std::sync::mpsc::Sender<VoxEvent>,
@@ -133,7 +127,7 @@ impl LlmWorker {
 
         // Gemma 2/4 Instruct Format:
         // <start_of_turn>user\n{system}\n\n{user}<end_of_turn>\n<start_of_turn>model\n
-        let prompt = self.format_prompt(user_text);
+        let prompt = self.format_prompt(user_text, system_prompt);
 
         // Tokenize
         let tokens = self.model
@@ -249,12 +243,12 @@ impl LlmWorker {
         Ok(())
     }
 
-    fn format_prompt(&self, text: &str) -> String {
+    fn format_prompt(&self, text: &str, system_prompt: &str) -> String {
         // Gemma 4 E2B-it (March 2026) uses <|turn>role<turn|> format.
         // It supports a native system role.
         format!(
             "<|turn>system {}<turn|>\n<|turn>user {}<turn|>\n<|turn>model\n",
-            SYSTEM_PROMPT, text
+            system_prompt, text
         )
     }
 

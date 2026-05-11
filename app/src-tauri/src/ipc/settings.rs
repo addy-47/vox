@@ -20,6 +20,15 @@ pub struct BootState {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct ModelCatalog {
+    pub llm: Vec<crate::core::settings::ModelMetadata>,
+    pub asr: Vec<crate::core::settings::ModelMetadata>,
+    pub tts: Vec<crate::core::settings::ModelMetadata>,
+    pub voices: Vec<crate::core::settings::VoiceProfile>,
+    pub preset_colors: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SettingUpdateResult {
     pub applied: bool,
     pub reload_policy: String,
@@ -46,6 +55,17 @@ pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
         settings,
         models_dir_exists,
         settings_path,
+    })
+}
+
+#[tauri::command]
+pub async fn request_model_catalog() -> Result<ModelCatalog, String> {
+    Ok(ModelCatalog {
+        llm: crate::core::settings::get_llm_metadata(),
+        asr: crate::core::settings::get_asr_metadata(),
+        tts: crate::core::settings::get_tts_metadata(),
+        voices: crate::core::settings::get_voice_profiles(),
+        preset_colors: crate::core::settings::get_preset_colors(),
     })
 }
 
@@ -102,6 +122,12 @@ pub async fn update_setting(
 
     log::debug!("[Settings] update_setting: {}.{} = {:?} (policy: {})", domain, key, value, policy.as_str());
 
+    if domain == "ui" && key == "theme" {
+        let _ = app.emit("theme-changed", value.as_str().unwrap_or("dark"));
+    }
+
+    let _ = app.emit("settings-updated", ());
+
     Ok(SettingUpdateResult {
         applied: true,
         reload_policy: policy.as_str().to_string(),
@@ -125,6 +151,24 @@ pub async fn update_theme(app: AppHandle, theme: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Resets all settings to system defaults.
+#[tauri::command]
+pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let defaults = VoxSettings::default();
+    {
+        let mut settings = state.settings.write().map_err(|e| e.to_string())?;
+        *settings = defaults.clone();
+    }
+    
+    // Immediate apply for theme and other hot settings
+    let _ = app.emit("theme-changed", defaults.ui.theme.clone());
+    
+    schedule_debounced_save(app.clone(), state.clone()).await;
+    
+    Ok(defaults)
+}
+
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
 /// Applies a mutation to the settings struct by domain+key routing.
@@ -141,6 +185,24 @@ fn apply_setting_mutation(
         }
         ("ui", "accent_seed") => {
             settings.ui.accent_seed = value.as_str().ok_or("accent_seed must be a string")?.to_string();
+        }
+        ("ui", "tray_enabled") => {
+            settings.ui.tray_enabled = value.as_bool().ok_or("tray_enabled must be a boolean")?;
+        }
+        ("ui", "tray_blur_density") => {
+            settings.ui.tray_blur_density = value.as_u64().ok_or("tray_blur_density must be a positive integer")? as u32;
+        }
+        ("ui", "tray_glass_tint") => {
+            settings.ui.tray_glass_tint = value.as_bool().ok_or("tray_glass_tint must be a boolean")?;
+        }
+        ("ui", "tray_hide_delay") => {
+            settings.ui.tray_hide_delay = value.as_f64().ok_or("tray_hide_delay must be a number")? as f32;
+        }
+        ("ui", "tray_fade_transition") => {
+            settings.ui.tray_fade_transition = value.as_str().ok_or("tray_fade_transition must be a string")?.to_string();
+        }
+        ("ui", "tray_history_limit") => {
+            settings.ui.tray_history_limit = value.as_u64().ok_or("tray_history_limit must be a positive integer")? as u32;
         }
         ("vad", "threshold") => {
             settings.vad.threshold = value.as_f64().ok_or("threshold must be a number")? as f32;
@@ -183,6 +245,9 @@ fn apply_setting_mutation(
         }
         ("tts", "hi_model") => {
             settings.tts.hi_model = value.as_str().ok_or("hi_model must be a string")?.to_string();
+        }
+        ("tts", "voice_id") => {
+            settings.tts.voice_id = value.as_i64().ok_or("voice_id must be an integer")? as i32;
         }
         ("persistence", "enabled") => {
             settings.persistence.enabled = value.as_bool().ok_or("enabled must be a boolean")?;
