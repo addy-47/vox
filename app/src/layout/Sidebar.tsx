@@ -4,7 +4,7 @@ import { Settings, Database, Monitor, Sun, Moon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import logo from "@/assets/logo.webp";
 import logoLight from "@/assets/logo-light.webp";
-import { useTheme } from "@/shared/context/ThemeContext";
+import { useSettings } from "@/shared/context/SettingsContext";
 
 const topNavItems = [
   { icon: Monitor, label: "HOME", path: "/" },
@@ -13,27 +13,27 @@ const topNavItems = [
 ];
 
 export const Sidebar: React.FC = () => {
-  const { theme, toggleTheme } = useTheme();
+  const { draftSettings, toggleTheme } = useSettings();
+  const theme = draftSettings?.ui.theme || 'dark';
 
   return (
     <aside className="fixed left-0 top-0 h-full z-40 flex flex-col bg-[rgb(var(--sidebar))] border-r border-[rgba(var(--border),0.05)] transition-colors duration-300" style={{ width: "96px" }}>
       {/* Top logo area */}
       <div className="flex flex-col items-center justify-center py-10">
         <div
-          className={cn(
-            "flex items-center justify-center rounded-full overflow-hidden transition-all duration-300 hover:scale-110 active:scale-95",
-            theme === 'light' ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 shadow-lg shadow-black/[0.05]" : "bg-gradient-to-br from-[rgb(var(--accent))]/20 to-[rgb(var(--accent))]/5 border-[rgb(var(--accent))]/20"
-          )}
-          style={{
-            width: 52,
-            height: 52,
-            borderWidth: "1px",
-          }}
+          className="relative transition-all duration-300 hover:scale-110 active:scale-95"
+          style={{ width: 32, height: 32 }}
         >
-          <img
-            src={theme === 'light' ? logoLight : logo}
-            alt="VOX"
-            className="w-8 h-8 object-contain transition-all duration-500"
+          <div 
+            className="absolute inset-0 bg-[rgb(var(--accent))]"
+            style={{
+              maskImage: `url(${theme === 'light' ? logoLight : logo})`,
+              WebkitMaskImage: `url(${theme === 'light' ? logoLight : logo})`,
+              maskSize: 'contain',
+              WebkitMaskSize: 'contain',
+              maskRepeat: 'no-repeat',
+              WebkitMaskRepeat: 'no-repeat',
+            }}
           />
         </div>
       </div>

@@ -77,12 +77,24 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
     const ampScales = new Float32Array(WAVE_PARAMS.map(w => w.ampScale));
     const widths    = new Float32Array(WAVE_PARAMS.map(w => w.width));
 
+    // ── Get theme colors ──────────────────────────────────────────────────
+    const getThemeColor = (cssVar: string, defaultHex: string) => {
+      const val = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim();
+      if (!val) return new THREE.Color(defaultHex);
+      const rgb = val.split(',').map(v => parseInt(v.trim()));
+      if (rgb.length === 3) return new THREE.Color(`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`);
+      return new THREE.Color(defaultHex);
+    };
+
+    const accentColor = getThemeColor('--accent', '#00dbe9');
+    const accentGlow = accentColor.clone().multiplyScalar(1.2);
+
     const uniforms = {
       u_time:        { value: 0.0 },
       u_amplitude:   { value: 0.0 },
       u_frequency:   { value: 1.0 },
-      u_color:       { value: new THREE.Color('#00dbe9') },
-      u_colorGlow:   { value: new THREE.Color('#40f0ff') },
+      u_color:       { value: accentColor },
+      u_colorGlow:   { value: accentGlow },
       u_anchors:     { value: anchors },
       u_speeds:      { value: speeds },
       u_phases:      { value: phases },
@@ -190,7 +202,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
 
     // ── Outer shell (perfect rim mask) ─────────────────────────────────────
     const outerMat = new THREE.ShaderMaterial({
-      uniforms: { u_color: { value: new THREE.Color('#00dbe9') } },
+      uniforms: { u_color: { value: accentColor } },
       transparent: true,
       depthWrite: true,           // write depth so inner fragments behind it are discarded
       depthTest: true,
@@ -224,6 +236,18 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
         }
       `,
     });
+
+    // Update colors when CSS variables change
+    const updateColors = () => {
+      const newAccent = getThemeColor('--accent', '#00dbe9');
+      uniforms.u_color.value = newAccent;
+      uniforms.u_colorGlow.value = newAccent.clone().multiplyScalar(1.2);
+      outerMat.uniforms.u_color.value = newAccent;
+    };
+
+    // Observer for CSS variable changes
+    const themeObserver = new MutationObserver(() => updateColors());
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme'] });
 
     const innerMesh = new THREE.Mesh(innerGeo, innerMat);
     const outerMesh = new THREE.Mesh(outerGeo, outerMat);
@@ -323,6 +347,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
 
     return () => {
       resizeObs.disconnect();
+      themeObserver.disconnect();
       cancelAnimationFrame(raf);
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
       outerGeo.dispose(); innerGeo.dispose();

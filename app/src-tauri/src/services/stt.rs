@@ -207,7 +207,7 @@ pub fn spawn_stt_worker(
                     let _ = app.emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }));
 
                     // Reset interaction state
-                    let state: tauri::State<'_, crate::core::state::AppState> = app.state();
+                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
                     let idle_state = if state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed) {
                         InteractionState::Listening
                     } else {

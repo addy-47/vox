@@ -316,12 +316,13 @@ export const LiveWaveform = ({
 
         // Gradient Cache
         if (!barGradientCacheRef.current || lastHeightRef.current !== height) {
+          const accentVal = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || "0, 219, 233";
           const g = ctx.createLinearGradient(0, 0, 0, height)
-          g.addColorStop(0, "rgba(0, 247, 255, 0.05)")
-          g.addColorStop(0.3, "rgba(0, 247, 255, 0.6)")
-          g.addColorStop(0.5, "#00f7ff") 
-          g.addColorStop(0.7, "rgba(0, 247, 255, 0.6)")
-          g.addColorStop(1, "rgba(0, 247, 255, 0.05)")
+          g.addColorStop(0, `rgba(${accentVal}, 0.05)`)
+          g.addColorStop(0.3, `rgba(${accentVal}, 0.6)`)
+          g.addColorStop(0.5, `rgb(${accentVal})`) 
+          g.addColorStop(0.7, `rgba(${accentVal}, 0.6)`)
+          g.addColorStop(1, `rgba(${accentVal}, 0.05)`)
           barGradientCacheRef.current = g
         }
         

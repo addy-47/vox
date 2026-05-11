@@ -15,7 +15,7 @@ use crate::ipc::tray::{
 };
 use crate::ipc::history::{get_transcript_history, get_sessions, get_turns, delete_session};
 use crate::ipc::test::debug_harden_test;
-use crate::ipc::settings::{get_settings, update_theme, update_setting, request_boot_state};
+use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog};
 use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
 use crate::tray::{setup_linux_virtual_layer, setup_tray_window, position_tray_window};
 
@@ -205,9 +205,11 @@ pub fn run() {
             update_interaction_mode,
             show_main_window,
             request_boot_state,
+            request_model_catalog,
             get_settings,
             update_theme,
             update_setting,
+            reset_settings,
             ptt_start,
             ptt_stop,
             ptt_cancel,
