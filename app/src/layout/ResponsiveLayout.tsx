@@ -36,10 +36,17 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         <div className="absolute bottom-0 right-0 w-2 h-2 cursor-nwse-resize z-[110]" />
 
         {/* Background atmospheric orbs — fixed to viewport, pointer-events none */}
-        <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0 }}>
-          <div style={{ position: "absolute", top: "15%", left: "5%", width: "45vw", height: "45vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,219,233,0.15) 0%, transparent 70%)", filter: "blur(140px)", opacity: 0.3 }} />
-          <div style={{ position: "absolute", bottom: "10%", right: "5%", width: "40vw", height: "40vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,219,233,0.1) 0%, transparent 70%)", filter: "blur(120px)", opacity: 0.15 }} />
-          <div style={{ position: "absolute", top: "40%", right: "10%", width: "30vw", height: "30vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,219,233,0.05) 0%, transparent 70%)", filter: "blur(100px)", opacity: 0.2 }} />
+        <div style={{ 
+          position: "fixed", 
+          inset: 0, 
+          pointerEvents: "none", 
+          zIndex: 0,
+          willChange: "transform",
+          transform: "translateZ(0)"
+        }}>
+          <div style={{ position: "absolute", top: "15%", left: "5%", width: "45vw", height: "45vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,219,233,0.15) 0%, transparent 70%)", filter: "blur(140px)", opacity: 0.3, willChange: "filter" }} />
+          <div style={{ position: "absolute", bottom: "10%", right: "5%", width: "40vw", height: "40vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,219,233,0.1) 0%, transparent 70%)", filter: "blur(120px)", opacity: 0.15, willChange: "filter" }} />
+          <div style={{ position: "absolute", top: "40%", right: "10%", width: "30vw", height: "30vw", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,219,233,0.05) 0%, transparent 70%)", filter: "blur(100px)", opacity: 0.2, willChange: "filter" }} />
         </div>
 
         {/* Left sidebar — desktop only */}

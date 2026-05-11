@@ -17,6 +17,7 @@ export const Home: React.FC = () => {
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
   const [transcript, setTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
+  const [isSleeping, setIsSleeping] = useState(false);
   const telemetryRef = useTelemetry();
 
   const isUserSpeaking = interactionState === "UserSpeaking" || pttStatus === 'RECORDING';
@@ -71,6 +72,17 @@ export const Home: React.FC = () => {
           setInteractionMode(settings.main_app_mode.toUpperCase() as InteractionMode);
         }
 
+        // Sync Engagement State
+        try {
+          const snapshot = await invoke<any>("get_runtime_snapshot");
+          if (snapshot) {
+            setIsEngaged(snapshot.is_engaged);
+            setIsSleeping(snapshot.is_sleeping);
+          }
+        } catch (e) {
+          console.warn("[Home] Failed to sync initial engagement state:", e);
+        }
+
         unlisteners.push(await appWindow.listen<InteractionState>("state_changed", (event) => {
           const newState = event.payload;
           setInteractionState(newState);
@@ -100,6 +112,10 @@ export const Home: React.FC = () => {
           }
         }));
 
+        unlisteners.push(await appWindow.listen<boolean>("auto_sleep_state", (event) => {
+          setIsSleeping(event.payload);
+        }));
+
         // Phase 5: Show window only after listeners are ready
         setTimeout(async () => {
           await invoke("show_main_window");
@@ -117,7 +133,7 @@ export const Home: React.FC = () => {
 
 
   return (
-    <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-colors duration-300">
+    <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-all duration-400 ease-in-out">
       {/* ===== CENTRAL HUD AREA ===== */}
       <div className="flex-1 flex flex-col relative overflow-visible">
 
@@ -131,8 +147,9 @@ export const Home: React.FC = () => {
                 : "bg-[rgb(var(--foreground-muted))] opacity-60"
             )} />
             <span className="text-[11px] font-bold tracking-[0.3em] md:tracking-[0.4em] uppercase shimmer-text">
-              {!isEngaged && interactionState === "Idle" && "System Dormant"}
-              {isEngaged && interactionState === "Idle" && pttStatus === 'IDLE' && "System Ready"}
+              {!isEngaged && interactionState === "Idle" && !isSleeping && "System Dormant"}
+              {isSleeping && "System Sleeping (Models Offloaded)"}
+              {isEngaged && interactionState === "Idle" && pttStatus === 'IDLE' && !isSleeping && "System Ready"}
               {pttStatus === 'RECORDING' && "Recording..."}
               {pttStatus === 'PROCESSING' && "Processing..."}
               {interactionState === "Thinking" && pttStatus === 'IDLE' && "Thinking..."}
@@ -149,9 +166,10 @@ export const Home: React.FC = () => {
           <div className="w-full h-full max-h-[60vh] min-h-[300px] flex items-center justify-center">
             <div className={cn(
               "w-full h-full scale-100 transition-all duration-1000 flex items-center justify-center",
-              !isEngaged ? "grayscale-[0.8] opacity-60 blur-[2px]" : "grayscale-0 opacity-600 blur-0"
+              !isEngaged ? "grayscale-[0.8] opacity-60 blur-[2px]" : "grayscale-0 opacity-600 blur-0",
+              isSleeping && "grayscale-[0.9] opacity-30 blur-[4px]"
             )}>
-              <VoxOrb telemetryRef={telemetryRef} interactionState={interactionState} />
+              <VoxOrb telemetryRef={telemetryRef} interactionState={interactionState} isSleeping={isSleeping} />
             </div>
           </div>
         </div>
@@ -233,7 +251,7 @@ export const Home: React.FC = () => {
       {/* ===== RIGHT SIDEBAR BRIEF (Desktop Only) ===== */}
       <div className="hidden xl:flex flex-col gap-6 py-16 pr-12 w-[420px] shrink-0 z-10">
         <div className="premium-card p-10 min-h-[500px] flex flex-col relative group">
-          <div className="absolute top-0 right-0 p-4 opacity-60 group-hover:opacity-60 transition-opacity">
+          <div className="absolute top-5 right-5 p-4 opacity-20 group-hover:opacity-40 transition-opacity">
             <Mic size={48} />
           </div>
 

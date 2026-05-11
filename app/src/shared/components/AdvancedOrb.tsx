@@ -11,6 +11,7 @@ interface VoxOrbProps {
   amplitude?: number;
   frequency?: number;
   interactionState?: "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Interrupted";
+  isSleeping?: boolean;
 }
 
 // ─── 4 big, slow waves — enough to feel organic, never chaotic ─────────────
@@ -35,6 +36,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
   telemetryRef,
   amplitude = 0.0,
   interactionState = "Idle",
+  isSleeping = false,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef(interactionState);
@@ -237,16 +239,22 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       `,
     });
 
-    // Update colors when CSS variables change
-    const updateColors = () => {
+    // Update colors when CSS variables or sleep state change
+    const updateColors = (sleeping: boolean) => {
       const newAccent = getThemeColor('--accent', '#00dbe9');
+      if (sleeping) {
+          // Dim to 30% for Cold state
+          newAccent.multiplyScalar(0.3);
+      }
       uniforms.u_color.value = newAccent;
       uniforms.u_colorGlow.value = newAccent.clone().multiplyScalar(1.2);
       outerMat.uniforms.u_color.value = newAccent;
     };
 
+    updateColors(isSleeping);
+
     // Observer for CSS variable changes
-    const themeObserver = new MutationObserver(() => updateColors());
+    const themeObserver = new MutationObserver(() => updateColors(isSleeping));
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme'] });
 
     const innerMesh = new THREE.Mesh(innerGeo, innerMat);
@@ -354,7 +362,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       outerMat.dispose(); innerMat.dispose();
       renderer.dispose();
     };
-  }, []);
+  }, [isSleeping]);
 
   return (
     <div

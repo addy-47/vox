@@ -6,6 +6,7 @@ import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 const Home = lazy(() => import("@/pages/Home").then(m => ({ default: m.Home })));
 const History = lazy(() => import("@/pages/History").then(m => ({ default: m.History })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
+const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
 
 // Premium Loading Overlay
 const PageLoader = () => (
@@ -31,6 +32,7 @@ const App: React.FC = () => {
             <Route path="/" element={<Home />} />
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/monitoring" element={<Monitoring />} />
           </Route>
         </Routes>
       </Suspense>

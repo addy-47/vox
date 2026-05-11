@@ -49,8 +49,8 @@ llama-cpp-sys-2 = "0.1.146"
 
 encoding_rs = "0.8.35"
 regex = "1.12.3"
+sysinfo = "0.29"
 
 [dev-dependencies]
 # Helpers for integration tests
 chrono = "0.4"
-sysinfo = "0.29"
