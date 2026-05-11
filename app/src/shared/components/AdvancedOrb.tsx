@@ -168,11 +168,14 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
           totalDisp = totalDisp / float(u_waveCount) * 1.2;
 
           // Add a high-frequency secondary noise for organic texture
-          float noise = sin(posNorm.x * 20.0 + u_time) * cos(posNorm.y * 25.0 - u_time * 0.5) * 0.04;
-          totalDisp += noise * (u_amplitude + 0.1);
+          // Add multiple high-frequency noise layers for organic texture
+          float noise1 = sin(posNorm.x * 30.0 + u_time * 1.2) * cos(posNorm.y * 35.0 - u_time * 0.7);
+          float noise2 = sin(posNorm.z * 50.0 - u_time * 2.0) * cos(posNorm.x * 45.0 + u_time * 1.5);
+          float combinedNoise = (noise1 * 0.6 + noise2 * 0.4) * 0.05;
+          totalDisp += combinedNoise * (u_amplitude + 0.15);
 
           // Scale by global amplitude (idle base always present)
-          float finalDisp = totalDisp * (u_amplitude * 0.7 + 0.06);
+          float finalDisp = totalDisp * (u_amplitude * 0.75 + 0.07);
 
           // PUSH INWARD ONLY — outer silhouette stays untouched
           vec3 newPos = position - n * finalDisp;
@@ -192,13 +195,14 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float fresnel = 1.0 - abs(dot(viewDir, vNormal));
 
-          float waveGlow = smoothstep(0.01, 0.4, vWaveHeight);
-          float rim      = smoothstep(0.4, 0.9, fresnel);
+          // More active glow for internal animation
+          float waveGlow = smoothstep(0.005, 0.45, vWaveHeight);
+          float rim      = smoothstep(0.35, 0.95, fresnel);
 
-          // Reduced alpha: inner surface is a faint, glowing internal state.
-          float alpha = rim * 0.25 + waveGlow * 0.3;
-          vec3 color  = mix(u_color, u_colorGlow, waveGlow * 0.4 + rim * 0.1);
-          alpha *= 0.25 + vWaveHeight * 0.1;
+          // Enhanced glow: inner surface is a vibrant, glowing internal state.
+          float alpha = rim * 0.3 + waveGlow * 0.55;
+          vec3 color  = mix(u_color, u_colorGlow, waveGlow * 0.6 + rim * 0.15);
+          alpha *= 0.35 + vWaveHeight * 0.25;
 
           gl_FragColor = vec4(color, alpha);
         }
@@ -233,7 +237,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
 
           // Thinner, dimmer rim for a more premium "glassy" feel
           float rim = smoothstep(0.45, 0.85, fresnel);
-          float alpha = rim * 0.5;  // dimmed from 0.85
+          float alpha = rim * 0.35;  // dimmed from 0.5
 
           if (alpha < 0.02) discard; 
 

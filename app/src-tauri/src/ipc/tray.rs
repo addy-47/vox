@@ -124,6 +124,27 @@ pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+
+        // Lazy Launch: If we are in Passive mode, we need the engine running.
+        let state: State<'_, std::sync::Arc<AppState>> = app.state();
+        let is_passive = {
+            let s = state.settings.read().unwrap();
+            s.interaction.main_app_mode == InteractionMode::Passive
+        };
+
+        if is_passive {
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let state: State<'_, std::sync::Arc<AppState>> = app_clone.state();
+                let engine_running = state.engine.lock().await.is_some();
+                if !engine_running {
+                    log::info!("[Window] Main window shown in Passive mode. Launching engine...");
+                    if let Err(e) = crate::ipc::pipeline::launch_engine(app_clone).await {
+                        log::error!("[Window] Lazy launch failed: {}", e);
+                    }
+                }
+            });
+        }
     }
     Ok(())
 }
