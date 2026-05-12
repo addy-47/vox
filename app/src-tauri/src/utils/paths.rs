@@ -37,15 +37,29 @@ static PATHS: OnceLock<VoxPaths> = OnceLock::new();
 pub fn init(_app: &tauri::AppHandle) {
     let root = if let Ok(env_path) = std::env::var("VOX_HOME") {
         PathBuf::from(env_path)
-    } else if let Some(data_dir) = dirs::data_local_dir() {
-        data_dir.join("vox")
     } else {
-        // Ultimate fallback
-        std::env::var("HOME")
-            .map(|h| PathBuf::from(h).join(".vox"))
-            .unwrap_or_else(|_| {
+        #[cfg(target_os = "linux")]
+        {
+            // On Linux, prioritize ~/.vox for visibility/accessibility like a dev tool
+            if let Some(home) = dirs::home_dir() {
+                home.join(".vox")
+            } else if let Some(data_dir) = dirs::data_local_dir() {
+                data_dir.join("vox")
+            } else {
                 std::env::current_dir().unwrap_or_default().join(".vox")
-            })
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            // On Windows/Mac, follow standard app data conventions
+            if let Some(data_dir) = dirs::data_local_dir() {
+                data_dir.join("vox")
+            } else if let Some(home) = dirs::home_dir() {
+                home.join(".vox")
+            } else {
+                std::env::current_dir().unwrap_or_default().join(".vox")
+            }
+        }
     };
 
     init_with_root(root);
