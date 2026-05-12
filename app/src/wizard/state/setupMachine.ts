@@ -20,6 +20,7 @@ export interface SetupContext {
   currentStep: SetupStep;
   models: Record<string, ModelProgress>;
   totalProgress: number;
+  manifestReady: boolean;
   error?: string;
   systemInfo?: {
     cpuCount: number;
@@ -35,11 +36,18 @@ export const setupMachine = createMachine({
     currentStep: 'welcome',
     models: {},
     totalProgress: 0,
+    manifestReady: false,
   } as SetupContext,
   states: {
     welcome: {
       on: {
-        NEXT: 'checking'
+        MANIFEST_READY: {
+          actions: assign({ manifestReady: true })
+        },
+        NEXT: {
+          target: 'checking',
+          guard: ({ context }) => context.manifestReady
+        }
       }
     },
     checking: {

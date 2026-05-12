@@ -20,7 +20,22 @@
         "decorations": false,
         "alwaysOnTop": true,
         "resizable": true,
-        "visible": false
+        "visible": false,
+        "backgroundColor": "#050505"
+      },
+      {
+        "label": "wizard",
+        "title": "Vox Setup Wizard",
+        "url": "/wizard",
+        "width": 900,
+        "height": 650,
+        "transparent": false,
+        "decorations": true,
+        "alwaysOnTop": false,
+        "resizable": true,
+        "visible": false,
+        "center": true,
+        "backgroundColor": "#050505"
       },
       {
         "label": "tray",
