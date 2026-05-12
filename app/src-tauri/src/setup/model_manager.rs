@@ -108,10 +108,27 @@ impl ModelManager {
                 models_dir.to_path_buf()
             };
 
-            if let Err(e) = self.extract(&temp_path, archive_type, &extract_dest) {
-                self.emit_status(model_id, SetupStep::Failed, 100.0, entry.size_bytes, entry.size_bytes, Some(e.to_string()));
-                let _ = std::fs::remove_file(&temp_path);
-                return Err(e);
+            let temp_path_clone = temp_path.clone();
+            let archive_type_clone = archive_type.clone();
+            let extract_dest_clone = extract_dest.clone();
+
+            let extract_res = tauri::async_runtime::spawn_blocking(move || {
+                Self::do_extract(&temp_path_clone, &archive_type_clone, &extract_dest_clone)
+            }).await;
+
+            match extract_res {
+                Ok(Ok(_)) => {},
+                Ok(Err(e)) => {
+                    self.emit_status(model_id, SetupStep::Failed, 100.0, entry.size_bytes, entry.size_bytes, Some(e.to_string()));
+                    let _ = std::fs::remove_file(&temp_path);
+                    return Err(e);
+                }
+                Err(e) => {
+                    let err = format!("Extraction task panicked: {}", e);
+                    self.emit_status(model_id, SetupStep::Failed, 100.0, entry.size_bytes, entry.size_bytes, Some(err.clone()));
+                    let _ = std::fs::remove_file(&temp_path);
+                    return Err(anyhow::anyhow!(err));
+                }
             }
             let _ = std::fs::remove_file(&temp_path);
         } else {
@@ -169,7 +186,7 @@ impl ModelManager {
         Ok(hash)
     }
 
-    fn extract(&self, archive_path: &Path, archive_type: &str, dest_dir: &Path) -> anyhow::Result<()> {
+    fn do_extract(archive_path: &Path, archive_type: &str, dest_dir: &Path) -> anyhow::Result<()> {
         let file = std::fs::File::open(archive_path)?;
         
         match archive_type {

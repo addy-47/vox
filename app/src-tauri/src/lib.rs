@@ -6,6 +6,7 @@ pub mod utils;
 pub mod persistence;
 pub mod monitoring;
 pub mod setup;
+pub mod wizard;
 
 use crate::core::state::AppState;
 use crate::ipc::pipeline::{check_engine_status, launch_engine, stop_engine, engage};
@@ -225,16 +226,28 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let (tray_enabled, setup_completed) = {
                     let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
-                    let s = state.settings.read().unwrap();
-                    (s.ui.tray_enabled, s.setup.completed)
+                    
+                    // ── 3.1 Auto-detect existing models ────────────────────────────
+                    let mut settings = state.settings.write().unwrap();
+                    if !settings.setup.completed && wizard::check_setup_health() {
+                        log::info!("[BOOTSTRAP] Existing models detected. Auto-completing setup.");
+                        settings.setup.completed = true;
+                        let _ = settings.save();
+                    }
+                    
+                    (settings.ui.tray_enabled, settings.setup.completed)
                 };
 
                 if setup_completed && tray_enabled {
+                    log::info!("[BOOTSTRAP] Setup completed. Launching engine...");
                     if let Err(e) = launch_engine(handle).await {
                         log::error!("[BOOTSTRAP] Engine auto-launch failed: {}", e);
                     }
                 } else if !setup_completed {
-                    log::info!("[BOOTSTRAP] Setup not completed. Engine standby until wizard finishes.");
+                    log::info!("[BOOTSTRAP] Setup not completed. Launching onboarding wizard...");
+                    if let Some(wizard_win) = handle.get_webview_window("wizard") {
+                        crate::wizard::setup_wizard_window(&wizard_win);
+                    }
                 } else {
                     log::info!("[BOOTSTRAP] Tray disabled. Skipping engine auto-launch to save resources.");
                 }
@@ -332,10 +345,12 @@ pub fn run() {
             crate::ipc::monitoring::clear_runtime_history,
             // Setup
             crate::ipc::setup::fetch_manifest,
+            crate::ipc::setup::get_onboarding_status,
             crate::ipc::setup::get_runtime_report,
             crate::ipc::setup::start_model_setup,
             crate::ipc::setup::cancel_model_setup,
             crate::ipc::setup::complete_setup_wizard,
+            crate::ipc::setup::reveal_wizard,
             // Audio
             crate::ipc::audio::list_input_devices,
         ])

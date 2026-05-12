@@ -1,13 +1,25 @@
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, Manager};
 use crate::core::state::AppState;
 use crate::setup::manifest::VoxManifest;
 use crate::setup::runtime_check::{verify_runtime, RuntimeReport};
 
 #[tauri::command]
 pub async fn fetch_manifest(state: State<'_, Arc<AppState>>) -> Result<VoxManifest, String> {
-    let manifest = VoxManifest::fetch().await.map_err(|e| e.to_string())?;
+    // Acquire write lock immediately to serialize potential concurrent callers
+    // This ensures only one thread actually performs the fetch while others wait.
     let mut m = state.manifest.write().await;
+    
+    if let Some(ref manifest) = *m {
+        return Ok(manifest.clone());
+    }
+
+    // Perform the fetch while holding the lock to prevent others from starting a fetch
+    let manifest = VoxManifest::fetch().await.map_err(|e| {
+        log::error!("[IPC] Manifest fetch failed: {}", e);
+        e.to_string()
+    })?;
+
     *m = Some(manifest.clone());
     Ok(manifest)
 }
@@ -53,11 +65,38 @@ pub async fn cancel_model_setup(state: State<'_, Arc<AppState>>) -> Result<(), S
 }
 
 #[tauri::command]
-pub async fn complete_setup_wizard(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let mut settings = state.settings.write().unwrap();
-    settings.setup.completed = true;
-    settings.save().map_err(|e| e.to_string())?;
+pub async fn get_onboarding_status(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
+    let settings = state.settings.read().unwrap();
+    Ok(settings.setup.completed)
+}
+
+#[tauri::command]
+pub async fn complete_setup_wizard(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    {
+        let mut settings = state.settings.write().unwrap();
+        settings.setup.completed = true;
+        settings.save().map_err(|e| e.to_string())?;
+    }
     
     log::info!("[SETUP] Onboarding wizard marked as completed.");
+
+    // Window Transition
+    if let Some(wizard_win) = app.get_webview_window("wizard") {
+        let _ = wizard_win.close();
+    }
+    
+    if let Some(main_win) = app.get_webview_window("main") {
+        let _ = main_win.show();
+        let _ = main_win.set_focus();
+    }
+
+    Ok(())
+}
+#[tauri::command]
+pub async fn reveal_wizard(app: AppHandle) -> Result<(), String> {
+    if let Some(wizard_win) = app.get_webview_window("wizard") {
+        let _ = wizard_win.show();
+        let _ = wizard_win.set_focus();
+    }
     Ok(())
 }
