@@ -34,6 +34,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             // ── 0. Paths Singleton (must be first) ──────────────────────────────────
             crate::utils::paths::init(app.handle());
@@ -307,9 +311,9 @@ pub fn run() {
             delete_session,
             debug_harden_test,
             // Monitoring
-            crate::monitoring::ipc::get_runtime_snapshot,
-            crate::monitoring::ipc::get_runtime_history,
-            crate::monitoring::ipc::clear_runtime_history,
+            crate::ipc::monitoring::get_runtime_snapshot,
+            crate::ipc::monitoring::get_runtime_history,
+            crate::ipc::monitoring::clear_runtime_history,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

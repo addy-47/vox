@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread;
-use sysinfo::SystemExt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::core::state::AppState;
 use crate::monitoring::snapshot::RuntimeSnapshot;
@@ -17,8 +16,8 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
             // Fetch static hardware context once
             let sys = sysinfo::System::new_with_specifics(
                 sysinfo::RefreshKind::new()
-                    .with_memory()
-                    .with_cpu(sysinfo::CpuRefreshKind::new())
+                    .with_memory(sysinfo::MemoryRefreshKind::everything())
+                    .with_cpu(sysinfo::CpuRefreshKind::everything())
             );
             let total_ram_mb = (sys.total_memory() / 1024 / 1024) as u32;
             let cpu_cores = sys.cpus().len() as u32;

@@ -9,16 +9,20 @@ use crate::core::constants::*;
 /// Initialized ONCE at startup via `paths::init(app_handle)`.
 /// After init, `paths::get()` is safe to call from any thread without locks.
 pub struct VoxPaths {
-    /// ~/.vox/ (base) — or Tauri's app_data_dir fallback
+    /// Base directory (~/.vox/ or platform-specific data dir)
     pub root:     PathBuf,
-    /// ~/.vox/models/
+    /// models/
     pub models:   PathBuf,
-    /// ~/.vox/logs/
+    /// logs/
     pub logs:     PathBuf,
-    /// ~/.vox/vox.db
+    /// vox.db
     pub db:       PathBuf,
-    /// ~/.vox/settings.json
+    /// settings.json
     pub settings: PathBuf,
+    /// cache/
+    pub cache:    PathBuf,
+    /// temp/
+    pub temp:     PathBuf,
 }
 
 static PATHS: OnceLock<VoxPaths> = OnceLock::new();
@@ -26,22 +30,31 @@ static PATHS: OnceLock<VoxPaths> = OnceLock::new();
 /// Initialize the path singleton. Must be called ONCE at startup with the AppHandle,
 /// before any call to `paths::get()`.
 ///
-/// Uses `app.path().app_data_dir()` for platform-correct resolution (respects macOS
-/// sandboxing, Windows %APPDATA%, and Linux XDG). Falls back to `$HOME/.vox` on failure.
+/// Priority:
+/// 1. `VOX_HOME` environment variable (for testing/hardening)
+/// 2. Platform-specific local data dir (e.g. ~/.local/share/vox)
+/// 3. Fallback to `$HOME/.vox`
 pub fn init(_app: &tauri::AppHandle) {
-    // User Directive: strictly use ~/.vox for all model and config persistence.
-    // This overrides Tauri's default app_data_dir() behavior on Linux.
-    let root = std::env::var("HOME")
-        .map(|h| PathBuf::from(h).join(".vox"))
-        .unwrap_or_else(|_| {
-            std::env::current_dir().unwrap_or_default().join(".vox")
-        });
+    let root = if let Ok(env_path) = std::env::var("VOX_HOME") {
+        PathBuf::from(env_path)
+    } else if let Some(data_dir) = dirs::data_local_dir() {
+        data_dir.join("vox")
+    } else {
+        // Ultimate fallback
+        std::env::var("HOME")
+            .map(|h| PathBuf::from(h).join(".vox"))
+            .unwrap_or_else(|_| {
+                std::env::current_dir().unwrap_or_default().join(".vox")
+            })
+    };
 
     let paths = VoxPaths {
         models:   root.join(MODELS_DIRNAME),
         logs:     root.join(LOG_DIRNAME),
         db:       root.join(DB_FILENAME),
         settings: root.join(SETTINGS_FILENAME),
+        cache:    root.join("cache"),
+        temp:     root.join("temp"),
         root,
     };
 
@@ -52,8 +65,7 @@ pub fn init(_app: &tauri::AppHandle) {
 /// Returns the initialized `VoxPaths` singleton.
 ///
 /// # Panics
-/// Panics if `paths::init()` was not called before this. This is intentional —
-/// it enforces correct startup ordering.
+/// Panics if `paths::init()` was not called before this.
 pub fn get() -> &'static VoxPaths {
     PATHS.get().expect("[FATAL] paths::init() was not called before paths::get(). Check app startup order.")
 }
@@ -64,7 +76,39 @@ pub fn ensure_dirs() -> std::io::Result<()> {
     std::fs::create_dir_all(&p.root)?;
     std::fs::create_dir_all(&p.models)?;
     std::fs::create_dir_all(&p.logs)?;
+    std::fs::create_dir_all(&p.cache)?;
+    std::fs::create_dir_all(&p.temp)?;
     Ok(())
+}
+
+// ─── Required API ────────────────────────────────────────────────────────────
+
+pub fn vox_dir() -> PathBuf {
+    get().root.clone()
+}
+
+pub fn models_dir() -> PathBuf {
+    get().models.clone()
+}
+
+pub fn logs_dir() -> PathBuf {
+    get().logs.clone()
+}
+
+pub fn db_path() -> PathBuf {
+    get().db.clone()
+}
+
+pub fn settings_path() -> PathBuf {
+    get().settings.clone()
+}
+
+pub fn cache_dir() -> PathBuf {
+    get().cache.clone()
+}
+
+pub fn temp_dir() -> PathBuf {
+    get().temp.clone()
 }
 
 /// Returns the absolute path to a specific model subdirectory.
