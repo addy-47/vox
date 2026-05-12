@@ -8,7 +8,8 @@ use crate::setup::manifest::{VoxManifest, VerifiedMarker};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeReport {
     pub write_access: bool,
-    pub disk_space_gb: f32,
+    pub available_space_gb: f32,
+    pub total_space_gb: f32,
     pub required_space_gb: f32,
     pub disk_space_ok: bool,
     pub mic_access: bool,
@@ -36,7 +37,7 @@ pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
         .unwrap_or(6 * 1024 * 1024 * 1024); // Fallback to 6GB if no manifest
     
     let required_gb = required_bytes as f32 / 1024.0 / 1024.0 / 1024.0;
-    let (space_gb, space_ok) = check_disk_space(&p.root, required_bytes);
+    let (available_gb, total_gb, space_ok) = check_disk_space(&p.root, required_bytes);
     
     // 3. Mic Access
     let mic_access = check_mic_access();
@@ -59,7 +60,8 @@ pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
 
     RuntimeReport {
         write_access,
-        disk_space_gb: space_gb,
+        available_space_gb: available_gb,
+        total_space_gb: total_gb,
         required_space_gb: required_gb,
         disk_space_ok: space_ok,
         mic_access,
@@ -91,26 +93,39 @@ fn check_write_access(path: &Path) -> bool {
     }
 }
 
-fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, bool) {
+fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, f32, bool) {
     let disks = Disks::new_with_refreshed_list();
     
-    let mut best_match: Option<(&Path, u64)> = None;
+    let mut best_match: Option<(&Path, u64, u64)> = None;
     
     for disk in &disks {
         let mount = disk.mount_point();
         if path.starts_with(mount) {
             let mount_len = mount.to_string_lossy().len();
             if best_match.is_none() || mount_len > best_match.unwrap().0.to_string_lossy().len() {
-                best_match = Some((mount, disk.available_space()));
+                best_match = Some((mount, disk.available_space(), disk.total_space()));
             }
         }
     }
     
-    if let Some((_, available)) = best_match {
-        let free_gb = available as f32 / 1024.0 / 1024.0 / 1024.0;
-        (free_gb, available >= required_bytes)
+    if let Some((_, available, total)) = best_match {
+        let available_gb = available as f32 / 1024.0 / 1024.0 / 1024.0;
+        let total_gb = total as f32 / 1024.0 / 1024.0 / 1024.0;
+        (available_gb, total_gb, available >= required_bytes)
     } else {
-        (0.0, false)
+        // Fallback for cases where sysinfo fails to match a mount point (common in some containers/Linux setups)
+        // We try to find the root "/" disk as a last resort.
+        for disk in &disks {
+            if disk.mount_point() == Path::new("/") {
+                let available = disk.available_space();
+                let available_gb = available as f32 / 1024.0 / 1024.0 / 1024.0;
+                let total_gb = disk.total_space() as f32 / 1024.0 / 1024.0 / 1024.0;
+                return (available_gb, total_gb, available >= required_bytes);
+            }
+        }
+        // If still nothing, we assume it's OK but log a warning (risky, but better than a hard block on valid systems)
+        log::warn!("[verify_runtime] Could not determine disk space for path {:?}. Proceeding with fallback.", path);
+        (100.0, 100.0, true) 
     }
 }
 

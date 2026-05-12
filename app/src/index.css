@@ -15,6 +15,12 @@
   --vh: 100vh;
 }
 
+/* Explicit early background to kill the flash */
+html, body {
+  background-color: #050505 !important;
+}
+
+
 [data-theme='light'] {
   --background: 248, 250, 252;
   --foreground: 15, 23, 42;
@@ -40,7 +46,6 @@
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "ss01", "ss02", "cv01", "cv02";
     font-size: 14px;
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   #root {

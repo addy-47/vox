@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { motion } from 'framer-motion';
-import { Mic, Check, Volume2 } from 'lucide-react';
+import { Mic, Check, Volume2, ArrowRight, Activity } from 'lucide-react';
+import { cn } from '@/shared/lib/utils';
 
 interface AudioDevice {
   name: string;
@@ -20,14 +21,17 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext }) => {
 
   useEffect(() => {
     const load = async () => {
-      const devList = await invoke<AudioDevice[]>('list_input_devices');
-      setDevices(devList);
-      const def = devList.find(d => d.is_default);
-      if (def) setSelected(def.name);
+      try {
+        const devList = await invoke<AudioDevice[]>('list_input_devices');
+        setDevices(devList);
+        const def = devList.find(d => d.is_default);
+        if (def) setSelected(def.name);
+      } catch (e) {
+        console.error('Failed to list devices', e);
+      }
     };
     load();
 
-    // Listen for energy level to show meter
     const unlisten = listen<number>('audio_energy', (event) => {
       setEnergy(event.payload * 100);
     });
@@ -38,60 +42,91 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext }) => {
   }, []);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h2 className="text-3xl font-bold text-white mb-2">Audio Calibration</h2>
-        <p className="text-neutral-400">Select your preferred microphone and test the input levels.</p>
-      </div>
+    <div className="flex flex-col gap-8 h-full">
+      <header>
+        <h2 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase">AUDIO CONFIGURATION</h2>
+        <p className="text-white/80 text-sm font-light">Calibrating audio input for system interaction.</p>
+      </header>
 
-      {/* Live Meter */}
-      <div className="p-8 bg-neutral-900 border border-neutral-800 rounded-3xl text-center">
-        <div className="inline-flex h-16 w-16 bg-indigo-500/10 rounded-2xl items-center justify-center mb-6">
-          <Mic className={`h-8 w-8 ${energy > 5 ? 'text-indigo-400' : 'text-neutral-600'} transition-colors`} />
-        </div>
+      {/* Live Analysis Card */}
+      <div className="p-6 bg-white/[0.02] border border-white/10 rounded-2xl relative overflow-hidden group">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#00dbe9]/5 to-transparent opacity-50" />
         
-        <div className="max-w-xs mx-auto">
-          <div className="h-4 bg-neutral-800 rounded-full overflow-hidden mb-2">
+        <div className="relative z-10 flex items-center gap-6">
+          <div className="relative">
             <motion.div 
-              className="h-full bg-gradient-to-r from-indigo-600 to-purple-500"
-              animate={{ width: `${Math.min(energy * 2, 100)}%` }}
-              transition={{ type: 'spring', bounce: 0, duration: 0.1 }}
+              animate={energy > 5 ? { scale: [1, 1.15, 1], opacity: [0.3, 0.6, 0.3] } : { opacity: 0.2 }}
+              className="absolute inset-0 bg-[#00dbe9] rounded-full blur-xl"
             />
+            <div className={cn(
+              "w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300 relative z-10",
+              energy > 5 ? "bg-[#00dbe9] text-black shadow-[0_0_30px_#00dbe9]" : "bg-white/5 text-white/20"
+            )}>
+              <Mic className="w-8 h-8" />
+            </div>
           </div>
-          <p className="text-xs text-neutral-500 uppercase tracking-tighter">Live Input Level</p>
+
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-black text-white/80 uppercase tracking-widest flex items-center gap-2">
+                <Activity className="w-3 h-3" /> Input Signal
+              </span>
+              <span className="text-[11px] font-bold text-[#00dbe9]">{Math.round(energy)}%</span>
+            </div>
+            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+              <motion.div 
+                className="h-full bg-gradient-to-r from-[#00dbe9] to-[#d8baff]"
+                animate={{ width: `${Math.min(energy, 100)}%` }}
+                transition={{ type: 'spring', bounce: 0, duration: 0.1 }}
+              />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-neutral-500 px-2">Input Device</p>
-        <div className="grid gap-2">
+      <div className="flex flex-col gap-3 flex-1 overflow-hidden">
+        <span className="text-[11px] font-black text-white/80 uppercase tracking-widest px-1">Source Selection</span>
+        <div className="space-y-2 overflow-y-auto pr-1 custom-scrollbar">
           {devices.map(device => (
             <button
               key={device.name}
               onClick={() => setSelected(device.name)}
-              className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
+              className={cn(
+                "w-full p-4 rounded-xl border transition-all text-left flex items-center justify-between group",
                 selected === device.name 
-                  ? 'bg-white/5 border-white/20 text-white' 
-                  : 'bg-transparent border-neutral-800 text-neutral-500 hover:border-neutral-700'
-              }`}
+                  ? "bg-[#00dbe9]/10 border-[#00dbe9]/50 text-white shadow-xl" 
+                  : "bg-white/[0.02] border-white/5 text-white/80 hover:bg-white/5 hover:border-white/10"
+              )}
             >
               <div className="flex items-center gap-3">
-                <Volume2 className="h-4 w-4" />
-                <span className="text-sm font-medium truncate max-w-[240px]">{device.name}</span>
+                <Volume2 className={cn("w-4 h-4", selected === device.name ? "text-[#00dbe9]" : "text-white/40")} />
+                <span className="text-[11px] font-bold truncate max-w-[300px] uppercase tracking-tight">{device.name}</span>
               </div>
-              {selected === device.name && <Check className="h-4 w-4 text-indigo-500" />}
+              {selected === device.name && <Check className="w-4 h-4 text-[#00dbe9]" />}
             </button>
           ))}
         </div>
       </div>
 
-      <button
-        onClick={onNext}
-        disabled={!selected}
-        className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-neutral-900 disabled:text-neutral-700 text-white font-bold rounded-2xl transition-all"
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
       >
-        Continue to Voice Test
-      </button>
+        <button
+          onClick={onNext}
+          disabled={!selected}
+          className={cn(
+            "group relative w-full py-5 font-bold rounded-2xl overflow-hidden transition-all flex items-center justify-center gap-4 shadow-2xl",
+            selected 
+              ? "bg-[#0a0a0a] border border-white/10 text-white hover:bg-zinc-900 active:scale-[0.98]" 
+              : "bg-white/5 text-white/40 border border-white/5 cursor-not-allowed"
+          )}
+        >
+          {selected && <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />}
+          <span className="relative z-10 uppercase tracking-[0.3em] text-[11px]">Finalize Initialization</span>
+          <ArrowRight className="w-4 h-4 relative z-10 group-hover:translate-x-1 transition-transform" />
+        </button>
+      </motion.div>
     </div>
   );
 };

@@ -45,11 +45,12 @@ impl VoxManifest {
 
     /// Fetches the manifest from the Hugging Face repository.
     pub async fn fetch() -> anyhow::Result<Self> {
-        let url = "https://huggingface.co/addyo07/Vox/resolve/main/manifests/manifest.json";
-        log::info!("[VoxManifest] Fetching from: {}", url);
+        let url = "https://huggingface.co/addyo07/Vox/resolve/main/manifest.json";
+        log::info!("[VoxManifest] Initiating fetch from: {}", url);
         
         let client = reqwest::Client::builder()
             .user_agent("Vox-App/0.6.0")
+            .timeout(std::time::Duration::from_secs(15))
             .build()?;
 
         let response = client.get(url).send().await?;
