@@ -56,19 +56,19 @@ pub fn get_voice_profiles() -> Vec<VoiceProfile> {
         id: 100, 
         name: "Priyamvada".to_string(), 
         language: "hi".into(), 
-        model_file: Some("hi_IN-priyamvada-medium.onnx".into()) 
+        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.into()) 
     });
     voices.push(VoiceProfile { 
         id: 101, 
         name: "Pratham".to_string(), 
         language: "hi".into(), 
-        model_file: Some("hi_IN-pratham-medium.onnx".into()) 
+        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRATHAM.into()) 
     });
     voices.push(VoiceProfile { 
         id: 102, 
         name: "Rohan".to_string(), 
         language: "hi".into(), 
-        model_file: Some("hi_IN-rohan-medium.onnx".into()) 
+        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_ROHAN.into()) 
     });
 
     voices
@@ -311,7 +311,7 @@ impl Default for TtsSettings {
             en_model: "kokoro".to_string(),
             en_voice: 0, // Bella
             hi_model: "piper_hi".to_string(),
-            hi_voice: "hi_IN-priyamvada-medium.onnx".to_string(),
+            hi_voice: crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.to_string(),
         }
     }
 }

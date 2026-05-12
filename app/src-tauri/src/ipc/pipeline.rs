@@ -186,8 +186,8 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let settings = state.settings.read().unwrap();
         let models_dir = paths::get().models.clone();
         
-        let stt = models_dir.join(&settings.asr.model);
-        let vad = models_dir.join(crate::core::constants::MODEL_FILE_VAD);
+        let stt = models_dir.join(crate::core::constants::MODEL_DIR_STT);
+        let vad = models_dir.join(crate::core::constants::MODEL_DIR_VAD).join(crate::core::constants::MODEL_FILE_VAD);
 
         (stt, vad, settings.ui.tray_enabled)
     };
@@ -252,9 +252,9 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let settings = state.settings.read().unwrap();
         let models_dir = paths::get().models.clone();
         
-        let en_tts = models_dir.join(&settings.tts.en_model);
+        let en_tts = models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN);
         
-        // Hindi is always in MODEL_DIR_TTS_HI folder, but filename is dynamic
+        // Hindi is in MODEL_DIR_TTS_HI folder, and filename is dynamic from settings
         let hi_tts = models_dir.join(crate::core::constants::MODEL_DIR_TTS_HI).join(&settings.tts.hi_voice);
 
         (en_tts, hi_tts)

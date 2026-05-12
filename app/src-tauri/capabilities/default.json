@@ -12,6 +12,10 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
-    "core:window:allow-hide"
+    "core:window:allow-hide",
+    "dialog:default",
+    "fs:default",
+    "process:default",
+    "positioner:allow-move-window"
   ]
 }
