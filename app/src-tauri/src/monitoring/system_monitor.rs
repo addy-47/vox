@@ -1,5 +1,5 @@
 use tauri::{AppHandle, Emitter, Manager};
-use sysinfo::{System, SystemExt, ProcessExt, CpuExt};
+use sysinfo::System;
 
 pub fn spawn_system_monitor(app: AppHandle) {
     let state_arc: std::sync::Arc<crate::core::state::AppState> = app.state::<std::sync::Arc<crate::core::state::AppState>>().inner().clone();
@@ -22,7 +22,8 @@ pub fn spawn_system_monitor(app: AppHandle) {
             
             // 2. Vox Process Metrics
             let (vox_cpu, vox_ram_mb, thread_count): (f32, u32, u32) = if let Some(p) = pid.and_then(|id| sys.process(id)) {
-                let threads = p.tasks.len() as u32;
+                // In 0.30, tasks() might not be available on all platforms.
+                let threads = p.tasks().map(|t| t.len()).unwrap_or(0) as u32;
                 (p.cpu_usage() / sys.cpus().len() as f32, (p.memory() / 1024 / 1024) as u32, threads)
             } else {
                 (0.0, 0, 0)
