@@ -1,6 +1,8 @@
-import React, { Suspense, lazy } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import React, { Suspense, lazy, useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
+import { WizardRoot } from "@/wizard/WizardRoot";
 
 // Lazy load pages for performance
 const Home = lazy(() => import("@/pages/Home").then(m => ({ default: m.Home })));
@@ -24,16 +26,50 @@ const PageLoader = () => (
 );
 
 const App: React.FC = () => {
+  const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const checkSetup = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const forceWizard = urlParams.get('wizard') === 'true';
+
+      try {
+        await invoke('fetch_manifest');
+        const report = await invoke<any>('get_runtime_report');
+        setSetupCompleted(forceWizard ? false : report.setup_completed);
+      } catch (e) {
+        console.error('Setup check failed', e);
+        setSetupCompleted(false);
+      }
+    };
+    checkSetup();
+  }, []);
+
+  if (setupCompleted === null) return <PageLoader />;
+
   return (
     <Router>
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route element={<ResponsiveLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/monitoring" element={<Monitoring />} />
-          </Route>
+          {/* If setup not completed, always redirect to wizard */}
+          {!setupCompleted && (
+            <>
+              <Route path="/wizard" element={<WizardRoot />} />
+              <Route path="*" element={<Navigate to="/wizard" replace />} />
+            </>
+          )}
+
+          {/* Main App Routes */}
+          {setupCompleted && (
+            <Route element={<ResponsiveLayout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/monitoring" element={<Monitoring />} />
+              <Route path="/wizard" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          )}
         </Routes>
       </Suspense>
     </Router>
@@ -41,4 +77,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

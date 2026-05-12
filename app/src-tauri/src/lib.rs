@@ -36,7 +36,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        // .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
@@ -223,18 +223,20 @@ pub fn run() {
             // ── 3. Conditional auto-launch engine on startup ─────────────────────────────
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let launch_needed = {
+                let (tray_enabled, setup_completed) = {
                     let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
                     let s = state.settings.read().unwrap();
-                    s.ui.tray_enabled // Only auto-launch if the background Tray HUD is active
+                    (s.ui.tray_enabled, s.setup.completed)
                 };
 
-                if launch_needed {
+                if setup_completed && tray_enabled {
                     if let Err(e) = launch_engine(handle).await {
                         log::error!("[BOOTSTRAP] Engine auto-launch failed: {}", e);
                     }
+                } else if !setup_completed {
+                    log::info!("[BOOTSTRAP] Setup not completed. Engine standby until wizard finishes.");
                 } else {
-                    log::info!("[BOOTSTRAP] Tray disabled and Main App is non-passive. Skipping engine auto-launch to save resources.");
+                    log::info!("[BOOTSTRAP] Tray disabled. Skipping engine auto-launch to save resources.");
                 }
             });
 
@@ -334,6 +336,8 @@ pub fn run() {
             crate::ipc::setup::start_model_setup,
             crate::ipc::setup::cancel_model_setup,
             crate::ipc::setup::complete_setup_wizard,
+            // Audio
+            crate::ipc::audio::list_input_devices,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

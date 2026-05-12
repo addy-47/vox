@@ -51,5 +51,7 @@
       "icons/icon.ico"
     ],
     "resources": []
+  },
+  "plugins": {
   }
 }

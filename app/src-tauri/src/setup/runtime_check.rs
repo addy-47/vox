@@ -18,6 +18,7 @@ pub struct RuntimeReport {
     pub models_dir_exists: bool,
     pub models_missing: Vec<String>,
     pub models_verified: bool,
+    pub setup_completed: bool,
 }
 
 /// Performs system validation.
@@ -50,6 +51,12 @@ pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
     // 5. Model Verification
     let (missing, models_verified) = check_model_integrity(&p.models, manifest);
 
+    // 6. Setup Status
+    let setup_completed = p.settings.exists() && {
+        let settings = crate::core::settings::VoxSettings::load();
+        settings.setup.completed
+    };
+
     RuntimeReport {
         write_access,
         disk_space_gb: space_gb,
@@ -62,6 +69,7 @@ pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
         models_dir_exists,
         models_missing: missing,
         models_verified,
+        setup_completed,
     }
 }
 
