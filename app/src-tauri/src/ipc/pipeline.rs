@@ -179,6 +179,9 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
     // ────────────────────────────────────────────────────────────────────────
+    
+    app.emit(crate::core::constants::EVENT_MODEL_LOADING, "VAD").ok();
+
     let (stt_model_path, vad_model_path, pre_load) = {
         let settings = state.settings.read().unwrap();
         let models_dir = paths::get().models.clone();
@@ -197,7 +200,16 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone(), state.is_stt_loaded.clone(), state.pipeline.engine_shutdown.clone(), pre_load)?;
 
     let threshold = state.settings.read().unwrap().vad.threshold;
-    let mut vad = VadEngine::new(&vad_model_path, threshold).map_err(|e| e.to_string())?;
+    let mut vad = match VadEngine::new(&vad_model_path, threshold) {
+        Ok(v) => {
+            app.emit(crate::core::constants::EVENT_MODEL_READY, "VAD").ok();
+            v
+        }
+        Err(e) => {
+            app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("VAD: {}", e)).ok();
+            return Err(e.to_string());
+        }
+    };
     let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split(); 
     
     let stt_tx_for_vad = stt_tx_internal.clone();
@@ -235,6 +247,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let audio_stream = AudioStream::new(producer).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
+    app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS").ok();
     let (en_tts_dir, hi_tts_path) = {
         let settings = state.settings.read().unwrap();
         let models_dir = paths::get().models.clone();

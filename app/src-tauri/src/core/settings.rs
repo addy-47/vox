@@ -373,6 +373,19 @@ impl Default for PersistenceSettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SetupSettings {
+    pub completed: bool,
+}
+
+impl Default for SetupSettings {
+    fn default() -> Self {
+        Self {
+            completed: false,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AssistantSettings {
     /// System-level behavior instruction for the LLM. Sent to worker via channel on change.
     /// Future: expand to per-persona system prompts.
@@ -403,6 +416,7 @@ pub struct VoxSettings {
     pub telemetry:   TelemetrySettings,
     pub persistence: PersistenceSettings,
     pub assistant:   AssistantSettings,
+    pub setup:       SetupSettings,
 }
 
 impl VoxSettings {
