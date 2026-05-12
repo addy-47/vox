@@ -3,6 +3,8 @@ import { MessageSquare, Trash2, Check, X, Clock, CalendarDays, Hash, History as 
 import { cn } from "@/shared/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettings } from "@/shared/context/SettingsContext";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 
 interface SessionRow {
   id: number;
@@ -30,6 +32,21 @@ export const History: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const { draftSettings, updateDraft } = useSettings();
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
+  const [showMobileInspector, setShowMobileInspector] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const selectSession = (session: SessionRow) => {
+    setSelectedSession(session);
+    if (isMobile) {
+      setShowMobileInspector(true);
+    }
+  };
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -172,7 +189,7 @@ export const History: React.FC = () => {
                 {sessions.map(session => (
                   <div 
                     key={session.id}
-                    onClick={() => setSelectedSession(session)}
+                    onClick={() => selectSession(session)}
                     className={cn(
                       "group relative p-4 rounded-2xl cursor-pointer transition-all duration-300 border",
                       selectedSession?.id === session.id 
@@ -228,15 +245,21 @@ export const History: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
-                      <div className="flex items-center gap-1.5">
-                        <CalendarDays size={12} />
-                        {formatDate(session.started_at)}
+                    <div className="flex items-center justify-between gap-4 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1.5">
+                          <CalendarDays size={12} />
+                          {formatDate(session.started_at)}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Hash size={12} />
+                          {session.turn_count} {session.turn_count === 1 ? 'Turn' : 'Turns'}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <Hash size={12} />
-                        {session.turn_count} {session.turn_count === 1 ? 'Turn' : 'Turns'}
-                      </div>
+                      
+                      {isMobile && (
+                        <ChevronRight size={14} className="text-[rgb(var(--accent))] opacity-60" />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -247,86 +270,115 @@ export const History: React.FC = () => {
                 )}
               </div>
             </div>
-
             {/* Right Column: Chat/Turns List (2/3 Width) */}
-            <div className="lg:col-span-2 flex flex-col h-full bg-[rgb(var(--background))] relative overflow-hidden rounded-3xl border border-[rgba(var(--border),0.05)] shadow-sm">
-              {!selectedSession ? (
-                <div className="flex-1 flex items-center justify-center text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
-                  Select a session to view conversation
-                </div>
-              ) : loading ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="w-6 h-6 border-2 border-[rgb(var(--accent))]/20 border-t-[rgb(var(--accent))] rounded-full animate-spin" />
-                </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10">
-                  <div className="max-w-5xl mx-auto space-y-8 pb-12">
-                    
-                    <div className="text-center pb-8 border-b border-[rgba(var(--border),0.05)] mb-8">
-                      <h2 className="text-xl font-bold text-[rgb(var(--foreground))] mb-3">
-                         {selectedSession.first_message || "Session Started"}
-                      </h2>
-                      <div className="inline-flex items-center gap-4 px-4 py-2 rounded-full bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)] text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-80">
-                        <div className="flex items-center gap-1.5">
-                          <Clock size={12} />
-                          {formatDate(selectedSession.started_at)}
+            <AnimatePresence mode="wait">
+              {(!isMobile || showMobileInspector) && (
+                <motion.div 
+                  key={selectedSession?.id || 'empty'}
+                  initial={{ x: '100%' }}
+                  animate={{ x: 0 }}
+                  exit={{ x: '100%' }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                  className={cn(
+                    "fixed inset-x-0 top-8 bottom-[64px] z-50 flex flex-col bg-[rgb(var(--background))] lg:static lg:flex lg:translate-x-0 lg:col-span-2 lg:rounded-3xl lg:border lg:border-[rgba(var(--border),0.05)] lg:shadow-sm"
+                  )}
+                >
+                  {/* Mobile Header */}
+                  {isMobile && (
+                    <header className="flex items-center justify-between px-6 py-4 border-b border-[rgba(var(--border),0.05)] bg-[rgb(var(--background))]/80 backdrop-blur-xl z-10">
+                      <button 
+                        onClick={() => setShowMobileInspector(false)}
+                        className="flex items-center gap-2 text-sm font-bold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+                      >
+                        <ArrowLeft size={18} />
+                        Back
+                      </button>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Session ID</span>
+                        <span className="text-xs font-mono">#{selectedSession?.id}</span>
+                      </div>
+                    </header>
+                  )}
+
+                  {!selectedSession ? (
+                    <div className="flex-1 flex items-center justify-center text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
+                      Select a session to view conversation
+                    </div>
+                  ) : loading ? (
+                    <div className="flex-1 flex items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-[rgb(var(--accent))]/20 border-t-[rgb(var(--accent))] rounded-full animate-spin" />
+                    </div>
+                  ) : (
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10">
+                      <div className="max-w-5xl mx-auto space-y-8 pb-12">
+                        
+                        <div className="text-center pb-8 border-b border-[rgba(var(--border),0.05)] mb-8">
+                          <h2 className="text-xl font-bold text-[rgb(var(--foreground))] mb-3">
+                             {selectedSession.first_message || "Session Started"}
+                          </h2>
+                          <div className="inline-flex items-center gap-4 px-4 py-2 rounded-full bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)] text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-80">
+                            <div className="flex items-center gap-1.5">
+                              <Clock size={12} />
+                              {formatDate(selectedSession.started_at)}
+                            </div>
+                            {selectedSession.ended_at && (
+                               <>
+                                 <div className="w-1 h-1 rounded-full bg-[rgb(var(--foreground-muted))]/30" />
+                                 <div className="flex items-center gap-1.5">
+                                   Duration: {((selectedSession.ended_at - selectedSession.started_at) / 1000).toFixed(1)}s
+                                 </div>
+                               </>
+                            )}
+                          </div>
                         </div>
-                        {selectedSession.ended_at && (
-                           <>
-                             <div className="w-1 h-1 rounded-full bg-[rgb(var(--foreground-muted))]/30" />
-                             <div className="flex items-center gap-1.5">
-                               Duration: {((selectedSession.ended_at - selectedSession.started_at) / 1000).toFixed(1)}s
-                             </div>
-                           </>
-                        )}
+
+                        <div className="space-y-6">
+                          {turns.map((turn) => (
+                            <div key={turn.id} className="space-y-6">
+                              {/* User Message */}
+                              <div className="flex flex-col items-end gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))] opacity-60">
+                                  User • {formatTime(turn.created_at)}
+                                </span>
+                                <div className="max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-sm bg-[rgb(var(--accent))]/10 text-[rgb(var(--foreground))] border border-[rgb(var(--accent))]/20 shadow-[0_4px_24px_-4px_rgba(var(--accent),0.05)] text-sm md:text-base leading-relaxed">
+                                  {turn.user_text}
+                                </div>
+                              </div>
+
+                              {/* Assistant Message */}
+                              <div className="flex flex-col items-start gap-2">
+                                <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))] opacity-80">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgb(var(--accent))]" />
+                                  Vox
+                                </span>
+                                <div className="max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tl-sm bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] text-[rgb(var(--foreground-muted))] text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                                  {turn.assistant_text}
+                                </div>
+                                {/* Turn Metadata */}
+                                <div className="flex items-center gap-4 text-[10px] font-mono tracking-wider text-[rgb(var(--foreground-muted))] opacity-60 pl-2">
+                                  {turn.stt_latency_ms !== null && (
+                                    <span>STT: {turn.stt_latency_ms}ms</span>
+                                  )}
+                                  {turn.ttft_ms !== null && (
+                                    <span>TTFT: {turn.ttft_ms}ms</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {turns.length === 0 && (
+                            <div className="text-center p-8 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-40">
+                              No conversation data
+                            </div>
+                          )}
+                        </div>
+
                       </div>
                     </div>
-
-                    <div className="space-y-6">
-                      {turns.map((turn) => (
-                        <div key={turn.id} className="space-y-6">
-                          {/* User Message */}
-                          <div className="flex flex-col items-end gap-2">
-                            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))] opacity-60">
-                              User • {formatTime(turn.created_at)}
-                            </span>
-                            <div className="max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-sm bg-[rgb(var(--accent))]/10 text-[rgb(var(--foreground))] border border-[rgb(var(--accent))]/20 shadow-[0_4px_24px_-4px_rgba(var(--accent),0.05)] text-sm md:text-base leading-relaxed">
-                              {turn.user_text}
-                            </div>
-                          </div>
-
-                          {/* Assistant Message */}
-                          <div className="flex flex-col items-start gap-2">
-                            <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))] opacity-80">
-                              <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgb(var(--accent))]" />
-                              Vox
-                            </span>
-                            <div className="max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tl-sm bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] text-[rgb(var(--foreground-muted))] text-sm md:text-base leading-relaxed whitespace-pre-wrap">
-                              {turn.assistant_text}
-                            </div>
-                            {/* Turn Metadata */}
-                            <div className="flex items-center gap-4 text-[10px] font-mono tracking-wider text-[rgb(var(--foreground-muted))] opacity-60 pl-2">
-                              {turn.stt_latency_ms !== null && (
-                                <span>STT: {turn.stt_latency_ms}ms</span>
-                              )}
-                              {turn.ttft_ms !== null && (
-                                <span>TTFT: {turn.ttft_ms}ms</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {turns.length === 0 && (
-                        <div className="text-center p-8 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-40">
-                          No conversation data
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                </div>
+                  )}
+                </motion.div>
               )}
-            </div>
+            </AnimatePresence>
           </div>
         </div>
       </div>
