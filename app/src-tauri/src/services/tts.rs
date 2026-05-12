@@ -192,6 +192,7 @@ pub enum TtsCommand {
 // ─── TTS Worker Entry Point ──────────────────────────────────────────────────
 
 pub fn spawn_tts_worker(
+    app: tauri::AppHandle,
     rx: std::sync::mpsc::Receiver<TtsCommand>,
     en_model_dir: std::path::PathBuf,
     hi_model_path: std::path::PathBuf,
@@ -199,13 +200,18 @@ pub fn spawn_tts_worker(
     cancel_flag: Arc<AtomicBool>,
     is_loaded: Arc<AtomicBool>,
 ) {
+    use tauri::Emitter;
+    let _ = app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS");
+
     let mut engine = match TtsEngine::new(&en_model_dir, &hi_model_path) {
         Ok(e) => {
             is_loaded.store(true, Ordering::Relaxed);
+            let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "TTS");
             e
         },
         Err(e) => {
             log::error!("[TTS] CRITICAL: Failed to load multi-model engine: {}", e);
+            let _ = app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("TTS: {}", e));
             return;
         }
     };

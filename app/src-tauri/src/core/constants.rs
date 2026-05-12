@@ -38,3 +38,10 @@ pub const SETTINGS_FILENAME: &str = "settings.json";
 pub const LOG_DIRNAME: &str = "logs";
 pub const MODELS_DIRNAME: &str = "models";
 pub const TRANSCRIPT_HISTORY_LIMIT: usize = 10;
+
+// ─── Lifecycle Events ────────────────────────────────────────────────────────
+pub const EVENT_RUNTIME_BOOTING: &str = "runtime_booting";
+pub const EVENT_RUNTIME_READY:   &str = "runtime_ready";
+pub const EVENT_MODEL_LOADING:   &str = "model_loading";
+pub const EVENT_MODEL_READY:     &str = "model_ready";
+pub const EVENT_MODEL_FAILED:    &str = "model_failed";

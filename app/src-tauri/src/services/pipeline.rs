@@ -147,7 +147,7 @@ impl PipelineOrchestrator {
     }
 
     /// Initialize the LLM worker if it's not already running.
-    pub fn warm_up_llm(&self) -> Result<(), String> {
+    pub fn warm_up_llm(&self, app: &tauri::AppHandle) -> Result<(), String> {
         let mut lock = self.llm_tx.lock().map_err(|e| e.to_string())?;
         if lock.is_some() {
             return Ok(());
@@ -167,12 +167,13 @@ impl PipelineOrchestrator {
 
         let event_tx = self.event_tx.clone();
         let is_loaded = Arc::clone(&self.is_llm_loaded);
+        let app_clone = app.clone();
         *lock = Some(tx);
         
         let handle = std::thread::Builder::new()
             .name("vox-llm-persistent".to_string())
             .spawn(move || {
-                crate::services::llm::spawn_llm_worker(rx, llm_path, event_tx, is_loaded);
+                crate::services::llm::spawn_llm_worker(app_clone, rx, llm_path, event_tx, is_loaded);
             })
             .map_err(|e| e.to_string())?;
 
@@ -195,7 +196,7 @@ impl PipelineOrchestrator {
     }
 
     /// Initialize the TTS worker if it's not already running.
-    pub fn warm_up_tts(&self, en_tts_dir: PathBuf, hi_tts_path: PathBuf) -> Result<(), String> {
+    pub fn warm_up_tts(&self, app: &tauri::AppHandle, en_tts_dir: PathBuf, hi_tts_path: PathBuf) -> Result<(), String> {
         let mut lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
         if lock.is_some() {
             return Ok(());
@@ -209,10 +210,11 @@ impl PipelineOrchestrator {
         let is_loaded = Arc::clone(&self.is_tts_loaded);
         *lock = Some(tx);
 
+        let app_clone = app.clone();
         let handle = std::thread::Builder::new()
             .name("vox-tts-persistent".to_string())
             .spawn(move || {
-                crate::services::tts::spawn_tts_worker(rx, en_tts_dir, hi_tts_path, event_tx, cancel_tts, is_loaded);
+                crate::services::tts::spawn_tts_worker(app_clone, rx, en_tts_dir, hi_tts_path, event_tx, cancel_tts, is_loaded);
             })
             .map_err(|e| e.to_string())?;
 
@@ -310,7 +312,7 @@ impl PipelineOrchestrator {
 
         // ── Active Pipeline ──────────────────────────────────────────────────
         // Ensure LLM is warm
-        if let Err(e) = self.warm_up_llm() {
+        if let Err(e) = self.warm_up_llm(&_app_handle) {
             log::error!("[Pipeline] Failed to warm up LLM: {}", e);
             return new_turn;
         }
@@ -460,10 +462,10 @@ impl PipelineOrchestrator {
             match event {
                 // ── Pre-warm: load LLM and TTS in background on engage ───────
                 VoxEvent::WarmUp => {
-                    if let Err(e) = self.warm_up_llm() {
+                    if let Err(e) = self.warm_up_llm(&app_handle) {
                         log::error!("[Pipeline] WarmUp (LLM): failed: {}", e);
                     }
-                    if let Err(e) = self.warm_up_tts(en_tts_dir.clone(), hi_tts_path.clone()) {
+                    if let Err(e) = self.warm_up_tts(&app_handle, en_tts_dir.clone(), hi_tts_path.clone()) {
                         log::error!("[Pipeline] WarmUp (TTS): failed: {}", e);
                     }
                     log::info!("[Pipeline] WarmUp: workers started in background.");

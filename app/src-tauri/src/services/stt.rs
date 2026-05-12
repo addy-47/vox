@@ -154,13 +154,16 @@ pub fn spawn_stt_worker(
         log::info!("[STT] >>> Dedicated worker thread started.");
         
         let mut engine: Option<SttEngine> = if pre_load {
+            app.emit(crate::core::constants::EVENT_MODEL_LOADING, "STT").ok();
             match SttEngine::new(&model_path) {
                 Ok(e) => {
                     is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
+                    app.emit(crate::core::constants::EVENT_MODEL_READY, "STT").ok();
                     Some(e)
                 },
                 Err(err) => {
                     log::error!("[STT] CRITICAL: Failed to initialize Sherpa engine: {}", err);
+                    app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("STT: {}", err)).ok();
                     return;
                 }
             }
@@ -190,13 +193,16 @@ pub fn spawn_stt_worker(
                             if last_emit_time.elapsed() >= Duration::from_millis(STT_THROTTLE_MS) {
                                 // Lazy load if needed
                                 if engine.is_none() {
+                                    app.emit(crate::core::constants::EVENT_MODEL_LOADING, "STT").ok();
                                     match SttEngine::new(&model_path) {
                                         Ok(e) => {
                                             is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
+                                            app.emit(crate::core::constants::EVENT_MODEL_READY, "STT").ok();
                                             engine = Some(e);
                                         }
                                         Err(e) => {
                                             log::error!("[STT] Lazy load failed: {}", e);
+                                            app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("STT: {}", e)).ok();
                                             continue;
                                         }
                                     }

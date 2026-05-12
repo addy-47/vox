@@ -48,6 +48,11 @@ pub fn init(_app: &tauri::AppHandle) {
             })
     };
 
+    init_with_root(root);
+}
+
+/// Specialized initializer for testing or custom environments.
+pub fn init_with_root(root: PathBuf) {
     let paths = VoxPaths {
         models:   root.join(MODELS_DIRNAME),
         logs:     root.join(LOG_DIRNAME),
@@ -58,7 +63,7 @@ pub fn init(_app: &tauri::AppHandle) {
         root,
     };
 
-    // Ignore error if already initialized (idempotent in tests)
+    // Ignore error if already initialized
     let _ = PATHS.set(paths);
 }
 

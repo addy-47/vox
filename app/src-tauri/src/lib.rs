@@ -5,6 +5,7 @@ pub mod ipc;
 pub mod utils;
 pub mod persistence;
 pub mod monitoring;
+pub mod setup;
 
 use crate::core::state::AppState;
 use crate::ipc::pipeline::{check_engine_status, launch_engine, stop_engine, engage};
@@ -21,7 +22,7 @@ use crate::monitoring::system_monitor::spawn_system_monitor;
 
 use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, State};
+use tauri::{Manager, State, Emitter};
 
 // ─── App Entry Point ─────────────────────────────────────────────────────────
 
@@ -39,6 +40,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            // ── 0. Runtime Booting ──────────────────────────────────────────────────
+            app.emit(crate::core::constants::EVENT_RUNTIME_BOOTING, ()).ok();
+
             // ── 0. Paths Singleton (must be first) ──────────────────────────────────
             crate::utils::paths::init(app.handle());
             crate::utils::paths::ensure_dirs().ok();
@@ -182,6 +186,16 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            
+            // ── 1.8 Runtime Ready ───────────────────────────────────────────────────
+            {
+                use crate::core::state::RuntimeStatus;
+                use std::sync::atomic::Ordering;
+                let state: State<'_, std::sync::Arc<AppState>> = app.state();
+                state.runtime_status.store(RuntimeStatus::Ready as u32, Ordering::Relaxed);
+                app.emit(crate::core::constants::EVENT_RUNTIME_READY, ()).ok();
+                log::info!("[BOOTSTRAP] Runtime Ready. Tray visible.");
+            }
 
             // ── 2. Position tray HUD ─────────────────────────────────────────
             if let Some(tray_win) = app.get_webview_window("tray") {
@@ -314,6 +328,12 @@ pub fn run() {
             crate::ipc::monitoring::get_runtime_snapshot,
             crate::ipc::monitoring::get_runtime_history,
             crate::ipc::monitoring::clear_runtime_history,
+            // Setup
+            crate::ipc::setup::fetch_manifest,
+            crate::ipc::setup::get_runtime_report,
+            crate::ipc::setup::start_model_setup,
+            crate::ipc::setup::cancel_model_setup,
+            crate::ipc::setup::complete_setup_wizard,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
