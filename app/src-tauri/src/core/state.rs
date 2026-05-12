@@ -14,6 +14,13 @@ pub enum InteractionOwner {
     Ptt = 2,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub enum RuntimeStatus {
+    Initializing,
+    Ready,
+    Error,
+}
+
 impl From<u32> for InteractionOwner {
     fn from(v: u32) -> Self {
         match v {
@@ -220,6 +227,7 @@ pub struct AppState {
     pub is_stt_loaded: Arc<AtomicBool>,
     pub is_vad_loaded: Arc<AtomicBool>,
     pub is_sleeping: Arc<AtomicBool>,
+    pub runtime_status: Arc<std::sync::atomic::AtomicU32>, // RuntimeStatus as u32
 
     /// Persistence worker channel. None if persistence is disabled or hibernating.
     pub persist_tx: std::sync::Mutex<Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>>,
@@ -229,11 +237,15 @@ pub struct AppState {
     pub dropped_telemetry_events: Arc<std::sync::atomic::AtomicU64>,
     /// Monitoring state (snapshots + history).
     pub monitoring: Arc<crate::monitoring::runtime_state::MonitoringState>,
+    
+    /// Phase 7 Setup
+    pub model_manager: Arc<crate::setup::model_manager::ModelManager>,
+    pub manifest: Arc<tokio::sync::RwLock<Option<crate::setup::manifest::VoxManifest>>>,
 }
 
 impl AppState {
     pub fn new(
-        _app: &tauri::AppHandle,
+        app_handle: &tauri::AppHandle,
         log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
         telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
         latest_energy: Arc<AtomicU32>,
@@ -256,6 +268,9 @@ impl AppState {
         // paths::init() must have been called before AppState::new()
         let settings = VoxSettings::load();
         is_private_mode.store(settings.persistence.private_mode, Ordering::Relaxed);
+
+        let model_manager = Arc::new(crate::setup::model_manager::ModelManager::new(Some(app_handle.clone())));
+        let manifest = Arc::new(tokio::sync::RwLock::new(None));
 
         Self {
             engine:        Mutex::new(None),
@@ -295,10 +310,13 @@ impl AppState {
             is_stt_loaded: Arc::new(AtomicBool::new(false)),
             is_vad_loaded: Arc::new(AtomicBool::new(false)),
             is_sleeping: Arc::new(AtomicBool::new(false)),
+            runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
             persist_tx: std::sync::Mutex::new(None),
             dropped_persistence_events: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             dropped_telemetry_events,
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
+            model_manager,
+            manifest,
         }
     }
 }

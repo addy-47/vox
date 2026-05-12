@@ -24,11 +24,15 @@ use crate::core::events::VoxEvent;
 // ─── LLM Worker Entry Point ──────────────────────────────────────────────────
 
 pub fn spawn_llm_worker(
+    app: tauri::AppHandle,
     rx: std::sync::mpsc::Receiver<LlmCommand>,
     model_path: std::path::PathBuf,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
     is_loaded: Arc<AtomicBool>,
 ) {
+    use tauri::Emitter;
+    let _ = app.emit(crate::core::constants::EVENT_MODEL_LOADING, "LLM");
+
     let settings = {
         // We need to know ctx_size and threads
         // This is a bit awkward as we don't have AppState here.
@@ -40,10 +44,12 @@ pub fn spawn_llm_worker(
     let worker = match LlmWorker::new(&model_path, settings.0, settings.1) {
         Ok(w) => {
             is_loaded.store(true, Ordering::Relaxed);
+            let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "LLM");
             w
         },
         Err(e) => {
             log::error!("[LLM] CRITICAL: Failed to load model: {}", e);
+            let _ = app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("LLM: {}", e));
             return;
         }
     };
