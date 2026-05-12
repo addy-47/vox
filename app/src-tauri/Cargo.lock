@@ -39,6 +39,7 @@ dependencies = [
  "tauri-plugin-positioner",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "tempfile",
  "thread-priority",
  "tokio",
  "tokio-util",
