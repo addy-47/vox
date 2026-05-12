@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 
@@ -29,14 +30,16 @@ const App: React.FC = () => {
   const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
 
   useEffect(() => {
+    // Show window immediately once JS is ready to display the loader
+    getCurrentWindow().show().catch(console.error);
+
     const checkSetup = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const forceWizard = urlParams.get('wizard') === 'true';
 
       try {
-        await invoke('fetch_manifest');
-        const report = await invoke<any>('get_runtime_report');
-        setSetupCompleted(forceWizard ? false : report.setup_completed);
+        const completed = await invoke<boolean>('get_onboarding_status');
+        setSetupCompleted(forceWizard ? false : completed);
       } catch (e) {
         console.error('Setup check failed', e);
         setSetupCompleted(false);
