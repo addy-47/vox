@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::{AppHandle, State, Manager};
+use tauri::{AppHandle, State, Manager, Emitter};
 use crate::core::state::AppState;
 use crate::setup::manifest::VoxManifest;
 use crate::setup::runtime_check::{verify_runtime, RuntimeReport};
@@ -34,25 +34,66 @@ pub async fn get_runtime_report(state: State<'_, Arc<AppState>>) -> Result<Runti
 }
 
 #[tauri::command]
-pub async fn start_model_setup(_app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn start_model_setup(
+    _app: AppHandle, 
+    state: State<'_, Arc<AppState>>, 
+    selected_ids: Option<Vec<String>>
+) -> Result<(), String> {
     let manifest_guard: tokio::sync::RwLockReadGuard<Option<VoxManifest>> = state.manifest.read().await;
     let manifest = manifest_guard.as_ref().ok_or("Manifest not fetched")?.clone();
     
+    // Check if setup is already running to prevent concurrent task overlap
+    {
+        let mut is_running = state.setup_running.lock().await;
+        if *is_running {
+            log::warn!("[SETUP] Model setup already in progress. Ignoring duplicate request.");
+            return Ok(());
+        }
+        *is_running = true;
+    }
+
     let manager = state.model_manager.clone();
     let models_dir = crate::utils::paths::get().models.clone();
     let base_url = "https://huggingface.co/addyo07/Vox/resolve/main".to_string();
+    let state_clone = state.inner().clone();
+    let app_clone = _app.clone();
     
+    log::info!("[SETUP] Initializing model setup task (State: {:p})", state.inner());
+ 
     tauri::async_runtime::spawn(async move {
-        // Sequentially setup each model defined in the manifest
-        for model in manifest.models {
+        // Filter models based on selection or requirement
+        let target_models: Vec<_> = if let Some(ids) = selected_ids {
+            manifest.models.into_iter().filter(|m| ids.contains(&m.id)).collect()
+        } else {
+            manifest.models.into_iter().filter(|m| m.required).collect()
+        };
+
+        if target_models.is_empty() {
+            log::warn!("[SETUP] No models selected for setup.");
+            let _ = app_clone.emit("model_setup_complete", true);
+            let mut is_running = state_clone.setup_running.lock().await;
+            *is_running = false;
+            return;
+        }
+
+        for model in target_models {
             log::info!("[SETUP] Starting setup for model: {}", model.id);
             if let Err(e) = manager.setup_model(&model, &base_url, &models_dir).await {
-                log::error!("[SETUP] Failed to setup model {}: {}", model.id, e);
+                log::error!("[SETUP] Failed to setup core model {}: {}", model.id, e);
+                // Emit global failure event to frontend
+                let _ = app_clone.emit("model_setup_error", e.to_string());
+                let mut is_running = state_clone.setup_running.lock().await;
+                *is_running = false;
                 return;
             }
         }
         
-        log::info!("[SETUP] All models verified and ready.");
+        log::info!("[SETUP] All mandatory core models verified and ready.");
+        let mut is_running = state_clone.setup_running.lock().await;
+        *is_running = false;
+        
+        // Notify frontend that all models are ready
+        let _ = app_clone.emit("model_setup_complete", true);
     });
 
     Ok(())
@@ -92,6 +133,55 @@ pub async fn complete_setup_wizard(app: AppHandle, state: State<'_, Arc<AppState
 
     Ok(())
 }
+#[tauri::command]
+pub async fn check_model_exists(model_id: String, state: State<'_, Arc<AppState>>) -> Result<bool, String> {
+    let manifest_guard = state.manifest.read().await;
+    let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
+    
+    let model = manifest.models.iter().find(|m| m.id == model_id)
+        .ok_or_else(|| format!("Model {} not found in manifest", model_id))?;
+
+    let models_dir = crate::utils::paths::get().models.clone();
+    let dest_path = models_dir.join(&model.path);
+    let verified_path = dest_path.with_extension("verified");
+
+    Ok(verified_path.exists())
+}
+
+#[tauri::command]
+pub async fn download_optional_model(
+    model_id: String, 
+    app: AppHandle, 
+    state: State<'_, Arc<AppState>>
+) -> Result<(), String> {
+    let manifest_guard = state.manifest.read().await;
+    let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
+    
+    let model = manifest.models.iter().find(|m| m.id == model_id)
+        .ok_or_else(|| format!("Model {} not found in manifest", model_id))?.clone();
+
+    let app_clone = app.clone();
+    
+    // Spawn isolated background task for the heavy optional download
+    tauri::async_runtime::spawn(async move {
+        let p = crate::utils::paths::get();
+        let base_url = "https://huggingface.co/addyo07/Vox/resolve/main"; 
+        
+        // Use a new manager to avoid state conflicts with the primary setup
+        let manager = crate::setup::model_manager::ModelManager::new(Some(app_clone.clone()));
+        
+        if let Err(e) = manager.setup_model(&model, base_url, &p.models).await {
+            log::error!("[DOWNLOAD] Failed to download {}: {}", model.id, e);
+            let _ = app_clone.emit("optional_download_failed", e.to_string());
+        } else {
+            log::info!("[DOWNLOAD] Successfully downloaded optional model: {}", model.id);
+            let _ = app_clone.emit("optional_download_complete", model.id);
+        }
+    });
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn reveal_wizard(app: AppHandle) -> Result<(), String> {
     if let Some(wizard_win) = app.get_webview_window("wizard") {

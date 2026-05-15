@@ -16,12 +16,29 @@ pub async fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
     let mut result = Vec::new();
     for device in devices {
         if let Ok(name) = device.name() {
-            result.push(AudioDevice {
-                is_default: Some(name.clone()) == default_device,
-                name,
-            });
+            let name_lower = name.to_lowercase();
+            if name_lower.contains("monitor") || 
+               name_lower.contains("null") || 
+               name_lower.contains("loopback") || 
+               name_lower.contains("dummy") ||
+               name_lower.contains("virtual") {
+                continue;
+            }
+
+            // Check if device actually supports any input configurations
+            if let Ok(mut configs) = device.supported_input_configs() {
+                if configs.next().is_some() {
+                    result.push(AudioDevice {
+                        is_default: Some(name.clone()) == default_device,
+                        name,
+                    });
+                }
+            }
         }
     }
+    
+    // Sort so default is first
+    result.sort_by(|a, b| b.is_default.cmp(&a.is_default));
     
     Ok(result)
 }
