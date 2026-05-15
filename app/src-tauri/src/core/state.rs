@@ -241,6 +241,7 @@ pub struct AppState {
     /// Phase 7 Setup
     pub model_manager: Arc<crate::setup::model_manager::ModelManager>,
     pub manifest: Arc<tokio::sync::RwLock<Option<crate::setup::manifest::VoxManifest>>>,
+    pub setup_running: Arc<Mutex<bool>>,
 }
 
 impl AppState {
@@ -317,6 +318,7 @@ impl AppState {
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
             model_manager,
             manifest,
+            setup_running: Arc::new(Mutex::new(false)),
         }
     }
 }

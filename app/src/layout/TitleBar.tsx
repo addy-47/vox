@@ -8,7 +8,9 @@ export const TitleBar: React.FC = () => {
 
   useEffect(() => {
     // Check if we are running in Tauri
-    const hasTauri = !!(window as any).__TAURI_INTERNALS__;
+    const hasTauri = !!(window as any).__TAURI__ || 
+                     !!(window as any).__TAURI_INTERNALS__ || 
+                     !!(window as any).__TAURI_METADATA__;
     setIsTauri(hasTauri);
 
     if (hasTauri) {

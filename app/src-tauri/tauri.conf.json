@@ -20,8 +20,7 @@
         "decorations": false,
         "alwaysOnTop": true,
         "resizable": true,
-        "visible": false,
-        "backgroundColor": "#050505"
+        "visible": false
       },
       {
         "label": "wizard",
@@ -30,12 +29,11 @@
         "width": 900,
         "height": 650,
         "transparent": false,
-        "decorations": true,
+        "decorations": false,
         "alwaysOnTop": false,
         "resizable": true,
         "visible": false,
-        "center": true,
-        "backgroundColor": "#050505"
+        "center": true
       },
       {
         "label": "tray",

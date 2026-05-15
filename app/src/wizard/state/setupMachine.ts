@@ -21,6 +21,7 @@ export interface SetupContext {
   models: Record<string, ModelProgress>;
   totalProgress: number;
   manifestReady: boolean;
+  setupComplete: boolean;
   error?: string;
   systemInfo?: {
     cpuCount: number;
@@ -37,6 +38,7 @@ export const setupMachine = createMachine({
     models: {},
     totalProgress: 0,
     manifestReady: false,
+    setupComplete: false,
   } as SetupContext,
   states: {
     welcome: {
@@ -53,19 +55,26 @@ export const setupMachine = createMachine({
     checking: {
       on: {
         SUCCESS: 'downloading',
-        FAILURE: 'error',
-        RETRY: 'checking'
+        FAILURE: {
+          target: 'error',
+          actions: assign({ error: ({ event }) => (event as any).message || 'System check failed' })
+        },
+        BACK: 'welcome'
       }
     },
     downloading: {
       on: {
-        FINISH: 'audio',
+        FINISH: {
+          target: 'audio',
+          actions: assign({ setupComplete: true })
+        },
+        BACK: 'checking',
         PROGRESS: {
           actions: assign(({ context, event }) => {
             const data = (event as any).data;
             if (!data) return {};
             
-            const { model_id, progress, step, bytes_downloaded, total_bytes } = data;
+            const { model_id, progress, step, bytes_downloaded, total_bytes, error } = data;
             const newModels = {
               ...context.models,
               [model_id]: {
@@ -85,20 +94,30 @@ export const setupMachine = createMachine({
             return {
               models: newModels,
               totalProgress,
+              error: error || context.error,
             };
           })
         },
-        ERROR: 'error'
+        ERROR: {
+          target: 'downloading', // Stay in downloading but show error in UI
+          actions: assign({ error: ({ event }) => (event as any).message })
+        },
+        RETRY: {
+          target: 'downloading',
+          actions: assign({ error: undefined })
+        }
       }
     },
     audio: {
       on: {
-        NEXT: 'testing'
+        NEXT: 'testing',
+        BACK: 'downloading'
       }
     },
     testing: {
       on: {
-        NEXT: 'completed'
+        NEXT: 'completed',
+        BACK: 'audio'
       }
     },
     completed: {
@@ -106,7 +125,8 @@ export const setupMachine = createMachine({
     },
     error: {
       on: {
-        RETRY: 'checking'
+        RETRY: 'checking',
+        BACK: 'welcome'
       }
     }
   }

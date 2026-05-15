@@ -33,6 +33,12 @@ use tauri::{Manager, State, Emitter};
 /// engine on startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Suppress ALSA/Jack noisy logs on Linux
+    #[cfg(target_os = "linux")]
+    {
+        std::env::set_var("ALSA_LOG_LEVEL", "0");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
@@ -351,6 +357,8 @@ pub fn run() {
             crate::ipc::setup::cancel_model_setup,
             crate::ipc::setup::complete_setup_wizard,
             crate::ipc::setup::reveal_wizard,
+            crate::ipc::setup::check_model_exists,
+            crate::ipc::setup::download_optional_model,
             // Audio
             crate::ipc::audio::list_input_devices,
         ])

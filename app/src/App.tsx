@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
+import { TitleBar } from "@/layout/TitleBar";
 
 // Lazy load pages for performance
 const Home = lazy(() => import("@/pages/Home").then(m => ({ default: m.Home })));
@@ -48,7 +49,12 @@ const App: React.FC = () => {
     checkSetup();
   }, []);
 
-  if (setupCompleted === null) return <PageLoader />;
+  if (setupCompleted === null) return (
+    <div className="flex flex-col h-screen w-full bg-[rgb(var(--background))] overflow-hidden">
+      <TitleBar />
+      <PageLoader />
+    </div>
+  );
 
   return (
     <Router>

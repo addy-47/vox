@@ -12,6 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Settings2, Shield, Mic2, Sparkles, Home } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { TitleBar } from '@/layout/TitleBar';
 
 export const WizardRoot: React.FC = () => {
   const [state, send] = useMachine(setupMachine);
@@ -56,13 +57,47 @@ export const WizardRoot: React.FC = () => {
   ];
 
   const renderStep = () => {
+    const error = state.context.error;
+    const onBack = () => send({ type: 'BACK' });
+
     switch (true) {
-      case state.matches('welcome'): return <WelcomeStep key="welcome" onNext={() => send({ type: 'NEXT' })} />;
-      case state.matches('checking'): return <SystemCheckStep key="checking" onNext={() => send({ type: 'SUCCESS' })} />;
-      case state.matches('downloading'): return <ModelSetupStep key="models" onNext={() => send({ type: 'FINISH' })} />;
-      case state.matches('audio'): return <AudioSetupStep key="audio" onNext={() => send({ type: 'NEXT' })} />;
-      case state.matches('testing'): return <LiveTestStep key="testing" onNext={() => send({ type: 'NEXT' })} />;
-      case state.matches('completed'): return <CompletedStep key="completed" />;
+      case state.matches('welcome'): 
+        return <WelcomeStep key="welcome" onNext={() => send({ type: 'NEXT' })} />;
+      
+      case state.matches('checking'): 
+        return <SystemCheckStep 
+          key="checking" 
+          onNext={() => send({ type: 'SUCCESS' })} 
+          onBack={onBack} 
+          error={error}
+        />;
+      
+      case state.matches('downloading'): 
+        return <ModelSetupStep 
+          key="models" 
+          onNext={() => send({ type: 'FINISH' })} 
+          onBack={onBack}
+          error={error}
+          isAlreadyComplete={state.context.setupComplete}
+        />;
+      
+      case state.matches('audio'): 
+        return <AudioSetupStep 
+          key="audio" 
+          onNext={() => send({ type: 'NEXT' })} 
+          onBack={onBack}
+        />;
+      
+      case state.matches('testing'): 
+        return <LiveTestStep 
+          key="testing" 
+          onNext={() => send({ type: 'NEXT' })} 
+          onBack={onBack}
+        />;
+      
+      case state.matches('completed'): 
+        return <CompletedStep key="completed" />;
+      
       default: return <div>Unknown State</div>;
     }
   };
@@ -77,7 +112,8 @@ export const WizardRoot: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#050505] text-white overflow-hidden font-inter selection:bg-[#00dbe9]/30">
+    <div className="flex flex-col h-screen w-full bg-[#050505] text-white overflow-hidden font-inter selection:bg-[#00dbe9]/30">
+      <TitleBar />
       <div className="flex-1 flex relative overflow-hidden">
         {/* Background Effects */}
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
@@ -88,7 +124,7 @@ export const WizardRoot: React.FC = () => {
         </div>
 
         {/* Sidebar Navigation */}
-        <div className="w-[280px] border-r border-white/5 bg-white/[0.01] backdrop-blur-3xl flex flex-col p-8 z-10">
+        <div className="w-[228px] border-r border-white/5 bg-white/[0.01] backdrop-blur-3xl flex flex-col p-8 z-10">
           <div className="flex items-center gap-3 mb-12">
             <img src="/logo.png" className="w-8 h-8" alt="Vox" />
             <span className="text-lg font-black tracking-tighter text-white italic">VOX</span>
@@ -137,7 +173,7 @@ export const WizardRoot: React.FC = () => {
         </div>
 
         {/* Main Content Area */}
-        <main className="flex-1 relative z-10 flex items-center justify-center p-12 overflow-hidden">
+        <main className="flex-1 relative z-10 flex flex-col px-12 py-8 overflow-hidden">
           <AnimatePresence mode="popLayout">
             <motion.div
               key={state.value as string}
@@ -145,9 +181,9 @@ export const WizardRoot: React.FC = () => {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -10, opacity: 0 }}
               transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
-              className="w-full h-full flex items-center justify-center"
+              className="w-full h-full flex flex-col"
             >
-              <div className="w-full max-w-2xl">
+              <div className="w-full max-w-2xl mx-auto h-full flex flex-col">
                 {renderStep()}
               </div>
             </motion.div>

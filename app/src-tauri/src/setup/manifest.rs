@@ -10,6 +10,8 @@ pub struct ModelEntry {
     pub sha256: String,
     #[serde(rename = "archive")]
     pub archive_type: Option<String>, // "zip", "tar.gz", or None
+    #[serde(default)]
+    pub required: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

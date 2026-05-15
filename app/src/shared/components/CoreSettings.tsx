@@ -1,10 +1,128 @@
-import React, { useState } from "react";
-import { Brain, Volume2, Palette, Cpu, MemoryStick, ChevronLeft, MousePointerClick, Sun, Moon, Shield } from "lucide-react";
+import React, { useState, useEffect } from "react";
 import { HexColorPicker } from "react-colorful";
 import { cn } from "@/shared/lib/utils";
 import { useSettings, VoiceProfile } from "@/shared/context/SettingsContext";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { 
+  Brain, Volume2, Palette, Cpu, MemoryStick, ChevronLeft, 
+  MousePointerClick, Sun, Moon, Shield, Download, 
+  AlertCircle 
+} from "lucide-react";
 
 // ─── Sub-Components (Isolated Cards) ──────────────────────────────────────────
+
+interface ModelStatus {
+  step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  bytesDownloaded: number;
+  totalBytes: number;
+  error?: string;
+}
+
+const DownloadOverlay: React.FC<{ 
+  modelId: string, 
+  onComplete: () => void 
+}> = ({ modelId, onComplete }) => {
+    const [status, setStatus] = useState<ModelStatus>({ step: 'idle', progress: 0, bytesDownloaded: 0, totalBytes: 0 });
+    const [isChecking, setIsChecking] = useState(true);
+    const [exists, setExists] = useState(false);
+
+    useEffect(() => {
+        let isMounted = true;
+        const check = async () => {
+            const hasModel = await invoke<boolean>("check_model_exists", { modelId });
+            if (isMounted) {
+                setExists(hasModel);
+                setIsChecking(false);
+            }
+        };
+        check();
+
+        const unlistenStatus = listen<{
+            model_id: string;
+            step: string;
+            progress: number;
+            bytes_downloaded: number;
+            total_bytes: number;
+            error?: string;
+        }>("model_setup_status", (event) => {
+            if (event.payload.model_id === modelId && isMounted) {
+                setStatus({
+                    step: event.payload.step as any,
+                    progress: event.payload.progress,
+                    bytesDownloaded: event.payload.bytes_downloaded,
+                    total_bytes: event.payload.total_bytes,
+                    error: event.payload.error
+                } as any);
+            }
+        });
+
+        const unlistenComplete = listen<string>("optional_download_complete", (event) => {
+            if (event.payload === modelId && isMounted) {
+                setExists(true);
+                onComplete();
+            }
+        });
+
+        return () => {
+            isMounted = false;
+            unlistenStatus.then(u => u());
+            unlistenComplete.then(u => u());
+        };
+    }, [modelId, onComplete]);
+
+    if (isChecking || exists) return null;
+
+    const startDownload = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        invoke("download_optional_model", { modelId });
+    };
+
+    return (
+        <div className="absolute inset-0 z-20 rounded-[inherit] bg-[rgb(var(--background))]/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
+            {status.step === 'idle' ? (
+                <>
+                    <div className="w-12 h-12 rounded-2xl bg-[rgb(var(--accent))]/10 flex items-center justify-center mb-5 border border-[rgb(var(--accent))]/20">
+                      <Download className="text-[rgb(var(--accent))]" size={24} />
+                    </div>
+                    <h3 className="text-[12px] font-bold text-[rgb(var(--foreground))] mb-2 uppercase tracking-[0.2em]">Model Deployment</h3>
+                    <p className="text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))] mb-8 max-w-[220px] opacity-70">
+                        This component requires high-fidelity weights (approx. 3.2GB) not found locally.
+                    </p>
+                    <button 
+                        onClick={startDownload}
+                        className="px-8 py-3 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-[0.15em] shadow-lg shadow-[rgb(var(--accent))]/20 hover:scale-[1.02] active:scale-[0.98] transition-all border border-white/10"
+                    >
+                        Begin Fetch
+                    </button>
+                </>
+            ) : (
+                <div className="w-full max-w-[240px] space-y-5">
+                    <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))]">
+                        <span className="opacity-60">{status.step}</span>
+                        <span className="text-[rgb(var(--accent))]">{Math.round(status.progress)}%</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-[rgb(var(--foreground))]/[0.05] rounded-full overflow-hidden border border-[rgba(var(--border),0.05)] p-[1px]">
+                        <div 
+                            className="h-full bg-[rgb(var(--accent))] transition-all duration-300 rounded-full shadow-[0_0_15px_rgb(var(--accent))]"
+                            style={{ width: `${status.progress}%` }}
+                        />
+                    </div>
+                    <div className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] opacity-40">
+                        {(status.bytesDownloaded / 1024 / 1024).toFixed(0)} MB / {(status.totalBytes / 1024 / 1024).toFixed(0)} MB
+                    </div>
+                    {status.error && (
+                        <div className="flex items-center gap-2 text-red-400 text-[10px] bg-red-500/5 p-3 rounded-xl border border-red-500/10 animate-in shake duration-500">
+                            <AlertCircle size={14} />
+                            <span className="leading-tight">{status.error}</span>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const EngineCard: React.FC = React.memo(() => {
   const { draftSettings, updateDraft, modelCatalog } = useSettings();
@@ -26,9 +144,13 @@ const EngineCard: React.FC = React.memo(() => {
       >
         {/* Front Face */}
         <div 
-          className="premium-card p-6 md:p-8 flex flex-col h-full"
+          className="premium-card p-6 md:p-8 flex flex-col h-full overflow-hidden relative"
           style={{ backfaceVisibility: 'hidden' }}
         >
+          <DownloadOverlay 
+            modelId={activeLlm.id} 
+            onComplete={() => { /* State will refresh via check_model_exists */ }} 
+          />
           {/* Header */}
           <div className="flex items-center gap-3 mb-8 shrink-0">
             <Brain className="text-[rgb(var(--accent))]" size={20} />
@@ -276,7 +398,11 @@ const VoiceCard: React.FC = React.memo(() => {
   const currentHeights = getHeights();
 
   return (
-    <div className="premium-card p-6 md:p-8 flex flex-col h-full">
+    <div className="premium-card p-6 md:p-8 flex flex-col h-full relative overflow-hidden">
+      <DownloadOverlay 
+        modelId="tts_kokoro_onnx" 
+        onComplete={() => {}} 
+      />
       <div className="flex items-center justify-between mb-8 shrink-0">
         <div className="flex items-center gap-3">
           <Volume2 className="text-[rgb(var(--accent))]" size={20} />
