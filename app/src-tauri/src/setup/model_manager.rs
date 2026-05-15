@@ -90,7 +90,14 @@ impl ModelManager {
         // ── 2. Verify Hash ───────────────────────────────────────────────────
         self.emit_status(model_id, SetupStep::Verifying, 100.0, entry.size_bytes, entry.size_bytes, None);
         if hash != entry.sha256 {
-            let err = format!("Hash mismatch for {}. Expected {}, got {}", model_id, entry.sha256, hash);
+            let mut err = format!("Hash mismatch for {}. Expected {}, got {}", model_id, entry.sha256, hash);
+            
+            // Diagnostic: Check if we downloaded something large but the manifest hash is for a pointer
+            if entry.size_bytes > 1024 && entry.sha256.len() == 64 {
+                log::warn!("[ModelManager] Hash mismatch detected. Diagnostic: If you are using Git LFS, ensure your manifest.json contains hashes of smudged files, not pointer files.");
+                err.push_str("\n\nTip: Manifest hash may be for an LFS pointer. Re-verify manifest.json.");
+            }
+
             self.emit_status(model_id, SetupStep::Failed, 100.0, entry.size_bytes, entry.size_bytes, Some(err.clone()));
             let _ = std::fs::remove_file(&temp_path);
             return Err(anyhow::anyhow!(err));
