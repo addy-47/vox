@@ -4,9 +4,9 @@ use crate::core::constants::*;
 /// Configures the wizard window with specific attributes.
 pub fn setup_wizard_window(window: &tauri::WebviewWindow) {
     let _ = window.set_min_size(Some(tauri::LogicalSize::new(900.0, 650.0)));
-    let _ = window.set_max_size(Some(tauri::LogicalSize::new(905.0, 655.0)));
+    let _ = window.set_max_size(Some(tauri::LogicalSize::new(900.0, 650.0)));
     let _ = window.set_resizable(true);
-    let _ = window.set_decorations(true);
+    let _ = window.set_decorations(false);
     let _ = window.set_always_on_top(false);
     let _ = window.center();
 }
