@@ -68,6 +68,17 @@ impl ModelManager {
         log::info!("[ModelManager] Starting setup for: {} ({})", model_id, url);
         self.cancel_flag.store(false, Ordering::Relaxed);
 
+        // ── 0. Check if already verified ─────────────────────────────────────
+        if verified_path.exists() {
+            if let Ok(marker) = VerifiedMarker::load(&verified_path) {
+                if marker.sha256 == entry.sha256 && dest_path.exists() {
+                    log::info!("[ModelManager] Model {} already verified. Skipping setup.", model_id);
+                    self.emit_status(model_id, SetupStep::Completed, 100.0, entry.size_bytes, entry.size_bytes, None);
+                    return Ok(());
+                }
+            }
+        }
+
         // Ensure parent directory exists
         if let Some(parent) = dest_path.parent() {
             std::fs::create_dir_all(parent)?;

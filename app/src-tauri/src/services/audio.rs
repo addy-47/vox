@@ -31,14 +31,42 @@ impl AudioStream {
     /// 
     /// # Arguments
     /// * `producer` - The producer side of a lock-free ringbuf.
-    pub fn new<P>(producer: P) -> Result<Self> 
+    pub fn new<P>(producer: P, device_name: Option<String>) -> Result<Self> 
     where 
         P: Producer<Item = f32> + Send + 'static 
     {
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| anyhow::anyhow!("No input device found"))?;
+        let host = {
+            let mut host = cpal::default_host();
+            
+            #[cfg(target_os = "linux")]
+            {
+                let available_hosts = cpal::available_hosts();
+                log::info!("[AUDIO] Available hosts: {:?}", available_hosts);
+                
+                // Prioritize ALSA on Linux to avoid JACK issues
+                if let Some(alsa_id) = available_hosts.iter().find(|id| format!("{:?}", id) == "Alsa") {
+                    if let Ok(alsa_host) = cpal::host_from_id(*alsa_id) {
+                        log::info!("[AUDIO] Prioritizing ALSA host for stability");
+                        host = alsa_host;
+                    }
+                }
+            }
+            host
+        };
+
+        log::info!("[AUDIO] Using audio host: {:?}", host.id());
+        
+        let device = if let Some(name) = device_name {
+            log::info!("[AUDIO] Attempting to use requested device: {}", name);
+            host.input_devices()?
+                .find(|d| d.name().map(|n| n == name).unwrap_or(false))
+                .or_else(|| {
+                    log::warn!("[AUDIO] Requested device '{}' not found, falling back to default", name);
+                    host.default_input_device()
+                })
+        } else {
+            host.default_input_device()
+        }.ok_or_else(|| anyhow::anyhow!("No input device found on host {:?}", host.id()))?;
 
         let config: cpal::StreamConfig = device.default_input_config()?.into();
         let sample_rate = config.sample_rate.0;

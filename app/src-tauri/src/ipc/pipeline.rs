@@ -182,14 +182,14 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     
     app.emit(crate::core::constants::EVENT_MODEL_LOADING, "VAD").ok();
 
-    let (stt_model_path, vad_model_path, pre_load) = {
+    let (stt_model_path, vad_model_path, pre_load, input_device) = {
         let settings = state.settings.read().unwrap();
         let models_dir = paths::get().models.clone();
         
         let stt = models_dir.join(crate::core::constants::MODEL_DIR_STT);
         let vad = models_dir.join(crate::core::constants::MODEL_DIR_VAD).join(crate::core::constants::MODEL_FILE_VAD);
 
-        (stt, vad, settings.ui.tray_enabled)
+        (stt, vad, settings.ui.tray_enabled, settings.audio.input_device.clone())
     };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
@@ -244,7 +244,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         }
     });
 
-    let audio_stream = AudioStream::new(producer).map_err(|e| e.to_string())?;
+    let audio_stream = AudioStream::new(producer, input_device).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
     app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS").ok();
