@@ -398,7 +398,7 @@ impl PipelineOrchestrator {
                     {
                         awaiting_playback_finish = false;
                         metrics.mark(MetricField::PlaybackFinish);
-                        let report = metrics.latency_report();
+                        let report = metrics.latency_report(0.0, 0.0);
                         log::info!("[Pipeline] Turn complete (polled). Latencies: {}", report);
                         let owner = self.get_current_owner(&app_handle);
                         self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
@@ -634,7 +634,7 @@ impl PipelineOrchestrator {
                 VoxEvent::PlaybackFinished { turn_id } => {
                     if turn_id != current_tid { continue; }
                     metrics.mark(MetricField::PlaybackFinish);
-                    let report = metrics.latency_report();
+                    let report = metrics.latency_report(0.0, 0.0);
                     tracing::info!("[Pipeline] Turn complete. Latencies: {}", report);
                     
                     // Emit structured telemetry

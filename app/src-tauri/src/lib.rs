@@ -15,7 +15,6 @@ use crate::ipc::tray::{
     update_interaction_mode, show_main_window, toggle_hud_visibility
 };
 use crate::ipc::history::{get_transcript_history, get_sessions, get_turns, delete_session};
-use crate::ipc::test::debug_harden_test;
 use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog};
 use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
 use crate::tray::{setup_linux_virtual_layer, setup_tray_window, position_tray_window};
@@ -259,29 +258,9 @@ pub fn run() {
                 }
             });
 
-            // ── 4. E2E Hardening Test (CLI Triggered) ────────────────────────
+            // ── 4. CLI Arguments Handling ────────────────────────
             let args: Vec<String> = std::env::args().collect();
-            if let Some(wav_path) = args.iter().position(|a| a == "--test-harden").and_then(|i| args.get(i + 1)) {
-                let wav_path = wav_path.clone();
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    log::info!("[Harden] CLI Test Triggered. Waiting for engine...");
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    
-                    match debug_harden_test(handle.clone(), wav_path).await {
-                        Ok(res) => {
-                            println!("HARDEN_TEST_SUCCESS: {}", res);
-                            log::info!("[Harden] Test successful: {}", res);
-                        }
-                        Err(e) => {
-                            println!("HARDEN_TEST_FAILURE: {}", e);
-                            log::error!("[Harden] Test failed: {}", e);
-                        }
-                    }
-                    // Exit the app after test
-                    std::process::exit(0);
-                });
-            }
+            // (Future CLI flags can be added here)
 
             Ok(())
         })
@@ -344,7 +323,6 @@ pub fn run() {
             get_sessions,
             get_turns,
             delete_session,
-            debug_harden_test,
             // Monitoring
             crate::ipc::monitoring::get_runtime_snapshot,
             crate::ipc::monitoring::get_runtime_history,

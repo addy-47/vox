@@ -1,0 +1,350 @@
+use clap::Parser;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool};
+use std::sync::mpsc::{channel};
+use std::time::{Instant, Duration};
+
+use vox_lib::services::traits::{SttEngine as _, LlmEngine as _, TtsEngine as _, VadEngine as _};
+use vox_lib::services::stt::qwen_onnx::{SttEngine};
+use vox_lib::services::llm::gemma_cpp::LlmWorker;
+use vox_lib::services::tts::kokoro_piper::TtsEngine;
+use vox_lib::services::vad::ten_onnx::VadEngine;
+use vox_lib::utils::bench_reporter::{BenchReporter, MemorySnapshot};
+use vox_lib::core::events::VoxEvent;
+use vox_lib::core::metrics::{PipelineMetrics, MetricField};
+use vox_lib::services::utils::{transliterate_if_hi, count_words, should_flush};
+use vox_lib::core::state::InteractionOwner;
+
+#[derive(Parser, Debug)]
+#[command(name = "vox-bench", about = "Production-parity async benchmark for Vox")]
+struct Args {
+    /// Path to input WAV file (16kHz mono)
+    #[arg(short, long)]
+    input: String,
+
+    /// System prompt (overrides constants)
+    #[arg(short, long)]
+    prompt: Option<String>,
+
+    /// Number of concurrent turns to simulate (1 for now)
+    #[arg(short, long, default_value = "1")]
+    turns: usize,
+}
+
+enum BenchCommand {
+    SttPartial(u32, Vec<f32>),
+    SttFinal(u32, Vec<f32>),
+    Llm(String, String),
+    Tts(String, u32),
+    Shutdown,
+}
+
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    let reporter = BenchReporter::new();
+    let metrics = Arc::new(std::sync::Mutex::new(PipelineMetrics::new()));
+    
+    // 1. Setup paths & Hardware init simulation
+    let home = dirs::home_dir().expect("Could not find home directory");
+    let vox_root = home.join(".vox");
+    vox_lib::utils::paths::init_with_root(vox_root);
+    
+    println!("\x1b[32m[Bench]\x1b[0m Starting Production-Parity Run...");
+    println!("\x1b[32m[Bench]\x1b[0m Run dir: {:?}", reporter.run_dir);
+
+    // 2. Initialize Channels (Production-like Actor pattern)
+    let (event_tx, event_rx) = channel::<VoxEvent>();
+    let (stt_tx, stt_rx) = channel::<BenchCommand>();
+    let (llm_tx, llm_rx) = channel::<BenchCommand>();
+    let (tts_tx, tts_rx) = channel::<BenchCommand>();
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let system_prompt = args.prompt.unwrap_or_else(|| vox_lib::core::constants::SYSTEM_PROMPT_HI.to_string());
+
+    // 3. Load Models Sequentially (to avoid ONNX environment conflicts and improve memory tracking)
+    println!("\x1b[32m[Bench]\x1b[0m Loading STT (Qwen3-ASR)...");
+    let stt_path = vox_lib::utils::paths::model_dir("stt").join("qwen3-asr");
+    let snap_1 = BenchReporter::get_memory_snapshot();
+    let stt_engine = SttEngine::new(&stt_path).expect("Failed to load STT");
+    let snap_2 = BenchReporter::get_memory_snapshot();
+    let stt_mem_mb = snap_2.rss_mb.saturating_sub(snap_1.rss_mb);
+    metrics.lock().unwrap().stt_mem_mb = stt_mem_mb;
+
+    println!("\x1b[32m[Bench]\x1b[0m Loading LLM (Gemma 4-E2B)...");
+    let llm_path = vox_lib::utils::paths::model_dir("llm").join("gemma4").join("google_gemma-4-E2B-it-Q4_K_M.gguf");
+    let snap_3 = BenchReporter::get_memory_snapshot();
+    let llm_engine = LlmWorker::new(&llm_path, 2048, 4).expect("Failed to load LLM");
+    let snap_4 = BenchReporter::get_memory_snapshot();
+    let llm_mem_mb = snap_4.rss_mb.saturating_sub(snap_3.rss_mb);
+    metrics.lock().unwrap().llm_mem_mb = llm_mem_mb;
+
+    println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Kokoro + Piper)...");
+    let en_tts_dir = vox_lib::utils::paths::model_dir("tts").join("kokoro");
+    let hi_tts_path = vox_lib::utils::paths::model_dir("tts").join("piper_hi").join("hi_IN-priyamvada-medium.onnx");
+    let snap_5 = BenchReporter::get_memory_snapshot();
+    let tts_engine = TtsEngine::new(&en_tts_dir, &hi_tts_path).expect("Failed to load TTS");
+    let snap_6 = BenchReporter::get_memory_snapshot();
+    let tts_mem_mb = snap_6.rss_mb.saturating_sub(snap_5.rss_mb);
+    metrics.lock().unwrap().tts_mem_mb = tts_mem_mb;
+
+    // 4. Spawn Dedicated Worker Threads
+    
+    // STT Worker
+    let stt_event_tx = event_tx.clone();
+    let stt_handle = std::thread::spawn(move || {
+        let engine = stt_engine; // Move initialized engine
+        while let Ok(cmd) = stt_rx.recv() {
+            match cmd {
+                BenchCommand::SttPartial(tid, samples) => {
+                    if let Ok(text) = engine.transcribe(&samples) {
+                        if !text.is_empty() {
+                            let _ = stt_event_tx.send(VoxEvent::TranscriptPartial { turn_id: tid, owner: InteractionOwner::MainWindow, text });
+                        }
+                    }
+                }
+                BenchCommand::SttFinal(tid, samples) => {
+                    if let Ok(text) = engine.transcribe(&samples) {
+                        let _ = stt_event_tx.send(VoxEvent::TranscriptFinal { turn_id: tid, owner: InteractionOwner::MainWindow, text });
+                    }
+                }
+                BenchCommand::Shutdown => break,
+                _ => {}
+            }
+        }
+    });
+
+    // LLM Worker
+    let llm_event_tx = event_tx.clone();
+    let llm_cancel = Arc::clone(&cancel_flag);
+    let llm_handle = std::thread::spawn(move || {
+        let engine = llm_engine; // Move initialized engine
+        while let Ok(cmd) = llm_rx.recv() {
+            match cmd {
+                BenchCommand::Llm(text, prompt) => {
+                    println!("\x1b[34m[LLM]\x1b[0m Starting generation for: \"{}\"", text);
+                    let _ = engine.generate(&text, &prompt, 1, &llm_cancel, &llm_event_tx);
+                }
+                BenchCommand::Shutdown => break,
+                _ => {}
+            }
+        }
+    });
+
+    // TTS Worker
+    let tts_event_tx = event_tx.clone();
+    let tts_cancel = Arc::clone(&cancel_flag);
+    let tts_handle = std::thread::spawn(move || {
+        let mut engine = tts_engine; // Move initialized engine
+        while let Ok(cmd) = tts_rx.recv() {
+            match cmd {
+                BenchCommand::Tts(text, turn_id) => {
+                    println!("\x1b[35m[TTS]\x1b[0m Synthesizing chunk: \"{}\"", text);
+                    let _ = engine.synthesize_chunk(&text, 0, turn_id, Arc::clone(&tts_cancel), tts_event_tx.clone());
+                }
+                BenchCommand::Shutdown => break,
+                _ => {}
+            }
+        }
+    });
+
+    // 4. Start Streaming Ingestion (Production simulation)
+    let mut reader = hound::WavReader::open(&args.input)?;
+    let all_samples: Vec<f32> = reader.samples::<i16>()
+        .map(|s| s.unwrap() as f32 / 32768.0)
+        .collect();
+    
+    let vad_path = vox_lib::utils::paths::model_dir("vad").join("ten_vad.onnx");
+    let mut vad = VadEngine::new(&vad_path, 0.5).expect("Failed to load VAD");
+    let mut utterance_buf = Vec::new();
+    let mut in_speech = false;
+    let mut turn_id = 0;
+    
+    let input_duration = all_samples.len() as f64 / 16000.0;
+    
+    // Spawn memory tracker for PEAK RSS (total process)
+    let mem_cancel = Arc::clone(&cancel_flag);
+    let mem_handle = std::thread::spawn(move || {
+        let mut max_rss = 0;
+        while !mem_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            let snap = BenchReporter::get_memory_snapshot();
+            if snap.rss_mb > max_rss {
+                max_rss = snap.rss_mb;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        max_rss
+    });
+    
+    metrics.lock().unwrap().mark(MetricField::SpeechStart);
+
+    // Simulate 20ms chunks (320 samples at 16kHz)
+    for chunk in all_samples.chunks(320) {
+        if chunk.len() < 320 { break; }
+        
+        let detected = vad.predict(chunk);
+        if detected {
+            if !in_speech {
+                in_speech = true;
+                turn_id += 1;
+                utterance_buf.clear();
+            }
+            utterance_buf.extend_from_slice(chunk);
+            
+            // Periodically send partials (every 500ms)
+            if utterance_buf.len() % 8000 == 0 {
+                stt_tx.send(BenchCommand::SttPartial(turn_id, utterance_buf.clone()))?;
+            }
+        } else if in_speech {
+            in_speech = false;
+            stt_tx.send(BenchCommand::SttFinal(turn_id, utterance_buf.clone()))?;
+            utterance_buf.clear();
+        }
+    }
+    // Final flush if still in speech
+    if in_speech {
+        stt_tx.send(BenchCommand::SttFinal(turn_id, utterance_buf.clone()))?;
+    }
+
+    // 5. Production Pipeline Orchestration (Event Loop)
+    let mut assistant_text = String::new();
+    let mut token_buf = String::new();
+    let mut tts_samples = Vec::new();
+    let mut final_transcript = String::new();
+    let mut tts_finished_count = 0;
+    let mut tts_started_count = 0;
+    let mut tokens_generated = 0;
+    let mut llm_done = false;
+
+    while !llm_done || tts_finished_count < tts_started_count {
+        if let Ok(event) = event_rx.recv_timeout(Duration::from_secs(30)) {
+            match event {
+                VoxEvent::TranscriptPartial { text, .. } => {
+                    println!("\x1b[30m[STT]\x1b[0m Partial: \"{}\"", text);
+                }
+                VoxEvent::TranscriptFinal { text, .. } => {
+                    final_transcript = text.clone();
+                    let mut m_lock = metrics.lock().unwrap();
+                    m_lock.mark(MetricField::FinalTranscript);
+                    m_lock.mark(MetricField::LlmStart);
+                    m_lock.input_len_chars = text.len();
+                    println!("\x1b[34m[STT]\x1b[0m Final: \"{}\"", text);
+                    llm_tx.send(BenchCommand::Llm(text, system_prompt.clone()))?;
+                }
+                VoxEvent::LlmToken { token, .. } => {
+                    let mut m_lock = metrics.lock().unwrap();
+                    if m_lock.first_token.is_none() {
+                        m_lock.mark(MetricField::FirstToken);
+                    }
+                    print!("{}", token); 
+                    use std::io::Write;
+                    std::io::stdout().flush().unwrap();
+                    
+                    assistant_text.push_str(&token);
+                    token_buf.push_str(&token);
+                    tokens_generated += 1;
+                    
+                    let wc = count_words(&token_buf);
+                    if wc >= 6 || should_flush(&token_buf, wc) {
+                        let chunk = token_buf.trim().to_string();
+                        if !chunk.is_empty() {
+                            m_lock.mark(MetricField::TtsStart);
+                            tts_started_count += 1;
+                            tts_tx.send(BenchCommand::Tts(chunk, 1))?;
+                            token_buf.clear();
+                        }
+                    }
+                }
+                VoxEvent::LlmFinished { .. } => {
+                    println!("\n\x1b[34m[LLM]\x1b[0m Response complete.");
+                    let mut m_lock = metrics.lock().unwrap();
+                    m_lock.mark(MetricField::LlmEnd);
+                    m_lock.output_len_chars = assistant_text.len();
+                    m_lock.tokens_generated = tokens_generated;
+                    
+                    let remainder = token_buf.trim().to_string();
+                    if !remainder.is_empty() {
+                        m_lock.mark(MetricField::TtsStart);
+                        tts_started_count += 1;
+                        tts_tx.send(BenchCommand::Tts(remainder, 1))?;
+                    }
+                    llm_done = true;
+                }
+                VoxEvent::TtsChunk { samples, .. } => {
+                    let mut m_lock = metrics.lock().unwrap();
+                    if m_lock.first_audio.is_none() {
+                        m_lock.mark(MetricField::FirstAudio);
+                        m_lock.mark(MetricField::PlaybackStart);
+                        println!("\x1b[35m[TTS]\x1b[0m First audio generated!");
+                    }
+                    tts_samples.extend(samples);
+                }
+                VoxEvent::TtsFinished { .. } => {
+                    tts_finished_count += 1;
+                    println!("\x1b[35m[TTS]\x1b[0m Chunk {}/{} complete.", tts_finished_count, tts_started_count);
+                    if tts_finished_count == tts_started_count && llm_done {
+                        metrics.lock().unwrap().mark(MetricField::TtsEnd);
+                    }
+                }
+                VoxEvent::Error { message, .. } => {
+                    println!("\x1b[31m[Pipeline Error]\x1b[0m {}", message);
+                }
+                _ => {}
+            }
+        } else {
+            break;
+        }
+    }
+
+    // 6. Artifact Collection & Formal Reporting
+    stt_tx.send(BenchCommand::Shutdown)?;
+    llm_tx.send(BenchCommand::Shutdown)?;
+    tts_tx.send(BenchCommand::Shutdown)?;
+    
+    let _ = stt_handle.join();
+    let _ = llm_handle.join();
+    let _ = tts_handle.join();
+
+    cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    let peak_rss_mb = mem_handle.join().unwrap_or(0);
+
+    let mut m = metrics.lock().unwrap();
+    m.mark(MetricField::PlaybackFinish); 
+    
+    let output_duration = tts_samples.len() as f64 / 24000.0;
+    let mut report = m.latency_report(input_duration, output_duration);
+    
+    if let Some(obj) = report.as_object_mut() {
+        if let Some(perf) = obj.get_mut("memory_mb").and_then(|v| v.as_object_mut()) {
+            perf.insert("peak_process_rss_mb".to_string(), serde_json::json!(peak_rss_mb));
+        }
+    }
+    
+    // Write detailed artifacts
+    reporter.write_artifact("stt_transcript.txt", &final_transcript);
+    reporter.write_artifact("llm_response.txt", &assistant_text);
+    reporter.write_artifact("transliteration.txt", &format!("STT: {}\nLLM: {}", transliterate_if_hi(&final_transcript), transliterate_if_hi(&assistant_text)));
+    
+    // Export result audio
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 24000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let wav_path = reporter.run_dir.join("output_tts.wav");
+    let mut writer = hound::WavWriter::create(&wav_path, spec)?;
+    for &sample in &tts_samples {
+        writer.write_sample((sample * 32767.0) as i16)?;
+    }
+    writer.finalize()?;
+
+    // Final Memory & Latency report
+    println!("\n\x1b[32m[Bench]\x1b[0m {}", report["summary"].as_str().unwrap_or(""));
+    println!("\x1b[32m[Bench]\x1b[0m STT RAM: {}MB | LLM RAM: {}MB | TTS RAM: {}MB", m.stt_mem_mb, m.llm_mem_mb, m.tts_mem_mb);
+    println!("\x1b[32m[Bench]\x1b[0m Peak Memory RSS: {}MB", peak_rss_mb);
+    
+    reporter.save_report(report);
+    println!("\x1b[32m[Bench]\x1b[0m All artifacts saved to: {:?}", reporter.run_dir);
+
+    Ok(())
+}
