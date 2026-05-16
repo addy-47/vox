@@ -4,11 +4,12 @@ version = 4
 
 [[package]]
 name = "Vox"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "cairo-rs",
  "chrono",
+ "clap",
  "cpal",
  "crossbeam-channel",
  "dirs",
