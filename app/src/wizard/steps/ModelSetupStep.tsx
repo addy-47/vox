@@ -3,12 +3,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Check, Database, BrainCircuit, Mic, 
-  ArrowRight, Box, HardDrive, AlertCircle
+  Database, BrainCircuit, Mic, 
+  Check, ArrowRight
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
-// --- Sub-components (Moved to top to prevent TDZ) ---
+// --- Modular Components ---
+import { WizardHeader } from '../components/WizardHeader';
+import { WizardFooter } from '../components/WizardFooter';
+import { ModelCategory } from '../components/ModelCategory';
 
 const VolumeIcon = ({ className }: { className?: string }) => (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -24,55 +27,6 @@ interface ModelEntry {
   size: number;
   required: boolean;
 }
-
-const ModelCard = ({ model, metadata, selected, onToggle, formatSize }: { 
-    model: ModelEntry, 
-    metadata: any, 
-    selected: boolean, 
-    onToggle: () => void,
-    formatSize: (b: number) => string
-}) => (
-    <button 
-        onClick={onToggle}
-        className={cn(
-            "w-full p-4 rounded-xl border transition-all duration-300 flex items-center justify-between group text-left",
-            selected 
-                ? "bg-white/[0.04] border-white/20 shadow-lg" 
-                : "bg-white/[0.01] border-white/5 opacity-60 hover:opacity-100 hover:bg-white/[0.02]"
-        )}
-    >
-        <div className="flex items-center gap-4">
-            <div className={cn(
-                "p-2.5 rounded-lg transition-colors",
-                selected ? "bg-[#00dbe9]/10 text-[#00dbe9]" : "bg-white/5 text-white/40"
-            )}>
-                {metadata.icon}
-            </div>
-            <div className="flex flex-col">
-                <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-[11px] font-black text-white uppercase tracking-wider">{metadata.label}</span>
-                    {model.required && (
-                        <span className="text-[8px] font-bold bg-white/10 text-white/40 px-1.5 py-0.5 rounded uppercase tracking-tighter">Core</span>
-                    )}
-                </div>
-                <p className="text-[10px] text-white/30 font-medium leading-tight max-w-[200px]">
-                    {metadata.desc}
-                </p>
-            </div>
-        </div>
-        <div className="flex flex-col items-end gap-1.5">
-            <span className="text-[10px] font-mono text-white/60">{formatSize(model.size)}</span>
-            <div className={cn(
-                "w-4 h-4 rounded border flex items-center justify-center transition-all",
-                selected ? "bg-[#00dbe9] border-transparent" : "bg-transparent border-white/10"
-            )}>
-                {selected && <Check className="w-3 h-3 text-black stroke-[4]" />}
-            </div>
-        </div>
-    </button>
-);
-
-// --- Main Step Component ---
 
 interface Manifest {
   version: string;
@@ -102,32 +56,15 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   const [progress, setProgress] = useState<Record<string, ModelProgress>>({});
   const [isFetching, setIsFetching] = useState(false);
   const [internalError, setInternalError] = useState<string | null>(null);
-  const [installPath, setInstallPath] = useState<string>('~/.vox/models');
-
-  // Human-readable labels for jargon reduction
-  const modelInfo: Record<string, { label: string, desc: string, icon: React.ReactNode }> = {
-    'vad': { label: 'Silence Detection', desc: 'Optimizes CPU by ignoring silence.', icon: <Mic className="w-4 h-4" /> },
-    'stt': { label: 'Voice Understanding', desc: 'Converts your speech into text locally.', icon: <Database className="w-4 h-4" /> },
-    'llm': { label: 'Intelligence Layer', desc: 'Advanced reasoning and tool orchestration.', icon: <BrainCircuit className="w-4 h-4" /> },
-    'tts': { label: 'Speech Synthesis', desc: 'High-fidelity voice output for interactions.', icon: <VolumeIcon className="w-4 h-4" /> },
-  };
-
-  const getModelMetadata = (id: string) => {
-    if (id.includes('vad')) return modelInfo['vad'];
-    if (id.includes('stt') || id.includes('asr')) return modelInfo['stt'];
-    if (id.includes('llm') || id.includes('gemma')) return modelInfo['llm'];
-    if (id.includes('tts') || id.includes('piper') || id.includes('kokoro')) return modelInfo['tts'];
-    return { label: 'System Asset', desc: 'Core component for Vox functionality.', icon: <Box className="w-4 h-4" /> };
-  };
+  const [installPath, setInstallPath] = useState<string>('Detecting path...');
+  const [isFinished, setIsFinished] = useState(false);
 
   useEffect(() => {
     const fetchCatalog = async () => {
       setIsFetching(true);
       try {
-        // Correct IPC command: fetch_manifest returns VoxManifest
         const data = await invoke<Manifest>('fetch_manifest');
         setManifest(data);
-        // Default select all required
         const required = data.models.filter(m => m.required).map(m => m.id);
         setSelectedIds(new Set(required));
       } catch (e) {
@@ -139,12 +76,11 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     };
     fetchCatalog();
 
-    // Correct handling of RuntimeReport object
     invoke<any>('get_runtime_report').then(report => {
         if (report.models_verified && !isAlreadyComplete) {
+            setIsFinished(true);
             setView('complete');
         }
-        // Use the actual path from the backend
         if (report.models_dir) {
             setInstallPath(report.models_dir);
         }
@@ -157,11 +93,13 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     });
 
     const unlistenComplete = listen<boolean>('model_setup_complete', () => {
-      setView('complete');
+      console.log('Model setup complete signal received');
+      setIsFinished(true);
     });
 
     const unlistenError = listen<string>('model_setup_error', (event) => {
         setInternalError(event.payload);
+        setView('catalog'); 
     });
 
     return () => {
@@ -171,12 +109,15 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     };
   }, []);
 
-  const toggleModel = (id: string, required: boolean) => {
-    if (required) return;
+  const toggleCategory = (ids: string[]) => {
     setSelectedIds(prev => {
         const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
+        const allPresent = ids.every(id => next.has(id));
+        if (allPresent) {
+            ids.forEach(id => next.delete(id));
+        } else {
+            ids.forEach(id => next.add(id));
+        }
         return next;
     });
   };
@@ -205,12 +146,43 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const groupedModels = useMemo(() => {
-    if (!manifest || !manifest.models) return { core: [], optional: [] };
-    return {
-        core: manifest.models.filter(m => m.required),
-        optional: manifest.models.filter(m => !m.required)
-    };
+  const categories = useMemo(() => {
+    if (!manifest || !manifest.models) return [];
+    
+    return [
+        {
+            id: 'vad',
+            label: 'Silence Detection (VAD)',
+            subLabel: 'Ten-VAD / 10ms Window',
+            icon: <Mic />,
+            required: true,
+            models: manifest.models.filter(m => m.path.startsWith('vad/'))
+        },
+        {
+            id: 'stt',
+            label: 'Voice Understanding (ASR)',
+            subLabel: 'Qwen-ASR / Int8 Quant',
+            icon: <Database />,
+            required: true,
+            models: manifest.models.filter(m => m.path.startsWith('stt/'))
+        },
+        {
+            id: 'llm',
+            label: 'Intelligence Layer (LLM)',
+            subLabel: 'Gemma-2B / Q4_K_M',
+            icon: <BrainCircuit />,
+            required: false,
+            models: manifest.models.filter(m => m.path.startsWith('llm/'))
+        },
+        {
+            id: 'tts',
+            label: 'Speech Synthesis (TTS)',
+            subLabel: 'Kokoro + Piper Multi-Voice',
+            icon: <VolumeIcon />,
+            required: false,
+            models: manifest.models.filter(m => m.path.startsWith('tts/'))
+        }
+    ];
   }, [manifest]);
 
   return (
@@ -224,77 +196,47 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             exit={{ opacity: 0, x: -20 }}
             className="flex flex-col h-full"
           >
-            <header className="mb-8">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="h-[1px] w-8 bg-[#00dbe9]/30" />
-                  <span className="text-[11px] font-black tracking-[0.4em] text-[#00dbe9] uppercase">Step 2.1 • Selection</span>
+            <WizardHeader 
+                step="Step 2.1 • Selection"
+                title="AI Components"
+                description="Customize your local AI stack. Mandatory core ensures functional interaction, while optional layers unlock deep reasoning."
+                rightContent={
+                    <div className="flex flex-col items-end">
+                        <span className="text-[13px] font-bold text-white/80  tracking-tight mb-1">
+                            {installPath}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-1.5 rounded-full bg-[#00dbe9] shadow-[0_0_8px_rgba(0,219,233,0.8)]" />
+                            <span className="text-[12px] font-black text-[#00dbe9]  tracking-widest">
+                                {formatSize(totalSize)} Total
+                            </span>
+                        </div>
+                    </div>
+                }
+            />
+
+            <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar -mx-2 px-2">
+                <div className="grid gap-4 py-2">
+                    {categories.map(cat => (
+                        <ModelCategory 
+                            key={cat.id}
+                            {...cat}
+                            selected={cat.models.length > 0 && cat.models.every(m => selectedIds.has(m.id))}
+                            onToggle={() => toggleCategory(cat.models.map(m => m.id))}
+                            formatSize={formatSize}
+                        />
+                    ))}
                 </div>
-                <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">Neural Components</h1>
-                <p className="text-white/40 text-sm leading-relaxed max-w-md">
-                    Choose the intelligence layers you want to deploy locally. Core components are required for basic interaction.
-                </p>
-            </header>
-
-            <div className="flex-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-                {/* Core Section */}
-                <section className="space-y-3">
-                    <div className="flex items-center justify-between px-1">
-                        <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Mandatory Core</span>
-                        <span className="text-[10px] font-mono text-white/20">{installPath}</span>
-                    </div>
-                    <div className="grid gap-2">
-                        {groupedModels.core.map(m => (
-                            <ModelCard 
-                                key={m.id} 
-                                model={m} 
-                                metadata={getModelMetadata(m.id)} 
-                                selected={true} 
-                                onToggle={() => {}} 
-                                formatSize={formatSize}
-                            />
-                        ))}
-                    </div>
-                </section>
-
-                {/* Optional Section */}
-                <section className="space-y-3">
-                    <div className="flex items-center justify-between px-1">
-                        <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Optional Intelligence</span>
-                    </div>
-                    <div className="grid gap-2">
-                        {groupedModels.optional.map(m => (
-                            <ModelCard 
-                                key={m.id} 
-                                model={m} 
-                                metadata={getModelMetadata(m.id)} 
-                                selected={selectedIds.has(m.id)} 
-                                onToggle={() => toggleModel(m.id, false)} 
-                                formatSize={formatSize}
-                            />
-                        ))}
-                    </div>
-                </section>
             </div>
 
-            <div className="mt-8 pt-8 border-t border-white/5 space-y-6">
-                <div className="flex items-center justify-between px-2">
-                    <div className="flex flex-col">
-                        <span className="text-[10px] text-white/40 font-bold uppercase tracking-widest mb-1">Total Weight</span>
-                        <span className="text-lg font-black text-white">{formatSize(totalSize)}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] font-medium text-white/40">
-                        <HardDrive className="w-3 h-3" />
-                        <span>Target: Local Disk</span>
-                    </div>
-                </div>
-
+            <div className="mt-8 pt-8 border-t border-white/10">
                 <div className="flex gap-4">
                     <button onClick={onBack} className="px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors">
                         Back
                     </button>
                     <button 
                         onClick={startSetup}
-                        disabled={isFetching}
+                        disabled={isFetching || selectedIds.size === 0}
                         className="group relative flex-1 py-5 bg-zinc-950 text-white font-black rounded-2xl overflow-hidden border border-white/10 transition-all hover:bg-zinc-900 hover:border-[#00dbe9]/50 active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -305,6 +247,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     </button>
                 </div>
             </div>
+
           </motion.div>
         )}
 
@@ -316,79 +259,64 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             exit={{ opacity: 0, scale: 1.02 }}
             className="flex flex-col h-full"
           >
-             <header className="mb-8">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="h-[1px] w-8 bg-[#d8baff]/30" />
-                  <span className="text-[11px] font-black tracking-[0.4em] text-[#d8baff] uppercase">Step 2.2 • Synchronizing</span>
-                </div>
-                <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">Downloading Brain</h1>
-                <p className="text-white/40 text-sm leading-relaxed max-w-md">
-                    Vox is deploying selected components to your local hardware. This process is fully encrypted and sandboxed.
-                </p>
-            </header>
+             <WizardHeader 
+                step="Step 2.2 • Synchronizing"
+                title="Deploying AI"
+                description="Vox is deploying selected components to your local hardware. This process is fully encrypted and sandboxed."
+                color="#d8baff"
+            />
 
             <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar">
-                {Array.from(selectedIds).map(id => {
-                    const p = progress[id];
-                    const meta = getModelMetadata(id);
+                {categories.filter(cat => cat.models.some(m => selectedIds.has(m.id))).map(cat => {
+                    const groupProgress = cat.models.reduce((acc, m) => acc + (progress[m.id]?.progress || 0), 0) / cat.models.length;
+                    const isDone = cat.models.every(m => progress[m.id]?.step === 'Verified');
+                    const activeStep = cat.models
+                        .map(m => progress[m.id])
+                        .find(p => p && p.step !== 'Verified')?.step || (isDone ? 'Ready' : 'Queued');
+
                     return (
-                        <div key={id} className="p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+                        <div key={cat.id} className="p-4 bg-white/[0.02] border border-white/5 rounded-xl">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-white/5 rounded-lg text-white/60">
-                                        {meta.icon}
+                                    <div className={cn(
+                                        "p-2 rounded-lg transition-colors",
+                                        isDone ? "bg-[#00dbe9]/20 text-[#00dbe9]" : "bg-white/5 text-white/40"
+                                    )}>
+                                        {cat.icon}
                                     </div>
                                     <div className="flex flex-col">
-                                        <span className="text-[11px] font-black text-white uppercase tracking-wider">{meta.label}</span>
-                                        <span className="text-[10px] text-white/30 font-bold uppercase tracking-tighter">
-                                            {p?.step || 'Waiting...'}
+                                        <span className="text-[11px] font-black text-white uppercase tracking-wider">{cat.label}</span>
+                                        <span className="text-[10px] text-[#00dbe9]/60 font-bold uppercase tracking-tighter">
+                                            {activeStep}
                                         </span>
                                     </div>
                                 </div>
                                 <span className="text-[11px] font-mono text-white/60">
-                                    {p ? `${Math.round(p.progress)}%` : '0%'}
+                                    {Math.round(groupProgress)}%
                                 </span>
                             </div>
                             <div className="h-1 bg-white/5 rounded-full overflow-hidden mb-2">
                                 <motion.div 
                                     className="h-full bg-gradient-to-r from-[#00dbe9] to-[#d8baff]"
                                     initial={{ width: 0 }}
-                                    animate={{ width: `${p?.progress || 0}%` }}
+                                    animate={{ width: `${groupProgress}%` }}
                                     transition={{ duration: 0.3 }}
                                 />
-                            </div>
-                            <div className="flex justify-between text-[9px] font-bold text-white/20 uppercase tracking-widest">
-                                <span>{p ? formatSize(p.bytes_downloaded) : '0 MB'}</span>
-                                <span>{p ? formatSize(p.total_bytes) : '...'}</span>
                             </div>
                         </div>
                     );
                 })}
             </div>
 
-            {(internalError || externalError) && (
-                <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3">
-                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                    <div className="space-y-1">
-                        <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">Synchronization Error</span>
-                        <p className="text-[11px] text-red-400/80 leading-relaxed font-medium">
-                            {internalError || externalError}
-                        </p>
-                    </div>
-                </div>
-            )}
-
-            <div className="mt-8 pt-8 border-t border-white/5 flex gap-4">
-                <button 
-                    onClick={() => setView('catalog')}
-                    className="px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors"
-                >
-                    Cancel
-                </button>
-                <div className="flex-1 flex items-center justify-center bg-zinc-950/50 rounded-2xl border border-white/5">
-                    <span className="text-[10px] font-black text-white/10 uppercase tracking-[0.4em]">Processing Engine Queue</span>
-                </div>
-            </div>
+            <WizardFooter 
+                onBack={() => setView('catalog')}
+                onNext={() => setView('complete')}
+                nextLabel={isFinished ? "Continue to Verification" : "Synchronizing..."}
+                isNextDisabled={!isFinished}
+                showBack={true}
+                error={internalError || externalError}
+                errorLabel="Synchronization Error"
+            />
           </motion.div>
         )}
 
@@ -410,24 +338,33 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     </div>
                 </div>
 
-                <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">Neural Link Active</h1>
+                <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">Models Ready</h1>
                 <p className="text-white/40 text-sm max-w-sm leading-relaxed mb-12">
-                    All selected components have been successfully synchronized and verified. Your local brain is ready for interaction.
+                    All selected AI models have been successfully downloaded and verified on your system.
                 </p>
 
-                <button 
-                    onClick={onNext}
-                    className="group relative w-full max-w-xs py-5 bg-zinc-950 text-white font-black rounded-2xl overflow-hidden border border-white/10 transition-all hover:bg-zinc-900 hover:border-[#00dbe9]/50 active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
-                >
-                    <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
-                        Initialize Engine
-                        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[#00dbe9]" />
-                    </span>
-                </button>
+                <div className="flex flex-col gap-4 w-full max-w-xs">
+                    <button 
+                        onClick={onNext}
+                        className="group relative w-full py-5 bg-zinc-950 text-white font-black rounded-2xl overflow-hidden border border-white/10 transition-all hover:bg-zinc-900 hover:border-[#00dbe9]/50 active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
+                    >
+                        <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/10 to-[#d8baff]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <span className="relative z-10 flex items-center justify-center gap-3 tracking-widest uppercase text-xs">
+                            Continue Setup <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        </span>
+                    </button>
+                    
+                    <button 
+                        onClick={() => setView('catalog')}
+                        className="py-3 text-xs font-bold text-white/30 uppercase tracking-widest hover:text-white/60 transition-colors"
+                    >
+                        Return to Selection
+                    </button>
+                </div>
             </motion.div>
         )}
       </AnimatePresence>
     </div>
   );
 };
+

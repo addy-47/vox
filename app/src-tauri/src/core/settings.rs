@@ -168,6 +168,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
 
         // Audio output mode — restart CPAL stream
         ("audio", "output_mode")         => SettingReloadPolicy::Restart,
+        ("audio", "input_device")        => SettingReloadPolicy::Restart,
 
         // ASR — model change requires full pipeline restart
         ("asr", "model")                 => SettingReloadPolicy::Restart,
@@ -242,12 +243,14 @@ impl Default for UiSettings {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AudioSettings {
     pub output_mode: AudioOutputMode,
+    pub input_device: Option<String>,
 }
 
 impl Default for AudioSettings {
     fn default() -> Self {
         Self {
             output_mode: AudioOutputMode::Speaker,
+            input_device: None,
         }
     }
 }

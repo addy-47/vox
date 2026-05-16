@@ -28,6 +28,7 @@ export interface SetupContext {
     ramTotal: number;
     diskAvailable: number;
   };
+  maxReachedIndex: number;
 }
 
 export const setupMachine = createMachine({
@@ -39,9 +40,21 @@ export const setupMachine = createMachine({
     totalProgress: 0,
     manifestReady: false,
     setupComplete: false,
+    maxReachedIndex: 0,
   } as SetupContext,
+  on: {
+    GO_TO: [
+      { target: '.welcome', guard: ({ context, event }) => (event as any).targetStep === 'welcome' && context.maxReachedIndex >= 0 },
+      { target: '.checking', guard: ({ context, event }) => (event as any).targetStep === 'checking' && context.maxReachedIndex >= 1 },
+      { target: '.downloading', guard: ({ context, event }) => (event as any).targetStep === 'downloading' && context.maxReachedIndex >= 2 },
+      { target: '.audio', guard: ({ context, event }) => (event as any).targetStep === 'audio' && context.maxReachedIndex >= 3 },
+      { target: '.testing', guard: ({ context, event }) => (event as any).targetStep === 'testing' && context.maxReachedIndex >= 4 },
+      { target: '.completed', guard: ({ context, event }) => (event as any).targetStep === 'completed' && context.maxReachedIndex >= 5 }
+    ]
+  },
   states: {
     welcome: {
+      entry: assign({ currentStep: 'welcome' }),
       on: {
         MANIFEST_READY: {
           actions: assign({ manifestReady: true })
@@ -53,6 +66,7 @@ export const setupMachine = createMachine({
       }
     },
     checking: {
+      entry: assign({ currentStep: 'checking' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 1) }),
       on: {
         SUCCESS: 'downloading',
         FAILURE: {
@@ -63,6 +77,7 @@ export const setupMachine = createMachine({
       }
     },
     downloading: {
+      entry: assign({ currentStep: 'downloading' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 2) }),
       on: {
         FINISH: {
           target: 'audio',
@@ -109,19 +124,24 @@ export const setupMachine = createMachine({
       }
     },
     audio: {
+      entry: assign({ currentStep: 'audio' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 3) }),
       on: {
         NEXT: 'testing',
         BACK: 'downloading'
       }
     },
     testing: {
+      entry: assign({ currentStep: 'testing' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 4) }),
       on: {
         NEXT: 'completed',
         BACK: 'audio'
       }
     },
     completed: {
-      type: 'final'
+      entry: assign({ currentStep: 'completed' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 5) }),
+      on: {
+        BACK: 'testing'
+      }
     },
     error: {
       on: {

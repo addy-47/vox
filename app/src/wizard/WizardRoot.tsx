@@ -35,12 +35,7 @@ export const WizardRoot: React.FC = () => {
   React.useEffect(() => {
     // Listen for model setup progress
     const unlisten = listen('model_setup_status', (event) => {
-      const payload = event.payload as any;
-      if (payload.step === 'completed') {
-        send({ type: 'FINISH' });
-      } else {
-        send({ type: 'PROGRESS', data: payload });
-      }
+      send({ type: 'PROGRESS', data: event.payload });
     });
 
     return () => {
@@ -51,7 +46,7 @@ export const WizardRoot: React.FC = () => {
   const steps = [
     { id: 'welcome', label: 'Welcome', icon: <Home className="w-4 h-4" /> },
     { id: 'checking', label: 'System Check', icon: <Shield className="w-4 h-4" /> },
-    { id: 'downloading', label: 'Neural Models', icon: <Settings2 className="w-4 h-4" /> },
+    { id: 'downloading', label: 'AI Models', icon: <Settings2 className="w-4 h-4" /> },
     { id: 'audio', label: 'Audio Pipeline', icon: <Mic2 className="w-4 h-4" /> },
     { id: 'testing', label: 'Live Test', icon: <Sparkles className="w-4 h-4" /> },
   ];
@@ -96,18 +91,17 @@ export const WizardRoot: React.FC = () => {
         />;
       
       case state.matches('completed'): 
-        return <CompletedStep key="completed" />;
+        return <CompletedStep key="completed" onBack={onBack} />;
       
       default: return <div>Unknown State</div>;
     }
   };
 
   const getStepStatus = (id: string) => {
-    const currentIndex = steps.findIndex(s => state.matches(s.id));
     const stepIndex = steps.findIndex(s => s.id === id);
     
     if (state.matches(id)) return 'active';
-    if (stepIndex < currentIndex) return 'completed';
+    if (stepIndex <= state.context.maxReachedIndex) return 'completed';
     return 'pending';
   };
 
@@ -133,13 +127,20 @@ export const WizardRoot: React.FC = () => {
           <nav className="flex-1 space-y-6">
             {steps.map((s) => {
               const status = getStepStatus(s.id);
+              const isReachable = steps.findIndex(step => step.id === s.id) <= state.context.maxReachedIndex;
               return (
-                <div key={s.id} className={cn(
-                  "flex items-center gap-4 transition-all duration-500",
-                  status === 'pending' ? 'opacity-80 grayscale' : 'opacity-100'
-                )}>
+                <button 
+                  key={s.id} 
+                  onClick={() => {
+                    if (isReachable) send({ type: 'GO_TO', targetStep: s.id });
+                  }}
+                  className={cn(
+                    "flex items-center gap-4 transition-all duration-500 w-full text-left outline-none",
+                    status === 'pending' ? 'opacity-80 grayscale cursor-not-allowed' : 'opacity-100 hover:scale-[1.02] active:scale-95 cursor-pointer'
+                  )}
+                >
                   <div className={cn(
-                    "w-8 h-8 rounded-xl flex items-center justify-center border transition-all duration-500",
+                    "w-8 h-8 rounded-xl flex items-center justify-center border transition-all duration-500 shrink-0",
                     status === 'active' ? 'bg-[#00dbe9]/10 border-[#00dbe9]/50 shadow-[0_0_15px_rgba(0,219,233,0.2)]' : 
                     status === 'completed' ? 'bg-[#00dbe9]/20 border-transparent' : 'bg-white/5 border-white/10'
                   )}>
@@ -148,18 +149,18 @@ export const WizardRoot: React.FC = () => {
                        className: cn("w-4 h-4", status === 'active' ? 'text-[#00dbe9]' : 'text-white/80') 
                      })}
                   </div>
-                  <div className="flex flex-col">
+                  <div className="flex flex-col relative w-full">
                     <span className={cn(
-                      "text-[11px] font-bold tracking-widest uppercase mb-0.5",
+                      "text-[11px] font-bold tracking-widest uppercase mb-0.5 transition-colors",
                       status === 'active' ? 'text-[#00dbe9]' : 'text-white/80'
                     )}>
                       {s.label}
                     </span>
                     {status === 'active' && (
-                      <motion.div layoutId="active-indicator" className="h-0.5 w-4 bg-[#00dbe9] rounded-full" />
+                      <motion.div layoutId="active-indicator" className="h-0.5 w-4 bg-[#00dbe9] rounded-full absolute -bottom-1" />
                     )}
                   </div>
-                </div>
+                </button>
               );
             })}
           </nav>

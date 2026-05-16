@@ -32,17 +32,20 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
   useEffect(() => {
     setup();
 
-    const unlistenTranscript = listen<{ text: string, is_final: boolean }>('stt_transcript', (event) => {
+    const unlistenPartial = listen<{ text: string, turn_id: number }>('transcript_partial', (event) => {
       setTranscript(event.payload.text);
-      if (event.payload.is_final && event.payload.text.length > 2) {
-        setTestComplete(true);
-      }
       
       if (transcriptTimeoutRef.current) clearTimeout(transcriptTimeoutRef.current);
       transcriptTimeoutRef.current = setTimeout(() => {
-        // Auto-complete if they said something
         if (event.payload.text.length > 2) setTestComplete(true);
       }, 2000);
+    });
+
+    const unlistenFinal = listen<{ text: string, turn_id: number }>('transcript_final', (event) => {
+      setTranscript(event.payload.text);
+      if (event.payload.text.length > 2) {
+        setTestComplete(true);
+      }
     });
 
     const unlistenEnergy = listen<number>('audio_energy', (event) => {
@@ -50,7 +53,8 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
     });
 
     return () => {
-      unlistenTranscript.then(u => u());
+      unlistenPartial.then(u => u());
+      unlistenFinal.then(u => u());
       unlistenEnergy.then(u => u());
       invoke('stop_engine').catch(console.error);
     };
@@ -63,9 +67,9 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
           <div className="h-[1px] w-8 bg-[#00dbe9]/30" />
           <span className="text-[11px] font-black tracking-[0.4em] text-[#00dbe9] uppercase">Step 4.0 • Live Validation</span>
         </div>
-        <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">Neural Feedback</h1>
+        <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">AI Feedback</h1>
         <p className="text-white/40 text-sm leading-relaxed max-w-md">
-            Testing the real-time audio pipeline. Speak clearly into your microphone to verify the conversion of speech to neural tokens.
+            Testing the real-time audio pipeline. Speak clearly into your microphone to verify the conversion of speech to AI tokens.
         </p>
       </header>
 
@@ -152,7 +156,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                                 animate={{ opacity: 1 }}
                                 className="text-white/20 italic font-medium"
                             >
-                                {isEngineReady ? "Speak to begin verification..." : "Initializing neural engine..."}
+                                {isEngineReady ? "Speak to begin verification..." : "Initializing AI engine..."}
                             </motion.p>
                         )}
                     </AnimatePresence>
