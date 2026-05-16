@@ -63,6 +63,8 @@ pub enum VadCommand {
     UpdateMode(crate::core::settings::InteractionMode),
     /// Update the interaction owner (Tray, MainWindow, Ptt)
     UpdateOwner(InteractionOwner),
+    /// Update the audio output mode (Speaker, Headset) for mic ducking logic
+    UpdateAudioMode(crate::core::settings::AudioOutputMode),
     /// Gracefully shutdown the VAD worker.
     Shutdown,
 }
