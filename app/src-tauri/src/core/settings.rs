@@ -166,8 +166,8 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("vad", "threshold")             => SettingReloadPolicy::WorkerCommand,
         ("vad", "ptt_noise_gate")        => SettingReloadPolicy::WorkerCommand,
 
-        // Audio output mode — restart CPAL stream
-        ("audio", "output_mode")         => SettingReloadPolicy::Restart,
+        // Audio output mode — update VAD mic ducking snapshot
+        ("audio", "output_mode")         => SettingReloadPolicy::WorkerCommand,
         ("audio", "input_device")        => SettingReloadPolicy::Restart,
 
         // ASR — model change requires full pipeline restart

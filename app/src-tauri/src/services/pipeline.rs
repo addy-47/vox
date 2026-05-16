@@ -16,62 +16,7 @@ use crate::core::metrics::{MetricField, PipelineMetrics};
 use crate::core::settings::{VoxSettings};
 use std::sync::RwLock;
 use crate::core::state::InteractionOwner;
-use lipilekhika::transliterate;
-
-// ─── Directive 2: Sub-Sentence Chunker ───────────────────────────────────────
-
-/// Returns `true` if the accumulated token buffer should be flushed to TTS.
-///
-/// Flush conditions (in priority order):
-///   1. Hard boundaries: `.` `!` `?`
-///   2. Soft boundaries: `,` `;` ` — ` ` - `
-///   3. Word count limit: ≥ 6 words accumulated without any boundary
-///
-/// This guarantees Time-to-First-Audio ≤ ~500ms regardless of LLM sentence length.
-#[inline]
-pub fn should_flush(buf: &str, word_count: usize) -> bool {
-    let trimmed = buf.trim_end();
-    let last = trimmed.chars().last().unwrap_or(' ');
-
-    // Hard boundaries — always flush
-    if matches!(last, '.' | '!' | '?') {
-        return true;
-    }
-
-    // Soft boundaries — flush to begin audio early
-    if matches!(last, ',' | ';') {
-        return true;
-    }
-    if trimmed.ends_with(" — ") || trimmed.ends_with(" - ") {
-        return true;
-    }
-
-    // Word count gate — prevent long-sentence lag (Directive 2)
-    // Threshold set to 6 words as requested for maximum responsiveness.
-    word_count >= 6
-}
-
-/// Count words in the accumulated buffer.
-#[inline]
-fn count_words(s: &str) -> usize {
-    s.split_whitespace().count()
-}
-
-/// Detect if string contains Devanagari (Hindi) characters.
-pub fn is_devanagari(text: &str) -> bool {
-    text.chars().any(|c| c >= '\u{0900}' && c <= '\u{097F}')
-}
-
-/// Transliterates Devanagari to Roman script if Hindi is detected.
-/// Used strictly for UI display to provide a "Hinglish" experience.
-pub fn transliterate_if_hi(text: &str) -> String {
-    if is_devanagari(text) {
-        // Transliterate from Devanagari to Latin (English/Roman)
-        transliterate(text, "Hindi", "English", None).unwrap_or_else(|_| text.to_string())
-    } else {
-        text.to_string()
-    }
-}
+use crate::services::utils::{is_devanagari, transliterate_if_hi, count_words, should_flush};
 
 // ─── Pipeline Orchestrator ────────────────────────────────────────────────────
 
@@ -168,7 +113,7 @@ impl PipelineOrchestrator {
         log::info!("[Pipeline] Warming up LLM worker...");
         let (tx, rx) = std::sync::mpsc::channel();
         
-        let (llm_path, _ctx_size, _n_threads) = {
+        let (llm_path, ctx_size, n_threads) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
             let mut path = crate::utils::paths::get().models.join(&s.llm.model);
             if path.is_dir() {
@@ -185,7 +130,7 @@ impl PipelineOrchestrator {
         let handle = std::thread::Builder::new()
             .name("vox-llm-persistent".to_string())
             .spawn(move || {
-                crate::services::llm::spawn_llm_worker(app_clone, rx, llm_path, event_tx, is_loaded);
+                crate::services::llm::spawn_llm_worker(app_clone, rx, llm_path, event_tx, is_loaded, ctx_size, n_threads);
             })
             .map_err(|e| e.to_string())?;
 
@@ -722,7 +667,7 @@ impl PipelineOrchestrator {
                     if let Some(ref tx) = self.persist_tx {
                         if let Err(_) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
                             conversation_id: self.conversation_id.load(Ordering::Relaxed),
-                            turn_id: turn_id,
+                            turn_id,
                             user_text: turn_user_text.clone(),
                             assistant_text: turn_assistant_text.clone(),
                             stt_latency_ms: turn_stt_ms,

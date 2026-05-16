@@ -392,6 +392,12 @@ async fn dispatch_worker_command(app: &AppHandle, domain: &str, key: &str, value
                     log::debug!("[Settings] VadCommand::UpdateNoiseGate({}) dispatched", v);
                 }
             }
+            ("audio", "output_mode") => {
+                if let Ok(mode) = serde_json::from_value::<crate::core::settings::AudioOutputMode>(value.clone()) {
+                    let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateAudioMode(mode));
+                    log::debug!("[Settings] VadCommand::UpdateAudioMode dispatched");
+                }
+            }
             ("assistant", "system_prompt") => {
                 // Phase 6.3: dispatch to LLM worker when it supports hot-update
                 log::debug!("[Settings] system_prompt change staged (LLM worker dispatch in Phase 6.3)");
