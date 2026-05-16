@@ -115,7 +115,16 @@ impl PipelineOrchestrator {
         
         let (llm_path, ctx_size, n_threads) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
+            
+            // Try to resolve path: 
+            // 1. If it's a direct path to a file, use it.
+            // 2. If it's a directory, look for the standard GGUF.
+            // 3. Fallback to standard MODEL_DIR_LLM if ID-only.
             let mut path = crate::utils::paths::get().models.join(&s.llm.model);
+            if !path.exists() {
+                path = crate::utils::paths::get().models.join(crate::core::constants::MODEL_DIR_LLM);
+            }
+            
             if path.is_dir() {
                 path = path.join(crate::core::constants::MODEL_FILE_LLM_GGUF);
             }
