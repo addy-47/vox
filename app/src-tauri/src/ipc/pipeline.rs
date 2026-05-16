@@ -200,7 +200,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone(), state.is_stt_loaded.clone(), state.pipeline.engine_shutdown.clone(), pre_load)?;
 
     let threshold = state.settings.read().unwrap().vad.threshold;
-    let mut vad = match VadEngine::new(&vad_model_path, threshold) {
+    let vad = match VadEngine::new(&vad_model_path, threshold) {
         Ok(v) => {
             app.emit(crate::core::constants::EVENT_MODEL_READY, "VAD").ok();
             v
@@ -221,7 +221,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let vad_handle = std::thread::Builder::new()
         .name("vox-vad-worker".to_string())
         .spawn(move || {
-            if let Err(e) = vad.run_sync_loop(app_handle_vad, consumer, event_tx, stt_tx_for_vad, vad_rx_for_vad, telemetry_tx_for_vad, Some(vox_event_tx_for_vad), state_vad.is_vad_loaded.clone()) {
+            if let Err(e) = crate::services::vad::spawn_vad_actor(vad, app_handle_vad, consumer, event_tx, stt_tx_for_vad, vad_rx_for_vad, telemetry_tx_for_vad, Some(vox_event_tx_for_vad), state_vad.is_vad_loaded.clone()) {
                 log::error!("[VAD] CRITICAL: Worker thread crashed: {}", e);
             }
         })
@@ -321,7 +321,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         vad_tx: vad_tx_internal,
         telemetry_tx: state.telemetry_tx.clone(),
         pipeline_tx: vox_event_tx.clone(),
-        playback_engine: playback_engine,
+        playback_engine,
         stt_handle: Some(stt_handle),
         vad_handle: Some(vad_handle),
         orchestrator_handle: Some(orchestrator_handle),
