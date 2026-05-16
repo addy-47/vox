@@ -51,3 +51,7 @@ pub const EVENT_RUNTIME_READY:   &str = "runtime_ready";
 pub const EVENT_MODEL_LOADING:   &str = "model_loading";
 pub const EVENT_MODEL_READY:     &str = "model_ready";
 pub const EVENT_MODEL_FAILED:    &str = "model_failed";
+
+// ─── AI Persona ─────────────────────────────────────────────────────────────
+pub const SYSTEM_PROMPT_HI: &str = "You are Vox, a concise and helpful voice assistant. Always reply in Hindi using Devanagari script. Keep responses brief and conversational. Avoid markdown formatting.";
+pub const SYSTEM_PROMPT_EN: &str = "You are Vox, a concise and helpful voice assistant. Always respond in English. Keep responses brief and conversational. Avoid markdown formatting.";
