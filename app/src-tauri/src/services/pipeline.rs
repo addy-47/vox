@@ -16,6 +16,7 @@ use crate::core::metrics::{MetricField, PipelineMetrics};
 use crate::core::settings::{VoxSettings};
 use std::sync::RwLock;
 use crate::core::state::InteractionOwner;
+use lipilekhika::transliterate;
 
 // ─── Directive 2: Sub-Sentence Chunker ───────────────────────────────────────
 
@@ -59,6 +60,17 @@ fn count_words(s: &str) -> usize {
 /// Detect if string contains Devanagari (Hindi) characters.
 pub fn is_devanagari(text: &str) -> bool {
     text.chars().any(|c| c >= '\u{0900}' && c <= '\u{097F}')
+}
+
+/// Transliterates Devanagari to Roman script if Hindi is detected.
+/// Used strictly for UI display to provide a "Hinglish" experience.
+pub fn transliterate_if_hi(text: &str) -> String {
+    if is_devanagari(text) {
+        // Transliterate from Devanagari to Latin (English/Roman)
+        transliterate(text, "Hindi", "English", None).unwrap_or_else(|_| text.to_string())
+    } else {
+        text.to_string()
+    }
 }
 
 // ─── Pipeline Orchestrator ────────────────────────────────────────────────────
@@ -324,7 +336,13 @@ impl PipelineOrchestrator {
             // a Cancelled event (which usually resets this), the LLM would stall.
             self.cancel_flag.store(false, Ordering::Relaxed);
 
-            let system_prompt = self.settings.read().unwrap().assistant.system_prompt.clone();
+            let assistant_settings = self.settings.read().unwrap().assistant.clone();
+            let system_prompt = if is_devanagari(&text) {
+                assistant_settings.hindi_prompt
+            } else {
+                assistant_settings.english_prompt
+            };
+
             let cmd = crate::services::llm::LlmCommand::Generate {
                 text,
                 system_prompt,
@@ -523,7 +541,7 @@ impl PipelineOrchestrator {
                         crate::core::state::InteractionOwner::Tray => "tray",
                     };
                     let _ = app_handle.emit_to(target, "transcript_partial", serde_json::json!({
-                        "text": text,
+                        "text": transliterate_if_hi(&text),
                         "turn_id": turn_id,
                         "owner": owner
                     }));
@@ -547,7 +565,7 @@ impl PipelineOrchestrator {
                         crate::core::state::InteractionOwner::Tray => "tray",
                     };
                     let _ = app_handle.emit_to(target, "transcript_final", serde_json::json!({
-                        "text": text.clone(),
+                        "text": transliterate_if_hi(&text),
                         "turn_id": turn_id,
                         "owner": owner
                     }));
@@ -608,7 +626,7 @@ impl PipelineOrchestrator {
                              crate::core::state::InteractionOwner::Tray => "tray",
                          }
                      };
-                     let _ = app_handle.emit_to(target, "llm_token", &token);
+                     let _ = app_handle.emit_to(target, "llm_token", transliterate_if_hi(&token));
                  }
 
                 VoxEvent::LlmFinished { turn_id } => {

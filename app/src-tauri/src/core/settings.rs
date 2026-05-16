@@ -389,17 +389,22 @@ impl Default for SetupSettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct AssistantSettings {
-    /// System-level behavior instruction for the LLM. Sent to worker via channel on change.
-    /// Future: expand to per-persona system prompts.
+    /// Generic fallback prompt.
     pub system_prompt: String,
+    /// Prompt used when Devanagari (Hindi) input is detected.
+    pub hindi_prompt: String,
+    /// Prompt used when English/other input is detected.
+    pub english_prompt: String,
 }
 
 impl Default for AssistantSettings {
     fn default() -> Self {
         Self {
-            system_prompt: "You are Vox, a concise and helpful voice assistant. \
-                Keep responses brief and conversational. Avoid markdown formatting.".into(),
+            system_prompt: crate::core::constants::SYSTEM_PROMPT_EN.into(),
+            hindi_prompt: crate::core::constants::SYSTEM_PROMPT_HI.into(),
+            english_prompt: crate::core::constants::SYSTEM_PROMPT_EN.into(),
         }
     }
 }
