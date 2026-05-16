@@ -118,6 +118,14 @@ if !detected && in_speech {
 
 ---
 
+---
+
+## 4.1 Future VAD Roadmap (To Be Integrated)
+
+### **Earshot**
+* **Role**: Ultra-low latency acoustic event detection and streaming ASR.
+* **Status**: Researching integration for multi-turn context awareness.
+
 ## 5. Speech-to-Text (STT)
 
 ### Selected Model: **Qwen3-ASR-0.6B (INT8 ONNX)**
@@ -178,6 +186,8 @@ if samples_since_partial >= 12800 {
 * Limited Hinglish support
 * Less robust multilingual handling
 * Higher latency on CPU
+
+
 
 ---
 
@@ -247,6 +257,14 @@ ctx.clear_kv_cache();
 // Context limits prevent explosion
 if n_cur >= ctx_size { break; }
 ```
+
+---
+
+## 6.1 Future LLM Roadmap (To Be Integrated)
+
+### **Gemma 4 E4B-it**
+* **Role**: Larger reasoning backbone for complex tasks.
+* **Constraint**: Likely requires 16GB RAM or high-compression quantization (IQ2_XS).
 
 ---
 
@@ -327,6 +345,14 @@ Target: **Time-to-First-Audio ≤ ~500ms**
 * No Hindi support
 * Poor CPU performance
 * Higher memory usage
+
+---
+
+## 7.1 Future TTS Roadmap (To Be Integrated)
+
+### **NeuTTS**
+* **Role**: Emotional and expressive synthesis for personalized AI persona.
+* **Status**: Awaiting ONNX export stability for native C++ inference.
 
 ---
 

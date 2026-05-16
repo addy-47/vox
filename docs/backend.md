@@ -66,21 +66,18 @@ Every component must minimize:
 
 ---
 
-### Architecture
-
-```text
-[Tauri (Rust)]
+### [Tauri (Rust)]
     ├── Audio Capture (cpal)
-    ├── Event Bus (crossbeam_channel / mpsc)
+    ├── Event Bus (mpsc)
     ├── UI IPC (Tauri Events)
     │
     ↓
-[C++ Inference Layer]
-    ├── VAD (TenVAD via sherpa-onnx)
-    ├── STT (Qwen3-ASR via sherpa-onnx)
-    ├── LLM (llama.cpp)
-    └── TTS (Kokoro + Piper via sherpa-onnx)
-```
+[Services Layer (Actor-Engine Pattern)]
+    ├── VAD (Actor -> Engine: TenVAD)
+    ├── STT (Actor -> Engine: Qwen3-ASR)
+    ├── LLM (Actor -> Engine: llama.cpp)
+    └── TTS (Actor -> Engine: Kokoro + Piper)
+    └── Utils (Shared logic: transliteration, chunking)
 
 ---
 
@@ -160,9 +157,46 @@ if pushed < resampled_buffer.len() {
 }
 ```
 
+## 5. Directory Structure (src/services)
+
+The backend services are organized into domain-specific modules using the **Actor-Engine pattern**:
+
+```text
+src/services/
+├── mod.rs          # Service registration
+├── traits.rs       # Engine interfaces (SttEngine, TtsEngine, etc.)
+├── pipeline.rs     # Main orchestrator
+├── utils.rs        # Shared logic (Hindi detection, text chunking)
+├── llm/
+│   ├── mod.rs      # Module entry
+│   ├── actor.rs    # Command/Event handler
+│   └── gemma_cpp.rs # Llama.cpp engine
+├── stt/
+│   ├── mod.rs
+│   ├── actor.rs
+│   └── qwen_onnx.rs # Sherpa-ONNX engine
+├── tts/
+│   ├── mod.rs
+│   ├── actor.rs
+│   └── kokoro_piper.rs # Multi-model engine
+└── vad/
+    ├── mod.rs
+    ├── actor.rs
+    └── ten_onnx.rs # VAD engine
+```
+
 ---
 
 ## 6. Voice Activity Detection (VAD) - Tier 2
+
+---
+
+### Actor-Engine Pattern
+
+Each AI domain (VAD, STT, LLM, TTS) follows a strict separation of concerns:
+
+1. **Actor**: Owns the OS thread, manages the command `Receiver`, handles state (turn IDs, cancellation), and emits `VoxEvent`s.
+2. **Engine**: Encapsulates the C++/ONNX inference logic, implements the domain trait, and remains stateless where possible.
 
 ---
 

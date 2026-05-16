@@ -51,7 +51,7 @@ impl VoxManifest {
         log::info!("[VoxManifest] Initiating fetch from: {}", url);
         
         let client = reqwest::Client::builder()
-            .user_agent("Vox-App/0.6.0")
+            .user_agent("Vox-App/0.7.0")
             .timeout(std::time::Duration::from_secs(15))
             .build()?;
 
