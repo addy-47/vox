@@ -2,8 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { motion } from 'framer-motion';
-import { Mic, Check, Volume2, ArrowRight, Activity } from 'lucide-react';
+import { Mic, Check, Volume2, Activity } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+
+// --- Modular Components ---
+import { WizardHeader } from '../components/WizardHeader';
+import { WizardFooter } from '../components/WizardFooter';
 
 interface AudioDevice {
   name: string;
@@ -21,20 +25,37 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
   const [energy, setEnergy] = useState(0);
 
   useEffect(() => {
-    const load = async () => {
+    const init = async () => {
       try {
+        // Ensure engine is running so we get energy events
+        await invoke('launch_engine');
+        
         const devList = await invoke<AudioDevice[]>('list_input_devices');
         setDevices(devList);
-        const def = devList.find(d => d.is_default);
-        if (def) setSelected(def.name);
+        
+        // Try to get current device from settings first
+        try {
+          const settings = await invoke<any>('get_settings');
+          if (settings.audio.input_device) {
+            setSelected(settings.audio.input_device);
+          } else {
+            const def = devList.find(d => d.is_default);
+            if (def) setSelected(def.name);
+          }
+        } catch {
+          const def = devList.find(d => d.is_default);
+          if (def) setSelected(def.name);
+        }
       } catch (e) {
-        console.error('Failed to list devices', e);
+        console.error('Audio initialization failed', e);
       }
     };
-    load();
+    init();
 
-    const unlisten = listen<number>('audio_energy', (event) => {
-      setEnergy(event.payload * 100);
+    const unlisten = listen<any>('audio_energy', (event) => {
+      // Backend sends payload as { energy: f32 } or just f32 depending on implementation
+      const val = typeof event.payload === 'number' ? event.payload : event.payload?.energy || 0;
+      setEnergy(val * 100);
     });
 
     return () => {
@@ -42,22 +63,29 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     };
   }, []);
 
+  const handleSelect = async (name: string) => {
+    setSelected(name);
+    try {
+      await invoke('update_setting', { domain: 'audio', key: 'input_device', value: name });
+      // Restart engine to apply hardware change immediately
+      await invoke('stop_engine');
+      await invoke('launch_engine');
+    } catch (e) {
+      console.error('Failed to update audio device', e);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full relative">
-      <header className="mb-8">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="h-[1px] w-8 bg-[#00dbe9]/30" />
-          <span className="text-[11px] font-black tracking-[0.4em] text-[#00dbe9] uppercase">Step 3.0 • Audio Input</span>
-        </div>
-        <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">Device Selection</h1>
-        <p className="text-white/40 text-sm leading-relaxed max-w-md">
-            Configuring audio input for real-time interaction. Select your primary microphone to enable voice understanding.
-        </p>
-      </header>
+      <WizardHeader 
+        step="Step 3.0 • Audio Input"
+        title="Device Selection"
+        description="Configuring audio input for real-time interaction. Select your primary microphone to enable voice understanding."
+      />
  
-      <div className="flex-1 flex flex-col gap-6 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
+      <div className="flex-1 flex flex-col gap-6 min-h-0">
         {/* Live Analysis Card */}
-        <div className="p-5 bg-white/[0.02] border border-white/10 rounded-2xl relative overflow-hidden group">
+        <div className="flex-shrink-0 p-5 bg-white/[0.02] border border-white/10 rounded-2xl relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-[#00dbe9]/5 to-transparent opacity-50" />
             
             <div className="relative z-10 flex items-center gap-6">
@@ -92,13 +120,13 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
             </div>
         </div>
     
-        <div className="flex flex-col gap-3 min-h-0">
+        <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
             <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest px-1">Source Selection</span>
             <div className="space-y-2">
             {devices.map(device => (
                 <button
                 key={device.name}
-                onClick={() => setSelected(device.name)}
+                onClick={() => handleSelect(device.name)}
                 className={cn(
                     "w-full p-4 rounded-xl border transition-all text-left flex items-center justify-between group",
                     selected === device.name 
@@ -122,33 +150,14 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         </div>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mt-8 pt-8 border-t border-white/5 flex gap-4"
-      >
-        <button
-          onClick={onBack}
-          className="px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors"
-        >
-          Back
-        </button>
-
-        <button
-          onClick={onNext}
-          disabled={!selected}
-          className={cn(
-            "group relative flex-1 py-5 font-black rounded-2xl overflow-hidden transition-all flex items-center justify-center gap-4 shadow-[0_0_40px_rgba(0,0,0,0.5)]",
-            selected 
-              ? "bg-zinc-950 text-white border border-white/10 hover:bg-zinc-900 hover:border-[#00dbe9]/50 active:scale-[0.98]" 
-              : "bg-white/5 text-white/20 border border-white/5 cursor-not-allowed"
-          )}
-        >
-          {selected && <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />}
-          <span className="relative z-10 uppercase tracking-[0.4em] text-[11px]">Finalize Initialization</span>
-          <ArrowRight className="w-4 h-4 relative z-10 group-hover:translate-x-1 transition-transform text-[#00dbe9]" />
-        </button>
-      </motion.div>
+      <WizardFooter 
+        onBack={onBack}
+        onNext={onNext}
+        nextLabel="Finalize Initialization"
+        isNextDisabled={!selected}
+        showBack={true}
+      />
     </div>
   );
 };
+
