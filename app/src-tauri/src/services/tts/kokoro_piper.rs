@@ -3,19 +3,16 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
-
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
     OfflineTtsKokoroModelConfig, OfflineTtsVitsModelConfig,
 };
-
 use crate::core::events::VoxEvent;
 use crate::core::constants::{
     MODEL_FILE_TTS_ONNX, MODEL_FILE_TTS_VOICES, MODEL_FILE_TTS_TOKENS, 
     MODEL_FILE_TTS_ESPEAK,
 };
-
-// ─── TTS Engine (Multi-Model Routing) ─────────────────────────────────────────
+use crate::services::traits;
 
 pub struct TtsEngine {
     en_tts: OfflineTts,
@@ -23,14 +20,12 @@ pub struct TtsEngine {
 }
 
 impl TtsEngine {
-    /// Initialize the TTS engine with both English and Hindi models.
     pub fn new(en_model_dir: &Path, hi_model_path: &Path) -> Result<Self> {
         log::info!("[TTS] Initializing Multi-Model TTS engine...");
         
         let hi_model_dir = hi_model_path.parent()
             .ok_or_else(|| anyhow!("[TTS] Invalid Hindi model path"))?;
 
-        // 1. English (Kokoro-82M)
         let en_config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 kokoro: OfflineTtsKokoroModelConfig {
@@ -51,8 +46,6 @@ impl TtsEngine {
         let en_tts = OfflineTts::create(&en_config)
             .ok_or_else(|| anyhow!("[TTS] Failed to create English (Kokoro) TTS instance."))?;
 
-        // 2. Hindi (Piper VITS)
-        // Note: Piper models in sherpa-onnx use the VITS config block.
         let hi_config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 vits: OfflineTtsVitsModelConfig {
@@ -82,15 +75,13 @@ impl TtsEngine {
         Ok(Self { en_tts, hi_tts })
     }
 
-    /// Detect if string contains Devanagari (Hindi) characters.
     fn is_hindi(&self, text: &str) -> bool {
-        text.chars().any(|c| c >= '\u{0900}' && c <= '\u{097F}' )
+        crate::services::utils::is_devanagari(text)
     }
+}
 
-    /// Synthesize text and stream audio chunks to the pipeline.
-    ///
-    /// Routes text to either Kokoro (English) or Piper (Hindi) based on characters.
-    pub fn synthesize_chunk(
+impl traits::TtsEngine for TtsEngine {
+    fn synthesize_chunk(
         &mut self,
         text: &str,
         voice_sid: i32,
@@ -102,12 +93,8 @@ impl TtsEngine {
             return Ok(());
         }
 
-        // Language Routing Logic (Zero-latency Unicode check)
         let is_hi = self.is_hindi(text);
         let tts_instance = if is_hi { &self.hi_tts } else { &self.en_tts };
-        
-        // For Hindi, we usually use sid=0 for single-voice Piper models.
-        // For English (Kokoro), voice_sid maps to the voice index in voices.bin.
         let actual_sid = if is_hi { 0 } else { voice_sid };
 
         let gen_config = GenerationConfig {
@@ -175,62 +162,4 @@ impl TtsEngine {
 
         Ok(())
     }
-}
-
-/// Commands sent from the Pipeline Orchestrator to the TTS background thread.
-pub enum TtsCommand {
-    /// Start synthesizing `text` using `voice_sid`.
-    Generate {
-        turn_id: u32,
-        voice_sid: i32,
-        text: String,
-    },
-    /// Stop the background thread and deallocate the models.
-    Shutdown,
-}
-
-// ─── TTS Worker Entry Point ──────────────────────────────────────────────────
-
-pub fn spawn_tts_worker(
-    app: tauri::AppHandle,
-    rx: std::sync::mpsc::Receiver<TtsCommand>,
-    en_model_dir: std::path::PathBuf,
-    hi_model_path: std::path::PathBuf,
-    event_tx: std::sync::mpsc::Sender<VoxEvent>,
-    cancel_flag: Arc<AtomicBool>,
-    is_loaded: Arc<AtomicBool>,
-) {
-    use tauri::Emitter;
-    let _ = app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS");
-
-    let mut engine = match TtsEngine::new(&en_model_dir, &hi_model_path) {
-        Ok(e) => {
-            is_loaded.store(true, Ordering::Relaxed);
-            let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "TTS");
-            e
-        },
-        Err(e) => {
-            log::error!("[TTS] CRITICAL: Failed to load multi-model engine: {}", e);
-            let _ = app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("TTS: {}", e));
-            return;
-        }
-    };
-
-    log::info!("[TTS Worker] Persistent loop started.");
-    while let Ok(cmd) = rx.recv() {
-        match cmd {
-            TtsCommand::Generate { turn_id, voice_sid, text } => {
-                if let Err(e) = engine.synthesize_chunk(&text, voice_sid, turn_id, cancel_flag.clone(), event_tx.clone()) {
-                    log::error!("[TTS Worker] Synthesis error (turn {}): {}", turn_id, e);
-                }
-            }
-            TtsCommand::Shutdown => {
-                log::info!("[TTS Worker] Shutdown command received. Exiting loop.");
-                break;
-            }
-        }
-    }
-    
-    is_loaded.store(false, Ordering::Relaxed);
-    log::info!("[TTS Worker] Loop exited. Engine will be dropped.");
 }
