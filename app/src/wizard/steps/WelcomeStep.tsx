@@ -17,60 +17,93 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
   const prevSubStep = () => setSubStep(prev => Math.max(prev - 1, 1));
 
   return (
-    <div className="flex flex-col h-full relative">
-      {/* Sub-step Navigation Controls (Top Right) */}
-      <div className="absolute -top-4 -right-4 flex items-center gap-2 z-50">
-        <button 
-          onClick={prevSubStep}
-          disabled={subStep === 1}
-          className="p-2 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 disabled:opacity-20 transition-all"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <button 
-          onClick={nextSubStep}
-          disabled={subStep === 3}
-          className="p-2 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 disabled:opacity-20 transition-all"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
+    <div className="flex flex-col h-full relative" ref={containerRef}>
+      <header className="mb-8">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-4">
+            <div className="h-[1px] w-8 bg-[#00dbe9]/30" />
+            <span className="text-[11px] font-black tracking-[0.4em] text-[#00dbe9] uppercase">Step 1.0 • Initialization</span>
+          </div>
+          
+          {/* Sub-step Navigation Controls */}
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={prevSubStep}
+              disabled={subStep === 1}
+              className="p-2 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 disabled:opacity-20 transition-all"
+            >
+              <ChevronLeft className="w-4 h-4 text-white/60" />
+            </button>
+            <button 
+              onClick={nextSubStep}
+              disabled={subStep === 3}
+              className="p-2 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 disabled:opacity-20 transition-all"
+            >
+              <ChevronRight className="w-4 h-4 text-white/60" />
+            </button>
+          </div>
+        </div>
 
-      <div className="flex-1 flex flex-col justify-center">
+        <AnimatePresence mode="wait">
+          {subStep === 1 && (
+            <motion.div
+              key="header1"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+            >
+              <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">
+                Welcome <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/50"> to Vox.</span>
+              </h1>
+              <p className="text-white/40 text-sm leading-relaxed max-w-md">
+                Vox is a low-latency audio intelligence system designed to live in your system tray and provide real-time interaction.
+              </p>
+            </motion.div>
+          )}
+          {subStep === 2 && (
+            <motion.div
+              key="header2"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+            >
+              <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">
+                The AI Core
+              </h1>
+              <p className="text-white/40 text-sm leading-relaxed max-w-md">
+                Powered by <span className="text-white/80">Qwen-ASR</span> and <span className="text-white/80">Gemma-2B</span>. 
+                Experience low-latency intelligence that processes everything locally on your hardware.
+              </p>
+            </motion.div>
+          )}
+          {subStep === 3 && (
+            <motion.div
+              key="header3"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+            >
+              <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">
+                Vox Live HUD
+              </h1>
+              <p className="text-white/40 text-sm leading-relaxed max-w-md">
+                An AI transcription overlay that follows your voice. It appears instantly when you speak and disappears when finished.
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </header>
+
+      <div className="flex-1 flex flex-col min-h-0">
         <AnimatePresence mode="wait">
           {subStep === 1 && (
             <motion.div 
               key="step1"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="flex flex-col gap-10"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="flex-1 flex flex-col justify-center"
             >
-              <header>
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="flex items-center gap-4 mb-4"
-                >
-                  <div className="h-[1px] w-8 bg-[#00dbe9]/30" />
-                  <span className="text-[11px] font-black tracking-[0.4em] text-[#00dbe9] uppercase">STABLE RELEASE</span>
-                </motion.div>
-
-                <motion.h1 
-                  className="text-5xl font-black tracking-tighter text-white mb-6 leading-[0.9]"
-                >
-                  Welcome 
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/50"> to Vox.</span>
-                </motion.h1>
-
-                <motion.p 
-                  className="text-white/40 text-sm leading-relaxed max-w-md"
-                >
-                  Vox is a low-latency audio intelligence system designed to live in your system tray and provide real-time interaction.
-                </motion.p>
-              </header>
-
               <div className="grid grid-cols-2 gap-4">
                 <FeatureCard 
                   icon={<ShieldCheck className="w-4 h-4 text-white/50" />}
@@ -102,23 +135,13 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.05 }}
-              className="flex flex-col items-center justify-center text-center py-6 h-full"
+              className="flex-1 flex flex-col items-center justify-center text-center py-6"
             >
-              <div className="relative w-72 h-72 mb-8 flex items-center justify-center">
-                {/* Authentic Vox Orb */}
+              <div className="relative w-64 h-64 mb-8 flex items-center justify-center">
                 <div className="w-full h-full">
                    <VoxOrb interactionState="Thinking" />
                 </div>
-                {/* Atmospheric Glow */}
                 <div className="absolute inset-0 bg-[#00dbe9]/10 blur-[100px] rounded-full pointer-events-none" />
-              </div>
-              
-              <div className="space-y-4">
-                <h2 className="text-3xl font-black tracking-tight text-white uppercase leading-none">The Neural Core</h2>
-                <p className="text-white/40 text-sm max-w-sm leading-relaxed mx-auto">
-                  Powered by <span className="text-white/80">Qwen-ASR</span> and <span className="text-white/80">Gemma-2B</span>. 
-                  Experience low-latency intelligence that processes everything locally on your hardware.
-                </p>
               </div>
             </motion.div>
           )}
@@ -130,12 +153,9 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               className="flex flex-col h-full py-4 relative"
-              ref={containerRef}
             >
               <div className="flex-1 flex flex-col items-center justify-center relative">
-                {/* Central Tray HUD Mockup */}
                 <div className="w-[380px] h-[240px] liquid-glass rounded-2xl border border-white/10 overflow-hidden flex flex-col text-left shadow-2xl relative z-10">
-                  {/* Authentic Header */}
                   <div className="px-6 py-4 flex items-center justify-between relative z-10 border-b border-white/5">
                     <div 
                       className="flex items-center gap-3 cursor-help group/status"
@@ -170,7 +190,6 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                     </div>
                   </div>
 
-                  {/* Authentic Renderer Mockup */}
                   <div 
                     className="flex-1 px-5 py-4 cursor-help flex flex-col items-center justify-center text-center"
                     onMouseEnter={() => setHoveredElement('renderer')}
@@ -189,7 +208,6 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                     </div>
                   </div>
 
-                  {/* Authentic Footer */}
                   <div 
                     className="px-7 py-4 bg-black/40 border-t border-white/5 flex items-center justify-between"
                     onMouseEnter={() => setHoveredElement('history')}
@@ -217,7 +235,6 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                   </div>
                 </div>
 
-                {/* Connection Lines (SVG) */}
                 <div className="absolute inset-0 pointer-events-none z-0">
                   <CalloutLine active={hoveredElement === 'status'} fromId="step3-status" containerRef={containerRef} />
                   <CalloutLine active={hoveredElement === 'mic'} fromId="step3-mic" containerRef={containerRef} />
@@ -227,8 +244,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                 </div>
               </div>
 
-              {/* Bottom Tooltip Info Area */}
-              <div className="mt-8 border-t border-white/5 pt-8 min-h-[120px] flex flex-col items-center text-center">
+              <div className="mt-8 pt-8 min-h-[120px] flex flex-col items-center text-center">
                 <AnimatePresence mode="wait">
                   {hoveredElement ? (
                     <motion.div
@@ -259,13 +275,10 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                       <div className="flex items-center justify-center gap-2">
                          <div className="h-[1px] w-4 bg-[#00dbe9]" />
                          <h3 className="text-[#00dbe9] text-sm font-black uppercase tracking-[0.2em]">
-                            Vox Live HUD
+                            Interactive Demo
                          </h3>
                          <div className="h-[1px] w-4 bg-[#00dbe9]" />
                       </div>
-                      <p className="text-white/60 text-[12px] leading-relaxed font-medium">
-                         A system-level transcription overlay that follows your voice. It appears instantly when you speak and disappears when finished, requiring zero context switching.
-                      </p>
                       <p className="text-white/40 text-[11px] italic">
                          Hover over HUD elements to explore features...
                       </p>
@@ -279,7 +292,6 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
       </div>
 
       <div className="mt-auto space-y-8">
-        {/* Pagination Dots */}
         <div className="flex items-center justify-center gap-3 py-2">
           {[1, 2, 3].map((i) => (
             <button 
@@ -357,13 +369,11 @@ const CalloutLine = ({ active, fromId, containerRef }: { active: boolean, fromId
       if (fromEl) {
         const fromRect = fromEl.getBoundingClientRect();
         
-        // Tooltip target point is centered at the bottom of the container
-        // We target the top of the bottom info area
         setCoords({
           x1: fromRect.left + fromRect.width / 2 - containerRect.left,
           y1: fromRect.top + fromRect.height / 2 - containerRect.top,
-          x2: containerRect.width / 2, // Centered X
-          y2: containerRect.height - 110 // Targeted Y in the bottom area
+          x2: containerRect.width / 2,
+          y2: containerRect.height - 110
         });
       }
     } else {

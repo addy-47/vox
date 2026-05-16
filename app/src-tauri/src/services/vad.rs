@@ -137,6 +137,8 @@ impl VadEngine {
         
         // 16ms chunks (256 samples at 16kHz) — matches TenVAD window_size default
         let mut chunk = vec![0.0f32; 256];
+        
+        let mut ui_emit_counter = 0;
 
         loop {
             // Check for global engine shutdown signal
@@ -219,6 +221,18 @@ impl VadEngine {
                     vad_prob: 0.0,
                 }) {
                     dropped_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+
+                ui_emit_counter += 1;
+                if ui_emit_counter >= 2 {
+                    // Emit directly to UI (every ~32ms) to animate setup/live-test waves
+                    use tauri::Emitter;
+                    let target = match owner {
+                        InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
+                        InteractionOwner::Tray => "tray",
+                    };
+                    let _ = app.emit_to(target, "audio_energy", energy);
+                    ui_emit_counter = 0;
                 }
 
                 if mode == crate::core::settings::InteractionMode::PTT {

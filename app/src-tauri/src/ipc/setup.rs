@@ -68,27 +68,35 @@ pub async fn start_model_setup(
             manifest.models.into_iter().filter(|m| m.required).collect()
         };
 
+        let model_ids: Vec<String> = target_models.iter().map(|m| m.id.clone()).collect();
+        log::info!("[SETUP] Initializing setup task for {} models: {:?}", target_models.len(), model_ids);
+
         if target_models.is_empty() {
-            log::warn!("[SETUP] No models selected for setup.");
+            log::warn!("[SETUP] No models selected for setup. Emitting completion immediately.");
             let _ = app_clone.emit("model_setup_complete", true);
             let mut is_running = state_clone.setup_running.lock().await;
             *is_running = false;
             return;
         }
 
+        let mut success_count = 0;
+        let total_count = target_models.len();
+
         for model in target_models {
-            log::info!("[SETUP] Starting setup for model: {}", model.id);
+            log::info!("[SETUP] [{}/{}] Starting setup for model: {}", success_count + 1, total_count, model.id);
             if let Err(e) = manager.setup_model(&model, &base_url, &models_dir).await {
-                log::error!("[SETUP] Failed to setup core model {}: {}", model.id, e);
+                log::error!("[SETUP] Failed to setup model {}: {}", model.id, e);
                 // Emit global failure event to frontend
                 let _ = app_clone.emit("model_setup_error", e.to_string());
                 let mut is_running = state_clone.setup_running.lock().await;
                 *is_running = false;
                 return;
             }
+            success_count += 1;
+            log::info!("[SETUP] [{}/{}] Finished setup for model: {}", success_count, total_count, model.id);
         }
         
-        log::info!("[SETUP] All mandatory core models verified and ready.");
+        log::info!("[SETUP] All {} models successfully verified and ready.", total_count);
         let mut is_running = state_clone.setup_running.lock().await;
         *is_running = false;
         
