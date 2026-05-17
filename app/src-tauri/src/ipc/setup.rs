@@ -129,12 +129,19 @@ pub async fn complete_setup_wizard(app: AppHandle, state: State<'_, Arc<AppState
     
     log::info!("[SETUP] Onboarding wizard marked as completed.");
 
+    // Transition InteractionOwner to Tray and update VAD synced state
+    state.owner.store(crate::core::state::InteractionOwner::Tray as u32, std::sync::atomic::Ordering::Relaxed);
+    if let Some(engine) = state.engine.lock().await.as_ref() {
+        let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(crate::core::state::InteractionOwner::Tray));
+    }
+
     // Window Transition
     if let Some(wizard_win) = app.get_webview_window("wizard") {
         let _ = wizard_win.close();
     }
     
     if let Some(main_win) = app.get_webview_window("main") {
+        let _ = main_win.eval("window.location.replace('/')");
         let _ = main_win.show();
         let _ = main_win.set_focus();
     }

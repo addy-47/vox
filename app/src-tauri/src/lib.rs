@@ -205,13 +205,13 @@ pub fn run() {
 
             // ── 2. Position tray HUD ─────────────────────────────────────────
             if let Some(tray_win) = app.get_webview_window("tray") {
-                let tray_enabled = {
+                let (tray_enabled, setup_completed) = {
                     let state: State<'_, std::sync::Arc<AppState>> = app.state();
                     let s = state.settings.read().unwrap();
-                    s.ui.tray_enabled
+                    (s.ui.tray_enabled, s.setup.completed)
                 };
 
-                if tray_enabled {
+                if setup_completed && tray_enabled {
                     let tray_win_clone = tray_win.clone();
                     tauri::async_runtime::spawn(async move {
                         // Give the window manager a moment to register the window
@@ -220,6 +220,8 @@ pub fn run() {
                         position_tray_window(&tray_win_clone).await;
                         let _ = tray_win_clone.hide();
                     });
+                } else if !setup_completed {
+                    log::info!("[BOOTSTRAP] Onboarding setup not completed. Keeping tray window hidden.");
                 } else {
                     log::info!("[BOOTSTRAP] Tray HUD disabled. Closing tray window to save RAM.");
                     let _ = tray_win.close();

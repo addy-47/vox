@@ -52,10 +52,22 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     };
     init();
 
+    let lastTime = 0;
+    let localEnergy = 0;
+    const THROTTLE_MS = 60;
+
     const unlisten = listen<any>('audio_energy', (event) => {
-      // Backend sends payload as { energy: f32 } or just f32 depending on implementation
       const val = typeof event.payload === 'number' ? event.payload : event.payload?.energy || 0;
-      setEnergy(val * 100);
+      const targetEnergy = val * 100;
+      
+      // Exponential moving average smoothing for organic signal rise and slow decay (low-pass)
+      localEnergy = localEnergy * 0.85 + targetEnergy * 0.15;
+      
+      const now = Date.now();
+      if (now - lastTime >= THROTTLE_MS) {
+        setEnergy(localEnergy);
+        lastTime = now;
+      }
     });
 
     return () => {
@@ -90,15 +102,20 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
             
             <div className="relative z-10 flex items-center gap-6">
             <div className="relative">
-                <motion.div 
-                animate={energy > 5 ? { scale: [1, 1.15, 1], opacity: [0.3, 0.6, 0.3] } : { opacity: 0.2 }}
-                className="absolute inset-0 bg-[#00dbe9] rounded-full blur-xl"
-                />
+                {/* Relaxed steady ambient glow when mic is active */}
+                {selected && (
+                  <div 
+                    className="absolute inset-0 bg-[#00dbe9]/10 rounded-full blur-xl animate-pulse" 
+                    style={{ animationDuration: '3s' }} 
+                  />
+                )}
                 <div className={cn(
-                "w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 relative z-10",
-                energy > 5 ? "bg-[#00dbe9] text-black shadow-[0_0_30px_#00dbe9]" : "bg-white/5 text-white/20"
+                  "w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 relative z-10 border",
+                  selected 
+                    ? "bg-[#00dbe9]/10 border-[#00dbe9]/20 text-[#00dbe9] shadow-[0_0_20px_rgba(0,219,233,0.15)]" 
+                    : "bg-white/5 border-transparent text-white/20"
                 )}>
-                <Mic className="w-7 h-7" />
+                  <Mic className="w-7 h-7" />
                 </div>
             </div>
     
@@ -113,7 +130,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
                 <motion.div 
                     className="h-full bg-gradient-to-r from-[#00dbe9] to-[#d8baff]"
                     animate={{ width: `${Math.min(energy, 100)}%` }}
-                    transition={{ type: 'spring', bounce: 0, duration: 0.1 }}
+                    transition={{ type: 'tween', ease: 'easeOut', duration: 0.15 }}
                 />
                 </div>
             </div>

@@ -46,6 +46,7 @@ where
                 InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
                 InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
                 InteractionOwner::Ptt => InteractionMode::PTT,
+                InteractionOwner::Wizard => InteractionMode::Passive,
             };
             (settings.vad.threshold, settings.vad.ptt_noise_gate, mode, owner, settings.audio.output_mode.clone())
         };
@@ -152,6 +153,7 @@ where
                 let target = match owner {
                     InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
                     InteractionOwner::Tray => "tray",
+                    InteractionOwner::Wizard => "wizard",
                 };
                 let _ = app.emit_to(target, "audio_energy", energy);
                 ui_emit_counter = 0;

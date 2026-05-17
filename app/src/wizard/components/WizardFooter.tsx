@@ -5,10 +5,12 @@ import { cn } from '@/shared/lib/utils';
 interface WizardFooterProps {
   onBack?: () => void;
   onNext?: () => void;
+  onSkip?: () => void;
   nextLabel?: string;
   isNextDisabled?: boolean;
   isNextLoading?: boolean;
   showBack?: boolean;
+  showSkip?: boolean;
   className?: string;
   error?: string;
   errorLabel?: string;
@@ -17,10 +19,12 @@ interface WizardFooterProps {
 export const WizardFooter: React.FC<WizardFooterProps> = ({
   onBack,
   onNext,
+  onSkip,
   nextLabel = "Proceed",
   isNextDisabled = false,
   isNextLoading = false,
   showBack = true,
+  showSkip = false,
   className,
   error,
   errorLabel = "Error"
@@ -44,6 +48,15 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
             className="px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors"
           >
             Back
+          </button>
+        )}
+
+        {showSkip && onSkip && (
+          <button
+            onClick={onSkip}
+            className="px-6 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-[#00dbe9] transition-colors border border-dashed border-white/10 hover:border-[#00dbe9]/30 rounded-2xl bg-white/[0.01] transition-all duration-300"
+          >
+            Skip
           </button>
         )}
 

@@ -71,7 +71,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                 The AI Core
               </h1>
               <p className="text-white/40 text-sm leading-relaxed max-w-md">
-                Powered by <span className="text-white/80">Qwen-ASR</span> and <span className="text-white/80">Gemma-2B</span>. 
+                Powered by <span className="text-white/80">edge AI models</span>. 
                 Experience low-latency intelligence that processes everything locally on your hardware.
               </p>
             </motion.div>
@@ -155,7 +155,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               className="flex flex-col h-full py-4 relative"
             >
               <div className="flex-1 flex flex-col items-center justify-center relative">
-                <div className="w-[380px] h-[240px] liquid-glass rounded-2xl border border-white/10 overflow-hidden flex flex-col text-left shadow-2xl relative z-10">
+                <div className="w-[400px] h-[200px] liquid-glass rounded-2xl border border-white/10 overflow-hidden flex flex-col text-left shadow-2xl relative z-10">
                   <div className="px-6 py-4 flex items-center justify-between relative z-10 border-b border-white/5">
                     <div 
                       className="flex items-center gap-3 cursor-help group/status"
@@ -198,7 +198,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                   >
                     <div className="w-full space-y-2">
                        <div className="text-[17px] leading-snug font-medium tracking-tight text-white/90">
-                          Actually, let's explore the tray...
+                          Live transcriptions in real-time...
                           <motion.span 
                             animate={{ opacity: [0, 1, 0] }}
                             transition={{ repeat: Infinity, duration: 0.8 }}
@@ -244,7 +244,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                 </div>
               </div>
 
-              <div className="mt-8 pt-8 min-h-[120px] flex flex-col items-center text-center">
+              <div className="mt-4 pt-4 min-h-[80px] flex flex-col items-center text-center">
                 <AnimatePresence mode="wait">
                   {hoveredElement ? (
                     <motion.div
@@ -291,7 +291,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
         </AnimatePresence>
       </div>
 
-      <div className="mt-auto space-y-8">
+      <div className="mt-auto space-y-4">
         <div className="flex items-center justify-center gap-3 py-2">
           {[1, 2, 3].map((i) => (
             <button 

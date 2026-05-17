@@ -7,13 +7,13 @@ use crate::tray::{setup_linux_virtual_layer, position_tray_window};
 pub async fn toggle_hud_visibility(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
-    // Check if tray is even enabled
-    let tray_enabled = {
+    // Check if setup is completed and tray is even enabled
+    let (tray_enabled, setup_completed) = {
         let s = state.settings.read().unwrap();
-        s.ui.tray_enabled
+        (s.ui.tray_enabled, s.setup.completed)
     };
-    if !tray_enabled {
-        log::warn!("[Tray] Blocked toggle_hud_visibility: Tray HUD is disabled in settings.");
+    if !setup_completed || !tray_enabled {
+        log::warn!("[Tray] Blocked toggle_hud_visibility: Setup not completed or Tray HUD is disabled.");
         return;
     }
 
