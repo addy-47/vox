@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use std::sync::mpsc;
 
 #[test]
 fn test_backend_init() {
@@ -18,7 +18,7 @@ fn test_backend_init() {
     
     static TEST_BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
     println!("Initializing backend...");
-    let backend = TEST_BACKEND.get_or_init(|| {
+    let _backend = TEST_BACKEND.get_or_init(|| {
         LlamaBackend::init().expect("Failed to initialize llama.cpp backend")
     });
     println!("Backend initialized!");
@@ -72,8 +72,8 @@ fn test_llm_generates_tokens() {
     use vox_lib::core::events::VoxEvent;
 
     let path = gguf_path();
-    let (cmd_tx, cmd_rx) = mpsc::channel(32);
-    let (event_tx, mut event_rx) = mpsc::channel(64);
+    let (cmd_tx, cmd_rx) = mpsc::channel();
+    let (event_tx, event_rx) = mpsc::channel();
 
     // Spawn worker thread
     let handle = std::thread::spawn(move || {
@@ -84,34 +84,30 @@ fn test_llm_generates_tokens() {
     let cancel = Arc::new(AtomicBool::new(false));
     
     // Send generate command
-    cmd_tx.blocking_send(LlmCommand::Generate {
+    cmd_tx.send(LlmCommand::Generate {
         text: "Say exactly: hello".to_string(),
-        session_id: 1,
+        system_prompt: "You are a helpful assistant.".to_string(),
+        turn_id: 1,
         cancel_flag: cancel,
     }).expect("send failed");
 
-    // Collect tokens with a timeout
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let tokens: Vec<String> = rt.block_on(async {
-        let mut collected = Vec::new();
-        while let Ok(event) = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            event_rx.recv(),
-        ).await {
+    // Collect tokens with standard channel receiver
+    let mut tokens = Vec::new();
+    let start = std::time::Instant::now();
+    while start.elapsed() < std::time::Duration::from_secs(30) {
+        if let Ok(event) = event_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             match event {
-                Some(VoxEvent::LlmToken { token, .. }) => {
-                    collected.push(token);
+                VoxEvent::LlmToken { token, .. } => {
+                    tokens.push(token);
                 }
-                Some(VoxEvent::LlmFinished { .. }) => break,
-                None => break,
+                VoxEvent::LlmFinished { .. } => break,
                 _ => {}
             }
         }
-        collected
-    });
+    }
 
     // Shutdown
-    cmd_tx.blocking_send(LlmCommand::Shutdown).expect("shutdown failed");
+    cmd_tx.send(LlmCommand::Shutdown).expect("shutdown failed");
     handle.join().expect("thread panicked");
 
     assert!(!tokens.is_empty(), "LLM should produce at least one token");
@@ -127,8 +123,8 @@ fn test_llm_cancels_mid_generation() {
     use vox_lib::core::events::VoxEvent;
 
     let path = gguf_path();
-    let (cmd_tx, cmd_rx) = mpsc::channel(32);
-    let (event_tx, mut event_rx) = mpsc::channel(64);
+    let (cmd_tx, cmd_rx) = mpsc::channel();
+    let (event_tx, event_rx) = mpsc::channel();
 
     let handle = std::thread::spawn(move || {
         let worker = LlmWorker::new(&path, 512, 2).expect("model load failed");
@@ -139,37 +135,40 @@ fn test_llm_cancels_mid_generation() {
     let cancel_clone = cancel.clone();
 
     // Send generate command
-    cmd_tx.blocking_send(LlmCommand::Generate {
+    cmd_tx.send(LlmCommand::Generate {
         text: "Write a very long essay about the history of computing".to_string(),
-        session_id: 1,
+        system_prompt: "You are a helpful assistant.".to_string(),
+        turn_id: 1,
         cancel_flag: cancel_clone,
     }).expect("send failed");
 
     // Cancel after first token arrives
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let cancelled = rt.block_on(async {
-        let mut got_token = false;
-        loop {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(30),
-                event_rx.recv(),
-            ).await {
-                Ok(Some(VoxEvent::LlmToken { .. })) => {
+    let mut got_token = false;
+    let mut cancelled = false;
+    let start = std::time::Instant::now();
+    
+    while start.elapsed() < std::time::Duration::from_secs(30) {
+        if let Ok(event) = event_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            match event {
+                VoxEvent::LlmToken { .. } => {
                     if !got_token {
                         got_token = true;
                         // Trigger cancellation
                         cancel.store(true, Ordering::Relaxed);
                     }
                 }
-                Ok(Some(VoxEvent::Cancelled { .. })) => return true,
-                Ok(Some(VoxEvent::LlmFinished { .. })) => return false,
-                _ => return false,
+                VoxEvent::Cancelled { .. } => {
+                    cancelled = true;
+                    break;
+                }
+                VoxEvent::LlmFinished { .. } => break,
+                _ => {}
             }
         }
-    });
+    }
 
     // Shutdown
-    cmd_tx.blocking_send(LlmCommand::Shutdown).expect("shutdown failed");
+    cmd_tx.send(LlmCommand::Shutdown).expect("shutdown failed");
     handle.join().expect("thread panicked");
 
     assert!(cancelled, "Cancellation event should be received after cancel_flag is set");
