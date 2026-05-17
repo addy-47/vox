@@ -307,6 +307,10 @@ fn apply_setting_mutation(
         ("vad", "ptt_noise_gate") => {
             settings.vad.ptt_noise_gate = value.as_f64().ok_or("ptt_noise_gate must be a number")? as f32;
         }
+        ("vad", "vad_backend") => {
+            settings.vad.vad_backend = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid vad_backend: {}", e))?;
+        }
         ("asr", "model") => {
             settings.asr.model = value.as_str().ok_or("model must be a string")?.to_string();
         }

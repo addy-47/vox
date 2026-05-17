@@ -129,31 +129,49 @@ pub async fn complete_setup_wizard(app: AppHandle, state: State<'_, Arc<AppState
     
     log::info!("[SETUP] Onboarding wizard marked as completed.");
 
-    // Transition InteractionOwner to Tray and update VAD synced state
-    state.owner.store(crate::core::state::InteractionOwner::Tray as u32, std::sync::atomic::Ordering::Relaxed);
-    if let Some(engine) = state.engine.lock().await.as_ref() {
-        let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(crate::core::state::InteractionOwner::Tray));
-    }
-
-    // Window Transition
+    // Close the wizard window immediately to prevent UI blocking
     if let Some(wizard_win) = app.get_webview_window("wizard") {
         let _ = wizard_win.close();
     }
-    
-    if let Some(main_win) = app.get_webview_window("main") {
-        let _ = main_win.eval("window.location.replace('/')");
-        let _ = main_win.show();
-        let _ = main_win.set_focus();
-    }
+
+    let state_clone = state.inner().clone();
+    let app_clone = app.clone();
+
+    // Spawn engine ownership transition and main window initialization in the background
+    tauri::async_runtime::spawn(async move {
+        // Transition InteractionOwner to Tray and update VAD synced state
+        state_clone.owner.store(crate::core::state::InteractionOwner::Tray as u32, std::sync::atomic::Ordering::Relaxed);
+        if let Some(engine) = state_clone.engine.lock().await.as_ref() {
+            let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(crate::core::state::InteractionOwner::Tray));
+        }
+
+        // Show and focus the main window
+        if let Some(main_win) = app_clone.get_webview_window("main") {
+            let _ = main_win.eval("window.location.replace('/')");
+            let _ = main_win.show();
+            let _ = main_win.set_focus();
+        }
+    });
 
     Ok(())
 }
+fn map_model_id(model_id: &str) -> &str {
+    match model_id {
+        "gemma4" => "llm_gemma_4_q4_k_m",
+        "kokoro" => "tts_kokoro_onnx",
+        "qwen3-asr" => "stt_encoder",
+        "piper_hi" => "tts_hi_piper_onnx",
+        other => other,
+    }
+}
+
 #[tauri::command]
 pub async fn check_model_exists(model_id: String, state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     let manifest_guard = state.manifest.read().await;
     let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
     
-    let model = manifest.models.iter().find(|m| m.id == model_id)
+    let mapped_id = map_model_id(&model_id);
+    let model = manifest.models.iter().find(|m| m.id == mapped_id)
         .ok_or_else(|| format!("Model {} not found in manifest", model_id))?;
 
     let models_dir = crate::utils::paths::get().models.clone();
@@ -172,7 +190,8 @@ pub async fn download_optional_model(
     let manifest_guard = state.manifest.read().await;
     let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
     
-    let model = manifest.models.iter().find(|m| m.id == model_id)
+    let mapped_id = map_model_id(&model_id);
+    let model = manifest.models.iter().find(|m| m.id == mapped_id)
         .ok_or_else(|| format!("Model {} not found in manifest", model_id))?.clone();
 
     let app_clone = app.clone();
