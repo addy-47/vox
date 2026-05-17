@@ -1,7 +1,7 @@
 use std::sync::atomic::{Ordering, AtomicBool};
 use std::sync::Arc;
 use crate::core::events::VoxEvent;
-use super::gemma_cpp::LlmWorker;
+use super::llama_cpp::LlmWorker;
 
 pub enum LlmCommand {
     Generate {

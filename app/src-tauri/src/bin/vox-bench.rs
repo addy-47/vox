@@ -6,7 +6,7 @@ use std::time::{Instant, Duration};
 
 use vox_lib::services::traits::{SttEngine as _, LlmEngine as _, TtsEngine as _, VadEngine as _};
 use vox_lib::services::stt::qwen_onnx::{SttEngine};
-use vox_lib::services::llm::gemma_cpp::LlmWorker;
+use vox_lib::services::llm::llama_cpp::LlmWorker;
 use vox_lib::services::tts::kokoro_piper::TtsEngine;
 use vox_lib::services::vad::ten_onnx::VadEngine;
 use vox_lib::utils::bench_reporter::{BenchReporter, MemorySnapshot};
@@ -29,6 +29,10 @@ struct Args {
     /// Number of concurrent turns to simulate (1 for now)
     #[arg(short, long, default_value = "1")]
     turns: usize,
+
+    /// Name of the LLM GGUF model file inside the gemma4 directory (defaults to E2B)
+    #[arg(short, long)]
+    llm: Option<String>,
 }
 
 enum BenchCommand {
@@ -70,8 +74,9 @@ fn main() -> anyhow::Result<()> {
     let stt_mem_mb = snap_2.rss_mb.saturating_sub(snap_1.rss_mb);
     metrics.lock().unwrap().stt_mem_mb = stt_mem_mb;
 
-    println!("\x1b[32m[Bench]\x1b[0m Loading LLM (Gemma 4-E2B)...");
-    let llm_path = vox_lib::utils::paths::model_dir("llm").join("gemma4").join("google_gemma-4-E2B-it-Q4_K_M.gguf");
+    let llm_filename = args.llm.clone().unwrap_or_else(|| "gemma4/google_gemma-4-E2B-it-Q4_K_M.gguf".to_string());
+    println!("\x1b[32m[Bench]\x1b[0m Loading LLM ({})...", llm_filename);
+    let llm_path = vox_lib::utils::paths::model_dir("llm").join(&llm_filename);
     let snap_3 = BenchReporter::get_memory_snapshot();
     let llm_engine = LlmWorker::new(&llm_path, 2048, 4).expect("Failed to load LLM");
     let snap_4 = BenchReporter::get_memory_snapshot();
