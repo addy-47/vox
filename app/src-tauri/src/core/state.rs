@@ -12,6 +12,7 @@ pub enum InteractionOwner {
     Tray = 0,
     MainWindow = 1,
     Ptt = 2,
+    Wizard = 3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
@@ -26,6 +27,7 @@ impl From<u32> for InteractionOwner {
         match v {
             1 => InteractionOwner::MainWindow,
             2 => InteractionOwner::Ptt,
+            3 => InteractionOwner::Wizard,
             _ => InteractionOwner::Tray,
         }
     }
@@ -168,6 +170,7 @@ impl PipelineAtomics {
             let target = match owner {
                 InteractionOwner::Tray => "tray",
                 InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
+                InteractionOwner::Wizard => "wizard",
             };
             let _ = tauri::Emitter::emit_to(app_handle, target, "state_changed", new_state);
         }
@@ -277,7 +280,13 @@ impl AppState {
 
         Self {
             engine:        Mutex::new(None),
-            owner:         Arc::new(AtomicU32::new(InteractionOwner::Tray as u32)),
+            owner:         Arc::new(AtomicU32::new(
+                if settings.setup.completed {
+                    InteractionOwner::Tray as u32
+                } else {
+                    InteractionOwner::Wizard as u32
+                }
+            )),
             hud_visible:   Mutex::new(true),
             settings:      Arc::new(RwLock::new(settings)),
             hud_menu_item: Mutex::new(None),

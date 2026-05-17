@@ -4,12 +4,17 @@ use once_cell::sync::Lazy;
 
 /// Returns `true` if the accumulated token buffer should be flushed to TTS.
 #[inline]
-pub fn should_flush(buf: &str, word_count: usize) -> bool {
+pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128) -> bool {
     let trimmed = buf.trim_end();
     let last = trimmed.chars().last().unwrap_or(' ');
     if matches!(last, '.' | '!' | '?') { return true; }
     if matches!(last, ',' | ';') { return true; }
     if trimmed.ends_with(" — ") || trimmed.ends_with(" - ") { return true; }
+    
+    // Time-based Flush Gateway: If we have at least 1-2 words and 800ms have passed, force flush
+    if word_count >= 1 && elapsed_ms > 800 { return true; }
+    
+    // Fallback: If 4 words accumulate without hitting timeout, flush anyway
     word_count >= 4
 }
 
@@ -84,8 +89,9 @@ pub fn to_friendly_hinglish(text: &str) -> String {
         match w {
             "haiM" | "hain" => "hain".to_string(),
             "kaisE" | "kaise" => "kaise".to_string(),
-            "karatE" | "karate" => "karte".to_string(), // Common verb contraction
-            "namastE" | "namaste" => "namaste".to_string(),
+            "karatE" | "karate" | "kairatE" | "kairate" => "karte".to_string(), // Common verb contraction
+            "namastE" | "namaste" | "nmaste" | "nste" => "namaste".to_string(),
+            "dIpAvalI" | "dipavali" | "dipli" | "dipvali" => "dipavali".to_string(),
             "shubh" => "shubh".to_string(),
             _ => {
                 // Remove trailing 'a' if word length > 3 (Schwa deletion at end)

@@ -41,6 +41,7 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     let target = match owner {
         crate::core::state::InteractionOwner::Tray => "tray",
         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+        crate::core::state::InteractionOwner::Wizard => "wizard",
     };
 
     log::info!("[PTT] >>> Recording started (turn: {}, target: {}, owner: {:?})", turn, target, owner);
@@ -75,6 +76,7 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
     let target = match owner {
         crate::core::state::InteractionOwner::Tray => "tray",
         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+        crate::core::state::InteractionOwner::Wizard => "wizard",
     };
 
     let _ = app.emit_to(target, "ptt_status", json!({ "state": "PROCESSING", "session_id": turn }));
@@ -108,6 +110,7 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
     let target = match owner {
         crate::core::state::InteractionOwner::Tray => "tray",
         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+        crate::core::state::InteractionOwner::Wizard => "wizard",
     };
 
     log::info!("[PTT] ❌ Recording cancelled (target: {}, owner: {:?})", target, owner);

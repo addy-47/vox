@@ -1,9 +1,9 @@
 use anyhow::Result;
-use tauri::{AppHandle, Manager, Emitter};
+use tauri::{AppHandle, Emitter};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
-use crate::core::state::{InteractionOwner, InteractionState};
+use crate::core::state::InteractionOwner;
 use crate::core::events::VoxEvent;
 use crate::core::constants::STT_THROTTLE_MS;
 use crate::services::traits::SttEngine as _;
@@ -164,45 +164,50 @@ pub fn spawn_stt_worker(
                             }
 
                             if let Some(ref eng) = engine {
+                                // BUGFIX: Slicing final utterance to the trailing 2.5s chunk to avoid O(N^2) offline transformer death.
+                                let start_idx = utterance.len().saturating_sub(40000);
+                                let rolling_utterance = &utterance[start_idx..];
+
                                 if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
                                     stitched_transcript.clear();
                                     last_transcript.clear();
                                     continue;
                                 }
 
-                                match eng.transcribe(&utterance) {
+                                match eng.transcribe(rolling_utterance) {
                                     Ok(text) => {
                                         if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
                                             stitched_transcript.clear();
                                             last_transcript.clear();
                                             continue;
                                         }
-                                        let text_str: String = text;
+                                        
+                                        let raw_final: String = text;
+                                        stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_final);
+                                        
                                         if let Some(ref pipeline_tx) = pipeline_event_tx {
                                             let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
                                                 turn_id: tid,
                                                 owner,
-                                                text: text_str,
+                                                text: stitched_transcript.clone(),
                                             });
                                         }
+                                        stitched_transcript.clear();
+                                        last_transcript.clear();
                                     }
-                                    Err(e) => log::error!("[STT] Final transcription failed: {}", e),
+                                    Err(e) => {
+                                        log::error!("[STT] Final transcription failed: {}", e);
+                                        stitched_transcript.clear();
+                                        last_transcript.clear();
+                                    }
                                 }
                             }
-                            
                             let target = match owner {
                                 InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
                                 InteractionOwner::Tray => "tray",
+                                InteractionOwner::Wizard => "wizard",
                             };
                             let _ = app.emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }));
-
-                            let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
-                            let idle_state = if state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed) {
-                                InteractionState::Listening
-                            } else {
-                                InteractionState::Idle
-                            };
-                            state.pipeline.update_interaction_state(idle_state, owner, &app);
 
                             stitched_transcript.clear();
                             last_transcript.clear();

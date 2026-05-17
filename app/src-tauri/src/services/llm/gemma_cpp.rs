@@ -39,7 +39,8 @@ impl LlmWorker {
         });
 
         let model_params = LlamaModelParams::default()
-            .with_n_gpu_layers(0);
+            .with_n_gpu_layers(0)
+            .with_use_mlock(true);
 
         log::info!("[LLM] Loading GGUF: {:?}", resolved);
         let model = LlamaModel::load_from_file(backend, &resolved, &model_params)
@@ -130,7 +131,9 @@ impl traits::LlmEngine for LlmWorker {
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(Some(NonZeroU32::new(self.ctx_size).unwrap()))
             .with_n_threads(self.n_threads as i32)
-            .with_n_threads_batch(self.n_threads as i32);
+            .with_n_threads_batch(self.n_threads as i32)
+            .with_n_batch(512)
+            .with_n_ubatch(512);
 
         let mut ctx = self.model
             .new_context(self.backend, ctx_params)

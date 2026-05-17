@@ -1,7 +1,11 @@
 import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { motion } from 'framer-motion';
-import { Sparkles, ArrowRight, Zap, ShieldCheck, Check } from 'lucide-react';
+import { Zap, Check } from 'lucide-react';
+
+// --- Modular Components ---
+import { WizardHeader } from '../components/WizardHeader';
+import { WizardFooter } from '../components/WizardFooter';
+import { StatusCard } from '../components/StatusCard';
 
 interface Props {
   onBack: () => void;
@@ -10,100 +14,70 @@ interface Props {
 export const CompletedStep: React.FC<Props> = ({ onBack }) => {
   const handleFinish = async () => {
     await invoke('complete_setup_wizard');
-    window.location.reload(); 
   };
 
   return (
-    <div className="flex flex-col h-full relative">
-      <header className="mb-8">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="h-[1px] w-8 bg-[#00dbe9]/30" />
-          <span className="text-[11px] font-black tracking-[0.4em] text-[#00dbe9] uppercase">Setup Finished</span>
-        </div>
-        <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4 leading-[0.9]">
-            Setup 
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/50"> Complete.</span>
-        </h1>
-        <p className="text-white/40 text-sm leading-relaxed max-w-md">
-            Vox is now fully configured and integrated with your system. Your personal AI assistant is ready to help.
-        </p>
-      </header>
+    <div className="flex flex-col h-full max-h-[100vh] overflow-hidden justify-between relative select-none">
+      <WizardHeader 
+        step="Step 5.0 • Completion"
+        title="Setup Complete."
+        description="Vox is installed and ready to use."
+      />
 
-      <div className="flex-1 flex flex-col items-center justify-center relative">
-        <div className="relative">
-            {/* Ambient Glow */}
-            <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="absolute inset-0 bg-[#00dbe9] rounded-full blur-[80px] opacity-10"
-            />
-            
-            <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: 'spring', bounce: 0.4 }}
-                className="w-32 h-32 bg-zinc-950 border border-[#00dbe9]/30 rounded-[2.5rem] flex items-center justify-center text-[#00dbe9] shadow-[0_0_50px_rgba(0,219,233,0.1)] relative z-10"
-            >
-                <div className="absolute inset-0 bg-gradient-to-br from-[#00dbe9]/10 to-transparent rounded-[2.5rem]" />
-                <ShieldCheck className="w-14 h-14 relative z-20" />
-                
-                <motion.div 
-                    animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
-                    transition={{ repeat: Infinity, duration: 3 }}
-                    className="absolute -top-3 -right-3 text-[#d8baff] z-30"
-                >
-                    <Sparkles className="w-8 h-8" />
-                </motion.div>
-            </motion.div>
+      <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-hidden justify-center">
+        {/* Harmonized Diagnostics Grid */}
+        <div className="grid grid-cols-2 gap-3 shrink-0">
+          <StatusCard 
+            icon={<Check className="w-4 h-4" />}
+            label="SPEECH ENGINE"
+            value="READY"
+            subValue="Runs completely offline"
+            ok={true}
+          />
+          <StatusCard 
+            icon={<Check className="w-4 h-4" />}
+            label="AI MODELS"
+            value="READY"
+            subValue="Configured on your device"
+            ok={true}
+          />
+          <StatusCard 
+            icon={<Check className="w-4 h-4" />}
+            label="SYSTEM TRAY"
+            value="RUNNING"
+            subValue="Access from your menu bar"
+            ok={true}
+          />
+          <StatusCard 
+            icon={<Check className="w-4 h-4" />}
+            label="PRIVACY"
+            value="SECURED"
+            subValue="100% private & safe"
+            ok={true}
+          />
         </div>
 
-        <div className="mt-12 grid grid-cols-2 gap-4 w-full max-w-sm">
-            <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center gap-3">
-                <Check className="w-3 h-3 text-[#00dbe9]" />
-                <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Voice Ready</span>
-            </div>
-            <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center gap-3">
-                <Check className="w-3 h-3 text-[#00dbe9]" />
-                <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">System Ready</span>
-            </div>
-        </div>
-      </div>
-
-      {/* Tip Card */}
-      <div className="mt-8 p-6 bg-zinc-950/50 border border-white/5 rounded-2xl relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-50" />
-          <div className="flex items-center gap-2 mb-3 relative z-10">
-              <Zap className="w-3 h-3 text-[#00dbe9]" />
-              <span className="text-[10px] font-black text-[#00dbe9] uppercase tracking-[0.3em]">Quick Tip</span>
+        {/* Tip Card */}
+        <div className="p-4 bg-zinc-950/50 border border-white/5 rounded-2xl relative overflow-hidden group shrink-0">
+          <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-50 pointer-events-none" />
+          <div className="flex items-center gap-2 mb-2 relative z-10">
+            <Zap className="w-3 h-3 text-[#00dbe9]" />
+            <span className="text-[9px] font-black text-[#00dbe9] uppercase tracking-[0.3em]">Quick Tip</span>
           </div>
-          <p className="text-[11px] text-white/40 leading-relaxed relative z-10">
-            Open Vox anytime from your <span className="text-white font-bold">System Tray</span> or use your global shortcut to start talking.
+          <p className="text-[11px] text-white/40 leading-relaxed relative z-10 font-medium">
+            Click the Vox icon in your menu bar or press your shortcut key to start talking.
           </p>
+        </div>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="mt-8 pt-8 border-t border-white/5 flex gap-4"
-      >
-        <button
-          onClick={onBack}
-          className="px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors"
-        >
-          Back
-        </button>
-        <button
-          onClick={handleFinish}
-          className="group relative flex-1 py-5 bg-zinc-950 text-white font-black rounded-2xl overflow-hidden border border-white/10 transition-all hover:bg-zinc-900 hover:border-[#00dbe9]/50 active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
-            Start Using Vox
-            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[#00dbe9]" />
-          </span>
-        </button>
-      </motion.div>
+      <WizardFooter 
+        onBack={onBack}
+        onNext={handleFinish}
+        nextLabel="Start Using Vox"
+        showBack={true}
+        showSkip={false}
+        className="mt-4 shrink-0"
+      />
     </div>
   );
 };
