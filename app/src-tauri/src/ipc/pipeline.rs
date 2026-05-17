@@ -4,7 +4,7 @@ use crate::core::state::{AppState, VoxEngine, InteractionOwner, InteractionState
 use crate::core::events::VoxEvent;
 use crate::services::stt::{spawn_stt_worker, SttCommand};
 use crate::services::audio::AudioStream;
-use crate::services::vad::VadEngine;
+use crate::services::vad::{VadBackend, ten_onnx::VadEngine as TenVadEngine, earshot_vad::EarshotVadEngine};
 use crate::services::pipeline::PipelineOrchestrator;
 use crate::services::playback::PlaybackEngine;
 use crate::tray::position_tray_window;
@@ -188,14 +188,19 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     
     app.emit(crate::core::constants::EVENT_MODEL_LOADING, "VAD").ok();
 
-    let (stt_model_path, vad_model_path, pre_load, input_device) = {
+    let (stt_model_path, vad_model_path_opt, vad_backend_opt, pre_load, input_device) = {
         let settings = state.settings.read().unwrap();
         let models_dir = paths::get().models.clone();
         
         let stt = models_dir.join(crate::core::constants::MODEL_DIR_STT);
-        let vad = models_dir.join(crate::core::constants::MODEL_DIR_VAD).join(crate::core::constants::MODEL_FILE_VAD);
+        // Only resolve the VAD model path for TenVAD — earshot has no external model file.
+        let vad_path = if settings.vad.vad_backend == crate::core::settings::VadBackendOption::TenVad {
+            Some(models_dir.join(crate::core::constants::MODEL_DIR_VAD).join(crate::core::constants::MODEL_FILE_VAD))
+        } else {
+            None
+        };
 
-        (stt, vad, settings.ui.tray_enabled, settings.audio.input_device.clone())
+        (stt, vad_path, settings.vad.vad_backend.clone(), settings.ui.tray_enabled, settings.audio.input_device.clone())
     };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
@@ -206,14 +211,34 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.cancel_flag.clone(), state.is_stt_loaded.clone(), state.pipeline.engine_shutdown.clone(), pre_load)?;
 
     let threshold = state.settings.read().unwrap().vad.threshold;
-    let vad = match VadEngine::new(&vad_model_path, threshold) {
-        Ok(v) => {
-            app.emit(crate::core::constants::EVENT_MODEL_READY, "VAD").ok();
-            v
+    let vad = match vad_backend_opt {
+        crate::core::settings::VadBackendOption::Earshot => {
+            log::info!("[PIPELINE] VAD backend: Earshot (pure Rust, no model file required).");
+            match EarshotVadEngine::new(threshold) {
+                Ok(engine) => {
+                    app.emit(crate::core::constants::EVENT_MODEL_READY, "VAD").ok();
+                    VadBackend::Earshot(engine)
+                }
+                Err(e) => {
+                    app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("VAD: {}", e)).ok();
+                    return Err(e.to_string());
+                }
+            }
         }
-        Err(e) => {
-            app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("VAD: {}", e)).ok();
-            return Err(e.to_string());
+        crate::core::settings::VadBackendOption::TenVad => {
+            let vad_model_path = vad_model_path_opt
+                .ok_or_else(|| "[PIPELINE] TenVAD selected but model path could not be resolved.".to_string())?;
+            log::info!("[PIPELINE] VAD backend: TenVAD (ONNX, model={:?}).", vad_model_path);
+            match TenVadEngine::new(&vad_model_path, threshold) {
+                Ok(engine) => {
+                    app.emit(crate::core::constants::EVENT_MODEL_READY, "VAD").ok();
+                    VadBackend::Ten(engine)
+                }
+                Err(e) => {
+                    app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("VAD: {}", e)).ok();
+                    return Err(e.to_string());
+                }
+            }
         }
     };
     let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split(); 

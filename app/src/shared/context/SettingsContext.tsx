@@ -41,6 +41,7 @@ export interface VoxSettings {
   vad: {
     threshold: number;
     ptt_noise_gate: number;
+    vad_backend: "earshot" | "ten_vad";
   };
   asr: {
     model: string;

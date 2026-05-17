@@ -7,10 +7,10 @@ use crate::core::settings::InteractionMode;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use crate::services::traits::VadEngine as _;
-use super::ten_onnx::VadEngine;
+use super::VadBackend;
 
 pub fn spawn_vad_actor<C>(
-    mut vad: VadEngine,
+    mut vad: VadBackend,
     app: tauri::AppHandle,
     mut consumer: C,
     event_tx: mpsc::Sender<serde_json::Value>,
@@ -86,7 +86,7 @@ where
                 VadCommand::UpdateThreshold(v) => {
                     log::info!("[VAD] Updating threshold to {} (Hot-Reloading)...", v);
                     threshold = v;
-                    if let Err(e) = vad.update_detector(threshold) {
+                    if let Err(e) = vad.update_threshold(threshold) {
                         log::error!("[VAD] Failed to hot-reload detector: {}", e);
                     } else {
                         log::info!("[VAD] Detector hot-reloaded successfully.");

@@ -1,17 +1,19 @@
 /// VAD Unit Tests
-/// Verified with real audio assets to ensure detection accuracy.
+/// Covers both Earshot (default) and TenVAD (legacy) backends.
 /// Run with: cargo test --test vad_test -- --nocapture
 
 use std::path::PathBuf;
-use vox_lib::services::vad::VadEngine;
-use ringbuf::traits::*;
+use vox_lib::services::vad::{VadBackend, ten_onnx::VadEngine as TenVadEngine, earshot_vad::EarshotVadEngine};
+use vox_lib::services::traits::VadEngine as VadEngineTrait;
 
-/// Path to the VAD model.
-fn vad_model_path() -> PathBuf {
+// ── Shared Helpers ────────────────────────────────────────────────────────────
+
+/// Path to the TenVAD ONNX model (only needed for TenVAD tests).
+fn tenvad_model_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/ten_vad.onnx")
 }
 
-/// Path to a known speech file.
+/// Path to a known speech WAV file (16kHz mono preferred).
 fn speech_wav_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/qwen3-asr/test_wavs/fast1.wav")
 }
@@ -59,40 +61,123 @@ fn load_wav(path: &std::path::Path) -> Vec<f32> {
     }
 }
 
-#[test]
-fn test_vad_engine_init() {
-    let path = vad_model_path();
-    assert!(path.exists(), "VAD model missing at {:?}", path);
+// ── Earshot Tests (default backend, no model file required) ──────────────────
 
-    let engine = VadEngine::new(&path);
-    assert!(engine.is_ok(), "VadEngine::new failed: {:?}", engine.err());
-    println!("[PASS] VAD engine initialized");
+#[test]
+fn test_earshot_engine_init() {
+    let engine = EarshotVadEngine::new(0.5);
+    assert!(engine.is_ok(), "EarshotVadEngine::new failed: {:?}", engine.err());
+    println!("[PASS] Earshot VAD engine initialized (no model file, pure Rust).");
 }
 
 #[test]
-fn test_vad_speech_detection() {
-    let path = vad_model_path();
+fn test_earshot_threshold_hot_update() {
+    let mut engine = EarshotVadEngine::new(0.5).expect("init earshot");
+    // Hot threshold update must not fail or panic
+    engine.update_threshold(0.7);
+    engine.update_threshold(0.3);
+    println!("[PASS] Earshot threshold hot-update (free f32 write, no reload).");
+}
+
+#[test]
+fn test_earshot_flush_reset() {
+    let mut engine = EarshotVadEngine::new(0.5).expect("init earshot");
+    // flush() calls detector.reset() — must not panic
+    engine.flush();
+    println!("[PASS] Earshot flush/reset OK.");
+}
+
+#[test]
+fn test_earshot_predict_silent_frame() {
+    let mut engine = EarshotVadEngine::new(0.5).expect("init earshot");
+    // A silent frame (all zeros) must not be classified as speech.
+    let silent = vec![0.0f32; 256];
+    let result = engine.predict(&silent);
+    assert!(!result, "Earshot falsely detected speech in a silent frame.");
+    println!("[PASS] Earshot: silent frame correctly classified as silence.");
+}
+
+#[test]
+fn test_earshot_speech_detection() {
     let wav_path = speech_wav_path();
-    
-    if !path.exists() || !wav_path.exists() {
-        eprintln!("[SKIP] Assets missing: VAD={:?}, WAV={:?}", path.exists(), wav_path.exists());
+    if !wav_path.exists() {
+        eprintln!("[SKIP] Speech WAV asset missing at {:?}", wav_path);
         return;
     }
 
-    let mut engine = VadEngine::new(&path).expect("init vad");
+    let mut engine = EarshotVadEngine::new(0.5).expect("init earshot");
     let audio = load_wav(&wav_path);
-    
+
     let mut speech_detected = false;
-    // Process first 2 seconds in 10ms chunks
-    for chunk in audio[..audio.len().min(16000 * 2)].chunks(160) {
-        if chunk.len() == 160 {
+    // Process first 2 seconds in 16ms chunks (256 samples at 16kHz)
+    for chunk in audio[..audio.len().min(16000 * 2)].chunks(256) {
+        if chunk.len() == 256 {
             if engine.predict(chunk) {
                 speech_detected = true;
                 break;
             }
         }
     }
-    
-    assert!(speech_detected, "VAD failed to detect speech in a known speech file (fast1.wav)");
-    println!("[PASS] VAD speech detection verified on real audio");
+
+    assert!(speech_detected, "Earshot failed to detect speech in a known speech file (fast1.wav)");
+    println!("[PASS] Earshot speech detection verified on real audio.");
+}
+
+#[test]
+fn test_earshot_via_vad_backend_enum() {
+    let engine = EarshotVadEngine::new(0.5).expect("init earshot");
+    let mut backend = VadBackend::Earshot(engine);
+
+    // Silent frame via unified dispatch
+    let silent = vec![0.0f32; 256];
+    assert!(!backend.predict(&silent), "VadBackend(Earshot): silent frame detected as speech.");
+
+    // Threshold hot-update via VadBackend
+    backend.update_threshold(0.3).expect("update_threshold should not fail for Earshot");
+    backend.flush();
+
+    println!("[PASS] VadBackend(Earshot) enum dispatch verified.");
+}
+
+// ── TenVAD Tests (legacy backend, requires model file) ───────────────────────
+
+#[test]
+fn test_tenvad_engine_init() {
+    let path = tenvad_model_path();
+    if !path.exists() {
+        eprintln!("[SKIP] TenVAD model missing at {:?}", path);
+        return;
+    }
+
+    let engine = TenVadEngine::new(&path, 0.45);
+    assert!(engine.is_ok(), "TenVadEngine::new failed: {:?}", engine.err());
+    println!("[PASS] TenVAD engine initialized.");
+}
+
+#[test]
+fn test_tenvad_speech_detection() {
+    let path = tenvad_model_path();
+    let wav_path = speech_wav_path();
+
+    if !path.exists() || !wav_path.exists() {
+        eprintln!("[SKIP] Assets missing: TenVAD={:?}, WAV={:?}", path.exists(), wav_path.exists());
+        return;
+    }
+
+    let mut engine = TenVadEngine::new(&path, 0.45).expect("init tenvad");
+    let audio = load_wav(&wav_path);
+
+    let mut speech_detected = false;
+    // TenVAD also uses 256-sample chunks
+    for chunk in audio[..audio.len().min(16000 * 2)].chunks(256) {
+        if chunk.len() == 256 {
+            if engine.predict(chunk) {
+                speech_detected = true;
+                break;
+            }
+        }
+    }
+
+    assert!(speech_detected, "TenVAD failed to detect speech in a known speech file (fast1.wav)");
+    println!("[PASS] TenVAD speech detection verified on real audio.");
 }
