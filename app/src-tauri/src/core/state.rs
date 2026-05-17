@@ -89,11 +89,11 @@ pub struct VoxEngine {
 // ─── PttState ─────────────────────────────────────────────────────────────────
 
 pub struct PttState {
-    pub is_recording:           Mutex<bool>,
+    pub is_recording:           std::sync::atomic::AtomicBool,
     pub turn_id:                Arc<AtomicU32>,
-    pub audio_buffer:           Mutex<Vec<f32>>,
-    pub samples_since_partial:  Mutex<usize>,
-    pub samples_since_waveform: Mutex<usize>,
+    pub audio_buffer:           std::sync::Mutex<Vec<f32>>,
+    pub samples_since_partial:  std::sync::atomic::AtomicUsize,
+    pub samples_since_waveform: std::sync::atomic::AtomicUsize,
 }
 
 // ─── PipelineAtomics ──────────────────────────────────────────────────────────
@@ -282,11 +282,11 @@ impl AppState {
             settings:      Arc::new(RwLock::new(settings)),
             hud_menu_item: Mutex::new(None),
             ptt: PttState {
-                is_recording:           Mutex::new(false),
+                is_recording:           std::sync::atomic::AtomicBool::new(false),
                 turn_id:                Arc::new(AtomicU32::new(0)),
-                audio_buffer:           Mutex::new(Vec::new()),
-                samples_since_partial:  Mutex::new(0),
-                samples_since_waveform: Mutex::new(0),
+                audio_buffer:           std::sync::Mutex::new(Vec::new()),
+                samples_since_partial:  std::sync::atomic::AtomicUsize::new(0),
+                samples_since_waveform: std::sync::atomic::AtomicUsize::new(0),
             },
             pipeline:      PipelineAtomics::new(),
             save_debounce: Mutex::new(None),

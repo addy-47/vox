@@ -21,7 +21,7 @@ pub fn spawn_stt_worker(
     rx: std::sync::mpsc::Receiver<SttCommand>,
     model_path: std::path::PathBuf,
     pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
-    _is_engaged: Arc<AtomicBool>,
+    cancel_flag: Arc<AtomicBool>,
     is_loaded: Arc<AtomicBool>,
     engine_shutdown: Arc<AtomicBool>,
     pre_load: bool,
@@ -57,6 +57,8 @@ pub fn spawn_stt_worker(
 
         let mut last_emit_time = Instant::now();
         let mut last_transcript = String::new();
+        let mut stitched_transcript = String::new();
+        let mut current_active_turn = 0u32;
 
         loop {
             if engine_shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -72,7 +74,20 @@ pub fn spawn_stt_worker(
                             break;
                         }
                         SttCommand::Partial(tid, owner, utterance) => {
+                            if tid != current_active_turn {
+                                log::info!("[STT] New turn ID {} detected (prev {}). Resetting stitched buffers.", tid, current_active_turn);
+                                current_active_turn = tid;
+                                stitched_transcript.clear();
+                                last_transcript.clear();
+                            }
+
                             if last_emit_time.elapsed() >= Duration::from_millis(STT_THROTTLE_MS) {
+                                if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                    stitched_transcript.clear();
+                                    last_transcript.clear();
+                                    continue;
+                                }
+
                                 if engine.is_none() {
                                     app.emit(crate::core::constants::EVENT_MODEL_LOADING, "STT").ok();
                                     match SttEngine::new(&model_path) {
@@ -90,18 +105,37 @@ pub fn spawn_stt_worker(
                                 }
 
                                 if let Some(ref eng) = engine {
-                                    match eng.transcribe(&utterance) {
+                                    // Rolling window logic: only transcribe last 2.5 seconds of audio to cut O(N^2) CPU overhead
+                                    let start_idx = utterance.len().saturating_sub(40000);
+                                    let rolling_utterance = &utterance[start_idx..];
+
+                                    if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                        stitched_transcript.clear();
+                                        last_transcript.clear();
+                                        continue;
+                                    }
+
+                                    match eng.transcribe(rolling_utterance) {
                                         Ok(text) => {
-                                            let text_str: String = text;
-                                            if !text_str.is_empty() && text_str != last_transcript {
+                                            if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                                stitched_transcript.clear();
+                                                last_transcript.clear();
+                                                continue;
+                                            }
+                                            let raw_partial: String = text;
+                                            
+                                            // Stitch the raw partial with our stable prefix buffer statefully
+                                            stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_partial);
+
+                                            if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
                                                 if let Some(ref pipeline_tx) = pipeline_event_tx {
                                                     let _ = pipeline_tx.send(VoxEvent::TranscriptPartial {
                                                         turn_id: tid,
                                                         owner,
-                                                        text: text_str.clone(),
+                                                        text: stitched_transcript.clone(),
                                                     });
                                                 }
-                                                last_transcript = text_str;
+                                                last_transcript = stitched_transcript.clone();
                                             }
                                             last_emit_time = Instant::now();
                                         }
@@ -111,6 +145,12 @@ pub fn spawn_stt_worker(
                             }
                         }
                         SttCommand::Final(tid, owner, utterance) => {
+                            if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                stitched_transcript.clear();
+                                last_transcript.clear();
+                                continue;
+                            }
+
                             if engine.is_none() {
                                 match SttEngine::new(&model_path) {
                                     Ok(e) => {
@@ -124,8 +164,19 @@ pub fn spawn_stt_worker(
                             }
 
                             if let Some(ref eng) = engine {
+                                if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                    stitched_transcript.clear();
+                                    last_transcript.clear();
+                                    continue;
+                                }
+
                                 match eng.transcribe(&utterance) {
                                     Ok(text) => {
+                                        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                            stitched_transcript.clear();
+                                            last_transcript.clear();
+                                            continue;
+                                        }
                                         let text_str: String = text;
                                         if let Some(ref pipeline_tx) = pipeline_event_tx {
                                             let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
@@ -153,11 +204,13 @@ pub fn spawn_stt_worker(
                             };
                             state.pipeline.update_interaction_state(idle_state, owner, &app);
 
+                            stitched_transcript.clear();
                             last_transcript.clear();
                             last_emit_time = Instant::now();
                         }
                         SttCommand::ResetStream => {
                             log::info!("[STT] ResetStream received. Aggressively clearing state.");
+                            stitched_transcript.clear();
                             last_transcript.clear();
                             while let Ok(pending_cmd) = rx.try_recv() {
                                 match pending_cmd {
