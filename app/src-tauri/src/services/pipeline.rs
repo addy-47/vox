@@ -210,6 +210,7 @@ impl PipelineOrchestrator {
             let target = match owner {
                 InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
                 InteractionOwner::Tray => "tray",
+                InteractionOwner::Wizard => "wizard",
             };
             let _ = app_handle.emit_to(target, "state_changed", new_state);
         }
@@ -260,7 +261,7 @@ impl PipelineOrchestrator {
         // 1. The user explicitly engaged the main app via the Home screen.
         // 2. OR the interaction owner is already MainWindow/Ptt.
         let is_engaged = self.is_engaged.load(Ordering::Relaxed);
-        let should_trigger_pipeline = is_engaged || owner != InteractionOwner::Tray;
+        let should_trigger_pipeline = is_engaged || (owner != InteractionOwner::Tray && owner != InteractionOwner::Wizard);
 
         if !should_trigger_pipeline {
             log::info!("[Pipeline] System is dormant. Skipping LLM/TTS for Tray interaction.");
@@ -353,6 +354,7 @@ impl PipelineOrchestrator {
         let mut turn_assistant_text = String::new();
         let mut turn_stt_ms = 0u32;
         let mut turn_ttft_ms = 0u32;
+        let mut last_tts_flush = std::time::Instant::now();
 
         log::info!("[Pipeline] Event loop starting...");
         let engine_shutdown = {
@@ -447,8 +449,11 @@ impl PipelineOrchestrator {
                     // Directive: Auto-show Tray HUD on speech if enabled (Fixes Tray Lifecycle Bug)
                     if owner == crate::core::state::InteractionOwner::Tray {
                         let state_handle = app_handle.state::<std::sync::Arc<crate::core::state::AppState>>();
-                        let tray_enabled = state_handle.settings.read().unwrap().ui.tray_enabled;
-                        if tray_enabled {
+                        let (tray_enabled, setup_completed) = {
+                            let settings = state_handle.settings.read().unwrap();
+                            (settings.ui.tray_enabled, settings.setup.completed)
+                        };
+                        if setup_completed && tray_enabled {
                             let app_clone = app_handle.clone();
                             tauri::async_runtime::spawn(async move {
                                 let state = app_clone.state::<std::sync::Arc<crate::core::state::AppState>>();
@@ -493,6 +498,7 @@ impl PipelineOrchestrator {
                     let target = match owner {
                         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                         crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = app_handle.emit_to(target, "transcript_partial", serde_json::json!({
                         "text": transliterate_if_hi(&text),
@@ -517,6 +523,7 @@ impl PipelineOrchestrator {
                     let target = match owner {
                         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                         crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = app_handle.emit_to(target, "transcript_final", serde_json::json!({
                         "text": transliterate_if_hi(&text),
@@ -544,8 +551,9 @@ impl PipelineOrchestrator {
                     token_buf.push_str(&token);
                     turn_assistant_text.push_str(&token);
                     let word_count = count_words(&token_buf);
+                    let elapsed_ms = last_tts_flush.elapsed().as_millis();
 
-                    if word_count >= 4 || should_flush(&token_buf, word_count) {
+                    if should_flush(&token_buf, word_count, elapsed_ms) {
                         let chunk = token_buf.trim().to_string();
                         if !chunk.is_empty() {
                             // Directive 5: Language Detection - Lock voice for the remainder of the turn
@@ -569,19 +577,21 @@ impl PipelineOrchestrator {
                                 }
                             }
                             token_buf.clear();
+                            last_tts_flush = std::time::Instant::now();
                         }
                     }
-                     
-                     let target = {
-                         let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app_handle.state();
-                         let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
-                         match owner {
-                             crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
-                             crate::core::state::InteractionOwner::Tray => "tray",
-                         }
-                     };
-                     let _ = app_handle.emit_to(target, "llm_token", transliterate_if_hi(&token));
-                 }
+                    
+                    let target = {
+                        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app_handle.state();
+                        let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+                        match owner {
+                            crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
+                            crate::core::state::InteractionOwner::Tray => "tray",
+                            crate::core::state::InteractionOwner::Wizard => "wizard",
+                        }
+                    };
+                    let _ = app_handle.emit_to(target, "llm_token", transliterate_if_hi(&token));
+                }
 
                 VoxEvent::LlmFinished { turn_id } => {
                     if turn_id != current_tid { continue; }
@@ -598,6 +608,7 @@ impl PipelineOrchestrator {
                                 });
                             }
                         }
+                        last_tts_flush = std::time::Instant::now();
                     }
                     token_buf.clear();
                     // Signal that all text has been dispatched. The polling loop
@@ -668,6 +679,7 @@ impl PipelineOrchestrator {
                         match owner {
                             crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                             crate::core::state::InteractionOwner::Tray => "tray",
+                            crate::core::state::InteractionOwner::Wizard => "wizard",
                         }
                     };
                     let _ = app_handle.emit_to(target, "playback_finished", &report);
@@ -726,6 +738,7 @@ impl PipelineOrchestrator {
                         match owner {
                             crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                             crate::core::state::InteractionOwner::Tray => "tray",
+                            crate::core::state::InteractionOwner::Wizard => "wizard",
                         }
                     };
                     let _ = app_handle.emit_to(target, "pipeline_error", &message);

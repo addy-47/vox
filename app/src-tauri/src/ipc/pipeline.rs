@@ -149,10 +149,16 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let mut lock = state.engine.lock().await;
     
     if lock.is_some() {
-        if let Some(window) = app.get_webview_window("tray") {
-            let _ = window.show();
-            position_tray_window(&window).await;
-            let _ = window.set_focus();
+        let (tray_enabled, setup_completed) = {
+            let s = state.settings.read().unwrap();
+            (s.ui.tray_enabled, s.setup.completed)
+        };
+        if setup_completed && tray_enabled {
+            if let Some(window) = app.get_webview_window("tray") {
+                let _ = window.show();
+                position_tray_window(&window).await;
+                let _ = window.set_focus();
+            }
         }
         return Ok(());
     }
@@ -237,6 +243,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                     match owner {
                         InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
                         InteractionOwner::Tray => "tray",
+                        InteractionOwner::Wizard => "wizard",
                     }
                 };
                 let _ = app_handle_emit.emit_to(target, msg_type, &event);
