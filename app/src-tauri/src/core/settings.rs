@@ -13,6 +13,18 @@ pub enum AudioOutputMode {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VadBackendOption {
+    /// Earshot — pure Rust, no ONNX dependency, embedded NN weights.
+    /// ~20x faster than TenVAD. Default starting from Phase 8.
+    #[default]
+    Earshot,
+    /// TenVAD — ONNX-based, requires ten_vad.onnx model file.
+    /// Legacy option, kept for user preference.
+    TenVad,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub enum InteractionMode {
     #[default]
     Passive,
@@ -165,6 +177,8 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         // VAD — threshold and noise gate update via VadCommand channel
         ("vad", "threshold")             => SettingReloadPolicy::WorkerCommand,
         ("vad", "ptt_noise_gate")        => SettingReloadPolicy::WorkerCommand,
+        // VAD backend switch requires full engine restart (different constructor path)
+        ("vad", "vad_backend")           => SettingReloadPolicy::Restart,
 
         // Audio output mode — update VAD mic ducking snapshot
         ("audio", "output_mode")         => SettingReloadPolicy::WorkerCommand,
@@ -259,13 +273,16 @@ impl Default for AudioSettings {
 pub struct VadSettings {
     pub threshold: f32,
     pub ptt_noise_gate: f32,
+    /// Which VAD backend to use. Changing this requires an engine restart.
+    pub vad_backend: VadBackendOption,
 }
 
 impl Default for VadSettings {
     fn default() -> Self {
         Self {
-            threshold: 0.45,
+            threshold: 0.5,        // Earshot recommends 0.5 as a good default
             ptt_noise_gate: 0.015,
+            vad_backend: VadBackendOption::Earshot,
         }
     }
 }

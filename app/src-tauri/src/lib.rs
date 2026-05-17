@@ -261,7 +261,7 @@ pub fn run() {
             });
 
             // ── 4. CLI Arguments Handling ────────────────────────
-            let args: Vec<String> = std::env::args().collect();
+            let _args: Vec<String> = std::env::args().collect();
             // (Future CLI flags can be added here)
 
             Ok(())
