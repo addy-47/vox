@@ -11,23 +11,10 @@ pub struct MemorySnapshot {
 }
 
 #[derive(Serialize, Default, Debug)]
-pub struct BenchMetrics {
-    pub stt_latency_ms: u32,
-    pub stt_rtf: f32,
-    pub llm_ttft_ms: u32,
-    pub llm_tps: f32,
-    pub tts_latency_ms: u32,
-    pub tts_rtf: f32,
-    pub e2e_latency_ms: u32, // Time to first sound
-    
-    pub ram_start: MemorySnapshot,
-    pub ram_peak: MemorySnapshot,
-    pub ram_end: MemorySnapshot,
-}
+pub struct BenchMetrics {} // Deprecated, keeping as placeholder if needed elsewhere
 
 pub struct BenchReporter {
     pub run_dir: PathBuf,
-    pub metrics: BenchMetrics,
 }
 
 impl BenchReporter {
@@ -40,7 +27,6 @@ impl BenchReporter {
 
         Self {
             run_dir,
-            metrics: BenchMetrics::default(),
         }
     }
 
@@ -49,23 +35,8 @@ impl BenchReporter {
         fs::write(path, content).expect("Failed to write artifact");
     }
 
-    pub fn save_report(&self, latency_report: serde_json::Value) {
+    pub fn save_report(&self, report: serde_json::Value) {
         let path = self.run_dir.join("metrics.json");
-        
-        let report = serde_json::json!({
-            "latency": latency_report,
-            "performance": {
-                "stt_rtf": self.metrics.stt_rtf,
-                "llm_tps": self.metrics.llm_tps,
-                "tts_rtf": self.metrics.tts_rtf,
-            },
-            "resources": {
-                "ram_start_mb": self.metrics.ram_start,
-                "ram_peak_mb": self.metrics.ram_peak,
-                "ram_end_mb": self.metrics.ram_end,
-            }
-        });
-
         let json = serde_json::to_string_pretty(&report).expect("Failed to serialize report");
         fs::write(path, json).expect("Failed to write metrics.json");
     }
@@ -84,10 +55,5 @@ impl BenchReporter {
         }
     }
     
-    pub fn update_peak_ram(&mut self) {
-        let current = Self::get_memory_snapshot();
-        if current.rss_mb > self.metrics.ram_peak.rss_mb {
-            self.metrics.ram_peak = current;
-        }
-    }
+    // Memory peak tracking moved to background thread in vox-bench.rs
 }
