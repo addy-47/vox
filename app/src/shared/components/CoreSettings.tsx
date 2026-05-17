@@ -20,6 +20,60 @@ interface ModelStatus {
   error?: string;
 }
 
+const mapModelId = (id: string): string => {
+  switch (id) {
+    case "gemma4":
+      return "llm_gemma_4_q4_k_m";
+    case "kokoro":
+      return "tts_kokoro_onnx";
+    case "qwen3-asr":
+      return "stt_encoder";
+    case "piper_hi":
+      return "tts_hi_piper_onnx";
+    default:
+      return id;
+  }
+};
+
+const getModelOverlayDetails = (modelId: string) => {
+  switch (modelId) {
+    case "gemma4":
+    case "llm_gemma_4_q4_k_m":
+      return {
+        title: "Gemma 4 Core",
+        description: "This component requires high-fidelity LLM weights (approx. 3.2GB) not found locally."
+      };
+    case "tts_kokoro_onnx":
+    case "kokoro":
+      return {
+        title: "Kokoro Speech Synthesis",
+        description: "This component requires high-fidelity TTS weights (approx. 345MB) not found locally."
+      };
+    case "qwen3-asr":
+    case "stt_encoder":
+      return {
+        title: "Speech Recognition Engine",
+        description: "This component requires multilingual ASR weights (approx. 950MB) not found locally."
+      };
+    case "piper_hi":
+    case "tts_hi_piper_onnx":
+      return {
+        title: "Hindi Voice Engine",
+        description: "This component requires high-fidelity Hindi TTS weights (approx. 63MB) not found locally."
+      };
+    case "ten_vad":
+      return {
+        title: "TenVAD Engine",
+        description: "This component requires the TenVAD legacy voice detection model (approx. 332KB) not found locally."
+      };
+    default:
+      return {
+        title: "Model Deployment",
+        description: "This component requires optional neural weights not found locally."
+      };
+  }
+};
+
 const DownloadOverlay: React.FC<{ 
   modelId: string, 
   onComplete: () => void 
@@ -47,7 +101,7 @@ const DownloadOverlay: React.FC<{
             total_bytes: number;
             error?: string;
         }>("model_setup_status", (event) => {
-            if (event.payload.model_id === modelId && isMounted) {
+            if (mapModelId(event.payload.model_id) === mapModelId(modelId) && isMounted) {
                 setStatus({
                     step: event.payload.step as any,
                     progress: event.payload.progress,
@@ -59,7 +113,7 @@ const DownloadOverlay: React.FC<{
         });
 
         const unlistenComplete = listen<string>("optional_download_complete", (event) => {
-            if (event.payload === modelId && isMounted) {
+            if (mapModelId(event.payload) === mapModelId(modelId) && isMounted) {
                 setExists(true);
                 onComplete();
             }
@@ -79,6 +133,8 @@ const DownloadOverlay: React.FC<{
         invoke("download_optional_model", { modelId });
     };
 
+    const details = getModelOverlayDetails(modelId);
+
     return (
         <div className="absolute inset-0 z-20 rounded-[inherit] bg-[rgb(var(--background))]/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
             {status.step === 'idle' ? (
@@ -86,9 +142,9 @@ const DownloadOverlay: React.FC<{
                     <div className="w-12 h-12 rounded-2xl bg-[rgb(var(--accent))]/10 flex items-center justify-center mb-5 border border-[rgb(var(--accent))]/20">
                       <Download className="text-[rgb(var(--accent))]" size={24} />
                     </div>
-                    <h3 className="text-[12px] font-bold text-[rgb(var(--foreground))] mb-2 uppercase tracking-[0.2em]">Model Deployment</h3>
+                    <h3 className="text-[12px] font-bold text-[rgb(var(--foreground))] mb-2 uppercase tracking-[0.2em]">{details.title}</h3>
                     <p className="text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))] mb-8 max-w-[220px] opacity-70">
-                        This component requires high-fidelity weights (approx. 3.2GB) not found locally.
+                        {details.description}
                     </p>
                     <button 
                         onClick={startDownload}
@@ -151,6 +207,12 @@ const EngineCard: React.FC = React.memo(() => {
             modelId={activeLlm.id} 
             onComplete={() => { /* State will refresh via check_model_exists */ }} 
           />
+          {draftSettings.vad.vad_backend === "ten_vad" && (
+            <DownloadOverlay 
+              modelId="ten_vad" 
+              onComplete={() => {}} 
+            />
+          )}
           {/* Header */}
           <div className="flex items-center gap-3 mb-8 shrink-0">
             <Brain className="text-[rgb(var(--accent))]" size={20} />
@@ -215,8 +277,12 @@ const EngineCard: React.FC = React.memo(() => {
                   onClick={() => setFlippedView('vad')}
                   className="w-full text-left p-4 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/[0.05] transition-colors"
                 >
-                  <div className="text-l font-bold text-[rgb(var(--foreground))] opacity-80 mb-1">TenVAD</div>
-                  <div className="text-[12px] text-[rgb(var(--foreground-muted))] opacity-80 ">Filters background noise for clear triggers</div>
+                  <div className="text-l font-bold text-[rgb(var(--foreground))] opacity-80 mb-1">
+                    {draftSettings.vad.vad_backend === "ten_vad" ? "TenVAD" : "Earshot"}
+                  </div>
+                  <div className="text-[12px] text-[rgb(var(--foreground-muted))] opacity-80 ">
+                    {draftSettings.vad.vad_backend === "ten_vad" ? "Filters background noise for clear triggers" : "Low-latency voice activity detector"}
+                  </div>
                 </button>
               </div>
             </div>
@@ -326,6 +392,36 @@ const EngineCard: React.FC = React.memo(() => {
 
             {flippedView === 'vad' && (
               <div className="space-y-6">
+                <div className="space-y-3">
+                  <label className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-80">
+                    VAD Engine
+                  </label>
+                  <div className="flex p-1 bg-[rgb(var(--foreground))]/[0.05] border border-[rgba(var(--border),0.05)] rounded-xl">
+                    <button
+                      onClick={() => updateDraft("vad", "vad_backend", "earshot")}
+                      className={cn(
+                        "flex-1 px-4 py-2 rounded-xl text-[11px] font-bold uppercase transition-all duration-300",
+                        draftSettings.vad.vad_backend === "earshot"
+                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
+                          : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                      )}
+                    >
+                      Earshot
+                    </button>
+                    <button
+                      onClick={() => updateDraft("vad", "vad_backend", "ten_vad")}
+                      className={cn(
+                        "flex-1 px-4 py-2 rounded-xl text-[11px] font-bold uppercase transition-all duration-300",
+                        draftSettings.vad.vad_backend === "ten_vad"
+                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
+                          : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                      )}
+                    >
+                      TenVAD
+                    </button>
+                  </div>
+                </div>
+
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] opacity-80">Activation Threshold</span>
