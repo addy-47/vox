@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 use vox_lib::services::stt::SttEngine;
 use vox_lib::services::llm::LlmWorker;
 use vox_lib::services::tts::TtsEngine;
+use vox_lib::services::traits::{SttEngine as _, TtsEngine as _};
 use vox_lib::core::events::VoxEvent;
 use sysinfo::{ProcessExt, System, SystemExt, Pid};
 use std::time::Instant;
