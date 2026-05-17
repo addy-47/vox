@@ -11,25 +11,24 @@ use crate::core::events::VoxEvent;
 pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
-    let mut recording = state.ptt.is_recording.lock().await;
-    if *recording {
+    if state.ptt.is_recording.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
         log::warn!("[PTT] ptt_start called while already recording. Ignoring.");
         return Ok(());
     }
-    *recording = true;
     
-    let mut buffer = state.ptt.audio_buffer.lock().await;
-    let mut samples_since = state.ptt.samples_since_partial.lock().await;
-    let mut samples_waveform = state.ptt.samples_since_waveform.lock().await;
+    let turn = {
+        let mut buffer = state.ptt.audio_buffer.lock().unwrap();
 
-    // Sync PTT turn with global pipeline turn
-    let current_global = state.pipeline.turn_id.load(Ordering::Relaxed);
-    state.ptt.turn_id.store(current_global, Ordering::Relaxed);
-    let turn = current_global;
+        // Sync PTT turn with global pipeline turn
+        let current_global = state.pipeline.turn_id.load(Ordering::Relaxed);
+        state.ptt.turn_id.store(current_global, Ordering::Relaxed);
+        let turn = current_global;
 
-    buffer.clear();
-    *samples_since = 0;
-    *samples_waveform = 0;
+        buffer.clear();
+        state.ptt.samples_since_partial.store(0, Ordering::Relaxed);
+        state.ptt.samples_since_waveform.store(0, Ordering::Relaxed);
+        turn
+    };
 
     let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
 
@@ -57,18 +56,15 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
 pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
-    // Extract everything we need and drop the locks immediately to prevent 
-    // pipeline freezes while waiting for the STT channel.
     let (turn, owner, buffer_clone) = {
-        let mut recording = state.ptt.is_recording.lock().await;
-        if !*recording {
+        if !state.ptt.is_recording.load(Ordering::SeqCst) {
             return Ok(());
         }
 
-        let buffer = state.ptt.audio_buffer.lock().await;
+        let buffer = state.ptt.audio_buffer.lock().unwrap();
         let turn = state.ptt.turn_id.load(Ordering::Relaxed);
 
-        *recording = false;
+        state.ptt.is_recording.store(false, Ordering::SeqCst);
         log::info!("[PTT] <<< Recording stopped. Finalizing {} samples...", buffer.len());
         
         let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
@@ -89,9 +85,6 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
     // Send the full buffer to STT for finalization
     let engine_lock = state.engine.lock().await;
     if let Some(engine) = engine_lock.as_ref() {
-        // We use .send().await here because it's the final buffer; we MUST ensure it's delivered.
-        // Since we dropped the ptt locks above, the VAD thread can continue processing 
-        // other tasks even if this send blocks temporarily.
         let _ = engine.stt_tx.send(SttCommand::Final(turn, owner, buffer_clone));
         log::info!("[PTT] Sent final buffer to STT worker (turn: {}, owner: {:?})", turn, owner);
     } else {
@@ -105,10 +98,8 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
 pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
-    let mut recording = state.ptt.is_recording.lock().await;
-    let mut buffer = state.ptt.audio_buffer.lock().await;
-
-    *recording = false;
+    state.ptt.is_recording.store(false, Ordering::SeqCst);
+    let mut buffer = state.ptt.audio_buffer.lock().unwrap();
     buffer.clear();
 
     let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
@@ -134,18 +125,12 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
 const MAX_PTT_SAMPLES: usize = 16000 * 60 * 10;
 
 /// Appends audio samples to the PTT buffer unconditionally.
-/// 
-/// In PTT mode the user explicitly controls when recording starts/stops with 
-/// a button. Unlike passive VAD mode, silence must NOT be discarded — doing so
-/// causes onset frames (first ~300ms of speech) to be lost during VAD warm-up,
-/// producing empty or truncated transcripts.
 pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     
-    let recording = state.ptt.is_recording.blocking_lock();
-    if !*recording { return; }
+    if !state.ptt.is_recording.load(Ordering::SeqCst) { return; }
 
-    let mut buffer = state.ptt.audio_buffer.blocking_lock();
+    let mut buffer = state.ptt.audio_buffer.lock().unwrap();
     
     // Capture ALL audio — the user's button press is the gate.
     if buffer.len() < MAX_PTT_SAMPLES {
@@ -154,7 +139,6 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
         // Safety Cap: Stop recording if it exceeds 10 minutes (OOM protection)
         log::warn!("[PTT] Hard limit reached ({} samples). Stopping recording.", MAX_PTT_SAMPLES);
         drop(buffer);
-        drop(recording);
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
             let _ = ptt_stop(app_clone).await;
@@ -163,11 +147,10 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
     }
 
     // Advance partial counter only for appended samples (not silence)
-    let mut samples_since = state.ptt.samples_since_partial.blocking_lock();
-    *samples_since += samples.len();
+    let samples_since = state.ptt.samples_since_partial.fetch_add(samples.len(), Ordering::SeqCst) + samples.len();
 
     // BACKGROUND STT: Every 800ms, send partial buffer to worker
-    if *samples_since >= 12800 {
+    if samples_since >= 12800 {
         let turn = state.ptt.turn_id.load(Ordering::Relaxed);
         if let Ok(lock) = state.engine.try_lock() {
             if let Some(engine) = lock.as_ref() {
@@ -179,14 +162,13 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
                 log::debug!("[PTT] Sent partial buffer window ({} samples) to STT worker", buffer[start_idx..].len());
             }
         }
-        *samples_since = 0;
+        state.ptt.samples_since_partial.store(0, Ordering::SeqCst);
     }
 
     // WAVEFORM THROTTLING: Only emit amplitude every 60ms (960 samples)
-    let mut samples_waveform = state.ptt.samples_since_waveform.blocking_lock();
-    *samples_waveform += samples.len();
+    let samples_waveform = state.ptt.samples_since_waveform.fetch_add(samples.len(), Ordering::SeqCst) + samples.len();
 
-    if *samples_waveform >= 960 {
+    if samples_waveform >= 960 {
         // Calculate RMS on the actual samples for live waveform feedback
         let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
         let rms = (sum_sq / samples.len() as f32).sqrt();
@@ -207,7 +189,7 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
                 });
             }
         }
-        *samples_waveform = 0;
+        state.ptt.samples_since_waveform.store(0, Ordering::SeqCst);
     }
 }
 

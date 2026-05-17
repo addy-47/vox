@@ -545,7 +545,7 @@ impl PipelineOrchestrator {
                     turn_assistant_text.push_str(&token);
                     let word_count = count_words(&token_buf);
 
-                    if word_count >= 6 || should_flush(&token_buf, word_count) {
+                    if word_count >= 4 || should_flush(&token_buf, word_count) {
                         let chunk = token_buf.trim().to_string();
                         if !chunk.is_empty() {
                             // Directive 5: Language Detection - Lock voice for the remainder of the turn
@@ -733,7 +733,7 @@ impl PipelineOrchestrator {
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                 }
                 VoxEvent::Shutdown => {
-                    log::info!("[Pipeline] Shutdown signal received. Joining workers...");
+                    log::info!("[Pipeline] Shutdown signal received. Dispatched thread shutdown...");
                     
                     // Directive 3: ASSERT CANCELLATION before joining.
                     // This forces C++ loops (llama.cpp) to abort instantly, unblocking the thread.
@@ -745,11 +745,11 @@ impl PipelineOrchestrator {
                             let _ = tx.send(crate::services::llm::LlmCommand::Shutdown);
                         }
                     }
-                    if let Ok(mut lock) = self.llm_handle.lock() {
-                        if let Some(h) = lock.take() {
-                            let _ = h.join();
-                        }
-                    }
+                    let llm_handle_opt = if let Ok(mut lock) = self.llm_handle.lock() {
+                        lock.take()
+                    } else {
+                        None
+                    };
 
                     // 2. Shutdown TTS Worker
                     if let Ok(mut lock) = self.tts_tx.lock() {
@@ -757,13 +757,26 @@ impl PipelineOrchestrator {
                             let _ = tx.send(crate::services::tts::TtsCommand::Shutdown);
                         }
                     }
-                    if let Ok(mut lock) = self.tts_handle.lock() {
-                        if let Some(h) = lock.take() {
+                    let tts_handle_opt = if let Ok(mut lock) = self.tts_handle.lock() {
+                        lock.take()
+                    } else {
+                        None
+                    };
+
+                    // Join workers asynchronously in a background thread to prevent Tauri exit/shutdown deadlocks
+                    std::thread::spawn(move || {
+                        if let Some(h) = llm_handle_opt {
+                            log::info!("[Pipeline Shutdown] Joining LLM worker thread...");
                             let _ = h.join();
                         }
-                    }
+                        if let Some(h) = tts_handle_opt {
+                            log::info!("[Pipeline Shutdown] Joining TTS worker thread...");
+                            let _ = h.join();
+                        }
+                        log::info!("[Pipeline Shutdown] Both worker threads cleaned up.");
+                    });
 
-                    log::info!("[Pipeline] Worker threads joined. Orchestrator exiting.");
+                    log::info!("[Pipeline] Event loop exited. Model cleanup detached.");
                     break;
                 }
 

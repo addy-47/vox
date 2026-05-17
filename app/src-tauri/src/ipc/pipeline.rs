@@ -197,7 +197,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let (vad_tx_internal, vad_rx_internal) = std::sync::mpsc::channel::<crate::core::state::VadCommand>();
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
-    let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.is_engaged.clone(), state.is_stt_loaded.clone(), state.pipeline.engine_shutdown.clone(), pre_load)?;
+    let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.cancel_flag.clone(), state.is_stt_loaded.clone(), state.pipeline.engine_shutdown.clone(), pre_load)?;
 
     let threshold = state.settings.read().unwrap().vad.threshold;
     let vad = match VadEngine::new(&vad_model_path, threshold) {

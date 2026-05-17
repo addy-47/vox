@@ -10,7 +10,7 @@ pub fn should_flush(buf: &str, word_count: usize) -> bool {
     if matches!(last, '.' | '!' | '?') { return true; }
     if matches!(last, ',' | ';') { return true; }
     if trimmed.ends_with(" — ") || trimmed.ends_with(" - ") { return true; }
-    word_count >= 6
+    word_count >= 4
 }
 
 /// Count words in the accumulated buffer.
@@ -101,6 +101,54 @@ pub fn to_friendly_hinglish(text: &str) -> String {
     words.join(" ")
 }
 
+/// Seamlessly stitches two transcription fragments (prefix and suffix) using word-level overlap matching.
+/// This prevents visual flashing/amnesia in the UI when using rolling window partial transcripters.
+pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
+    let p_clean = prefix.trim();
+    let s_clean = suffix.trim();
+    if p_clean.is_empty() {
+        return s_clean.to_string();
+    }
+    if s_clean.is_empty() {
+        return p_clean.to_string();
+    }
+
+    let p_words: Vec<&str> = p_clean.split_whitespace().collect();
+    let s_words: Vec<&str> = s_clean.split_whitespace().collect();
+
+    let max_overlap = p_words.len().min(s_words.len());
+    let mut best_overlap_len = 0;
+
+    // Find the longest overlap where the end of p_words matches the start of s_words
+    for k in (1..=max_overlap).rev() {
+        let p_slice = &p_words[p_words.len() - k..];
+        let s_slice = &s_words[..k];
+        
+        let mut matched = true;
+        for i in 0..k {
+            let p_w = p_slice[i].trim_matches(|c: char| c.is_ascii_punctuation() || c == '।').to_lowercase();
+            let s_w = s_slice[i].trim_matches(|c: char| c.is_ascii_punctuation() || c == '।').to_lowercase();
+            if p_w != s_w {
+                matched = false;
+                break;
+            }
+        }
+        
+        if matched {
+            best_overlap_len = k;
+            break;
+        }
+    }
+
+    if best_overlap_len > 0 {
+        let mut result_words = p_words;
+        result_words.extend_from_slice(&s_words[best_overlap_len..]);
+        result_words.join(" ")
+    } else {
+        format!("{} {}", p_clean, s_clean)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,5 +158,36 @@ mod tests {
         assert_eq!(to_friendly_hinglish("namastE"), "namaste");
         assert_eq!(to_friendly_hinglish("dIpAvalI"), "dipavali");
         assert_eq!(to_friendly_hinglish("kairatE"), "karte");
+    }
+
+    #[test]
+    fn test_stitch_transcripts_overlap() {
+        // Standard Hinglish overlap
+        assert_eq!(
+            stitch_transcripts("mera phone number", "phone number hai 98409"),
+            "mera phone number hai 98409"
+        );
+
+        // Case insensitivity and punctuation stripping
+        assert_eq!(
+            stitch_transcripts("Mera phone, number!", "Phone number: hai?"),
+            "Mera phone, number! hai?"
+        );
+
+        // No overlap concatenation fallback
+        assert_eq!(
+            stitch_transcripts("mera phone", "aur kuch"),
+            "mera phone aur kuch"
+        );
+
+        // Empty states
+        assert_eq!(stitch_transcripts("", "hello"), "hello");
+        assert_eq!(stitch_transcripts("world", ""), "world");
+
+        // Complete containment
+        assert_eq!(
+            stitch_transcripts("mera phone number", "number"),
+            "mera phone number"
+        );
     }
 }
