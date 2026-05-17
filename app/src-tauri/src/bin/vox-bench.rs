@@ -93,19 +93,43 @@ fn main() -> anyhow::Result<()> {
     let stt_event_tx = event_tx.clone();
     let stt_handle = std::thread::spawn(move || {
         let engine = stt_engine; // Move initialized engine
+        let mut stitched_transcript = String::new();
+        let mut last_transcript = String::new();
+        
         while let Ok(cmd) = stt_rx.recv() {
             match cmd {
                 BenchCommand::SttPartial(tid, samples) => {
-                    if let Ok(text) = engine.transcribe(&samples) {
-                        if !text.is_empty() {
-                            let _ = stt_event_tx.send(VoxEvent::TranscriptPartial { turn_id: tid, owner: InteractionOwner::MainWindow, text });
+                    // Rolling window: last 2.5s (40000 samples)
+                    let start_idx = samples.len().saturating_sub(40000);
+                    let rolling_samples = &samples[start_idx..];
+                    
+                    if let Ok(text) = engine.transcribe(rolling_samples) {
+                        stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                        if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
+                            let _ = stt_event_tx.send(VoxEvent::TranscriptPartial { 
+                                turn_id: tid, 
+                                owner: InteractionOwner::MainWindow, 
+                                text: stitched_transcript.clone() 
+                            });
+                            last_transcript = stitched_transcript.clone();
                         }
                     }
                 }
                 BenchCommand::SttFinal(tid, samples) => {
-                    if let Ok(text) = engine.transcribe(&samples) {
-                        let _ = stt_event_tx.send(VoxEvent::TranscriptFinal { turn_id: tid, owner: InteractionOwner::MainWindow, text });
+                    // Slicing final utterance to the trailing 2.5s chunk to avoid O(N^2) load
+                    let start_idx = samples.len().saturating_sub(40000);
+                    let rolling_samples = &samples[start_idx..];
+                    
+                    if let Ok(text) = engine.transcribe(rolling_samples) {
+                        stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                        let _ = stt_event_tx.send(VoxEvent::TranscriptFinal { 
+                            turn_id: tid, 
+                            owner: InteractionOwner::MainWindow, 
+                            text: stitched_transcript.clone() 
+                        });
                     }
+                    stitched_transcript.clear();
+                    last_transcript.clear();
                 }
                 BenchCommand::Shutdown => break,
                 _ => {}
@@ -214,6 +238,7 @@ fn main() -> anyhow::Result<()> {
     let mut tts_started_count = 0;
     let mut tokens_generated = 0;
     let mut llm_done = false;
+    let mut last_tts_flush = std::time::Instant::now();
 
     while !llm_done || tts_finished_count < tts_started_count {
         if let Ok(event) = event_rx.recv_timeout(Duration::from_secs(30)) {
@@ -244,13 +269,15 @@ fn main() -> anyhow::Result<()> {
                     tokens_generated += 1;
                     
                     let wc = count_words(&token_buf);
-                    if wc >= 6 || should_flush(&token_buf, wc) {
+                    let elapsed_ms = last_tts_flush.elapsed().as_millis();
+                    if should_flush(&token_buf, wc, elapsed_ms) {
                         let chunk = token_buf.trim().to_string();
                         if !chunk.is_empty() {
                             m_lock.mark(MetricField::TtsStart);
                             tts_started_count += 1;
                             tts_tx.send(BenchCommand::Tts(chunk, 1))?;
                             token_buf.clear();
+                            last_tts_flush = std::time::Instant::now();
                         }
                     }
                 }
@@ -266,6 +293,7 @@ fn main() -> anyhow::Result<()> {
                         m_lock.mark(MetricField::TtsStart);
                         tts_started_count += 1;
                         tts_tx.send(BenchCommand::Tts(remainder, 1))?;
+                        last_tts_flush = std::time::Instant::now();
                     }
                     llm_done = true;
                 }
