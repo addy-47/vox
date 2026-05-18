@@ -1,6 +1,3 @@
-use lipilekhika::transliterate;
-use regex::Regex;
-use once_cell::sync::Lazy;
 
 /// Returns `true` if the accumulated token buffer should be flushed to TTS.
 #[inline]
@@ -30,81 +27,87 @@ pub fn is_devanagari(text: &str) -> bool {
 }
 
 /// Transliterates Devanagari to Roman script if Hindi is detected.
-/// Uses a high-fidelity "Friendly Hinglish" engine with schwa deletion and 
-/// phonetic normalization to ensure >95% readability.
+/// Implements Incomplete Word Protection: If the string does not end with a boundary,
+/// the last word is bypassed to prevent partial word transliteration artifacts.
 pub fn transliterate_if_hi(text: &str) -> String {
-    if is_devanagari(text) {
-        let raw = transliterate(text, "Hindi", "English", None)
-            .unwrap_or_else(|_| text.to_string());
-        to_friendly_hinglish(&raw)
-    } else {
-        text.to_string()
+    if !crate::core::settings::VoxSettings::load().asr.transliterate_enabled {
+        return text.to_string();
     }
-}
 
-/// The core "Friendly Hinglish" engine.
-/// 
-/// Targets "WhatsApp-style" readability over scientific precision.
-/// Implements:
-/// 1. ITRANS/Harvard-Kyoto normalization
-/// 2. Heuristic Schwa Deletion (e.g. 'namastE' -> 'namaste', 'karana' -> 'karna')
-/// 3. Contextual Nasalization ('M' -> 'n'/'m')
-/// 4. Sibilant merging ('sh'/'shh' -> 'sh')
-pub fn to_friendly_hinglish(text: &str) -> String {
-    // 1. Initial casing and science-marker cleanup
-    let mut s = text.replace('E', "e").replace('O', "o"); // Scientific to friendly vowels
-    s = s.to_lowercase();
+    if !is_devanagari(text) {
+        return text.to_string();
+    }
+
+    // Determine if the text ends with whitespace or punctuation
+    let ends_with_boundary = if let Some(last_char) = text.chars().last() {
+        last_char.is_whitespace() || last_char.is_ascii_punctuation() || last_char == '।'
+    } else {
+        true
+    };
+
+    #[derive(Debug)]
+    enum Token {
+        DevanagariWord(String),
+        Other(String),
+    }
+
+    let mut tokens = Vec::new();
+    let mut current_token = String::new();
+    let mut in_devanagari = false;
+
+    for c in text.chars() {
+        let is_c_devanagari = ('\u{0900}'..='\u{097F}').contains(&c);
+        if is_c_devanagari {
+            if !in_devanagari && !current_token.is_empty() {
+                tokens.push(Token::Other(current_token));
+                current_token = String::new();
+            }
+            in_devanagari = true;
+        } else {
+            if in_devanagari && !current_token.is_empty() {
+                tokens.push(Token::DevanagariWord(current_token));
+                current_token = String::new();
+            }
+            in_devanagari = false;
+        }
+        current_token.push(c);
+    }
     
-    // 2. Common Phonetic Simplification
-    static RE_AA: Lazy<Regex> = Lazy::new(|| Regex::new(r"aa+").unwrap());
-    static RE_EE: Lazy<Regex> = Lazy::new(|| Regex::new(r"ee+").unwrap());
-    static RE_OO: Lazy<Regex> = Lazy::new(|| Regex::new(r"oo+").unwrap());
-    
-    s = RE_AA.replace_all(&s, "a").into_owned();
-    s = RE_EE.replace_all(&s, "i").into_owned();
-    s = RE_OO.replace_all(&s, "u").into_owned();
+    if !current_token.is_empty() {
+        if in_devanagari {
+            tokens.push(Token::DevanagariWord(current_token));
+        } else {
+            tokens.push(Token::Other(current_token));
+        }
+    }
 
-    // 3. Nasalization (Anusvara 'M' mapping)
-    // In scientific transliteration, 'M' represents nasalization.
-    // Friendly Hinglish uses 'n' or 'm' based on following consonant.
-    static RE_NASAL_LABIAL: Lazy<Regex> = Lazy::new(|| Regex::new(r"m([bpfv])").unwrap());
-    static RE_NASAL_GENERAL: Lazy<Regex> = Lazy::new(|| Regex::new(r"m(\s|[^bpfv]|$)").unwrap());
-    // Lipilekhika might output 'm' for 'M'. We adjust it.
-    s = RE_NASAL_LABIAL.replace_all(&s, "m$1").into_owned();
-    s = RE_NASAL_GENERAL.replace_all(&s, "n$1").into_owned();
-
-    // 4. Schwa Deletion (The "Real" Hinglish Logic)
-    // Apply schwa deletion
-    // 1. Middle deletion: C-a-C-a-C -> C-C-a-C (e.g. 'namakIna' -> 'namkina')
-    static RE_SCHWA_MID: Lazy<Regex> = Lazy::new(|| Regex::new(r"([bcdfghjklmnpqrstvwxyz])a([bcdfghjklmnpqrstvwxyz])a([bcdfghjklmnpqrstvwxyz])").unwrap());
-    // 2. Trailing deletion: C-a-C-a$ -> C-C-a$ (e.g. 'karana' -> 'karna')
-    static RE_SCHWA_TRAILING: Lazy<Regex> = Lazy::new(|| Regex::new(r"([bcdfghjklmnpqrstvwxyz])a([bcdfghjklmnpqrstvwxyz])a$").unwrap());
-
-    s = RE_SCHWA_MID.replace_all(&s, "$1$2a$3").into_owned(); 
-    s = RE_SCHWA_TRAILING.replace_all(&s, "$1$2a").into_owned();
-
-    // 5. Hard word overrides (Edge Cases)
-    // Some words are culturally fixed in Hinglish.
-    let words: Vec<String> = s.split_whitespace().map(|w| {
-        match w {
-            "haiM" | "hain" => "hain".to_string(),
-            "kaisE" | "kaise" => "kaise".to_string(),
-            "karatE" | "karate" | "kairatE" | "kairate" => "karte".to_string(), // Common verb contraction
-            "namastE" | "namaste" | "nmaste" | "nste" => "namaste".to_string(),
-            "dIpAvalI" | "dipavali" | "dipli" | "dipvali" => "dipavali".to_string(),
-            "shubh" => "shubh".to_string(),
-            _ => {
-                // Remove trailing 'a' if word length > 3 (Schwa deletion at end)
-                if w.len() > 3 && w.ends_with('a') && !w.ends_with("ia") {
-                    w[..w.len()-1].to_string()
+    let mut result = String::new();
+    let num_tokens = tokens.len();
+    for (i, token) in tokens.into_iter().enumerate() {
+        match token {
+            Token::DevanagariWord(word) => {
+                let is_last = i == num_tokens - 1;
+                if is_last && !ends_with_boundary {
+                    // Incomplete word protection: leave final word in raw Devanagari
+                    result.push_str(&word);
                 } else {
-                    w.to_string()
+                    // Complete word: transliterate directly using the native ONNX model
+                    let raw_trans = crate::services::translit::transliterate(&word);
+                    result.push_str(&raw_trans);
                 }
             }
+            Token::Other(other) => {
+                result.push_str(&other);
+            }
         }
-    }).collect();
+    }
 
-    words.join(" ")
+    result
+}
+
+/// Backward-compatible Hinglish engine wrapper.
+pub fn to_friendly_hinglish(text: &str) -> String {
+    transliterate_if_hi(text)
 }
 
 /// Seamlessly stitches two transcription fragments (prefix and suffix) using word-level overlap matching.
@@ -161,9 +164,9 @@ mod tests {
 
     #[test]
     fn test_hinglish_normalization() {
-        assert_eq!(to_friendly_hinglish("namastE"), "namaste");
-        assert_eq!(to_friendly_hinglish("dIpAvalI"), "dipavali");
-        assert_eq!(to_friendly_hinglish("kairatE"), "karte");
+        // Without engine initialized, transliterate_if_hi should fallback to raw word safely
+        assert_eq!(transliterate_if_hi("नमस्ते"), "नमस्ते");
+        assert_eq!(transliterate_if_hi("hello"), "hello");
     }
 
     #[test]

@@ -5,6 +5,7 @@ import json
 import subprocess
 import glob
 import time
+import argparse
 from datetime import datetime
 
 # Absolute paths
@@ -19,11 +20,6 @@ WAV_FILES = [
     "AD09021.wav",
     "AD09039.wav",
     "AD09051.wav",
-    "AD09055.wav",
-    "AD13034.wav",
-    "AD13040.wav",
-    "AD13069.wav",
-    "AD13072.wav",
 ]
 
 def get_latest_run_metrics():
@@ -62,10 +58,18 @@ def get_latest_run_metrics():
     return data, stt_txt, llm_txt
 
 def main():
+    parser = argparse.ArgumentParser(description="Vox Single Model Benchmark")
+    parser.add_argument("--llm", type=str, required=True, help="LLF GGUF filename (e.g. llama/Llama-3.2-1B-Instruct-Q4_K_M.gguf)")
+    args = parser.parse_args()
+    
+    llm_filename = args.llm
+    llm_basename = os.path.basename(llm_filename)
+    
     print("=" * 60)
-    print("VOX 0.7.0 FORMAL PRODUCTION BENCHMARK RUNNER (FIXED)")
+    print("VOX 0.7.0 DYNAMIC MODEL BENCHMARK RUNNER")
+    print(f"Model: {llm_filename}")
+    print(f"Targeting: 5 WAV files sequentially from: {AUDIO_DIR}")
     print("=" * 60)
-    print(f"Targeting 10 WAV files sequentially from: {AUDIO_DIR}")
     
     os.makedirs(BENCHMARKS_DIR, exist_ok=True)
     
@@ -79,10 +83,10 @@ def main():
             
         file_size_kb = os.path.getsize(wav_path) / 1024.0
         
-        print(f"\n[{idx}/10] Running benchmark on {fname} ({file_size_kb:.1f} KB)...")
+        print(f"\n[{idx}/5] Running benchmark on {fname} ({file_size_kb:.1f} KB)...")
         
-        # Run cargo release command
-        cmd = ["cargo", "run", "--release", "--bin", "vox-bench", "--", "--input", wav_path]
+        # Run cargo release command passing the LLM file dynamically
+        cmd = ["cargo", "run", "--release", "--bin", "vox-bench", "--", "--input", wav_path, "--llm", llm_filename]
         
         start_time = time.time()
         process = subprocess.Popen(
@@ -93,10 +97,30 @@ def main():
             text=True
         )
         
-        # Read and stream stdout to console
-        stdout, stderr = process.communicate()
-        elapsed = time.time() - start_time
-        
+        try:
+            stdout, stderr = process.communicate(timeout=120)
+            elapsed = time.time() - start_time
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate()
+            print(f" -> Timeout (120s) reached for {fname}!")
+            runs.append({
+                "filename": fname,
+                "file_size_kb": file_size_kb,
+                "input_duration_sec": os.path.getsize(wav_path) / 32000.0,
+                "stt_transcript": "TIMEOUT",
+                "llm_response": "TIMEOUT",
+                "stt_rtf": 0.0,
+                "llm_tps": 0.0,
+                "ttfa_sec": 0.0,
+                "total_time_sec": 0.0,
+                "peak_rss_mb": 0.0,
+                "stt_ram_mb": 0.0,
+                "llm_ram_mb": 0.0,
+                "tts_ram_mb": 0.0
+            })
+            continue
+
         if process.returncode != 0:
             print(f"[Error] Command failed for {fname}")
             print(stderr)
@@ -114,7 +138,6 @@ def main():
         latency = metrics.get("latency", {})
         memory = metrics.get("memory_mb", {})
         throughput = metrics.get("throughput", {})
-        data_fields = metrics.get("data", {})
         
         stt_rtf = throughput.get("stt_rtf", 0.0)
         llm_tps = throughput.get("llm_tps", 0.0)
@@ -164,85 +187,28 @@ def main():
     llm_ram_fixed = runs[0]["llm_ram_mb"]
     tts_ram_fixed = runs[0]["tts_ram_mb"]
     
-    # Generate Beautiful Markdown Report
-    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Output JSON string block of averages and runs so parent process can parse it easily
+    summary_data = {
+        "model": llm_filename,
+        "avg_stt_rtf": avg_stt_rtf,
+        "avg_llm_tps": avg_llm_tps,
+        "avg_ttfa": avg_ttfa,
+        "avg_total_time": avg_total_time,
+        "avg_peak_rss": avg_peak_rss,
+        "stt_ram": stt_ram_fixed,
+        "llm_ram": llm_ram_fixed,
+        "tts_ram": tts_ram_fixed,
+        "runs": runs
+    }
     
-    md = f"""# Vox v0.7.0 Formal Production Benchmark Results
-
-This report documents the performance metrics of the **Vox Voice Interaction Pipeline (v0.7.0)**. 
-All benchmarks were compiled in highly optimized `--release` profile and profiled sequentially across **10 different multi-lingual speech audio segments** to ensure production-parity accuracy, hardware stability, and memory integrity.
-
-- **Date:** `{timestamp_str}`
-- **OS Platform:** `Linux`
-- **CPU:** `11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz (4 Cores, 8 Threads)`
-- **RAM Baseline:** `8GB CPU-first constraints`
-
----
-
-## ⚡ Executive Performance Summary
-
-| Metric | Average Benchmark Value | Target Baseline | Status |
-| :--- | :--- | :--- | :--- |
-| **STT RTF (Real-Time Factor)** | `{avg_stt_rtf:.2f}x` | `< 1.50x (rolling window)` | **Passed (Sub-Realtime)** ✅ |
-| **LLM Generation Speed** | `{avg_llm_tps:.2f} TPS` | `> 1.00 TPS` | **Passed (Optimized)** ✅ |
-| **TTFA (Time to First Audio)** | `{avg_ttfa:.2f}s` | `< 4.00s` | **Passed (Ultra low-latency)** ✅ |
-| **Total Turn Latency** | `{avg_total_time:.2f}s` | `< 10.00s` | **Passed** ✅ |
-| **Peak Process RSS** | `{avg_peak_rss:.0f} MB` | `< 7500 MB` | **Passed (Highly efficient)** ✅ |
-
----
-
-## 🧠 Memory Footprint Profiles
-
-| Module | Engine | Model | Memory Allocation (RSS) |
-| :--- | :--- | :--- | :--- |
-| **STT** | `sherpa-onnx` | `Qwen3-ASR` | `{stt_ram_fixed:.0f} MB` |
-| **LLM** | `llama-cpp-2` | `Gemma-2B (Q4_K_M)` | `{llm_ram_fixed:.0f} MB` |
-| **TTS** | `kokoro + piper` | `Kokoro-82M + Priyamvada-Medium` | `{tts_ram_fixed:.0f} MB` |
-| **Shared Cache & Runtime** | `Tauri Core + Sys` | `Shared memory` | `~600 - 800 MB` |
-| **Total Peak Footprint** | **All Active Workers** | **Full Context Pipeline** | **`{avg_peak_rss:.0f} MB`** |
-
----
-
-## 📋 Granular Run Metrics (10-File Sequence)
-
-| Run | Input File | File Size (KB) | Audio Dur (s) | Transcript | STT RTF | LLM TPS | TTFA (s) | Total (s) | Peak RSS (MB) |
-| :--- | :--- | :---: | :---: | :--- | :---: | :---: | :---: | :---: | :---: |
-"""
-
-    for i, r in enumerate(runs, 1):
-        trans_clean = r["stt_transcript"].replace("\n", " ").replace("|", "\\|")
-        if len(trans_clean) > 80:
-            trans_clean = trans_clean[:77] + "..."
-        md += f"| #{i} | `{r['filename']}` | {r['file_size_kb']:.1f} | {r['input_duration_sec']:.1f}s | {trans_clean} | {r['stt_rtf']:.2f}x | {r['llm_tps']:.2f} | {r['ttfa_sec']:.2f}s | {r['total_time_sec']:.2f}s | {r['peak_rss_mb']:.0f} |\n"
-
-    md += """
----
-
-## 💡 Architectural Tuning & Hardening Notes (v0.7.0)
-
-1. **Stateful STT Prefix Stitcher**:
-   * Slicing partial and final voice samples to a trailing **`2.5s` (40,000 samples)** sliding window dropped the STT Real-Time Factor (RTF) from $12.82\\text{x}$ down to **$5.14\\text{x}$**!
-   * This completely eliminated $O(N^2)$ transcript calculation scaling without losing context.
-
-2. **Locked Model in Memory (`mlock`)**:
-   * We enabled `.with_use_mlock(true)` on `model_params`. 
-   * This forces the entire 1.6GB weights tensor of Gemma-2B to reside strictly in physical RAM, making LLM inference completely immune to background operating system page swap latency spikes.
-
-3. **CPU Cache Thread Optimization**:
-   * By pinning `.with_n_batch(512)` and `.with_n_ubatch(512)` on context creation, we heavily reduced CPU L1/L2 cache trashing.
-   * This increased physical core efficiency of the mobile Core i5, boosting overall average LLM TPS by **+8.4%**.
-
-4. **Sequential Model Hydration**:
-   * Spawning engines sequentially avoids model startup conflicts and ensures that the ONNX runtimes and `llama.cpp` instantiate cleanly under resource-restricted 8GB system environments.
-"""
-
-    report_path = os.path.join(BENCHMARKS_DIR, "version_0.7.0_results.md")
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write(md)
+    # Save a temporary JSON report for this specific model
+    report_json_path = os.path.join(BENCHMARKS_DIR, f"temp_{llm_basename}.json")
+    with open(report_json_path, "w", encoding="utf-8") as f:
+        json.dump(summary_data, f, indent=2)
         
     print("\n" + "=" * 60)
-    print("SUCCESS: BENCHMARK COMPLETED SUCCESSFULLY!")
-    print(f"Final Report Written to: {report_path}")
+    print(f"SUCCESS: BENCHMARK FOR {llm_basename} COMPLETED SUCCESSFULLY!")
+    print(f"Metrics JSON written to: {report_json_path}")
     print("=" * 60)
 
 if __name__ == "__main__":

@@ -314,6 +314,9 @@ fn apply_setting_mutation(
         ("asr", "model") => {
             settings.asr.model = value.as_str().ok_or("model must be a string")?.to_string();
         }
+        ("asr", "transliterate_enabled") => {
+            settings.asr.transliterate_enabled = value.as_bool().ok_or("transliterate_enabled must be a boolean")?;
+        }
         ("audio", "output_mode") => {
             settings.audio.output_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid output_mode: {}", e))?;

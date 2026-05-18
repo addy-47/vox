@@ -54,7 +54,7 @@ pub async fn start_model_setup(
 
     let manager = state.model_manager.clone();
     let models_dir = crate::utils::paths::get().models.clone();
-    let base_url = "https://huggingface.co/addyo07/Vox/resolve/main".to_string();
+    let base_url = "https://huggingface.co/addyo07/vox-models/resolve/main".to_string();
     let state_clone = state.inner().clone();
     let app_clone = _app.clone();
     
@@ -129,6 +129,11 @@ pub async fn complete_setup_wizard(app: AppHandle, state: State<'_, Arc<AppState
     
     log::info!("[SETUP] Onboarding wizard marked as completed.");
 
+    // Eagerly initialize the transliteration engine now that models have been downloaded
+    if let Err(e) = crate::services::translit::init_transliteration_engine() {
+        log::error!("[SETUP] Failed to initialize transliteration engine: {}", e);
+    }
+
     // Close the wizard window immediately to prevent UI blocking
     if let Some(wizard_win) = app.get_webview_window("wizard") {
         let _ = wizard_win.close();
@@ -199,7 +204,7 @@ pub async fn download_optional_model(
     // Spawn isolated background task for the heavy optional download
     tauri::async_runtime::spawn(async move {
         let p = crate::utils::paths::get();
-        let base_url = "https://huggingface.co/addyo07/Vox/resolve/main"; 
+        let base_url = "https://huggingface.co/addyo07/vox-models/resolve/main"; 
         
         // Use a new manager to avoid state conflicts with the primary setup
         let manager = crate::setup::model_manager::ModelManager::new(Some(app_clone.clone()));

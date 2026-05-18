@@ -64,7 +64,17 @@ impl traits::VadEngine for EarshotVadEngine {
     /// earshot will panic in debug builds if `chunk.len() != 256`.
     /// In Vox's VAD actor this is always 256 by construction.
     fn predict(&mut self, chunk: &[f32]) -> bool {
-        let score = self.detector.predict_f32(chunk);
-        score >= self.threshold
+        if chunk.len() == 256 {
+            let mut clamped_chunk = [0.0f32; 256];
+            for (i, &val) in chunk.iter().enumerate() {
+                clamped_chunk[i] = val.clamp(-1.0, 1.0);
+            }
+            let score = self.detector.predict_f32(&clamped_chunk);
+            score >= self.threshold
+        } else {
+            let clamped: Vec<f32> = chunk.iter().map(|&val| val.clamp(-1.0, 1.0)).collect();
+            let score = self.detector.predict_f32(&clamped);
+            score >= self.threshold
+        }
     }
 }
