@@ -78,10 +78,17 @@ fn main() -> anyhow::Result<()> {
     println!("\x1b[32m[Bench]\x1b[0m Loading LLM ({})...", llm_filename);
     let llm_path = vox_lib::utils::paths::model_dir("llm").join(&llm_filename);
     let snap_3 = BenchReporter::get_memory_snapshot();
-    let llm_engine = LlmWorker::new(&llm_path, 2048, 4).expect("Failed to load LLM");
+    let llm_engine = Box::new(LlmWorker::new(&llm_path, 2048, 4).expect("Failed to load LLM"));
     let snap_4 = BenchReporter::get_memory_snapshot();
     let llm_mem_mb = snap_4.rss_mb.saturating_sub(snap_3.rss_mb);
     metrics.lock().unwrap().llm_mem_mb = llm_mem_mb;
+
+    println!("\x1b[32m[Bench]\x1b[0m Warming up LLM KV Cache with system prompt...");
+    let warmup_cancel = Arc::new(AtomicBool::new(false));
+    let (warmup_tx, _) = channel();
+    let warmup_start = std::time::Instant::now();
+    llm_engine.generate("", &system_prompt, 0, &warmup_cancel, &warmup_tx).expect("Failed to warm up LLM KV Cache");
+    println!("\x1b[32m[Bench]\x1b[0m LLM KV Cache warmed up in {:?}", warmup_start.elapsed());
 
     println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Kokoro + Piper)...");
     let en_tts_dir = vox_lib::utils::paths::model_dir("tts").join("kokoro");
