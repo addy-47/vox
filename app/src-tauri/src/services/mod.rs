@@ -8,3 +8,4 @@ pub mod tts;
 pub mod vad;
 pub mod ptt;
 pub mod utils;
+pub mod translit;

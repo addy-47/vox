@@ -6,4 +6,4 @@ CMAKE_CXX_COMPILER = "/usr/bin/clang++"
 CXXFLAGS = "-stdlib=libc++"
 
 [build]
-rustflags = ["-C", "link-arg=-lc++", "-C", "link-arg=-lc++abi"]
+rustflags = ["-C", "link-arg=-lc++", "-C", "link-arg=-lc++abi", "-C", "link-arg=-Wl,--allow-multiple-definition"]

@@ -328,6 +328,10 @@ impl PipelineOrchestrator {
             let s = self.settings.read().unwrap();
             s.tts.en_voice
         };
+        let mut local_transliterate_enabled = {
+            let s = self.settings.read().unwrap();
+            s.asr.transliterate_enabled
+        };
         let mut local_sleep_timeout = {
             let s = self.settings.read().unwrap();
             std::time::Duration::from_secs(s.interaction.auto_sleep_timeout as u64)
@@ -500,8 +504,13 @@ impl PipelineOrchestrator {
                         crate::core::state::InteractionOwner::Tray => "tray",
                         crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
+                    let output_text = if local_transliterate_enabled {
+                        transliterate_if_hi(&text)
+                    } else {
+                        text.clone()
+                    };
                     let _ = app_handle.emit_to(target, "transcript_partial", serde_json::json!({
-                        "text": transliterate_if_hi(&text),
+                        "text": output_text,
                         "turn_id": turn_id,
                         "owner": owner
                     }));
@@ -525,8 +534,13 @@ impl PipelineOrchestrator {
                         crate::core::state::InteractionOwner::Tray => "tray",
                         crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
+                    let output_text = if local_transliterate_enabled {
+                        transliterate_if_hi(&text)
+                    } else {
+                        text.clone()
+                    };
                     let _ = app_handle.emit_to(target, "transcript_final", serde_json::json!({
-                        "text": transliterate_if_hi(&text),
+                        "text": output_text,
                         "turn_id": turn_id,
                         "owner": owner
                     }));
@@ -590,7 +604,12 @@ impl PipelineOrchestrator {
                             crate::core::state::InteractionOwner::Wizard => "wizard",
                         }
                     };
-                    let _ = app_handle.emit_to(target, "llm_token", transliterate_if_hi(&token));
+                    let output_token = if local_transliterate_enabled {
+                        transliterate_if_hi(&token)
+                    } else {
+                        token.clone()
+                    };
+                    let _ = app_handle.emit_to(target, "llm_token", output_token);
                 }
 
                 VoxEvent::LlmFinished { turn_id } => {
@@ -798,6 +817,7 @@ impl PipelineOrchestrator {
                     local_en_voice = new_settings.tts.en_voice;
                     local_sleep_timeout = std::time::Duration::from_secs(new_settings.interaction.auto_sleep_timeout as u64);
                     local_main_mode = new_settings.interaction.main_app_mode;
+                    local_transliterate_enabled = new_settings.asr.transliterate_enabled;
                 }
 
                 // Handle remaining events that don't require orchestrator logic

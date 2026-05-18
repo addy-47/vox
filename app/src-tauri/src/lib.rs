@@ -56,6 +56,11 @@ pub fn run() {
             // ── 0.5 Logging (must be second, relies on paths) ───────────────────────
             let log_guard = crate::utils::logging::init(crate::utils::paths::get().logs.clone());
 
+            // ── 0.55 Transliteration Engine (eager initialization) ──────────────────
+            if let Err(e) = crate::services::translit::init_transliteration_engine() {
+                log::warn!("[BOOTSTRAP] Eager transliteration engine initialization skipped: {}", e);
+            }
+
             // ── 0.6 Telemetry Aggregator ───────────────────────────────────────────
             let latest_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_vad_prob = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
