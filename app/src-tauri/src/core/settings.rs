@@ -186,6 +186,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
 
         // ASR — model change requires full pipeline restart
         ("asr", "model")                 => SettingReloadPolicy::Restart,
+        ("asr", "transliterate_enabled") => SettingReloadPolicy::Hot,
 
         // LLM — most require restart (model is loaded once)
         ("llm", "model")                 => SettingReloadPolicy::Restart,
@@ -288,14 +289,17 @@ impl Default for VadSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AsrSettings {
     pub model: String, // e.g., "qwen3-asr"
+    pub transliterate_enabled: bool,
 }
 
 impl Default for AsrSettings {
     fn default() -> Self {
         Self {
             model: "qwen3-asr".to_string(),
+            transliterate_enabled: true,
         }
     }
 }

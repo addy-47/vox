@@ -35,7 +35,7 @@ async fn test_model_manager_download_sandbox() {
     
     // 3. Fetch manifest to get correct URLs and metadata
     let manifest = VoxManifest::fetch().await.expect("Failed to fetch manifest");
-    let base_url = "https://huggingface.co/addyo07/Vox/resolve/main";
+    let base_url = "https://huggingface.co/addyo07/vox-models/resolve/main";
     
     // 4. Test downloading a SMALL file: ten_vad.onnx (id: ten_vad)
     let vad_entry = manifest.get_model("ten_vad").expect("ten_vad not found in manifest");
