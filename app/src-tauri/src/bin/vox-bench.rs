@@ -99,6 +99,9 @@ fn main() -> anyhow::Result<()> {
     let tts_mem_mb = snap_6.rss_mb.saturating_sub(snap_5.rss_mb);
     metrics.lock().unwrap().tts_mem_mb = tts_mem_mb;
 
+    println!("\x1b[32m[Bench]\x1b[0m Loading Transliteration Engine (Native RNN)...");
+    vox_lib::services::translit::init_transliteration_engine().expect("Failed to load Transliteration Engine");
+
     // 4. Spawn Dedicated Worker Threads
     
     // STT Worker

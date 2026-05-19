@@ -28,8 +28,10 @@ pub fn init(log_dir: PathBuf) -> WorkerGuard {
 
     // Build the subscriber
     tracing_subscriber::registry()
-        // Filter based on RUST_LOG env var or default to "info"
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        // Filter based on RUST_LOG env var or default to info, but suppress verbose ONNX/ORT crates
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            EnvFilter::new("info,ort=warn,onnxruntime=warn,sherpa_onnx=warn,ort_sys=warn,onnx=warn")
+        }))
         // Console layer (stdout)
         .with(fmt::layer().with_ansi(true).with_target(false))
         // File layer (non-blocking)

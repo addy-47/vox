@@ -1,12 +1,40 @@
 {
   "version": "1.0.0",
-  "total_size_bytes": 5008946285,
+  "total_size_bytes": 9056399547,
   "models": [
     {
       "id": "ten_vad",
       "path": "vad/ten_vad.onnx",
       "size": 332211,
       "sha256": "718cb7eef47e3cf5ddbe7e967a7503f46b8b469c0706872f494dfa921b486206",
+      "required": true
+    },
+    {
+      "id": "translit_encoder",
+      "path": "translit/encoder.onnx",
+      "size": 9511984,
+      "sha256": "b439795a8387059c76e471f5d7ef536439cae1958442d7db52f46676b99e7ddc",
+      "required": true
+    },
+    {
+      "id": "translit_decoder",
+      "path": "translit/decoder.onnx",
+      "size": 6690514,
+      "sha256": "23b32436e3aaf395c1fe677bdb7d5b52322362941310de51a77ca19140846caa",
+      "required": true
+    },
+    {
+      "id": "translit_input_vocab",
+      "path": "translit/input_vocab.json",
+      "size": 946,
+      "sha256": "f530055fe3d5c5fffe590bafa49a18c59cfa36502406a319a92948d56d447c2f",
+      "required": true
+    },
+    {
+      "id": "translit_target_vocab",
+      "path": "translit/target_vocab.json",
+      "size": 346,
+      "sha256": "81a34f107f4e7f95fb9d0866e6ab4ad85de6f1e4a58935d611e921889744fa5d",
       "required": true
     },
     {
@@ -56,6 +84,20 @@
       "path": "llm/gemma4/google_gemma-4-E2B-it-Q4_K_M.gguf",
       "size": 3462678272,
       "sha256": "b5310340b3a23d31655d7119d100d5df1b2d8ee17b3ca8b0a23ad7e9eb5fa705",
+      "required": false
+    },
+    {
+      "id": "llm_llama_3_2_1b_instruct_q6_k",
+      "path": "llm/llama/Llama-3.2-1B-Instruct-Q6_K.gguf",
+      "size": 1021800576,
+      "sha256": "0f4c510daf16e0d1b3bc94931fd9296c28936bebdda2593687d4eb70c5b70628",
+      "required": false
+    },
+    {
+      "id": "llm_gemma_4_e2b_uncensored_aggressive_q2_k_p",
+      "path": "llm/gemma4/Gemma-4-E2B-Uncensored-HauhauCS-Aggressive-Q2_K_P.gguf",
+      "size": 3009448896,
+      "sha256": "c9213a33b16d513482790bb7092243f783a450e35f7deca584a41e0470afdb97",
       "required": false
     },
     {

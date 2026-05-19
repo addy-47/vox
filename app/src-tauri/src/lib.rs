@@ -344,6 +344,7 @@ pub fn run() {
             crate::ipc::setup::reveal_wizard,
             crate::ipc::setup::check_model_exists,
             crate::ipc::setup::download_optional_model,
+            crate::ipc::setup::delete_model,
             // Audio
             crate::ipc::audio::list_input_devices,
         ])

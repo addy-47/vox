@@ -36,6 +36,8 @@ where
     let mut utterance_buffer: Vec<f32> = Vec::new();
     let mut samples_since_partial = 0;
     let mut pre_roll_buffer: Vec<f32> = Vec::with_capacity(8000); // 500ms pre-roll
+    let mut active_frames = 0;
+    let mut inactive_frames = 0;
 
     // Local state initialized once, updated via vad_rx to avoid hot-path locks
         let (threshold_init, noise_gate_init, mode_init, owner_init, audio_mode_init) = {
@@ -62,8 +64,9 @@ where
         (state.dropped_telemetry_events.clone(), state.pipeline.engine_shutdown.clone())
     };
 
+    let is_earshot = matches!(vad, VadBackend::Earshot(_));
     is_loaded.store(true, Ordering::Relaxed);
-    log::info!("[VAD] Entering sync loop: threshold={}, noise_gate={}, mode={:?}", threshold, noise_gate, mode);
+    log::info!("[VAD] Entering sync loop: threshold={}, noise_gate={}, is_earshot={}, mode={:?}", threshold, noise_gate, is_earshot, mode);
 
     
     // 16ms chunks (256 samples at 16kHz) — matches TenVAD window_size default
@@ -103,6 +106,16 @@ where
                 VadCommand::UpdateOwner(o) => {
                     log::info!("[VAD] Updating interaction owner to {:?}", o);
                     owner = o;
+                    
+                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                    let settings = state.settings.read().unwrap();
+                    mode = match owner {
+                        InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+                        InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
+                        InteractionOwner::Ptt => InteractionMode::PTT,
+                        InteractionOwner::Wizard => InteractionMode::Passive,
+                    };
+                    log::info!("[VAD] Automatically recalculated interaction mode to {:?}", mode);
                 }
                 VadCommand::UpdateAudioMode(m) => {
                     log::info!("[VAD] Updating audio output mode to {:?}", m);
@@ -183,10 +196,20 @@ where
             }
 
             // Classify chunk as speech or silence
-            let detected = vad.predict(&chunk);
+            // We must ALWAYS call vad.predict to keep its internal context windows synchronized.
+            let mut detected = vad.predict(&chunk);
+            
+            // Override hallucinated speech on sub-threshold noise
+            let effective_noise_gate = if is_earshot { noise_gate * 1.5 } else { noise_gate };
+            if raw_energy < effective_noise_gate {
+                detected = false;
+            }
             
             if detected {
-                if !in_speech {
+                active_frames += 1;
+                inactive_frames = 0;
+
+                if !in_speech && active_frames >= 4 {
                     in_speech = true;
                     current_turn_id += 1;
                     log::info!("[VAD] >>> SPEECH START (session: {}, owner: {:?})", current_turn_id, owner);
@@ -206,21 +229,11 @@ where
                     samples_since_partial = utterance_buffer.len();
                     pre_roll_buffer.clear();
                 }
-
-                utterance_buffer.extend_from_slice(&chunk);
-                samples_since_partial += chunk.len();
-
-                if samples_since_partial >= 12800 {
-                    let start_idx = utterance_buffer.len().saturating_sub(240000);
-                    let _ = stt_tx.send(crate::services::stt::SttCommand::Partial(
-                        current_turn_id, 
-                        owner,
-                        utterance_buffer[start_idx..].to_vec()
-                    ));
-                    samples_since_partial = 0;
-                }
             } else {
-                if in_speech {
+                inactive_frames += 1;
+                active_frames = 0;
+
+                if in_speech && inactive_frames >= 35 {
                     in_speech = false;
                     log::info!("[VAD] <<< SPEECH END (session: {}, owner: {:?})", current_turn_id, owner);
                     
@@ -246,13 +259,27 @@ where
                     utterance_buffer.clear();
                     samples_since_partial = 0;
                 }
-                
-                if !in_speech {
-                    pre_roll_buffer.extend_from_slice(&chunk);
-                    if pre_roll_buffer.len() > 8000 {
-                        let excess = pre_roll_buffer.len() - 8000;
-                        pre_roll_buffer.drain(0..excess);
-                    }
+            }
+            
+            // Append chunk to the appropriate buffer
+            if in_speech {
+                utterance_buffer.extend_from_slice(&chunk);
+                samples_since_partial += chunk.len();
+
+                if samples_since_partial >= 12800 {
+                    let start_idx = utterance_buffer.len().saturating_sub(240000);
+                    let _ = stt_tx.send(crate::services::stt::SttCommand::Partial(
+                        current_turn_id, 
+                        owner,
+                        utterance_buffer[start_idx..].to_vec()
+                    ));
+                    samples_since_partial = 0;
+                }
+            } else {
+                pre_roll_buffer.extend_from_slice(&chunk);
+                if pre_roll_buffer.len() > 8000 {
+                    let excess = pre_roll_buffer.len() - 8000;
+                    pre_roll_buffer.drain(0..excess);
                 }
             }
         } else {

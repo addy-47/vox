@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Database, BrainCircuit, Mic, 
-  Check, ArrowRight
+  Check, ArrowRight, Languages
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
@@ -112,11 +112,23 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   const toggleCategory = (ids: string[]) => {
     setSelectedIds(prev => {
         const next = new Set(prev);
-        const allPresent = ids.every(id => next.has(id));
-        if (allPresent) {
+        const anyPresent = ids.some(id => next.has(id));
+        if (anyPresent) {
             ids.forEach(id => next.delete(id));
         } else {
             ids.forEach(id => next.add(id));
+        }
+        return next;
+    });
+  };
+
+  const toggleModel = (id: string) => {
+    setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+            next.delete(id);
+        } else {
+            next.add(id);
         }
         return next;
     });
@@ -165,6 +177,14 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             icon: <Database />,
             required: true,
             models: manifest.models.filter(m => m.path.startsWith('stt/'))
+        },
+        {
+            id: 'translit',
+            label: 'HI-EN Transliteration',
+            subLabel: 'Deep learning based transliteration',
+            icon: <Languages />,
+            required: true,
+            models: manifest.models.filter(m => m.path.startsWith('translit/'))
         },
         {
             id: 'llm',
@@ -221,9 +241,11 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                         <ModelCategory 
                             key={cat.id}
                             {...cat}
-                            selected={cat.models.length > 0 && cat.models.every(m => selectedIds.has(m.id))}
+                            selected={cat.models.length > 0 && cat.models.some(m => selectedIds.has(m.id))}
                             onToggle={() => toggleCategory(cat.models.map(m => m.id))}
                             formatSize={formatSize}
+                            selectedIds={selectedIds}
+                            onToggleModel={toggleModel}
                         />
                     ))}
                 </div>
