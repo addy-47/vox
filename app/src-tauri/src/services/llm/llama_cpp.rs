@@ -130,7 +130,8 @@ impl ModelFamily {
         
         match self {
             ModelFamily::Gemma => {
-                let re_tags = regex::Regex::new(r"<\|turn>|<turn\|>|<channel\|>|system\s*\n|user\s*\n|model\s*\n").unwrap();
+                static RE_GEMMA_TAGS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+                let re_tags = RE_GEMMA_TAGS.get_or_init(|| regex::Regex::new(r"<\|turn>|<turn\|>|<channel\|>|system\s*\n|user\s*\n|model\s*\n").unwrap());
                 cleaned = re_tags.replace_all(&cleaned, "").to_string();
                 if cleaned.contains("<end") || cleaned.contains("<eos>") {
                     log::warn!("[LLM] Possible leaked eos tag detected: {:?}", cleaned);
@@ -138,8 +139,8 @@ impl ModelFamily {
                 }
             }
             ModelFamily::Qwen => {
-                // Strip entire <think>...</think> block including inner text
-                let re_think = regex::Regex::new(r"(?s)<think>.*?</think>").unwrap();
+                static RE_QWEN_THINK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+                let re_think = RE_QWEN_THINK.get_or_init(|| regex::Regex::new(r"(?s)<think>.*?</think>").unwrap());
                 cleaned = re_think.replace_all(&cleaned, "").to_string();
 
                 let tags = vec![

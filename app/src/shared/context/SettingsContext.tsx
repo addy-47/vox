@@ -45,6 +45,7 @@ export interface VoxSettings {
   };
   asr: {
     model: string;
+    transliterate_enabled: boolean;
   };
   llm: {
     model: string;
@@ -74,6 +75,8 @@ export interface VoxSettings {
   };
   assistant: {
     system_prompt: string;
+    hindi_prompt: string;
+    english_prompt: string;
   };
 }
 

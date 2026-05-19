@@ -189,6 +189,15 @@ pub async fn update_setting(
         }
     }
 
+    if applied && domain == "vad" && key == "vad_backend" {
+        log::info!("[Settings] VAD backend changed. Hot-swapping 3-Tier Engine...");
+        let app_clone = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = stop_engine(app_clone.clone()).await;
+            let _ = launch_engine(app_clone).await;
+        });
+    }
+
     if !applied {
         return Ok(SettingUpdateResult {
             applied: false,

@@ -160,30 +160,122 @@ pub async fn complete_setup_wizard(app: AppHandle, state: State<'_, Arc<AppState
 
     Ok(())
 }
-fn map_model_id(model_id: &str) -> &str {
+
+async fn ensure_manifest_loaded(state: &State<'_, Arc<AppState>>) -> Result<(), String> {
+    let mut m = state.manifest.write().await;
+    if m.is_none() {
+        let manifest_path = crate::utils::paths::get().models.join("manifest.json");
+
+        // 1. Try reading from local manifest.json first
+        if manifest_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                if let Ok(manifest) = serde_json::from_str::<VoxManifest>(&content) {
+                    log::info!("[SETUP] Loaded manifest from local cache at {:?}", manifest_path);
+                    *m = Some(manifest);
+                    return Ok(());
+                }
+            }
+            log::warn!("[SETUP] Local manifest.json was corrupted or unreadable. Fetching fresh from HF...");
+        }
+
+        // 2. Fall back to fetching from HF
+        log::info!("[SETUP] Dynamic manifest fetch from HF...");
+        let manifest = VoxManifest::fetch().await.map_err(|e| {
+            log::error!("[SETUP] Dynamic manifest fetch failed: {}", e);
+            format!("Manifest not loaded and failed to fetch: {}", e)
+        })?;
+
+        // 3. Save fetched manifest to local cache
+        if let Ok(serialized) = serde_json::to_string_pretty(&manifest) {
+            if let Err(e) = std::fs::write(&manifest_path, serialized) {
+                log::error!("[SETUP] Failed to write local manifest cache: {}", e);
+            } else {
+                log::info!("[SETUP] Saved manifest to local cache at {:?}", manifest_path);
+            }
+        }
+
+        *m = Some(manifest);
+    }
+    Ok(())
+}
+
+fn get_model_group_ids(model_id: &str) -> Vec<String> {
     match model_id {
-        "gemma4" => "llm_gemma_4_q4_k_m",
-        "kokoro" => "tts_kokoro_onnx",
-        "qwen3-asr" => "stt_encoder",
-        "piper_hi" => "tts_hi_piper_onnx",
-        other => other,
+        "ten_vad" => vec!["ten_vad".to_string()],
+        "translit" => vec![
+            "translit_encoder".to_string(),
+            "translit_decoder".to_string(),
+            "translit_input_vocab".to_string(),
+            "translit_target_vocab".to_string(),
+        ],
+        "qwen3-asr" => vec![
+            "stt_conv_frontend".to_string(),
+            "stt_encoder".to_string(),
+            "stt_decoder".to_string(),
+            "stt_vocab".to_string(),
+            "stt_merges".to_string(),
+            "stt_config".to_string(),
+        ],
+        "gemma4" => vec!["llm_gemma_4_q4_k_m".to_string()],
+        "kokoro" => vec![
+            "tts_kokoro_onnx".to_string(),
+            "tts_kokoro_voices".to_string(),
+            "tts_kokoro_tokens".to_string(),
+            "tts_kokoro_espeak_ng_data".to_string(),
+        ],
+        "piper_hi" => vec![
+            "tts_hi_priyamvada_onnx".to_string(),
+            "tts_hi_priyamvada_config".to_string(),
+            "tts_piper_hi_espeak_ng_data".to_string(),
+        ],
+        other => vec![other.to_string()],
     }
 }
 
 #[tauri::command]
 pub async fn check_model_exists(model_id: String, state: State<'_, Arc<AppState>>) -> Result<bool, String> {
+    ensure_manifest_loaded(&state).await?;
     let manifest_guard = state.manifest.read().await;
     let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
     
-    let mapped_id = map_model_id(&model_id);
-    let model = manifest.models.iter().find(|m| m.id == mapped_id)
-        .ok_or_else(|| format!("Model {} not found in manifest", model_id))?;
-
+    let group_ids = get_model_group_ids(&model_id);
     let models_dir = crate::utils::paths::get().models.clone();
-    let dest_path = models_dir.join(&model.path);
-    let verified_path = dest_path.with_extension("verified");
+    
+    for mapped_id in group_ids {
+        let model = manifest.models.iter().find(|m| m.id == mapped_id);
+        if model.is_none() {
+            return Ok(false);
+        }
+        let model = model.unwrap();
+        
+        let dest_path = models_dir.join(&model.path);
+        let verified_path = dest_path.with_extension("verified");
 
-    Ok(verified_path.exists())
+        if verified_path.exists() {
+            continue;
+        }
+
+        if dest_path.exists() {
+            if let Ok(metadata) = std::fs::metadata(&dest_path) {
+                if metadata.len() == model.size_bytes {
+                    let marker = crate::setup::manifest::VerifiedMarker {
+                        sha256: model.sha256.clone(),
+                        verified_at: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                        expected_size: model.size_bytes,
+                    };
+                    let _ = marker.save(&verified_path);
+                    continue;
+                }
+            }
+        }
+        
+        return Ok(false);
+    }
+
+    Ok(true)
 }
 
 #[tauri::command]
@@ -192,14 +284,21 @@ pub async fn download_optional_model(
     app: AppHandle, 
     state: State<'_, Arc<AppState>>
 ) -> Result<(), String> {
+    ensure_manifest_loaded(&state).await?;
     let manifest_guard = state.manifest.read().await;
     let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
     
-    let mapped_id = map_model_id(&model_id);
-    let model = manifest.models.iter().find(|m| m.id == mapped_id)
-        .ok_or_else(|| format!("Model {} not found in manifest", model_id))?.clone();
+    let group_ids = get_model_group_ids(&model_id);
+    let mut target_models = Vec::new();
+    
+    for mapped_id in group_ids {
+        let model = manifest.models.iter().find(|m| m.id == mapped_id)
+            .ok_or_else(|| format!("Model {} not found in manifest", mapped_id))?.clone();
+        target_models.push(model);
+    }
 
     let app_clone = app.clone();
+    let model_id_clone = model_id.clone();
     
     // Spawn isolated background task for the heavy optional download
     tauri::async_runtime::spawn(async move {
@@ -209,12 +308,23 @@ pub async fn download_optional_model(
         // Use a new manager to avoid state conflicts with the primary setup
         let manager = crate::setup::model_manager::ModelManager::new(Some(app_clone.clone()));
         
-        if let Err(e) = manager.setup_model(&model, base_url, &p.models).await {
-            log::error!("[DOWNLOAD] Failed to download {}: {}", model.id, e);
-            let _ = app_clone.emit("optional_download_failed", e.to_string());
+        let mut failed = false;
+        let mut last_err = String::new();
+        
+        for model in target_models {
+            if let Err(e) = manager.setup_model(&model, base_url, &p.models).await {
+                log::error!("[DOWNLOAD] Failed to download {}: {}", model.id, e);
+                last_err = e.to_string();
+                failed = true;
+                break;
+            }
+        }
+        
+        if failed {
+            let _ = app_clone.emit("optional_download_failed", last_err);
         } else {
-            log::info!("[DOWNLOAD] Successfully downloaded optional model: {}", model.id);
-            let _ = app_clone.emit("optional_download_complete", model.id);
+            log::info!("[DOWNLOAD] Successfully downloaded optional model group: {}", model_id_clone);
+            let _ = app_clone.emit("optional_download_complete", model_id_clone);
         }
     });
 
@@ -227,5 +337,47 @@ pub async fn reveal_wizard(app: AppHandle) -> Result<(), String> {
         let _ = wizard_win.show();
         let _ = wizard_win.set_focus();
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_model(model_id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    ensure_manifest_loaded(&state).await?;
+    let manifest_guard = state.manifest.read().await;
+    let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
+    
+    let group_ids = get_model_group_ids(&model_id);
+    let models_dir = crate::utils::paths::get().models.clone();
+    
+    for mapped_id in group_ids {
+        let model = manifest.models.iter().find(|m| m.id == mapped_id)
+            .ok_or_else(|| format!("Model {} not found in manifest", mapped_id))?;
+
+        let dest_path = models_dir.join(&model.path);
+        let verified_path = dest_path.with_extension("verified");
+
+        // 1. Delete verified marker
+        if verified_path.exists() {
+            let _ = std::fs::remove_file(&verified_path);
+        }
+
+        // 2. Delete model file
+        if dest_path.exists() {
+            log::info!("[Settings] Deleting file: {:?}", dest_path);
+            let _ = std::fs::remove_file(&dest_path);
+        }
+
+        // 3. Folder cleanup
+        if model_id == "qwen3-asr" || model_id == "kokoro" || model_id == "piper_hi" || model_id == "translit" {
+            if let Some(parent) = dest_path.parent() {
+                if parent.exists() && parent != models_dir {
+                    log::info!("[Settings] Deleting folder: {:?}", parent);
+                    let _ = std::fs::remove_dir_all(parent);
+                }
+            }
+        }
+    }
+
+    log::info!("[Settings] Deleted model: {} successfully", model_id);
     Ok(())
 }
