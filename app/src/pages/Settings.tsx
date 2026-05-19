@@ -3,11 +3,12 @@ import { Save, RotateCcw, Settings as SettingsIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { CoreSettings } from "@/shared/components/CoreSettings";
+import { ModelSettings } from "@/shared/components/ModelSettings";
 import { TraySettings } from "@/shared/components/TraySettings";
 
 export const Settings: React.FC = () => {
   const { draftSettings, hasChanges, commitChanges, discardChanges, restoreDefaults } = useSettings();
-  const [activeTab, setActiveTab] = useState<"core" | "tray">("core");
+  const [activeTab, setActiveTab] = useState<"core" | "models" | "tray">("core");
 
   if (!draftSettings) return null;
 
@@ -41,6 +42,17 @@ export const Settings: React.FC = () => {
                 Core
               </button>
               <button 
+                onClick={() => setActiveTab("models")}
+                className={cn(
+                  "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
+                  activeTab === "models" 
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
+                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                )}
+              >
+                Models
+              </button>
+              <button 
                 onClick={() => setActiveTab("tray")}
                 className={cn(
                   "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
@@ -61,6 +73,8 @@ export const Settings: React.FC = () => {
         <div className="h-full max-w-[1600px] mx-auto py-6 md:py-8">
           {activeTab === "core" ? (
             <CoreSettings />
+          ) : activeTab === "models" ? (
+            <ModelSettings />
           ) : (
             <TraySettings />
           )}

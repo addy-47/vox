@@ -20,6 +20,11 @@ pub struct EarshotVadEngine {
     /// Earshot recommends 0.5 as a general-purpose default.
     /// Stored here so hot-updates are a free f32 write (no model reload).
     threshold: f32,
+    
+    // Temporal state machine variables for debouncing voice triggers
+    is_speech: bool,
+    active_frames: usize,
+    inactive_frames: usize,
 }
 
 impl EarshotVadEngine {
@@ -34,7 +39,13 @@ impl EarshotVadEngine {
         // avoiding an 8 KiB stack allocation before the Box move.
         let detector = Detector::default_boxed();
         log::info!("[VAD] Earshot VAD Engine ready (~8 KiB heap, ~110 KiB binary footprint).");
-        Ok(Self { detector, threshold })
+        Ok(Self { 
+            detector, 
+            threshold,
+            is_speech: false,
+            active_frames: 0,
+            inactive_frames: 0,
+        })
     }
 
     /// Hot-update the voice threshold without restarting the engine.
@@ -54,6 +65,9 @@ impl EarshotVadEngine {
     /// This is the earshot equivalent of TenVAD's `flush()`.
     pub fn flush(&mut self) {
         self.detector.reset();
+        self.is_speech = false;
+        self.active_frames = 0;
+        self.inactive_frames = 0;
     }
 }
 
@@ -64,17 +78,48 @@ impl traits::VadEngine for EarshotVadEngine {
     /// earshot will panic in debug builds if `chunk.len() != 256`.
     /// In Vox's VAD actor this is always 256 by construction.
     fn predict(&mut self, chunk: &[f32]) -> bool {
-        if chunk.len() == 256 {
+        let score = if chunk.len() == 256 {
             let mut clamped_chunk = [0.0f32; 256];
             for (i, &val) in chunk.iter().enumerate() {
                 clamped_chunk[i] = val.clamp(-1.0, 1.0);
             }
-            let score = self.detector.predict_f32(&clamped_chunk);
-            score >= self.threshold
+            self.detector.predict_f32(&clamped_chunk)
         } else {
             let clamped: Vec<f32> = chunk.iter().map(|&val| val.clamp(-1.0, 1.0)).collect();
-            let score = self.detector.predict_f32(&clamped);
-            score >= self.threshold
+            self.detector.predict_f32(&clamped)
+        };
+
+        // Calibration threshold to filter ambient room/fan hiss from the small model
+        let cal_threshold = (self.threshold + 0.15).min(0.99);
+        let is_active = score >= cal_threshold;
+
+        log::trace!(
+            "[VAD/Earshot] score: {:.4}, cal_threshold: {:.4}, is_active: {}, current_speech_state: {}", 
+            score, cal_threshold, is_active, self.is_speech
+        );
+
+        if is_active {
+            self.active_frames += 1;
+            self.inactive_frames = 0;
+            if !self.is_speech && self.active_frames >= 6 {
+                self.is_speech = true;
+                log::debug!(
+                    "[VAD/Earshot] SPEECH START CONFIRMED (raw_score={:.4}, frames={})", 
+                    score, self.active_frames
+                );
+            }
+        } else {
+            self.inactive_frames += 1;
+            self.active_frames = 0;
+            if self.is_speech && self.inactive_frames >= 15 {
+                self.is_speech = false;
+                log::debug!(
+                    "[VAD/Earshot] SILENCE CONFIRMED (raw_score={:.4}, frames={})", 
+                    score, self.inactive_frames
+                );
+            }
         }
+
+        self.is_speech
     }
 }

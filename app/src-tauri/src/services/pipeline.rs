@@ -18,6 +18,14 @@ use std::sync::RwLock;
 use crate::core::state::InteractionOwner;
 use crate::services::utils::{is_devanagari, transliterate_if_hi, count_words, should_flush};
 
+pub enum TranslitTask {
+    Token { turn_id: u32, target: String, token: String, local_transliterate_enabled: bool },
+    Partial { turn_id: u32, target: String, text: String, owner: InteractionOwner, local_transliterate_enabled: bool },
+    Final { turn_id: u32, target: String, text: String, owner: InteractionOwner, local_transliterate_enabled: bool },
+    Cancel { turn_id: u32 },
+    Shutdown,
+}
+
 // ─── Pipeline Orchestrator ────────────────────────────────────────────────────
 
 pub enum PipelineState {
@@ -366,6 +374,42 @@ impl PipelineOrchestrator {
             state.pipeline.engine_shutdown.clone()
         };
 
+        let (translit_tx, translit_rx) = std::sync::mpsc::channel::<TranslitTask>();
+        let app_handle_translit = app_handle.clone();
+        std::thread::Builder::new().name("vox-translit".into()).spawn(move || {
+            let mut worker_turn_id = 0;
+            while let Ok(task) = translit_rx.recv() {
+                match task {
+                    TranslitTask::Cancel { turn_id } => {
+                        worker_turn_id = turn_id;
+                    }
+                    TranslitTask::Token { turn_id, target, token, local_transliterate_enabled } => {
+                        if turn_id < worker_turn_id { continue; }
+                        worker_turn_id = turn_id;
+                        let output = if local_transliterate_enabled { transliterate_if_hi(&token) } else { token };
+                        let _ = app_handle_translit.emit_to(&target, "llm_token", output);
+                    }
+                    TranslitTask::Partial { turn_id, target, text, owner, local_transliterate_enabled } => {
+                        if turn_id < worker_turn_id { continue; }
+                        worker_turn_id = turn_id;
+                        let output = if local_transliterate_enabled { transliterate_if_hi(&text) } else { text };
+                        let _ = app_handle_translit.emit_to(&target, "transcript_partial", serde_json::json!({
+                            "text": output, "turn_id": turn_id, "owner": owner
+                        }));
+                    }
+                    TranslitTask::Final { turn_id, target, text, owner, local_transliterate_enabled } => {
+                        if turn_id < worker_turn_id { continue; }
+                        worker_turn_id = turn_id;
+                        let output = if local_transliterate_enabled { transliterate_if_hi(&text) } else { text };
+                        let _ = app_handle_translit.emit_to(&target, "transcript_final", serde_json::json!({
+                            "text": output, "turn_id": turn_id, "owner": owner
+                        }));
+                    }
+                    TranslitTask::Shutdown => break,
+                }
+            }
+        }).expect("Failed to spawn Translit worker");
+
         loop {
             // Check for global engine shutdown signal
             if engine_shutdown.load(Ordering::Relaxed) {
@@ -483,6 +527,7 @@ impl PipelineOrchestrator {
                     if buffer_len > 2400 {
                         log::info!("[Pipeline] Barge-in detected — cancelling turn {} ({} samples left)", turn_id, buffer_len);
                         self.cancel_flag.store(true, Ordering::Relaxed);
+                        let _ = translit_tx.send(TranslitTask::Cancel { turn_id });
                         playback_engine.cancel();
                         awaiting_playback_finish = false;
                         self.update_interaction_state(crate::core::state::InteractionState::Interrupted, owner, &app_handle);
@@ -504,16 +549,13 @@ impl PipelineOrchestrator {
                         crate::core::state::InteractionOwner::Tray => "tray",
                         crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
-                    let output_text = if local_transliterate_enabled {
-                        transliterate_if_hi(&text)
-                    } else {
-                        text.clone()
-                    };
-                    let _ = app_handle.emit_to(target, "transcript_partial", serde_json::json!({
-                        "text": output_text,
-                        "turn_id": turn_id,
-                        "owner": owner
-                    }));
+                    let _ = translit_tx.send(TranslitTask::Partial {
+                        turn_id,
+                        target: target.to_string(),
+                        text,
+                        owner,
+                        local_transliterate_enabled,
+                    });
                 }
 
                 // ── Transcript final: hand off to LLM ────────────────────
@@ -534,16 +576,13 @@ impl PipelineOrchestrator {
                         crate::core::state::InteractionOwner::Tray => "tray",
                         crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
-                    let output_text = if local_transliterate_enabled {
-                        transliterate_if_hi(&text)
-                    } else {
-                        text.clone()
-                    };
-                    let _ = app_handle.emit_to(target, "transcript_final", serde_json::json!({
-                        "text": output_text,
-                        "turn_id": turn_id,
-                        "owner": owner
-                    }));
+                    let _ = translit_tx.send(TranslitTask::Final {
+                        turn_id,
+                        target: target.to_string(),
+                        text: text.clone(),
+                        owner,
+                        local_transliterate_enabled,
+                    });
 
                     current_tid = self.on_transcript_final(text, owner, app_handle.clone());
                 }
@@ -604,12 +643,12 @@ impl PipelineOrchestrator {
                             crate::core::state::InteractionOwner::Wizard => "wizard",
                         }
                     };
-                    let output_token = if local_transliterate_enabled {
-                        transliterate_if_hi(&token)
-                    } else {
-                        token.clone()
-                    };
-                    let _ = app_handle.emit_to(target, "llm_token", output_token);
+                    let _ = translit_tx.send(TranslitTask::Token {
+                        turn_id,
+                        target: target.to_string(),
+                        token,
+                        local_transliterate_enabled,
+                    });
                 }
 
                 VoxEvent::LlmFinished { turn_id } => {
@@ -734,6 +773,7 @@ impl PipelineOrchestrator {
                     awaiting_playback_finish = false;
                     // Reset cancel flag so new sessions can proceed
                     self.cancel_flag.store(false, Ordering::Relaxed);
+                    let _ = translit_tx.send(TranslitTask::Cancel { turn_id });
 
                     // Persist Cancellation
                     if let Some(ref tx) = self.persist_tx {
@@ -770,6 +810,7 @@ impl PipelineOrchestrator {
                     // Directive 3: ASSERT CANCELLATION before joining.
                     // This forces C++ loops (llama.cpp) to abort instantly, unblocking the thread.
                     self.cancel_flag.store(true, Ordering::Relaxed);
+                    let _ = translit_tx.send(TranslitTask::Shutdown);
 
                     // 1. Shutdown LLM Worker
                     if let Ok(mut lock) = self.llm_tx.lock() {
