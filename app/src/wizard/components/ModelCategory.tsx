@@ -26,6 +26,8 @@ interface CategoryProps {
     required: boolean;
     onToggle: () => void;
     formatSize: (b: number) => string;
+    selectedIds?: Set<string>;
+    onToggleModel?: (id: string) => void;
 }
 
 export const ModelCategory = ({ 
@@ -36,7 +38,9 @@ export const ModelCategory = ({
     selected, 
     required, 
     onToggle, 
-    formatSize 
+    formatSize,
+    selectedIds,
+    onToggleModel
 }: CategoryProps) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const elementRef = useRef<HTMLDivElement>(null);
@@ -81,18 +85,46 @@ export const ModelCategory = ({
                 )}
                 <div className={cn("space-y-1 relative", node.name !== 'root' && "ml-4 pl-4 border-l border-white/10")}>
                     {Object.values(node.folders).map((f) => renderFolder(f))}
-                    {node.files.map(m => (
-                        <div key={m.id} className="flex items-center justify-between text-[11px] font-bold py-2 px-3 hover:bg-[#00dbe9]/5 rounded-xl group transition-all border border-transparent hover:border-[#00dbe9]/20">
-                            <div className="flex items-center gap-3">
-                                <div className="relative">
-                                    <div className="absolute inset-0 bg-[#00dbe9] blur-md opacity-0 group-hover:opacity-20 transition-opacity" />
-                                    <FileCode className="w-4 h-4 text-white/40 group-hover:text-[#00dbe9] transition-colors relative z-10" />
+                    {node.files.map(m => {
+                        const isModelSelected = selectedIds?.has(m.id) ?? false;
+                        const handleLineClick = (e: React.MouseEvent) => {
+                            if (required) return;
+                            e.stopPropagation();
+                            onToggleModel?.(m.id);
+                        };
+                        return (
+                            <div 
+                                key={m.id} 
+                                onClick={handleLineClick}
+                                className={cn(
+                                    "flex items-center justify-between text-[11px] font-bold py-2 px-3 hover:bg-[#00dbe9]/5 rounded-xl group transition-all border border-transparent hover:border-[#00dbe9]/20",
+                                    !required && "cursor-pointer"
+                                )}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={cn(
+                                        "w-4 h-4 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0",
+                                        isModelSelected 
+                                            ? (required ? "bg-[#00dbe9]/10 border-[#00dbe9]/40" : "bg-[#00dbe9] border-transparent shadow-[0_0_10px_rgba(0,219,233,0.4)]")
+                                            : "bg-transparent border-white/20 group-hover:border-white/40"
+                                    )}>
+                                        {isModelSelected && (
+                                            <Check className={cn(
+                                                "w-2.5 h-2.5 stroke-[4]",
+                                                required ? "text-[#00dbe9]" : "text-black"
+                                            )} />
+                                        )}
+                                    </div>
+                                    <div className="relative">
+                                        <div className="absolute inset-0 bg-[#00dbe9] blur-md opacity-0 group-hover:opacity-20 transition-opacity" />
+                                        <FileCode className="w-4 h-4 text-white/40 group-hover:text-[#00dbe9] transition-colors relative z-10" />
+                                    </div>
+                                    <span className="text-white/60 group-hover:text-white transition-colors truncate max-w-[280px]">{m.path.split('/').pop()}</span>
                                 </div>
-                                <span className="text-white/60 group-hover:text-white transition-colors truncate max-w-[280px]">{m.path.split('/').pop()}</span>
+                                <span className="text-white/40 font-mono text-[10px] group-hover:text-[#00dbe9]/60 transition-colors">{formatSize(m.size)}</span>
                             </div>
-                            <span className="text-white/40 font-mono text-[10px] group-hover:text-[#00dbe9]/60 transition-colors">{formatSize(m.size)}</span>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         );

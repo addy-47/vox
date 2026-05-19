@@ -104,6 +104,20 @@ pub fn get_llm_metadata() -> Vec<ModelMetadata> {
             description: "Fast and smart core for general conversation and tasks.".to_string(),
             ram_usage: " ~1.4GB".to_string(),
             parameters: "2.4B (Q4_K_M)".to_string(),
+        },
+        ModelMetadata {
+            id: "llm_llama_3_2_1b_instruct_q6_k".to_string(),
+            name: "Llama 3.2 1B".to_string(),
+            description: "Highly optimized low-latency instruction-following agent.".to_string(),
+            ram_usage: " ~1.0GB".to_string(),
+            parameters: "1.2B (Q6_K)".to_string(),
+        },
+        ModelMetadata {
+            id: "llm_gemma_4_e2b_uncensored_aggressive_q2_k_p".to_string(),
+            name: "Gemma 4 Uncensored".to_string(),
+            description: "Unrestricted high-speed agent with ultra-quantized weights.".to_string(),
+            ram_usage: " ~2.9GB".to_string(),
+            parameters: "2.4B (Q2_K_P)".to_string(),
         }
     ]
 }
@@ -281,7 +295,7 @@ pub struct VadSettings {
 impl Default for VadSettings {
     fn default() -> Self {
         Self {
-            threshold: 0.5,        // Earshot recommends 0.5 as a good default
+            threshold: 0.65,        // Earshot recommends 0.65 to prevent rapid sessions
             ptt_noise_gate: 0.015,
             vad_backend: VadBackendOption::Earshot,
         }
@@ -314,7 +328,7 @@ pub struct LlmSettings {
 impl Default for LlmSettings {
     fn default() -> Self {
         Self {
-            model: "gemma4".to_string(),
+            model: "llama-3.2".to_string(),
             ctx_size: 2048,
             threads: 4,
         }
