@@ -312,7 +312,7 @@ def main():
     audio_extensions = ['.mp3', '.wav', '.m4a', '.flac', '.ogg']
     files = []
     for ext in audio_extensions:
-        files.extend(Path(INPUT_DIR).glob(f"*{ext}"))
+        files.extend(Path(INPUT_DIR).rglob(f"*{ext}"))
     
     files = sorted(files)
     logger.info(f"Found {len(files)} audio files in {INPUT_DIR}")
