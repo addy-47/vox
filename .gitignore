@@ -31,5 +31,4 @@ output*/
 data/
 condense/
 **/.vox_sandbox/
-HF-models*
-vox-hinglish*
+vox-*
