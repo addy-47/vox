@@ -43,6 +43,18 @@ impl SttEngine {
     }
 }
 
+fn strip_cjk(text: &str) -> String {
+    text.chars()
+        .filter(|&c| !(('\u{4E00}'..='\u{9FFF}').contains(&c)
+            || ('\u{3400}'..='\u{4DBF}').contains(&c)
+            || ('\u{F900}'..='\u{FAFF}').contains(&c)
+            || ('\u{3000}'..='\u{303F}').contains(&c)))
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 impl traits::SttEngine for SttEngine {
     fn transcribe(&self, audio: &[f32]) -> Result<String> {
         if audio.is_empty() {
@@ -63,11 +75,14 @@ impl traits::SttEngine for SttEngine {
         let audio_duration = audio.len() as f32 / SAMPLE_RATE as f32;
         let rtf = if audio_duration > 0.0 { elapsed / audio_duration } else { 0.0 };
 
+        let cleaned_text = strip_cjk(result.text.trim());
+
         log::info!(
             "[STT] Transcribed (Final): {:?}. (Audio: {:.2}s, Latency: {:.2}s, RTF: {:.3})",
-            result.text.trim(), audio_duration, elapsed, rtf
+            cleaned_text, audio_duration, elapsed, rtf
         );
 
-        Ok(result.text.trim().to_string())
+        Ok(cleaned_text)
     }
 }
+
