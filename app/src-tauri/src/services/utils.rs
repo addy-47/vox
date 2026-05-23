@@ -110,6 +110,68 @@ pub fn to_friendly_hinglish(text: &str) -> String {
     transliterate_if_hi(text)
 }
 
+fn edit_distance(s1: &str, s2: &str) -> usize {
+    let v1: Vec<char> = s1.chars().collect();
+    let v2: Vec<char> = s2.chars().collect();
+    let len1 = v1.len();
+    let len2 = v2.len();
+    
+    let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
+    for i in 0..=len1 { dp[i][0] = i; }
+    for j in 0..=len2 { dp[0][j] = j; }
+    
+    for i in 1..=len1 {
+        for j in 1..=len2 {
+            if v1[i-1] == v2[j-1] {
+                dp[i][j] = dp[i-1][j-1];
+            } else {
+                dp[i][j] = 1 + dp[i-1][j-1].min(dp[i-1][j].min(dp[i][j-1]));
+            }
+        }
+    }
+    dp[len1][len2]
+}
+
+fn words_soft_match(w1: &str, w2: &str) -> bool {
+    let clean1 = w1.trim_matches(|c: char| c.is_ascii_punctuation() || c == '।').to_lowercase();
+    let clean2 = w2.trim_matches(|c: char| c.is_ascii_punctuation() || c == '।').to_lowercase();
+    if clean1 == clean2 {
+        return true;
+    }
+    
+    let dist = edit_distance(&clean1, &clean2);
+    let len = clean1.chars().count().max(clean2.chars().count());
+    
+    if len <= 3 {
+        dist <= 1
+    } else {
+        dist <= (len / 3).max(1)
+    }
+}
+
+fn is_soft_subslice(p_words: &[&str], s_words: &[&str]) -> bool {
+    if s_words.is_empty() {
+        return true;
+    }
+    if p_words.len() < s_words.len() {
+        return false;
+    }
+    
+    for i in 0..=(p_words.len() - s_words.len()) {
+        let mut matched = true;
+        for j in 0..s_words.len() {
+            if !words_soft_match(p_words[i + j], s_words[j]) {
+                matched = false;
+                break;
+            }
+        }
+        if matched {
+            return true;
+        }
+    }
+    false
+}
+
 /// Seamlessly stitches two transcription fragments (prefix and suffix) using word-level overlap matching.
 /// This prevents visual flashing/amnesia in the UI when using rolling window partial transcripters.
 pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
@@ -125,6 +187,12 @@ pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
     let p_words: Vec<&str> = p_clean.split_whitespace().collect();
     let s_words: Vec<&str> = s_clean.split_whitespace().collect();
 
+    // 1. Soft subslice/containment check to prevent older/smaller overlapping frames from duplicating
+    if is_soft_subslice(&p_words, &s_words) {
+        return p_clean.to_string();
+    }
+
+    // 2. Overlap matching
     let max_overlap = p_words.len().min(s_words.len());
     let mut best_overlap_len = 0;
 
@@ -135,9 +203,7 @@ pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
         
         let mut matched = true;
         for i in 0..k {
-            let p_w = p_slice[i].trim_matches(|c: char| c.is_ascii_punctuation() || c == '।').to_lowercase();
-            let s_w = s_slice[i].trim_matches(|c: char| c.is_ascii_punctuation() || c == '।').to_lowercase();
-            if p_w != s_w {
+            if !words_soft_match(p_slice[i], s_slice[i]) {
                 matched = false;
                 break;
             }
@@ -198,5 +264,18 @@ mod tests {
             stitch_transcripts("mera phone number", "number"),
             "mera phone number"
         );
+
+        // Containment of middle slice
+        assert_eq!(
+            stitch_transcripts("mera phone number hai", "phone number"),
+            "mera phone number hai"
+        );
+
+        // Soft match overlap
+        assert_eq!(
+            stitch_transcripts("mera phone numbere", "number hai"),
+            "mera phone numbere hai"
+        );
     }
 }
+

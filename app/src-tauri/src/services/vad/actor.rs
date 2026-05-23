@@ -209,7 +209,7 @@ where
                 active_frames += 1;
                 inactive_frames = 0;
 
-                if !in_speech && active_frames >= 4 {
+                if !in_speech && active_frames >= 6 {
                     in_speech = true;
                     current_turn_id += 1;
                     log::info!("[VAD] >>> SPEECH START (session: {}, owner: {:?})", current_turn_id, owner);
