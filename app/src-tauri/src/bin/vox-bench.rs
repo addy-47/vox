@@ -119,7 +119,11 @@ fn main() -> anyhow::Result<()> {
                     let rolling_samples = &samples[start_idx..];
                     
                     if let Ok(text) = engine.transcribe(rolling_samples) {
-                        stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                        if start_idx == 0 {
+                            stitched_transcript = text;
+                        } else {
+                            stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                        }
                         if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
                             let _ = stt_event_tx.send(VoxEvent::TranscriptPartial { 
                                 turn_id: tid, 
@@ -136,7 +140,11 @@ fn main() -> anyhow::Result<()> {
                     let rolling_samples = &samples[start_idx..];
                     
                     if let Ok(text) = engine.transcribe(rolling_samples) {
-                        stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                        if start_idx == 0 {
+                            stitched_transcript = text;
+                        } else {
+                            stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                        }
                         let _ = stt_event_tx.send(VoxEvent::TranscriptFinal { 
                             turn_id: tid, 
                             owner: InteractionOwner::MainWindow, 

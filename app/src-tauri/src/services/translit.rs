@@ -68,11 +68,12 @@ impl TransliterationEngine {
 
     pub fn transliterate_word(&self, word: &str) -> Result<String, String> {
         let unk_idx = *self.src_vocab.get("<unk>").unwrap_or(&1);
-        let sos_idx = *self.src_vocab.get("<s>").unwrap_or(&2);
+        let _sos_idx = *self.src_vocab.get("<s>").unwrap_or(&2);
         let eos_idx = *self.src_vocab.get("</s>").unwrap_or(&3);
 
         let mut src_ids = Vec::new();
-        src_ids.push(sos_idx);
+        // BUGFIX: Do NOT push sos_idx (<s>) to the encoder source sequence.
+        // The encoder was trained on raw character sequences without a start token.
         for c in word.chars() {
             let key = c.to_string();
             src_ids.push(*self.src_vocab.get(&key).unwrap_or(&unk_idx));
