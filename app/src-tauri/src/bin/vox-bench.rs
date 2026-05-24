@@ -67,14 +67,14 @@ fn main() -> anyhow::Result<()> {
 
     // 3. Load Models Sequentially (to avoid ONNX environment conflicts and improve memory tracking)
     println!("\x1b[32m[Bench]\x1b[0m Loading STT (Qwen3-ASR)...");
-    let stt_path = vox_lib::utils::paths::model_dir("stt").join("qwen3-asr");
+    let stt_path = vox_lib::utils::paths::model_dir("stt").join("onnx-0.6b-finetuned");
     let snap_1 = BenchReporter::get_memory_snapshot();
     let stt_engine = SttEngine::new(&stt_path).expect("Failed to load STT");
     let snap_2 = BenchReporter::get_memory_snapshot();
     let stt_mem_mb = snap_2.rss_mb.saturating_sub(snap_1.rss_mb);
     metrics.lock().unwrap().stt_mem_mb = stt_mem_mb;
 
-    let llm_filename = args.llm.clone().unwrap_or_else(|| "gemma4/google_gemma-4-E2B-it-Q4_K_M.gguf".to_string());
+    let llm_filename = args.llm.clone().unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q6_K.gguf".to_string());
     println!("\x1b[32m[Bench]\x1b[0m Loading LLM ({})...", llm_filename);
     let llm_path = vox_lib::utils::paths::model_dir("llm").join(&llm_filename);
     let snap_3 = BenchReporter::get_memory_snapshot();

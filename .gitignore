@@ -32,3 +32,5 @@ data/
 condense/
 **/.vox_sandbox/
 vox-*
+venv*
+qwen-asr-hindi
