@@ -124,8 +124,12 @@ pub fn spawn_stt_worker(
                                             }
                                             let raw_partial: String = text;
                                             
-                                            // Stitch the raw partial with our stable prefix buffer statefully
-                                            stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_partial);
+                                            // Stitch the raw partial with our stable prefix buffer statefully; overwrite if we are transcribing from the beginning
+                                            if start_idx == 0 {
+                                                stitched_transcript = raw_partial;
+                                            } else {
+                                                stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_partial);
+                                            }
 
                                             if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
                                                 if let Some(ref pipeline_tx) = pipeline_event_tx {
@@ -183,7 +187,13 @@ pub fn spawn_stt_worker(
                                         }
                                         
                                         let raw_final: String = text;
-                                        stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_final);
+                                        
+                                        // Overwrite if start_idx == 0; otherwise stitch
+                                        if start_idx == 0 {
+                                            stitched_transcript = raw_final;
+                                        } else {
+                                            stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_final);
+                                        }
                                         
                                         if let Some(ref pipeline_tx) = pipeline_event_tx {
                                             let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {

@@ -21,17 +21,19 @@ impl SttEngine {
         
         let mut config = OfflineRecognizerConfig::default();
         
+        config.decoding_method = Some("greedy_search".to_string());
+        
         config.model_config.qwen3_asr = OfflineQwen3ASRModelConfig {
             conv_frontend: Some(model_dir.join(MODEL_FILE_ASR_FRONTEND).to_string_lossy().into()),
             encoder: Some(model_dir.join(MODEL_FILE_ASR_ENCODER).to_string_lossy().into()),
             decoder: Some(model_dir.join(MODEL_FILE_ASR_DECODER).to_string_lossy().into()),
             tokenizer: Some(model_dir.join(MODEL_FILE_ASR_TOKENIZER).to_string_lossy().into()),
             max_total_len: 2048,
-            max_new_tokens: 512,
+            max_new_tokens: 128, // Optimized for 2.5s sliding window chunks to avoid useless decode overhead
             ..Default::default()
         };
         
-        config.model_config.num_threads = 2;
+        config.model_config.num_threads = 4; // Optimized from 2 to 4 threads for standard laptop performance cores
         config.model_config.debug = false;
         config.model_config.provider = Some("cpu".into());
         
