@@ -31,34 +31,35 @@ A **system-level, real-time transcription overlay** that works across all applic
 ## 4. User Experience Flow
 
 ### Background Behavior
-- Vox runs lightweight VAD + STT service
-- Passively listens for speech
-- No manual trigger required (default mode)
+- Vox runs lightweight VAD + STT service.
+- Passively listens for speech.
+- No manual trigger required (default passive mode).
 
 ### On Speech Detection
 ```
 User speaks
   ↓
-Speech detected → Small overlay appears (right edge)
+Speech detected → Audio engine wakes up (waveform indicator reacts if visible)
+  ↓
+First non-empty character transcribed → Overlay appears instantly
   ↓
 Real-time transcription streams in
-  ↓
-UI remains minimal, non-intrusive
 ```
 
 ### During Active Speech
-- Text updates continuously (no waiting for full sentence)
-- Tray stays visible, follows speech
+- Text updates continuously and statefully on screen.
+- Turns are appended and separated cleanly by newlines (`\n`).
+- Overlay remains open indefinitely to support pauses, thinking, and conversational continuity.
 
-### On Silence End
+### On Session Conclusion / Clear
 ```
-Silence detected (300ms)
+User clicks 'Close' in Header OR Auto-Sleep triggers (3 mins silence)
   ↓
-Transcription finalizes
+Entire visual session text block is committed to History
   ↓
-Tray fades out and disappears
+Active screen resets and clears
   ↓
-Next speech → New tray instance
+Tray performs a 500ms exit fade-out and hides
 ```
 
 ---
@@ -70,28 +71,24 @@ Next speech → New tray instance
 The Tray is a **direct surface** of the backend pipeline:
 
 ```
-audio → VAD → STT → transcript events → tray UI
+audio → VAD (300ms gate) → STT (coalesced partials) → dynamic throttle → tray UI
 ```
 
 ### Component Structure
 
 ```typescript
 // TrayApp.tsx - Main overlay component
-interface TrayAppProps {
-  settings: VoxSettings;
-}
-
-const TrayApp: React.FC = () => {
+export const TrayApp: React.FC = () => {
   // State management
   const [interactionState, setInteractionState] = useState<string>("Idle");
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
 
-  // Ephemeral history (in-memory only, never persisted)
+  // Ephemeral history (backend-backed completed sessions list)
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [viewingHistory, setViewingHistory] = useState(false);
 
-  // Interaction session management
+  // Interaction session management (accumulates turns with \n)
   const {
     committedText,
     partialText,
@@ -101,16 +98,14 @@ const TrayApp: React.FC = () => {
     reset
   } = useInteraction();
 
-  // Visibility state machine
+  // Simplified visibility state machine
   const {
     state: visibilityState,
     show,
-    startHold,
+    startFade,
+    cancelFade,
     hideImmediately
-  } = useVisibility({
-    holdDuration: settings.ui.tray_hide_delay * 1000,
-    fadeDuration: settings.ui.tray_fade_transition === 'Snappy' ? 500 : 1500
-  });
+  } = useVisibility();
 };
 ```
 
@@ -118,11 +113,10 @@ const TrayApp: React.FC = () => {
 
 ```typescript
 enum VisibilityState {
-  HIDDEN = 'HIDDEN',      // Not visible
-  APPEARING = 'APPEARING', // Fade in animation
-  ACTIVE = 'ACTIVE',      // Fully visible, interactive
-  HOLD = 'HOLD',          // Holding after speech end
-  FADING = 'FADING'       // Fade out animation
+  HIDDEN = 'HIDDEN',      // HUD window is hidden from desktop
+  APPEARING = 'APPEARING', // Fade-in and zoom transition
+  ACTIVE = 'ACTIVE',      // Fully visible, persistent and interactive
+  FADING = 'FADING'       // 500ms exit transition triggered on sleep/close
 }
 ```
 
@@ -131,69 +125,67 @@ enum VisibilityState {
 ```typescript
 useEffect(() => {
   const unlisteners = [
-    // Speech lifecycle events
     window.listen("speech_start", () => {
       setViewingHistory(false);
-      startNewInteraction();
-      show(); // Show overlay
+      startNewInteraction(); // Intialize session ID
     }),
 
     window.listen("transcript_partial", ({ payload }) => {
-      if (pttStatus === 'RECORDING') return; // Skip during PTT
-      updatePartial(payload.text);
+      if (pttStatus === 'RECORDING') return;
+      if (payload.text) {
+        if (visibilityState === 'HIDDEN') show(); // Show HUD on first character
+        updatePartial(payload.text);
+      }
     }),
 
     window.listen("transcript_final", ({ payload }) => {
       if (payload.text) {
-        commitFinal(payload.text);
-        // Add to ephemeral history
-        setHistory(prev => [payload.text, ...prev.slice(0, MAX_HISTORY - 1)]);
+        commitFinal(payload.text); // Appends turn state with \n
       }
     }),
 
     window.listen("speech_end", () => {
-      endSpeechSegment();
-      startHold(); // Begin hold before hide
+      endSpeechSegment(); // Just update silence timestamp
     }),
 
-    // UI state events
-    window.listen("state_changed", ({ payload }) => {
-      setInteractionState(payload);
-    }),
-
-    window.listen("ptt_status", ({ payload }) => {
-      setPttStatus(payload.state);
+    window.listen("auto_sleep_state", ({ payload: isSleeping }) => {
+      if (isSleeping) {
+        // Auto-sleep: commit session text and fadeout
+        const textToCommit = liveTargetText;
+        if (textToCommit.trim()) {
+          invoke("commit_session_to_history", { text: textToCommit }).then(h => {
+            setHistory(h);
+          });
+        }
+        reset();
+        startFade();
+      } else {
+        cancelFade();
+      }
     }),
   ];
 
   return () => unlisteners.forEach(u => u());
-}, []);
+}, [liveTargetText]);
 ```
 
 ---
 
 ## 6. UI Design Principles
 
-### Ephemeral by Design
-- Tray is **temporary** - exists only during active speech
-- **Never persists** or accumulates history
-- **One speech session = one UI instance**
+### Session-Persistent by Design
+- The HUD is **persistent** during transcription – it stays alive as you talk and pause.
+- It groups multiple utterances and formats them into a readable transcription session context.
+- **One workflow segment = one unified session context.**
 
-### Zero Friction
-User should **never** need to:
-- Click anything to start
-- Switch applications
-- Manually trigger recording
+### Zero Flicker
+- Decoupling SpeechStart ensures clicking, mic thumps, and breathing noises **never** cause the HUD window to trigger or flicker.
+- Safe thresholds on the backend (300ms sweet spot VAD gate) reject short pops, protecting system resource health.
 
-### Non-Intrusive
-- Does not steal focus
-- Does not block interactions
-- Appears softly, disappears cleanly
-
-### Instant Feedback
-- Partial transcription appears immediately
-- No waiting for sentence completion
-- Streaming text updates
+### Non-Intrusive & Snappy
+- Does not steal focus.
+- Slide and fade transitions are optimized to **150ms entry / 500ms exit** for maximum snappiness.
+- Dynamic Backoff Throttle ensures zero typing latency on high-performance rigs while safely avoiding execution spirals on slower CPUs.
 
 ---
 
@@ -207,14 +199,13 @@ User should **never** need to:
 - **Shadow**: Soft drop shadow for depth
 
 ### Header
-- **Status indicator**: LIVE/Idle dot
+- **Status indicator**: Translucent/Glowing Active dot
 - **Copy button**: One-click clipboard copy
-- **Close button**: Manual dismiss (optional)
-- **PTT toggle**: Button for push-to-talk mode
+- **Close button**: Dismiss HUD, commit context to history immediately, and hide.
+- **PTT toggle**: Toggle push-to-talk manual override
 
 ### Content Area
-- **Transcript display**: Streaming text with typewriter animation
-- **Typography**: Clean, readable font
+- **Transcript display**: Streaming text formatted with newlines (`\n`) for clean turn boundaries
 - **Overflow**: Auto-scroll for long transcripts
 
 ### Footer
@@ -256,168 +247,21 @@ gtk_window.input_shape_combine_region(Some(&region));
 ## 9. History System (Ephemeral)
 
 ### Design Constraints
-- **Memory only**: Never written to disk
-- **Limited retention**: Max 10 items (configurable)
-- **No persistence**: Cleared on app restart
-- **Read-only**: Historical transcripts cannot be edited
-
-### Navigation
-```typescript
-const handlePrev = () => {
-  if (history.length === 0) return;
-  setViewingHistory(true);
-  setHistoryIndex(prev => prev === -1 ? history.length - 1 : Math.max(0, prev - 1));
-};
-
-const handleNext = () => {
-  setHistoryIndex(prev => {
-    if (prev === -1 || prev >= history.length - 1) {
-      setViewingHistory(false);
-      return -1;
-    }
-    return prev + 1;
-  });
-};
-```
-
-### Integration with Live Mode
-- **Live transcripts**: `historyIndex = -1`
-- **History viewing**: `historyIndex >= 0`
-- **Seamless switching**: Between live and historical views
+- **In-memory only**: Never written to disk to protect user privacy.
+- **Capacity**: Clamped to `5` sessions by default (user configurable up to 15) to maintain flat memory usage.
+- **Clear on restart**: Wiped when the main runtime boots down.
 
 ---
 
 ## 10. Settings Integration
 
-### Tray-Specific Settings
+### Tray Config Parameters
 ```typescript
-interface TraySettings {
-  tray_enabled: boolean;              // Master toggle
-  tray_blur_density: number;           // Backdrop blur (px)
-  tray_glass_tint: boolean;           // Accent color tint
-  tray_hide_delay: number;            // Hold duration (seconds)
-  tray_fade_transition: string;       // 'Snappy' | 'Smooth' | 'Gentle'
-  tray_history_limit: number;         // Max history items
+interface UiSettings {
+  tray_enabled: boolean;              // Master HUD toggle
+  tray_blur_density: number;          // Glassmorphism blur (px)
+  tray_glass_tint: boolean;           // Ambient color tint
+  tray_history_limit: number;         // Session memory depth (1 - 15)
 }
 ```
-
-### Reload Behavior
-- **Hot reload**: All tray settings apply immediately
-- **No restart required**: Changes take effect instantly
-- **Validation**: Settings clamped to safe ranges
-
----
-
-## 11. Performance Constraints
-
-### Memory Usage
-- **Minimal footprint**: <50MB additional RAM
-- **Efficient rendering**: No heavy animations or effects
-- **Text streaming**: Throttled character updates
-
-### CPU Usage
-- **Idle**: ~0% CPU when hidden
-- **Active**: <5% CPU during transcription
-- **Animation**: Hardware-accelerated transforms
-
-### Battery Impact
-- **Passive listening**: Minimal drain
-- **Active transcription**: Moderate drain
-- **Animation**: GPU-accelerated, minimal impact
-
----
-
-## 12. Error Handling & Resilience
-
-### IPC Failures
-```typescript
-// Graceful degradation
-try {
-  await invoke("sync_hud_visibility", { visible: true });
-} catch (error) {
-  console.warn("[Tray] IPC failed:", error);
-  // Continue with local state
-}
-```
-
-### Component Crashes
-```typescript
-// Error boundary
-class TrayErrorBoundary extends React.Component {
-  state = { hasError: false };
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return <div>Tray temporarily unavailable</div>;
-    }
-    return this.props.children;
-  }
-}
-```
-
-### Backend Disconnection
-- **Auto-hide**: Tray disappears if backend unavailable
-- **Reconnection**: Automatically shows when backend recovers
-- **State reset**: Clean slate on reconnection
-
----
-
-## 13. Accessibility
-
-### Keyboard Navigation
-- **Tab order**: Logical focus flow
-- **Escape**: Dismiss tray
-- **Arrow keys**: History navigation
-- **Enter/Space**: Copy to clipboard
-
-### Screen Reader Support
-- **ARIA labels**: Descriptive labels for all controls
-- **Live regions**: Transcript updates announced
-- **Status messages**: State changes communicated
-
-### High Contrast
-- **Color schemes**: Respects system preferences
-- **Focus indicators**: Clear focus outlines
-- **Text contrast**: WCAG AA compliant
-
-
-
----
-
-## 16. Relationship to Core System
-
-### Backend Dependencies
-- **VAD engine**: Speech detection triggers
-- **STT pipeline**: Real-time transcription
-- **Event bus**: State synchronization
-
-### Integration Points
-- **Settings system**: Configuration persistence
-- **Monitoring**: Performance telemetry
-- **Persistence**: History management (future)
-
-### Architectural Fit
-The Tray is the **primary user interface** for passive voice interaction, complementing the main application UI for explicit control.
-
----
-
-## 17. Success Metrics
-
-### User Experience
-- **Time-to-text**: <500ms perceived latency
-- **Workflow disruption**: Zero context switches
-- **Learnability**: Intuitive, no training required
-
-### Technical Performance
-- **Reliability**: 99.9% uptime
-- **Responsiveness**: 60fps animations
-- **Efficiency**: <5% CPU usage during active transcription
-
-### Adoption
-- **Feature usage**: >80% of voice interactions through tray
-- **User satisfaction**: Positive feedback on friction reduction
-- **Retention**: Increased daily active usage
+*Note: Configs relating to automatic speech-end hold timers and custom transition animations are completely deprecated to guarantee standard, deterministic behavior.*

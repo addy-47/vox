@@ -12,50 +12,50 @@
     {
       "id": "translit_encoder",
       "path": "translit/encoder.onnx",
-      "size": 9511984,
-      "sha256": "b439795a8387059c76e471f5d7ef536439cae1958442d7db52f46676b99e7ddc",
+      "size": 9529392,
+      "sha256": "af1ed31d5af319a353587c746b5c7540646e154d977d7614081c30f8bfb40564",
       "required": true
     },
     {
       "id": "translit_decoder",
       "path": "translit/decoder.onnx",
-      "size": 6690514,
-      "sha256": "23b32436e3aaf395c1fe677bdb7d5b52322362941310de51a77ca19140846caa",
+      "size": 6819685,
+      "sha256": "4930f3460baf4c0f75a346e1320579469b4ff5e00d3e62375cbcb0cee5120aa3",
       "required": true
     },
     {
       "id": "translit_input_vocab",
       "path": "translit/input_vocab.json",
-      "size": 946,
-      "sha256": "f530055fe3d5c5fffe590bafa49a18c59cfa36502406a319a92948d56d447c2f",
+      "size": 1395,
+      "sha256": "b7126832254c449c9a208ec650feae5682a7f77323fd2e9bf2ad29c1ab7332e2",
       "required": true
     },
     {
       "id": "translit_target_vocab",
       "path": "translit/target_vocab.json",
-      "size": 346,
-      "sha256": "81a34f107f4e7f95fb9d0866e6ab4ad85de6f1e4a58935d611e921889744fa5d",
+      "size": 787,
+      "sha256": "bd5e364110187e05fcbf00529af0facf45a7838e2aa6b410390af1d80ff08f96",
       "required": true
     },
     {
       "id": "stt_conv_frontend",
       "path": "stt/qwen3-asr/conv_frontend.onnx",
       "size": 44148281,
-      "sha256": "d22dc4423e0940e49884e903d2ea2f7e5567c14fc1aed97e4e26d6b8f208ef9e",
+      "sha256": "1f38b879b0871c9f689b092ad4fa85c68ef473c585dcf53d50a029fe8a0ab0cb",
       "required": true
     },
     {
       "id": "stt_encoder",
       "path": "stt/qwen3-asr/encoder.int8.onnx",
       "size": 182491662,
-      "sha256": "60748d3e6744a57c9c91e1b17424a6c2990567e8adceb0783940c03ed98fa9d9",
+      "sha256": "ae0cf814d9cd5249b98a1aa9199511d0c0a0c5c8b3059532637fa3cb4785c60c",
       "required": true
     },
     {
       "id": "stt_decoder",
       "path": "stt/qwen3-asr/decoder.int8.onnx",
-      "size": 755914231,
-      "sha256": "4f6885be5959ae26af3089d38ee7972c5fafbeeb1cf8d5e76eab6d8b61ca5771",
+      "size": 755914121,
+      "sha256": "9604e5f8c06c90c167ecfa63368783b8622125771b11ec595a3e1dcbcf239dd5",
       "required": true
     },
     {

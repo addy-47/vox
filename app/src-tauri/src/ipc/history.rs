@@ -9,6 +9,27 @@ pub async fn get_transcript_history(state: State<'_, std::sync::Arc<AppState>>) 
     Ok(history.iter().cloned().collect())
 }
 
+/// Commits a completed session's full text to the ephemeral history buffer.
+#[tauri::command]
+pub async fn commit_session_to_history(text: String, state: State<'_, std::sync::Arc<AppState>>) -> Result<Vec<String>, String> {
+    if !text.trim().is_empty() {
+        let mut history = state.pipeline.transcript_history.lock().unwrap();
+        // Prevent duplicate consecutive entries
+        if history.front() != Some(&text) {
+            history.push_front(text);
+            let limit = {
+                let settings = state.settings.read().unwrap();
+                settings.ui.tray_history_limit as usize
+            };
+            while history.len() > limit {
+                history.pop_back();
+            }
+        }
+    }
+    let history = state.pipeline.transcript_history.lock().unwrap();
+    Ok(history.iter().cloned().collect())
+}
+
 // ─── Persistence-Backed History Commands ─────────────────────────────────────
 
 #[derive(Debug, Serialize, Clone)]

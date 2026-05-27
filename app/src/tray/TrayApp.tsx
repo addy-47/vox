@@ -36,7 +36,7 @@ export const TrayApp: React.FC = () => {
   const telemetryRef = useTelemetry();
   
   const liveTargetText = useMemo(() => {
-    const separator = committedText && partialText ? " " : "";
+    const separator = committedText && partialText ? "\n" : "";
     return committedText + separator + partialText;
   }, [committedText, partialText]);
 
@@ -51,11 +51,8 @@ export const TrayApp: React.FC = () => {
   
   // ─── Visibility & UX State ────────────────────────────────────────────────
   const { 
-    state: visibilityState, setIsHovered, show, startHold, hideImmediately 
-  } = useVisibility({ 
-    holdDuration: (settings?.ui.tray_hide_delay || 3) * 1000, 
-    fadeDuration: settings?.ui.tray_fade_transition === 'Snappy' ? 500 : 1500 
-  });
+    state: visibilityState, setIsHovered, show, startFade, cancelFade, hideImmediately 
+  } = useVisibility();
 
   const [interactionState, setInteractionState] = useState<string>("Idle");
   const [copied, setCopied] = useState(false);
@@ -64,15 +61,6 @@ export const TrayApp: React.FC = () => {
 
   // ─── PTT & Status State ──────────────────────────────────────────────────────
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
-
-  // Bug 5a: Reset stale transcript state when tray hides
-  useEffect(() => {
-    if (visibilityState === 'HIDDEN') {
-      reset();
-      setPttStatus('IDLE');
-      setInteractionState('Idle');
-    }
-  }, [visibilityState, reset]);
 
   // Sync React state to OS Window and Backend state
   useEffect(() => {
@@ -102,15 +90,18 @@ export const TrayApp: React.FC = () => {
     interactionId,
     interactionState,
     history,
-    historyLimit: settings?.ui.tray_history_limit || 10,
+    historyLimit: settings?.ui.tray_history_limit || 5,
+    liveTargetText,
     callbacks: {
       startNewInteraction,
       updatePartial,
       commitFinal,
       endSpeechSegment,
       show,
-      startHold,
-      hideImmediately
+      startFade,
+      cancelFade,
+      hideImmediately,
+      reset
     }
   });
 
@@ -121,91 +112,22 @@ export const TrayApp: React.FC = () => {
       interactionId, 
       interactionState, 
       history,
-      historyLimit: settings?.ui.tray_history_limit || 10,
+      historyLimit: settings?.ui.tray_history_limit || 5,
+      liveTargetText,
       callbacks: {
         startNewInteraction,
         updatePartial,
         commitFinal,
         endSpeechSegment,
         show,
-        startHold,
-        hideImmediately
+        startFade,
+        cancelFade,
+        hideImmediately,
+        reset
       }
     };
   }, [pttStatus, visibilityState, interactionId, interactionState, history, settings?.ui.tray_history_limit, 
-      startNewInteraction, updatePartial, commitFinal, endSpeechSegment, show, startHold, hideImmediately]);
-
-  // ─── IPC Event Listeners ───────────────────────────────────────────────────
-  useEffect(() => {
-    let unlisteners: (() => void)[] = [];
-
-    const setupListeners = async () => {
-      try {
-        const appWindow = getCurrentWindow();
-        
-        const u1 = await appWindow.listen("speech_start", () => {
-          setViewingHistory(false);
-          stateRef.current.callbacks.startNewInteraction();
-          stateRef.current.callbacks.show();
-        });
-
-        const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
-          if (stateRef.current.pttStatus === 'RECORDING') return;
-          stateRef.current.callbacks.updatePartial(event.payload.text);
-        });
-
-        const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
-          if (event.payload.text) {
-            stateRef.current.callbacks.commitFinal(event.payload.text);
-            invoke<string[]>("get_transcript_history").then(h => {
-              setHistory(h.slice(0, stateRef.current.historyLimit));
-            });
-          }
-        });
-
-        const u4 = await appWindow.listen("speech_end", () => {
-          stateRef.current.callbacks.endSpeechSegment();
-          stateRef.current.callbacks.startHold();
-        });
-
-        const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
-          setStats(event.payload);
-        });
-
-        const u6 = await appWindow.listen("toggle_hud", () => {
-          if (stateRef.current.visibilityState === 'HIDDEN') stateRef.current.callbacks.show();
-          else stateRef.current.callbacks.hideImmediately();
-        });
-
-        const u7 = await appWindow.listen<string>("state_changed", (event) => {
-          setInteractionState(event.payload);
-        });
-
-        const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
-          setPttStatus(event.payload.state as any);
-        });
-
-        const u9 = await appWindow.listen<boolean>("auto_sleep_state", (event) => {
-          setIsSleeping(event.payload);
-        });
-
-        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
-      } catch (err) {
-        console.error("[TrayApp] Failed to setup listeners:", err);
-      }
-    };
-
-    setupListeners();
-
-    // Initial History Sync
-    invoke<string[]>("get_transcript_history").then(h => {
-      setHistory(h.slice(0, stateRef.current.historyLimit));
-    });
-
-    return () => {
-      unlisteners.forEach(u => u());
-    };
-  }, []); // Stable Listeners
+      liveTargetText, startNewInteraction, updatePartial, commitFinal, endSpeechSegment, show, startFade, cancelFade, hideImmediately, reset]);
 
   // ─── Actions ───────────────────────────────────────────────────────────────
   const copyToClipboard = () => {
@@ -215,6 +137,19 @@ export const TrayApp: React.FC = () => {
       setTimeout(() => setCopied(false), 2000);
     }
   };
+
+  const handleClose = useCallback(() => {
+    const textToCommit = stateRef.current.liveTargetText;
+    if (textToCommit.trim()) {
+      invoke<string[]>("commit_session_to_history", { text: textToCommit }).then(h => {
+        setHistory(h.slice(0, stateRef.current.historyLimit));
+      });
+    }
+    stateRef.current.callbacks.reset();
+    setHistoryIndex(-1);
+    setViewingHistory(false);
+    stateRef.current.callbacks.hideImmediately();
+  }, []);
 
   const handlePrev = useCallback(() => {
     if (history.length === 0) return;
@@ -244,12 +179,97 @@ export const TrayApp: React.FC = () => {
     }
   };
 
+  // ─── IPC Event Listeners ───────────────────────────────────────────────────
+  useEffect(() => {
+    let unlisteners: (() => void)[] = [];
+
+    const setupListeners = async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        
+        const u1 = await appWindow.listen("speech_start", () => {
+          setViewingHistory(false);
+          stateRef.current.callbacks.startNewInteraction();
+        });
+
+        const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
+          if (stateRef.current.pttStatus === 'RECORDING') return;
+          if (event.payload.text) {
+            if (stateRef.current.visibilityState === 'HIDDEN') {
+              stateRef.current.callbacks.show();
+            }
+            stateRef.current.callbacks.updatePartial(event.payload.text);
+          }
+        });
+
+        const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
+          if (event.payload.text) {
+            stateRef.current.callbacks.commitFinal(event.payload.text);
+          }
+        });
+
+        const u4 = await appWindow.listen("speech_end", () => {
+          stateRef.current.callbacks.endSpeechSegment();
+        });
+
+        const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
+          setStats(event.payload);
+        });
+
+        const u6 = await appWindow.listen("toggle_hud", () => {
+          if (stateRef.current.visibilityState === 'HIDDEN') stateRef.current.callbacks.show();
+          else stateRef.current.callbacks.hideImmediately();
+        });
+
+        const u7 = await appWindow.listen<string>("state_changed", (event) => {
+          setInteractionState(event.payload);
+        });
+
+        const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
+          setPttStatus(event.payload.state as any);
+        });
+
+        const u9 = await appWindow.listen<boolean>("auto_sleep_state", (event) => {
+          const sleep = event.payload;
+          setIsSleeping(sleep);
+          if (sleep) {
+            // Auto-sleep: Commit current session & fadeout HUD
+            const textToCommit = stateRef.current.liveTargetText;
+            if (textToCommit.trim()) {
+              invoke<string[]>("commit_session_to_history", { text: textToCommit }).then(h => {
+                setHistory(h.slice(0, stateRef.current.historyLimit));
+              });
+            }
+            stateRef.current.callbacks.reset();
+            stateRef.current.callbacks.startFade();
+          } else {
+            stateRef.current.callbacks.cancelFade();
+          }
+        });
+
+        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
+      } catch (err) {
+        console.error("[TrayApp] Failed to setup listeners:", err);
+      }
+    };
+
+    setupListeners();
+
+    // Initial History Sync
+    invoke<string[]>("get_transcript_history").then(h => {
+      setHistory(h.slice(0, stateRef.current.historyLimit));
+    });
+
+    return () => {
+      unlisteners.forEach(u => u());
+    };
+  }, []); // Stable Listeners
+
   const containerVariants = {
     HIDDEN: { opacity: 0, x: 20, scale: 0.98, pointerEvents: "none" as const },
     APPEARING: { opacity: 1, x: 0, scale: 1 },
     ACTIVE: { opacity: 1, x: 0, scale: 1, pointerEvents: "auto" as const },
-    HOLD: { opacity: 1, x: 0, scale: 1, pointerEvents: "auto" as const },
-    FADING: { opacity: 0, x: 10, scale: 0.99, transition: { duration: 2 }, pointerEvents: "none" as const }
+    FADING: { opacity: 0, x: 10, scale: 0.99, transition: { duration: 0.5 }, pointerEvents: "none" as const }
   };
 
   if (isLoading || !settings) return null;
@@ -265,13 +285,7 @@ export const TrayApp: React.FC = () => {
             initial="HIDDEN"
             animate={visibilityState}
             exit="HIDDEN"
-            transition={
-              settings.ui.tray_fade_transition === 'Snappy' 
-                ? { duration: 0.1, ease: "easeOut" }
-                : settings.ui.tray_fade_transition === 'Smooth'
-                ? { duration: 0.4, ease: "easeInOut" }
-                : { type: "spring", damping: 20, stiffness: 100 }
-            }
+            transition={{ duration: 0.15, ease: "easeOut" }}
             className={cn(
               "w-[380px] h-[250px] flex flex-col liquid-glass overflow-hidden rounded-2xl transition-all duration-1000",
               isSleeping && "grayscale-[0.8] opacity-50"
@@ -279,7 +293,6 @@ export const TrayApp: React.FC = () => {
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             style={{ 
-               // Dynamically apply blur from settings
                backdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
                WebkitBackdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
                backgroundColor: settings.ui.tray_glass_tint ? `rgba(var(--accent), 0.1)` : undefined,
@@ -292,7 +305,7 @@ export const TrayApp: React.FC = () => {
               isPttActive={pttStatus !== 'IDLE'}
               interactionMode={settings.interaction.tray_mode.toUpperCase()}
               onCopy={copyToClipboard} 
-              onClose={hideImmediately}
+              onClose={handleClose}
               onTogglePtt={togglePtt}
             />
 

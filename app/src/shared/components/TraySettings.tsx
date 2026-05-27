@@ -1,5 +1,5 @@
 import React from "react";
-import { Monitor, Layers, Sliders, Zap, History } from "lucide-react";
+import { Monitor, Layers, Sliders, History } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 
@@ -45,109 +45,50 @@ export const TraySettings: React.FC = () => {
               </div>
             </div>
 
-            {/* Look & Feel */}
-            <div className="grid md:grid-cols-2 gap-8">
-              <div className="premium-card p-6 md:p-8 space-y-8">
-                <div className="flex items-center gap-3 mb-8 shrink-0">
-                  <Layers className="text-[rgb(var(--accent))]" size={20} />
-                  <div className="space-y-1">
-                    <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Appearance</h3>
-                    <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Customize look & feel</p>
-                  </div>
-                </div>
-
-                <div className="space-y-6">
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Blur Density</span>
-                      <span className="text-[11px] font-mono opacity-60">{ui.tray_blur_density}px</span>
-                    </div>
-                    <div className="relative h-6 flex items-center">
-                      <input 
-                        type="range" 
-                        min="0" max="100" 
-                        value={ui.tray_blur_density}
-                        onChange={(e) => updateDraft("ui", "tray_blur_density", Number(e.target.value))}
-                        className="w-full" 
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Glass Tint</span>
-                      <p className="text-[11px] opacity-60 uppercase tracking-widest">Adds a subtle color glow</p>
-                    </div>
-                    <button 
-                      onClick={() => updateDraft("ui", "tray_glass_tint", !ui.tray_glass_tint)}
-                      className={cn(
-                        "w-10 h-5 rounded-full relative transition-all duration-300",
-                        ui.tray_glass_tint ? "bg-[rgb(var(--accent))]" : "bg-[rgb(var(--foreground))]/10"
-                      )}
-                    >
-                      <div className={cn(
-                        "absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300",
-                        ui.tray_glass_tint ? "right-1" : "left-1"
-                      )} />
-                    </button>
-                  </div>
+            {/* Look & Feel (Appearance Card spans full width of this row) */}
+            <div className="premium-card p-6 md:p-8 space-y-8">
+              <div className="flex items-center gap-3 mb-8 shrink-0">
+                <Layers className="text-[rgb(var(--accent))]" size={20} />
+                <div className="space-y-1">
+                  <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Appearance</h3>
+                  <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Customize look & feel</p>
                 </div>
               </div>
 
-              <div className="premium-card p-6 md:p-8 space-y-8">
-                <div className="flex items-center gap-3 mb-8 shrink-0">
-                  <Zap className="text-[rgb(var(--accent))]" size={20} />
-                  <div className="space-y-1">
-                    <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Behavior</h3>
-                    <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">HUD automation rules</p>
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Blur Density</span>
+                    <span className="text-[11px] font-mono opacity-60">{ui.tray_blur_density}px</span>
+                  </div>
+                  <div className="relative h-6 flex items-center">
+                    <input 
+                      type="range" 
+                      min="0" max="100" 
+                      value={ui.tray_blur_density}
+                      onChange={(e) => updateDraft("ui", "tray_blur_density", Number(e.target.value))}
+                      className="w-full" 
+                    />
                   </div>
                 </div>
 
-                <div className="space-y-6">
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Hide After</span>
-                      <span className="text-[11px] font-mono opacity-60">{ui.tray_hide_delay}s</span>
-                    </div>
-                    <div className="grid grid-cols-5 gap-2">
-                      {[1, 2, 3, 5, 10].map(s => (
-                        <button 
-                          key={s}
-                          onClick={() => updateDraft("ui", "tray_hide_delay", s)}
-                          className={cn(
-                            "py-2 rounded-lg text-[11px] font-bold transition-all duration-300",
-                            ui.tray_hide_delay === s 
-                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
-                              : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.03)] hover:bg-[rgb(var(--foreground))]/10 text-[rgb(var(--foreground))]/60"
-                          )}
-                        >
-                          {s}s
-                        </button>
-                      ))}
-                    </div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Glass Tint</span>
+                    <p className="text-[11px] opacity-60 uppercase tracking-widest">Adds a subtle color glow</p>
                   </div>
-
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">Transition</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {['Fast', 'Smooth', 'Liquid'].map(f => (
-                        <button 
-                          key={f}
-                          onClick={() => updateDraft("ui", "tray_fade_transition", f)}
-                          className={cn(
-                            "py-2 rounded-lg text-[11px] font-bold uppercase transition-all duration-300",
-                            ui.tray_fade_transition === f 
-                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
-                              : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.03)] hover:bg-[rgb(var(--foreground))]/10 text-[rgb(var(--foreground))]/60"
-                          )}
-                        >
-                          {f}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <button 
+                    onClick={() => updateDraft("ui", "tray_glass_tint", !ui.tray_glass_tint)}
+                    className={cn(
+                      "w-10 h-5 rounded-full relative transition-all duration-300",
+                      ui.tray_glass_tint ? "bg-[rgb(var(--accent))]" : "bg-[rgb(var(--foreground))]/10"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300",
+                      ui.tray_glass_tint ? "right-1" : "left-1"
+                    )} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -202,7 +143,7 @@ export const TraySettings: React.FC = () => {
               <div className="flex items-center gap-3 mb-8 shrink-0">
                 <History className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">
-                  <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Context Window</h3>
+                  <h3 className="text-lg font-bold text-[rgb(var(--foreground))]">Session Memory</h3>
                   <p className="text-[11px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-80">Memory depth</p>
                 </div>
               </div>
@@ -210,19 +151,19 @@ export const TraySettings: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex justify-between">
                   <span className="text-xs text-[rgb(var(--foreground))] opacity-70 font-medium">History Depth</span>
-                  <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">{ui.tray_history_limit} items</span>
+                  <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">{ui.tray_history_limit} sessions</span>
                 </div>
                 <div className="relative h-6 flex items-center">
                   <input 
                     type="range" 
-                    min="1" max="50" 
+                    min="1" max="15" 
                     value={ui.tray_history_limit}
                     onChange={(e) => updateDraft("ui", "tray_history_limit", Number(e.target.value))}
                     className="w-full" 
                   />
                 </div>
                 <p className="text-[11px] text-[rgb(var(--foreground-muted))] opacity-60 italic leading-relaxed">
-                  Controls how many previous transcripts are stored in the Tray HUD's session memory.
+                  Controls how many previous completed transcription sessions are stored in the Tray HUD's ephemeral memory.
                 </p>
               </div>
             </div>

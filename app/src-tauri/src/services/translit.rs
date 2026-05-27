@@ -1,8 +1,8 @@
-use std::sync::OnceLock;
-use std::path::Path;
-use std::collections::HashMap;
-use ort::session::Session;
 use ndarray::{Array1, Array2, Array3};
+use ort::session::Session;
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::OnceLock;
 
 pub struct TransliterationEngine {
     encoder_sess: std::sync::Mutex<Session>,
@@ -19,7 +19,11 @@ impl TransliterationEngine {
         let encoder_path = model_dir.join("encoder.onnx");
         let decoder_path = model_dir.join("decoder.onnx");
 
-        if !src_vocab_path.exists() || !tgt_vocab_path.exists() || !encoder_path.exists() || !decoder_path.exists() {
+        if !src_vocab_path.exists()
+            || !tgt_vocab_path.exists()
+            || !encoder_path.exists()
+            || !decoder_path.exists()
+        {
             return Err(format!("Model files not found in {:?}", model_dir));
         }
 
@@ -68,12 +72,13 @@ impl TransliterationEngine {
 
     pub fn transliterate_word(&self, word: &str) -> Result<String, String> {
         let unk_idx = *self.src_vocab.get("<unk>").unwrap_or(&1);
-        let _sos_idx = *self.src_vocab.get("<s>").unwrap_or(&2);
+        let sos_idx = *self.src_vocab.get("<s>").unwrap_or(&2);
         let eos_idx = *self.src_vocab.get("</s>").unwrap_or(&3);
 
         let mut src_ids = Vec::new();
-        // BUGFIX: Do NOT push sos_idx (<s>) to the encoder source sequence.
-        // The encoder was trained on raw character sequences without a start token.
+        // Prepend the sos_idx (<s>) token to the encoder source sequence.
+        // The Seq2Seq attention alignment relies on this start token.
+        src_ids.push(sos_idx);
         for c in word.chars() {
             let key = c.to_string();
             src_ids.push(*self.src_vocab.get(&key).unwrap_or(&unk_idx));
@@ -89,20 +94,26 @@ impl TransliterationEngine {
         let input_ids_tensor = ort::value::Tensor::from_array(input_ids)
             .map_err(|e| format!("Failed to create input_ids tensor: {}", e))?;
         let mut enc_sess = self.encoder_sess.lock().unwrap();
-        let enc_outputs = enc_sess.run(ort::inputs![
-            "input_ids" => input_ids_tensor
-        ])
-        .map_err(|e| format!("Encoder run failed: {}", e))?;
+        let enc_outputs = enc_sess
+            .run(ort::inputs![
+                "input_ids" => input_ids_tensor
+            ])
+            .map_err(|e| format!("Encoder run failed: {}", e))?;
 
-        let enc_outputs_view = enc_outputs["encoder_outputs"].try_extract_array::<f32>()
+        let enc_outputs_view = enc_outputs["encoder_outputs"]
+            .try_extract_array::<f32>()
             .map_err(|e| format!("Failed to extract encoder_outputs: {}", e))?;
 
-        let enc_outputs_owned = enc_outputs_view.to_owned().into_dimensionality::<ndarray::Dim<[usize; 3]>>()
+        let enc_outputs_owned = enc_outputs_view
+            .to_owned()
+            .into_dimensionality::<ndarray::Dim<[usize; 3]>>()
             .map_err(|e| format!("Failed to reshape encoder_outputs: {}", e))?;
 
-        let enc_h_view = enc_outputs["h_states"].try_extract_array::<f32>()
+        let enc_h_view = enc_outputs["h_states"]
+            .try_extract_array::<f32>()
             .map_err(|e| format!("Failed to extract h_states: {}", e))?;
-        let enc_c_view = enc_outputs["c_states"].try_extract_array::<f32>()
+        let enc_c_view = enc_outputs["c_states"]
+            .try_extract_array::<f32>()
             .map_err(|e| format!("Failed to extract c_states: {}", e))?;
 
         // Initial decoder states: bidirectional averaging
@@ -112,8 +123,10 @@ impl TransliterationEngine {
 
         for i in 0..2 {
             for j in 0..256 {
-                dec_h[[i, 0, j]] = (enc_h_view[[2 * i, 0, j]] + enc_h_view[[2 * i + 1, 0, j]]) / 2.0;
-                dec_c[[i, 0, j]] = (enc_c_view[[2 * i, 0, j]] + enc_c_view[[2 * i + 1, 0, j]]) / 2.0;
+                dec_h[[i, 0, j]] =
+                    (enc_h_view[[2 * i, 0, j]] + enc_h_view[[2 * i + 1, 0, j]]) / 2.0;
+                dec_c[[i, 0, j]] =
+                    (enc_c_view[[2 * i, 0, j]] + enc_c_view[[2 * i + 1, 0, j]]) / 2.0;
             }
         }
 
@@ -138,15 +151,17 @@ impl TransliterationEngine {
                 .map_err(|e| format!("Failed to convert enc_outputs: {}", e))?;
 
             let mut dec_sess = self.decoder_sess.lock().unwrap();
-            let decoder_outputs = dec_sess.run(ort::inputs![
-                "input_char" => dec_input_tensor,
-                "prev_h" => dec_h_tensor,
-                "prev_c" => dec_c_tensor,
-                "encoder_outputs" => enc_outputs_tensor
-            ])
-            .map_err(|e| format!("Decoder run failed: {}", e))?;
+            let decoder_outputs = dec_sess
+                .run(ort::inputs![
+                    "input_char" => dec_input_tensor,
+                    "prev_h" => dec_h_tensor,
+                    "prev_c" => dec_c_tensor,
+                    "encoder_outputs" => enc_outputs_tensor
+                ])
+                .map_err(|e| format!("Decoder run failed: {}", e))?;
 
-            let logits_view = decoder_outputs["logits"].try_extract_array::<f32>()
+            let logits_view = decoder_outputs["logits"]
+                .try_extract_array::<f32>()
                 .map_err(|e| format!("Failed to extract logits: {}", e))?;
 
             let logits_shape = logits_view.shape();
@@ -185,9 +200,11 @@ impl TransliterationEngine {
 
             dec_input[[0]] = next_char_idx as i64;
 
-            let next_h_view = decoder_outputs["h"].try_extract_array::<f32>()
+            let next_h_view = decoder_outputs["h"]
+                .try_extract_array::<f32>()
                 .map_err(|e| format!("Failed to extract decoder h: {}", e))?;
-            let next_c_view = decoder_outputs["c"].try_extract_array::<f32>()
+            let next_c_view = decoder_outputs["c"]
+                .try_extract_array::<f32>()
                 .map_err(|e| format!("Failed to extract decoder c: {}", e))?;
 
             for i in 0..2 {
@@ -222,7 +239,11 @@ pub fn transliterate(word: &str) -> String {
         match engine.transliterate_word(word) {
             Ok(res) => res,
             Err(e) => {
-                log::warn!("[Translit] Transliteration failed for '{}': {}. Falling back to raw word.", word, e);
+                log::warn!(
+                    "[Translit] Transliteration failed for '{}': {}. Falling back to raw word.",
+                    word,
+                    e
+                );
                 word.to_string()
             }
         }

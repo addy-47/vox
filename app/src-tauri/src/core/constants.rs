@@ -11,7 +11,7 @@ pub const SYSTEM_STATS_INTERVAL: Duration = Duration::from_secs(5);
 
 // ─── Model Names & Files ─────────────────────────────────────────────────────
 pub const MODEL_DIR_STT:    &str = "stt/qwen3-asr";
-pub const MODEL_DIR_LLM:    &str = "llm/gemma4";
+pub const MODEL_DIR_LLM:    &str = "llm/llama";
 pub const MODEL_DIR_TTS_EN: &str = "tts/kokoro";
 pub const MODEL_DIR_TTS_HI: &str = "tts/piper_hi";
 pub const MODEL_DIR_VAD:    &str = "vad";
@@ -24,8 +24,8 @@ pub const MODEL_FILE_ASR_ENCODER:   &str = "encoder.int8.onnx";
 pub const MODEL_FILE_ASR_DECODER:   &str = "decoder.int8.onnx";
 pub const MODEL_FILE_ASR_TOKENIZER: &str = "tokenizer";
 
-// LLM Filenames (Gemma 4)
-pub const MODEL_FILE_LLM_GGUF: &str = "google_gemma-4-E2B-it-Q4_K_M.gguf";
+// LLM Filenames (Llama 3.2 1B Instruct)
+pub const MODEL_FILE_LLM_GGUF: &str = "Llama-3.2-1B-Instruct-Q6_K.gguf";
 
 // TTS Filenames (Kokoro/Piper)
 pub const MODEL_FILE_TTS_ONNX:     &str = "model.onnx";
