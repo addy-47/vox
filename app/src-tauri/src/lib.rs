@@ -14,7 +14,7 @@ use crate::ipc::tray::{
     hide_tray_window, sync_hud_visibility, set_hud_ignore_cursor, 
     update_interaction_mode, show_main_window, toggle_hud_visibility
 };
-use crate::ipc::history::{get_transcript_history, get_sessions, get_turns, delete_session};
+use crate::ipc::history::{get_transcript_history, commit_session_to_history, get_sessions, get_turns, delete_session};
 use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog};
 use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
 use crate::tray::{setup_linux_virtual_layer, setup_tray_window, position_tray_window};
@@ -327,6 +327,7 @@ pub fn run() {
             ptt_stop,
             ptt_cancel,
             get_transcript_history,
+            commit_session_to_history,
             get_sessions,
             get_turns,
             delete_session,

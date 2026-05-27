@@ -248,7 +248,7 @@ where
 
                     vad.flush();
                     
-                    if utterance_buffer.len() >= 3200 { 
+                    if utterance_buffer.len() >= 4800 { 
                         let _ = stt_tx.send(crate::services::stt::SttCommand::Final(
                             current_turn_id, 
                             owner,
@@ -266,7 +266,7 @@ where
                 utterance_buffer.extend_from_slice(&chunk);
                 samples_since_partial += chunk.len();
 
-                if samples_since_partial >= 12800 {
+                if samples_since_partial >= 6400 {
                     let start_idx = utterance_buffer.len().saturating_sub(240000);
                     let _ = stt_tx.send(crate::services::stt::SttCommand::Partial(
                         current_turn_id, 

@@ -34,8 +34,6 @@ export interface VoxSettings {
     tray_enabled: boolean;
     tray_blur_density: number;
     tray_glass_tint: boolean;
-    tray_hide_delay: number;
-    tray_fade_transition: string;
     tray_history_limit: number;
   };
   vad: {

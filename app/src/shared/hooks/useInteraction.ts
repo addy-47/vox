@@ -7,10 +7,8 @@ export interface Interaction {
   lastUpdateTime: number;
 }
 
-const CONTINUITY_WINDOW = 1200; // ms
-
 /**
- * Manages logical interaction sessions by grouping noisy VAD segments.
+ * Manages logical interaction sessions by keeping visual history alive.
  * Decouples VAD start/end from UX-level "Interaction Sessions".
  */
 export const useInteraction = () => {
@@ -22,18 +20,14 @@ export const useInteraction = () => {
   const currentIdRef = useRef<number>(0);
 
   const startNewInteraction = useCallback(() => {
-    const now = Date.now();
-    const diff = now - lastSpeechEndTime.current;
-
-    // Continuity Rule: If the gap is small, keep the same interaction
-    if (diff > CONTINUITY_WINDOW || currentIdRef.current === 0) {
-      currentIdRef.current += 1;
+    // In the persistent session model, starting a new interaction is handled
+    // strictly by manual clear or waking up after auto-sleep. We keep the ID stable.
+    if (currentIdRef.current === 0) {
+      currentIdRef.current = 1;
       setInteractionId(currentIdRef.current);
       setCommittedText("");
       setPartialText("");
-      console.log(`[Interaction] >>> New Session Started: ${currentIdRef.current}`);
-    } else {
-      console.log(`[Interaction] Merging with existing session: ${currentIdRef.current}`);
+      console.log(`[Interaction] >>> Session Initiated: ${currentIdRef.current}`);
     }
   }, []);
 
@@ -48,7 +42,7 @@ export const useInteraction = () => {
   const commitFinal = useCallback((text: string) => {
     if (!text) return;
     setCommittedText(prev => {
-      const separator = prev ? " " : "";
+      const separator = prev ? "\n" : "";
       return prev + separator + text;
     });
     setPartialText("");

@@ -301,12 +301,6 @@ fn apply_setting_mutation(
         ("ui", "tray_glass_tint") => {
             settings.ui.tray_glass_tint = value.as_bool().ok_or("tray_glass_tint must be a boolean")?;
         }
-        ("ui", "tray_hide_delay") => {
-            settings.ui.tray_hide_delay = value.as_f64().ok_or("tray_hide_delay must be a number")? as f32;
-        }
-        ("ui", "tray_fade_transition") => {
-            settings.ui.tray_fade_transition = value.as_str().ok_or("tray_fade_transition must be a string")?.to_string();
-        }
         ("ui", "tray_history_limit") => {
             settings.ui.tray_history_limit = value.as_u64().ok_or("tray_history_limit must be a positive integer")? as u32;
         }

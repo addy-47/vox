@@ -252,15 +252,6 @@ impl PipelineOrchestrator {
         let new_turn = self.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
         log::info!("[Pipeline] New turn {} (owner: {:?}) — transcript: {:?}", new_turn, owner, text);
 
-        // Store in ephemeral in-memory history if owner is Tray (skipping empty results)
-        if owner == InteractionOwner::Tray && !text.trim().is_empty() {
-            let mut history = self.transcript_history.lock().unwrap();
-            history.push_back(text.clone());
-            if history.len() > crate::core::constants::TRANSCRIPT_HISTORY_LIMIT {
-                history.pop_front();
-            }
-        }
-
         // Reset cancellation flag AFTER the Cancelled event is queued
         self.cancel_flag.store(false, Ordering::Relaxed);
 
@@ -367,6 +358,7 @@ impl PipelineOrchestrator {
         let mut turn_stt_ms = 0u32;
         let mut turn_ttft_ms = 0u32;
         let mut last_tts_flush = std::time::Instant::now();
+        let mut last_committed_session_id = 0u32;
 
         log::info!("[Pipeline] Event loop starting...");
         let engine_shutdown = {
@@ -494,34 +486,6 @@ impl PipelineOrchestrator {
                 }
                 // ── Speech start: barge-in cancellation ───────────
                 VoxEvent::SpeechStart { turn_id, owner } => {
-                    // Directive: Auto-show Tray HUD on speech if enabled (Fixes Tray Lifecycle Bug)
-                    if owner == crate::core::state::InteractionOwner::Tray {
-                        let state_handle = app_handle.state::<std::sync::Arc<crate::core::state::AppState>>();
-                        let (tray_enabled, setup_completed) = {
-                            let settings = state_handle.settings.read().unwrap();
-                            (settings.ui.tray_enabled, settings.setup.completed)
-                        };
-                        if setup_completed && tray_enabled {
-                            let app_clone = app_handle.clone();
-                            tauri::async_runtime::spawn(async move {
-                                let state = app_clone.state::<std::sync::Arc<crate::core::state::AppState>>();
-                                let mut hud_visible = state.hud_visible.lock().await;
-                                if !*hud_visible {
-                                    if let Some(window) = app_clone.get_webview_window("tray") {
-                                        let _ = window.show();
-                                        crate::tray::position_tray_window(&window).await;
-                                        *hud_visible = true;
-                                        let _ = app_clone.emit("toggle_hud", ());
-                                        let item_lock = state.hud_menu_item.lock().await;
-                                        if let Some(item) = &*item_lock {
-                                            let _ = item.set_checked(true);
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                    }
-
                     let buffer_len = playback_engine.buffer_len();
                     // Only log as "Barge-in" if there is significant audio left (>50ms at 48kHz)
                     if buffer_len > 2400 {
@@ -561,6 +525,12 @@ impl PipelineOrchestrator {
                 // ── Transcript final: hand off to LLM ────────────────────
                 VoxEvent::TranscriptFinal { turn_id, owner, text } => {
                     if turn_id < current_tid { continue; }
+                    if turn_id <= last_committed_session_id {
+                        log::info!("[Pipeline] Guard triggered: Skipping adjacent double-final from turn_id {} (last committed: {})", turn_id, last_committed_session_id);
+                        continue;
+                    }
+                    last_committed_session_id = turn_id;
+
                     token_buf.clear();
                     turn_voice_id = None; // Reset language lock for new turn
                     thinking = false;
