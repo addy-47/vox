@@ -249,8 +249,6 @@ pub struct UiSettings {
     pub tray_enabled: bool,
     pub tray_blur_density: u32,
     pub tray_glass_tint: bool,
-    pub tray_hide_delay: f32,
-    pub tray_fade_transition: String,
     pub tray_history_limit: u32,
 }
 
@@ -262,9 +260,7 @@ impl Default for UiSettings {
             tray_enabled: true,
             tray_blur_density: 40,
             tray_glass_tint: true,
-            tray_hide_delay: 5.0,
-            tray_fade_transition: "Smooth".into(),
-            tray_history_limit: 10,
+            tray_history_limit: 5,
         }
     }
 }
