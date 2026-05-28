@@ -1,0 +1,42 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Architectures: amd64
+Codename: stable
+Components: main
+Date: Thu, 28 May 2026 07:28:45 +0000
+Label: Vox
+Origin: Vox
+Suite: stable
+MD5Sum:
+ f35f545ffc7d62b1bd230e1def250c8b              130 Release
+ 6dffb523cd987a462b055aff38c754e6              416 main/binary-amd64/Packages
+ d9b743e9b929c29588badb6251c331d7              339 main/binary-amd64/Packages.gz
+SHA1:
+ 223c77f128725b72b4718174d95410345b465e89              130 Release
+ e6b18d67237e5f6908a9d23ce1713e3288a9a575              416 main/binary-amd64/Packages
+ c70ec91edc96c00103659ecb316ebcdfbbd71c64              339 main/binary-amd64/Packages.gz
+SHA256:
+ 7008d7c4d7868ee24df668f206074e1da91acb926fa001fae96a361bcfe91741              130 Release
+ 996ec3718db5be10d24c56bb0e096f9ddbba5ba9426bf40ed2957b783e7c5680              416 main/binary-amd64/Packages
+ 32767a4e896414357bd2fd8d15d0288b069a38b89a35f764c714ad7305634126              339 main/binary-amd64/Packages.gz
+SHA512:
+ 1efc8517e8ec3da74ebb39d1658e4f51e1a5a5991af3120e7da15c3f268255b1ae2a90349f7e142d886c4d6dcdff54a1826a0da5b14dae501bf96d8b2bd6c319              130 Release
+ 8341d49dfc3658c729c9eb8a90ec4aac8bbacd3dfe86de98aee429167e02361140cf1c5fe4bace102f9ecd2e9748e5cca8959eeb5165592c7fc43617aad34025              416 main/binary-amd64/Packages
+ 1c162ce3cb383576562098c81704bceb44c40ceb16efe545e447520ffcf0c322e03ffc2c9a393d341832bc077ed1a44197961b4ee7bf355934b122876b57fa30              339 main/binary-amd64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEEUG8p/KChB+IjB6YbV2wNaxW7kS0FAmoX7q0ACgkQV2wNaxW7
+kS0Fag/8C6M/oeJYV4MUXhPJXd36vinz0Q64dFtwpjFfW2Nx9+CZp0XcpQbDTvO0
+SuwRu5TgpAvLQP3cAf0FDM3mmJ20jlo7pqDsxWfyEDTY8MOUTb/sPC6lKEISM8w6
+whk7XGEfTVBeYD105Cyz4nFG9v/x87d+Qx41gUq6EP1qomgnIZq+WtM8QfY8y0zm
+tC54lWBe7WWolLOdt3GCJ+/V80kRuJon5yWQmnpDHDTeIuWQJVlc+XG3ClgSvxWC
+REE0XBV43iU9zQcqrl2WJfi/+SaI+d1wzj9X9qlfLYFagOlltI28Dsoq7IAKgXRV
+m5GpWnCtm/eXIap60HMun9xDUuIj74Bqz9z8Hbxdfyk/gwr/zXyhr9bzjufHmq7h
+0dUzBTXsVEFvJZ5A+0pUlBEkgcD0YnukVoU5ESuZSeScuxCm5d2ktOGd9aONmyL7
+7YJL/uwA2BIsmz72QHj39DXONI522++ha1OCTpn9n63ra5c5Cox1gMDjvzwYGcWp
+veUFy4amwxnKz3DNRtGy7TQ9tp3ftclPkPM8RwHIBk0mvFfUIbKsr4l+hWqHy84R
+904UASlNPn9BOlfo2750hqtS0lpzL8ru/6CnUliwmGWq2wJOUDLrK3OZsPRqzZap
+Ne8IwNZyhKZ89JGwHhkpUyRPYHQF17+xuWchNx6yO8LBOO85I+0=
+=+y5o
+-----END PGP SIGNATURE-----

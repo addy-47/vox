@@ -1,0 +1,12 @@
+{
+  "latest_version": "0.8.0",
+  "release_notes": [
+    "Integrated native ONNX Runtime inference layers for low-latency VAD and ASR.",
+    "Decoupled model weight checks to prevent disk bloat on 8GB RAM environments.",
+    "Integrated persistent Glassmorphism update notification pills and tooltips."
+  ],
+  "linux": {
+    "package": "vox",
+    "update_command": "sudo apt update && sudo apt upgrade vox"
+  }
+}

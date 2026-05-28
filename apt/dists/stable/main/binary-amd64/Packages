@@ -1,0 +1,15 @@
+Package: vox
+Version: 0.8.0
+Architecture: amd64
+Maintainer: you
+Installed-Size: 90661
+Depends: libappindicator3-1, libwebkit2gtk-4.1-0, libgtk-3-0
+Filename: pool/main/Vox_0.8.0_amd64.deb
+Size: 33302648
+MD5sum: 2c70803d42a4572178bf0c8eb5f28315
+SHA1: 553bd6417eae25c30010bfe3b0ce6d9eeafe9e96
+SHA256: fc6d2a2bb4d5c32925fab2acc8c725ed3c261c328772fa31de9a3570d32c5649
+Priority: optional
+Description: A Tauri App
+ (none)
+
