@@ -50,6 +50,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           <button 
             onClick={(e) => { e.stopPropagation(); onCopy(); }}
             className="p-2 rounded-lg hover:bg-[rgb(var(--accent))]/10 transition-all text-[rgb(var(--foreground))]/40 hover:text-[rgb(var(--accent))] active:scale-90"
+            title="Copy to Clipboard"
           >
             {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
@@ -58,6 +59,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/10 transition-all text-[rgb(var(--foreground))]/30 hover:text-[rgb(var(--foreground))]/80 active:scale-90"
+          title="Close & Commit Session"
         >
           <X size={16} />
         </button>
