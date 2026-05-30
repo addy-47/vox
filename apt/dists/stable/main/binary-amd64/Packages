@@ -5,10 +5,10 @@ Maintainer: addy-47
 Installed-Size: 90707
 Depends: libappindicator3-1, libwebkit2gtk-4.1-0, libgtk-3-0
 Filename: pool/main/Vox_0.8.0_amd64.deb
-Size: 33290064
-MD5sum: 5748bd9d9e0149325d2950d15323f191
-SHA1: 136d3e58556a767c4159646e26b7668506c4f863
-SHA256: 6fb760404ef303e6eec10f4888a6c1381b1b2898e7a9db67999655cedc9466c0
+Size: 33290050
+MD5sum: 3e24f40b9ea3d6f07ec408a85a6f270d
+SHA1: cb6b596707b86a9eabababa954aa38f3ac143e91
+SHA256: a73b4cb80f7e8015d4caa10eb5c5515236552f5c7948782a1e9e710bf3969068
 Priority: optional
 Description: Vox - A modern desktop voice inference engine built for edge devices.
  (none)
