@@ -3,6 +3,24 @@ use tauri::{AppHandle, State, Manager, Emitter};
 use crate::core::state::AppState;
 use crate::setup::manifest::VoxManifest;
 use crate::setup::runtime_check::{verify_runtime, RuntimeReport};
+use crate::setup::update_check::{check_app_updates, UpdateReport, check_model_updates, ModelUpdateReport};
+
+#[tauri::command]
+pub async fn check_for_updates() -> Result<UpdateReport, String> {
+    check_app_updates().await.map_err(|e| {
+        log::error!("[IPC] App update check failed: {}", e);
+        e.to_string()
+    })
+}
+
+#[tauri::command]
+pub async fn check_for_model_updates() -> Result<ModelUpdateReport, String> {
+    check_model_updates().await.map_err(|e| {
+        log::error!("[IPC] Model update check failed: {}", e);
+        e.to_string()
+    })
+}
+
 
 #[tauri::command]
 pub async fn fetch_manifest(state: State<'_, Arc<AppState>>) -> Result<VoxManifest, String> {
@@ -61,11 +79,17 @@ pub async fn start_model_setup(
     log::info!("[SETUP] Initializing model setup task (State: {:p})", state.inner());
  
     tauri::async_runtime::spawn(async move {
-        // Filter models based on selection or requirement
+        // Filter models based on selection or requirement using group structures
         let target_models: Vec<_> = if let Some(ids) = selected_ids {
-            manifest.models.into_iter().filter(|m| ids.contains(&m.id)).collect()
+            manifest.model_groups.into_iter()
+                .filter(|g| ids.contains(&g.id))
+                .flat_map(|g| g.files)
+                .collect()
         } else {
-            manifest.models.into_iter().filter(|m| m.required).collect()
+            manifest.model_groups.into_iter()
+                .filter(|g| g.files.iter().any(|f| f.required))
+                .flat_map(|g| g.files)
+                .collect()
         };
 
         let model_ids: Vec<String> = target_models.iter().map(|m| m.id.clone()).collect();
@@ -164,9 +188,9 @@ pub async fn complete_setup_wizard(app: AppHandle, state: State<'_, Arc<AppState
 async fn ensure_manifest_loaded(state: &State<'_, Arc<AppState>>) -> Result<(), String> {
     let mut m = state.manifest.write().await;
     if m.is_none() {
-        let manifest_path = crate::utils::paths::get().models.join("manifest.json");
+        let manifest_path = crate::utils::paths::get().models.join("models_manifest.json");
 
-        // 1. Try reading from local manifest.json first
+        // 1. Try reading from local models_manifest.json first
         if manifest_path.exists() {
             if let Ok(content) = std::fs::read_to_string(&manifest_path) {
                 if let Ok(manifest) = serde_json::from_str::<VoxManifest>(&content) {
@@ -175,7 +199,7 @@ async fn ensure_manifest_loaded(state: &State<'_, Arc<AppState>>) -> Result<(), 
                     return Ok(());
                 }
             }
-            log::warn!("[SETUP] Local manifest.json was corrupted or unreadable. Fetching fresh from HF...");
+            log::warn!("[SETUP] Local models_manifest.json was corrupted or unreadable. Fetching fresh from HF...");
         }
 
         // 2. Fall back to fetching from HF
@@ -199,80 +223,78 @@ async fn ensure_manifest_loaded(state: &State<'_, Arc<AppState>>) -> Result<(), 
     Ok(())
 }
 
-fn get_model_group_ids(model_id: &str) -> Vec<String> {
-    match model_id {
-        "ten_vad" => vec!["ten_vad".to_string()],
-        "translit" => vec![
-            "translit_encoder".to_string(),
-            "translit_decoder".to_string(),
-            "translit_input_vocab".to_string(),
-            "translit_target_vocab".to_string(),
-        ],
-        "qwen3-asr" => vec![
-            "stt_conv_frontend".to_string(),
-            "stt_encoder".to_string(),
-            "stt_decoder".to_string(),
-            "stt_vocab".to_string(),
-            "stt_merges".to_string(),
-            "stt_config".to_string(),
-        ],
-        "gemma4" => vec!["llm_gemma_4_q4_k_m".to_string()],
-        "kokoro" => vec![
-            "tts_kokoro_onnx".to_string(),
-            "tts_kokoro_voices".to_string(),
-            "tts_kokoro_tokens".to_string(),
-            "tts_kokoro_espeak_ng_data".to_string(),
-        ],
-        "piper_hi" => vec![
-            "tts_hi_priyamvada_onnx".to_string(),
-            "tts_hi_priyamvada_config".to_string(),
-            "tts_piper_hi_espeak_ng_data".to_string(),
-        ],
-        other => vec![other.to_string()],
-    }
-}
-
 #[tauri::command]
 pub async fn check_model_exists(model_id: String, state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     ensure_manifest_loaded(&state).await?;
     let manifest_guard = state.manifest.read().await;
     let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
     
-    let group_ids = get_model_group_ids(&model_id);
+    let group = manifest.model_groups.iter().find(|g| g.id == model_id);
+
+    let Some(group) = group else {
+        return Ok(false);
+    };
+
     let models_dir = crate::utils::paths::get().models.clone();
     
-    for mapped_id in group_ids {
-        let model = manifest.models.iter().find(|m| m.id == mapped_id);
-        if model.is_none() {
-            return Ok(false);
-        }
-        let model = model.unwrap();
-        
-        let dest_path = models_dir.join(&model.path);
-        let verified_path = dest_path.with_extension("verified");
+    for file in &group.files {
+        let is_archive = file.archive_type.is_some();
+        let dest_path = if is_archive {
+            let p_str = file.path.as_str();
+            if p_str.ends_with(".tar.gz") {
+                models_dir.join(&p_str[..p_str.len() - 7])
+            } else if p_str.ends_with(".zip") || p_str.ends_with(".tgz") {
+                models_dir.join(&p_str[..p_str.len() - 4])
+            } else {
+                models_dir.join(&file.path)
+            }
+        } else {
+            models_dir.join(&file.path)
+        };
+        let verified_path = models_dir.join(&file.path).with_extension("verified");
 
+        let mut file_ok = false;
         if verified_path.exists() {
-            continue;
+            if let Ok(marker) = crate::setup::manifest::VerifiedMarker::load(&verified_path) {
+                if marker.sha256 == file.sha256 && dest_path.exists() && (is_archive || marker.expected_size == file.size_bytes) {
+                    file_ok = true;
+                }
+            }
         }
 
-        if dest_path.exists() {
-            if let Ok(metadata) = std::fs::metadata(&dest_path) {
-                if metadata.len() == model.size_bytes {
+        if !file_ok && dest_path.exists() {
+            if is_archive {
+                let marker = crate::setup::manifest::VerifiedMarker {
+                    model_id: Some(file.id.clone()),
+                    sha256: file.sha256.clone(),
+                    verified_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                    expected_size: file.size_bytes,
+                };
+                let _ = marker.save(&verified_path);
+                file_ok = true;
+            } else if let Ok(metadata) = std::fs::metadata(&dest_path) {
+                if metadata.len() == file.size_bytes {
                     let marker = crate::setup::manifest::VerifiedMarker {
-                        sha256: model.sha256.clone(),
+                        model_id: Some(file.id.clone()),
+                        sha256: file.sha256.clone(),
                         verified_at: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_millis() as u64,
-                        expected_size: model.size_bytes,
+                        expected_size: file.size_bytes,
                     };
                     let _ = marker.save(&verified_path);
-                    continue;
+                    file_ok = true;
                 }
             }
         }
         
-        return Ok(false);
+        if !file_ok {
+            return Ok(false);
+        }
     }
 
     Ok(true)
@@ -284,18 +306,15 @@ pub async fn download_optional_model(
     app: AppHandle, 
     state: State<'_, Arc<AppState>>
 ) -> Result<(), String> {
-    ensure_manifest_loaded(&state).await?;
-    let manifest_guard = state.manifest.read().await;
-    let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
-    
-    let group_ids = get_model_group_ids(&model_id);
-    let mut target_models = Vec::new();
-    
-    for mapped_id in group_ids {
-        let model = manifest.models.iter().find(|m| m.id == mapped_id)
-            .ok_or_else(|| format!("Model {} not found in manifest", mapped_id))?.clone();
-        target_models.push(model);
-    }
+    let (target_models, manager) = {
+        let manifest_guard = state.manifest.read().await;
+        let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
+        
+        let group = manifest.model_groups.iter().find(|g| g.id == model_id)
+            .ok_or_else(|| format!("Model group {} not found in manifest", model_id))?;
+
+        (group.files.clone(), state.inner().model_manager.clone())
+    };
 
     let app_clone = app.clone();
     let model_id_clone = model_id.clone();
@@ -305,27 +324,18 @@ pub async fn download_optional_model(
         let p = crate::utils::paths::get();
         let base_url = "https://huggingface.co/addyo07/vox-models/resolve/main"; 
         
-        // Use a new manager to avoid state conflicts with the primary setup
-        let manager = crate::setup::model_manager::ModelManager::new(Some(app_clone.clone()));
-        
-        let mut failed = false;
-        let mut last_err = String::new();
+        log::info!("[SETUP] Starting optional model group download for: {} ({} files)", model_id_clone, target_models.len());
         
         for model in target_models {
             if let Err(e) = manager.setup_model(&model, base_url, &p.models).await {
-                log::error!("[DOWNLOAD] Failed to download {}: {}", model.id, e);
-                last_err = e.to_string();
-                failed = true;
-                break;
+                log::error!("[SETUP] Failed to setup optional model file {}: {}", model.id, e);
+                let _ = app_clone.emit("optional_model_failed", (model_id_clone.clone(), e.to_string()));
+                return;
             }
         }
         
-        if failed {
-            let _ = app_clone.emit("optional_download_failed", last_err);
-        } else {
-            log::info!("[DOWNLOAD] Successfully downloaded optional model group: {}", model_id_clone);
-            let _ = app_clone.emit("optional_download_complete", model_id_clone);
-        }
+        log::info!("[SETUP] Optional model group download completed: {}", model_id_clone);
+        let _ = app_clone.emit("optional_model_complete", model_id_clone);
     });
 
     Ok(())
@@ -346,38 +356,55 @@ pub async fn delete_model(model_id: String, state: State<'_, Arc<AppState>>) -> 
     let manifest_guard = state.manifest.read().await;
     let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
     
-    let group_ids = get_model_group_ids(&model_id);
+    let group = manifest.model_groups.iter().find(|g| g.id == model_id)
+        .ok_or_else(|| format!("Model group {} not found in manifest", model_id))?;
+
     let models_dir = crate::utils::paths::get().models.clone();
     
-    for mapped_id in group_ids {
-        let model = manifest.models.iter().find(|m| m.id == mapped_id)
-            .ok_or_else(|| format!("Model {} not found in manifest", mapped_id))?;
-
-        let dest_path = models_dir.join(&model.path);
-        let verified_path = dest_path.with_extension("verified");
+    for file in &group.files {
+        let is_archive = file.archive_type.is_some();
+        let dest_path = if is_archive {
+            let p_str = file.path.as_str();
+            if p_str.ends_with(".tar.gz") {
+                models_dir.join(&p_str[..p_str.len() - 7])
+            } else if p_str.ends_with(".zip") || p_str.ends_with(".tgz") {
+                models_dir.join(&p_str[..p_str.len() - 4])
+            } else {
+                models_dir.join(&file.path)
+            }
+        } else {
+            models_dir.join(&file.path)
+        };
+        let verified_path = models_dir.join(&file.path).with_extension("verified");
 
         // 1. Delete verified marker
         if verified_path.exists() {
             let _ = std::fs::remove_file(&verified_path);
         }
 
-        // 2. Delete model file
+        // 2. Delete model file or directory
         if dest_path.exists() {
-            log::info!("[Settings] Deleting file: {:?}", dest_path);
-            let _ = std::fs::remove_file(&dest_path);
+            log::info!("[Settings] Deleting: {:?}", dest_path);
+            if dest_path.is_dir() {
+                let _ = std::fs::remove_dir_all(&dest_path);
+            } else {
+                let _ = std::fs::remove_file(&dest_path);
+            }
         }
 
         // 3. Folder cleanup
-        if model_id == "qwen3-asr" || model_id == "kokoro" || model_id == "piper_hi" || model_id == "translit" {
-            if let Some(parent) = dest_path.parent() {
-                if parent.exists() && parent != models_dir {
-                    log::info!("[Settings] Deleting folder: {:?}", parent);
-                    let _ = std::fs::remove_dir_all(parent);
+        if let Some(parent) = dest_path.parent() {
+            if parent.exists() && parent != models_dir {
+                if let Ok(entries) = std::fs::read_dir(parent) {
+                    if entries.count() == 0 {
+                        log::info!("[Settings] Deleting empty folder: {:?}", parent);
+                        let _ = std::fs::remove_dir(parent);
+                    }
                 }
             }
         }
     }
 
-    log::info!("[Settings] Deleted model: {} successfully", model_id);
+    log::info!("[Settings] Deleted model group: {} successfully", model_id);
     Ok(())
 }

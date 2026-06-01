@@ -181,18 +181,23 @@ export const TrayApp: React.FC = () => {
 
   // ─── IPC Event Listeners ───────────────────────────────────────────────────
   useEffect(() => {
-    let unlisteners: (() => void)[] = [];
+    let active = true;
+    let localUnlisteners: (() => void)[] = [];
 
     const setupListeners = async () => {
       try {
         const appWindow = getCurrentWindow();
         
         const u1 = await appWindow.listen("speech_start", () => {
+          if (!active) return;
           setViewingHistory(false);
           stateRef.current.callbacks.startNewInteraction();
         });
+        if (!active) { u1(); return; }
+        localUnlisteners.push(u1);
 
         const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
+          if (!active) return;
           if (stateRef.current.pttStatus === 'RECORDING') return;
           if (event.payload.text) {
             if (stateRef.current.visibilityState === 'HIDDEN') {
@@ -201,53 +206,78 @@ export const TrayApp: React.FC = () => {
             stateRef.current.callbacks.updatePartial(event.payload.text);
           }
         });
+        if (!active) { u2(); return; }
+        localUnlisteners.push(u2);
 
         const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
+          if (!active) return;
           if (event.payload.text) {
+            if (stateRef.current.visibilityState === 'HIDDEN') {
+              stateRef.current.callbacks.show();
+            }
             stateRef.current.callbacks.commitFinal(event.payload.text);
           }
         });
+        if (!active) { u3(); return; }
+        localUnlisteners.push(u3);
 
         const u4 = await appWindow.listen("speech_end", () => {
+          if (!active) return;
           stateRef.current.callbacks.endSpeechSegment();
         });
+        if (!active) { u4(); return; }
+        localUnlisteners.push(u4);
 
         const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
+          if (!active) return;
           setStats(event.payload);
         });
+        if (!active) { u5(); return; }
+        localUnlisteners.push(u5);
 
         const u6 = await appWindow.listen("toggle_hud", () => {
+          if (!active) return;
           if (stateRef.current.visibilityState === 'HIDDEN') stateRef.current.callbacks.show();
           else stateRef.current.callbacks.hideImmediately();
         });
+        if (!active) { u6(); return; }
+        localUnlisteners.push(u6);
 
         const u7 = await appWindow.listen<string>("state_changed", (event) => {
+          if (!active) return;
           setInteractionState(event.payload);
         });
+        if (!active) { u7(); return; }
+        localUnlisteners.push(u7);
 
         const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
+          if (!active) return;
           setPttStatus(event.payload.state as any);
         });
+        if (!active) { u8(); return; }
+        localUnlisteners.push(u8);
 
         const u9 = await appWindow.listen<boolean>("auto_sleep_state", (event) => {
+          if (!active) return;
           const sleep = event.payload;
           setIsSleeping(sleep);
           if (sleep) {
-            // Auto-sleep: Commit current session & fadeout HUD
+            // Auto-sleep: Commit current session & hide HUD
             const textToCommit = stateRef.current.liveTargetText;
             if (textToCommit.trim()) {
               invoke<string[]>("commit_session_to_history", { text: textToCommit }).then(h => {
-                setHistory(h.slice(0, stateRef.current.historyLimit));
+                if (active) setHistory(h.slice(0, stateRef.current.historyLimit));
               });
             }
             stateRef.current.callbacks.reset();
-            stateRef.current.callbacks.startFade();
+            stateRef.current.callbacks.hideImmediately();
           } else {
             stateRef.current.callbacks.cancelFade();
           }
         });
+        if (!active) { u9(); return; }
+        localUnlisteners.push(u9);
 
-        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8, u9];
       } catch (err) {
         console.error("[TrayApp] Failed to setup listeners:", err);
       }
@@ -257,11 +287,12 @@ export const TrayApp: React.FC = () => {
 
     // Initial History Sync
     invoke<string[]>("get_transcript_history").then(h => {
-      setHistory(h.slice(0, stateRef.current.historyLimit));
+      if (active) setHistory(h.slice(0, stateRef.current.historyLimit));
     });
 
     return () => {
-      unlisteners.forEach(u => u());
+      active = false;
+      localUnlisteners.forEach(u => u());
     };
   }, []); // Stable Listeners
 

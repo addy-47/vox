@@ -66,7 +66,7 @@ def main():
     llm_basename = os.path.basename(llm_filename)
     
     print("=" * 60)
-    print("VOX 0.7.0 DYNAMIC MODEL BENCHMARK RUNNER")
+    print("VOX 0.8.0 DYNAMIC MODEL BENCHMARK RUNNER")
     print(f"Model: {llm_filename}")
     print(f"Targeting: 5 WAV files sequentially from: {AUDIO_DIR}")
     print("=" * 60)

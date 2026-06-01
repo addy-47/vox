@@ -101,7 +101,7 @@ impl traits::VadEngine for EarshotVadEngine {
         if is_active {
             self.active_frames += 1;
             self.inactive_frames = 0;
-            if !self.is_speech && self.active_frames >= 6 {
+            if !self.is_speech && self.active_frames >= 15 {
                 self.is_speech = true;
                 log::debug!(
                     "[VAD/Earshot] SPEECH START CONFIRMED (raw_score={:.4}, frames={})", 
@@ -111,7 +111,7 @@ impl traits::VadEngine for EarshotVadEngine {
         } else {
             self.inactive_frames += 1;
             self.active_frames = 0;
-            if self.is_speech && self.inactive_frames >= 15 {
+            if self.is_speech && self.inactive_frames >= 40 {
                 self.is_speech = false;
                 log::debug!(
                     "[VAD/Earshot] SILENCE CONFIRMED (raw_score={:.4}, frames={})", 

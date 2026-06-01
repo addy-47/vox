@@ -233,7 +233,7 @@ where
                 inactive_frames += 1;
                 active_frames = 0;
 
-                if in_speech && inactive_frames >= 35 {
+                if in_speech && inactive_frames >= 50 {
                     in_speech = false;
                     log::info!("[VAD] <<< SPEECH END (session: {}, owner: {:?})", current_turn_id, owner);
                     

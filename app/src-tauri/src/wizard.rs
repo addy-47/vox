@@ -16,7 +16,7 @@ pub fn check_setup_health() -> bool {
     let p = paths::get();
     
     // 1. Manifest
-    if !p.models.join("manifest.json").exists() { 
+    if !p.models.join("models_manifest.json").exists() { 
         return false; 
     }
 

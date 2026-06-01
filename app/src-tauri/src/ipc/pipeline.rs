@@ -1,19 +1,23 @@
-use tauri::{State, Manager, AppHandle, Emitter};
-use crate::utils::paths;
-use crate::core::state::{AppState, VoxEngine, InteractionOwner, InteractionState};
 use crate::core::events::VoxEvent;
-use crate::services::stt::{spawn_stt_worker, SttCommand};
+use crate::core::state::{AppState, InteractionOwner, InteractionState, VoxEngine};
 use crate::services::audio::AudioStream;
-use crate::services::vad::{VadBackend, ten_onnx::VadEngine as TenVadEngine, earshot_vad::EarshotVadEngine};
 use crate::services::pipeline::PipelineOrchestrator;
 use crate::services::playback::PlaybackEngine;
+use crate::services::stt::{spawn_stt_worker, SttCommand};
+use crate::services::vad::{
+    earshot_vad::EarshotVadEngine, ten_onnx::VadEngine as TenVadEngine, VadBackend,
+};
 use crate::tray::position_tray_window;
+use crate::utils::paths;
 use ringbuf::traits::Split;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[tauri::command]
-pub async fn check_engine_status(state: State<'_, std::sync::Arc<AppState>>) -> Result<bool, String> {
+pub async fn check_engine_status(
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<bool, String> {
     let lock = state.engine.lock().await;
     Ok(lock.is_some())
 }
@@ -22,18 +26,21 @@ pub async fn check_engine_status(state: State<'_, std::sync::Arc<AppState>>) -> 
 pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let mut lock = state.engine.lock().await;
-    
+
     if let Some(mut engine) = lock.take() {
         log::info!("[PIPELINE] >>> Shutting down 3-Tier Audio Engine (Deterministic)...");
-        
+
         // 1. Signal all threads to exit via Atomic flag (Secondary exit path)
-        state.pipeline.engine_shutdown.store(true, Ordering::Relaxed);
+        state
+            .pipeline
+            .engine_shutdown
+            .store(true, Ordering::Relaxed);
 
         // 2. Signal threads via channels (Primary exit path)
         let _ = engine.pipeline_tx.send(VoxEvent::Shutdown);
         let _ = engine.stt_tx.send(SttCommand::Shutdown);
         let _ = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown);
-        
+
         // Wait for threads to join
         if let Some(h) = engine.orchestrator_handle.take() {
             let _ = h.join();
@@ -56,19 +63,24 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
             }
         }
     }
-    
+
     Ok(())
 }
 
 #[tauri::command]
-pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) -> Result<(), String> {
+pub async fn engage(
+    state: State<'_, std::sync::Arc<AppState>>,
+    app: AppHandle,
+) -> Result<(), String> {
     let current = state.pipeline.is_engaged.load(Ordering::Relaxed);
     let new_state = !current;
-    
+
     if new_state {
-        log::info!("[Pipeline] Engaging main application pipeline...");
+        log::info!("[Pipeline] Engaging main application pipeline. Starting User Session.");
         state.pipeline.is_engaged.store(true, Ordering::Relaxed);
-        state.owner.store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
+        state
+            .owner
+            .store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
 
         // Ensure engine is launched
         if state.engine.lock().await.is_none() {
@@ -83,54 +95,74 @@ pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) 
                 .unwrap_or_default()
                 .as_millis() as u64;
             state.conversation_id.store(conv_id, Ordering::Relaxed);
+            log::info!("[Session] >>> USER SESSION STARTED: id={}", conv_id);
 
             // Persist Session Start
             {
                 let persist_tx = state.persist_tx.lock().unwrap();
                 if let Some(ref tx) = *persist_tx {
-                    if let Err(_) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionStarted {
-                        id: conv_id,
-                        timestamp_ms: conv_id,
-                    }) {
-                        state.dropped_persistence_events.fetch_add(1, Ordering::Relaxed);
+                    if let Err(_) = tx.try_send(
+                        crate::persistence::events::PersistenceEvent::SessionStarted {
+                            id: conv_id,
+                            timestamp_ms: conv_id,
+                        },
+                    ) {
+                        state
+                            .dropped_persistence_events
+                            .fetch_add(1, Ordering::Relaxed);
                     }
                 }
             }
 
             let _ = engine.pipeline_tx.send(VoxEvent::WarmUp);
-            let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(InteractionOwner::MainWindow));
+            let _ = engine
+                .vad_tx
+                .send(crate::core::state::VadCommand::UpdateOwner(
+                    InteractionOwner::MainWindow,
+                ));
         }
     } else {
-        log::info!("[Pipeline] Disengaging pipeline (Stopping session)...");
+        log::info!("[Pipeline] Disengaging pipeline. Ending User Session.");
         state.pipeline.is_engaged.store(false, Ordering::Relaxed);
         state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
-        
+
         if let Some(engine) = state.engine.lock().await.as_ref() {
             let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
             let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id });
             let _ = engine.stt_tx.send(SttCommand::ResetStream);
-            let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(InteractionOwner::Tray));
+            let _ = engine
+                .vad_tx
+                .send(crate::core::state::VadCommand::UpdateOwner(
+                    InteractionOwner::Tray,
+                ));
 
             // Persist Session End
             let conv_id = state.conversation_id.swap(0, Ordering::Relaxed);
             if conv_id != 0 {
+                log::info!("[Session] <<< USER SESSION ENDED (User Disengaged): id={}", conv_id);
                 let persist_tx = state.persist_tx.lock().unwrap();
                 if let Some(ref tx) = *persist_tx {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64;
-                    if let Err(_) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
-                        id: conv_id,
-                        timestamp_ms: now,
-                    }) {
-                        state.dropped_persistence_events.fetch_add(1, Ordering::Relaxed);
+                    if let Err(_) =
+                        tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                            id: conv_id,
+                            timestamp_ms: now,
+                        })
+                    {
+                        state
+                            .dropped_persistence_events
+                            .fetch_add(1, Ordering::Relaxed);
                     }
                 }
             }
         }
 
-        state.owner.store(InteractionOwner::Tray as u32, Ordering::Relaxed);
+        state
+            .owner
+            .store(InteractionOwner::Tray as u32, Ordering::Relaxed);
 
         {
             let mut state_lock = state.pipeline.state.lock().unwrap();
@@ -139,7 +171,7 @@ pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) 
         let _ = app.emit_to("main", "state_changed", InteractionState::Idle);
         let _ = app.emit_to("tray", "state_changed", InteractionState::Idle);
     }
-    
+
     Ok(())
 }
 
@@ -147,7 +179,7 @@ pub async fn engage(state: State<'_, std::sync::Arc<AppState>>, app: AppHandle) 
 pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let mut lock = state.engine.lock().await;
-    
+
     if lock.is_some() {
         let (tray_enabled, setup_completed) = {
             let s = state.settings.read().unwrap();
@@ -166,7 +198,10 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     log::info!("[PIPELINE] >>> Launching 3-Tier Audio Engine...");
 
     // We MUST reset them before spawning workers, otherwise they exit immediately.
-    state.pipeline.engine_shutdown.store(false, Ordering::Relaxed);
+    state
+        .pipeline
+        .engine_shutdown
+        .store(false, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     // ── Re-spawn Persistence Worker if needed ──────────────────────────────
@@ -185,30 +220,93 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
     // ────────────────────────────────────────────────────────────────────────
-    
-    app.emit(crate::core::constants::EVENT_MODEL_LOADING, "VAD").ok();
+
+    // Ensure manifest is loaded from cache/disk before launching engine
+    {
+        let mut m = state.manifest.write().await;
+        if m.is_none() {
+            let manifest_path = crate::utils::paths::get()
+                .models
+                .join("models_manifest.json");
+            if manifest_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                    if let Ok(manifest) =
+                        serde_json::from_str::<crate::setup::manifest::VoxManifest>(&content)
+                    {
+                        *m = Some(manifest);
+                    }
+                }
+            }
+        }
+    }
+
+    app.emit(crate::core::constants::EVENT_MODEL_LOADING, "VAD")
+        .ok();
 
     let (stt_model_path, vad_model_path_opt, vad_backend_opt, pre_load, input_device) = {
-        let settings = state.settings.read().unwrap();
+        let (vad_backend, tray_enabled, input_device) = {
+            let settings = state.settings.read().unwrap();
+            (
+                settings.vad.vad_backend.clone(),
+                settings.ui.tray_enabled,
+                settings.audio.input_device.clone(),
+            )
+        };
         let models_dir = paths::get().models.clone();
-        
+        let manifest_lock = state.manifest.read().await;
+
         let stt = models_dir.join(crate::core::constants::MODEL_DIR_STT);
+
         // Only resolve the VAD model path for TenVAD — earshot has no external model file.
-        let vad_path = if settings.vad.vad_backend == crate::core::settings::VadBackendOption::TenVad {
-            Some(models_dir.join(crate::core::constants::MODEL_DIR_VAD).join(crate::core::constants::MODEL_FILE_VAD))
+        let vad_path = if vad_backend == crate::core::settings::VadBackendOption::TenVad {
+            if let Some(ref manifest) = *manifest_lock {
+                if let Some(group) = manifest.model_groups.iter().find(|g| g.id == "ten_vad") {
+                    if let Some(file) = group.files.first() {
+                        Some(models_dir.join(&file.path))
+                    } else {
+                        Some(
+                            models_dir
+                                .join(crate::core::constants::MODEL_DIR_VAD)
+                                .join(crate::core::constants::MODEL_FILE_VAD),
+                        )
+                    }
+                } else {
+                    Some(
+                        models_dir
+                            .join(crate::core::constants::MODEL_DIR_VAD)
+                            .join(crate::core::constants::MODEL_FILE_VAD),
+                    )
+                }
+            } else {
+                Some(
+                    models_dir
+                        .join(crate::core::constants::MODEL_DIR_VAD)
+                        .join(crate::core::constants::MODEL_FILE_VAD),
+                )
+            }
         } else {
             None
         };
 
-        (stt, vad_path, settings.vad.vad_backend.clone(), settings.ui.tray_enabled, settings.audio.input_device.clone())
+        (stt, vad_path, vad_backend, tray_enabled, input_device)
     };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
     let (stt_tx_internal, stt_rx_internal) = std::sync::mpsc::channel::<SttCommand>();
-    let (vad_tx_internal, vad_rx_internal) = std::sync::mpsc::channel::<crate::core::state::VadCommand>();
+    let (vad_tx_internal, vad_rx_internal) =
+        std::sync::mpsc::channel::<crate::core::state::VadCommand>();
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
-    let stt_handle = spawn_stt_worker(app.clone(), stt_rx_internal, stt_model_path, Some(vox_event_tx.clone()), state.pipeline.cancel_flag.clone(), state.is_stt_loaded.clone(), state.pipeline.engine_shutdown.clone(), pre_load)?;
+    let stt_handle = spawn_stt_worker(
+        app.clone(),
+        stt_rx_internal,
+        stt_model_path,
+        Some(vox_event_tx.clone()),
+        state.pipeline.cancel_flag.clone(),
+        state.is_stt_loaded.clone(),
+        state.pipeline.engine_shutdown.clone(),
+        pre_load,
+    )?;
 
     let threshold = state.settings.read().unwrap().vad.threshold;
     let vad = match vad_backend_opt {
@@ -216,33 +314,47 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             log::info!("[PIPELINE] VAD backend: Earshot (pure Rust, no model file required).");
             match EarshotVadEngine::new(threshold) {
                 Ok(engine) => {
-                    app.emit(crate::core::constants::EVENT_MODEL_READY, "VAD").ok();
+                    app.emit(crate::core::constants::EVENT_MODEL_READY, "VAD")
+                        .ok();
                     VadBackend::Earshot(engine)
                 }
                 Err(e) => {
-                    app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("VAD: {}", e)).ok();
+                    app.emit(
+                        crate::core::constants::EVENT_MODEL_FAILED,
+                        format!("VAD: {}", e),
+                    )
+                    .ok();
                     return Err(e.to_string());
                 }
             }
         }
         crate::core::settings::VadBackendOption::TenVad => {
-            let vad_model_path = vad_model_path_opt
-                .ok_or_else(|| "[PIPELINE] TenVAD selected but model path could not be resolved.".to_string())?;
-            log::info!("[PIPELINE] VAD backend: TenVAD (ONNX, model={:?}).", vad_model_path);
+            let vad_model_path = vad_model_path_opt.ok_or_else(|| {
+                "[PIPELINE] TenVAD selected but model path could not be resolved.".to_string()
+            })?;
+            log::info!(
+                "[PIPELINE] VAD backend: TenVAD (ONNX, model={:?}).",
+                vad_model_path
+            );
             match TenVadEngine::new(&vad_model_path, threshold) {
                 Ok(engine) => {
-                    app.emit(crate::core::constants::EVENT_MODEL_READY, "VAD").ok();
+                    app.emit(crate::core::constants::EVENT_MODEL_READY, "VAD")
+                        .ok();
                     VadBackend::Ten(engine)
                 }
                 Err(e) => {
-                    app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("VAD: {}", e)).ok();
+                    app.emit(
+                        crate::core::constants::EVENT_MODEL_FAILED,
+                        format!("VAD: {}", e),
+                    )
+                    .ok();
                     return Err(e.to_string());
                 }
             }
         }
     };
-    let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split(); 
-    
+    let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split();
+
     let stt_tx_for_vad = stt_tx_internal.clone();
     let vad_rx_for_vad = vad_rx_internal;
     let app_handle_vad = app.clone();
@@ -252,7 +364,17 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let vad_handle = std::thread::Builder::new()
         .name("vox-vad-worker".to_string())
         .spawn(move || {
-            if let Err(e) = crate::services::vad::spawn_vad_actor(vad, app_handle_vad, consumer, event_tx, stt_tx_for_vad, vad_rx_for_vad, telemetry_tx_for_vad, Some(vox_event_tx_for_vad), state_vad.is_vad_loaded.clone()) {
+            if let Err(e) = crate::services::vad::spawn_vad_actor(
+                vad,
+                app_handle_vad,
+                consumer,
+                event_tx,
+                stt_tx_for_vad,
+                vad_rx_for_vad,
+                telemetry_tx_for_vad,
+                Some(vox_event_tx_for_vad),
+                state_vad.is_vad_loaded.clone(),
+            ) {
                 log::error!("[VAD] CRITICAL: Worker thread crashed: {}", e);
             }
         })
@@ -279,17 +401,88 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let audio_stream = AudioStream::new(producer, input_device).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
-    app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS").ok();
-    let (en_tts_dir, hi_tts_path) = {
-        let settings = state.settings.read().unwrap();
+    app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS")
+        .ok();
+    let (en_tts_dir, hi_tts_path, llm_path) = {
+        let (hi_voice, llm_model) = {
+            let settings = state.settings.read().unwrap();
+            (settings.tts.hi_voice.clone(), settings.llm.model.clone())
+        };
         let models_dir = paths::get().models.clone();
-        
-        let en_tts = models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN);
-        
-        // Hindi is in MODEL_DIR_TTS_HI folder, and filename is dynamic from settings
-        let hi_tts = models_dir.join(crate::core::constants::MODEL_DIR_TTS_HI).join(&settings.tts.hi_voice);
+        let manifest_lock = state.manifest.read().await;
 
-        (en_tts, hi_tts)
+        let en_tts = if let Some(ref manifest) = *manifest_lock {
+            if let Some(group) = manifest
+                .model_groups
+                .iter()
+                .find(|g| g.id == "kokoro_english_tts")
+            {
+                if let Some(file) = group.files.first() {
+                    let path = models_dir.join(&file.path);
+                    path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| {
+                        models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
+                    })
+                } else {
+                    models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
+                }
+            } else {
+                models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
+            }
+        } else {
+            models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
+        };
+
+        let hi_tts = if let Some(ref manifest) = *manifest_lock {
+            if let Some(group) = manifest
+                .model_groups
+                .iter()
+                .find(|g| g.id == "piper_hindi_tts")
+            {
+                if let Some(file) = group.files.first() {
+                    let path = models_dir.join(&file.path);
+                    path.parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| {
+                            models_dir.join(crate::core::constants::MODEL_DIR_TTS_HI)
+                        })
+                        .join(&hi_voice)
+                } else {
+                    models_dir
+                        .join(crate::core::constants::MODEL_DIR_TTS_HI)
+                        .join(&hi_voice)
+                }
+            } else {
+                models_dir
+                    .join(crate::core::constants::MODEL_DIR_TTS_HI)
+                    .join(&hi_voice)
+            }
+        } else {
+            models_dir
+                .join(crate::core::constants::MODEL_DIR_TTS_HI)
+                .join(&hi_voice)
+        };
+
+        let llm = if let Some(ref manifest) = *manifest_lock {
+            if let Some(group) = manifest.model_groups.iter().find(|g| g.id == llm_model) {
+                if let Some(file) = group.files.first() {
+                    models_dir.join(&file.path)
+                } else {
+                    models_dir
+                        .join(crate::core::constants::MODEL_DIR_LLM)
+                        .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+                }
+            } else {
+                models_dir
+                    .join(crate::core::constants::MODEL_DIR_LLM)
+                    .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+            }
+        } else {
+            models_dir
+                .join(crate::core::constants::MODEL_DIR_LLM)
+                .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+        };
+
+        (en_tts, hi_tts, llm)
     };
 
     let playback_energy = Arc::new(AtomicU32::new(0f32.to_bits()));
@@ -303,12 +496,15 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     ) {
         Ok(pe) => std::sync::Arc::new(pe),
         Err(e) => {
-            log::error!("[Pipeline] PlaybackEngine init failed: {} — TTS output disabled", e);
+            log::error!(
+                "[Pipeline] PlaybackEngine init failed: {} — TTS output disabled",
+                e
+            );
             return Ok(());
         }
     };
 
-    // Pipeline Orchestrator now takes Arc<RwLock<VoxSettings>>
+    // Pipeline Orchestrator now takes Arc<RwLock<VoxSettings>> and the pre-resolved llm_path
     let orchestrator = PipelineOrchestrator::new(
         std::sync::Arc::clone(&state.pipeline.cancel_flag),
         std::sync::Arc::clone(&state.pipeline.playback_active),
@@ -317,6 +513,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         std::sync::Arc::clone(&state.pipeline.state),
         vox_event_tx.clone(),
         Arc::clone(&state.settings),
+        llm_path,
         std::sync::Arc::clone(&state.pipeline.is_engaged),
         std::sync::Arc::clone(&state.pipeline.transcript_history),
         std::sync::Arc::clone(&state.conversation_id),
@@ -358,7 +555,6 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         vad_handle: Some(vad_handle),
         orchestrator_handle: Some(orchestrator_handle),
     });
-
 
     Ok(())
 }
