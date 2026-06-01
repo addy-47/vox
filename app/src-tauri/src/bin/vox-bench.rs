@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
 
     // 3. Load Models Sequentially (to avoid ONNX environment conflicts and improve memory tracking)
     println!("\x1b[32m[Bench]\x1b[0m Loading STT (Qwen3-ASR)...");
-    let stt_path = vox_lib::utils::paths::model_dir("stt").join("onnx-0.6b-finetuned");
+    let stt_path = vox_lib::utils::paths::get().models.join(vox_lib::core::constants::MODEL_DIR_STT);
     let snap_1 = BenchReporter::get_memory_snapshot();
     let stt_engine = SttEngine::new(&stt_path).expect("Failed to load STT");
     let snap_2 = BenchReporter::get_memory_snapshot();
@@ -373,7 +373,7 @@ fn main() -> anyhow::Result<()> {
     // Write detailed artifacts
     reporter.write_artifact("stt_transcript.txt", &final_transcript);
     reporter.write_artifact("llm_response.txt", &assistant_text);
-    reporter.write_artifact("transliteration.txt", &format!("STT: {}\nLLM: {}", transliterate_if_hi(&final_transcript), transliterate_if_hi(&assistant_text)));
+    reporter.write_artifact("transliteration.txt", &format!("STT: {}\nLLM: {}", transliterate_if_hi(&final_transcript, true), transliterate_if_hi(&assistant_text, true)));
     
     // Export result audio
     let spec = hound::WavSpec {

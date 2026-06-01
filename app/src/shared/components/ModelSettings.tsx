@@ -6,7 +6,8 @@ import { listen } from "@tauri-apps/api/event";
 import { 
   Brain, Volume2, Database, Trash2,
   Sliders, Languages, 
-  Activity, Sparkles, Shield, Check, ArrowLeft
+  Activity, Sparkles, Shield, Check, ArrowLeft,
+  Download, RefreshCw
 } from "lucide-react";
 
 interface ModelStatus {
@@ -17,22 +18,46 @@ interface ModelStatus {
   error?: string;
 }
 
-const mapModelId = (id: string): string => {
-  switch (id) {
-    case "gemma4":
-      return "llm_gemma_4_q4_k_m";
-    case "kokoro":
-      return "tts_kokoro_onnx";
-    case "qwen3-asr":
-      return "stt_encoder";
-    case "piper_hi":
-      return "tts_hi_piper_onnx";
-    case "translit":
-      return "translit_encoder";
-    default:
-      return id;
-  }
-};
+interface ModelEntry {
+  id: string;
+  path: string;
+  size: number;
+  required: boolean;
+}
+
+interface ModelGroup {
+  id: string;
+  name: string;
+  category: string;
+  version: string;
+  files: ModelEntry[];
+}
+
+interface VoxManifest {
+  models_version: string;
+  release_notes?: string[];
+  total_size_bytes: number;
+  model_groups: ModelGroup[];
+}
+
+const pulseStyles = `
+@keyframes premium-pulse-red {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.2); box-shadow: 0 0 4px rgba(239, 68, 68, 0.1); }
+  50% { border-color: rgba(239, 68, 68, 0.7); box-shadow: 0 0 12px rgba(239, 68, 68, 0.35); }
+}
+@keyframes premium-pulse-purple {
+  0%, 100% { border-color: rgba(168, 85, 247, 0.2); box-shadow: 0 0 4px rgba(168, 85, 247, 0.1); }
+  50% { border-color: rgba(168, 85, 247, 0.7); box-shadow: 0 0 12px rgba(168, 85, 247, 0.35); }
+}
+.pulse-missing {
+  animation: premium-pulse-red 2s infinite ease-in-out;
+  border-width: 1px !important;
+}
+.pulse-update {
+  animation: premium-pulse-purple 2s infinite ease-in-out;
+  border-width: 1px !important;
+}
+`;
 
 export const ModelSettings: React.FC = () => {
   const { draftSettings, updateDraft, modelCatalog } = useSettings();
@@ -41,6 +66,31 @@ export const ModelSettings: React.FC = () => {
   const [promptTab, setPromptTab] = useState<"en" | "hi">("en");
   const [activePipelineTab, setActivePipelineTab] = useState<"vad" | "asr" | "translit" | "llm" | "tts">("llm");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [outdatedModels, setOutdatedModels] = useState<string[]>([]);
+  const [manifest, setManifest] = useState<VoxManifest | null>(null);
+
+  const getGroupIdForFile = useCallback((fileId: string): string => {
+    if (!manifest) {
+      if (fileId.startsWith("vad")) return "ten_vad";
+      if (fileId.startsWith("translit")) return "vox_translit_rnn";
+      if (fileId.startsWith("stt")) return "qwen3_asr";
+      if (fileId.startsWith("tts_kokoro")) return "kokoro_english_tts";
+      if (fileId.startsWith("tts_hi") || fileId.startsWith("tts_piper_hi")) return "piper_hindi_tts";
+      return fileId;
+    }
+    for (const group of manifest.model_groups) {
+      if (group.id === fileId || group.files.some(f => f.id === fileId)) {
+        return group.id;
+      }
+    }
+    return fileId;
+  }, [manifest]);
+
+  const isGroupRequired = useCallback((groupId: string): boolean => {
+    if (!manifest) return groupId === "ten_vad" || groupId === "vox_translit_rnn" || groupId === "qwen3_asr";
+    const group = manifest.model_groups.find(g => g.id === groupId);
+    return group ? group.files.some(f => f.required) : false;
+  }, [manifest]);
 
   const renderDeleteControl = (modelId: string, className?: string, isPurgeLink = false) => {
     if (confirmDeleteId === modelId) {
@@ -114,21 +164,40 @@ export const ModelSettings: React.FC = () => {
     );
   };
 
+  const checkOutdated = useCallback(async () => {
+    try {
+      const res = await invoke<any>("check_for_model_updates");
+      if (res && res.update_available) {
+        setOutdatedModels(res.outdated_models);
+      } else {
+        setOutdatedModels([]);
+      }
+    } catch (e) {
+      console.warn("Failed to check outdated models:", e);
+    }
+  }, []);
+
   // Check local model existence dynamically
   const checkPresence = useCallback(async () => {
     if (!modelCatalog || !draftSettings) return;
     const presence: Record<string, boolean> = {};
 
-    const checkIds = [
-      "gemma4",
-      "llm_llama_3_2_1b_instruct_q6_k",
-      "llm_gemma_4_e2b_uncensored_aggressive_q2_k_p",
-      "qwen3-asr",
-      "translit",
-      "kokoro",
-      "piper_hi",
-      "ten_vad"
-    ];
+    // Trigger outdated model checking
+    checkOutdated();
+
+    const groups = manifest?.model_groups || [];
+    const checkIds = groups.length > 0 
+      ? groups.map(g => g.id)
+      : [
+          "ten_vad",
+          "vox_translit_rnn",
+          "qwen3_asr",
+          "gemma_4_reasoning",
+          "llama_3_2_reasoning",
+          "gemma_4_uncensored",
+          "kokoro_english_tts",
+          "piper_hindi_tts"
+        ];
 
     for (const id of checkIds) {
       try {
@@ -141,7 +210,19 @@ export const ModelSettings: React.FC = () => {
 
     presence["earshot"] = true; // Always verified
     setModelPresence(presence);
-  }, [modelCatalog, draftSettings]);
+  }, [modelCatalog, draftSettings, checkOutdated, manifest]);
+
+  useEffect(() => {
+    const loadManifest = async () => {
+      try {
+        const data = await invoke<VoxManifest>("fetch_manifest");
+        setManifest(data);
+      } catch (err) {
+        console.error("Failed to fetch manifest:", err);
+      }
+    };
+    loadManifest();
+  }, []);
 
   useEffect(() => {
     checkPresence();
@@ -154,10 +235,11 @@ export const ModelSettings: React.FC = () => {
       total_bytes: number;
       error?: string;
     }>("model_setup_status", (event) => {
-      const canonicalId = event.payload.model_id;
+      const fileId = event.payload.model_id;
+      const groupId = getGroupIdForFile(fileId);
       setDownloadStatuses(prev => ({
         ...prev,
-        [canonicalId]: {
+        [groupId]: {
           step: event.payload.step as any,
           progress: event.payload.progress,
           bytesDownloaded: event.payload.bytes_downloaded,
@@ -180,14 +262,14 @@ export const ModelSettings: React.FC = () => {
       unlistenStatus.then(u => u());
       unlistenComplete.then(u => u());
     };
-  }, [checkPresence]);
+  }, [checkPresence, getGroupIdForFile]);
 
   if (!draftSettings || !modelCatalog) return null;
 
   const startDownload = (modelId: string) => {
     setDownloadStatuses(prev => ({
       ...prev,
-      [mapModelId(modelId)]: { step: 'idle', progress: 0, bytesDownloaded: 0, totalBytes: 0 }
+      [modelId]: { step: 'idle', progress: 0, bytesDownloaded: 0, totalBytes: 0 }
     }));
     invoke("download_optional_model", { modelId });
   };
@@ -206,20 +288,51 @@ export const ModelSettings: React.FC = () => {
   const isVadVerified = activeVadBackend === "earshot" || modelPresence["ten_vad"];
 
   // ASR logic
-  const isAsrVerified = modelPresence["qwen3-asr"];
+  const isAsrVerified = modelPresence["qwen3_asr"];
 
   // Translit logic
-  const isTranslitVerified = modelPresence["translit"];
+  const isTranslitVerified = modelPresence["vox_translit_rnn"];
 
   // LLM logic
   const selectedLlmId = draftSettings.llm.model;
   const isLlmDownloaded = modelPresence[selectedLlmId];
 
   // TTS logic
-  const isTtsVerified = modelPresence["kokoro"] && modelPresence["piper_hi"];
+  const isTtsVerified = modelPresence["kokoro_english_tts"] && modelPresence["piper_hindi_tts"];
+
+  // Highlights state for Topology Pipeline Map
+  const isVadCategoryMissing = activeVadBackend === "ten_vad" && !modelPresence["ten_vad"];
+  const isAsrCategoryMissing = !modelPresence["qwen3_asr"];
+  const isTranslitCategoryMissing = !modelPresence["vox_translit_rnn"];
+  const isLlmCategoryMissing = !modelPresence[selectedLlmId];
+  const isTtsCategoryMissing = !modelPresence["kokoro_english_tts"] || !modelPresence["piper_hindi_tts"];
+
+  const hasVadUpdate = outdatedModels.includes("ten_vad");
+  const hasAsrUpdate = outdatedModels.includes("qwen3_asr");
+  const hasTranslitUpdate = outdatedModels.includes("vox_translit_rnn");
+  const hasLlmUpdate = outdatedModels.includes(selectedLlmId);
+  const hasTtsUpdate = outdatedModels.includes("kokoro_english_tts") || outdatedModels.includes("piper_hindi_tts");
+
+  const getPulseClass = (isMissing: boolean, hasUpdate: boolean) => {
+    if (isMissing) return "pulse-missing border-red-500/30";
+    if (hasUpdate) return "pulse-update border-purple-500/30";
+    return "";
+  };
+
+  const renderOverlayIcon = (isMissing: boolean, hasUpdate: boolean) => {
+    if (!isMissing && !hasUpdate) return null;
+    const Icon = isMissing ? Download : RefreshCw;
+    const colorClass = isMissing ? "text-red-400 animate-bounce" : "text-purple-400 animate-spin";
+    return (
+      <div className="absolute top-1 right-1 p-0.5 rounded-full bg-black/40 backdrop-blur-sm z-10">
+        <Icon size={10} className={colorClass} style={{ animationDuration: isMissing ? "2s" : "4s" }} />
+      </div>
+    );
+  };
 
   return (
     <div className="h-full overflow-y-auto lg:overflow-hidden custom-scrollbar pr-1 -mr-1 select-none pb-10">
+      <style>{pulseStyles}</style>
       <div className="lg:h-full flex flex-col lg:grid lg:grid-cols-12 gap-8 items-stretch pb-10">
         
         {/* Left Column: Interactive Topology Pipeline Selector */}
@@ -247,9 +360,11 @@ export const ModelSettings: React.FC = () => {
                   "col-span-2 lg:col-span-1 p-2.5 lg:p-4 rounded-xl flex flex-row lg:flex-col items-center justify-center gap-2 border text-center transition-all duration-300 relative group overflow-hidden",
                   activePipelineTab === "vad"
                     ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_15px_rgba(var(--accent),0.15)] scale-[1.02]"
-                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]"
+                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+                  getPulseClass(isVadCategoryMissing, hasVadUpdate)
                 )}
               >
+                {renderOverlayIcon(isVadCategoryMissing, hasVadUpdate)}
                 <Activity size={16} className={cn("transition-colors shrink-0", activePipelineTab === "vad" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))]")} />
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Silence</span>
                 <span className={cn(
@@ -265,9 +380,11 @@ export const ModelSettings: React.FC = () => {
                   "col-span-2 lg:col-span-1 p-2.5 lg:p-4 rounded-xl flex flex-row lg:flex-col items-center justify-center gap-2 border text-center transition-all duration-300 relative group overflow-hidden",
                   activePipelineTab === "asr"
                     ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_15px_rgba(var(--accent),0.15)] scale-[1.02]"
-                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]"
+                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+                  getPulseClass(isAsrCategoryMissing, hasAsrUpdate)
                 )}
               >
+                {renderOverlayIcon(isAsrCategoryMissing, hasAsrUpdate)}
                 <Sparkles size={16} className={cn("transition-colors shrink-0", activePipelineTab === "asr" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))]")} />
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">ASR</span>
                 <span className={cn(
@@ -283,9 +400,11 @@ export const ModelSettings: React.FC = () => {
                   "col-span-2 lg:col-span-1 p-2.5 lg:p-4 rounded-xl flex flex-row lg:flex-col items-center justify-center gap-2 border text-center transition-all duration-300 relative group overflow-hidden",
                   activePipelineTab === "translit"
                     ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_15px_rgba(var(--accent),0.15)] scale-[1.02]"
-                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]"
+                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+                  getPulseClass(isTranslitCategoryMissing, hasTranslitUpdate)
                 )}
               >
+                {renderOverlayIcon(isTranslitCategoryMissing, hasTranslitUpdate)}
                 <Languages size={16} className={cn("transition-colors shrink-0", activePipelineTab === "translit" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))]")} />
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Hinglish</span>
                 <span className={cn(
@@ -301,9 +420,11 @@ export const ModelSettings: React.FC = () => {
                   "col-span-3 lg:col-span-1 p-2.5 lg:p-4 rounded-xl flex flex-row lg:flex-col items-center justify-center gap-2 border text-center transition-all duration-300 relative group overflow-hidden",
                   activePipelineTab === "llm"
                     ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_15px_rgba(var(--accent),0.15)] scale-[1.02]"
-                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]"
+                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+                  getPulseClass(isLlmCategoryMissing, hasLlmUpdate)
                 )}
               >
+                {renderOverlayIcon(isLlmCategoryMissing, hasLlmUpdate)}
                 <Brain size={16} className={cn("transition-colors shrink-0", activePipelineTab === "llm" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))]")} />
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">LLM</span>
                 <span className={cn(
@@ -319,9 +440,11 @@ export const ModelSettings: React.FC = () => {
                   "col-span-3 lg:col-span-1 p-2.5 lg:p-4 rounded-xl flex flex-row lg:flex-col items-center justify-center gap-2 border text-center transition-all duration-300 relative group overflow-hidden",
                   activePipelineTab === "tts"
                     ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_15px_rgba(var(--accent),0.15)] scale-[1.02]"
-                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]"
+                    : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+                  getPulseClass(isTtsCategoryMissing, hasTtsUpdate)
                 )}
               >
+                {renderOverlayIcon(isTtsCategoryMissing, hasTtsUpdate)}
                 <Volume2 size={16} className={cn("transition-colors shrink-0", activePipelineTab === "tts" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))]")} />
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Voice</span>
                 <span className={cn(
@@ -376,7 +499,12 @@ export const ModelSettings: React.FC = () => {
                     >
                       <div>
                         <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center justify-between">
-                          <span>TenVAD Engine</span>
+                          <span className="flex items-center gap-1.5">
+                            <span>TenVAD Engine</span>
+                            {outdatedModels.includes("ten_vad") && (
+                              <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                            )}
+                          </span>
                           {activeVadBackend === "ten_vad" ? (
                             modelPresence["ten_vad"] ? (
                               <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">Active</span>
@@ -399,8 +527,8 @@ export const ModelSettings: React.FC = () => {
                       {activeVadBackend === "ten_vad" && !modelPresence["ten_vad"] && (
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-[rgba(var(--border),0.05)]">
                           <span className="text-[13px] text-[rgb(var(--foreground-muted))]">Deploy Weights</span>
-                          {downloadStatuses[mapModelId("ten_vad")] ? (
-                            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses[mapModelId("ten_vad")].progress)}%</span>
+                          {downloadStatuses["ten_vad"] ? (
+                            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["ten_vad"].progress)}%</span>
                           ) : (
                             <button 
                               onClick={(e) => { e.stopPropagation(); startDownload("ten_vad"); }}
@@ -426,7 +554,12 @@ export const ModelSettings: React.FC = () => {
                   <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] space-y-4">
                     <div className="flex justify-between items-start">
                       <div>
-                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))]">Qwen3-ASR Decoder</div>
+                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                          <span>Qwen3-ASR Decoder</span>
+                          {outdatedModels.includes("qwen3_asr") && (
+                            <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                          )}
+                        </div>
                         <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-1.5 leading-relaxed">
                           Multilingual Speech Recognition engine. Decodes live voice streams to text completely offline (~950MB).
                         </p>
@@ -441,18 +574,18 @@ export const ModelSettings: React.FC = () => {
 
                     <div className="flex justify-end gap-3 pt-3 border-t border-[rgba(var(--border),0.05)]">
                       {!isAsrVerified ? (
-                        downloadStatuses[mapModelId("qwen3-asr")] ? (
-                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses[mapModelId("qwen3-asr")].progress)}%</span>
+                        downloadStatuses["qwen3_asr"] ? (
+                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["qwen3_asr"].progress)}%</span>
                         ) : (
                           <button 
-                            onClick={() => startDownload("qwen3-asr")}
+                            onClick={() => startDownload("qwen3_asr")}
                             className="px-4 py-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow hover:scale-[1.02] transition-all"
                           >
                             Download Model
                           </button>
                         )
                       ) : (
-                        renderDeleteControl("qwen3-asr")
+                        renderDeleteControl("qwen3_asr")
                       )}
                     </div>
                   </div>
@@ -469,7 +602,12 @@ export const ModelSettings: React.FC = () => {
                   <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] space-y-4">
                     <div className="flex justify-between items-start">
                       <div>
-                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))]">Vox Hinglish RNN</div>
+                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                          <span>Vox Hinglish RNN</span>
+                          {outdatedModels.includes("vox_translit_rnn") && (
+                            <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                          )}
+                        </div>
                         <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-1.5 leading-relaxed">
                           Converts Devanagari (Hindi) scripts dynamically to natural Hinglish phonetic spelling (~18MB).
                         </p>
@@ -484,25 +622,25 @@ export const ModelSettings: React.FC = () => {
 
                     <div className="flex justify-end gap-3 pt-3 border-t border-[rgba(var(--border),0.05)]">
                       {!isTranslitVerified ? (
-                        downloadStatuses[mapModelId("translit")] ? (
-                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses[mapModelId("translit")].progress)}%</span>
+                        downloadStatuses["vox_translit_rnn"] ? (
+                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["vox_translit_rnn"].progress)}%</span>
                         ) : (
                           <button 
-                            onClick={() => startDownload("translit")}
+                            onClick={() => startDownload("vox_translit_rnn")}
                             className="px-4 py-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow hover:scale-[1.02] transition-all"
                           >
                             Download Model
                           </button>
                         )
                       ) : (
-                        renderDeleteControl("translit")
+                        renderDeleteControl("vox_translit_rnn")
                       )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* TAB 4: AI REASONING (LLM) - FULL CARD INVENTORY GRID SELECTOR */}
+              {/* TAB 4: AI REASONING (LLM) */}
               {activePipelineTab === "llm" && (
                 <div className="space-y-4">
                   <div className="pb-2 border-b border-[rgba(var(--border),0.05)]">
@@ -512,8 +650,9 @@ export const ModelSettings: React.FC = () => {
                   <div className="grid grid-cols-1 gap-3.5">
                     {modelCatalog.llm.map((model) => {
                       const isSelected = selectedLlmId === model.id;
-                      const isDownloaded = modelPresence[model.id];
-                      const status = downloadStatuses[mapModelId(model.id)];
+                      const modelGroupId = model.id;
+                      const isDownloaded = modelPresence[modelGroupId];
+                      const status = downloadStatuses[modelGroupId];
 
                       return (
                         <div 
@@ -525,9 +664,12 @@ export const ModelSettings: React.FC = () => {
                           )}
                         >
                           <div className="space-y-1 flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">{model.name}</span>
                               <span className="text-[13px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded font-normal">{model.parameters}</span>
+                              {outdatedModels.includes(modelGroupId) && (
+                                <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                              )}
                             </div>
                             <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 leading-normal max-w-[420px]">
                               {model.description}
@@ -542,8 +684,8 @@ export const ModelSettings: React.FC = () => {
                                 ) : (
                                   <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2.5 py-1 rounded">Select</span>
                                 )}
-                                {model.id !== "llm_llama_3_2_1b_instruct_q6_k" && model.id !== "gemma4" && (
-                                  renderDeleteControl(model.id, "icon-only")
+                                {!isGroupRequired(model.id) && (
+                                  renderDeleteControl(modelGroupId, "icon-only")
                                 )}
                               </div>
                             ) : (
@@ -551,7 +693,7 @@ export const ModelSettings: React.FC = () => {
                                 <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(status.progress)}%</span>
                               ) : (
                                 <button 
-                                  onClick={(e) => { e.stopPropagation(); startDownload(model.id); }}
+                                  onClick={(e) => { e.stopPropagation(); startDownload(modelGroupId); }}
                                   className="px-3.5 py-1.5 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow"
                                 >
                                   Get
@@ -578,8 +720,13 @@ export const ModelSettings: React.FC = () => {
                     <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] flex flex-col justify-between h-36">
                       <div>
                         <div className="flex justify-between items-center">
-                          <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">English Voice</span>
-                          <span className={cn("w-2 h-2 rounded-full", modelPresence["kokoro"] ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500")} />
+                          <span className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                            <span>English Voice</span>
+                            {outdatedModels.includes("kokoro_english_tts") && (
+                              <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                            )}
+                          </span>
+                          <span className={cn("w-2 h-2 rounded-full", modelPresence["kokoro_english_tts"] ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500")} />
                         </div>
                         <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2">
                           High quality English vocal syntheses package (~345MB).
@@ -588,14 +735,14 @@ export const ModelSettings: React.FC = () => {
 
                       <div className="flex justify-between items-center pt-2 border-t border-[rgba(var(--border),0.05)]">
                         <span className="text-[13px] text-[rgb(var(--foreground-muted))]">Deploy Weights</span>
-                        {!modelPresence["kokoro"] ? (
-                          downloadStatuses[mapModelId("kokoro")] ? (
-                            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses[mapModelId("kokoro")].progress)}%</span>
+                        {!modelPresence["kokoro_english_tts"] ? (
+                          downloadStatuses["kokoro_english_tts"] ? (
+                            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["kokoro_english_tts"].progress)}%</span>
                           ) : (
-                            <button onClick={() => startDownload("kokoro")} className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow">Get</button>
+                            <button onClick={() => startDownload("kokoro_english_tts")} className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow">Get</button>
                           )
                         ) : (
-                          renderDeleteControl("kokoro", undefined, true)
+                          renderDeleteControl("kokoro_english_tts", undefined, true)
                         )}
                       </div>
                     </div>
@@ -604,8 +751,13 @@ export const ModelSettings: React.FC = () => {
                     <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] flex flex-col justify-between h-36">
                       <div>
                         <div className="flex justify-between items-center">
-                          <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">Hindi Voice</span>
-                          <span className={cn("w-2 h-2 rounded-full", modelPresence["piper_hi"] ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500")} />
+                          <span className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                            <span>Hindi Voice</span>
+                            {outdatedModels.includes("piper_hindi_tts") && (
+                              <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                            )}
+                          </span>
+                          <span className={cn("w-2 h-2 rounded-full", modelPresence["piper_hindi_tts"] ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500")} />
                         </div>
                         <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2">
                           Highly optimized Hindi synthesis speech weights (~63MB).
@@ -614,14 +766,14 @@ export const ModelSettings: React.FC = () => {
 
                       <div className="flex justify-between items-center pt-2 border-t border-[rgba(var(--border),0.05)]">
                         <span className="text-[13px] text-[rgb(var(--foreground-muted))]">Deploy Weights</span>
-                        {!modelPresence["piper_hi"] ? (
-                          downloadStatuses[mapModelId("piper_hi")] ? (
-                            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses[mapModelId("piper_hi")].progress)}%</span>
+                        {!modelPresence["piper_hindi_tts"] ? (
+                          downloadStatuses["piper_hindi_tts"] ? (
+                            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["piper_hindi_tts"].progress)}%</span>
                           ) : (
-                            <button onClick={() => startDownload("piper_hi")} className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow">Get</button>
+                            <button onClick={() => startDownload("piper_hindi_tts")} className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow">Get</button>
                           )
                         ) : (
-                          renderDeleteControl("piper_hi", undefined, true)
+                          renderDeleteControl("piper_hindi_tts", undefined, true)
                         )}
                       </div>
                     </div>

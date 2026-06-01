@@ -15,10 +15,20 @@ pub struct ModelEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VoxManifest {
+pub struct ModelGroup {
+    pub id: String,
+    pub name: String,
+    pub category: String,
     pub version: String,
+    pub files: Vec<ModelEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxManifest {
+    pub models_version: String,
+    pub release_notes: Option<Vec<String>>,
     pub total_size_bytes: u64,
-    pub models: Vec<ModelEntry>,
+    pub model_groups: Vec<ModelGroup>,
 }
 
 impl VoxManifest {
@@ -28,36 +38,46 @@ impl VoxManifest {
     /// Buffer is a fixed 1GB as per Part 2 Directive.
     pub fn calculate_required_space(&self) -> u64 {
         let mut required = 0;
-        for model in &self.models {
-            required += model.size_bytes;
-            // If it's an archive, assume it needs another ~50% space for extraction
-            if model.archive_type.is_some() {
-                required += model.size_bytes / 2;
+        for group in &self.model_groups {
+            for model in &group.files {
+                required += model.size_bytes;
+                // If it's an archive, assume it needs another ~50% space for extraction
+                if model.archive_type.is_some() {
+                    required += model.size_bytes / 2;
+                }
             }
         }
-        
+
         // Add 1GB safety buffer
         required + (1024 * 1024 * 1024)
     }
 
     /// Finds a model entry by ID.
     pub fn get_model(&self, id: &str) -> Option<&ModelEntry> {
-        self.models.iter().find(|m| m.id == id)
+        for group in &self.model_groups {
+            if let Some(m) = group.files.iter().find(|m| m.id == id) {
+                return Some(m);
+            }
+        }
+        None
     }
 
     /// Fetches the manifest from the Hugging Face repository.
     pub async fn fetch() -> anyhow::Result<Self> {
-        let url = "https://huggingface.co/addyo07/vox-models/resolve/main/manifest.json";
+        let url = "https://huggingface.co/addyo07/vox-models/resolve/main/models_manifest.json";
         log::info!("[VoxManifest] Initiating fetch from: {}", url);
-        
+
         let client = reqwest::Client::builder()
-            .user_agent("Vox-App/0.7.0")
+            .user_agent("Vox-App/0.8.0")
             .timeout(std::time::Duration::from_secs(15))
             .build()?;
 
         let response = client.get(url).send().await?;
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch manifest: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch manifest: {}",
+                response.status()
+            ));
         }
 
         let text = response.text().await?;
@@ -73,6 +93,7 @@ impl VoxManifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifiedMarker {
+    pub model_id: Option<String>,
     pub sha256: String,
     pub verified_at: u64, // epoch ms
     pub expected_size: u64,
@@ -89,5 +110,48 @@ impl VerifiedMarker {
         let content = serde_json::to_string_pretty(self)?;
         std::fs::write(path, content)?;
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinuxInfo {
+    pub package: String,
+    pub update_command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppManifest {
+    pub latest_version: String,
+    pub release_notes: Vec<String>,
+    pub linux: LinuxInfo,
+}
+
+impl AppManifest {
+    /// Fetches the application manifest from GitHub Pages.
+    pub async fn fetch() -> anyhow::Result<Self> {
+        let url = "https://addy-47.github.io/vox/manifests/app_manifest.json";
+        log::info!("[AppManifest] Initiating fetch from: {}", url);
+
+        let client = reqwest::Client::builder()
+            .user_agent("Vox-App/0.8.0")
+            .timeout(std::time::Duration::from_secs(10))
+            .build()?;
+
+        let response = client.get(url).send().await?;
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to fetch app manifest: {}",
+                response.status()
+            ));
+        }
+
+        let text = response.text().await?;
+        match serde_json::from_str::<AppManifest>(&text) {
+            Ok(m) => Ok(m),
+            Err(e) => {
+                log::error!("[AppManifest] JSON Parse Error: {}. Content: {}", e, text);
+                Err(anyhow::anyhow!("JSON Parse Error: {}", e))
+            }
+        }
     }
 }

@@ -70,13 +70,12 @@ pub fn spawn_stt_worker(
             let mut cmd = if let Some(c) = pending_cmd.take() {
                 c
             } else {
-                match rx.try_recv() {
+                match rx.recv_timeout(Duration::from_millis(150)) {
                     Ok(c) => c,
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        std::thread::sleep(Duration::from_millis(15));
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                         continue;
                     }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             };
 
@@ -141,8 +140,9 @@ pub fn spawn_stt_worker(
                         }
 
                         if let Some(ref eng) = engine {
-                            // Rolling window logic: only transcribe last 2.5 seconds of audio to cut O(N^2) CPU overhead
-                            let start_idx = utterance.len().saturating_sub(40000);
+                            // Audio Guillotine Fix: Keep last 4.5 seconds (72000 samples) instead of slicing aggressively
+                            // and stitch with previous partial transcripts.
+                            let start_idx = utterance.len().saturating_sub(72000);
                             let rolling_utterance = &utterance[start_idx..];
 
                             if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -193,6 +193,13 @@ pub fn spawn_stt_worker(
                                 continue;
                             }
 
+                            if tid < current_active_turn {
+                                log::info!("[STT] Discarding stale Final from superseded turn {} (active: {})", tid, current_active_turn);
+                                stitched_transcript.clear();
+                                last_transcript.clear();
+                                continue;
+                            }
+
                             if engine.is_none() {
                                 match SttEngine::new(&model_path) {
                                     Ok(e) => {
@@ -206,8 +213,8 @@ pub fn spawn_stt_worker(
                             }
 
                             if let Some(ref eng) = engine {
-                                // BUGFIX: Slicing final utterance to the trailing 2.5s chunk to avoid O(N^2) offline transformer death.
-                                let start_idx = utterance.len().saturating_sub(40000);
+                                // BUGFIX: Slicing final utterance to the trailing 4.5s chunk to avoid O(N^2) offline transformer death.
+                                let start_idx = utterance.len().saturating_sub(72000);
                                 let rolling_utterance = &utterance[start_idx..];
 
                                 if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
