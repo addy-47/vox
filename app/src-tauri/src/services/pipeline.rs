@@ -41,6 +41,7 @@ pub struct PipelineOrchestrator {
     state:            Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
     event_tx:         std::sync::mpsc::Sender<VoxEvent>,
     settings:         Arc<RwLock<VoxSettings>>,
+    llm_path:         PathBuf,
     is_engaged:       Arc<AtomicBool>,
     pub transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
     pub conversation_id:    Arc<std::sync::atomic::AtomicU64>,
@@ -73,6 +74,7 @@ impl PipelineOrchestrator {
         state:           Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
         event_tx:        std::sync::mpsc::Sender<VoxEvent>,
         settings:        Arc<RwLock<VoxSettings>>,
+        llm_path:        PathBuf,
         is_engaged:      Arc<AtomicBool>,
         transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
         conversation_id: Arc<std::sync::atomic::AtomicU64>,
@@ -93,6 +95,7 @@ impl PipelineOrchestrator {
             state,
             event_tx,
             settings,
+            llm_path,
             is_engaged,
             transcript_history,
             conversation_id,
@@ -123,20 +126,7 @@ impl PipelineOrchestrator {
         
         let (llm_path, ctx_size, n_threads) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
-            
-            // Try to resolve path: 
-            // 1. If it's a direct path to a file, use it.
-            // 2. If it's a directory, look for the standard GGUF.
-            // 3. Fallback to standard MODEL_DIR_LLM if ID-only.
-            let mut path = crate::utils::paths::get().models.join(&s.llm.model);
-            if !path.exists() {
-                path = crate::utils::paths::get().models.join(crate::core::constants::MODEL_DIR_LLM);
-            }
-            
-            if path.is_dir() {
-                path = path.join(crate::core::constants::MODEL_FILE_LLM_GGUF);
-            }
-            (path, s.llm.ctx_size, s.llm.threads)
+            (self.llm_path.clone(), s.llm.ctx_size, s.llm.threads)
         };
 
         let event_tx = self.event_tx.clone();
@@ -378,13 +368,14 @@ impl PipelineOrchestrator {
                     TranslitTask::Token { turn_id, target, token, local_transliterate_enabled } => {
                         if turn_id < worker_turn_id { continue; }
                         worker_turn_id = turn_id;
-                        let output = if local_transliterate_enabled { transliterate_if_hi(&token) } else { token };
+                        let output = if local_transliterate_enabled { transliterate_if_hi(&token, false) } else { token };
                         let _ = app_handle_translit.emit_to(&target, "llm_token", output);
                     }
                     TranslitTask::Partial { turn_id, target, text, owner, local_transliterate_enabled } => {
                         if turn_id < worker_turn_id { continue; }
                         worker_turn_id = turn_id;
-                        let output = if local_transliterate_enabled { transliterate_if_hi(&text) } else { text };
+                        let output = if local_transliterate_enabled { transliterate_if_hi(&text, false) } else { text };
+                        log::info!("[Translit] Emitting partial to {}: {:?}", target, output);
                         let _ = app_handle_translit.emit_to(&target, "transcript_partial", serde_json::json!({
                             "text": output, "turn_id": turn_id, "owner": owner
                         }));
@@ -392,7 +383,8 @@ impl PipelineOrchestrator {
                     TranslitTask::Final { turn_id, target, text, owner, local_transliterate_enabled } => {
                         if turn_id < worker_turn_id { continue; }
                         worker_turn_id = turn_id;
-                        let output = if local_transliterate_enabled { transliterate_if_hi(&text) } else { text };
+                        let output = if local_transliterate_enabled { transliterate_if_hi(&text, true) } else { text };
+                        log::info!("[Translit] Emitting final to {}: {:?}", target, output);
                         let _ = app_handle_translit.emit_to(&target, "transcript_final", serde_json::json!({
                             "text": output, "turn_id": turn_id, "owner": owner
                         }));
@@ -417,17 +409,41 @@ impl PipelineOrchestrator {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     // Check for auto-sleep
                     if last_interaction.elapsed() > sleep_timeout && !self.is_sleeping.load(Ordering::Relaxed) {
-                        log::info!("[Pipeline] Inactivity detected ({}s). Triggering Auto-Sleep...", last_interaction.elapsed().as_secs());
+                        log::info!("[Pipeline] Inactivity detected ({}s). Triggering Auto-Sleep/Timeout...", last_interaction.elapsed().as_secs());
                         self.is_sleeping.store(true, Ordering::Relaxed);
                         
                         // Tiered offloading
                         self.cool_down_llm();
                         self.cool_down_tts();
 
-                        // If in Passive mode, disengage entirely
-                        if self.is_engaged.load(Ordering::Relaxed) && local_main_mode == crate::core::settings::InteractionMode::Passive {
-                            log::info!("[Pipeline] Auto-Sleep: Disengaging passive session.");
-                            self.is_engaged.store(false, Ordering::Relaxed);
+                        let owner = self.get_current_owner(&app_handle);
+                        if owner == crate::core::state::InteractionOwner::Tray {
+                            log::info!("[Pipeline] Auto-Sleep Timeout: Ending Tray user session.");
+                            if let Some(window) = app_handle.get_webview_window("tray") {
+                                log::info!("[Pipeline] Auto-Sleep Timeout: Hiding Tray window.");
+                                let _ = window.hide();
+                            }
+                        } else {
+                            // If in Passive mode, disengage entirely
+                            if self.is_engaged.load(Ordering::Relaxed) && local_main_mode == crate::core::settings::InteractionMode::Passive {
+                                let conv_id = self.conversation_id.swap(0, Ordering::Relaxed);
+                                log::info!("[Pipeline] Auto-Sleep Timeout: Disengaging passive session. Ended Session: id={}", conv_id);
+                                self.is_engaged.store(false, Ordering::Relaxed);
+                                
+                                // Send SessionEnded persistence event
+                                if conv_id != 0 {
+                                    if let Some(ref tx) = self.persist_tx {
+                                        let now = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_millis() as u64;
+                                        let _ = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                                            id: conv_id,
+                                            timestamp_ms: now,
+                                        });
+                                    }
+                                }
+                            }
                         }
 
                         let _ = app_handle.emit("auto_sleep_state", true);

@@ -1,0 +1,67 @@
+name: Build and Release Windows App
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: '9'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Frontend Dependencies & Build UI
+        shell: bash
+        run: |
+          cd app
+          pnpm install
+          pnpm build
+
+      - name: Build Tauri Application Bundle
+        shell: bash
+        run: |
+          cd app
+          pnpm tauri build
+
+      - name: Extract Versions and Build Info
+        id: build_info
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
+          # Find NSIS installer (.exe)
+          EXE_PATH=$(find app/src-tauri/target/release/bundle/nsis/ -name "*.exe" | head -n 1)
+          echo "EXE_PATH=$EXE_PATH" >> $GITHUB_ENV
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ env.EXE_PATH }}
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}

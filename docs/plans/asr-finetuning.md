@@ -443,3 +443,96 @@ Fine-tune the **Qwen3-ASR-0.6B** base model using Hugging Face PEFT/LoRA.
    - The false trigger rate on `negatives` is near-zero (the model must output empty transcripts for non-speech noise).
 3. Merge the LoRA adapter weights into the base Qwen3-ASR-0.6B model.
 4. Export the final merged model to **ONNX INT8** format optimized for low-latency desktop runtime inference.
+
+
+
+# Vox ASR — V2 Fine-Tuning & Evaluation Plan (Actual)
+
+**Date:** May 29, 2026  
+**Context:** Actual end-to-end plan executed during the Vox ASR V2 fine-tuning cycle. This phase focused on scaling noise robust Hinglish conversational ASR, eliminating CJK hallucinations under heavy noise, reducing negative false triggers, and achieving real-time streaming capability on server CPUs using ONNX INT8.
+
+---
+
+## 1. Scope & Execution Phases
+
+The V2 fine-tuning cycle was executed in six sequential phases to ensure complete traceability, data hygiene, and validation rigor.
+
+```mermaid
+graph TD
+    A[Phase 1: Corpus Assembly & Augmentation] --> B[Phase 2: Baseline Calibration]
+    B --> C[Phase 3: QLoRA Fine-Tuning]
+    C --> D[Phase 4: Checkpoint Evaluation]
+    D --> E[Phase 5: Merging & ONNX INT8 Export]
+    E --> F[Phase 6: Streaming Simulation & Verification]
+```
+
+---
+
+## Phase 1 — Corpus Assembly & Augmentation
+**Goal:** Expand Hinglish conversational diversity, inject heavy room impulse response (RIR) reverberation, mix realistic background noise profiles, and curate a negative rejection dataset to suppress false triggers.
+
+1. **CAIMAN Background Noise Recovery**: Pulled **509 MB** of real-world ambient parquets from `/opt/vox/noise/CAIMAN-ASR-BackgroundNoise/`.
+2. **Hinglish Conversation Harvesting**: Downloaded **15.7 hours** of conversational Hinglish talks, stand-up comedy, and podcasts via `yt-dlp`.
+3. **VAD Chunking**: Segmented the harvested long audio into **6,665 short speech segments** (3.0s to 15.0s) using `silero-vad`.
+4. **Teacher Pseudo-Labeling**: Transcribed all segments using the high-accuracy `Qwen3-ASR-1.7B` on GPU. Applied a normalization filter to strip random CJK drift characters.
+5. **Reverb & Noise Augmentation**:
+   - Mixed ambient fan hum, AC noise, and keyboard typing at a challenging SNR range of **$5\text{dB} - 15\text{dB}$**.
+   - Applied simulated room impulse responses (RIR) to mimic domestic office environments.
+   - Compiled a negative rejection dataset of **2,500 silence/noise clips** mapped to empty targets (`""`) to train the model to remain silent during non-speech segments.
+6. **Dataset Compiling & Sharding**: Merged V1 datasets with new V2 datasets into Snappy-compressed Arrow tables:
+   - **Train Set:** 23,512 rows (~31.41 hours)
+   - **Val Set:** 2,331 rows (~3.15 hours)
+   - **Test Set:** 2,838 rows (~3.70 hours)
+   - **Total Dataset:** **28,681 rows (~38.26 hours of audio)**
+
+---
+
+## Phase 2 — Pre-Training Baseline Calibration
+**Goal:** Establish baseline performance numbers on the untuned `Qwen3-ASR-0.6B` PyTorch model before training.
+* **Clean Hindi WER:** 24.62%
+* **Noisy Hindi WER:** 65.16%
+* **Noisy CJK Hallucinations:** 10.00%
+* **Negatives False Trigger Rate:** 2.00%
+
+---
+
+## Phase 3 — QLoRA Fine-Tuning Execution
+**Goal:** Compute low-rank adapters over the attention layers of `Qwen3-ASR-0.6B`.
+* **Base Model:** `qwen-asr-0.6b-pt` (PyTorch weights)
+* **LoRA Configuration:** Rank ($r$) = 16, Alpha ($\alpha$) = 32, Target Modules = `["q_proj", "k_proj", "v_proj", "o_proj"]`, Dropout = 0.05
+* **Execution Parameters:** 4 epochs (2,940 steps) on the RTX 5070 Ti GPU (Blackwell architecture), using PyTorch Nightly (`+cu128`), `torchcodec`, Cosine Decay LR (1e-4 peak), effective batch size of 32 (8 per device × 4 grad accum steps).
+* **Total Runtime:** 1 hour and 10 minutes.
+
+---
+
+## Phase 4 — Checkpoint Analysis & Selection
+**Goal:** Evaluate checkpoint validation curves to select the mathematically superior model snapshot.
+
+* **Epoch 1 (Step 735):** Clean WER 23.35%, Noisy WER 61.09%, CJK 0%, FT 0%
+* **Epoch 2 (Step 1470):** Clean WER **20.69%**, Noisy WER **58.21%**, CJK 0%, FT 0%
+* **Epoch 3 (Step 2205):** Clean WER 23.24%, Noisy WER 58.27%, CJK 0%, FT 0%
+* **Epoch 4 (Step 2940):** Clean WER 22.54%, Noisy WER 59.90%, CJK 0%, FT 0%
+
+**Selection:** **Epoch 2 (`checkpoint-1470`)** was selected for production merge. It registered the lowest validation error and best generalization before the LoRA adaptation plateaued/overfit on noisy patterns.
+
+---
+
+## Phase 5 — Model Merge & ONNX INT8 Export
+**Goal:** Merge low-rank adapters and export to a high-efficiency CPU execution format.
+1. **Merge:** PEFT adapter weights from `checkpoint-1470` were merged directly into `qwen-asr-0.6b-pt` to yield a full-precision PyTorch model.
+2. **Dependency Restoration:** Installed/restored missing `decoder.py`, `encoder.py`, and `conv_frontend.py` wrappers.
+3. **ONNX Export:** Exported the architecture as three separate graphs tailored for `sherpa-onnx`:
+   - `conv_frontend.onnx` (FP32, 44MB)
+   - `encoder.int8.onnx` (INT8 dynamic, 182MB)
+   - `decoder.int8.onnx` (INT8 dynamic, 756MB)
+4. **Quantization:** Dynamic dynamic range INT8 quantization (`MatMul` and `Gemm` operations).
+
+---
+
+## Phase 6 — Streaming Simulation & Verification
+**Goal:** Validate streaming performance against production latency requirements using the merged ONNX INT8 weights.
+* **Harness:** `streaming_sim.py`
+* **Configuration:** Window Size = 2.0s, Step = 0.8s, Greedy Decoding
+* **Primary Targets:** TTFT < 0.5s, PFR < 2.0, 0% CJK Hallucinations under noise.
+
+

@@ -1,10 +1,10 @@
 [package]
 name = "Vox"
-version = "0.7.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "0.7.9"
+description = "Vox - A modern desktop voice inference engine built for edge devices."
+authors = ["addy-47"]
 edition = "2021"
-default-run = "Vox"  
+default-run = "Vox"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -28,7 +28,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 cpal = "0.15"
 ringbuf = "0.4.7"
-sherpa-onnx = "1.12.39"
 earshot = "1.1"
 hound = "3.5"
 anyhow = "1"
@@ -41,10 +40,7 @@ tracing-appender = "0.2"
 crossbeam-channel = "0.5"
 thread-priority = "1.1"
 
-# Phase 6.3 — Session persistence
 rusqlite = { version = "0.31", features = ["bundled"] }
-gtk = { version = "0.18", features = ["v3_24"] }
-cairo-rs = "0.18"
 
 # Phase 4 — LLM runtime (llama.cpp Rust bindings, compiles llama.cpp from source, CPU-only)
 llama-cpp-2 = "0.1.146"
@@ -74,6 +70,17 @@ tar = "0.4"
 flate2 = "1.0"
 once_cell = "1.21.4"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", features = ["v3_24"] }
+cairo-rs = "0.18"
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+sherpa-onnx = { version = "1.12.39" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+sherpa-onnx = { version = "1.12.39", default-features = false, features = ["shared"] }
+
 [dev-dependencies]
 # Helpers for integration tests
 tempfile = "3"
+

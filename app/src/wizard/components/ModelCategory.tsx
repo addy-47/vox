@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Database, ChevronDown, FileCode } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
 interface ModelEntry {
@@ -10,10 +10,12 @@ interface ModelEntry {
   required: boolean;
 }
 
-interface FolderNode {
-    name: string;
-    files: ModelEntry[];
-    folders: Record<string, FolderNode>;
+interface ModelGroup {
+  id: string;
+  name: string;
+  category: string;
+  version: string;
+  files: ModelEntry[];
 }
 
 interface CategoryProps {
@@ -21,20 +23,20 @@ interface CategoryProps {
     label: string;
     subLabel: string;
     icon: React.ReactNode;
-    models: ModelEntry[];
+    groups: ModelGroup[];
     selected: boolean;
     required: boolean;
     onToggle: () => void;
     formatSize: (b: number) => string;
-    selectedIds?: Set<string>;
-    onToggleModel?: (id: string) => void;
+    selectedIds: Set<string>;
+    onToggleModel: (id: string) => void;
 }
 
 export const ModelCategory = ({ 
     label, 
     subLabel, 
     icon, 
-    models, 
+    groups, 
     selected, 
     required, 
     onToggle, 
@@ -44,91 +46,13 @@ export const ModelCategory = ({
 }: CategoryProps) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const elementRef = useRef<HTMLDivElement>(null);
-    const totalSize = models.reduce((acc, m) => acc + m.size, 0);
+    const totalSize = groups.reduce((acc, g) => acc + g.files.reduce((sum, f) => sum + f.size, 0), 0);
 
     useEffect(() => {
         if (isExpanded && elementRef.current) {
             elementRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }, [isExpanded]);
-
-    // Build tree structure for this category
-    const tree = useMemo(() => {
-        const root: FolderNode = { name: 'root', files: [], folders: {} };
-        models.forEach(m => {
-            const parts = m.path.split('/');
-            const relevantParts = parts.slice(1);
-            let current = root;
-            
-            relevantParts.forEach((part, i) => {
-                if (i === relevantParts.length - 1) {
-                    current.files.push(m);
-                } else {
-                    if (!current.folders[part]) {
-                        current.folders[part] = { name: part, files: [], folders: {} };
-                    }
-                    current = current.folders[part];
-                }
-            });
-        });
-        return root;
-    }, [models]);
-
-    const renderFolder = (node: FolderNode) => {
-        return (
-            <div key={node.name} className="relative">
-                {node.name !== 'root' && (
-                    <div className="flex items-center gap-2 py-2 px-3 text-[11px] font-black text-white/90 uppercase tracking-[0.2em] bg-white/5 rounded-xl mb-2 border border-white/10 shadow-sm">
-                        <Database className="w-3.5 h-3.5 text-[#00dbe9]" />
-                        {node.name}
-                    </div>
-                )}
-                <div className={cn("space-y-1 relative", node.name !== 'root' && "ml-4 pl-4 border-l border-white/10")}>
-                    {Object.values(node.folders).map((f) => renderFolder(f))}
-                    {node.files.map(m => {
-                        const isModelSelected = selectedIds?.has(m.id) ?? false;
-                        const handleLineClick = (e: React.MouseEvent) => {
-                            if (required) return;
-                            e.stopPropagation();
-                            onToggleModel?.(m.id);
-                        };
-                        return (
-                            <div 
-                                key={m.id} 
-                                onClick={handleLineClick}
-                                className={cn(
-                                    "flex items-center justify-between text-[11px] font-bold py-2 px-3 hover:bg-[#00dbe9]/5 rounded-xl group transition-all border border-transparent hover:border-[#00dbe9]/20",
-                                    !required && "cursor-pointer"
-                                )}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className={cn(
-                                        "w-4 h-4 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0",
-                                        isModelSelected 
-                                            ? (required ? "bg-[#00dbe9]/10 border-[#00dbe9]/40" : "bg-[#00dbe9] border-transparent shadow-[0_0_10px_rgba(0,219,233,0.4)]")
-                                            : "bg-transparent border-white/20 group-hover:border-white/40"
-                                    )}>
-                                        {isModelSelected && (
-                                            <Check className={cn(
-                                                "w-2.5 h-2.5 stroke-[4]",
-                                                required ? "text-[#00dbe9]" : "text-black"
-                                            )} />
-                                        )}
-                                    </div>
-                                    <div className="relative">
-                                        <div className="absolute inset-0 bg-[#00dbe9] blur-md opacity-0 group-hover:opacity-20 transition-opacity" />
-                                        <FileCode className="w-4 h-4 text-white/40 group-hover:text-[#00dbe9] transition-colors relative z-10" />
-                                    </div>
-                                    <span className="text-white/60 group-hover:text-white transition-colors truncate max-w-[280px]">{m.path.split('/').pop()}</span>
-                                </div>
-                                <span className="text-white/40 font-mono text-[10px] group-hover:text-[#00dbe9]/60 transition-colors">{formatSize(m.size)}</span>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        );
-    };
 
     return (
         <div 
@@ -189,7 +113,6 @@ export const ModelCategory = ({
                                 )} />
                             )}
                         </div>
-
                     </div>
                     <div className={cn("transition-transform duration-500", isExpanded && "rotate-180")}>
                         <ChevronDown className="w-5 h-5 text-white/40" />
@@ -206,8 +129,54 @@ export const ModelCategory = ({
                         transition={{ duration: 0.3, ease: 'circOut' }}
                         className="border-t border-white/5 bg-black/40"
                     >
-                        <div className="p-5 space-y-4 max-h-[300px] overflow-y-auto custom-scrollbar">
-                            {renderFolder(tree)}
+                        <div className="p-5 space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                            {groups.map((group) => {
+                                const isGroupSelected = selectedIds?.has(group.id) ?? false;
+                                const groupSize = group.files.reduce((sum, f) => sum + f.size, 0);
+                                const handleLineClick = (e: React.MouseEvent) => {
+                                    if (required) return;
+                                    e.stopPropagation();
+                                    onToggleModel?.(group.id);
+                                };
+
+                                return (
+                                    <div 
+                                        key={group.id} 
+                                        onClick={handleLineClick}
+                                        className={cn(
+                                            "flex items-center justify-between text-[11px] font-bold py-2.5 px-4 hover:bg-[#00dbe9]/5 rounded-xl group transition-all border border-transparent hover:border-[#00dbe9]/20",
+                                            !required && "cursor-pointer"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className={cn(
+                                                "w-4 h-4 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0",
+                                                isGroupSelected 
+                                                    ? (required ? "bg-[#00dbe9]/10 border-[#00dbe9]/40" : "bg-[#00dbe9] border-transparent shadow-[0_0_10px_rgba(0,219,233,0.4)]")
+                                                    : "bg-transparent border-white/20 group-hover:border-white/40"
+                                            )}>
+                                                {isGroupSelected && (
+                                                    <Check className={cn(
+                                                        "w-2.5 h-2.5 stroke-[4]",
+                                                        required ? "text-[#00dbe9]" : "text-black"
+                                                    )} />
+                                                )}
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-white/80 group-hover:text-white transition-colors truncate max-w-[280px]">
+                                                    {group.name}
+                                                </span>
+                                                <span className="text-white/40 text-[9px] font-mono">
+                                                    Version {group.version}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <span className="text-white/40 font-mono text-[10px] group-hover:text-[#00dbe9]/60 transition-colors self-center">
+                                            {formatSize(groupSize)}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </motion.div>
                 )}

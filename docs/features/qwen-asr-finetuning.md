@@ -1,275 +1,108 @@
-# Qwen3-ASR LoRA Fine-Tuning for Vox
+# Qwen3-ASR LoRA Fine-Tuning for Vox (V1 & V2)
 
 **Model:** Qwen3-ASR-0.6B  
 **Goal:** Vox-optimized streaming ASR for Hindi/Hinglish desktop conversations  
 **Dataset repo:** `vox-qwen-asr-hindi`  
 **Script repo:** `vox-qwen-asr-hindi/scripts/`  
-**Completed:** 2026-05-23
+**Completed V1:** 2026-05-23  
+**Completed V2:** 2026-05-29  
 
 ---
 
 ## Overview
 
-This documents the end-to-end pipeline used to fine-tune, merge, export, quantize, and evaluate a Qwen3-ASR-0.6B model specialized for Vox's Hindi/Hinglish streaming use case. The process ran in 6 sequential phases.
+This documents the end-to-end pipeline used to fine-tune, merge, export, quantize, and evaluate a Qwen3-ASR-0.6B model specialized for Vox's Hindi/Hinglish streaming use case. The pipeline has completed two full optimization iterations (V1 and V2).
 
 ---
 
-## Phase 1 — Corpus Assembly
+## Phase 1 — Corpus Assembly & Augmentation
 
-**Script:** `scripts/compile_corpus.py`, `scripts/pack_to_parquet.py`  
-**Output:** `data_parquet/` (train/val/test splits in Parquet format)
+**Scripts:** `scripts/compile_corpus.py`, `scripts/pack_to_parquet.py`, `scripts/unpack_from_parquet.py`
 
-### Corpus Composition
+### Corpus Growth
 
-| Split | Domain | Samples | Approx Hours |
-|---|---|---|---|
-| train | Clean Hindi (IndicVoices-R, NPTEL subset) | ~5500 | ~15h |
-| train | Hinglish conversational (custom curated) | ~1036 | ~3h |
-| train | Desktop-noisy augmented (fan/keyboard/reverb) | ~2500 | ~7h |
-| train | Negative (silence/non-speech) | ~800 | ~2h |
-| val | Clean Hindi held-out | 100 | — |
-| val | Noisy Hindi held-out | 100 | — |
-| test/benchmark | Clean Hindi | 500 | ~2.3h |
-| test/benchmark | Hinglish | 1036 | ~3.8h |
-| test/benchmark | Noisy Hindi | 250 | ~1.6h |
-| test/benchmark | Negatives (silence/noise) | 250 | ~1.0h |
+| Split | V1 Samples | V1 Hours | V2 Samples | V2 Hours | Domain / Source |
+|---|---|---|---|---|---|
+| **train** | ~5,500 | ~15.0h | ~5,500 | ~15.0h | Clean Hindi (IndicVoices-R, NPTEL) |
+| **train** | ~1,036 | ~3.0h | ~6,665 | ~15.7h | Hinglish conversational (Curated pseudo-labeled talks/podcasts) |
+| **train** | ~2,500 | ~7.0h | ~8,847 | ~22.6h | Desktop-noisy augmented (Fan/Keyboard/AC/RIR Reverb) |
+| **train** | ~800 | ~2.0h | ~2,500 | ~5.0h | Negatives (Silence, background sounds, TV chatter) |
+| **Total Train** | **~9,836** | **~27.0h** | **23,512** | **~31.41h** | Full training set |
+| **Val Set** | 200 | — | 2,331 | ~3.15h | Held-out validation split |
+| **Test Set** | 2,036 | ~8.7h | 2,838 | ~3.70h | Static benchmarks |
 
-### Noise Augmentation Parameters
-
-Applied to all clean training samples with:
-- **Fan noise:** SNR 15–25 dB (CAIMAN-ASR background noise library)
-- **Augmentation probability:** 0.5 per sample
-- **Speed perturbation:** ±5% at p=0.3
-- **Room reverb:** Not applied in v1 (planned for v2)
-
-### Parquet Schema
-
-```
-{
-  "audio": bytes (WAV, 16kHz mono),
-  "transcript": str,
-  "language": str ("hi" | "en" | "hi-en"),
-  "source": str,
-  "duration_s": float,
-  "noise_type": str | null
-}
-```
+### V2 Augmentation Upgrades
+* **Noise Diversity:** Custom keyboard tapping, TV/radio backgrounds, and AC/fan hum mixed at **$5\text{dB} - 15\text{dB}$ SNR** using the CAIMAN ambient noise library.
+* **Room Reverberation:** Applied physical Room Impulse Responses (RIR) using open impulse libraries to simulate desktop environments.
+* **Negative Rejection:** Expanded negative segments to **2,500 samples** mapped to empty targets (`""`) to completely eliminate false triggers during silent or noisy pauses.
 
 ---
 
 ## Phase 2 — LoRA Fine-Tuning
 
-**Script:** `scripts/train_lora.py`  
-**Command:**
-```bash
-nohup /opt/vox/venv/bin/python3 /opt/vox/temp/train/train_lora.py \
-  > /opt/vox/temp/logs/train_lora.log 2>&1 &
-```
+**Script:** `scripts/train_lora.py`
 
-### Key Hyperparameters
+### Hyperparameter Evolution
 
-| Parameter | Value |
-|---|---|
-| Base model | `Qwen3-ASR-0.6B` (HuggingFace safetensors) |
-| LoRA rank | 32 |
-| LoRA alpha | 64 |
-| LoRA dropout | 0.05 |
-| Target modules | `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj` |
-| Quantization | QLoRA 4-bit (bitsandbytes NF4) |
-| Learning rate | 2e-4 |
-| LR scheduler | Cosine decay |
-| Warmup steps | 100 |
-| Batch size | 4 per device |
-| Gradient accumulation | 8 steps (effective batch = 32) |
-| Max epochs | 5 |
-| Max audio length | 30s |
-| Evaluation interval | every 500 steps |
-| Optimizer | AdamW (paged, for QLoRA) |
-| Gradient checkpointing | Enabled |
-| Mixed precision | bf16 |
-| Seed | 42 |
+| Hyperparameter | V1 Configuration | V2 Configuration |
+|---|---|---|
+| **Base Model** | `Qwen3-ASR-0.6B` | `Qwen3-ASR-0.6B` |
+| **LoRA Rank (r)** | 32 | 16 |
+| **LoRA Alpha** | 64 | 32 |
+| **LoRA Dropout** | 0.05 | 0.05 |
+| **Target Modules** | `q_proj`, `k_proj`... | `q_proj`, `k_proj`, `v_proj`, `o_proj` |
+| **Batch Size** | 4 (eff. 32 via 8 steps) | 8 (eff. 32 via 4 steps) |
+| **Learning Rate** | 2e-4 | 1e-4 |
+| **Epochs** | 5 | 4 |
+| **Mixed Precision** | bf16 | bf16 |
+| **Compute Stack** | PyTorch 2.x | PyTorch Nightly (+cu128) |
 
-### Hardware
+### V2 Training Progress
 
-- **GPU:** RTX 5070 Ti (16GB VRAM)
-- **Training time:** ~6–8 hours for 5 epochs
-- **Peak VRAM:** ~13.5GB (QLoRA 4-bit)
-- **Framework:** HuggingFace Transformers + PEFT
+The V2 model was trained on the noise-augmented dataset using an RTX 5070 Ti:
 
-### Epoch Metrics (on internal eval split)
-
-| Epoch | Clean WER | Clean CER | Noisy WER | Noisy CER | Noisy CJK% | False Trigger% |
-|---|---|---|---|---|---|---|
-| Baseline (ep 0) | 25.5% | 12.3% | 65.3% | 59.9% | **11.0%** | 1.0% |
-| Epoch 1 | 30.3% | 16.3% | 63.2% | 56.0% | 11.0% | 0.0% |
-| Epoch 2 | 20.8% | 8.0% | 60.5% | 50.3% | **0.0%** | 0.0% |
-| Epoch 3 | 22.1% | 8.2% | 59.3% | 49.8% | 0.0% | 0.0% |
-| Epoch 4 | **20.1%** | **7.4%** | 59.3% | 50.2% | 0.0% | 0.0% |
-| Epoch 5 | 20.3% | 7.4% | **58.6%** | **49.3%** | 0.0% | 0.0% |
-
-**Best checkpoint used for merge:** Epoch 5 (best combined noisy WER + zero CJK).
+* **Epoch 1 (Step 735):** Clean WER 23.35%, Noisy WER 61.09%, False Trigger 0.00%
+* **Epoch 2 (Step 1470):** Clean WER **20.69%**, Noisy WER **58.21%**, False Trigger 0.00% (Selected Checkpoint)
+* **Epoch 3 (Step 2205):** Clean WER 23.24%, Noisy WER 58.27%, False Trigger 0.00%
+* **Epoch 4 (Step 2940):** Clean WER 22.54%, Noisy WER 59.90%, False Trigger 0.00%
 
 ---
 
 ## Phase 3 — Weight Merging
 
-**Script:** `scripts/merge_lora.py`  
-**Command:**
-```bash
-/opt/vox/venv/bin/python3 /opt/vox/temp/train/merge_lora.py \
-  > /opt/vox/temp/logs/merge_lora.log 2>&1
-```
+**Script:** `scripts/merge_lora.py`
 
-### Config
-
-| Parameter | Value |
-|---|---|
-| Base model path | `/opt/vox/Qwen3-ASR-0.6b` |
-| LoRA adapter path | `/opt/vox/temp/train/checkpoints/best/` |
-| Output path | `/opt/vox/temp/merged/qwen3-asr-0.6b-vox-v1` |
-| Merge method | `peft.merge_adapter()` |
-
-**Known issue fixed:** `GenerationConfig` validation error — `temperature` must be unset when `do_sample=False`. Fixed by programmatically clearing the field before save.
-
-**Output size:** ~1.8GB (full fp32 safetensors, same as base model)
+* The selected PEFT adapter (`checkpoint-1470` for V2) is fused directly into the baseline `Qwen3-ASR-0.6B` PyTorch layers.
+* Generates a single, lightweight PyTorch model saved under `model/pytorch/` with `GenerationConfig` validated (cleared `temperature` when `do_sample=False`).
 
 ---
 
 ## Phase 4 — ONNX Export & INT8 Quantization
 
-**Script:** `scripts/export_onnx.py` (based on wasser-onnx framework)  
-**Command:**
-```bash
-/opt/vox/venv/bin/python3 /opt/vox/temp/train/export_wasser.py \
-  > /opt/vox/temp/logs/export_wasser.log 2>&1
-```
+**Script:** `scripts/export_onnx.py`
 
-### Architecture Split
+The merged PyTorch model is split and exported into three distinct ONNX graphs compatible with `sherpa-onnx`:
 
-The Qwen3-ASR model is exported as three separate ONNX graphs, matching how `sherpa-onnx` loads them:
-
-| Component | File | Size | Quantization |
+| Component | File | Size | Format & Quantization |
 |---|---|---|---|
-| Convolutional frontend (mel+subsampling) | `conv_frontend.onnx` | 44 MB | FP32 |
-| Transformer encoder | `encoder.int8.onnx` | 182 MB | INT8 dynamic |
-| LM decoder (attention + embedding) | `decoder.int8.onnx` | 756 MB | INT8 dynamic |
+| **Frontend subsampler** | `conv_frontend.onnx` | 44 MB | FP32 |
+| **Transformer Encoder** | `encoder.int8.onnx` | 182 MB | Dynamic INT8 (`MatMul`, `Gemm` Dynamic) |
+| **Transformer Decoder** | `decoder.int8.onnx` | 756 MB | Dynamic INT8 (`MatMul`, `Gemm` Dynamic) |
 
-### Known Issues Fixed During Export
-
-1. **NumPy 2.x incompatibility** — `onnxruntime-tools` requires NumPy < 2.0. Downgraded to `numpy==1.26.4`.
-2. **Missing registration import** — `export_wasser.py` required `from wasser.register import ...` before model load.
-3. **TorchScript TracerWarning** — `conv_chunksize` conditional produces a tracing warning (not an error); the exported graph is correct for the default chunk size.
-
-### Quantization Parameters
-
-- **Method:** `onnxruntime.quantization.quantize_dynamic`
-- **Weight type:** `QUInt8`
-- **Op types quantized:** `MatMul`, `Gemm`
-- **Per-channel:** Yes (encoder/decoder)
-
-### Deployment
-
-```
-/opt/vox/models/onnx-0.6b-finetuned/
-  conv_frontend.onnx
-  encoder.int8.onnx
-  decoder.int8.onnx
-  tokenizer/
-  test_wavs/
-```
-
-Previous (original, pre-finetune) ONNX weights backed up to:
-```
-/opt/vox/models/onnx-0.6b-original/
-```
+**Model Directory:** `~/.vox/models/stt/qwen3-asr/` (including copied tokenizer assets under `tokenizer/`).
 
 ---
 
 ## Phase 5 — Offline Evaluation
 
-**Script:** `scripts/run_offline_eval.py`  
-**Parallelism:** `ProcessPoolExecutor(max_workers=8)` — 8 parallel eval workers  
-**Runtime:** ~3 hours total (clean + hinglish + noisy + negatives × 2 models)
+**Script:** `scripts/eval_srota_conv.py`
 
-### Metrics Computed
-
-- `corpus_wer` — aggregate WER across all samples
-- `avg_wer` — mean per-sample WER
-- `corpus_cer` / `avg_cer` — same for character error rate
-- `hallucination_rate` — fraction of samples with any non-empty output on a noise-only input OR unexpected language
-- `cjk_rate` — fraction of output tokens in CJK unicode range (U+4E00–U+9FFF)
-- `empty_rate` — fraction of samples producing empty transcript
-- `false_trigger_rate` — fraction of negative (silence) samples that produce non-empty output
-- `avg_rtf` / `overall_rtf` — real-time factor (elapsed / audio duration)
-
-### Usage
-
-```bash
-python3 scripts/run_offline_eval.py \
-  --model_dir /opt/vox/models/onnx-0.6b-finetuned \
-  --test_dir /opt/vox/vox-qwen-asr-hindi \
-  --output_dir /opt/vox/temp/eval/results \
-  --workers 8
-```
+A multi-threaded CPU/GPU benchmark harness that evaluates full-precision PyTorch vs dynamic INT8 quantized ONNX models across static datasets. Tracks WER/CER, hallucination rates, CJK token occurrences, empty transcribing, and real-time factor (RTF).
 
 ---
 
 ## Phase 6 — Streaming Simulation
 
-**Script:** `scripts/streaming_sim.py`  
-**Config evaluated:** window=2.0s, step=0.8s (production config)
+**Script:** `scripts/streaming_sim.py`
 
-### Metrics
-
-- `avg_ttft_sec` — time to first token (first chunk decode latency)
-- `avg_pfr` — partial flip rate (fraction of chunks where final transcript differs from partial)
-- `total_flips` — absolute count of transcript reversals
-- `total_transient_cjk` — CJK tokens appearing in any partial chunk output
-- `avg_wer_vs_offline` — ratio of streaming WER to offline WER (1.0 = identical)
-- `avg_cer_vs_offline` — same for CER
-
-### Usage
-
-```bash
-python3 scripts/streaming_sim.py \
-  --model_dir /opt/vox/models/onnx-0.6b-finetuned \
-  --test_dir /opt/vox/vox-qwen-asr-hindi/benchmark \
-  --window 2.0 \
-  --step 0.8 \
-  --output /opt/vox/temp/eval/results/streaming_sim_results_0.6b.json
-```
-
----
-
-## Environment
-
-```
-Python: 3.11
-PyTorch: 2.x (CUDA 12.x)
-transformers: 4.46+
-peft: 0.13+
-bitsandbytes: 0.43+
-onnxruntime: 1.18+
-numpy: 1.26.4  ← must be <2.0 for onnxruntime-tools
-sherpa-onnx: 1.10+
-```
-
-```bash
-# Activate environment
-source /opt/vox/venv/bin/activate
-```
-
----
-
-## Model Directory Structure
-
-```
-/opt/vox/models/
-  onnx-0.6b-original/      ← pre-finetune ONNX (backup)
-  onnx-0.6b-finetuned/     ← live fine-tuned ONNX (INT8, deployed)
-  pytorch-0.6b-original/   ← Qwen3-ASR-0.6B HuggingFace weights
-  pytorch-0.6b-finetuned/  ← merged LoRA weights (vox-v1)
-  pytorch-1.7b-original/   ← Qwen3-ASR-1.7B HuggingFace weights (reference)
-```
-
-All entries are symlinks — no data is duplicated.
+Simulates production-like desktop ASR inputs under a moving window configuration (2.0s window, 0.8s chunk step). Reports time-to-first-token (TTFT) and partial flip rate (PFR) on the target ONNX INT8 engine. V2 achieved **263ms TTFT** and reduced word flips by **40% (from 803 to 485)** compared to baseline Qwen3-ASR.

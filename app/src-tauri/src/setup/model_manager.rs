@@ -79,6 +79,9 @@ impl ModelManager {
             }
         }
 
+        // Clean up any older/different hash versions of this model ID before download
+        self.cleanup_old_versions(model_id, &entry.sha256, models_dir);
+
         // Ensure parent directory exists
         if let Some(parent) = dest_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -105,8 +108,8 @@ impl ModelManager {
             
             // Diagnostic: Check if we downloaded something large but the manifest hash is for a pointer
             if entry.size_bytes > 1024 && entry.sha256.len() == 64 {
-                log::warn!("[ModelManager] Hash mismatch detected. Diagnostic: If you are using Git LFS, ensure your manifest.json contains hashes of smudged files, not pointer files.");
-                err.push_str("\n\nTip: Manifest hash may be for an LFS pointer. Re-verify manifest.json.");
+                log::warn!("[ModelManager] Hash mismatch detected. Diagnostic: If you are using Git LFS, ensure your models_manifest.json contains hashes of smudged files, not pointer files.");
+                err.push_str("\n\nTip: Manifest hash may be for an LFS pointer. Re-verify models_manifest.json.");
             }
 
             self.emit_status(model_id, SetupStep::Failed, 100.0, entry.size_bytes, entry.size_bytes, Some(err.clone()));
@@ -156,6 +159,7 @@ impl ModelManager {
 
         // ── 4. Create Verified Marker ─────────────────────────────────────────
         let marker = VerifiedMarker {
+            model_id: Some(model_id.clone()),
             sha256: entry.sha256.clone(),
             verified_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)?
@@ -232,6 +236,53 @@ impl ModelManager {
                 total_bytes: total,
                 error,
             });
+        }
+    }
+
+    fn cleanup_old_versions(&self, model_id: &str, current_sha: &str, models_dir: &Path) {
+        log::info!("[ModelManager] Checking for old versions of model: {}", model_id);
+        
+        let walk_dir = |dir: &Path| -> Vec<std::path::PathBuf> {
+            let mut verified_files = Vec::new();
+            let mut stack = vec![dir.to_path_buf()];
+            
+            while let Some(current_dir) = stack.pop() {
+                if let Ok(entries) = std::fs::read_dir(current_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            stack.push(path);
+                        } else if path.extension().map_or(false, |ext| ext == "verified") {
+                            verified_files.push(path);
+                        }
+                    }
+                }
+            }
+            verified_files
+        };
+
+        for verified_path in walk_dir(models_dir) {
+            if let Ok(marker) = VerifiedMarker::load(&verified_path) {
+                let matches_id = marker.model_id.as_ref().map_or(false, |id| id == model_id) || 
+                    verified_path.file_stem().map_or(false, |stem| stem == model_id); // fallback to filename match
+                
+                if matches_id && marker.sha256 != current_sha {
+                    log::info!(
+                        "[ModelManager] Found outdated model version. Deleting files for: {} (Old Hash: {})", 
+                        model_id, marker.sha256
+                    );
+                    
+                    let model_file_path = verified_path.with_extension("");
+                    if model_file_path.exists() {
+                        if model_file_path.is_dir() {
+                            let _ = std::fs::remove_dir_all(&model_file_path);
+                        } else {
+                            let _ = std::fs::remove_file(&model_file_path);
+                        }
+                    }
+                    let _ = std::fs::remove_file(&verified_path);
+                }
+            }
         }
     }
 }

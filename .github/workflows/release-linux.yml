@@ -1,0 +1,184 @@
+name: Build and Release Linux App
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  release-linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: '9'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libc++-dev \
+            libc++abi-dev \
+            dpkg-dev \
+            apt-utils \
+            libasound2-dev
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Import GPG Key
+        run: |
+          echo "${{ secrets.APT_GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      - name: Install Frontend Dependencies & Build UI
+        run: |
+          cd app
+          pnpm install
+          pnpm build
+
+      - name: Build Tauri Application Bundle
+        env:
+          CC: clang
+          CXX: clang++
+          CMAKE_C_COMPILER: clang
+          CMAKE_CXX_COMPILER: clang++
+          CXXFLAGS: "-stdlib=libc++"
+          LDFLAGS: "-lc++"
+        run: |
+          cd app
+          pnpm tauri build
+
+      - name: Extract Versions and Build Info
+        id: build_info
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Find target release assets case-insensitively (supporting both 'Vox' and 'vox')
+          DEB_PATH=$(find app/src-tauri/target/release/bundle/deb/ -iname "vox_*_amd64.deb" | head -n 1)
+          APPIMAGE_PATH=$(find app/src-tauri/target/release/bundle/appimage/ -iname "vox_*_amd64.AppImage" | head -n 1)
+          
+          echo "DEB_PATH=$DEB_PATH" >> $GITHUB_ENV
+          echo "APPIMAGE_PATH=$APPIMAGE_PATH" >> $GITHUB_ENV
+          echo "DEB_NAME=$(basename $DEB_PATH)" >> $GITHUB_ENV
+          echo "APPIMAGE_NAME=$(basename $APPIMAGE_PATH)" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ env.DEB_PATH }}
+            ${{ env.APPIMAGE_PATH }}
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            Vox Release ${{ env.VERSION }}
+            
+            ### Installation:
+            ```bash
+            curl -fsSL https://addy-47.github.io/vox/install.sh | bash
+            ```
+            
+            ### Update:
+            ```bash
+            sudo apt update && sudo apt upgrade vox
+            ```
+
+      - name: Checkout gh-pages Branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update APT Repository & Manifests
+        env:
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          # 1. Recreate folder structures in gh-pages checkout
+          mkdir -p gh-pages-repo/apt/pool/main
+          mkdir -p gh-pages-repo/apt/dists/stable/main/binary-amd64
+          mkdir -p gh-pages-repo/manifests
+          
+          # 2. Copy compiled Debian package into the pool
+          cp ${{ env.DEB_PATH }} gh-pages-repo/apt/pool/main/
+          
+          # 3. Copy utility scripts and GPG public key to the web root
+          cp scripts/release/install.sh gh-pages-repo/
+          cp scripts/release/add-apt-repo.sh gh-pages-repo/
+          cp scripts/release/detect-os.sh gh-pages-repo/
+          cp scripts/release/verify-installation.sh gh-pages-repo/
+          cp public.gpg gh-pages-repo/
+          
+          # 4. Copy App Manifest
+          cp manifests/app_manifest.json gh-pages-repo/manifests/
+          
+          # 5. Run APT Indexer and GPG Sign
+          export APT_GPG_PASSPHRASE
+          chmod +x scripts/release/generate-repo.sh
+          # Re-import key into this execution context's gpg ring
+          echo "${{ secrets.APT_GPG_PRIVATE_KEY }}" | gpg --batch --import
+          
+          # Generate index inside gh-pages repo context
+          REPO_ROOT="$GITHUB_WORKSPACE/gh-pages-repo"
+          cd "$GITHUB_WORKSPACE/gh-pages-repo/apt"
+          
+          # Generate Packages & Packages.gz
+          dpkg-scanpackages --multiversion pool/main /dev/null > dists/stable/main/binary-amd64/Packages
+          gzip -9c dists/stable/main/binary-amd64/Packages > dists/stable/main/binary-amd64/Packages.gz
+          
+          # Generate Release metadata
+          cd dists/stable
+          apt-ftparchive \
+              -o APT::FTPArchive::Release::Origin="Vox" \
+              -o APT::FTPArchive::Release::Label="Vox" \
+              -o APT::FTPArchive::Release::Suite="stable" \
+              -o APT::FTPArchive::Release::Codename="stable" \
+              -o APT::FTPArchive::Release::Architectures="amd64" \
+              -o APT::FTPArchive::Release::Components="main" \
+              release . > Release
+              
+          # Sign Release file
+          PASSPHRASE_FILE=$(mktemp)
+          echo "$APT_GPG_PASSPHRASE" > "$PASSPHRASE_FILE"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-file "$PASSPHRASE_FILE" --clearsign -o InRelease Release
+          gpg --batch --yes --pinentry-mode loopback --passphrase-file "$PASSPHRASE_FILE" -abs -o Release.gpg Release
+          rm -f "$PASSPHRASE_FILE"
+
+      - name: Deploy Changes to GitHub Pages
+        run: |
+          cd gh-pages-repo
+          git config user.name "GitHub Actions Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No repository metadata changes detected."
+          else
+            git commit -m "Publish version ${{ env.VERSION }} to APT repo and update manifest"
+            git push origin gh-pages
+          fi

@@ -1,7 +1,10 @@
 use tauri::{AppHandle, Manager, State, WebviewWindow, Emitter};
 use crate::core::state::AppState;
 use crate::core::settings::InteractionMode;
-use crate::tray::{setup_linux_virtual_layer, position_tray_window};
+#[cfg(target_os = "linux")]
+use crate::tray::setup_linux_virtual_layer;
+use crate::tray::position_tray_window;
+
 
 /// Toggles the tray window visibility and updates the menu checkmark state.
 pub async fn toggle_hud_visibility(app: AppHandle) {
@@ -40,7 +43,13 @@ pub async fn toggle_hud_visibility(app: AppHandle) {
 use gtk::prelude::*;
 
 #[tauri::command]
-pub fn hide_tray_window(app: AppHandle) {
+pub async fn hide_tray_window(app: AppHandle) {
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let mut hud_lock = state.hud_visible.lock().await;
+    if *hud_lock {
+        *hud_lock = false;
+        log::info!("[Tray] Ending Tray user session (Tray window hidden).");
+    }
     if let Some(window) = app.get_webview_window("tray") {
         let _ = window.hide();
     }
@@ -59,7 +68,25 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
     }
 
     let mut hud_lock = state.hud_visible.lock().await;
+    let old_visible = *hud_lock;
     *hud_lock = visible;
+
+    if old_visible != visible {
+        if visible {
+            log::info!("[Tray] Starting Tray user session (Tray window shown).");
+        } else {
+            log::info!("[Tray] Ending Tray user session (Tray window hidden).");
+        }
+    }
+
+    if let Some(window) = app.get_webview_window("tray") {
+        if visible {
+            let _ = window.show();
+            let _ = position_tray_window(&window).await;
+        } else {
+            let _ = window.hide();
+        }
+    }
 
     let item_lock = state.hud_menu_item.lock().await;
     if let Some(item) = &*item_lock {

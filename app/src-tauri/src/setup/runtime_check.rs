@@ -156,45 +156,62 @@ fn check_model_integrity(models_dir: &Path, manifest: Option<&VoxManifest>) -> (
         return (Vec::new(), false);
     };
 
-    for entry in &m.models {
-        let model_path = models_dir.join(&entry.path);
-        let verified_path = model_path.with_extension("verified");
+    for group in &m.model_groups {
+        for entry in &group.files {
+            let is_archive = entry.archive_type.is_some();
+            let model_path = if is_archive {
+                let p_str = entry.path.as_str();
+                if p_str.ends_with(".tar.gz") {
+                    models_dir.join(&p_str[..p_str.len() - 7])
+                } else if p_str.ends_with(".zip") || p_str.ends_with(".tgz") {
+                    models_dir.join(&p_str[..p_str.len() - 4])
+                } else {
+                    models_dir.join(&entry.path)
+                }
+            } else {
+                models_dir.join(&entry.path)
+            };
+            
+            let verified_path = models_dir.join(&entry.path).with_extension("verified");
 
-        // 1. Existence check
-        if !model_path.exists() {
-            missing.push(entry.id.clone());
-            all_verified = false;
-            continue;
-        }
-
-        // 2. Size check
-        if let Ok(metadata) = std::fs::metadata(&model_path) {
-            if metadata.len() != entry.size_bytes {
-                missing.push(format!("{} (size mismatch)", entry.id));
+            // 1. Existence check
+            if !model_path.exists() {
+                missing.push(entry.id.clone());
                 all_verified = false;
                 continue;
             }
-        } else {
-            missing.push(entry.id.clone());
-            all_verified = false;
-            continue;
-        }
 
-        // 3. Verified marker check
-        if !verified_path.exists() {
-            all_verified = false;
-            continue;
-        }
+            // 2. Size check (skip for extracted archives since size on disk is different)
+            if !is_archive {
+                if let Ok(metadata) = std::fs::metadata(&model_path) {
+                    if metadata.len() != entry.size_bytes {
+                        missing.push(format!("{} (size mismatch)", entry.id));
+                        all_verified = false;
+                        continue;
+                    }
+                } else {
+                    missing.push(entry.id.clone());
+                    all_verified = false;
+                    continue;
+                }
+            }
 
-        if let Ok(marker) = VerifiedMarker::load(&verified_path) {
-            if marker.sha256 != entry.sha256 || marker.expected_size != entry.size_bytes {
-                missing.push(format!("{} (corrupt marker)", entry.id));
+            // 3. Verified marker check
+            if !verified_path.exists() {
+                all_verified = false;
+                continue;
+            }
+
+            if let Ok(marker) = VerifiedMarker::load(&verified_path) {
+                if marker.sha256 != entry.sha256 || marker.expected_size != entry.size_bytes {
+                    missing.push(format!("{} (corrupt marker)", entry.id));
+                    all_verified = false;
+                }
+            } else {
                 all_verified = false;
             }
-        } else {
-            all_verified = false;
         }
     }
 
-    (missing, all_verified && !m.models.is_empty())
+    (missing, all_verified && !m.model_groups.is_empty())
 }

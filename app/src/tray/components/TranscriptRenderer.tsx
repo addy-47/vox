@@ -72,7 +72,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
             animate={{ opacity: 1, y: 0 }}
             className="w-full space-y-2"
           >
-            <div className="text-[17px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 drop-shadow-sm">
+            <div className="text-[17px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 drop-shadow-sm whitespace-pre-wrap">
               {displayText}
               {(interactionState === "Listening" || interactionState === "UserSpeaking" || pttStatus === 'PROCESSING') && (
                 <motion.span 

@@ -1,0 +1,73 @@
+name: Build and Release macOS App
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  MACOSX_DEPLOYMENT_TARGET: "11.0"
+
+
+jobs:
+  release-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: '9'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Frontend Dependencies & Build UI
+        run: |
+          cd app
+          pnpm install
+          pnpm build
+
+      - name: Build Tauri Application Bundle
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
+          CFLAGS: "-mmacosx-version-min=11.0"
+          CXXFLAGS: "-mmacosx-version-min=11.0"
+        run: |
+          cd app
+          pnpm tauri build
+
+
+
+      - name: Extract Versions and Build Info
+        id: build_info
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
+          # Find DMG file case-insensitively
+          DMG_PATH=$(find app/src-tauri/target/release/bundle/dmg/ -iname "*.dmg" | head -n 1)
+          echo "DMG_PATH=$DMG_PATH" >> $GITHUB_ENV
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ env.DMG_PATH }}
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
