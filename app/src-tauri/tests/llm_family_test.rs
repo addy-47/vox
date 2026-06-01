@@ -6,40 +6,40 @@ use vox_lib::services::llm::llama_cpp::{ModelFamily};
 
 #[test]
 fn test_gemma_family_detection() {
-    let path = Path::new("/home/addy/.vox/models/llm/gemma4/Gemma-4-E2B-Uncensored-HauhauCS-Aggressive-Q2_K_P.gguf");
+    let path = Path::new("Gemma-4-E2B-Uncensored-HauhauCS-Aggressive-Q2_K_P.gguf");
     assert_eq!(ModelFamily::detect(path), ModelFamily::Gemma);
 
-    let path_google = Path::new("/home/addy/.vox/models/llm/gemma4/google_gemma-4-E2B-it-Q4_K_M.gguf");
+    let path_google = Path::new("google_gemma-4-E2B-it-Q4_K_M.gguf");
     assert_eq!(ModelFamily::detect(path_google), ModelFamily::Gemma);
 
-    let path_e4b = Path::new("/home/addy/.vox/models/llm/gemma4/google_gemma-4-E4B-it-Q4_K_M.gguf");
+    let path_e4b = Path::new("google_gemma-4-E4B-it-Q4_K_M.gguf");
     assert_eq!(ModelFamily::detect(path_e4b), ModelFamily::Gemma);
 }
 
 #[test]
 fn test_qwen_family_detection() {
-    let path_15b = Path::new("/home/addy/.vox/models/llm/qwen/qwen2.5-1.5b-instruct-q4_k_m.gguf");
+    let path_15b = Path::new("qwen2.5-1.5b-instruct-q4_k_m.gguf");
     assert_eq!(ModelFamily::detect(path_15b), ModelFamily::Qwen);
 
-    let path_3b = Path::new("/home/addy/.vox/models/llm/qwen/qwen2.5-3b-instruct-q4_k_m.gguf");
+    let path_3b = Path::new("qwen2.5-3b-instruct-q4_k_m.gguf");
     assert_eq!(ModelFamily::detect(path_3b), ModelFamily::Qwen);
 
-    let path_obliterated = Path::new("/home/addy/.vox/models/llm/qwen/Qwen3-4B-OBLITERATED.Q4_K_M.gguf");
+    let path_obliterated = Path::new("Qwen3-4B-OBLITERATED.Q4_K_M.gguf");
     assert_eq!(ModelFamily::detect(path_obliterated), ModelFamily::Qwen);
 
-    let path_qwen35 = Path::new("/home/addy/.vox/models/llm/qwen/Qwen3.5-4B-Q4_K_M.gguf");
+    let path_qwen35 = Path::new("Qwen3.5-4B-Q4_K_M.gguf");
     assert_eq!(ModelFamily::detect(path_qwen35), ModelFamily::Qwen);
 }
 
 #[test]
 fn test_llama_family_detection() {
-    let path = Path::new("/home/addy/.vox/models/llm/Llama-3.2-3B-Instruct-Q6_K_L.gguf");
+    let path = Path::new("Llama-3.2-3B-Instruct-Q6_K_L.gguf");
     assert_eq!(ModelFamily::detect(path), ModelFamily::Llama3);
 }
 
 #[test]
 fn test_nemotron_family_detection() {
-    let path = Path::new("/home/addy/.vox/models/llm/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf");
+    let path = Path::new("NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf");
     assert_eq!(ModelFamily::detect(path), ModelFamily::Nemotron);
 }
 

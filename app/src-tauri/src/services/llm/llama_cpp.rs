@@ -175,7 +175,7 @@ impl ModelFamily {
             ModelFamily::Unknown => {}
         }
 
-        cleaned
+        cleaned.trim().to_string()
     }
 }
 

@@ -99,21 +99,21 @@ pub fn get_preset_colors() -> Vec<String> {
 pub fn get_llm_metadata() -> Vec<ModelMetadata> {
     vec![
         ModelMetadata {
-            id: "gemma4".to_string(),
+            id: "gemma_4_reasoning".to_string(),
             name: "Gemma 4".to_string(),
             description: "Fast and smart core for general conversation and tasks.".to_string(),
             ram_usage: " ~1.4GB".to_string(),
             parameters: "2.4B (Q4_K_M)".to_string(),
         },
         ModelMetadata {
-            id: "llm_llama_3_2_1b_instruct_q6_k".to_string(),
+            id: "llama_3_2_reasoning".to_string(),
             name: "Llama 3.2 1B".to_string(),
             description: "Highly optimized low-latency instruction-following agent.".to_string(),
             ram_usage: " ~1.0GB".to_string(),
             parameters: "1.2B (Q6_K)".to_string(),
         },
         ModelMetadata {
-            id: "llm_gemma_4_e2b_uncensored_aggressive_q2_k_p".to_string(),
+            id: "gemma_4_uncensored".to_string(),
             name: "Gemma 4 Uncensored".to_string(),
             description: "Unrestricted high-speed agent with ultra-quantized weights.".to_string(),
             ram_usage: " ~2.9GB".to_string(),
@@ -125,7 +125,7 @@ pub fn get_llm_metadata() -> Vec<ModelMetadata> {
 pub fn get_asr_metadata() -> Vec<ModelMetadata> {
     vec![
         ModelMetadata {
-            id: "qwen3-asr".to_string(),
+            id: "qwen3_asr".to_string(),
             name: "Qwen3-ASR".to_string(),
             description: "Multi-lingual speech recognition.".to_string(),
             ram_usage: " ~800MB".to_string(),
@@ -137,14 +137,14 @@ pub fn get_asr_metadata() -> Vec<ModelMetadata> {
 pub fn get_tts_metadata() -> Vec<ModelMetadata> {
     vec![
         ModelMetadata {
-            id: "kokoro".to_string(),
+            id: "kokoro_english_tts".to_string(),
             name: "Kokoro".to_string(),
             description: "High-quality voice output with multiple profiles.".to_string(),
             ram_usage: " ~150MB".to_string(),
             parameters: "82M".to_string(),
         },
         ModelMetadata {
-            id: "piper_hi".to_string(),
+            id: "piper_hindi_tts".to_string(),
             name: "Piper Hindi".to_string(),
             description: "Natural Hindi speech optimized for low power devices.".to_string(),
             ram_usage: " ~100MB".to_string(),
@@ -291,8 +291,8 @@ pub struct VadSettings {
 impl Default for VadSettings {
     fn default() -> Self {
         Self {
-            threshold: 0.65,        // Earshot recommends 0.65 to prevent rapid sessions
-            ptt_noise_gate: 0.015,
+            threshold: 0.5,        // Earshot recommends 0.5 as general default, TenVAD also optimized to 0.5
+            ptt_noise_gate: 0.005,
             vad_backend: VadBackendOption::Earshot,
         }
     }
@@ -301,14 +301,14 @@ impl Default for VadSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AsrSettings {
-    pub model: String, // e.g., "qwen3-asr"
+    pub model: String, // e.g., "qwen3_asr"
     pub transliterate_enabled: bool,
 }
 
 impl Default for AsrSettings {
     fn default() -> Self {
         Self {
-            model: "qwen3-asr".to_string(),
+            model: "qwen3_asr".to_string(),
             transliterate_enabled: true,
         }
     }
@@ -316,7 +316,7 @@ impl Default for AsrSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmSettings {
-    pub model: String, // e.g., "gemma4"
+    pub model: String, // e.g., "llama_3_2_reasoning"
     pub ctx_size: u32,
     pub threads: u32,
 }
@@ -324,7 +324,7 @@ pub struct LlmSettings {
 impl Default for LlmSettings {
     fn default() -> Self {
         Self {
-            model: "llama-3.2".to_string(),
+            model: "llama_3_2_reasoning".to_string(),
             ctx_size: 2048,
             threads: 4,
         }
@@ -333,18 +333,18 @@ impl Default for LlmSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsSettings {
-    pub en_model: String, // e.g., "kokoro"
+    pub en_model: String, // e.g., "kokoro_english_tts"
     pub en_voice: i32,    // Kokoro voice index (0-10)
-    pub hi_model: String, // e.g., "piper_hi"
+    pub hi_model: String, // e.g., "piper_hindi_tts"
     pub hi_voice: String, // Specific Piper .onnx filename
 }
 
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
-            en_model: "kokoro".to_string(),
+            en_model: "kokoro_english_tts".to_string(),
             en_voice: 0, // Bella
-            hi_model: "piper_hi".to_string(),
+            hi_model: "piper_hindi_tts".to_string(),
             hi_voice: crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.to_string(),
         }
     }
@@ -362,7 +362,7 @@ impl Default for InteractionSettings {
         Self {
             main_app_mode: InteractionMode::Passive,
             tray_mode: InteractionMode::Passive,
-            auto_sleep_timeout: 300,
+            auto_sleep_timeout: 400,
         }
     }
 }

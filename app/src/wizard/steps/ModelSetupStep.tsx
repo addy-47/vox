@@ -28,9 +28,19 @@ interface ModelEntry {
   required: boolean;
 }
 
-interface Manifest {
+interface ModelGroup {
+  id: string;
+  name: string;
+  category: string;
   version: string;
-  models: ModelEntry[];
+  files: ModelEntry[];
+}
+
+interface VoxManifest {
+  models_version: string;
+  release_notes?: string[];
+  total_size_bytes: number;
+  model_groups: ModelGroup[];
 }
 
 interface ModelProgress {
@@ -51,7 +61,7 @@ interface Props {
 
 export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externalError, isAlreadyComplete }) => {
   const [view, setView] = useState<'catalog' | 'progress' | 'complete'>(isAlreadyComplete ? 'complete' : 'catalog');
-  const [manifest, setManifest] = useState<Manifest | null>(null);
+  const [manifest, setManifest] = useState<VoxManifest | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<Record<string, ModelProgress>>({});
   const [isFetching, setIsFetching] = useState(false);
@@ -63,9 +73,11 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     const fetchCatalog = async () => {
       setIsFetching(true);
       try {
-        const data = await invoke<Manifest>('fetch_manifest');
+        const data = await invoke<VoxManifest>('fetch_manifest');
         setManifest(data);
-        const required = data.models.filter(m => m.required).map(m => m.id);
+        const required = data.model_groups
+            .filter(g => g.files.some(f => f.required))
+            .map(g => g.id);
         setSelectedIds(new Set(required));
       } catch (e) {
         console.error('Failed to load model catalog', e);
@@ -144,10 +156,10 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   };
 
   const totalSize = useMemo(() => {
-    if (!manifest || !manifest.models) return 0;
-    return manifest.models
-        .filter(m => selectedIds.has(m.id))
-        .reduce((acc, m) => acc + m.size, 0);
+    if (!manifest || !manifest.model_groups) return 0;
+    return manifest.model_groups
+        .filter(g => selectedIds.has(g.id))
+        .reduce((acc, g) => acc + g.files.reduce((sum, f) => sum + f.size, 0), 0);
   }, [manifest, selectedIds]);
 
   const formatSize = (bytes: number) => {
@@ -159,7 +171,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   };
 
   const categories = useMemo(() => {
-    if (!manifest || !manifest.models) return [];
+    if (!manifest || !manifest.model_groups) return [];
     
     return [
         {
@@ -168,7 +180,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             subLabel: 'Ten-VAD / 10ms Window',
             icon: <Mic />,
             required: true,
-            models: manifest.models.filter(m => m.path.startsWith('vad/'))
+            groups: manifest.model_groups.filter(g => g.category === 'vad')
         },
         {
             id: 'stt',
@@ -176,7 +188,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             subLabel: 'Qwen-ASR / Int8 Quant',
             icon: <Database />,
             required: true,
-            models: manifest.models.filter(m => m.path.startsWith('stt/'))
+            groups: manifest.model_groups.filter(g => g.category === 'stt')
         },
         {
             id: 'translit',
@@ -184,15 +196,15 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             subLabel: 'Deep learning based transliteration',
             icon: <Languages />,
             required: true,
-            models: manifest.models.filter(m => m.path.startsWith('translit/'))
+            groups: manifest.model_groups.filter(g => g.category === 'translit')
         },
         {
             id: 'llm',
             label: 'Intelligence Layer (LLM)',
-            subLabel: 'Gemma-2B / Q4_K_M',
+            subLabel: 'Gemma / Llama Reasoning',
             icon: <BrainCircuit />,
             required: false,
-            models: manifest.models.filter(m => m.path.startsWith('llm/'))
+            groups: manifest.model_groups.filter(g => g.category === 'llm')
         },
         {
             id: 'tts',
@@ -200,7 +212,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             subLabel: 'Kokoro + Piper Multi-Voice',
             icon: <VolumeIcon />,
             required: false,
-            models: manifest.models.filter(m => m.path.startsWith('tts/'))
+            groups: manifest.model_groups.filter(g => g.category === 'tts')
         }
     ];
   }, [manifest]);
@@ -240,9 +252,14 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     {categories.map(cat => (
                         <ModelCategory 
                             key={cat.id}
-                            {...cat}
-                            selected={cat.models.length > 0 && cat.models.some(m => selectedIds.has(m.id))}
-                            onToggle={() => toggleCategory(cat.models.map(m => m.id))}
+                            id={cat.id}
+                            label={cat.label}
+                            subLabel={cat.subLabel}
+                            icon={cat.icon}
+                            groups={cat.groups}
+                            selected={cat.groups.length > 0 && cat.groups.some(g => selectedIds.has(g.id))}
+                            required={cat.required}
+                            onToggle={() => toggleCategory(cat.groups.map(g => g.id))}
                             formatSize={formatSize}
                             selectedIds={selectedIds}
                             onToggleModel={toggleModel}
@@ -289,10 +306,14 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             />
 
             <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar">
-                {categories.filter(cat => cat.models.some(m => selectedIds.has(m.id))).map(cat => {
-                    const groupProgress = cat.models.reduce((acc, m) => acc + (progress[m.id]?.progress || 0), 0) / cat.models.length;
-                    const isDone = cat.models.every(m => progress[m.id]?.step === 'Verified');
-                    const activeStep = cat.models
+                {categories.filter(cat => cat.groups.some(g => selectedIds.has(g.id))).map(cat => {
+                    const selectedGroups = cat.groups.filter(g => selectedIds.has(g.id));
+                    const allFiles = selectedGroups.flatMap(g => g.files);
+                    if (allFiles.length === 0) return null;
+
+                    const groupProgress = allFiles.reduce((acc, m) => acc + (progress[m.id]?.progress || 0), 0) / allFiles.length;
+                    const isDone = allFiles.every(m => progress[m.id]?.step === 'Verified');
+                    const activeStep = allFiles
                         .map(m => progress[m.id])
                         .find(p => p && p.step !== 'Verified')?.step || (isDone ? 'Ready' : 'Queued');
 
@@ -389,4 +410,3 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     </div>
   );
 };
-

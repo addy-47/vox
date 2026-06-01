@@ -16,7 +16,7 @@ const EngineCard: React.FC = React.memo(() => {
   
   const checkPresence = useCallback(async () => {
     if (!modelCatalog || !draftSettings) return;
-    const items = ["ten_vad", "qwen3-asr", "translit", draftSettings.llm.model];
+    const items = ["ten_vad", "qwen3_asr", "vox_translit_rnn", draftSettings.llm.model];
     const results: Record<string, boolean> = {};
     for (const id of items) {
       try {
@@ -38,8 +38,8 @@ const EngineCard: React.FC = React.memo(() => {
   const activeLlm = modelCatalog.llm.find(m => m.id === draftSettings.llm.model) || modelCatalog.llm[0];
   const activeAsr = modelCatalog.asr.find(m => m.id === draftSettings.asr.model) || modelCatalog.asr[0];
   const isLlmVerified = presence[activeLlm.id];
-  const isAsrVerified = presence["qwen3-asr"];
-  const isTranslitVerified = presence["translit"];
+  const isAsrVerified = presence["qwen3_asr"];
+  const isTranslitVerified = presence["vox_translit_rnn"];
   const isVadVerified = draftSettings.vad.vad_backend === "earshot" || presence["ten_vad"];
 
   return (
@@ -176,8 +176,8 @@ const VoiceCard: React.FC = React.memo(() => {
 
   const checkTtsPresence = useCallback(async () => {
     try {
-      const kokoroOk = await invoke<boolean>("check_model_exists", { modelId: "kokoro" });
-      const piperOk = await invoke<boolean>("check_model_exists", { modelId: "piper_hi" });
+      const kokoroOk = await invoke<boolean>("check_model_exists", { modelId: "kokoro_english_tts" });
+      const piperOk = await invoke<boolean>("check_model_exists", { modelId: "piper_hindi_tts" });
       setIsTtsVerified(kokoroOk && piperOk);
     } catch {
       setIsTtsVerified(false);

@@ -29,7 +29,7 @@ pub fn is_devanagari(text: &str) -> bool {
 /// Transliterates Devanagari to Roman script if Hindi is detected.
 /// Implements Incomplete Word Protection: If the string does not end with a boundary,
 /// the last word is bypassed to prevent partial word transliteration artifacts.
-pub fn transliterate_if_hi(text: &str) -> String {
+pub fn transliterate_if_hi(text: &str, is_final: bool) -> String {
     if !crate::core::settings::VoxSettings::load().asr.transliterate_enabled {
         return text.to_string();
     }
@@ -39,7 +39,9 @@ pub fn transliterate_if_hi(text: &str) -> String {
     }
 
     // Determine if the text ends with whitespace or punctuation
-    let ends_with_boundary = if let Some(last_char) = text.chars().last() {
+    let ends_with_boundary = if is_final {
+        true
+    } else if let Some(last_char) = text.chars().last() {
         last_char.is_whitespace() || last_char.is_ascii_punctuation() || last_char == '।'
     } else {
         true
@@ -107,7 +109,7 @@ pub fn transliterate_if_hi(text: &str) -> String {
 
 /// Backward-compatible Hinglish engine wrapper.
 pub fn to_friendly_hinglish(text: &str) -> String {
-    transliterate_if_hi(text)
+    transliterate_if_hi(text, true)
 }
 
 fn edit_distance(s1: &str, s2: &str) -> usize {
@@ -149,6 +151,7 @@ fn words_soft_match(w1: &str, w2: &str) -> bool {
     }
 }
 
+
 fn is_soft_subslice(p_words: &[&str], s_words: &[&str]) -> bool {
     if s_words.is_empty() {
         return true;
@@ -187,16 +190,46 @@ pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
     let p_words: Vec<&str> = p_clean.split_whitespace().collect();
     let s_words: Vec<&str> = s_clean.split_whitespace().collect();
 
-    // 1. Soft subslice/containment check to prevent older/smaller overlapping frames from duplicating
+    // 0. Soft subslice/containment check to prevent older/smaller overlapping frames from duplicating
     if is_soft_subslice(&p_words, &s_words) {
         return p_clean.to_string();
     }
 
-    // 2. Overlap matching
+    // 1. Alignment search (look for an overlapping/matching segment anywhere in prefix)
+    let mut best_i = 0;
+    let mut best_j = 0;
+    let mut max_match_len = 0;
+
+    let max_j = 8.min(s_words.len());
+    for i in 0..p_words.len() {
+        for j in 0..max_j {
+            let mut len = 0;
+            while i + len < p_words.len() && j + len < s_words.len() {
+                if words_soft_match(p_words[i + len], s_words[j + len]) {
+                    len += 1;
+                } else {
+                    break;
+                }
+            }
+            if len > max_match_len {
+                max_match_len = len;
+                best_i = i;
+                best_j = j;
+            }
+        }
+    }
+
+    let min_required_match = 3.min(s_words.len());
+    if max_match_len >= min_required_match {
+        let mut result_words = p_words[..best_i].to_vec();
+        result_words.extend_from_slice(&s_words[best_j..]);
+        return result_words.join(" ");
+    }
+
+    // 2. Sequential overlap matching (fallback if alignment search failed)
     let max_overlap = p_words.len().min(s_words.len());
     let mut best_overlap_len = 0;
 
-    // Find the longest overlap where the end of p_words matches the start of s_words
     for k in (1..=max_overlap).rev() {
         let p_slice = &p_words[p_words.len() - k..];
         let s_slice = &s_words[..k];
@@ -228,11 +261,16 @@ pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
 mod tests {
     use super::*;
 
+    fn init_paths_for_testing() {
+        let _ = crate::utils::paths::init_with_root(std::env::temp_dir().join("vox_test"));
+    }
+
     #[test]
     fn test_hinglish_normalization() {
+        init_paths_for_testing();
         // Without engine initialized, transliterate_if_hi should fallback to raw word safely
-        assert_eq!(transliterate_if_hi("नमस्ते"), "नमस्ते");
-        assert_eq!(transliterate_if_hi("hello"), "hello");
+        assert_eq!(transliterate_if_hi("नमस्ते", false), "नमस्ते");
+        assert_eq!(transliterate_if_hi("hello", false), "hello");
     }
 
     #[test]
@@ -275,6 +313,22 @@ mod tests {
         assert_eq!(
             stitch_transcripts("mera phone numbere", "number hai"),
             "mera phone numbere hai"
+        );
+
+        assert_eq!(
+            stitch_transcripts(
+                "Expert nature is around. Expecting to raise around twelve, I think forty thousand per month.",
+                "Expect nature is around twelve. I think forty thousand per month."
+            ),
+            "Expert nature is around. Expecting to raise around twelve. I think forty thousand per month."
+        );
+
+        assert_eq!(
+            stitch_transcripts(
+                "Spending any more than than than. thousand or greater because they are not they have said that they are spending only through credits.",
+                "I have said that they are spending only through credit. Right now."
+            ),
+            "Spending any more than than than. thousand or greater because they are not they have said that they are spending only through credit. Right now."
         );
     }
 }

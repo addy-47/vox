@@ -17,7 +17,10 @@ use crate::ipc::tray::{
 use crate::ipc::history::{get_transcript_history, commit_session_to_history, get_sessions, get_turns, delete_session};
 use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog};
 use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
-use crate::tray::{setup_linux_virtual_layer, setup_tray_window, position_tray_window};
+#[cfg(target_os = "linux")]
+use crate::tray::setup_linux_virtual_layer;
+use crate::tray::{setup_tray_window, position_tray_window};
+
 use crate::monitoring::system_monitor::spawn_system_monitor;
 
 use tauri::menu::Menu;
@@ -52,6 +55,35 @@ pub fn run() {
             // ── 0. Paths Singleton (must be first) ──────────────────────────────────
             crate::utils::paths::init(app.handle());
             crate::utils::paths::ensure_dirs().ok();
+
+            // ── Background Manifest Caching (fetches once at boot) ──────────────────
+            tauri::async_runtime::spawn(async {
+                let cache_dir = crate::utils::paths::cache_dir();
+                
+                // Fetch and cache App Manifest
+                match crate::setup::manifest::AppManifest::fetch().await {
+                    Ok(manifest) => {
+                        let path = cache_dir.join("app_manifest.json");
+                        if let Ok(content) = serde_json::to_string_pretty(&manifest) {
+                            let _ = std::fs::write(path, content);
+                            log::info!("[BOOTSTRAP] Successfully cached app manifest.");
+                        }
+                    }
+                    Err(e) => log::warn!("[BOOTSTRAP] Failed to fetch/cache app manifest at boot: {}", e),
+                }
+
+                // Fetch and cache Models Manifest
+                match crate::setup::manifest::VoxManifest::fetch().await {
+                    Ok(manifest) => {
+                        let path = cache_dir.join("models_manifest.json");
+                        if let Ok(content) = serde_json::to_string_pretty(&manifest) {
+                            let _ = std::fs::write(path, content);
+                            log::info!("[BOOTSTRAP] Successfully cached models manifest.");
+                        }
+                    }
+                    Err(e) => log::warn!("[BOOTSTRAP] Failed to fetch/cache models manifest at boot: {}", e),
+                }
+            });
 
             // ── 0.5 Logging (must be second, relies on paths) ───────────────────────
             let log_guard = crate::utils::logging::init(crate::utils::paths::get().logs.clone());
@@ -162,9 +194,14 @@ pub fn run() {
                 let _ = live_i.set_checked(hud_visible);
             }
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&tray_menu)
+            let mut tray_builder = TrayIconBuilder::new().menu(&tray_menu);
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            } else {
+                log::warn!("[Tray] Default window icon not found. Building tray without explicit icon.");
+            }
+
+            let _tray = tray_builder
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "launch" => {
                         let handle = app.clone();
@@ -197,6 +234,7 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
             
             // ── 1.8 Runtime Ready ───────────────────────────────────────────────────
             {
@@ -285,6 +323,7 @@ pub fn run() {
                 // Instead of closing, just hide the window
                 if window.label() == "main" || window.label() == "tray" {
                     let label = window.label().to_string();
+                    log::info!("[Window] Close requested for {}, hiding instead of closing window.", label);
                     let _ = window.hide();
                     api.prevent_close();
                     
@@ -299,8 +338,10 @@ pub fn run() {
                             };
                             
                             if !tray_enabled && !is_engaged {
-                                log::info!("[Window] Main window hidden and Tray disabled. Offloading engine...");
+                                log::info!("[Window] Main window hidden, Tray is disabled, and app is disengaged. Offloading engine...");
                                 let _ = crate::ipc::pipeline::stop_engine(handle).await;
+                            } else {
+                                log::info!("[Window] Main window hidden. Engine kept alive. Tray enabled: {}, Engaged: {}", tray_enabled, is_engaged);
                             }
                         });
                     }
@@ -337,6 +378,8 @@ pub fn run() {
             crate::ipc::monitoring::clear_runtime_history,
             // Setup
             crate::ipc::setup::fetch_manifest,
+            crate::ipc::setup::check_for_updates,
+            crate::ipc::setup::check_for_model_updates,
             crate::ipc::setup::get_onboarding_status,
             crate::ipc::setup::get_runtime_report,
             crate::ipc::setup::start_model_setup,
