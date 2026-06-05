@@ -266,7 +266,7 @@ where
                 utterance_buffer.extend_from_slice(&chunk);
                 samples_since_partial += chunk.len();
 
-                if samples_since_partial >= 6400 {
+                if samples_since_partial >= 12800 {
                     let start_idx = utterance_buffer.len().saturating_sub(240000);
                     let _ = stt_tx.send(crate::services::stt::SttCommand::Partial(
                         current_turn_id, 

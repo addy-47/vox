@@ -2,9 +2,18 @@
 
 ---
 
+## Core Mandate
+
+> **Accuracy First. Memory Second. Speed Third.**
+>
+> The system is useless if it cannot transcribe or respond accurately.
+> Speed is a byproduct of good engineering — not a target to optimize at the cost of correctness.
+
+---
+
 ## Versioning Logic
 
-* **0.1.x → 0.4.x** = Core real-time pipeline (native)
+* **0.1.x → 0.4.x** = Core pipeline (native, accuracy-focused)
 * **0.5.x → 0.7.x** = System intelligence + UX + persistence
 * **1.0.0** = Stable release
 
@@ -59,9 +68,9 @@ audio → VAD → event stream → UI reacts
 
 ---
 
-## Phase 0.3.0 — STT (Streaming Transcription)
+## Phase 0.3.0 — STT (Accurate Transcription)
 
-**Goal:** Low-latency multilingual transcription
+**Goal:** Accurate multilingual transcription — Hinglish, English, Hindi
 
 ---
 
@@ -69,8 +78,16 @@ audio → VAD → event stream → UI reacts
 
 * Integrate Qwen3-ASR-0.6B (INT8 ONNX)
 * Implement **ring buffer audio pipeline**
-* Feed **overlapping 240ms chunks**
-* Implement encoder state caching
+* Feed **overlapping audio chunks**
+* Ensure `max_new_tokens` is large enough to never truncate output
+
+---
+
+### Accuracy Constraints
+
+* `max_new_tokens` must be ≥ 256 (512 preferred) — truncated transcripts are bugs
+* Partial transcripts are UI feedback only — final transcript must be complete
+* The warning `"Result is truncated"` from sherpa-onnx is a hard failure, not acceptable
 
 ---
 
@@ -78,15 +95,15 @@ audio → VAD → event stream → UI reacts
 
 * emit:
 
-  * `text_delta` (partial transcript)
-  * `text_final`
+  * `text_delta` (partial transcript — for live UI feedback)
+  * `text_final` (authoritative — must be complete)
 
 ---
 
 ### UI Integration
 
 * overlay driven entirely by streaming text
-* no buffering delays
+* final transcript always wins over partial
 
 ---
 
@@ -94,6 +111,7 @@ audio → VAD → event stream → UI reacts
 
 * no full-audio batching
 * no reprocessing of old frames
+* never truncate to hit a latency target
 
 ---
 
@@ -131,9 +149,9 @@ audio → VAD → event stream → UI reacts
 
 ---
 
-## Phase 0.5.0 — Full Real-Time Loop frontend integration (CRITICAL)
+## Phase 0.5.0 — Full Voice Loop frontend integration (CRITICAL)
 
-**Goal:** Complete voice-to-voice interaction loop
+**Goal:** Complete, coherent voice-to-voice interaction loop
 
 ---
 
@@ -142,6 +160,18 @@ audio → VAD → event stream → UI reacts
 * integrate Chatterbox-Turbo (~350M)
 * streaming TTS (text → audio chunks)
 * audio playback via Rust (`cpal`)
+
+---
+
+### TTS Quality Mandate
+
+Chunking must produce **natural, complete utterances**:
+
+* Flush on sentence boundaries (`.`, `!`, `?`)
+* Flush on clause boundaries (`,`, `;`, ` — `)
+* Time-based flush: ≥ 1500ms AND ≥ 3 words
+* Word count fallback: ≥ 8 words
+* **Never flush on 1–2 words** — produces robotic, choppy speech
 
 ---
 
@@ -164,10 +194,12 @@ audio → VAD → STT → LLM → TTS → output
 
 ---
 
-### Target
+### Quality Target
 
-* <500ms perceived latency
-* fully non-blocking pipeline
+* Transcription: complete and accurate — no truncation
+* LLM response: coherent and complete
+* TTS: natural sentence-level utterances — not choppy word fragments
+* Pipeline: fully non-blocking
 
 ---
 
@@ -256,7 +288,7 @@ audio → VAD → STT → LLM → TTS → output
 
 ## Phase 0.9.0 — Hardening
 
-**Goal:** Stability + performance tuning
+**Goal:** Stability + accuracy validation + performance tuning
 
 ---
 
@@ -264,8 +296,18 @@ audio → VAD → STT → LLM → TTS → output
 
 * CPU profiling (thread allocation)
 * RAM monitoring (≤5.5GB inference)
-* latency tuning (<500ms target)
+* Accuracy validation: WER testing on Hinglish corpus
+* TTS quality review: naturalness and completeness of utterances
 * crash recovery (inference layer)
+
+---
+
+### Accuracy KPIs (not latency KPIs)
+
+* Zero `"Result is truncated"` warnings in normal usage
+* STT: Hinglish WER ≤ 20% on representative samples
+* TTS: No utterances < 3 words unless a sentence boundary is present
+* LLM: Responses are grammatically complete (no mid-sentence cutoff)
 
 ---
 
@@ -273,6 +315,7 @@ audio → VAD → STT → LLM → TTS → output
 
 * low-end devices (8GB baseline)
 * multi-OS validation
+* real-world Hinglish speech samples
 
 ---
 
@@ -285,7 +328,9 @@ audio → VAD → STT → LLM → TTS → output
 ### Requirements
 
 * stable IPC contract
-* consistent latency
+* accurate STT with zero truncation in normal usage
+* coherent LLM responses
+* natural TTS output (no choppy utterances)
 * reliable barge-in behavior
 * clean onboarding flow
 
@@ -295,7 +340,7 @@ audio → VAD → STT → LLM → TTS → output
 
 Vox v1.0 =
 
-* native real-time voice system
+* native, accuracy-first voice system
 * fully local-first
 * event-driven architecture
 * ephemeral UI (no persistent chat)
@@ -307,8 +352,8 @@ Vox v1.0 =
 
 > Vox is not a chatbot.
 
-It is a **real-time streaming voice system** constrained by:
+It is a **local-first, accuracy-driven voice system** constrained by:
 
 * memory physics
 * CPU bandwidth
-* latency guarantees
+* the mandate to be correct before being fast

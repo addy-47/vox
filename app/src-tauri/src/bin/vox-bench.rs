@@ -262,6 +262,7 @@ fn main() -> anyhow::Result<()> {
     let mut tokens_generated = 0;
     let mut llm_done = false;
     let mut last_tts_flush = std::time::Instant::now();
+    let mut first_token_time: Option<std::time::Instant> = None;
 
     while !llm_done || tts_finished_count < tts_started_count {
         if let Ok(event) = event_rx.recv_timeout(Duration::from_secs(30)) {
@@ -277,6 +278,8 @@ fn main() -> anyhow::Result<()> {
                     m_lock.input_len_chars = text.len();
                     println!("\x1b[34m[STT]\x1b[0m Final: \"{}\"", text);
                     llm_tx.send(BenchCommand::Llm(text, system_prompt.clone()))?;
+                    first_token_time = None;
+                    tokens_generated = 0;
                 }
                 VoxEvent::LlmToken { token, .. } => {
                     let mut m_lock = metrics.lock().unwrap();
@@ -291,9 +294,17 @@ fn main() -> anyhow::Result<()> {
                     token_buf.push_str(&token);
                     tokens_generated += 1;
                     
+                    let first_time = first_token_time.get_or_insert_with(std::time::Instant::now);
+                    let elapsed_secs = first_time.elapsed().as_secs_f32();
+                    let tps = if elapsed_secs > 0.5 {
+                        tokens_generated as f32 / elapsed_secs
+                    } else {
+                        3.5
+                    };
+                    
                     let wc = count_words(&token_buf);
                     let elapsed_ms = last_tts_flush.elapsed().as_millis();
-                    if should_flush(&token_buf, wc, elapsed_ms) {
+                    if should_flush(&token_buf, wc, elapsed_ms, tps) {
                         let chunk = token_buf.trim().to_string();
                         if !chunk.is_empty() {
                             m_lock.mark(MetricField::TtsStart);
@@ -373,7 +384,7 @@ fn main() -> anyhow::Result<()> {
     // Write detailed artifacts
     reporter.write_artifact("stt_transcript.txt", &final_transcript);
     reporter.write_artifact("llm_response.txt", &assistant_text);
-    reporter.write_artifact("transliteration.txt", &format!("STT: {}\nLLM: {}", transliterate_if_hi(&final_transcript, true), transliterate_if_hi(&assistant_text, true)));
+    reporter.write_artifact("transliteration.txt", &format!("STT: {}\nLLM: {}", transliterate_if_hi(&final_transcript, true, true), transliterate_if_hi(&assistant_text, true, true)));
     
     // Export result audio
     let spec = hound::WavSpec {
