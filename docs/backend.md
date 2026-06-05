@@ -52,13 +52,15 @@ Each stage emits incremental outputs.
 
 ### Low-Latency Constraint
 
-Target: **<500ms voice-to-voice**
+Target: **Accurate, complete outputs**
 
 Every component must minimize:
 
 * buffering
 * blocking
 * memory allocation
+
+**Speed is a result of good engineering, not a target that overrides accuracy.**
 
 ---
 
@@ -301,6 +303,8 @@ pub enum SttCommand {
 
 Partial transcripts throttled to `STT_THROTTLE_MS = 800ms` to prevent CPU spikes.
 
+**Note**: Partials are UI feedback only. The final transcript is authoritative and must be complete (no truncation). See `max_new_tokens` in the STT engine config.
+
 ---
 
 ## 8. Language Model (LLM) - Tier 3
@@ -414,13 +418,16 @@ fn is_hindi(text: &str) -> bool {
 
 ---
 
-### Chunked Synthesis
+### Chunked Synthesis (Quality Mandate)
 
-Tokens flushed to TTS on:
+Tokens flushed to TTS on sentence/clause boundaries that produce natural speech:
 
 1. Hard boundaries: `.`, `!`, `?`
 2. Soft boundaries: `,`, `;`, ` — `, `-`
-3. Word count: ≥6 words
+3. Time-based: ≥ 1500ms AND ≥ 3 words (never on 1–2 words alone)
+4. Word count fallback: ≥ 8 words
+
+**Never flush on 1–2 words** — produces robotic, staccato speech that destroys UX.
 
 ---
 
@@ -491,9 +498,10 @@ Directive 2: Flush to TTS on:
 
 * Hard boundaries: `.`, `!`, `?`
 * Soft boundaries: `,`, `;`, ` — `, `-`
-* Word count: ≥6 words
+* Time-based: ≥ 1500ms AND ≥ 3 words
+* Word count fallback: ≥ 8 words
 
-Target: Time-to-First-Audio ≤ ~500ms.
+**The goal is natural, complete utterances — not the shortest possible TTFA.**
 
 ---
 

@@ -29,7 +29,7 @@ impl SttEngine {
             decoder: Some(model_dir.join(MODEL_FILE_ASR_DECODER).to_string_lossy().into()),
             tokenizer: Some(model_dir.join(MODEL_FILE_ASR_TOKENIZER).to_string_lossy().into()),
             max_total_len: 2048,
-            max_new_tokens: 64, // Optimized for 2.5s sliding window chunks to avoid useless decode overhead
+            max_new_tokens: 128, // Raised to prevent truncation of final transcripts, particularly for token-dense languages like Hindi
             ..Default::default()
         };
         

@@ -8,7 +8,7 @@ Vox is a **model-agnostic, role-based system**, constrained by:
 
 * **8GB RAM baseline** (2026 hardware)
 * **CPU-only execution** (no GPU acceleration)
-* **<500ms real-time latency** target
+* **Accuracy-first output** — correct transcription and coherent responses are non-negotiable
 * **Native C++ inference** (ONNX Runtime + llama.cpp)
 
 ---
@@ -42,11 +42,18 @@ use llama_cpp_2::{model::LlamaModel, context::LlamaContext};
 
 **Python is completely absent** from the inference path.
 
-### Latency > Accuracy
+### Accuracy First — Always
 
-* Target: **<500ms voice-to-voice** (speech start to audio output)
-* Accuracy tradeoffs acceptable for real-time performance
-* Every component minimizes buffering and blocking
+> Accuracy → Memory → Speed. In that exact order.
+
+* **Accuracy is non-negotiable**: A wrong or truncated answer is a system failure, not a tradeoff.
+* **Speed is a result**: The system should be as fast as it can be *while* being accurate.
+* Every component is tuned to maximize output quality within resource constraints — not to minimize milliseconds at the cost of correctness.
+
+**What this rules out:**
+- `max_new_tokens` values too small to fully decode real speech (causes truncation)
+- TTS chunk sizes so small they produce robotic 1–2 word utterances
+- Any config where the sherpa-onnx truncation warning is accepted as normal
 
 ### Memory-Constrained Design
 
@@ -149,9 +156,9 @@ let config = OfflineRecognizerConfig {
 | Metric | Value | Why Important |
 |--------|-------|---------------|
 | Memory | ~800MB | Fits within budget |
-| Latency | 90-100ms | Enables real-time streaming |
-| Accuracy | High | Native Hinglish support |
-| Streaming | Yes | Critical for live transcription |
+| Accuracy | High | Native Hinglish support — the primary evaluation criterion |
+| Streaming | Yes | Enables live partial transcription in UI |
+| Latency | RTF ~2.0 on CPU | Acceptable for complete, accurate output |
 
 ### Key Advantages
 
@@ -159,19 +166,42 @@ let config = OfflineRecognizerConfig {
 2. **Streaming Architecture**: Encoder state caching enables real-time partial transcripts
 3. **CPU Optimized**: Designed for edge deployment
 
-### Streaming Strategy (CRITICAL)
+### Critical Configuration (ACCURACY MANDATE)
+
+The STT engine is the most critical accuracy point. Misconfiguration here corrupts every downstream output.
 
 ```rust
-// 240ms overlapping chunks
-const CHUNK_SIZE = 16000 * 0.24; // 3840 samples
-const OVERLAP = 16000 * 0.06;    // 960 samples
+let config = OfflineRecognizerConfig {
+    model_config: OfflineQwen3ASRModelConfig {
+        conv_frontend: Some("conv_frontend.onnx"),
+        encoder: Some("encoder.int8.onnx"),
+        decoder: Some("decoder.int8.onnx"),
+        tokenizer: Some("tokenizer"),
+        max_total_len: 2048,
+        // CRITICAL: Must be large enough to decode without truncation.
+        // 64 caused "Result is truncated" warnings for any utterance > ~2s.
+        // 512 handles up to ~30s of natural speech at normal speaking pace.
+        // NEVER reduce this to gain speed — truncated = garbage output.
+        max_new_tokens: 512,
+    },
+    num_threads: 4,  // Use all available perf cores for faster decode
+};
+```
 
-// Every 800ms: Send partial for live UI feedback
+**The sherpa-onnx warning `"Result is truncated. max_new_tokens X is too small"` is a hard bug — not acceptable.**
+
+### Streaming Strategy
+
+```rust
+// Overlapping audio window for streaming partial transcripts
+// Partials are UI feedback only — final transcript is authoritative
 if samples_since_partial >= 12800 {
     let window_start = buffer.len().saturating_sub(240000); // 15s
     stt_tx.send(SttCommand::Partial(turn_id, owner, buffer[window_start..]));
 }
 ```
+
+**Partial transcripts are for live UI feedback only.** The final transcript must be the complete, accurate decode of the full utterance.
 
 ### Why NOT Whisper?
 
@@ -315,24 +345,34 @@ fn is_hindi(text: &str) -> bool {
 let tts_instance = if is_hindi(text) { &hi_tts } else { &en_tts };
 ```
 
-### Chunked Synthesis (Sub-Sentence)
+### Chunked Synthesis (Accuracy-Quality Mandate)
 
-**Directive 2**: Flush to TTS on punctuation or word limits
+**Goal**: Natural, complete utterances — not choppy word fragments.
+
+Flush to TTS on sentence/clause boundaries that produce coherent speech:
 
 ```rust
-fn should_flush(buf: &str, word_count: usize) -> bool {
-    // Hard boundaries (immediate flush)
+fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128) -> bool {
+    // Hard boundaries (immediate flush — always correct sentence unit)
     if matches!(last_char, '.' | '!' | '?') { return true; }
 
-    // Soft boundaries (early audio)
+    // Soft boundaries (clause-level — still natural)
     if matches!(last_char, ',' | ';') { return true; }
+    if buf.ends_with(" — ") || buf.ends_with(" - ") { return true; }
 
-    // Word count gate (prevents long-sentence lag)
-    word_count >= 6
+    // Time-based gateway: ONLY if we have enough words for natural speech
+    // 800ms/1-word caused 1-2 word utterances = robotic audio
+    if word_count >= 3 && elapsed_ms > 1500 { return true; }
+
+    // Word count fallback: minimum viable sentence for TTS
+    word_count >= 8
 }
 ```
 
-Target: **Time-to-First-Audio ≤ ~500ms**
+**Never flush on 1–2 words** unless a hard sentence boundary is present.
+Short TTS chunks produce robotic, staccato audio that destroys the conversational UX.
+
+Target: **Time-to-First-Audio that sounds natural** — not the shortest possible TTFA.
 
 ### Why NOT Fish Speech (4B)?
 
@@ -396,13 +436,13 @@ set_current_thread_priority(ThreadPriorityValue::from(80u8).unwrap()); // STT wo
 
 ### Real-Time Constraints
 
-| Component | Target Latency | Current Implementation |
+| Component | Quality Target | Current Implementation |
 |-----------|----------------|----------------------|
-| VAD | <10ms | Frame-level detection |
-| STT | <100ms | Streaming with state cache |
-| LLM | <200ms TTFT | Token-by-token streaming |
-| TTS | <200ms | Sub-sentence chunking |
-| **Total** | **<500ms** | **Pipeline parallelism** |
+| VAD | Accurate onset/offset detection | Frame-level detection |
+| STT | Complete, untruncated decode | max_new_tokens=512, 4 threads |
+| LLM | Coherent, complete responses | Token-by-token streaming |
+| TTS | Natural, sentence-level utterances | Clause-boundary chunking |
+| **Mandate** | **Accuracy First** | **No latency target overrides accuracy** |
 
 ### Performance Optimizations
 
@@ -545,8 +585,8 @@ if available_memory < SAFETY_MARGIN {
 Models are bounded by **physics, not capability**. Every component is chosen to fit within:
 
 - **Memory**: 8GB system constraint
-- **CPU**: Real-time performance requirements
-- **Latency**: <500ms end-to-end pipeline
+- **CPU**: Available performance cores
+- **Accuracy**: Output must be correct — this is the primary constraint
 
 ### 2. Native Performance
 
@@ -560,9 +600,9 @@ Models are bounded by **physics, not capability**. Every component is chosen to 
 
 **No batch processing**. Everything streams:
 
-- Audio chunks → VAD → STT partials
-- LLM tokens → TTS chunks
-- Parallel execution for minimal latency
+- Audio chunks → VAD → STT partials (UI feedback) + STT final (authoritative)
+- LLM tokens → TTS chunks (sentence-level, not word-level)
+- Parallel execution for natural, responsive output
 
 ### 4. Resilience & Safety
 
@@ -578,4 +618,4 @@ Each model role is **replaceable** without affecting others. New models can be s
 2. Adjusting configuration
 3. Minimal code changes (ideally zero)
 
-This architecture ensures Vox can evolve with ML progress while maintaining its real-time, memory-constrained edge deployment requirements.
+This architecture ensures Vox can evolve with ML progress while maintaining its **accuracy-first, local-first** edge deployment requirements.
