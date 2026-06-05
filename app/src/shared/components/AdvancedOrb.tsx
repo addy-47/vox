@@ -97,6 +97,8 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       u_frequency:   { value: 1.0 },
       u_color:       { value: accentColor },
       u_colorGlow:   { value: accentGlow },
+      u_stateColor:  { value: accentColor.clone() },
+      u_state:       { value: 0 },
       u_anchors:     { value: anchors },
       u_speeds:      { value: speeds },
       u_phases:      { value: phases },
@@ -175,7 +177,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
           totalDisp += combinedNoise * (u_amplitude + 0.15);
 
           // Scale by global amplitude (idle base always present)
-          float finalDisp = totalDisp * (u_amplitude * 0.75 + 0.07);
+          float finalDisp = totalDisp * (u_amplitude * 0.75 + 0.20);
 
           // PUSH INWARD ONLY — outer silhouette stays untouched
           vec3 newPos = position - n * finalDisp;
@@ -187,6 +189,8 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       fragmentShader: /* glsl */ `
         uniform vec3 u_color;
         uniform vec3 u_colorGlow;
+        uniform vec3 u_stateColor;
+        uniform int u_state;
         varying vec3 vWorldPos;
         varying vec3 vNormal;
         varying float vWaveHeight;
@@ -196,13 +200,12 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
           float fresnel = 1.0 - abs(dot(viewDir, vNormal));
 
           // More active glow for internal animation
-          float waveGlow = smoothstep(0.005, 0.45, vWaveHeight);
+          float waveGlow = smoothstep(0.0, 0.45, vWaveHeight);
           float rim      = smoothstep(0.35, 0.95, fresnel);
 
           // Enhanced glow: inner surface is a vibrant, glowing internal state.
-          float alpha = rim * 0.3 + waveGlow * 0.55;
-          vec3 color  = mix(u_color, u_colorGlow, waveGlow * 0.6 + rim * 0.15);
-          alpha *= 0.35 + vWaveHeight * 0.25;
+          float alpha = max(0.12, rim * 0.35 + waveGlow * 0.65) * (0.5 + vWaveHeight * 0.3);
+          vec3 color  = mix(u_stateColor, u_colorGlow, waveGlow * 0.6 + rim * 0.15);
 
           gl_FragColor = vec4(color, alpha);
         }
@@ -237,7 +240,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
 
           // Thinner, dimmer rim for a more premium "glassy" feel
           float rim = smoothstep(0.45, 0.85, fresnel);
-          float alpha = rim * 0.35;  // dimmed from 0.5
+          float alpha = pow(fresnel, 1.5) * 0.55;
 
           if (alpha < 0.02) discard; 
 
@@ -349,6 +352,59 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       // Smooth frequency (the modulation you see)
       uniforms.u_frequency.value +=
         ((target.freq + telemFreq) - uniforms.u_frequency.value) * 0.05;
+
+      // State-specific color target and lerp logic
+      const baseColor = uniforms.u_color.value;
+      const targetColor = baseColor.clone();
+
+      switch (state) {
+        case "Idle":
+          targetColor.multiplyScalar(0.6);
+          break;
+        case "Listening":
+          targetColor.multiplyScalar(0.9);
+          break;
+        case "UserSpeaking": {
+          targetColor.multiplyScalar(1.1);
+          targetColor.r = Math.min(1.0, targetColor.r + 0.12);
+          targetColor.g = Math.min(1.0, targetColor.g + 0.05);
+          break;
+        }
+        case "Thinking": {
+          const hsl = { h: 0, s: 0, l: 0 };
+          baseColor.getHSL(hsl);
+          const targetHue = (hsl.h + 0.5) % 1.0;
+          targetColor.setHSL(targetHue, hsl.s, hsl.l);
+          const pulse = Math.sin(t * 2.5) * 0.15 + 0.85;
+          targetColor.multiplyScalar(pulse);
+          break;
+        }
+        case "AssistantSpeaking": {
+          targetColor.r = Math.min(1.0, targetColor.r + 0.15);
+          targetColor.g = Math.min(1.0, targetColor.g + 0.08);
+          break;
+        }
+        case "Interrupted": {
+          const hsl = { h: 0, s: 0, l: 0 };
+          baseColor.getHSL(hsl);
+          targetColor.setHSL(hsl.h, hsl.s * 0.2, hsl.l * 0.4);
+          break;
+        }
+        default:
+          targetColor.multiplyScalar(0.6);
+      }
+
+      uniforms.u_stateColor.value.lerp(targetColor, 0.05);
+
+      const stateInt = {
+        Idle: 0,
+        Listening: 1,
+        UserSpeaking: 2,
+        Thinking: 3,
+        AssistantSpeaking: 4,
+        Interrupted: 5,
+      }[state] ?? 0;
+      uniforms.u_state.value = stateInt;
 
       uniforms.u_time.value = t;
 

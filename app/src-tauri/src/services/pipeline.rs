@@ -349,6 +349,8 @@ impl PipelineOrchestrator {
         let mut turn_ttft_ms = 0u32;
         let mut last_tts_flush = std::time::Instant::now();
         let mut last_committed_session_id = 0u32;
+        let mut turn_first_token_time: Option<std::time::Instant> = None;
+        let mut turn_tokens_generated = 0usize;
 
         log::info!("[Pipeline] Event loop starting...");
         let engine_shutdown = {
@@ -368,13 +370,13 @@ impl PipelineOrchestrator {
                     TranslitTask::Token { turn_id, target, token, local_transliterate_enabled } => {
                         if turn_id < worker_turn_id { continue; }
                         worker_turn_id = turn_id;
-                        let output = if local_transliterate_enabled { transliterate_if_hi(&token, false) } else { token };
+                        let output = transliterate_if_hi(&token, false, local_transliterate_enabled);
                         let _ = app_handle_translit.emit_to(&target, "llm_token", output);
                     }
                     TranslitTask::Partial { turn_id, target, text, owner, local_transliterate_enabled } => {
                         if turn_id < worker_turn_id { continue; }
                         worker_turn_id = turn_id;
-                        let output = if local_transliterate_enabled { transliterate_if_hi(&text, false) } else { text };
+                        let output = transliterate_if_hi(&text, false, local_transliterate_enabled);
                         log::info!("[Translit] Emitting partial to {}: {:?}", target, output);
                         let _ = app_handle_translit.emit_to(&target, "transcript_partial", serde_json::json!({
                             "text": output, "turn_id": turn_id, "owner": owner
@@ -383,7 +385,7 @@ impl PipelineOrchestrator {
                     TranslitTask::Final { turn_id, target, text, owner, local_transliterate_enabled } => {
                         if turn_id < worker_turn_id { continue; }
                         worker_turn_id = turn_id;
-                        let output = if local_transliterate_enabled { transliterate_if_hi(&text, true) } else { text };
+                        let output = transliterate_if_hi(&text, true, local_transliterate_enabled);
                         log::info!("[Translit] Emitting final to {}: {:?}", target, output);
                         let _ = app_handle_translit.emit_to(&target, "transcript_final", serde_json::json!({
                             "text": output, "turn_id": turn_id, "owner": owner
@@ -554,6 +556,8 @@ impl PipelineOrchestrator {
                     
                     turn_user_text = text.clone();
                     turn_assistant_text.clear();
+                    turn_first_token_time = None;
+                    turn_tokens_generated = 0;
                     
                     self.update_interaction_state(crate::core::state::InteractionState::Thinking, owner, &app_handle);
 
@@ -589,10 +593,20 @@ impl PipelineOrchestrator {
 
                     token_buf.push_str(&token);
                     turn_assistant_text.push_str(&token);
+                    
+                    let first_time = turn_first_token_time.get_or_insert_with(std::time::Instant::now);
+                    turn_tokens_generated += 1;
+                    let elapsed_secs = first_time.elapsed().as_secs_f32();
+                    let tps = if elapsed_secs > 0.5 {
+                        turn_tokens_generated as f32 / elapsed_secs
+                    } else {
+                        3.5
+                    };
+
                     let word_count = count_words(&token_buf);
                     let elapsed_ms = last_tts_flush.elapsed().as_millis();
 
-                    if should_flush(&token_buf, word_count, elapsed_ms) {
+                    if should_flush(&token_buf, word_count, elapsed_ms, tps) {
                         let chunk = token_buf.trim().to_string();
                         if !chunk.is_empty() {
                             // Directive 5: Language Detection - Lock voice for the remainder of the turn

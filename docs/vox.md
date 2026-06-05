@@ -4,11 +4,11 @@
 
 ## 1. What is Vox?
 
-**Vox** is a **local-first, real-time voice intelligence system** designed to function as a persistent, low-latency personal assistant.
+**Vox** is a **local-first, accuracy-driven voice intelligence system** designed to function as a persistent, reliable personal assistant.
 
 It is not a chatbot, nor a traditional voice assistant.
 
-> Vox is a **continuous listening system** that reacts to speech, processes intent, and responds naturally — while remaining lightweight enough to run on everyday devices.
+> Vox is a **continuous listening system** that reacts to speech, understands it accurately, processes intent, and responds naturally — while remaining lightweight enough to run on everyday devices.
 
 ---
 
@@ -16,23 +16,52 @@ It is not a chatbot, nor a traditional voice assistant.
 
 ---
 
-### ⚡ Real-Time Over Everything
+### 🎯 Accuracy First — Always
 
 Vox prioritizes:
 
-* immediacy of response
-* continuous interaction
-* conversational flow
+* correct transcription of what was actually said
+* meaningful, complete responses
+* natural, coherent speech output
 
 Over:
 
-* perfect accuracy
-* heavy reasoning
-* long-form outputs
+* raw speed of response
+* minimizing latency metrics
+* throughput optimization
+
+**A fast wrong answer is worse than a correct answer that takes a moment longer.**
+
+Speed is a byproduct of a well-engineered system — not a design target to be optimized at the cost of quality.
 
 ---
 
-### ⚡ Local-First Intelligence
+### 🧠 Memory Second
+
+Vox prioritizes:
+
+* contextual awareness across a session
+* accurate recall of prior turns
+* coherent multi-turn conversations
+
+Over:
+
+* stateless single-turn processing
+* minimizing memory footprint at the cost of context
+
+---
+
+### ⚡ Speed Third
+
+Speed matters — but only after accuracy and memory are satisfied. The system should be as fast as it can be **while being accurate**. Do not tune parameters to hit a millisecond target at the cost of output quality.
+
+Removed forever:
+- `< 500ms voice-to-voice` as a hard constraint
+- Any config that truncates transcription or responses to hit a latency target
+
+---
+
+### 🏠 Local-First Intelligence
 
 * Runs fully offline by default
 * No dependency on cloud services
@@ -42,19 +71,19 @@ Cloud integrations (LLMs, STT, TTS) are **optional extensions**, not core depend
 
 ---
 
-### ⚡ Ephemeral Interaction Model
+### 🌊 Ephemeral Interaction Model
 
 Vox is designed around **transient interactions**:
 
 * User speaks → system reacts
-* Output is immediate and contextual
+* Output is contextual
 * UI appears only when needed and disappears after
 
 There is no persistent conversational UI in the core loop.
 
 ---
 
-### ⚡ Minimal Cognitive Load
+### 🔇 Minimal Cognitive Load
 
 The system must:
 
@@ -64,7 +93,7 @@ The system must:
 
 ---
 
-### ⚡ Modular Intelligence
+### 🔧 Modular Intelligence
 
 Vox is not tied to:
 
@@ -90,7 +119,7 @@ This follows the standard voice agent pipeline:
 * Language Model (LLM)
 * Text-to-Speech (TTS)
 
-Each stage operates in a **streaming and low-latency manner**, rather than sequential blocking.
+Each stage operates in a **streaming manner**, with accuracy as the primary constraint and latency as a secondary optimization.
 
 ---
 
@@ -107,8 +136,8 @@ Each stage operates in a **streaming and low-latency manner**, rather than seque
 
 ### Turn-Based Processing
 
-* A “turn” starts when speech begins
-* A “turn” ends after silence threshold
+* A "turn" starts when speech begins
+* A "turn" ends after silence threshold
 
 Each turn is:
 
@@ -121,7 +150,7 @@ Each turn is:
 ### Feedback Mechanism
 
 * Real-time transcription during speech
-* Immediate system response after turn ends
+* System response after turn ends (complete, accurate response is prioritized)
 
 ---
 
@@ -141,13 +170,11 @@ Design system reference:
 
 ---
 
-### Low Latency System
+### Accuracy-Driven System
 
-* Designed for sub-second feedback where possible
-* Avoids blocking pipelines
-* Uses streaming wherever possible
-
-Latency is a first-class constraint.
+* Transcription must be complete and correct — truncated results are bugs, not tradeoffs
+* LLM responses must be coherent and complete — partial responses are not acceptable
+* TTS output must be natural and fluid — choppy 1–2 word utterances are failures
 
 ---
 
@@ -164,6 +191,8 @@ Every decision must consider:
 * memory footprint
 * CPU usage
 * background overhead
+
+Resource constraints shape **how** the system is built. They do not override the accuracy mandate.
 
 ---
 
@@ -196,7 +225,7 @@ Future capabilities include (non-exhaustive):
 ### Advanced Interaction Modes
 
 * real-time voice-to-voice systems
-* streaming conversational agents
+* conversational agents
 * interruption-aware dialogue
 
 ---
@@ -240,36 +269,43 @@ Future capabilities include (non-exhaustive):
 
 ---
 
-### 1. Simplicity First
+### 1. Accuracy Above All
+
+* Every feature must produce correct, reliable output
+* Truncated transcripts, partial responses, and choppy TTS are all bugs
+
+---
+
+### 2. Simplicity First
 
 * Every feature must reduce friction
 * Avoid complex UI and flows
 
 ---
 
-### 2. Replaceability
+### 3. Replaceability
 
 * Any model or component should be swappable
 * No hard dependencies on specific tools
 
 ---
 
-### 3. Incremental Capability
+### 4. Incremental Capability
 
 * System evolves by adding modules
 * Core loop remains stable
 
 ---
 
-### 4. Privacy by Default
+### 5. Privacy by Default
 
 * No data leaves device unless explicitly configured
 
 ---
 
-### 5. Responsiveness Over Intelligence
+### 6. Coherence Over Responsiveness
 
-* Fast, good-enough answers > slow, perfect answers
+* Complete, meaningful answers > fast, broken answers
 
 ---
 
@@ -293,14 +329,14 @@ To avoid drift:
 * Not a chatbot interface
 * Not a dashboard-driven system
 * Not cloud-dependent
-* Not designed for heavy reasoning tasks
+* Not a speed-first system — never sacrifice accuracy for latency
 * Not UI-first
 
 ---
 
 ## 10. Final Definition
 
-> Vox is a **real-time, local-first voice system** that operates as an ambient layer over the user's device —
-> continuously listening, reacting, and assisting with minimal friction.
+> Vox is a **local-first, accuracy-driven voice system** that operates as an ambient layer over the user's device —
+> continuously listening, understanding accurately, and assisting meaningfully.
 
 ---

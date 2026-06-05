@@ -1,18 +1,34 @@
 
 /// Returns `true` if the accumulated token buffer should be flushed to TTS.
 #[inline]
-pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128) -> bool {
+pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128, tps: f32) -> bool {
     let trimmed = buf.trim_end();
     let last = trimmed.chars().last().unwrap_or(' ');
+    
+    // Hard boundaries: always flush
     if matches!(last, '.' | '!' | '?') { return true; }
-    if matches!(last, ',' | ';') { return true; }
-    if trimmed.ends_with(" — ") || trimmed.ends_with(" - ") { return true; }
     
-    // Time-based Flush Gateway: If we have at least 1-2 words and 800ms have passed, force flush
-    if word_count >= 1 && elapsed_ms > 800 { return true; }
+    // Determine dynamic thresholds based on Token-Per-Second (TPS)
+    let (soft_words, time_gate_words, fallback_words) = if tps <= 2.0 {
+        // Slow generation (e.g. CPU bottlenecks): prioritize latency/TTFA by using smaller chunks
+        (3, 3, 4)
+    } else if tps > 4.0 {
+        // Fast generation: prioritize speech continuity/prosody by using larger chunks
+        (5, 5, 12)
+    } else {
+        // Standard baseline (2.0 < TPS <= 4.0)
+        (3, 3, 8)
+    };
     
-    // Fallback: If 4 words accumulate without hitting timeout, flush anyway
-    word_count >= 4
+    // Soft boundaries: only flush with enough words for coherent speech
+    if matches!(last, ',' | ';') && word_count >= soft_words { return true; }
+    if (trimmed.ends_with(" — ") || trimmed.ends_with(" - ")) && word_count >= soft_words { return true; }
+    
+    // Time-based: elapsed time and dynamic word minimum
+    if word_count >= time_gate_words && elapsed_ms > 1500 { return true; }
+    
+    // Word-count fallback
+    word_count >= fallback_words
 }
 
 /// Count words in the accumulated buffer.
@@ -29,8 +45,8 @@ pub fn is_devanagari(text: &str) -> bool {
 /// Transliterates Devanagari to Roman script if Hindi is detected.
 /// Implements Incomplete Word Protection: If the string does not end with a boundary,
 /// the last word is bypassed to prevent partial word transliteration artifacts.
-pub fn transliterate_if_hi(text: &str, is_final: bool) -> String {
-    if !crate::core::settings::VoxSettings::load().asr.transliterate_enabled {
+pub fn transliterate_if_hi(text: &str, is_final: bool, transliterate_enabled: bool) -> String {
+    if !transliterate_enabled {
         return text.to_string();
     }
 
@@ -109,7 +125,7 @@ pub fn transliterate_if_hi(text: &str, is_final: bool) -> String {
 
 /// Backward-compatible Hinglish engine wrapper.
 pub fn to_friendly_hinglish(text: &str) -> String {
-    transliterate_if_hi(text, true)
+    transliterate_if_hi(text, true, true)
 }
 
 fn edit_distance(s1: &str, s2: &str) -> usize {
@@ -269,8 +285,8 @@ mod tests {
     fn test_hinglish_normalization() {
         init_paths_for_testing();
         // Without engine initialized, transliterate_if_hi should fallback to raw word safely
-        assert_eq!(transliterate_if_hi("नमस्ते", false), "नमस्ते");
-        assert_eq!(transliterate_if_hi("hello", false), "hello");
+        assert_eq!(transliterate_if_hi("नमस्ते", false, true), "नमस्ते");
+        assert_eq!(transliterate_if_hi("hello", false, true), "hello");
     }
 
     #[test]
@@ -286,6 +302,28 @@ mod tests {
             stitch_transcripts("Mera phone, number!", "Phone number: hai?"),
             "Mera phone, number! hai?"
         );
+
+        // Baseline tests (tps = 3.5)
+        assert!(should_flush("hello world. ", 2, 100, 3.5));
+        assert!(should_flush("hello world! ", 2, 100, 3.5));
+        assert!(!should_flush("hello, ", 1, 100, 3.5));
+        assert!(should_flush("hello world one, ", 3, 100, 3.5));
+        assert!(should_flush("hello world one two three four five six seven eight", 8, 100, 3.5));
+        assert!(!should_flush("hello world one two three", 4, 100, 3.5));
+        assert!(should_flush("hello world one two three", 4, 1600, 3.5));
+        assert!(!should_flush("hello world one two", 3, 1600, 3.5));
+
+        // Slow TPS tests (tps = 1.5)
+        assert!(should_flush("hello world one two", 4, 100, 1.5)); // Fallback is 4
+        assert!(should_flush("hello world, ", 2, 100, 1.5)); // Soft is still 3? Wait, count of words: hello world is 2, soft is 3, so not flush
+        assert!(!should_flush("hello world, ", 2, 100, 1.5));
+        assert!(should_flush("hello world one, ", 3, 100, 1.5));
+
+        // Fast TPS tests (tps = 5.0)
+        assert!(!should_flush("hello world one two three four five six", 6, 100, 5.0)); // Fallback is 12
+        assert!(!should_flush("hello world one, ", 3, 100, 5.0)); // Soft is 5
+        assert!(should_flush("hello world one two three, ", 5, 100, 5.0)); // Soft is 5
+        assert!(should_flush("hello world one two three four five six seven eight nine ten eleven twelve", 12, 100, 5.0));
 
         // No overlap concatenation fallback
         assert_eq!(

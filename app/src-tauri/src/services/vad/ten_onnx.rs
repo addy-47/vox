@@ -30,10 +30,10 @@ impl VadEngine {
             ten_vad: TenVadModelConfig {
                 model: Some(model_path.to_string_lossy().into()),
                 threshold,
-                min_silence_duration: 0.5,
+                min_silence_duration: 0.4,
                 min_speech_duration: 0.25,
                 window_size: 256,
-                max_speech_duration: 30.0,
+                max_speech_duration: 10.0,
             },
             sample_rate: 16000,
             num_threads: 1,
