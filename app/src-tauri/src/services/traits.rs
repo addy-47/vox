@@ -10,8 +10,10 @@ pub trait VadEngine {
 }
 
 /// Speech-to-Text engine contract.
-pub trait SttEngine {
+pub trait SttEngine: Send + Sync {
     fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String>;
+    fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String>;
+    fn reset_state(&self) -> anyhow::Result<()>;
 }
 
 /// Large Language Model engine contract.

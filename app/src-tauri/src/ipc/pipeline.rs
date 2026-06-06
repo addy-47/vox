@@ -243,11 +243,12 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     app.emit(crate::core::constants::EVENT_MODEL_LOADING, "VAD")
         .ok();
 
-    let (stt_model_path, vad_model_path_opt, vad_backend_opt, pre_load, input_device) = {
-        let (vad_backend, tray_enabled, input_device) = {
+    let (stt_model_path, stt_engine_type, vad_model_path_opt, vad_backend_opt, pre_load, input_device) = {
+        let (vad_backend, asr_model, tray_enabled, input_device) = {
             let settings = state.settings.read().unwrap();
             (
                 settings.vad.vad_backend.clone(),
+                settings.asr.model.clone(),
                 settings.ui.tray_enabled,
                 settings.audio.input_device.clone(),
             )
@@ -255,7 +256,11 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let models_dir = paths::get().models.clone();
         let manifest_lock = state.manifest.read().await;
 
-        let stt = models_dir.join(crate::core::constants::MODEL_DIR_STT);
+        let stt = if asr_model == "nvidia_nemotron" {
+            models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON)
+        } else {
+            models_dir.join(crate::core::constants::MODEL_DIR_STT)
+        };
 
         // Only resolve the VAD model path for TenVAD — earshot has no external model file.
         let vad_path = if vad_backend == crate::core::settings::VadBackendOption::TenVad {
@@ -288,7 +293,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             None
         };
 
-        (stt, vad_path, vad_backend, tray_enabled, input_device)
+        (stt, asr_model, vad_path, vad_backend, tray_enabled, input_device)
     };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
@@ -301,6 +306,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         app.clone(),
         stt_rx_internal,
         stt_model_path,
+        stt_engine_type,
         Some(vox_event_tx.clone()),
         state.pipeline.cancel_flag.clone(),
         state.is_stt_loaded.clone(),

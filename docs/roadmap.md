@@ -1,359 +1,158 @@
-# Vox — Roadmap (v1.0 Native Architecture)
-
----
+# Vox Roadmap
 
 ## Core Mandate
 
-> **Accuracy First. Memory Second. Speed Third.**
+> Local-first voice system.
 >
-> The system is useless if it cannot transcribe or respond accurately.
-> Speed is a byproduct of good engineering — not a target to optimize at the cost of correctness.
+> Accuracy → Memory → Speed.
 
 ---
 
-## Versioning Logic
+## v0.1.0 — Foundation
 
-* **0.1.x → 0.4.x** = Core pipeline (native, accuracy-focused)
-* **0.5.x → 0.7.x** = System intelligence + UX + persistence
-* **1.0.0** = Stable release
+**Goal:** Establish the desktop application foundation.
 
----
-
-## Phase 0.1.0 — Frontend (DONE)
-
-**Goal:** UI shell + interaction surfaces
-
-* Main UI (20:9 layout)
-* Overlay UI (ephemeral tray)
-* Orb + animations
-* Multi-window Tauri setup
-* Mock states (listening / thinking / speaking)
+* Tauri application setup
+* Multi-window architecture
+* Main UI shell
+* Overlay/tray groundwork
+* Design system and interaction concepts
 
 ---
 
-## Phase 0.2.0 — Native Audio + VAD
+## v0.2.0 — Audio Pipeline
 
-**Goal:** Real-time speech detection using native stack
+**Goal:** Build the real-time audio ingestion layer.
 
----
-
-### Core Work
-
-* Rust audio capture using `cpal`
-* 16kHz mono PCM stream (10–20ms chunks)
-* Integrate TEN VAD via ONNX (`ort` / C++ binding)
-* Real-time speech detection:
-
-  * `speech_start`
-  * `speech_end`
+* Native audio capture
+* VAD integration
+* Event-driven pipeline
+* Speech lifecycle detection
+* Frontend ↔ backend communication
 
 ---
 
-### IPC & Events
+## v0.3.0 — Speech Recognition
 
-* Rust event bus (no JSON streaming)
-* Emit to frontend:
+**Goal:** Introduce real-time transcription.
 
-  * `speech_start`
-  * `speech_end`
-  * `audio_level`
-
----
-
-### Output
-
-```text
-audio → VAD → event stream → UI reacts
-```
+* Qwen3-ASR integration
+* Streaming transcripts
+* Partial and final transcript flow
+* Tray transcription experience
+* Hinglish-focused speech support
 
 ---
 
-## Phase 0.3.0 — STT (Accurate Transcription)
+## v0.4.0 — Voice Intelligence
 
-**Goal:** Accurate multilingual transcription — Hinglish, English, Hindi
+**Goal:** Complete the first end-to-end voice interaction loop.
 
----
-
-### Core Work
-
-* Integrate Qwen3-ASR-0.6B (INT8 ONNX)
-* Implement **ring buffer audio pipeline**
-* Feed **overlapping audio chunks**
-* Ensure `max_new_tokens` is large enough to never truncate output
+* Local LLM runtime
+* Local TTS runtime
+* Voice-to-voice pipeline
+* Streaming responses
+* Runtime model architecture definition
 
 ---
 
-### Accuracy Constraints
+## v0.5.0 — Interaction System
 
-* `max_new_tokens` must be ≥ 256 (512 preferred) — truncated transcripts are bugs
-* Partial transcripts are UI feedback only — final transcript must be complete
-* The warning `"Result is truncated"` from sherpa-onnx is a hard failure, not acceptable
+**Goal:** Make Vox feel like a usable voice assistant.
 
----
-
-### Streaming Behavior
-
-* emit:
-
-  * `text_delta` (partial transcript — for live UI feedback)
-  * `text_final` (authoritative — must be complete)
+* Barge-in support
+* Interaction state management
+* Session orchestration
+* Overlay UX improvements
+* Full Push-To-Talk mode
 
 ---
 
-### UI Integration
+## v0.6.0 — Language Intelligence
 
-* overlay driven entirely by streaming text
-* final transcript always wins over partial
+**Goal:** Optimize Vox for Hindi and Hinglish users.
 
----
-
-### Critical Constraint
-
-* no full-audio batching
-* no reprocessing of old frames
-* never truncate to hit a latency target
+* Custom Qwen3-ASR fine-tuning
+* Benchmarking and evaluation pipeline
+* Hindi → Hinglish transliteration engine
+* Noise robustness improvements
+* False-trigger reduction
 
 ---
 
-## Phase 0.4.0 — Runtime infernce LLM + TTS 
+## v0.7.0 — Persistence & Observability
 
-**Goal:** Real-time reasoning with minimal latency
+**Goal:** Add configuration, monitoring and system visibility.
 
----
-
-### Core Work
-
-* integrate Gemma via `llama.cpp` (Rust binding)
-* quantized GGUF (INT4)
-* enforce:
-
-  * `ctx-size = 4096`
-  * KV cache limits
+* Settings architecture
+* Runtime telemetry
+* Monitoring dashboard
+* Session/history foundation
+* Model and runtime controls
 
 ---
 
-### Streaming Behavior
+## v0.8.0 — Distribution & Lifecycle
 
-* consume `text_delta` from STT
-* speculative prompt feeding (pre-fill context early)
-* emit:
+**Goal:** Prepare Vox for real-world deployment.
 
-  * `llm_token`
-  * `response_final`
-
----
-
-### Key Optimization
-
-* LLM begins before STT completes
+* Onboarding experience
+* Model download management
+* Runtime model lifecycle management
+* Packaging and release workflows
+* Cross-platform deployment preparation
 
 ---
 
-## Phase 0.5.0 — Full Voice Loop frontend integration (CRITICAL)
+## v0.9.0 — Model & Provider Ecosystem
 
-**Goal:** Complete, coherent voice-to-voice interaction loop
+**Goal:** Make Vox fully model-agnostic.
 
----
+### Local Providers
 
-### Core Work
+* Multiple STT engines
+* Multiple LLM runtimes
+* Multiple TTS engines
+* Runtime model switching
 
-* integrate Chatterbox-Turbo (~350M)
-* streaming TTS (text → audio chunks)
-* audio playback via Rust (`cpal`)
+### Cloud Providers
 
----
+* Gemini
+* OpenAI
+* ElevenLabs
+* Additional external providers
 
-### TTS Quality Mandate
+### Outcome
 
-Chunking must produce **natural, complete utterances**:
-
-* Flush on sentence boundaries (`.`, `!`, `?`)
-* Flush on clause boundaries (`,`, `;`, ` — `)
-* Time-based flush: ≥ 1500ms AND ≥ 3 words
-* Word count fallback: ≥ 8 words
-* **Never flush on 1–2 words** — produces robotic, choppy speech
-
----
-
-### Barge-In System (MANDATORY)
-
-```text
-speech_start →
-    cancel LLM
-    clear TTS buffer
-    switch to listening
-```
+* Unified provider abstraction
+* Local and cloud interoperability
+* User-selectable model stack
 
 ---
 
-### Final Pipeline
+## v1.0.0 — Stabilization & Release
 
-```text
-audio → VAD → STT → LLM → TTS → output
-```
+**Goal:** Production-ready release.
 
----
-
-### Quality Target
-
-* Transcription: complete and accurate — no truncation
-* LLM response: coherent and complete
-* TTS: natural sentence-level utterances — not choppy word fragments
-* Pipeline: fully non-blocking
+* End-to-end testing
+* Fresh install validation
+* Windows testing
+* Linux testing
+* macOS testing
+* Performance validation
+* Bug fixing and hardening
+* Release readiness review
 
 ---
 
-## Phase 0.6.0 — Persistence Layer
+## Final State
 
-**Goal:** Add structured storage (outside core loop)
+Vox v1.0 is:
 
----
-
-### Storage Design
-
-* `config.json` → settings
-* logs → rotating files
-* SQLite → optional history
-
----
-
-### Constraints
-
-* no storage in real-time path
-* only final outputs persisted
-
----
-
-### Directory
-
-```text
-~/.vox/
-  ├── config.json
-  ├── logs/
-  └── sessions/ (optional)
-```
-
----
-
-## Phase 0.7.0 — Onboarding (In-App)
-
-**Goal:** First-run system setup
-
----
-
-### Flow
-
-* welcome screen
-* model download manager
-* microphone test
-* system readiness check
-
----
-
-### Notes
-
-* built in React (NOT installer)
-* handles model downloads dynamically
-
----
-
-## Phase 0.8.0 — Packaging (Native)
-
-**Goal:** Shipable application
-
----
-
-### Build System
-
-* Tauri bundling (Rust + UI)
-* C++ inference binaries included
-* ONNX models external (downloaded)
-
----
-
-### Outputs
-
-* Windows → `.exe`
-* Linux → `.AppImage`, `.deb`
-* macOS → `.dmg` (future)
-
----
-
-### Constraints
-
-* no Python runtime
-* no external dependencies
-
----
-
-## Phase 0.9.0 — Hardening
-
-**Goal:** Stability + accuracy validation + performance tuning
-
----
-
-### Core Work
-
-* CPU profiling (thread allocation)
-* RAM monitoring (≤5.5GB inference)
-* Accuracy validation: WER testing on Hinglish corpus
-* TTS quality review: naturalness and completeness of utterances
-* crash recovery (inference layer)
-
----
-
-### Accuracy KPIs (not latency KPIs)
-
-* Zero `"Result is truncated"` warnings in normal usage
-* STT: Hinglish WER ≤ 20% on representative samples
-* TTS: No utterances < 3 words unless a sentence boundary is present
-* LLM: Responses are grammatically complete (no mid-sentence cutoff)
-
----
-
-### Testing
-
-* low-end devices (8GB baseline)
-* multi-OS validation
-* real-world Hinglish speech samples
-
----
-
-## Phase 1.0.0 — Release
-
-**Goal:** Production-ready system
-
----
-
-### Requirements
-
-* stable IPC contract
-* accurate STT with zero truncation in normal usage
-* coherent LLM responses
-* natural TTS output (no choppy utterances)
-* reliable barge-in behavior
-* clean onboarding flow
-
----
-
-### Final State
-
-Vox v1.0 =
-
-* native, accuracy-first voice system
-* fully local-first
-* event-driven architecture
-* ephemeral UI (no persistent chat)
-* optimized for constrained hardware
-
----
-
-## Final Principle
-
-> Vox is not a chatbot.
-
-It is a **local-first, accuracy-driven voice system** constrained by:
-
-* memory physics
-* CPU bandwidth
-* the mandate to be correct before being fast
+* Local-first
+* Model-agnostic
+* Event-driven
+* Real-time voice native
+* Hindi/Hinglish optimized
+* Cross-platform
+* Built for 8GB-class hardware
