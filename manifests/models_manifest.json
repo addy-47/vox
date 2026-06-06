@@ -1,10 +1,11 @@
 {
-  "models_version": "1.0.1",
+  "models_version": "1.0.2",
   "release_notes": [
     "Initial stable release of Vox speech and reasoning weights.",
-    "Integrated Qwen3-ASR model and Kokoro TTS English synthesis."
+    "Integrated Qwen3-ASR model and Kokoro TTS English synthesis.",
+    "Integrated Nvidia Nemotron-3.5 ASR Engine (INT8 quantized) as the default primary speech recognition model."
   ],
-  "total_size_bytes": 9056399547,
+  "total_size_bytes": 9811968972,
   "model_groups": [
     {
       "id": "ten_vad",
@@ -58,6 +59,42 @@
       ]
     },
     {
+      "id": "nvidia_nemotron",
+      "name": "Nemotron-3.5 ASR Engine",
+      "category": "stt",
+      "version": "1.0.0",
+      "files": [
+        {
+          "id": "stt_nemotron_config",
+          "path": "stt/nvidia-nemotron-3.5/config.json",
+          "size": 602,
+          "sha256": "0592a224f30670e00f5e0f1f106f0171428b0abde0fd4cbc64237b02c2241502",
+          "required": true
+        },
+        {
+          "id": "stt_nemotron_decoder_joint",
+          "path": "stt/nvidia-nemotron-3.5/decoder_joint.onnx",
+          "size": 97590054,
+          "sha256": "634dfadf24cb4f73c2fae170b36611d68db48186426882cbc8f7e02ed9f2bb29",
+          "required": true
+        },
+        {
+          "id": "stt_nemotron_encoder",
+          "path": "stt/nvidia-nemotron-3.5/encoder.onnx",
+          "size": 657572215,
+          "sha256": "e653d494a4855ee87f6251e8a9677416a73edf6f36578841316fa2b77a53cda7",
+          "required": true
+        },
+        {
+          "id": "stt_nemotron_tokenizer",
+          "path": "stt/nvidia-nemotron-3.5/tokenizer.model",
+          "size": 406554,
+          "sha256": "ce3895e40806f02a26c3a225161b96ef682d6c0054bae32a245dec4258d7d291",
+          "required": true
+        }
+      ]
+    },
+    {
       "id": "qwen3_asr",
       "name": "Qwen3 ASR Engine",
       "category": "stt",
@@ -68,42 +105,42 @@
           "path": "stt/qwen3-asr/conv_frontend.onnx",
           "size": 44148281,
           "sha256": "1f38b879b0871c9f689b092ad4fa85c68ef473c585dcf53d50a029fe8a0ab0cb",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_encoder",
           "path": "stt/qwen3-asr/encoder.int8.onnx",
           "size": 182491662,
           "sha256": "ae0cf814d9cd5249b98a1aa9199511d0c0a0c5c8b3059532637fa3cb4785c60c",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_decoder",
           "path": "stt/qwen3-asr/decoder.int8.onnx",
           "size": 755913551,
           "sha256": "768f0cc54a804e5b9724133910071995ce03ecd1a4d5be8e5e766b022623dc8d",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_vocab",
           "path": "stt/qwen3-asr/tokenizer/vocab.json",
           "size": 2776833,
           "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_merges",
           "path": "stt/qwen3-asr/tokenizer/merges.txt",
           "size": 1671853,
           "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_config",
           "path": "stt/qwen3-asr/tokenizer/tokenizer_config.json",
           "size": 12487,
           "sha256": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c",
-          "required": true
+          "required": false
         }
       ]
     },

@@ -7,39 +7,37 @@
 
 // ─── Sub-Sentence Chunker Unit Tests (Directive 2) ───────────────────────────
 
+fn should_flush(buf: &str, word_count: usize) -> bool {
+    vox_lib::services::utils::should_flush(buf, word_count, 100, 3.5)
+}
+
 #[test]
 fn test_flush_on_hard_boundary_period() {
-    use vox_lib::services::pipeline::should_flush;
     assert!(should_flush("Hello world.", 2), "Period should flush");
 }
 
 #[test]
 fn test_flush_on_hard_boundary_exclamation() {
-    use vox_lib::services::pipeline::should_flush;
     assert!(should_flush("Great!", 1), "Exclamation should flush");
 }
 
 #[test]
 fn test_flush_on_hard_boundary_question() {
-    use vox_lib::services::pipeline::should_flush;
     assert!(should_flush("What is this?", 3), "Question should flush");
 }
 
 #[test]
 fn test_flush_on_soft_boundary_comma() {
-    use vox_lib::services::pipeline::should_flush;
     assert!(should_flush("Well,", 1), "Comma should flush (soft boundary)");
 }
 
 #[test]
 fn test_flush_on_soft_boundary_semicolon() {
-    use vox_lib::services::pipeline::should_flush;
     assert!(should_flush("First clause;", 2), "Semicolon should flush");
 }
 
 #[test]
 fn test_flush_on_word_count_limit() {
-    use vox_lib::services::pipeline::should_flush;
     // Exactly 6 words, no punctuation — must flush
     let buf = "one two three four five six";
     assert!(should_flush(buf, 6), "6 words without punctuation must flush (Directive 2)");
@@ -47,20 +45,17 @@ fn test_flush_on_word_count_limit() {
 
 #[test]
 fn test_no_flush_below_word_count_with_no_punctuation() {
-    use vox_lib::services::pipeline::should_flush;
     let buf = "one two three four five";
     assert!(!should_flush(buf, 5), "5 words without punctuation should NOT flush");
 }
 
 #[test]
 fn test_no_flush_on_empty_buffer() {
-    use vox_lib::services::pipeline::should_flush;
     assert!(!should_flush("", 0), "Empty buffer should never flush");
 }
 
 #[test]
 fn test_flush_on_em_dash() {
-    use vox_lib::services::pipeline::should_flush;
     // Em dash as soft boundary
     let buf = "he said — ";
     // Note: ends_with check includes trailing space
@@ -69,7 +64,6 @@ fn test_flush_on_em_dash() {
 
 #[test]
 fn test_flush_priority_hard_before_word_limit() {
-    use vox_lib::services::pipeline::should_flush;
     // Even 1 word with hard punctuation should flush
     assert!(should_flush("Stop.", 1), "Hard punctuation beats word count — should flush at 1 word");
     assert!(!should_flush("Go", 1), "1 word no punctuation should NOT flush");

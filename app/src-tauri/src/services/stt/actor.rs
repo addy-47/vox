@@ -5,8 +5,6 @@ use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 use crate::core::state::InteractionOwner;
 use crate::core::events::VoxEvent;
-use crate::services::traits::SttEngine as _;
-use super::qwen_onnx::SttEngine;
 
 pub enum SttCommand {
     Partial(u32, crate::core::state::InteractionOwner, Vec<f32>),
@@ -15,10 +13,24 @@ pub enum SttCommand {
     Shutdown,
 }
 
+fn init_engine(
+    engine_type: &str,
+    model_path: &std::path::Path,
+) -> Result<Box<dyn crate::services::traits::SttEngine>> {
+    if engine_type == "nvidia_nemotron" {
+        let eng = super::nemotron_onnx::SttEngine::new(model_path)?;
+        Ok(Box::new(eng))
+    } else {
+        let eng = super::qwen_onnx::SttEngine::new(model_path)?;
+        Ok(Box::new(eng))
+    }
+}
+
 pub fn spawn_stt_worker(
     app: AppHandle,
     rx: std::sync::mpsc::Receiver<SttCommand>,
     model_path: std::path::PathBuf,
+    engine_type: String,
     pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
     cancel_flag: Arc<AtomicBool>,
     is_loaded: Arc<AtomicBool>,
@@ -33,18 +45,18 @@ pub fn spawn_stt_worker(
             log::warn!("[STT] Failed to set high priority: {:?}", e);
         }
 
-        log::info!("[STT] >>> Dedicated worker thread started.");
+        log::info!("[STT] >>> Dedicated worker thread started with engine type: {}.", engine_type);
         
-        let mut engine: Option<SttEngine> = if pre_load {
+        let mut engine: Option<Box<dyn crate::services::traits::SttEngine>> = if pre_load {
             app.emit(crate::core::constants::EVENT_MODEL_LOADING, "STT").ok();
-            match SttEngine::new(&model_path) {
+            match init_engine(&engine_type, &model_path) {
                 Ok(e) => {
                     is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
                     app.emit(crate::core::constants::EVENT_MODEL_READY, "STT").ok();
                     Some(e)
                 },
                 Err(err) => {
-                    log::error!("[STT] CRITICAL: Failed to initialize Sherpa engine: {}", err);
+                    log::error!("[STT] CRITICAL: Failed to initialize engine: {}", err);
                     app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("STT: {}", err)).ok();
                     return;
                 }
@@ -60,6 +72,10 @@ pub fn spawn_stt_worker(
         let mut current_active_turn = 0u32;
         let mut last_inference_duration = Duration::from_millis(300);
         let mut pending_cmd = None;
+
+        // Stateful streaming parameters for Nemotron
+        let mut processed_samples = 0usize;
+        let mut stt_audio_buffer = Vec::<f32>::new();
 
         loop {
             if engine_shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -109,10 +125,15 @@ pub fn spawn_stt_worker(
                 }
                 SttCommand::Partial(tid, owner, utterance) => {
                     if tid != current_active_turn {
-                        log::info!("[STT] New turn ID {} detected (prev {}). Resetting stitched buffers.", tid, current_active_turn);
+                        log::info!("[STT] New turn ID {} detected (prev {}). Resetting buffers.", tid, current_active_turn);
                         current_active_turn = tid;
                         stitched_transcript.clear();
                         last_transcript.clear();
+                        processed_samples = 0;
+                        stt_audio_buffer.clear();
+                        if let Some(ref eng) = engine {
+                            let _ = eng.reset_state();
+                        }
                     }
 
                     let dynamic_throttle = last_inference_duration.max(Duration::from_millis(300));
@@ -120,12 +141,14 @@ pub fn spawn_stt_worker(
                         if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
                             stitched_transcript.clear();
                             last_transcript.clear();
+                            stt_audio_buffer.clear();
+                            processed_samples = 0;
                             continue;
                         }
 
                         if engine.is_none() {
                             app.emit(crate::core::constants::EVENT_MODEL_LOADING, "STT").ok();
-                            match SttEngine::new(&model_path) {
+                            match init_engine(&engine_type, &model_path) {
                                 Ok(e) => {
                                     is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
                                     app.emit(crate::core::constants::EVENT_MODEL_READY, "STT").ok();
@@ -140,150 +163,212 @@ pub fn spawn_stt_worker(
                         }
 
                         if let Some(ref eng) = engine {
-                            // Audio Guillotine Fix: Keep last 4.5 seconds (72000 samples) instead of slicing aggressively
-                            // and stitch with previous partial transcripts.
-                            let start_idx = utterance.len().saturating_sub(72000);
-                            let rolling_utterance = &utterance[start_idx..];
-
                             if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
                                 stitched_transcript.clear();
                                 last_transcript.clear();
+                                stt_audio_buffer.clear();
+                                processed_samples = 0;
                                 continue;
                             }
 
                             let start_inference = Instant::now();
-                            match eng.transcribe(rolling_utterance) {
-                                Ok(text) => {
-                                    last_inference_duration = start_inference.elapsed();
-                                    if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                                        stitched_transcript.clear();
-                                        last_transcript.clear();
-                                        continue;
-                                    }
-                                    let raw_partial: String = text;
-                                    
-                                    // Stitch the raw partial with our stable prefix buffer statefully; overwrite if we are transcribing from the beginning
-                                    if start_idx == 0 {
-                                        stitched_transcript = raw_partial;
-                                    } else {
-                                        stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_partial);
-                                    }
 
-                                    if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
-                                        if let Some(ref pipeline_tx) = pipeline_event_tx {
-                                            let _ = pipeline_tx.send(VoxEvent::TranscriptPartial {
-                                                turn_id: tid,
-                                                owner,
-                                                text: stitched_transcript.clone(),
-                                            });
+                            if engine_type == "nvidia_nemotron" {
+                                // Dynamic non-overlapping chunking
+                                if processed_samples < utterance.len() {
+                                    let new_samples = &utterance[processed_samples..];
+                                    stt_audio_buffer.extend_from_slice(new_samples);
+                                    processed_samples = utterance.len();
+                                }
+
+                                // Stride is 560ms (8960 samples)
+                                const STRIDE_SAMPLES: usize = 8960;
+                                let mut partial_text = String::new();
+                                while stt_audio_buffer.len() >= STRIDE_SAMPLES {
+                                    let chunk: Vec<f32> = stt_audio_buffer.drain(..STRIDE_SAMPLES).collect();
+                                    match eng.transcribe_chunk(&chunk, false) {
+                                        Ok(text) => {
+                                            if !text.trim().is_empty() {
+                                                partial_text.push_str(&text);
+                                            }
                                         }
-                                        last_transcript = stitched_transcript.clone();
-                                    }
-                                    last_emit_time = Instant::now();
-                                }
-                                Err(e) => log::error!("[STT] Partial transcription failed: {}", e),
-                            }
-                        }
-                    }
-                }
-                        SttCommand::Final(tid, owner, utterance) => {
-                            if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                                stitched_transcript.clear();
-                                last_transcript.clear();
-                                continue;
-                            }
-
-                            if tid < current_active_turn {
-                                log::info!("[STT] Discarding stale Final from superseded turn {} (active: {})", tid, current_active_turn);
-                                stitched_transcript.clear();
-                                last_transcript.clear();
-                                continue;
-                            }
-
-                            if engine.is_none() {
-                                match SttEngine::new(&model_path) {
-                                    Ok(e) => {
-                                        is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
-                                        engine = Some(e);
-                                    }
-                                    Err(e) => {
-                                        log::error!("[STT] Lazy load failed: {}", e);
+                                        Err(e) => log::error!("[STT] Nemotron chunk transcribe failed: {}", e),
                                     }
                                 }
-                            }
 
-                            if let Some(ref eng) = engine {
-                                // BUGFIX: Slicing final utterance to the trailing 4.5s chunk to avoid O(N^2) offline transformer death.
-                                let start_idx = utterance.len().saturating_sub(72000);
-                                let rolling_utterance = &utterance[start_idx..];
+                                last_inference_duration = start_inference.elapsed();
 
                                 if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
                                     stitched_transcript.clear();
                                     last_transcript.clear();
+                                    stt_audio_buffer.clear();
+                                    processed_samples = 0;
                                     continue;
                                 }
 
+                                if !partial_text.is_empty() {
+                                    stitched_transcript.push_str(&partial_text);
+                                }
+                            } else {
+                                // Qwen sliding window mode
+                                let start_idx = utterance.len().saturating_sub(72000);
+                                let rolling_utterance = &utterance[start_idx..];
+
                                 match eng.transcribe(rolling_utterance) {
                                     Ok(text) => {
+                                        last_inference_duration = start_inference.elapsed();
                                         if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
                                             stitched_transcript.clear();
                                             last_transcript.clear();
                                             continue;
                                         }
+                                        let raw_partial: String = text;
                                         
-                                        let raw_final: String = text;
-                                        
-                                        // Overwrite if start_idx == 0; otherwise stitch
                                         if start_idx == 0 {
-                                            stitched_transcript = raw_final;
+                                            stitched_transcript = raw_partial;
                                         } else {
-                                            stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_final);
+                                            stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_partial);
                                         }
-                                        
-                                        if stitched_transcript.trim().is_empty() {
-                                            log::info!("[STT] Discarding empty final transcript.");
-                                            stitched_transcript.clear();
-                                            last_transcript.clear();
-                                            continue;
-                                        }
-
-                                        if let Some(ref pipeline_tx) = pipeline_event_tx {
-                                            let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
-                                                turn_id: tid,
-                                                owner,
-                                                text: stitched_transcript.clone(),
-                                            });
-                                        }
-                                        stitched_transcript.clear();
-                                        last_transcript.clear();
                                     }
-                                    Err(e) => {
-                                        log::error!("[STT] Final transcription failed: {}", e);
-                                        stitched_transcript.clear();
-                                        last_transcript.clear();
-                                    }
+                                    Err(e) => log::error!("[STT] Partial transcription failed: {}", e),
                                 }
                             }
-                            let target = match owner {
-                                InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
-                                InteractionOwner::Tray => "tray",
-                                InteractionOwner::Wizard => "wizard",
-                            };
-                            let _ = app.emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }));
 
-                            stitched_transcript.clear();
-                            last_transcript.clear();
+                            if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
+                                if let Some(ref pipeline_tx) = pipeline_event_tx {
+                                    let _ = pipeline_tx.send(VoxEvent::TranscriptPartial {
+                                        turn_id: tid,
+                                        owner,
+                                        text: stitched_transcript.clone(),
+                                    });
+                                }
+                                last_transcript = stitched_transcript.clone();
+                            }
                             last_emit_time = Instant::now();
                         }
-                        SttCommand::ResetStream => {
-                            log::info!("[STT] ResetStream received. Aggressively clearing state.");
+                    }
+                }
+                SttCommand::Final(tid, owner, utterance) => {
+                    if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                        stitched_transcript.clear();
+                        last_transcript.clear();
+                        stt_audio_buffer.clear();
+                        processed_samples = 0;
+                        continue;
+                    }
+
+                    if tid < current_active_turn {
+                        log::info!("[STT] Discarding stale Final from turn {} (active: {})", tid, current_active_turn);
+                        stitched_transcript.clear();
+                        last_transcript.clear();
+                        stt_audio_buffer.clear();
+                        processed_samples = 0;
+                        continue;
+                    }
+
+                    if engine.is_none() {
+                        match init_engine(&engine_type, &model_path) {
+                            Ok(e) => {
+                                is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
+                                engine = Some(e);
+                            }
+                            Err(e) => {
+                                log::error!("[STT] Lazy load failed: {}", e);
+                            }
+                        }
+                    }
+
+                    if let Some(ref eng) = engine {
+                        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
                             stitched_transcript.clear();
                             last_transcript.clear();
-                            while let Ok(pending_cmd) = rx.try_recv() {
-                                match pending_cmd {
-                                    SttCommand::Partial(..) | SttCommand::Final(..) | SttCommand::ResetStream => continue,
-                                    SttCommand::Shutdown => return,
+                            stt_audio_buffer.clear();
+                            processed_samples = 0;
+                            continue;
+                        }
+
+                        if engine_type == "nvidia_nemotron" {
+                            if processed_samples < utterance.len() {
+                                let new_samples = &utterance[processed_samples..];
+                                stt_audio_buffer.extend_from_slice(new_samples);
+                            }
+
+                            // Finalize by draining all remaining samples, padding to 8960
+                            let mut remaining = std::mem::take(&mut stt_audio_buffer);
+                            if !remaining.is_empty() {
+                                if remaining.len() < 8960 {
+                                    remaining.resize(8960, 0.0);
                                 }
+                                match eng.transcribe_chunk(&remaining, true) {
+                                    Ok(text) => {
+                                        if !text.trim().is_empty() {
+                                            stitched_transcript.push_str(&text);
+                                        }
+                                    }
+                                    Err(e) => log::error!("[STT] Nemotron final chunk transcribe failed: {}", e),
+                                }
+                            } else {
+                                // Flush cache with zero padding chunk
+                                let _ = eng.transcribe_chunk(&vec![0.0; 8960], true);
+                            }
+
+                            let _ = eng.reset_state();
+                        } else {
+                            // Qwen mode
+                            let start_idx = utterance.len().saturating_sub(72000);
+                            let rolling_utterance = &utterance[start_idx..];
+
+                            match eng.transcribe(rolling_utterance) {
+                                Ok(text) => {
+                                    let raw_final: String = text;
+                                    if start_idx == 0 {
+                                        stitched_transcript = raw_final;
+                                    } else {
+                                        stitched_transcript = crate::services::utils::stitch_transcripts(&stitched_transcript, &raw_final);
+                                    }
+                                }
+                                Err(e) => log::error!("[STT] Final transcription failed: {}", e),
+                            }
+                        }
+
+                        if stitched_transcript.trim().is_empty() {
+                            log::info!("[STT] Discarding empty final transcript.");
+                        } else if let Some(ref pipeline_tx) = pipeline_event_tx {
+                            let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
+                                turn_id: tid,
+                                owner,
+                                text: stitched_transcript.clone(),
+                            });
+                        }
+                    }
+
+                    let target = match owner {
+                        InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
+                        InteractionOwner::Tray => "tray",
+                        InteractionOwner::Wizard => "wizard",
+                    };
+                    let _ = app.emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }));
+
+                    stitched_transcript.clear();
+                    last_transcript.clear();
+                    stt_audio_buffer.clear();
+                    processed_samples = 0;
+                    last_emit_time = Instant::now();
+                }
+                SttCommand::ResetStream => {
+                    log::info!("[STT] ResetStream received. Aggressively clearing state.");
+                    stitched_transcript.clear();
+                    last_transcript.clear();
+                    stt_audio_buffer.clear();
+                    processed_samples = 0;
+                    if let Some(ref eng) = engine {
+                        let _ = eng.reset_state();
+                    }
+                    while let Ok(pending_cmd) = rx.try_recv() {
+                        match pending_cmd {
+                            SttCommand::Partial(..) | SttCommand::Final(..) | SttCommand::ResetStream => continue,
+                            SttCommand::Shutdown => return,
+                        }
                     }
                 }
             }

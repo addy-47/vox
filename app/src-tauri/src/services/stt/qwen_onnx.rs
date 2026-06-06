@@ -86,5 +86,13 @@ impl traits::SttEngine for SttEngine {
 
         Ok(cleaned_text)
     }
+
+    fn transcribe_chunk(&self, chunk: &[f32], _is_final: bool) -> Result<String> {
+        self.transcribe(chunk)
+    }
+
+    fn reset_state(&self) -> Result<()> {
+        Ok(())
+    }
 }
 

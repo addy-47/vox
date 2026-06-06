@@ -288,7 +288,8 @@ export const ModelSettings: React.FC = () => {
   const isVadVerified = activeVadBackend === "earshot" || modelPresence["ten_vad"];
 
   // ASR logic
-  const isAsrVerified = modelPresence["qwen3_asr"];
+  const selectedAsrId = draftSettings.asr.model;
+  const isAsrVerified = modelPresence[selectedAsrId];
 
   // Translit logic
   const isTranslitVerified = modelPresence["vox_translit_rnn"];
@@ -302,13 +303,13 @@ export const ModelSettings: React.FC = () => {
 
   // Highlights state for Topology Pipeline Map
   const isVadCategoryMissing = activeVadBackend === "ten_vad" && !modelPresence["ten_vad"];
-  const isAsrCategoryMissing = !modelPresence["qwen3_asr"];
+  const isAsrCategoryMissing = !modelPresence[selectedAsrId];
   const isTranslitCategoryMissing = !modelPresence["vox_translit_rnn"];
   const isLlmCategoryMissing = !modelPresence[selectedLlmId];
   const isTtsCategoryMissing = !modelPresence["kokoro_english_tts"] || !modelPresence["piper_hindi_tts"];
 
   const hasVadUpdate = outdatedModels.includes("ten_vad");
-  const hasAsrUpdate = outdatedModels.includes("qwen3_asr");
+  const hasAsrUpdate = outdatedModels.includes(selectedAsrId);
   const hasTranslitUpdate = outdatedModels.includes("vox_translit_rnn");
   const hasLlmUpdate = outdatedModels.includes(selectedLlmId);
   const hasTtsUpdate = outdatedModels.includes("kokoro_english_tts") || outdatedModels.includes("piper_hindi_tts");
@@ -551,43 +552,63 @@ export const ModelSettings: React.FC = () => {
                     <span className="text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Voice Recognition</span>
                   </div>
 
-                  <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] space-y-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                          <span>Qwen3-ASR Decoder</span>
-                          {outdatedModels.includes("qwen3_asr") && (
-                            <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
-                          )}
-                        </div>
-                        <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-1.5 leading-relaxed">
-                          Multilingual Speech Recognition engine. Decodes live voice streams to text completely offline (~950MB).
-                        </p>
-                      </div>
-                      <span className={cn(
-                        "text-[13px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded border",
-                        isAsrVerified ? "text-emerald-400 bg-emerald-500/5 border-emerald-500/10" : "text-red-400 bg-red-500/5 border-red-500/10"
-                      )}>
-                        {isAsrVerified ? "Active" : "Missing"}
-                      </span>
-                    </div>
+                  <div className="grid grid-cols-1 gap-3.5">
+                    {modelCatalog.asr.map((model) => {
+                      const isSelected = draftSettings.asr.model === model.id;
+                      const modelGroupId = model.id;
+                      const isDownloaded = modelPresence[modelGroupId];
+                      const status = downloadStatuses[modelGroupId];
 
-                    <div className="flex justify-end gap-3 pt-3 border-t border-[rgba(var(--border),0.05)]">
-                      {!isAsrVerified ? (
-                        downloadStatuses["qwen3_asr"] ? (
-                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["qwen3_asr"].progress)}%</span>
-                        ) : (
-                          <button 
-                            onClick={() => startDownload("qwen3_asr")}
-                            className="px-4 py-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow hover:scale-[1.02] transition-all"
-                          >
-                            Download Model
-                          </button>
-                        )
-                      ) : (
-                        renderDeleteControl("qwen3_asr")
-                      )}
-                    </div>
+                      return (
+                        <div 
+                          key={model.id}
+                          onClick={() => updateDraft("asr", "model", model.id)}
+                          className={cn(
+                            "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
+                            isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
+                          )}
+                        >
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">{model.name}</span>
+                              <span className="text-[13px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded font-normal">{model.parameters}</span>
+                              {outdatedModels.includes(modelGroupId) && (
+                                <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                              )}
+                            </div>
+                            <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 leading-normal max-w-[420px]">
+                              {model.description}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                            {isDownloaded ? (
+                              <div className="flex items-center gap-3">
+                                {isSelected ? (
+                                  <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2.5 py-1 rounded border border-emerald-500/10">Active</span>
+                                ) : (
+                                  <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2.5 py-1 rounded">Select</span>
+                                )}
+                                {!isGroupRequired(model.id) && (
+                                  renderDeleteControl(modelGroupId, "icon-only")
+                                )}
+                              </div>
+                            ) : (
+                              status ? (
+                                <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(status.progress)}%</span>
+                              ) : (
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); startDownload(modelGroupId); }}
+                                  className="px-3.5 py-1.5 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow"
+                                >
+                                  Get
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
