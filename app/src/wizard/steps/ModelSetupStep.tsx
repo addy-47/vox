@@ -185,7 +185,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'stt',
             label: 'Voice Understanding (ASR)',
-            subLabel: 'Qwen-ASR / Int8 Quant',
+            subLabel: 'Nemotron-3.5 ASR / Int8 Quant',
             icon: <Database />,
             required: true,
             groups: manifest.model_groups.filter(g => g.category === 'stt')

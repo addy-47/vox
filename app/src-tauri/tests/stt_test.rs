@@ -3,7 +3,7 @@
 /// Run with: cargo test --test stt_test -- --nocapture
 
 use std::path::PathBuf;
-use vox_lib::services::stt::SttEngine;
+use vox_lib::services::stt::qwen_onnx::SttEngine;
 use vox_lib::services::traits::SttEngine as _SttEngineTrait;
 
 /// Resolve path to model dir, checking home directory first then falling back to cargo manifest.

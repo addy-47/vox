@@ -5,15 +5,14 @@ use std::sync::mpsc::{channel};
 use std::time::{Instant, Duration};
 
 use vox_lib::services::traits::{SttEngine as _, LlmEngine as _, TtsEngine as _, VadEngine as _};
-use vox_lib::services::stt::qwen_onnx::{SttEngine};
-use vox_lib::services::llm::llama_cpp::LlmWorker;
-use vox_lib::services::tts::kokoro_piper::TtsEngine;
-use vox_lib::services::vad::ten_onnx::VadEngine;
 use vox_lib::utils::bench_reporter::{BenchReporter, MemorySnapshot};
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::metrics::{PipelineMetrics, MetricField};
 use vox_lib::services::utils::{transliterate_if_hi, count_words, should_flush};
 use vox_lib::core::state::InteractionOwner;
+use vox_lib::services::llm::llama_cpp::LlmWorker;
+use vox_lib::services::tts::kokoro_piper::TtsEngine;
+use vox_lib::services::vad::ten_onnx::VadEngine;
 
 #[derive(Parser, Debug)]
 #[command(name = "vox-bench", about = "Production-parity async benchmark for Vox")]
@@ -33,6 +32,10 @@ struct Args {
     /// Name of the LLM GGUF model file inside the gemma4 directory (defaults to E2B)
     #[arg(short, long)]
     llm: Option<String>,
+
+    /// STT engine to use: qwen (default) or nemotron
+    #[arg(short, long, default_value = "qwen")]
+    asr: String,
 }
 
 enum BenchCommand {
@@ -66,10 +69,19 @@ fn main() -> anyhow::Result<()> {
     let system_prompt = args.prompt.unwrap_or_else(|| vox_lib::core::constants::SYSTEM_PROMPT_HI.to_string());
 
     // 3. Load Models Sequentially (to avoid ONNX environment conflicts and improve memory tracking)
-    println!("\x1b[32m[Bench]\x1b[0m Loading STT (Qwen3-ASR)...");
-    let stt_path = vox_lib::utils::paths::get().models.join(vox_lib::core::constants::MODEL_DIR_STT);
+    println!("\x1b[32m[Bench]\x1b[0m Loading STT ({})...", args.asr);
+    let stt_path = if args.asr == "nemotron" {
+        vox_lib::utils::paths::get().models.join(vox_lib::core::constants::MODEL_DIR_STT_NEMOTRON)
+    } else {
+        vox_lib::utils::paths::get().models.join(vox_lib::core::constants::MODEL_DIR_STT)
+    };
+
     let snap_1 = BenchReporter::get_memory_snapshot();
-    let stt_engine = SttEngine::new(&stt_path).expect("Failed to load STT");
+    let stt_engine: Box<dyn vox_lib::services::traits::SttEngine> = if args.asr == "nemotron" {
+        Box::new(vox_lib::services::stt::nemotron_onnx::SttEngine::new(&stt_path).expect("Failed to load Nemotron STT"))
+    } else {
+        Box::new(vox_lib::services::stt::qwen_onnx::SttEngine::new(&stt_path).expect("Failed to load Qwen STT"))
+    };
     let snap_2 = BenchReporter::get_memory_snapshot();
     let stt_mem_mb = snap_2.rss_mb.saturating_sub(snap_1.rss_mb);
     metrics.lock().unwrap().stt_mem_mb = stt_mem_mb;
@@ -106,53 +118,107 @@ fn main() -> anyhow::Result<()> {
     
     // STT Worker
     let stt_event_tx = event_tx.clone();
+    let asr_engine_type = args.asr.clone();
     let stt_handle = std::thread::spawn(move || {
         let engine = stt_engine; // Move initialized engine
         let mut stitched_transcript = String::new();
         let mut last_transcript = String::new();
         
+        // Stateful streaming parameters for Nemotron
+        let mut processed_samples = 0usize;
+        let mut stt_audio_buffer = Vec::<f32>::new();
+
         while let Ok(cmd) = stt_rx.recv() {
             match cmd {
                 BenchCommand::SttPartial(tid, samples) => {
-                    // Rolling window: last 2.5s (40000 samples)
-                    let start_idx = samples.len().saturating_sub(40000);
-                    let rolling_samples = &samples[start_idx..];
-                    
-                    if let Ok(text) = engine.transcribe(rolling_samples) {
-                        if start_idx == 0 {
-                            stitched_transcript = text;
-                        } else {
-                            stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                    if asr_engine_type == "nemotron" {
+                        if processed_samples < samples.len() {
+                            let new_samples = &samples[processed_samples..];
+                            stt_audio_buffer.extend_from_slice(new_samples);
+                            processed_samples = samples.len();
                         }
-                        if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
-                            let _ = stt_event_tx.send(VoxEvent::TranscriptPartial { 
-                                turn_id: tid, 
-                                owner: InteractionOwner::MainWindow, 
-                                text: stitched_transcript.clone() 
-                            });
-                            last_transcript = stitched_transcript.clone();
+                        
+                        // Stride is 560ms (8960 samples)
+                        const STRIDE_SAMPLES: usize = 8960;
+                        let mut partial_text = String::new();
+                        while stt_audio_buffer.len() >= STRIDE_SAMPLES {
+                            let chunk: Vec<f32> = stt_audio_buffer.drain(..STRIDE_SAMPLES).collect();
+                            if let Ok(text) = engine.transcribe_chunk(&chunk, false) {
+                                if !text.trim().is_empty() {
+                                    partial_text.push_str(&text);
+                                }
+                            }
+                        }
+                        if !partial_text.is_empty() {
+                            stitched_transcript.push_str(&partial_text);
+                        }
+                    } else {
+                        // Rolling window: last 2.5s (40000 samples)
+                        let start_idx = samples.len().saturating_sub(40000);
+                        let rolling_samples = &samples[start_idx..];
+                        
+                        if let Ok(text) = engine.transcribe(rolling_samples) {
+                            if start_idx == 0 {
+                                stitched_transcript = text;
+                            } else {
+                                stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                            }
                         }
                     }
-                }
-                BenchCommand::SttFinal(tid, samples) => {
-                    // Slicing final utterance to the trailing 2.5s chunk to avoid O(N^2) load
-                    let start_idx = samples.len().saturating_sub(40000);
-                    let rolling_samples = &samples[start_idx..];
-                    
-                    if let Ok(text) = engine.transcribe(rolling_samples) {
-                        if start_idx == 0 {
-                            stitched_transcript = text;
-                        } else {
-                            stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
-                        }
-                        let _ = stt_event_tx.send(VoxEvent::TranscriptFinal { 
+
+                    if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
+                        let _ = stt_event_tx.send(VoxEvent::TranscriptPartial { 
                             turn_id: tid, 
                             owner: InteractionOwner::MainWindow, 
                             text: stitched_transcript.clone() 
                         });
+                        last_transcript = stitched_transcript.clone();
                     }
+                }
+                BenchCommand::SttFinal(tid, samples) => {
+                    if asr_engine_type == "nemotron" {
+                        if processed_samples < samples.len() {
+                            let new_samples = &samples[processed_samples..];
+                            stt_audio_buffer.extend_from_slice(new_samples);
+                        }
+                        let mut remaining = std::mem::take(&mut stt_audio_buffer);
+                        if !remaining.is_empty() {
+                            if remaining.len() < 8960 {
+                                remaining.resize(8960, 0.0);
+                            }
+                            if let Ok(text) = engine.transcribe_chunk(&remaining, true) {
+                                if !text.trim().is_empty() {
+                                    stitched_transcript.push_str(&text);
+                                }
+                            }
+                        } else {
+                            let _ = engine.transcribe_chunk(&vec![0.0; 8960], true);
+                        }
+                        let _ = engine.reset_state();
+                    } else {
+                        // Slicing final utterance to the trailing 2.5s chunk to avoid O(N^2) load
+                        let start_idx = samples.len().saturating_sub(40000);
+                        let rolling_samples = &samples[start_idx..];
+                        
+                        if let Ok(text) = engine.transcribe(rolling_samples) {
+                            if start_idx == 0 {
+                                stitched_transcript = text;
+                            } else {
+                                stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                            }
+                        }
+                    }
+                    
+                    let _ = stt_event_tx.send(VoxEvent::TranscriptFinal { 
+                        turn_id: tid, 
+                        owner: InteractionOwner::MainWindow, 
+                        text: stitched_transcript.clone() 
+                    });
+                    
                     stitched_transcript.clear();
                     last_transcript.clear();
+                    stt_audio_buffer.clear();
+                    processed_samples = 0;
                 }
                 BenchCommand::Shutdown => break,
                 _ => {}

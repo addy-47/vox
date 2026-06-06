@@ -130,6 +130,13 @@ pub fn get_asr_metadata() -> Vec<ModelMetadata> {
             description: "Multi-lingual speech recognition.".to_string(),
             ram_usage: " ~800MB".to_string(),
             parameters: "Sherpa-ONNX".to_string(),
+        },
+        ModelMetadata {
+            id: "nvidia_nemotron".to_string(),
+            name: "Nemotron-3.5 ASR".to_string(),
+            description: "Streaming Automatic Speech Recognition (parakeet-rs).".to_string(),
+            ram_usage: " ~2.5GB".to_string(),
+            parameters: "0.6B".to_string(),
         }
     ]
 }
@@ -308,7 +315,7 @@ pub struct AsrSettings {
 impl Default for AsrSettings {
     fn default() -> Self {
         Self {
-            model: "qwen3_asr".to_string(),
+            model: "nvidia_nemotron".to_string(),
             transliterate_enabled: true,
         }
     }

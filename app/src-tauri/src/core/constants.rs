@@ -11,6 +11,7 @@ pub const SYSTEM_STATS_INTERVAL: Duration = Duration::from_secs(5);
 
 // ─── Model Names & Files ─────────────────────────────────────────────────────
 pub const MODEL_DIR_STT:    &str = "stt/qwen3-asr";
+pub const MODEL_DIR_STT_NEMOTRON: &str = "stt/nvidia-nemotron-3.5";
 pub const MODEL_DIR_LLM:    &str = "llm/llama";
 pub const MODEL_DIR_TTS_EN: &str = "tts/kokoro";
 pub const MODEL_DIR_TTS_HI: &str = "tts/piper_hi";

@@ -1,9 +1,10 @@
 {
-  "latest_version": "0.8.0",
+  "latest_version": "0.8.1",
   "release_notes": [
     "Integrated native ONNX Runtime inference layers for low-latency VAD and ASR.",
     "Decoupled model weight checks to prevent disk bloat on 8GB RAM environments.",
-    "Integrated persistent Glassmorphism update notification pills and tooltips."
+    "Integrated persistent Glassmorphism update notification pills and tooltips.",
+    "Integrated quantized Nemotron-3.5 STT model as the default voice recognition engine."
   ],
   "linux": {
     "package": "vox",

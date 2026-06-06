@@ -1,6 +1,6 @@
 [package]
 name = "Vox"
-version = "0.7.9"
+version = "0.8.1"
 description = "Vox - A modern desktop voice inference engine built for edge devices."
 authors = ["addy-47"]
 edition = "2021"
@@ -48,8 +48,9 @@ llama-cpp-sys-2 = "0.1.146"
 
 encoding_rs = "0.8.35"
 regex = "1.12.3"
-ort = { version = "2.0.0-rc.9", features = ["download-binaries", "ndarray"] }
+ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"] }
 ndarray = "0.17.2"
+parakeet-rs = "0.3.6"
 # Phase 7 — Packaging and runtime hardening
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
