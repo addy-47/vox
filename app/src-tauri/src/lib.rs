@@ -96,6 +96,7 @@ pub fn run() {
             // ── 0.6 Telemetry Aggregator ───────────────────────────────────────────
             let latest_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_vad_prob = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_playback_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_sys_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_sys_ram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_vox_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
@@ -139,6 +140,7 @@ pub fn run() {
                 telemetry_tx,
                 latest_energy,
                 latest_vad_prob,
+                latest_playback_energy,
                 latest_sys_cpu,
                 latest_sys_ram,
                 latest_vox_cpu,
@@ -162,6 +164,7 @@ pub fn run() {
             
             crate::monitoring::collector::spawn_monitoring_collector(std::sync::Arc::clone(&state_arc));
             spawn_system_monitor(app.handle().clone());
+            crate::monitoring::telemetry_emitter::spawn_telemetry_emitter(app.handle().clone());
 
             // ── 1. System Tray ───────────────────────────────────────────────────────
             let tray_menu = Menu::new(app)?;

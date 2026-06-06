@@ -341,6 +341,9 @@ impl PipelineOrchestrator {
         
         // True after LlmFinished: we're waiting for TTS+Playback to drain
         let mut awaiting_playback_finish = false;
+        let mut tts_queued_chunks = 0usize;
+        let mut tts_finished_chunks = 0usize;
+        let mut tts_chunks_finished_in_turn = 0usize;
 
         // Turn persistence buffers
         let mut turn_user_text = String::new();
@@ -351,6 +354,7 @@ impl PipelineOrchestrator {
         let mut last_committed_session_id = 0u32;
         let mut turn_first_token_time: Option<std::time::Instant> = None;
         let mut turn_tokens_generated = 0usize;
+        let mut turn_output_samples = 0usize;
 
         log::info!("[Pipeline] Event loop starting...");
         let engine_shutdown = {
@@ -395,6 +399,23 @@ impl PipelineOrchestrator {
                 }
             }
         }).expect("Failed to spawn Translit worker");
+
+        macro_rules! trigger_playback {
+            ($reason:expr) => {
+                playback_engine.start_playback();
+                if metrics.playback_start.is_none() && !playback_engine.is_idle() {
+                    metrics.mark(MetricField::PlaybackStart);
+                    if let (Some(s), Some(p)) = (metrics.speech_start, metrics.playback_start) {
+                        let ms = p.duration_since(s).as_millis() as u32;
+                        self.latest_playback_start_ms.store(ms, Ordering::Relaxed);
+                        self.latest_voice_latency_ms.store(ms, Ordering::Relaxed);
+                    }
+                    let owner = self.get_current_owner(&app_handle);
+                    self.update_interaction_state(crate::core::state::InteractionState::AssistantSpeaking, owner, &app_handle);
+                    log::info!("[Pipeline] Playback started (Reason: {})", $reason);
+                }
+            };
+        }
 
         loop {
             // Check for global engine shutdown signal
@@ -458,7 +479,9 @@ impl PipelineOrchestrator {
                     {
                         awaiting_playback_finish = false;
                         metrics.mark(MetricField::PlaybackFinish);
-                        let report = metrics.latency_report(0.0, 0.0);
+                        let input_duration = (count_words(&turn_user_text) as f64 / 2.5).max(0.5);
+                        let output_duration = turn_output_samples as f64 / 24000.0;
+                        let report = metrics.latency_report(input_duration, output_duration);
                         log::info!("[Pipeline] Turn complete (polled). Latencies: {}", report);
                         let owner = self.get_current_owner(&app_handle);
                         self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
@@ -504,6 +527,7 @@ impl PipelineOrchestrator {
                 }
                 // ── Speech start: barge-in cancellation ───────────
                 VoxEvent::SpeechStart { turn_id, owner } => {
+                    metrics.mark(MetricField::SpeechStart);
                     let buffer_len = playback_engine.buffer_len();
                     // Only log as "Barge-in" if there is significant audio left (>50ms at 48kHz)
                     if buffer_len > 2400 {
@@ -526,6 +550,9 @@ impl PipelineOrchestrator {
                 // ── Transcript partial: update HUD UI ─────────────────────
                 VoxEvent::TranscriptPartial { turn_id, owner, text } => {
                     if turn_id < current_tid { continue; }
+                    if metrics.first_partial.is_none() {
+                        metrics.mark(MetricField::FirstPartial);
+                    }
                     let target = match owner {
                         crate::core::state::InteractionOwner::MainWindow | crate::core::state::InteractionOwner::Ptt => "main",
                         crate::core::state::InteractionOwner::Tray => "tray",
@@ -552,12 +579,21 @@ impl PipelineOrchestrator {
                     token_buf.clear();
                     turn_voice_id = None; // Reset language lock for new turn
                     thinking = false;
+                    
                     metrics.mark(MetricField::FinalTranscript);
+                    metrics.mark(MetricField::LlmStart);
+                    metrics.input_len_chars = text.len();
                     
                     turn_user_text = text.clone();
                     turn_assistant_text.clear();
                     turn_first_token_time = None;
                     turn_tokens_generated = 0;
+                    turn_output_samples = 0;
+                    tts_queued_chunks = 0;
+                    tts_finished_chunks = 0;
+                    tts_chunks_finished_in_turn = 0;
+                    last_tts_flush = std::time::Instant::now();
+                    awaiting_playback_finish = false;
                     
                     self.update_interaction_state(crate::core::state::InteractionState::Thinking, owner, &app_handle);
 
@@ -591,6 +627,11 @@ impl PipelineOrchestrator {
                     }
                     if thinking { continue; }
 
+                    if metrics.first_token.is_none() {
+                        metrics.mark(MetricField::FirstToken);
+                    }
+                    metrics.tokens_generated += 1;
+
                     token_buf.push_str(&token);
                     turn_assistant_text.push_str(&token);
                     
@@ -609,6 +650,10 @@ impl PipelineOrchestrator {
                     if should_flush(&token_buf, word_count, elapsed_ms, tps) {
                         let chunk = token_buf.trim().to_string();
                         if !chunk.is_empty() {
+                            log::info!("[Pipeline] Flushing text chunk to TTS: {:?}", chunk);
+                            if metrics.tts_start.is_none() {
+                                metrics.mark(MetricField::TtsStart);
+                            }
                             // Directive 5: Language Detection - Lock voice for the remainder of the turn
                             if turn_voice_id.is_none() {
                                 turn_voice_id = Some(if is_devanagari(&chunk) { 
@@ -627,6 +672,8 @@ impl PipelineOrchestrator {
                                         voice_sid: voice_sid as i32,
                                         text: chunk,
                                     });
+                                    tts_queued_chunks += 1;
+                                    self.tts_generating.store(true, Ordering::Relaxed);
                                 }
                             }
                             token_buf.clear();
@@ -654,8 +701,16 @@ impl PipelineOrchestrator {
                 VoxEvent::LlmFinished { turn_id } => {
                     if turn_id != current_tid { continue; }
                     thinking = false;
+                    metrics.mark(MetricField::LlmEnd);
+                    metrics.output_len_chars = turn_assistant_text.len();
+                    log::info!("[Pipeline] LLM finished response: {:?}", turn_assistant_text);
+
                     let remainder = token_buf.trim().to_string();
                     if !remainder.is_empty() {
+                        log::info!("[Pipeline] Flushing remainder text chunk to TTS: {:?}", remainder);
+                        if metrics.tts_start.is_none() {
+                            metrics.mark(MetricField::TtsStart);
+                        }
                         if let Ok(lock) = self.tts_tx.lock() {
                             if let Some(tx) = lock.as_ref() {
                                 let voice_sid = turn_voice_id.unwrap_or(local_en_voice as u32);
@@ -664,6 +719,8 @@ impl PipelineOrchestrator {
                                     voice_sid: voice_sid as i32,
                                     text: remainder,
                                 });
+                                tts_queued_chunks += 1;
+                                self.tts_generating.store(true, Ordering::Relaxed);
                             }
                         }
                         last_tts_flush = std::time::Instant::now();
@@ -672,38 +729,52 @@ impl PipelineOrchestrator {
                     // Signal that all text has been dispatched. The polling loop
                     // will detect when TTS+Playback drains and finalize the turn.
                     awaiting_playback_finish = true;
+                    if tts_finished_chunks >= tts_queued_chunks {
+                        self.tts_generating.store(false, Ordering::Relaxed);
+                        trigger_playback!("all chunks finished (LLM end)");
+                    }
                 }
 
                 VoxEvent::TtsChunk { turn_id, samples } => {
                     if turn_id != current_tid { continue; }
+                    turn_output_samples += samples.len();
                     if metrics.first_audio.is_none() {
                         metrics.mark(MetricField::FirstAudio);
                     }
                     playback_engine.ingest_chunk(&samples);
-                    if metrics.playback_start.is_none() && !playback_engine.is_idle() {
-                        metrics.mark(MetricField::PlaybackStart);
-                        
-                        // Update monitoring for Playback Start Latency (SpeechStart -> PlaybackStart)
-                        if let (Some(s), Some(p)) = (metrics.speech_start, metrics.playback_start) {
-                            let ms = p.duration_since(s).as_millis() as u32;
-                            self.latest_playback_start_ms.store(ms, Ordering::Relaxed);
-                            self.latest_voice_latency_ms.store(ms, Ordering::Relaxed);
-                        }
-
-                        let owner = self.get_current_owner(&app_handle);
-                        self.update_interaction_state(crate::core::state::InteractionState::AssistantSpeaking, owner, &app_handle);
+                    
+                    // Adaptive buffering: trigger playback if buffer size exceeds 1.2 seconds (57,600 samples at 48kHz)
+                    if playback_engine.buffer_len() >= 57_600 {
+                        trigger_playback!("buffer >= 1.2s");
+                    } else if !playback_engine.is_idle() {
+                        trigger_playback!("playback already active");
                     }
                 }
 
                 VoxEvent::TtsFinished { turn_id, rtf } => {
                     if turn_id != current_tid { continue; }
                     self.latest_tts_rtf.store(rtf.to_bits(), Ordering::Relaxed);
+                    metrics.mark(MetricField::TtsEnd);
+                    tts_finished_chunks += 1;
+                    tts_chunks_finished_in_turn += 1;
+
+                    if tts_chunks_finished_in_turn == 1 {
+                        trigger_playback!("first chunk finished");
+                    }
+
+                    if tts_finished_chunks >= tts_queued_chunks && awaiting_playback_finish {
+                        self.tts_generating.store(false, Ordering::Relaxed);
+                        trigger_playback!("all chunks finished (TTS end)");
+                    }
                 }
 
                 VoxEvent::PlaybackFinished { turn_id } => {
                     if turn_id != current_tid { continue; }
                     metrics.mark(MetricField::PlaybackFinish);
-                    let report = metrics.latency_report(0.0, 0.0);
+                    
+                    let input_duration = (count_words(&turn_user_text) as f64 / 2.5).max(0.5);
+                    let output_duration = turn_output_samples as f64 / 24000.0;
+                    let report = metrics.latency_report(input_duration, output_duration);
                     tracing::info!("[Pipeline] Turn complete. Latencies: {}", report);
                     
                     // Emit structured telemetry
@@ -717,13 +788,14 @@ impl PipelineOrchestrator {
                         _ => 0,
                     };
                     
+                    let tts_rtf_val = f32::from_bits(self.latest_tts_rtf.load(Ordering::Relaxed));
                     let conv_id = self.conversation_id.load(Ordering::Relaxed);
                     let _ = state.telemetry_tx.send(crate::monitoring::aggregator::TelemetryEvent::InteractionMetric {
                         conversation_id: conv_id,
                         turn_id,
                         stt_latency_ms: stt_ms,
                         ttft_ms,
-                        tts_rtf: 0.0, // Placeholder until RTF calculation is implemented
+                        tts_rtf: tts_rtf_val,
                     });
 
                     turn_stt_ms = stt_ms;
@@ -771,6 +843,7 @@ impl PipelineOrchestrator {
                     }
                     token_buf.clear();
                     awaiting_playback_finish = false;
+                    self.tts_generating.store(false, Ordering::Relaxed);
                     // Reset cancel flag so new sessions can proceed
                     self.cancel_flag.store(false, Ordering::Relaxed);
                     let _ = translit_tx.send(TranslitTask::Cancel { turn_id });
@@ -801,6 +874,8 @@ impl PipelineOrchestrator {
                         }
                     };
                     let _ = app_handle.emit_to(target, "pipeline_error", &message);
+                    awaiting_playback_finish = false;
+                    self.tts_generating.store(false, Ordering::Relaxed);
                     let owner = self.get_current_owner(&app_handle);
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                 }

@@ -10,7 +10,7 @@ use crate::services::vad::{
 use crate::tray::position_tray_window;
 use crate::utils::paths;
 use ringbuf::traits::Split;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -485,7 +485,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         (en_tts, hi_tts, llm)
     };
 
-    let playback_energy = Arc::new(AtomicU32::new(0f32.to_bits()));
+    let playback_energy = state.latest_playback_energy.clone();
 
     let playback_engine = match PlaybackEngine::new(
         std::sync::Arc::clone(&state.pipeline.playback_active),
