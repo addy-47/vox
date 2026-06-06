@@ -214,6 +214,7 @@ pub struct AppState {
     /// Latest VAD characteristics for monitoring (Atomic f32 via bit storage).
     pub latest_energy: Arc<AtomicU32>,
     pub latest_vad_prob: Arc<AtomicU32>,
+    pub latest_playback_energy: Arc<AtomicU32>,
     pub latest_sys_cpu: Arc<AtomicU32>,
     pub latest_sys_ram: Arc<AtomicU32>,
     pub latest_vox_cpu: Arc<AtomicU32>,
@@ -256,6 +257,7 @@ impl AppState {
         telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
         latest_energy: Arc<AtomicU32>,
         latest_vad_prob: Arc<AtomicU32>,
+        latest_playback_energy: Arc<AtomicU32>,
         latest_sys_cpu: Arc<AtomicU32>,
         latest_sys_ram: Arc<AtomicU32>,
         latest_vox_cpu: Arc<AtomicU32>,
@@ -304,6 +306,7 @@ impl AppState {
             conversation_id: Arc::new(AtomicU64::new(0)),
             latest_energy,
             latest_vad_prob,
+            latest_playback_energy,
             latest_sys_cpu,
             latest_sys_ram,
             latest_vox_cpu,
