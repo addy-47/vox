@@ -125,7 +125,7 @@ impl ModelFamily {
         }
     }
 
-    pub fn strip_tags(&self, text: &str) -> String {
+    pub fn strip_tags_raw(&self, text: &str) -> String {
         let mut cleaned = text.to_string();
         
         match self {
@@ -175,7 +175,11 @@ impl ModelFamily {
             ModelFamily::Unknown => {}
         }
 
-        cleaned.trim().to_string()
+        cleaned
+    }
+
+    pub fn strip_tags(&self, text: &str) -> String {
+        self.strip_tags_raw(text).trim().to_string()
     }
 }
 
@@ -470,7 +474,7 @@ impl traits::LlmEngine for LlmWorker {
                     ttft = Some(start_time.elapsed());
                 }
 
-                let cleaned = self.family.strip_tags(&token_str);
+                let cleaned = self.family.strip_tags_raw(&token_str);
                 if !cleaned.is_empty() {
                     let _ = tx.send(VoxEvent::LlmToken {
                         turn_id,

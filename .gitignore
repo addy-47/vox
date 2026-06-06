@@ -33,4 +33,4 @@ condense/
 **/.vox_sandbox/
 vox-*
 venv*
-qwen-asr-hindi
+gemini.py

@@ -35,11 +35,6 @@ pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
     out
 }
 
-// ─── Jitter Buffer Constants ──────────────────────────────────────────────────
-
-/// Pre-buffer 300ms of 48kHz audio before starting CPAL playback.
-/// Prevents underruns on the first chunk which is often uneven in size.
-const JITTER_PREBUFFER_SAMPLES: usize = 48_000 / 1000 * 300; // 14_400 samples
 
 // ─── Playback Engine ──────────────────────────────────────────────────────────
 
@@ -76,8 +71,8 @@ impl PlaybackEngine {
         playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
     ) -> Result<Self> {
-        // Create 2s buffer at 48kHz (192,000 samples)
-        let rb = ringbuf::HeapRb::<f32>::new(48_000 * 2);
+        // Create 30s buffer at 48kHz (1,440,000 samples) to prevent overflow on long TTS segments
+        let rb = ringbuf::HeapRb::<f32>::new(48_000 * 30);
         let (producer, consumer) = rb.split();
         let buffer_samples = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
@@ -121,14 +116,20 @@ impl PlaybackEngine {
             log::warn!("[Playback] Buffer overflow — dropped {} samples", upsampled.len() - pushed);
         }
         
-        let current_len = self.buffer_samples.fetch_add(pushed, Ordering::SeqCst) + pushed;
+        self.buffer_samples.fetch_add(pushed, Ordering::SeqCst);
+    }
 
-        // Start CPAL playback once we have enough pre-buffered audio
-        if !self.playback_active.load(Ordering::Relaxed)
-            && current_len >= JITTER_PREBUFFER_SAMPLES
-        {
-            log::info!("[Playback] Pre-buffer full ({} samples) — starting output", current_len);
-            self.playback_active.store(true, Ordering::Relaxed);
+    /// Explicitly trigger CPAL playback.
+    pub fn start_playback(&self) {
+        if self.cancel_flag.load(Ordering::Relaxed) {
+            return;
+        }
+        if !self.playback_active.load(Ordering::Relaxed) {
+            let current_len = self.buffer_samples.load(Ordering::SeqCst);
+            if current_len > 0 {
+                log::info!("[Playback] start_playback requested ({} samples buffered) — starting output", current_len);
+                self.playback_active.store(true, Ordering::Relaxed);
+            }
         }
     }
 
