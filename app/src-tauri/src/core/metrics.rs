@@ -79,6 +79,13 @@ impl PipelineMetrics {
         let tts_rtf = if output_duration > 0.0 { round(tts_duration / output_duration) } else { 0.0 };
         let tps = if llm_duration > 0.0 { round(self.tokens_generated as f64 / llm_duration) } else { 0.0 };
 
+        let mem = crate::utils::bench_reporter::BenchReporter::get_memory_snapshot();
+        let total_mem = if self.stt_mem_mb > 0 || self.llm_mem_mb > 0 || self.tts_mem_mb > 0 {
+            self.stt_mem_mb + self.llm_mem_mb + self.tts_mem_mb
+        } else {
+            mem.rss_mb
+        };
+
         serde_json::json!({
             "latency": {
                 "ttft_sec": ttft,
@@ -91,7 +98,7 @@ impl PipelineMetrics {
                 "stt": self.stt_mem_mb,
                 "llm": self.llm_mem_mb,
                 "tts": self.tts_mem_mb,
-                "total": self.stt_mem_mb + self.llm_mem_mb + self.tts_mem_mb
+                "total": total_mem
             },
             "throughput": {
                 "stt_rtf": stt_rtf,
@@ -104,7 +111,7 @@ impl PipelineMetrics {
                 "tokens": self.tokens_generated
             },
             "summary": format!("TTFA: {}s | STT_RTF: {} | LLM_TPS: {} | RAM: {}MB", 
-                ttfa.unwrap_or(0.0), stt_rtf, tps, self.stt_mem_mb + self.llm_mem_mb + self.tts_mem_mb)
+                ttfa.unwrap_or(0.0), stt_rtf, tps, total_mem)
         })
     }
 }
