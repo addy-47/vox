@@ -27,10 +27,11 @@ dist-ssr
 *pycache*
 *.onnx
 **/src-tauri/assets/
-output*/
+*output*/
 data/
 condense/
 **/.vox_sandbox/
 vox-*
 venv*
 gemini.py
+neutts/

@@ -12,19 +12,19 @@ export const useStreamingRenderer = (targetText: string) => {
 
   // When targetText updates, push the diff to the queue
   useEffect(() => {
-    // Check if targetText is strictly additive compared to our current displayed text
-    const isAdditive = targetText.startsWith(displayText);
+    const last = lastTargetText.current;
+    const isAdditive = targetText.startsWith(last);
     
-    if (isAdditive && targetText.length > displayText.length) {
-      const diff = targetText.slice(displayText.length);
+    if (isAdditive && targetText.length > last.length) {
+      const diff = targetText.slice(last.length);
       queue.current.push(...diff.split(""));
-    } else if (!isAdditive || targetText.length < displayText.length) {
-      // If the text was reset, formatted with a newline, or updated non-additively, sync instantly
+    } else if (!isAdditive || targetText.length < last.length) {
+      // If the text was reset, corrected, or updated non-additively, sync instantly
       setDisplayText(targetText);
       queue.current = [];
     }
     lastTargetText.current = targetText;
-  }, [targetText, displayText]);
+  }, [targetText]);
 
   const tick = useCallback(() => {
     if (queue.current.length > 0) {

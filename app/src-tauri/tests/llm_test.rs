@@ -13,7 +13,7 @@ use std::sync::mpsc;
 
 #[test]
 fn test_backend_init() {
-    use llama_cpp_2::llama_backend::LlamaBackend;
+    use llama_cpp_4::llama_backend::LlamaBackend;
     use std::sync::OnceLock;
     
     static TEST_BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
