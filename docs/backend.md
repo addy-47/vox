@@ -75,8 +75,8 @@ Every component must minimize:
     │
     ↓
 [Services Layer (Actor-Engine Pattern)]
-    ├── VAD (Actor -> Engine: TenVAD)
-    ├── STT (Actor -> Engine: Qwen3-ASR)
+    ├── VAD (Actor -> Engine: Earshot / TenVAD)
+    ├── STT (Actor -> Engine: Nvidia Nemotron-3.5 / Qwen3-ASR)
     ├── LLM (Actor -> Engine: llama.cpp)
     └── TTS (Actor -> Engine: Kokoro + Piper)
     └── Utils (Shared logic: transliteration, chunking)
