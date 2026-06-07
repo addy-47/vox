@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use llama_cpp_2::{
+use llama_cpp_4::{
     context::params::LlamaContextParams,
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
@@ -194,7 +194,7 @@ pub struct LlmWorker {
     ctx_size: u32,
     _n_threads: u32,
     family: ModelFamily,
-    ctx: std::sync::Mutex<Option<llama_cpp_2::context::LlamaContext<'static>>>,
+    ctx: std::sync::Mutex<Option<llama_cpp_4::context::LlamaContext<'static>>>,
     cache_state: std::sync::Mutex<Option<CacheState>>,
 }
 
@@ -242,19 +242,9 @@ impl LlmWorker {
         })
     }
 
-    fn token_to_bytes(&self, token: llama_cpp_2::token::LlamaToken) -> Vec<u8> {
-        match self.model.token_to_piece_bytes(token, 8, false, None) {
-            Ok(bytes) => bytes,
-            Err(llama_cpp_2::TokenToStringError::InsufficientBufferSpace(i)) => {
-                self.model.token_to_piece_bytes(
-                    token,
-                    (-i) as usize,
-                    false,
-                    None
-                ).unwrap_or_default()
-            }
-            Err(_) => Vec::new(),
-        }
+    fn token_to_bytes(&self, token: llama_cpp_4::token::LlamaToken) -> Vec<u8> {
+        self.model.token_to_bytes(token, llama_cpp_4::model::Special::Plaintext)
+            .unwrap_or_default()
     }
 
     pub fn run_loop(
@@ -313,7 +303,7 @@ impl traits::LlmEngine for LlmWorker {
             let ctx = self.model.new_context(self._backend, ctx_params)
                 .map_err(|e| anyhow!("[LLM] Lazy context creation failed: {}", e))?;
 
-            let static_ctx: llama_cpp_2::context::LlamaContext<'static> = unsafe { std::mem::transmute(ctx) };
+            let static_ctx: llama_cpp_4::context::LlamaContext<'static> = unsafe { std::mem::transmute(ctx) };
             *ctx_lock = Some(static_ctx);
         }
         let ctx = ctx_lock.as_mut().unwrap();
@@ -410,7 +400,7 @@ impl traits::LlmEngine for LlmWorker {
             
             let token = if self.family == ModelFamily::Qwen {
                 // Qwen temperature-based sampling with dist sampler to avoid infinite repeating loops
-                let sampler = LlamaSampler::chain_simple([
+                let mut sampler = LlamaSampler::chain_simple([
                     LlamaSampler::top_k(20),
                     LlamaSampler::top_p(0.95, 1),
                     LlamaSampler::temp(0.6),

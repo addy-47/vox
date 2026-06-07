@@ -83,6 +83,12 @@ pub fn get_voice_profiles() -> Vec<VoiceProfile> {
         model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_ROHAN.into()) 
     });
 
+    voices.push(VoiceProfile { id: 200, name: "Jo (NeuTTS English)".to_string(), language: "en".into(), model_file: None });
+    voices.push(VoiceProfile { id: 201, name: "Dave (NeuTTS English)".to_string(), language: "en".into(), model_file: None });
+    voices.push(VoiceProfile { id: 202, name: "Juliette (NeuTTS French)".to_string(), language: "fr".into(), model_file: None });
+    voices.push(VoiceProfile { id: 203, name: "Greta (NeuTTS German)".to_string(), language: "de".into(), model_file: None });
+    voices.push(VoiceProfile { id: 204, name: "Mateo (NeuTTS Spanish)".to_string(), language: "es".into(), model_file: None });
+
     voices
 }
 
@@ -156,6 +162,13 @@ pub fn get_tts_metadata() -> Vec<ModelMetadata> {
             description: "Natural Hindi speech optimized for low power devices.".to_string(),
             ram_usage: " ~100MB".to_string(),
             parameters: "VITS (Medium)".to_string(),
+        },
+        ModelMetadata {
+            id: "neutts_nano".to_string(),
+            name: "NeuTTS Nano".to_string(),
+            description: "Fast CPU voice-cloning/speech-synthesis engine.".to_string(),
+            ram_usage: " ~400MB".to_string(),
+            parameters: "120M".to_string(),
         }
     ]
 }
