@@ -73,7 +73,8 @@ export const ModelSettings: React.FC = () => {
     if (!manifest) {
       if (fileId.startsWith("vad")) return "ten_vad";
       if (fileId.startsWith("translit")) return "vox_translit_rnn";
-      if (fileId.startsWith("stt")) return "qwen3_asr";
+      if (fileId.startsWith("stt_nemotron")) return "nvidia_nemotron";
+      if (fileId.startsWith("stt_")) return "qwen3_asr";
       if (fileId.startsWith("tts_kokoro")) return "kokoro_english_tts";
       if (fileId.startsWith("tts_hi") || fileId.startsWith("tts_piper_hi")) return "piper_hindi_tts";
       return fileId;
@@ -87,7 +88,7 @@ export const ModelSettings: React.FC = () => {
   }, [manifest]);
 
   const isGroupRequired = useCallback((groupId: string): boolean => {
-    if (!manifest) return groupId === "ten_vad" || groupId === "vox_translit_rnn" || groupId === "qwen3_asr";
+    if (!manifest) return groupId === "ten_vad" || groupId === "vox_translit_rnn" || groupId === "qwen3_asr" || groupId === "nvidia_nemotron";
     const group = manifest.model_groups.find(g => g.id === groupId);
     return group ? group.files.some(f => f.required) : false;
   }, [manifest]);
@@ -192,6 +193,7 @@ export const ModelSettings: React.FC = () => {
           "ten_vad",
           "vox_translit_rnn",
           "qwen3_asr",
+          "nvidia_nemotron",
           "gemma_4_reasoning",
           "llama_3_2_reasoning",
           "gemma_4_uncensored",
@@ -249,7 +251,7 @@ export const ModelSettings: React.FC = () => {
       }));
     });
 
-    const unlistenComplete = listen<string>("optional_download_complete", (event) => {
+    const unlistenComplete = listen<string>("optional_model_complete", (event) => {
       checkPresence();
       setDownloadStatuses(prev => {
         const next = { ...prev };
