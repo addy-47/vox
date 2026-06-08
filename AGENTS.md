@@ -21,6 +21,8 @@ Role-specific instruction files in `.agents/rules/`. Load the relevant one based
 - `app/` — Frontend workspace (React 19, Vite 7, TailwindCSS 4, TypeScript)
 - `app/src-tauri/` — Tauri backend. The lib target is `vox_lib` (not `app`). The `vox_lib` crate contains ALL core logic.
 - `app/src-tauri/src/services/` — Engine subsystems: `vad/`, `stt/`, `llm/`, `tts/`, `translit.rs`, `audio.rs`, `pipeline.rs`
+- `app/src-tauri/src/services/tts/kokoro_piper.rs` — Kokoro (EN) + Piper (HI) TTS via sherpa-onnx (fallback engine)
+- `app/src-tauri/src/services/tts/supertonic.rs` — Supertonic 3 TTS via sherpa-onnx native `OfflineTtsSupertonicModelConfig` (default, 99M params, 31 languages, INT8 quantized ~144MB). Progress callback must capture owned Arcs/Senders (`'static`).
 - `app/src-tauri/src/services/traits.rs` — Engine trait contracts (`VadEngine`, `SttEngine`, `LlmEngine`, `TtsEngine`). Pure sync interfaces; no thread/Tauri awareness.
 - `app/src-tauri/src/bin/` — Standalone binaries: `tts-bench.rs`, `vox-bench.rs`, `test-translit.rs`
 - `manifests/` — Model validation manifests (`app_manifest.json`, `models_manifest.json`).
@@ -68,9 +70,15 @@ cargo test --test tts_test -- --ignored --nocapture --test-threads=1
 ### TTS benchmark (Rust)
 ```bash
 cd app/src-tauri
-cargo run --bin tts-bench
+# bench mode — single-engine benchmark
+cargo run --bin tts-bench bench
+# compare mode — multi-engine comparison
+cargo run --bin tts-bench compare
 ```
 Output WAVs go to `docs/benchmarks/audio_outputs/`.
+
+### Supertonic model (INT8 via sherpa-onnx native)
+7 INT8 model files at `~/.vox/models/tts/supertonic-3/` (flat, no subdirectories). Uses sherpa-onnx `OfflineTtsSupertonicModelConfig` with `GenerationConfig { sid, num_steps: i32, speed, extra: { "lang" } }`. Progress callback resamples 44.1→24kHz. Model pack: `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`. Expression tags (`<laugh>`, `<breath>`, `<sigh>`) injected into LLM system prompt when engine is Supertonic (see `pipeline.rs` dynamic prompt logic).
 
 ---
 
@@ -89,15 +97,16 @@ Output WAVs go to `docs/benchmarks/audio_outputs/`.
 - `vox-bench` is the full production-parity benchmark (STT + LLM + TTS + VAD pipeline). `tts-bench` is TTS-only.
 
 
-
-
-
 ## Common Pitfalls
 
 - **Forgetting `--test-threads=1`** on tests that load models or use audio hardware → race conditions or OOM
 - **Running `cargo test` from repo root** — there's no root workspace. Always `cd` into `app/src-tauri`.
 - **Hardcoded absolute paths** in code — use `dirs` crate or `vox_lib::utils::paths` instead
 - **Modifying streaming/latency/VAD behavior** without reading `.agents/rules/system-architect.md` first — these are critical-path invariants
+- **`ort::session::Session` API quirks (2.0.0-rc.12):** `Session` is at `ort::session::Session`, not `ort::Session`. Builder methods return `ort::Error<SessionBuilder>` which is `!Send` — always use `.map_err(|e| anyhow!("{:?}", e))?` instead of bare `?`. Access input/output info via `session.inputs()` / `session.outputs()` methods (not fields). `GraphOptimizationLevel` is at `ort::session::builder::GraphOptimizationLevel`.
+- **Adding new fields to settings structs:** Always add `#[serde(default)]` to the struct to avoid deserialization failures when loading old settings files missing the new field.
+- **sherpa-onnx Supertonic native API quirks:** `OfflineTtsSupertonicModelConfig` has 7 fields: `duration_predictor`, `text_encoder`, `vector_estimator`, `vocoder`, `tts_json`, `unicode_indexer`, `voice_style`. `GenerationConfig::num_steps` is `i32` (cast `quality_steps as i32`). Progress callback is `FnMut(&[f32], f32) -> bool + 'static` — must capture owned Arcs/Senders, not references.
+- **VITS tokens.txt format for Piper:** Must contain exactly the entries from `phoneme_id_map` in `<token> <id>` format (no padding). Use `onnx.json`'s `phoneme_id_map` dict where keys are phoneme characters and values are `[id]` lists. Duplicate tokens or padding with `_` at unused IDs will crash sherpa-onnx's `ReadTokens`.
 
 ---
 

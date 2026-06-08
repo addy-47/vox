@@ -1,5 +1,7 @@
-use super::kokoro_piper::TtsEngine;
+use super::kokoro_piper::TtsEngine as KokoroPiperEngine;
+use super::supertonic::TtsEngine as SupertonicEngine;
 use crate::core::events::VoxEvent;
+use crate::core::settings::TtsEngineOption;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -17,29 +19,52 @@ pub fn spawn_tts_worker(
     rx: std::sync::mpsc::Receiver<TtsCommand>,
     en_model_dir: std::path::PathBuf,
     hi_model_path: std::path::PathBuf,
+    super_model_path: std::path::PathBuf,
+    engine_option: TtsEngineOption,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
     cancel_flag: Arc<AtomicBool>,
     is_loaded: Arc<AtomicBool>,
+    quality_steps: u32,
+    speed: f32,
 ) {
     use tauri::Emitter;
     let _ = app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS");
 
-    let mut engine: Box<dyn crate::services::traits::TtsEngine + Send> =
-        match TtsEngine::new(&en_model_dir, &hi_model_path) {
+    let mut engine: Box<dyn crate::services::traits::TtsEngine + Send> = match engine_option {
+        TtsEngineOption::Supertonic => {
+            match SupertonicEngine::new(&super_model_path, quality_steps, speed) {
+                Ok(e) => {
+                    is_loaded.store(true, Ordering::Relaxed);
+                    let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "TTS");
+                    Box::new(e)
+                }
+                Err(e) => {
+                    log::error!("[TTS] CRITICAL: Failed to load Supertonic engine: {}", e);
+                    let _ = app.emit(
+                        crate::core::constants::EVENT_MODEL_FAILED,
+                        format!("TTS: {}", e),
+                    );
+                    return;
+                }
+            }
+        }
+        TtsEngineOption::KokoroPiper => match KokoroPiperEngine::new(&en_model_dir, &hi_model_path)
+        {
             Ok(e) => {
                 is_loaded.store(true, Ordering::Relaxed);
                 let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "TTS");
                 Box::new(e)
             }
             Err(e) => {
-                log::error!("[TTS] CRITICAL: Failed to load multi-model engine: {}", e);
+                log::error!("[TTS] CRITICAL: Failed to load Kokoro/Piper engine: {}", e);
                 let _ = app.emit(
                     crate::core::constants::EVENT_MODEL_FAILED,
                     format!("TTS: {}", e),
                 );
                 return;
             }
-        };
+        },
+    };
 
     log::info!("[TTS Worker] Persistent loop started.");
     while let Ok(cmd) = rx.recv() {
