@@ -1,7 +1,7 @@
-use std::sync::atomic::{Ordering, AtomicBool};
-use std::sync::Arc;
-use crate::core::events::VoxEvent;
 use super::llama_cpp::LlmWorker;
+use crate::core::events::VoxEvent;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub enum LlmCommand {
     Generate {
@@ -30,10 +30,13 @@ pub fn spawn_llm_worker(
             is_loaded.store(true, Ordering::Relaxed);
             let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "LLM");
             w
-        },
+        }
         Err(e) => {
             log::error!("[LLM] CRITICAL: Failed to load model: {}", e);
-            let _ = app.emit(crate::core::constants::EVENT_MODEL_FAILED, format!("LLM: {}", e));
+            let _ = app.emit(
+                crate::core::constants::EVENT_MODEL_FAILED,
+                format!("LLM: {}", e),
+            );
             return;
         }
     };

@@ -1,21 +1,23 @@
 use clap::Parser;
+use std::sync::atomic::AtomicBool;
+use std::sync::mpsc::channel;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool};
-use std::sync::mpsc::{channel};
-use std::time::{Instant, Duration};
+use std::time::Duration;
 
-use vox_lib::services::traits::{SttEngine as _, LlmEngine as _, TtsEngine as _, VadEngine as _};
-use vox_lib::utils::bench_reporter::{BenchReporter, MemorySnapshot};
 use vox_lib::core::events::VoxEvent;
-use vox_lib::core::metrics::{PipelineMetrics, MetricField};
-use vox_lib::services::utils::{transliterate_if_hi, count_words, should_flush};
+use vox_lib::core::metrics::{MetricField, PipelineMetrics};
 use vox_lib::core::state::InteractionOwner;
 use vox_lib::services::llm::llama_cpp::LlmWorker;
-use vox_lib::services::tts::kokoro_piper::TtsEngine;
+use vox_lib::services::traits::{LlmEngine as _, VadEngine as _};
+use vox_lib::services::utils::{count_words, should_flush, transliterate_if_hi};
 use vox_lib::services::vad::ten_onnx::VadEngine;
+use vox_lib::utils::bench_reporter::BenchReporter;
 
 #[derive(Parser, Debug)]
-#[command(name = "vox-bench", about = "Production-parity async benchmark for Vox")]
+#[command(
+    name = "vox-bench",
+    about = "Production-parity async benchmark for Vox"
+)]
 struct Args {
     /// Path to input WAV file (16kHz mono)
     #[arg(short, long)]
@@ -50,12 +52,12 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let reporter = BenchReporter::new();
     let metrics = Arc::new(std::sync::Mutex::new(PipelineMetrics::new()));
-    
+
     // 1. Setup paths & Hardware init simulation
     let home = dirs::home_dir().expect("Could not find home directory");
     let vox_root = home.join(".vox");
     vox_lib::utils::paths::init_with_root(vox_root);
-    
+
     println!("\x1b[32m[Bench]\x1b[0m Starting Production-Parity Run...");
     println!("\x1b[32m[Bench]\x1b[0m Run dir: {:?}", reporter.run_dir);
 
@@ -66,27 +68,42 @@ fn main() -> anyhow::Result<()> {
     let (tts_tx, tts_rx) = channel::<BenchCommand>();
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    let system_prompt = args.prompt.unwrap_or_else(|| vox_lib::core::constants::SYSTEM_PROMPT_HI.to_string());
+    let system_prompt = args
+        .prompt
+        .unwrap_or_else(|| vox_lib::core::constants::SYSTEM_PROMPT_HI.to_string());
 
     // 3. Load Models Sequentially (to avoid ONNX environment conflicts and improve memory tracking)
     println!("\x1b[32m[Bench]\x1b[0m Loading STT ({})...", args.asr);
     let stt_path = if args.asr == "nemotron" {
-        vox_lib::utils::paths::get().models.join(vox_lib::core::constants::MODEL_DIR_STT_NEMOTRON)
+        vox_lib::utils::paths::get()
+            .models
+            .join(vox_lib::core::constants::MODEL_DIR_STT_NEMOTRON)
     } else {
-        vox_lib::utils::paths::get().models.join(vox_lib::core::constants::MODEL_DIR_STT)
+        vox_lib::utils::paths::get()
+            .models
+            .join(vox_lib::core::constants::MODEL_DIR_STT)
     };
 
     let snap_1 = BenchReporter::get_memory_snapshot();
     let stt_engine: Box<dyn vox_lib::services::traits::SttEngine> = if args.asr == "nemotron" {
-        Box::new(vox_lib::services::stt::nemotron_onnx::SttEngine::new(&stt_path).expect("Failed to load Nemotron STT"))
+        Box::new(
+            vox_lib::services::stt::nemotron_onnx::SttEngine::new(&stt_path)
+                .expect("Failed to load Nemotron STT"),
+        )
     } else {
-        Box::new(vox_lib::services::stt::qwen_onnx::SttEngine::new(&stt_path).expect("Failed to load Qwen STT"))
+        Box::new(
+            vox_lib::services::stt::qwen_onnx::SttEngine::new(&stt_path)
+                .expect("Failed to load Qwen STT"),
+        )
     };
     let snap_2 = BenchReporter::get_memory_snapshot();
     let stt_mem_mb = snap_2.rss_mb.saturating_sub(snap_1.rss_mb);
     metrics.lock().unwrap().stt_mem_mb = stt_mem_mb;
 
-    let llm_filename = args.llm.clone().unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q6_K.gguf".to_string());
+    let llm_filename = args
+        .llm
+        .clone()
+        .unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q6_K.gguf".to_string());
     println!("\x1b[32m[Bench]\x1b[0m Loading LLM ({})...", llm_filename);
     let llm_path = vox_lib::utils::paths::model_dir("llm").join(&llm_filename);
     let snap_3 = BenchReporter::get_memory_snapshot();
@@ -99,23 +116,34 @@ fn main() -> anyhow::Result<()> {
     let warmup_cancel = Arc::new(AtomicBool::new(false));
     let (warmup_tx, _) = channel();
     let warmup_start = std::time::Instant::now();
-    llm_engine.generate("", &system_prompt, 0, &warmup_cancel, &warmup_tx).expect("Failed to warm up LLM KV Cache");
-    println!("\x1b[32m[Bench]\x1b[0m LLM KV Cache warmed up in {:?}", warmup_start.elapsed());
+    llm_engine
+        .generate("", &system_prompt, 0, &warmup_cancel, &warmup_tx)
+        .expect("Failed to warm up LLM KV Cache");
+    println!(
+        "\x1b[32m[Bench]\x1b[0m LLM KV Cache warmed up in {:?}",
+        warmup_start.elapsed()
+    );
 
+    let snap_5 = BenchReporter::get_memory_snapshot();
     println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Kokoro + Piper)...");
     let en_tts_dir = vox_lib::utils::paths::model_dir("tts").join("kokoro");
-    let hi_tts_path = vox_lib::utils::paths::model_dir("tts").join("piper_hi").join("hi_IN-priyamvada-medium.onnx");
-    let snap_5 = BenchReporter::get_memory_snapshot();
-    let tts_engine = TtsEngine::new(&en_tts_dir, &hi_tts_path).expect("Failed to load TTS");
+    let hi_tts_path = vox_lib::utils::paths::model_dir("tts")
+        .join("piper_hi")
+        .join("hi_IN-priyamvada-medium.onnx");
+    let tts_engine: Box<dyn vox_lib::services::traits::TtsEngine + Send> = Box::new(
+        vox_lib::services::tts::kokoro_piper::TtsEngine::new(&en_tts_dir, &hi_tts_path)
+            .expect("Failed to load TTS"),
+    );
     let snap_6 = BenchReporter::get_memory_snapshot();
     let tts_mem_mb = snap_6.rss_mb.saturating_sub(snap_5.rss_mb);
     metrics.lock().unwrap().tts_mem_mb = tts_mem_mb;
 
     println!("\x1b[32m[Bench]\x1b[0m Loading Transliteration Engine (Native RNN)...");
-    vox_lib::services::translit::init_transliteration_engine().expect("Failed to load Transliteration Engine");
+    vox_lib::services::translit::init_transliteration_engine()
+        .expect("Failed to load Transliteration Engine");
 
     // 4. Spawn Dedicated Worker Threads
-    
+
     // STT Worker
     let stt_event_tx = event_tx.clone();
     let asr_engine_type = args.asr.clone();
@@ -123,7 +151,7 @@ fn main() -> anyhow::Result<()> {
         let engine = stt_engine; // Move initialized engine
         let mut stitched_transcript = String::new();
         let mut last_transcript = String::new();
-        
+
         // Stateful streaming parameters for Nemotron
         let mut processed_samples = 0usize;
         let mut stt_audio_buffer = Vec::<f32>::new();
@@ -137,12 +165,13 @@ fn main() -> anyhow::Result<()> {
                             stt_audio_buffer.extend_from_slice(new_samples);
                             processed_samples = samples.len();
                         }
-                        
+
                         // Stride is 560ms (8960 samples)
                         const STRIDE_SAMPLES: usize = 8960;
                         let mut partial_text = String::new();
                         while stt_audio_buffer.len() >= STRIDE_SAMPLES {
-                            let chunk: Vec<f32> = stt_audio_buffer.drain(..STRIDE_SAMPLES).collect();
+                            let chunk: Vec<f32> =
+                                stt_audio_buffer.drain(..STRIDE_SAMPLES).collect();
                             if let Ok(text) = engine.transcribe_chunk(&chunk, false) {
                                 if !text.trim().is_empty() {
                                     partial_text.push_str(&text);
@@ -156,21 +185,24 @@ fn main() -> anyhow::Result<()> {
                         // Rolling window: last 2.5s (40000 samples)
                         let start_idx = samples.len().saturating_sub(40000);
                         let rolling_samples = &samples[start_idx..];
-                        
+
                         if let Ok(text) = engine.transcribe(rolling_samples) {
                             if start_idx == 0 {
                                 stitched_transcript = text;
                             } else {
-                                stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                                stitched_transcript = vox_lib::services::utils::stitch_transcripts(
+                                    &stitched_transcript,
+                                    &text,
+                                );
                             }
                         }
                     }
 
                     if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
-                        let _ = stt_event_tx.send(VoxEvent::TranscriptPartial { 
-                            turn_id: tid, 
-                            owner: InteractionOwner::MainWindow, 
-                            text: stitched_transcript.clone() 
+                        let _ = stt_event_tx.send(VoxEvent::TranscriptPartial {
+                            turn_id: tid,
+                            owner: InteractionOwner::MainWindow,
+                            text: stitched_transcript.clone(),
                         });
                         last_transcript = stitched_transcript.clone();
                     }
@@ -199,22 +231,25 @@ fn main() -> anyhow::Result<()> {
                         // Slicing final utterance to the trailing 2.5s chunk to avoid O(N^2) load
                         let start_idx = samples.len().saturating_sub(40000);
                         let rolling_samples = &samples[start_idx..];
-                        
+
                         if let Ok(text) = engine.transcribe(rolling_samples) {
                             if start_idx == 0 {
                                 stitched_transcript = text;
                             } else {
-                                stitched_transcript = vox_lib::services::utils::stitch_transcripts(&stitched_transcript, &text);
+                                stitched_transcript = vox_lib::services::utils::stitch_transcripts(
+                                    &stitched_transcript,
+                                    &text,
+                                );
                             }
                         }
                     }
-                    
-                    let _ = stt_event_tx.send(VoxEvent::TranscriptFinal { 
-                        turn_id: tid, 
-                        owner: InteractionOwner::MainWindow, 
-                        text: stitched_transcript.clone() 
+
+                    let _ = stt_event_tx.send(VoxEvent::TranscriptFinal {
+                        turn_id: tid,
+                        owner: InteractionOwner::MainWindow,
+                        text: stitched_transcript.clone(),
                     });
-                    
+
                     stitched_transcript.clear();
                     last_transcript.clear();
                     stt_audio_buffer.clear();
@@ -252,7 +287,13 @@ fn main() -> anyhow::Result<()> {
             match cmd {
                 BenchCommand::Tts(text, turn_id) => {
                     println!("\x1b[35m[TTS]\x1b[0m Synthesizing chunk: \"{}\"", text);
-                    let _ = engine.synthesize_chunk(&text, 0, turn_id, Arc::clone(&tts_cancel), tts_event_tx.clone());
+                    let _ = engine.synthesize_chunk(
+                        &text,
+                        0,
+                        turn_id,
+                        Arc::clone(&tts_cancel),
+                        tts_event_tx.clone(),
+                    );
                 }
                 BenchCommand::Shutdown => break,
                 _ => {}
@@ -262,18 +303,19 @@ fn main() -> anyhow::Result<()> {
 
     // 4. Start Streaming Ingestion (Production simulation)
     let mut reader = hound::WavReader::open(&args.input)?;
-    let all_samples: Vec<f32> = reader.samples::<i16>()
+    let all_samples: Vec<f32> = reader
+        .samples::<i16>()
         .map(|s| s.unwrap() as f32 / 32768.0)
         .collect();
-    
+
     let vad_path = vox_lib::utils::paths::model_dir("vad").join("ten_vad.onnx");
     let mut vad = VadEngine::new(&vad_path, 0.5).expect("Failed to load VAD");
     let mut utterance_buf = Vec::new();
     let mut in_speech = false;
     let mut turn_id = 0;
-    
+
     let input_duration = all_samples.len() as f64 / 16000.0;
-    
+
     // Spawn memory tracker for PEAK RSS (total process)
     let mem_cancel = Arc::clone(&cancel_flag);
     let mem_handle = std::thread::spawn(move || {
@@ -287,13 +329,15 @@ fn main() -> anyhow::Result<()> {
         }
         max_rss
     });
-    
+
     metrics.lock().unwrap().mark(MetricField::SpeechStart);
 
     // Simulate 20ms chunks (320 samples at 16kHz)
     for chunk in all_samples.chunks(320) {
-        if chunk.len() < 320 { break; }
-        
+        if chunk.len() < 320 {
+            break;
+        }
+
         let detected = vad.predict(chunk);
         if detected {
             if !in_speech {
@@ -302,7 +346,7 @@ fn main() -> anyhow::Result<()> {
                 utterance_buf.clear();
             }
             utterance_buf.extend_from_slice(chunk);
-            
+
             // Periodically send partials (every 500ms)
             if utterance_buf.len() % 8000 == 0 {
                 stt_tx.send(BenchCommand::SttPartial(turn_id, utterance_buf.clone()))?;
@@ -352,14 +396,14 @@ fn main() -> anyhow::Result<()> {
                     if m_lock.first_token.is_none() {
                         m_lock.mark(MetricField::FirstToken);
                     }
-                    print!("{}", token); 
+                    print!("{}", token);
                     use std::io::Write;
                     std::io::stdout().flush().unwrap();
-                    
+
                     assistant_text.push_str(&token);
                     token_buf.push_str(&token);
                     tokens_generated += 1;
-                    
+
                     let first_time = first_token_time.get_or_insert_with(std::time::Instant::now);
                     let elapsed_secs = first_time.elapsed().as_secs_f32();
                     let tps = if elapsed_secs > 0.5 {
@@ -367,7 +411,7 @@ fn main() -> anyhow::Result<()> {
                     } else {
                         3.5
                     };
-                    
+
                     let wc = count_words(&token_buf);
                     let elapsed_ms = last_tts_flush.elapsed().as_millis();
                     if should_flush(&token_buf, wc, elapsed_ms, tps) {
@@ -387,7 +431,7 @@ fn main() -> anyhow::Result<()> {
                     m_lock.mark(MetricField::LlmEnd);
                     m_lock.output_len_chars = assistant_text.len();
                     m_lock.tokens_generated = tokens_generated;
-                    
+
                     let remainder = token_buf.trim().to_string();
                     if !remainder.is_empty() {
                         m_lock.mark(MetricField::TtsStart);
@@ -408,7 +452,10 @@ fn main() -> anyhow::Result<()> {
                 }
                 VoxEvent::TtsFinished { .. } => {
                     tts_finished_count += 1;
-                    println!("\x1b[35m[TTS]\x1b[0m Chunk {}/{} complete.", tts_finished_count, tts_started_count);
+                    println!(
+                        "\x1b[35m[TTS]\x1b[0m Chunk {}/{} complete.",
+                        tts_finished_count, tts_started_count
+                    );
                     if tts_finished_count == tts_started_count && llm_done {
                         metrics.lock().unwrap().mark(MetricField::TtsEnd);
                     }
@@ -427,7 +474,7 @@ fn main() -> anyhow::Result<()> {
     stt_tx.send(BenchCommand::Shutdown)?;
     llm_tx.send(BenchCommand::Shutdown)?;
     tts_tx.send(BenchCommand::Shutdown)?;
-    
+
     let _ = stt_handle.join();
     let _ = llm_handle.join();
     let _ = tts_handle.join();
@@ -436,22 +483,32 @@ fn main() -> anyhow::Result<()> {
     let peak_rss_mb = mem_handle.join().unwrap_or(0);
 
     let mut m = metrics.lock().unwrap();
-    m.mark(MetricField::PlaybackFinish); 
-    
+    m.mark(MetricField::PlaybackFinish);
+
     let output_duration = tts_samples.len() as f64 / 24000.0;
     let mut report = m.latency_report(input_duration, output_duration);
-    
+
     if let Some(obj) = report.as_object_mut() {
         if let Some(perf) = obj.get_mut("memory_mb").and_then(|v| v.as_object_mut()) {
-            perf.insert("peak_process_rss_mb".to_string(), serde_json::json!(peak_rss_mb));
+            perf.insert(
+                "peak_process_rss_mb".to_string(),
+                serde_json::json!(peak_rss_mb),
+            );
         }
     }
-    
+
     // Write detailed artifacts
     reporter.write_artifact("stt_transcript.txt", &final_transcript);
     reporter.write_artifact("llm_response.txt", &assistant_text);
-    reporter.write_artifact("transliteration.txt", &format!("STT: {}\nLLM: {}", transliterate_if_hi(&final_transcript, true, true), transliterate_if_hi(&assistant_text, true, true)));
-    
+    reporter.write_artifact(
+        "transliteration.txt",
+        &format!(
+            "STT: {}\nLLM: {}",
+            transliterate_if_hi(&final_transcript, true, true),
+            transliterate_if_hi(&assistant_text, true, true)
+        ),
+    );
+
     // Export result audio
     let spec = hound::WavSpec {
         channels: 1,
@@ -467,12 +524,21 @@ fn main() -> anyhow::Result<()> {
     writer.finalize()?;
 
     // Final Memory & Latency report
-    println!("\n\x1b[32m[Bench]\x1b[0m {}", report["summary"].as_str().unwrap_or(""));
-    println!("\x1b[32m[Bench]\x1b[0m STT RAM: {}MB | LLM RAM: {}MB | TTS RAM: {}MB", m.stt_mem_mb, m.llm_mem_mb, m.tts_mem_mb);
+    println!(
+        "\n\x1b[32m[Bench]\x1b[0m {}",
+        report["summary"].as_str().unwrap_or("")
+    );
+    println!(
+        "\x1b[32m[Bench]\x1b[0m STT RAM: {}MB | LLM RAM: {}MB | TTS RAM: {}MB",
+        m.stt_mem_mb, m.llm_mem_mb, m.tts_mem_mb
+    );
     println!("\x1b[32m[Bench]\x1b[0m Peak Memory RSS: {}MB", peak_rss_mb);
-    
+
     reporter.save_report(report);
-    println!("\x1b[32m[Bench]\x1b[0m All artifacts saved to: {:?}", reporter.run_dir);
+    println!(
+        "\x1b[32m[Bench]\x1b[0m All artifacts saved to: {:?}",
+        reporter.run_dir
+    );
 
     Ok(())
 }

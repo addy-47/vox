@@ -1,36 +1,18 @@
-use std::sync::Arc;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::channel;
+use std::sync::Arc;
 use std::time::Instant;
-use std::path::PathBuf;
-use std::fs;
 
-use vox_lib::services::traits::TtsEngine as _;
-use vox_lib::utils::bench_reporter::BenchReporter;
+use clap::{Parser, Subcommand};
 use vox_lib::core::events::VoxEvent;
-use vox_lib::services::tts::kokoro_piper;
-use vox_lib::services::tts::neutts_nano;
 
-struct Prompt {
-    text: &'static str,
-    category: &'static str,
-    is_hindi: bool,
-}
-
-#[allow(dead_code)]
-struct BenchResult {
-    model_name: &'static str,
-    category: &'static str,
-    prompt: &'static str,
-    load_time_ms: u128,
-    ram_mb: u64,
-    ttfa_ms: u128,
-    rtf: f32,
-    inference_ms: u128,
-    audio_duration_s: f32,
-}
-
-fn write_wav(samples: &[f32], sample_rate: u32, path: &std::path::Path) -> Result<(), hound::Error> {
+fn write_wav(
+    samples: &[f32],
+    sample_rate: u32,
+    path: &std::path::Path,
+) -> Result<(), hound::Error> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate,
@@ -38,7 +20,6 @@ fn write_wav(samples: &[f32], sample_rate: u32, path: &std::path::Path) -> Resul
         sample_format: hound::SampleFormat::Int,
     };
     let mut writer = hound::WavWriter::create(path, spec)?;
-    // Peak normalization: scale down only if necessary to fit within [-1, 1], preventing clipping.
     let peak = samples.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
     let scale = if peak > 1.0 { 1.0 / peak } else { 1.0 };
     for &s in samples {
@@ -49,8 +30,53 @@ fn write_wav(samples: &[f32], sample_rate: u32, path: &std::path::Path) -> Resul
     Ok(())
 }
 
+#[derive(Parser)]
+#[command(name = "tts-bench", about = "TTS benchmarking tool")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run the Kokoro/Piper benchmark suite
+    Bench,
+    /// Run the multi-engine comparison framework
+    Compare,
+}
+
 fn main() -> anyhow::Result<()> {
-    // 1. Setup paths
+    let cli = Cli::parse();
+    match cli.command.unwrap_or(Command::Bench) {
+        Command::Bench => run_bench(),
+        Command::Compare => run_compare(),
+    }
+}
+
+fn run_bench() -> anyhow::Result<()> {
+    use vox_lib::services::traits::TtsEngine as _;
+    use vox_lib::services::tts::kokoro_piper;
+    use vox_lib::utils::bench_reporter::BenchReporter;
+
+    struct Prompt {
+        text: &'static str,
+        category: &'static str,
+        is_hindi: bool,
+    }
+
+    #[allow(dead_code)]
+    struct BenchResult {
+        model_name: &'static str,
+        category: &'static str,
+        prompt: &'static str,
+        load_time_ms: u128,
+        ram_mb: u64,
+        ttfa_ms: u128,
+        rtf: f32,
+        inference_ms: u128,
+        audio_duration_s: f32,
+    }
+
     let home = dirs::home_dir().expect("Could not find home directory");
     let vox_root = home.join(".vox");
     vox_lib::utils::paths::init_with_root(vox_root);
@@ -58,62 +84,69 @@ fn main() -> anyhow::Result<()> {
 
     println!("\x1b[32m[TTS-Bench]\x1b[0m Starting TTS Benchmark Suite...");
 
-    // Test Prompts
-    let prompts = vec![
-        Prompt {
-            text: "Hello, how are you doing today? The weather seems lovely.",
-            category: "English",
-            is_hindi: false,
-        },
-    ];
+    let prompts = vec![Prompt {
+        text: "I'm just a large language model, I don't have personal experiences or emotions, but I can tell you about some popular festive activities that people enjoy: Decorating the house with lights, garlands, and festive decorations. Attending family gatherings and parties. Singing festive songs and watching holiday movies. Cooking traditional holiday dishes. Exchanging gifts with loved ones. Participating in festive events and activities.",
+        category: "English",
+        is_hindi: false,
+    }];
 
     let mut results: Vec<BenchResult> = Vec::new();
 
-    // ==========================================
-    // 2. Benchmark Kokoro (English) & Piper (Hindi) - ENABLED
-    // ==========================================
     println!("\x1b[32m[TTS-Bench]\x1b[0m Loading Kokoro + Piper VITS...");
     let en_tts_dir = models_dir.join("tts/kokoro");
     let hi_tts_path = models_dir.join("tts/piper_hi/hi_IN-priyamvada-medium.onnx");
 
     let snap_init = BenchReporter::get_memory_snapshot();
     let load_start = Instant::now();
-    
+
     let mut kokoro_piper_engine = match kokoro_piper::TtsEngine::new(&en_tts_dir, &hi_tts_path) {
         Ok(e) => e,
         Err(e) => {
-            println!("\x1b[31m[TTS-Bench] Failed to load Kokoro/Piper: {}\x1b[0m", e);
+            println!(
+                "\x1b[31m[TTS-Bench] Failed to load Kokoro/Piper: {}\x1b[0m",
+                e
+            );
             return Err(e);
         }
     };
-    
+
     let load_time_kp = load_start.elapsed().as_millis();
     let snap_loaded_kp = BenchReporter::get_memory_snapshot();
     let ram_kp = snap_loaded_kp.rss_mb.saturating_sub(snap_init.rss_mb);
-    println!("\x1b[32m[TTS-Bench]\x1b[0m Kokoro+Piper loaded in {}ms. RAM usage: {}MB", load_time_kp, ram_kp);
+    println!(
+        "\x1b[32m[TTS-Bench]\x1b[0m Kokoro+Piper loaded in {}ms. RAM usage: {}MB",
+        load_time_kp, ram_kp
+    );
 
     for (i, prompt) in prompts.iter().enumerate() {
-        // Kokoro only supports English; Piper supports Hindi.
-        // So for English prompts we use Kokoro, for Hindi/Hinglish we use Piper.
-        let model_name = if prompt.is_hindi { "Piper (Hindi)" } else { "Kokoro (English)" };
-        println!("[{:?}/{:?}] Running prompt ({}): {:?}", i + 1, prompts.len(), model_name, prompt.text);
+        let model_name = if prompt.is_hindi {
+            "Piper (Hindi)"
+        } else {
+            "Kokoro (English)"
+        };
+        println!(
+            "[{:?}/{:?}] Running prompt ({}): {:?}",
+            i + 1,
+            prompts.len(),
+            model_name,
+            prompt.text
+        );
 
         let (tx, rx) = channel::<VoxEvent>();
         let cancel = Arc::new(AtomicBool::new(false));
-        
+
         let prompt_text = prompt.text.to_string();
         let cancel_clone = cancel.clone();
-        
+
         let turn_id = i as u32;
-        let voice_sid = if prompt.is_hindi { 100 } else { 0 }; // Priyamvada or Bella
-        
+        let voice_sid = if prompt.is_hindi { 100 } else { 0 };
+
         let start = Instant::now();
         let mut ttfa_ms: Option<u128> = None;
         let mut total_samples = 0;
         let mut rtf = 0.0f32;
         let mut accumulated_samples = Vec::new();
 
-        // Run synthesis on a scoped background thread so we can track TTFA dynamically
         std::thread::scope(|s| {
             s.spawn(|| {
                 let _ = kokoro_piper_engine.synthesize_chunk(
@@ -126,7 +159,6 @@ fn main() -> anyhow::Result<()> {
             });
         });
 
-        // Event consumer loop to measure TTFA
         while let Ok(event) = rx.recv() {
             match event {
                 VoxEvent::TtsChunk { samples, .. } => {
@@ -136,7 +168,9 @@ fn main() -> anyhow::Result<()> {
                     total_samples += samples.len();
                     accumulated_samples.extend_from_slice(&samples);
                 }
-                VoxEvent::TtsFinished { rtf: finished_rtf, .. } => {
+                VoxEvent::TtsFinished {
+                    rtf: finished_rtf, ..
+                } => {
                     rtf = finished_rtf;
                 }
                 _ => {}
@@ -146,13 +180,20 @@ fn main() -> anyhow::Result<()> {
         let sample_rate = if prompt.is_hindi { 22050 } else { 24000 };
         let audio_duration_s = total_samples as f32 / sample_rate as f32;
 
-        // Save WAV file
-        let audio_out_dir = PathBuf::from("/home/addy/projects/apps/vox/docs/benchmarks/audio_outputs");
+        let audio_out_dir =
+            PathBuf::from("/home/addy/projects/apps/vox/docs/benchmarks/audio_outputs");
         fs::create_dir_all(&audio_out_dir).ok();
-        let wav_name = format!("{:02}_{}.wav", i + 1, if prompt.is_hindi { "piper" } else { "kokoro" });
+        let wav_name = format!(
+            "{:02}_{}.wav",
+            i + 1,
+            if prompt.is_hindi { "piper" } else { "kokoro" }
+        );
         let wav_path = audio_out_dir.join(wav_name);
         if let Err(e) = write_wav(&accumulated_samples, sample_rate, &wav_path) {
-            println!("\x1b[31m[TTS-Bench] Failed to save WAV file {:?}: {}\x1b[0m", wav_path, e);
+            println!(
+                "\x1b[31m[TTS-Bench] Failed to save WAV file {:?}: {}\x1b[0m",
+                wav_path, e
+            );
         }
 
         results.push(BenchResult {
@@ -168,79 +209,24 @@ fn main() -> anyhow::Result<()> {
         });
     }
 
-    println!("\x1b[32m[TTS-Bench]\x1b[0m Offloading Kokoro + Piper VITS...");
+    println!("\x1b[32m[TTS-Bench]\x1b[0m Kokoro + Piper benchmark complete.");
+    Ok(())
+}
 
+fn run_compare() -> anyhow::Result<()> {
+    use vox_lib::services::traits::TtsEngine;
 
-    // ==========================================
-    // 3. Benchmark NeuTTS Nano
-    // ==========================================
-    println!("\x1b[32m[TTS-Bench]\x1b[0m Loading NeuTTS Nano...");
-    let backbone_path = models_dir.join("tts/neutts-nano/neutts-nano-q8.gguf");
-    let decoder_path = models_dir.join("tts/neucodec-decoder/neucodec_decoder.safetensors");
-
-    if !decoder_path.exists() {
-        println!("\x1b[33m[TTS-Bench] Decoder safetensors not found at {:?}. Attempting to convert pytorch_model.bin...\x1b[0m", decoder_path);
-        let bin_path = PathBuf::from("/home/addy/.cache/huggingface/hub/models--neuphonic--neucodec/snapshots/c92ba97d538f2a0baa9118c21ea5de4cdad4e02a/pytorch_model.bin");
-        if bin_path.exists() {
-            if let Some(parent) = decoder_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            neutts::download::convert_neucodec_checkpoint(&bin_path, &decoder_path, 16, "neuphonic/neucodec")?;
-            println!("\x1b[32m[TTS-Bench] Conversion successful! Saved to {:?}\x1b[0m", decoder_path);
-        } else {
-            println!("\x1b[31m[TTS-Bench] Error: pytorch_model.bin not found at {:?}\x1b[0m", bin_path);
-        }
-    }
-
-    let snap_init_neu = BenchReporter::get_memory_snapshot();
-    let load_start_neu = Instant::now();
-
-    let mut neutts_engine = match neutts_nano::TtsEngine::new(&backbone_path, &decoder_path) {
-        Ok(e) => e,
-        Err(e) => {
-            println!("\x1b[31m[TTS-Bench] Failed to load NeuTTS Nano: {}\x1b[0m", e);
-            return Err(e);
-        }
-    };
-
-    let load_time_neu = load_start_neu.elapsed().as_millis();
-    let snap_loaded_neu = BenchReporter::get_memory_snapshot();
-    let ram_neu = snap_loaded_neu.rss_mb.saturating_sub(snap_init_neu.rss_mb);
-    println!("\x1b[32m[TTS-Bench]\x1b[0m NeuTTS Nano loaded in {}ms. RAM usage: {}MB", load_time_neu, ram_neu);
-
-    for (i, prompt) in prompts.iter().enumerate() {
-        let model_name = "NeuTTS Nano";
-        println!("[{:?}/{:?}] Running prompt ({}): {:?}", i + 1, prompts.len(), model_name, prompt.text);
-
+    fn run_tts(name: &str, text: &str, engine: &mut dyn TtsEngine) -> anyhow::Result<()> {
         let (tx, rx) = channel::<VoxEvent>();
         let cancel = Arc::new(AtomicBool::new(false));
-        
-        let prompt_text = prompt.text.to_string();
-        let cancel_clone = cancel.clone();
-        
-        let turn_id = (prompts.len() + i) as u32;
-        let voice_sid = 0; // NeuTTS defaults
-        
+
         let start = Instant::now();
         let mut ttfa_ms: Option<u128> = None;
         let mut total_samples = 0;
-        let mut rtf = 0.0f32;
-        let mut accumulated_samples = Vec::new();
+        let mut accumulated = Vec::new();
 
-        // Run synthesis on a scoped background thread so we can track TTFA dynamically
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                let _ = neutts_engine.synthesize_chunk(
-                    &prompt_text,
-                    voice_sid,
-                    turn_id,
-                    cancel_clone,
-                    tx,
-                );
-            });
-        });
+        engine.synthesize_chunk(text, 0, 0, cancel, tx)?;
 
-        // Event consumer loop to measure TTFA
         while let Ok(event) = rx.recv() {
             match event {
                 VoxEvent::TtsChunk { samples, .. } => {
@@ -248,39 +234,56 @@ fn main() -> anyhow::Result<()> {
                         ttfa_ms = Some(start.elapsed().as_millis());
                     }
                     total_samples += samples.len();
-                    accumulated_samples.extend_from_slice(&samples);
+                    accumulated.extend_from_slice(&samples);
                 }
-                VoxEvent::TtsFinished { rtf: finished_rtf, .. } => {
-                    rtf = finished_rtf;
+                VoxEvent::TtsFinished { rtf: _rtf, .. } => {
+                    let elapsed = start.elapsed();
+                    let audio_dur = total_samples as f32 / 24000.0;
+                    println!("\n\x1b[36m=== {} ===\x1b[0m", name);
+                    println!("  Load time:        skipped (pre-loaded)");
+                    println!("  TTFA:             {} ms", ttfa_ms.unwrap_or(0));
+                    println!("  Inference time:   {:.2} s", elapsed.as_secs_f32());
+                    println!("  Audio duration:   {:.2} s", audio_dur);
+                    println!(
+                        "  RTF:              {:.3}",
+                        elapsed.as_secs_f32() / audio_dur
+                    );
+                    println!("  Samples:          {}", total_samples);
+
+                    let out_dir =
+                        PathBuf::from("/home/addy/projects/apps/vox/docs/benchmarks/audio_outputs");
+                    fs::create_dir_all(&out_dir).ok();
+                    let wav_name = format!("compare_{}.wav", name.to_lowercase().replace(' ', "_"));
+                    let wav_path = out_dir.join(wav_name);
+                    write_wav(&accumulated, 24000, &wav_path)?;
+                    println!("  WAV:              {:?}", wav_path);
                 }
                 _ => {}
             }
         }
-        let inference_ms = start.elapsed().as_millis();
-        let audio_duration_s = total_samples as f32 / 24000.0;
 
-        // Save WAV file
-        let audio_out_dir = PathBuf::from("/home/addy/projects/apps/vox/docs/benchmarks/audio_outputs");
-        fs::create_dir_all(&audio_out_dir).ok();
-        let wav_name = format!("{:02}_neutts.wav", i + 1);
-        let wav_path = audio_out_dir.join(wav_name);
-        if let Err(e) = write_wav(&accumulated_samples, 24000, &wav_path) {
-            println!("\x1b[31m[TTS-Bench] Failed to save WAV file {:?}: {}\x1b[0m", wav_path, e);
-        }
-
-        results.push(BenchResult {
-            model_name,
-            category: prompt.category,
-            prompt: prompt.text,
-            load_time_ms: load_time_neu,
-            ram_mb: ram_neu,
-            ttfa_ms: ttfa_ms.unwrap_or(inference_ms),
-            rtf,
-            inference_ms,
-            audio_duration_s,
-        });
+        Ok(())
     }
 
-    println!("\x1b[32m[TTS-Bench]\x1b[0m Generated exactly one clip using NeuTTS Nano. Done!");
+    let home = dirs::home_dir().expect("Could not find home directory");
+    let vox_root = home.join(".vox");
+    vox_lib::utils::paths::init_with_root(vox_root);
+    let models_dir = vox_lib::utils::paths::get().models.clone();
+
+    let text = "I'm just a large language model, I don't have personal experiences or emotions, but I can tell you about some popular festive activities that people enjoy: Decorating the house with lights, garlands, and festive decorations. Attending family gatherings and parties. Singing festive songs and watching holiday movies. Cooking traditional holiday dishes. Exchanging gifts with loved ones. Participating in festive events and activities.";
+
+    println!("\x1b[32m[TTS-Compare]\x1b[0m Text: {:.60}...", text);
+    println!(
+        "\x1b[32m[TTS-Compare]\x1b[0m Length: {} chars\n",
+        text.len()
+    );
+
+    println!("\x1b[32m[TTS-Compare]\x1b[0m Loading Kokoro...");
+    let en_dir = models_dir.join("tts/kokoro");
+    let hi_path = models_dir.join("tts/piper_hi/hi_IN-priyamvada-medium.onnx");
+    let mut kokoro = vox_lib::services::tts::kokoro_piper::TtsEngine::new(&en_dir, &hi_path)?;
+    run_tts("Kokoro (English)", text, &mut kokoro)?;
+
+    println!("\n\x1b[32m[TTS-Compare]\x1b[0m Done!");
     Ok(())
 }

@@ -256,10 +256,13 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let models_dir = paths::get().models.clone();
         let manifest_lock = state.manifest.read().await;
 
-        let stt = if asr_model == "nvidia_nemotron" {
-            models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON)
-        } else {
-            models_dir.join(crate::core::constants::MODEL_DIR_STT)
+        let stt = match asr_model.as_str() {
+            "nvidia_nemotron" => models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON),
+            "qwen3_asr" => models_dir.join(crate::core::constants::MODEL_DIR_STT),
+            _ => {
+                log::error!("[Pipeline] Unknown ASR model '{}', defaulting to nvidia_nemotron", asr_model);
+                models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON)
+            }
         };
 
         // Only resolve the VAD model path for TenVAD — earshot has no external model file.
