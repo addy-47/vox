@@ -209,7 +209,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'tts',
             label: 'Speech Synthesis (TTS)',
-            subLabel: 'Kokoro + Piper Multi-Voice',
+            subLabel: 'Supertonic 3 Multilingual',
             icon: <VolumeIcon />,
             required: false,
             groups: manifest.model_groups.filter(g => g.category === 'tts')

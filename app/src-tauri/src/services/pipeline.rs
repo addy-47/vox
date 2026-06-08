@@ -186,8 +186,6 @@ impl PipelineOrchestrator {
     pub fn warm_up_tts(
         &self,
         app: &tauri::AppHandle,
-        en_tts_dir: PathBuf,
-        hi_tts_path: PathBuf,
         super_tts_path: PathBuf,
     ) -> Result<(), String> {
         let mut lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
@@ -195,15 +193,12 @@ impl PipelineOrchestrator {
             return Ok(());
         }
 
-        let (engine_option, quality_steps, speed) = {
+        let (quality_steps, speed) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
-            (s.tts.engine.clone(), s.tts.quality_steps, s.tts.speed)
+            (s.tts.quality_steps, s.tts.speed)
         };
 
-        log::info!(
-            "[Pipeline] Warming up TTS worker (engine: {:?})...",
-            engine_option
-        );
+        log::info!("[Pipeline] Warming up TTS worker (Supertonic)...");
         let (tx, rx) = std::sync::mpsc::channel::<crate::services::tts::TtsCommand>();
 
         let cancel_tts = Arc::clone(&self.cancel_flag);
@@ -218,10 +213,7 @@ impl PipelineOrchestrator {
                 crate::services::tts::spawn_tts_worker(
                     app_clone,
                     rx,
-                    en_tts_dir,
-                    hi_tts_path,
                     super_tts_path,
-                    engine_option,
                     event_tx,
                     cancel_tts,
                     is_loaded,
@@ -363,23 +355,17 @@ impl PipelineOrchestrator {
             self.cancel_flag.store(false, Ordering::Relaxed);
 
             let assistant_settings = self.settings.read().unwrap().assistant.clone();
-            let tts_engine = self.settings.read().unwrap().tts.engine.clone();
             let system_prompt = if is_devanagari(&text) {
                 assistant_settings.hindi_prompt
             } else {
                 assistant_settings.english_prompt
             };
 
-            // Inject expression tag instructions for Supertonic
-            let system_prompt = if tts_engine == crate::core::settings::TtsEngineOption::Supertonic
-            {
-                format!(
-                    "{} You may use <laugh>, <breath>, <sigh> tags for expressive speech.",
-                    system_prompt
-                )
-            } else {
+            // Inject expression tag instructions (Supertonic supports <laugh>, <breath>, <sigh>)
+            let system_prompt = format!(
+                "{} You may use <laugh>, <breath>, <sigh> tags for expressive speech.",
                 system_prompt
-            };
+            );
 
             let cmd = crate::services::llm::LlmCommand::Generate {
                 text,
@@ -399,8 +385,6 @@ impl PipelineOrchestrator {
     pub fn run_event_loop(
         &self,
         rx: std::sync::mpsc::Receiver<VoxEvent>,
-        en_tts_dir: PathBuf,
-        hi_tts_path: PathBuf,
         super_tts_path: PathBuf,
         playback_engine: Arc<crate::services::playback::PlaybackEngine>,
         app_handle: tauri::AppHandle,
@@ -408,9 +392,9 @@ impl PipelineOrchestrator {
         let mut last_interaction = std::time::Instant::now();
 
         // Local settings cache to avoid RwLock contention in the hot path (Directive: Real-Time Safety)
-        let mut local_en_voice = {
+        let mut local_voice = {
             let s = self.settings.read().unwrap();
-            s.tts.en_voice
+            s.tts.voice
         };
         let mut local_transliterate_enabled = {
             let s = self.settings.read().unwrap();
@@ -423,6 +407,14 @@ impl PipelineOrchestrator {
         let mut local_main_mode = {
             let s = self.settings.read().unwrap();
             s.interaction.main_app_mode.clone()
+        };
+        let mut local_quality_steps = {
+            let s = self.settings.read().unwrap();
+            s.tts.quality_steps
+        };
+        let mut local_speed = {
+            let s = self.settings.read().unwrap();
+            s.tts.speed
         };
 
         // Turn-Locked state (Directive 5: Language Detection Stability)
@@ -665,12 +657,7 @@ impl PipelineOrchestrator {
                     if let Err(e) = self.warm_up_llm(&app_handle) {
                         log::error!("[Pipeline] WarmUp (LLM): failed: {}", e);
                     }
-                    if let Err(e) = self.warm_up_tts(
-                        &app_handle,
-                        en_tts_dir.clone(),
-                        hi_tts_path.clone(),
-                        super_tts_path.clone(),
-                    ) {
+                    if let Err(e) = self.warm_up_tts(&app_handle, super_tts_path.clone()) {
                         log::error!("[Pipeline] WarmUp (TTS): failed: {}", e);
                     }
                     log::info!("[Pipeline] WarmUp: workers started in background.");
@@ -843,20 +830,16 @@ impl PipelineOrchestrator {
                             if metrics.tts_start.is_none() {
                                 metrics.mark(MetricField::TtsStart);
                             }
-                            // Directive 5: Language Detection - Lock voice for the remainder of the turn
+                            // Lock voice for the remainder of the turn
                             if turn_voice_id.is_none() {
-                                turn_voice_id = Some(if is_devanagari(&chunk) {
-                                    1 // Piper Hindi index
-                                } else {
-                                    local_en_voice as u32
-                                });
+                                turn_voice_id = Some(local_voice as u32);
                                 log::info!(
-                                    "[Pipeline] Language locked: turn_voice_id={:?}",
+                                    "[Pipeline] Voice locked: turn_voice_id={:?}",
                                     turn_voice_id
                                 );
                             }
 
-                            let voice_sid = turn_voice_id.unwrap_or(local_en_voice as u32);
+                            let voice_sid = turn_voice_id.unwrap_or(local_voice as u32);
                             if let Ok(lock) = self.tts_tx.lock() {
                                 if let Some(tx) = lock.as_ref() {
                                     let _ = tx.send(crate::services::tts::TtsCommand::Generate {
@@ -916,7 +899,7 @@ impl PipelineOrchestrator {
                         }
                         if let Ok(lock) = self.tts_tx.lock() {
                             if let Some(tx) = lock.as_ref() {
-                                let voice_sid = turn_voice_id.unwrap_or(local_en_voice as u32);
+                                let voice_sid = turn_voice_id.unwrap_or(local_voice as u32);
                                 let _ = tx.send(crate::services::tts::TtsCommand::Generate {
                                     turn_id,
                                     voice_sid: voice_sid as i32,
@@ -1155,12 +1138,43 @@ impl PipelineOrchestrator {
 
                 VoxEvent::SettingsUpdated(new_settings) => {
                     log::info!("[Pipeline] Local settings cache updated (Asynchronous).");
-                    local_en_voice = new_settings.tts.en_voice;
+                    local_voice = new_settings.tts.voice;
                     local_sleep_timeout = std::time::Duration::from_secs(
                         new_settings.interaction.auto_sleep_timeout as u64,
                     );
                     local_main_mode = new_settings.interaction.main_app_mode;
                     local_transliterate_enabled = new_settings.asr.transliterate_enabled;
+
+                    // Forward TTS hot-updatable settings to the worker
+                    if new_settings.tts.quality_steps != local_quality_steps {
+                        local_quality_steps = new_settings.tts.quality_steps;
+                        if let Ok(lock) = self.tts_tx.lock() {
+                            if let Some(tx) = lock.as_ref() {
+                                let _ =
+                                    tx.send(crate::services::tts::TtsCommand::UpdateQualitySteps(
+                                        local_quality_steps,
+                                    ));
+                                log::debug!(
+                                    "[Pipeline] Dispatched UpdateQualitySteps({}) to TTS worker",
+                                    local_quality_steps
+                                );
+                            }
+                        }
+                    }
+                    if (new_settings.tts.speed - local_speed).abs() > f32::EPSILON {
+                        local_speed = new_settings.tts.speed;
+                        if let Ok(lock) = self.tts_tx.lock() {
+                            if let Some(tx) = lock.as_ref() {
+                                let _ = tx.send(crate::services::tts::TtsCommand::UpdateSpeed(
+                                    local_speed,
+                                ));
+                                log::debug!(
+                                    "[Pipeline] Dispatched UpdateSpeed({:.2}) to TTS worker",
+                                    local_speed
+                                );
+                            }
+                        }
+                    }
                 }
 
                 // Handle remaining events that don't require orchestrator logic

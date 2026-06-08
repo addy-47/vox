@@ -49,11 +49,11 @@ pub fn check_setup_health() -> bool {
         return false;
     }
 
-    // 5. TTS (EN)
+    // 5. TTS (Supertonic)
     if !p
         .models
-        .join(MODEL_DIR_TTS_EN)
-        .join(MODEL_FILE_TTS_ONNX)
+        .join(MODEL_DIR_TTS_SUPER)
+        .join(MODEL_FILE_TTS_SUPER_TEXT_ENCODER)
         .exists()
     {
         return false;

@@ -2,16 +2,6 @@
 
 > Compact instructions for AI agents working in this codebase. Every line answers: "Would an agent likely miss this without help?"
 
-## Agent Rules Files
-
-Role-specific instruction files in `.agents/rules/`. Load the relevant one based on your task:
-
-| File | When to use |
-|------|-------------|
-| `.agents/rules/system-architect.md` | Architectural decisions, implementation plans, pipeline changes |
-| `.agents/rules/code-style-guide.md` | All coding — modularity, API design, security, Docker, CLI |
-| `.agents/rules/finetune.md` | ASR/LLM fine-tuning, corpus engineering, dataset curation |
-
 ---
 
 ## Architecture (Non-Obvious Facts)
@@ -21,8 +11,7 @@ Role-specific instruction files in `.agents/rules/`. Load the relevant one based
 - `app/` — Frontend workspace (React 19, Vite 7, TailwindCSS 4, TypeScript)
 - `app/src-tauri/` — Tauri backend. The lib target is `vox_lib` (not `app`). The `vox_lib` crate contains ALL core logic.
 - `app/src-tauri/src/services/` — Engine subsystems: `vad/`, `stt/`, `llm/`, `tts/`, `translit.rs`, `audio.rs`, `pipeline.rs`
-- `app/src-tauri/src/services/tts/kokoro_piper.rs` — Kokoro (EN) + Piper (HI) TTS via sherpa-onnx (fallback engine)
-- `app/src-tauri/src/services/tts/supertonic.rs` — Supertonic 3 TTS via sherpa-onnx native `OfflineTtsSupertonicModelConfig` (default, 99M params, 31 languages, INT8 quantized ~144MB). Progress callback must capture owned Arcs/Senders (`'static`).
+- `app/src-tauri/src/services/tts/` — TTS engine. `supertonic.rs` is the sole TTS engine. Uses sherpa-onnx native `OfflineTtsSupertonicModelConfig` (99M params, 31 languages, INT8 quantized ~144MB). Progress callback must capture owned Arcs/Senders (`'static`). `actor.rs` dispatches TTS commands. `mod.rs` re-exports.
 - `app/src-tauri/src/services/traits.rs` — Engine trait contracts (`VadEngine`, `SttEngine`, `LlmEngine`, `TtsEngine`). Pure sync interfaces; no thread/Tauri awareness.
 - `app/src-tauri/src/bin/` — Standalone binaries: `tts-bench.rs`, `vox-bench.rs`, `test-translit.rs`
 - `manifests/` — Model validation manifests (`app_manifest.json`, `models_manifest.json`).
@@ -70,14 +59,11 @@ cargo test --test tts_test -- --ignored --nocapture --test-threads=1
 ### TTS benchmark (Rust)
 ```bash
 cd app/src-tauri
-# bench mode — single-engine benchmark
 cargo run --bin tts-bench bench
-# compare mode — multi-engine comparison
-cargo run --bin tts-bench compare
 ```
 Output WAVs go to `docs/benchmarks/audio_outputs/`.
 
-### Supertonic model (INT8 via sherpa-onnx native)
+### Supertonic (sole TTS engine, INT8 via sherpa-onnx native)
 7 INT8 model files at `~/.vox/models/tts/supertonic-3/` (flat, no subdirectories). Uses sherpa-onnx `OfflineTtsSupertonicModelConfig` with `GenerationConfig { sid, num_steps: i32, speed, extra: { "lang" } }`. Progress callback resamples 44.1→24kHz. Model pack: `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`. Expression tags (`<laugh>`, `<breath>`, `<sigh>`) injected into LLM system prompt when engine is Supertonic (see `pipeline.rs` dynamic prompt logic).
 
 ---
@@ -95,6 +81,7 @@ Output WAVs go to `docs/benchmarks/audio_outputs/`.
 - Integration tests in `app/src-tauri/tests/` often need **real model files** at `~/.vox/models/`. Many are `#[ignore]`-d and run with `--ignored`.
 - Tests requiring actual audio hardware or models should use `--test-threads=1` to avoid resource contention.
 - `vox-bench` is the full production-parity benchmark (STT + LLM + TTS + VAD pipeline). `tts-bench` is TTS-only.
+- **Benchmark audio clips** are at `data/benchmark_clips/` as `hiacc_adult_test_AD09XXX.wav`. The 5-file benchmark suite uses clips `AD09001`, `AD09004`, `AD09021`, `AD09039`, `AD09051` (approx 5-16s each, Hindi multi-lingual). Run with: `cargo run --release --bin vox-bench -- --input /home/addy/projects/apps/vox/data/benchmark_clips/hiacc_adult_test_AD09001.wav --llm minicpm/minicpm5-1b-Q4_K_M.gguf --asr nemotron` from `app/src-tauri/`. Always use absolute paths for `--input`.
 
 
 ## Common Pitfalls
@@ -106,7 +93,8 @@ Output WAVs go to `docs/benchmarks/audio_outputs/`.
 - **`ort::session::Session` API quirks (2.0.0-rc.12):** `Session` is at `ort::session::Session`, not `ort::Session`. Builder methods return `ort::Error<SessionBuilder>` which is `!Send` — always use `.map_err(|e| anyhow!("{:?}", e))?` instead of bare `?`. Access input/output info via `session.inputs()` / `session.outputs()` methods (not fields). `GraphOptimizationLevel` is at `ort::session::builder::GraphOptimizationLevel`.
 - **Adding new fields to settings structs:** Always add `#[serde(default)]` to the struct to avoid deserialization failures when loading old settings files missing the new field.
 - **sherpa-onnx Supertonic native API quirks:** `OfflineTtsSupertonicModelConfig` has 7 fields: `duration_predictor`, `text_encoder`, `vector_estimator`, `vocoder`, `tts_json`, `unicode_indexer`, `voice_style`. `GenerationConfig::num_steps` is `i32` (cast `quality_steps as i32`). Progress callback is `FnMut(&[f32], f32) -> bool + 'static` — must capture owned Arcs/Senders, not references.
-- **VITS tokens.txt format for Piper:** Must contain exactly the entries from `phoneme_id_map` in `<token> <id>` format (no padding). Use `onnx.json`'s `phoneme_id_map` dict where keys are phoneme characters and values are `[id]` lists. Duplicate tokens or padding with `_` at unused IDs will crash sherpa-onnx's `ReadTokens`.
+- **CPU-aware LLM thread presets:** ModelSettings.tsx computes LLM thread presets from `navigator.hardwareConcurrency`. Max safe = totalCores − 2 (reserving cores for system + other pipeline stages). Presets are generated dynamically: [2, 4] always, plus `maxSafe` and `totalCores` when they differ. Always guard with `typeof navigator !== 'undefined'` for SSR/SSG compatibility. Do NOT hardcode thread options.
+- **CPU governor detection (Linux):** `utils::check_cpu_governor()` reads `/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor` at startup. If not `"performance"`, emits `cpu_governor_warning` Tauri event. Frontend (`Home.tsx`) listens and shows a dismissible warning banner. On non-Linux it's a no-op.
 
 ---
 

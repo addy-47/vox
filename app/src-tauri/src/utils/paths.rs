@@ -1,6 +1,6 @@
+use crate::core::constants::*;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use crate::core::constants::*;
 
 // ─── Path Singleton ───────────────────────────────────────────────────────────
 
@@ -10,19 +10,19 @@ use crate::core::constants::*;
 /// After init, `paths::get()` is safe to call from any thread without locks.
 pub struct VoxPaths {
     /// Base directory (~/.vox/ or platform-specific data dir)
-    pub root:     PathBuf,
+    pub root: PathBuf,
     /// models/
-    pub models:   PathBuf,
+    pub models: PathBuf,
     /// logs/
-    pub logs:     PathBuf,
+    pub logs: PathBuf,
     /// vox.db
-    pub db:       PathBuf,
+    pub db: PathBuf,
     /// settings.json
     pub settings: PathBuf,
     /// cache/
-    pub cache:    PathBuf,
+    pub cache: PathBuf,
     /// temp/
-    pub temp:     PathBuf,
+    pub temp: PathBuf,
 }
 
 static PATHS: OnceLock<VoxPaths> = OnceLock::new();
@@ -68,12 +68,12 @@ pub fn init(_app: &tauri::AppHandle) {
 /// Specialized initializer for testing or custom environments.
 pub fn init_with_root(root: PathBuf) {
     let paths = VoxPaths {
-        models:   root.join(MODELS_DIRNAME),
-        logs:     root.join(LOG_DIRNAME),
-        db:       root.join(DB_FILENAME),
+        models: root.join(MODELS_DIRNAME),
+        logs: root.join(LOG_DIRNAME),
+        db: root.join(DB_FILENAME),
         settings: root.join(SETTINGS_FILENAME),
-        cache:    root.join("cache"),
-        temp:     root.join("temp"),
+        cache: root.join("cache"),
+        temp: root.join("temp"),
         root,
     };
 
@@ -86,7 +86,9 @@ pub fn init_with_root(root: PathBuf) {
 /// # Panics
 /// Panics if `paths::init()` was not called before this.
 pub fn get() -> &'static VoxPaths {
-    PATHS.get().expect("[FATAL] paths::init() was not called before paths::get(). Check app startup order.")
+    PATHS.get().expect(
+        "[FATAL] paths::init() was not called before paths::get(). Check app startup order.",
+    )
 }
 
 /// Ensures all required directories exist on disk. Called once at startup.
