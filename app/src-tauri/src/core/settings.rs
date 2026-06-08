@@ -40,6 +40,14 @@ pub struct ModelMetadata {
     pub parameters: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TtsEngineOption {
+    #[default]
+    Supertonic,
+    KokoroPiper,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VoiceProfile {
     pub id: i32,
@@ -212,6 +220,14 @@ pub fn get_tts_metadata() -> Vec<ModelMetadata> {
             ram_usage: " ~100MB".to_string(),
             parameters: "VITS (Medium)".to_string(),
         },
+        ModelMetadata {
+            id: "supertonic_tts".to_string(),
+            name: "Supertonic 3".to_string(),
+            description: "Multilingual TTS with 31 languages, flow-matching architecture."
+                .to_string(),
+            ram_usage: " ~400MB".to_string(),
+            parameters: "99M".to_string(),
+        },
     ]
 }
 
@@ -274,6 +290,9 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("tts", "en_voice") => SettingReloadPolicy::Restart,
         ("tts", "hi_model") => SettingReloadPolicy::Restart,
         ("tts", "hi_voice") => SettingReloadPolicy::Restart,
+        ("tts", "engine") => SettingReloadPolicy::Restart,
+        ("tts", "quality_steps") => SettingReloadPolicy::WorkerCommand,
+        ("tts", "speed") => SettingReloadPolicy::WorkerCommand,
 
         // Interaction — sent as mode-changed event immediately
         ("interaction", "auto_sleep_timeout") => SettingReloadPolicy::Hot,
@@ -394,20 +413,27 @@ impl Default for LlmSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TtsSettings {
     pub en_model: String, // e.g., "kokoro_english_tts"
-    pub en_voice: i32,    // Kokoro voice index (0-10)
+    pub en_voice: i32,    // Kokoro voice index (0-10) / Supertonic voice index (0-9)
     pub hi_model: String, // e.g., "piper_hindi_tts"
     pub hi_voice: String, // Specific Piper .onnx filename
+    pub engine: TtsEngineOption,
+    pub quality_steps: u32, // Supertonic total_steps (2-12, default 8)
+    pub speed: f32,         // Supertonic speed factor (0.7-2.0, default 1.05)
 }
 
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
             en_model: "kokoro_english_tts".to_string(),
-            en_voice: 0, // Bella
+            en_voice: 0,
             hi_model: "piper_hindi_tts".to_string(),
             hi_voice: crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.to_string(),
+            engine: TtsEngineOption::Supertonic,
+            quality_steps: 8,
+            speed: 1.05,
         }
     }
 }
