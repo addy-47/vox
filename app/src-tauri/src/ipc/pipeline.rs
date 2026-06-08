@@ -412,7 +412,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 
     app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS")
         .ok();
-    let (en_tts_dir, hi_tts_path, llm_path) = {
+    let (en_tts_dir, hi_tts_path, super_tts_path, llm_path) = {
         let (hi_voice, llm_model) = {
             let settings = state.settings.read().unwrap();
             (settings.tts.hi_voice.clone(), settings.llm.model.clone())
@@ -491,7 +491,10 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                 .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
         };
 
-        (en_tts, hi_tts, llm)
+        let super_tts = models_dir
+            .join(crate::core::constants::MODEL_DIR_TTS_SUPER);
+
+        (en_tts, hi_tts, super_tts, llm)
     };
 
     let playback_energy = state.latest_playback_energy.clone();
@@ -545,6 +548,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                 vox_event_rx,
                 en_tts_dir,
                 hi_tts_path,
+                super_tts_path,
                 playback_for_orch,
                 app_for_orch,
             );

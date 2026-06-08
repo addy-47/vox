@@ -89,10 +89,7 @@
 
 ### 6.1. Supertonic 3 — ONNX Runtime (ort crate)
 
-1. **Static graph caching:** Load ONNX graphs once at startup via `OnceCell`/`lazy_static` — never per utterance.
-2. **I/O binding & pre-allocation:** Pre-allocate contiguous buffers for input text tensors + output audio waveforms; avoid expensive data copying.
-3. **Thread affinity:** Restrict ONNX to 2-3 threads via `intra_op_num_threads`. Pin with `core_affinity` crate to prevent LLM starvation.
-4. **Custom text normalization (TN) layer:** Expand digits/abbreviations per language context (e.g., "3" → "तीन" in Hindi), inject Expression Tags before ONNX inference. Replaces Supertonic's delegated language handling.
+Implementation complete — see `tts/supertonic.rs`.
 
 ### 6.2. OmniVoice — Sherpa-ONNX FFI
 

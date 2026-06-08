@@ -19,8 +19,8 @@ Vox is a **model-agnostic, role-based system** with a selection strategy that is
 | **STT** (Fallback) | Qwen3-ASR-0.6B | `qwen3_asr` | ~800 MB | INT8 Quantized (`sherpa-onnx`) |
 | **LLM** (Default) | Llama 3.2 1B Instruct | `llama_3_2_reasoning` | ~1.0 GB | GGUF Q6_K, context size `2048`, threads `N-2` |
 | **LLM** (Alternative) | Gemma 4 E2B-it | `gemma_4_reasoning` | ~2.2 GB | GGUF Q4_K_M |
-| **TTS** (English) | Kokoro-82M | `kokoro_english_tts` | ~150 MB | ONNX Runtime, multi-voice profiles |
-| **TTS** (Hindi) | Piper VITS | `piper_hindi_tts` | ~100 MB | ONNX Runtime (`hi_IN-priyamvada-medium.onnx`) |
+| **TTS** (Default) | **Supertonic 3** | `supertonic_tts` | ~400 MB | ONNX Runtime (ort), flow-matching, 31 languages |
+| **TTS** (Fallback) | Kokoro-82M (EN) + Piper VITS (HI) | `kokoro_english_tts` / `piper_hindi_tts` | ~250 MB combined | ONNX Runtime (sherpa-onnx), multi-voice profiles |
 
 ---
 
@@ -217,10 +217,10 @@ if n_cur >= ctx_size { break; }
 
 ## 7. Text-to-Speech (TTS)
 
-### Selected Models: **Dual-Model Routing**
+### Selected Models: **Supertonic 3 (Default) + Kokoro/Piper (Fallback)**
 
-#### English: Kokoro-82M (ONNX)
-#### Hindi: Piper VITS (ONNX)
+#### Default: Supertonic 3 (ONNX via ort crate)
+#### Fallback: Kokoro-82M (English) + Piper VITS (Hindi)
 
 ```rust
 // English TTS
