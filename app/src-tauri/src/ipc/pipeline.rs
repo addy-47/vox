@@ -410,66 +410,13 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let audio_stream = AudioStream::new(producer, input_device).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
-    app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS")
-        .ok();
-    let (en_tts_dir, hi_tts_path, super_tts_path, llm_path) = {
-        let (hi_voice, llm_model) = {
+    let (super_tts_path, llm_path) = {
+        let llm_model = {
             let settings = state.settings.read().unwrap();
-            (settings.tts.hi_voice.clone(), settings.llm.model.clone())
+            settings.llm.model.clone()
         };
         let models_dir = paths::get().models.clone();
         let manifest_lock = state.manifest.read().await;
-
-        let en_tts = if let Some(ref manifest) = *manifest_lock {
-            if let Some(group) = manifest
-                .model_groups
-                .iter()
-                .find(|g| g.id == "kokoro_english_tts")
-            {
-                if let Some(file) = group.files.first() {
-                    let path = models_dir.join(&file.path);
-                    path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| {
-                        models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
-                    })
-                } else {
-                    models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
-                }
-            } else {
-                models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
-            }
-        } else {
-            models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
-        };
-
-        let hi_tts = if let Some(ref manifest) = *manifest_lock {
-            if let Some(group) = manifest
-                .model_groups
-                .iter()
-                .find(|g| g.id == "piper_hindi_tts")
-            {
-                if let Some(file) = group.files.first() {
-                    let path = models_dir.join(&file.path);
-                    path.parent()
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|| {
-                            models_dir.join(crate::core::constants::MODEL_DIR_TTS_HI)
-                        })
-                        .join(&hi_voice)
-                } else {
-                    models_dir
-                        .join(crate::core::constants::MODEL_DIR_TTS_HI)
-                        .join(&hi_voice)
-                }
-            } else {
-                models_dir
-                    .join(crate::core::constants::MODEL_DIR_TTS_HI)
-                    .join(&hi_voice)
-            }
-        } else {
-            models_dir
-                .join(crate::core::constants::MODEL_DIR_TTS_HI)
-                .join(&hi_voice)
-        };
 
         let llm = if let Some(ref manifest) = *manifest_lock {
             if let Some(group) = manifest.model_groups.iter().find(|g| g.id == llm_model) {
@@ -494,7 +441,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let super_tts = models_dir
             .join(crate::core::constants::MODEL_DIR_TTS_SUPER);
 
-        (en_tts, hi_tts, super_tts, llm)
+        (super_tts, llm)
     };
 
     let playback_energy = state.latest_playback_energy.clone();
@@ -546,8 +493,6 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         .spawn(move || {
             orchestrator.run_event_loop(
                 vox_event_rx,
-                en_tts_dir,
-                hi_tts_path,
                 super_tts_path,
                 playback_for_orch,
                 app_for_orch,

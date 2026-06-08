@@ -239,6 +239,26 @@ pub fn run() {
                 .build(app)?;
 
             
+            // ── 1.7.5 CPU Governor Check (Linux only — warns if not "performance") ──
+            {
+                if let Some(governor) = crate::utils::check_cpu_governor() {
+                    let is_optimal = governor == "performance";
+                    if !is_optimal {
+                        log::warn!(
+                            "[BOOTSTRAP] CPU governor is '{}', not 'performance'. \
+                             This may degrade voice pipeline performance significantly. \
+                             Consider: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
+                            governor
+                        );
+                    }
+                    let _ = app.emit("cpu_governor_warning", serde_json::json!({
+                        "governor": governor,
+                        "optimal": is_optimal,
+                        "advice": "Switch to 'performance' governor for best voice pipeline performance"
+                    }));
+                }
+            }
+
             // ── 1.8 Runtime Ready ───────────────────────────────────────────────────
             {
                 use crate::core::state::RuntimeStatus;

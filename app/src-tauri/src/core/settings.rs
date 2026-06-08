@@ -40,113 +40,57 @@ pub struct ModelMetadata {
     pub parameters: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum TtsEngineOption {
-    #[default]
-    Supertonic,
-    KokoroPiper,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VoiceProfile {
     pub id: i32,
     pub name: String,
-    pub language: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model_file: Option<String>,
 }
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
-    let mut voices = vec![
+    vec![
+        // Male voices (M1-M5)
         VoiceProfile {
             id: 0,
-            name: "Bella".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "James".to_string(),
         },
         VoiceProfile {
             id: 1,
-            name: "Sarah".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "David".to_string(),
         },
         VoiceProfile {
             id: 2,
-            name: "Sky".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "Alex".to_string(),
         },
         VoiceProfile {
             id: 3,
-            name: "Adam".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "Ryan".to_string(),
         },
         VoiceProfile {
             id: 4,
-            name: "Michael".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "Ethan".to_string(),
         },
+        // Female voices (F1-F5)
         VoiceProfile {
             id: 5,
-            name: "Eric".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "Sophia".to_string(),
         },
         VoiceProfile {
             id: 6,
-            name: "Emma".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "Olivia".to_string(),
         },
         VoiceProfile {
             id: 7,
-            name: "Isabella".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "Emma".to_string(),
         },
         VoiceProfile {
             id: 8,
-            name: "Jessica".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "Ava".to_string(),
         },
         VoiceProfile {
             id: 9,
-            name: "Nicole".to_string(),
-            language: "en".into(),
-            model_file: None,
+            name: "Mia".to_string(),
         },
-        VoiceProfile {
-            id: 10,
-            name: "William".to_string(),
-            language: "en".into(),
-            model_file: None,
-        },
-    ];
-
-    voices.push(VoiceProfile {
-        id: 100,
-        name: "Priyamvada".to_string(),
-        language: "hi".into(),
-        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.into()),
-    });
-    voices.push(VoiceProfile {
-        id: 101,
-        name: "Pratham".to_string(),
-        language: "hi".into(),
-        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRATHAM.into()),
-    });
-    voices.push(VoiceProfile {
-        id: 102,
-        name: "Rohan".to_string(),
-        language: "hi".into(),
-        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_ROHAN.into()),
-    });
-
-    voices
+    ]
 }
 
 pub fn get_preset_colors() -> Vec<String> {
@@ -205,30 +149,13 @@ pub fn get_asr_metadata() -> Vec<ModelMetadata> {
 }
 
 pub fn get_tts_metadata() -> Vec<ModelMetadata> {
-    vec![
-        ModelMetadata {
-            id: "kokoro_english_tts".to_string(),
-            name: "Kokoro".to_string(),
-            description: "High-quality voice output with multiple profiles.".to_string(),
-            ram_usage: " ~150MB".to_string(),
-            parameters: "82M".to_string(),
-        },
-        ModelMetadata {
-            id: "piper_hindi_tts".to_string(),
-            name: "Piper Hindi".to_string(),
-            description: "Natural Hindi speech optimized for low power devices.".to_string(),
-            ram_usage: " ~100MB".to_string(),
-            parameters: "VITS (Medium)".to_string(),
-        },
-        ModelMetadata {
-            id: "supertonic_tts".to_string(),
-            name: "Supertonic 3".to_string(),
-            description: "Multilingual TTS with 31 languages, flow-matching architecture."
-                .to_string(),
-            ram_usage: " ~400MB".to_string(),
-            parameters: "99M".to_string(),
-        },
-    ]
+    vec![ModelMetadata {
+        id: "supertonic_tts".to_string(),
+        name: "Supertonic 3".to_string(),
+        description: "Multilingual TTS with 31 languages, flow-matching architecture.".to_string(),
+        ram_usage: " ~400MB".to_string(),
+        parameters: "99M".to_string(),
+    }]
 }
 
 // ─── Reload Policy ────────────────────────────────────────────────────────────
@@ -285,12 +212,8 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("llm", "ctx_size") => SettingReloadPolicy::Restart,
         ("llm", "threads") => SettingReloadPolicy::Restart,
 
-        // TTS — model and voice changes require restart
-        ("tts", "en_model") => SettingReloadPolicy::Restart,
-        ("tts", "en_voice") => SettingReloadPolicy::Restart,
-        ("tts", "hi_model") => SettingReloadPolicy::Restart,
-        ("tts", "hi_voice") => SettingReloadPolicy::Restart,
-        ("tts", "engine") => SettingReloadPolicy::Restart,
+        // TTS — voice change requires engine restart; quality/speed are hot-updated
+        ("tts", "voice") => SettingReloadPolicy::Restart,
         ("tts", "quality_steps") => SettingReloadPolicy::WorkerCommand,
         ("tts", "speed") => SettingReloadPolicy::WorkerCommand,
 
@@ -415,11 +338,7 @@ impl Default for LlmSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TtsSettings {
-    pub en_model: String, // e.g., "kokoro_english_tts"
-    pub en_voice: i32,    // Kokoro voice index (0-10) / Supertonic voice index (0-9)
-    pub hi_model: String, // e.g., "piper_hindi_tts"
-    pub hi_voice: String, // Specific Piper .onnx filename
-    pub engine: TtsEngineOption,
+    pub voice: i32,         // Supertonic voice index (0-9)
     pub quality_steps: u32, // Supertonic total_steps (2-12, default 8)
     pub speed: f32,         // Supertonic speed factor (0.7-2.0, default 1.05)
 }
@@ -427,12 +346,8 @@ pub struct TtsSettings {
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
-            en_model: "kokoro_english_tts".to_string(),
-            en_voice: 0,
-            hi_model: "piper_hindi_tts".to_string(),
-            hi_voice: crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.to_string(),
-            engine: TtsEngineOption::Supertonic,
-            quality_steps: 8,
+            voice: 0,
+            quality_steps: 12,
             speed: 1.05,
         }
     }
