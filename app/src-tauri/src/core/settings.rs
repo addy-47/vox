@@ -1,7 +1,7 @@
+use crate::utils::paths;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use anyhow::Result;
-use crate::utils::paths;
 
 // ─── Shared Enums ─────────────────────────────────────────────────────────────
 
@@ -51,43 +51,92 @@ pub struct VoiceProfile {
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
     let mut voices = vec![
-        VoiceProfile { id: 0, name: "Bella".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 1, name: "Sarah".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 2, name: "Sky".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 3, name: "Adam".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 4, name: "Michael".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 5, name: "Eric".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 6, name: "Emma".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 7, name: "Isabella".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 8, name: "Jessica".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 9, name: "Nicole".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 10, name: "William".to_string(), language: "en".into(), model_file: None },
+        VoiceProfile {
+            id: 0,
+            name: "Bella".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 1,
+            name: "Sarah".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 2,
+            name: "Sky".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 3,
+            name: "Adam".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 4,
+            name: "Michael".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 5,
+            name: "Eric".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 6,
+            name: "Emma".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 7,
+            name: "Isabella".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 8,
+            name: "Jessica".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 9,
+            name: "Nicole".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
+        VoiceProfile {
+            id: 10,
+            name: "William".to_string(),
+            language: "en".into(),
+            model_file: None,
+        },
     ];
 
-    voices.push(VoiceProfile { 
-        id: 100, 
-        name: "Priyamvada".to_string(), 
-        language: "hi".into(), 
-        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.into()) 
+    voices.push(VoiceProfile {
+        id: 100,
+        name: "Priyamvada".to_string(),
+        language: "hi".into(),
+        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.into()),
     });
-    voices.push(VoiceProfile { 
-        id: 101, 
-        name: "Pratham".to_string(), 
-        language: "hi".into(), 
-        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRATHAM.into()) 
+    voices.push(VoiceProfile {
+        id: 101,
+        name: "Pratham".to_string(),
+        language: "hi".into(),
+        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRATHAM.into()),
     });
-    voices.push(VoiceProfile { 
-        id: 102, 
-        name: "Rohan".to_string(), 
-        language: "hi".into(), 
-        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_ROHAN.into()) 
+    voices.push(VoiceProfile {
+        id: 102,
+        name: "Rohan".to_string(),
+        language: "hi".into(),
+        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_ROHAN.into()),
     });
-
-    voices.push(VoiceProfile { id: 200, name: "Jo (NeuTTS English)".to_string(), language: "en".into(), model_file: None });
-    voices.push(VoiceProfile { id: 201, name: "Dave (NeuTTS English)".to_string(), language: "en".into(), model_file: None });
-    voices.push(VoiceProfile { id: 202, name: "Juliette (NeuTTS French)".to_string(), language: "fr".into(), model_file: None });
-    voices.push(VoiceProfile { id: 203, name: "Greta (NeuTTS German)".to_string(), language: "de".into(), model_file: None });
-    voices.push(VoiceProfile { id: 204, name: "Mateo (NeuTTS Spanish)".to_string(), language: "es".into(), model_file: None });
 
     voices
 }
@@ -124,7 +173,7 @@ pub fn get_llm_metadata() -> Vec<ModelMetadata> {
             description: "Unrestricted high-speed agent with ultra-quantized weights.".to_string(),
             ram_usage: " ~2.9GB".to_string(),
             parameters: "2.4B (Q2_K_P)".to_string(),
-        }
+        },
     ]
 }
 
@@ -143,7 +192,7 @@ pub fn get_asr_metadata() -> Vec<ModelMetadata> {
             description: "Streaming Automatic Speech Recognition (parakeet-rs).".to_string(),
             ram_usage: " ~2.5GB".to_string(),
             parameters: "0.6B".to_string(),
-        }
+        },
     ]
 }
 
@@ -163,13 +212,6 @@ pub fn get_tts_metadata() -> Vec<ModelMetadata> {
             ram_usage: " ~100MB".to_string(),
             parameters: "VITS (Medium)".to_string(),
         },
-        ModelMetadata {
-            id: "neutts_nano".to_string(),
-            name: "NeuTTS Nano".to_string(),
-            description: "Fast CPU voice-cloning/speech-synthesis engine.".to_string(),
-            ram_usage: " ~400MB".to_string(),
-            parameters: "120M".to_string(),
-        }
     ]
 }
 
@@ -192,9 +234,9 @@ pub enum SettingReloadPolicy {
 impl SettingReloadPolicy {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Hot           => "hot",
+            Self::Hot => "hot",
             Self::WorkerCommand => "worker_command",
-            Self::Restart       => "restart",
+            Self::Restart => "restart",
         }
     }
 }
@@ -206,53 +248,53 @@ impl SettingReloadPolicy {
 pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
     match (domain, key) {
         // UI — all hot: theme and accent change instantly
-        ("ui", _)                        => SettingReloadPolicy::Hot,
+        ("ui", _) => SettingReloadPolicy::Hot,
 
         // VAD — threshold and noise gate update via VadCommand channel
-        ("vad", "threshold")             => SettingReloadPolicy::WorkerCommand,
-        ("vad", "ptt_noise_gate")        => SettingReloadPolicy::WorkerCommand,
+        ("vad", "threshold") => SettingReloadPolicy::WorkerCommand,
+        ("vad", "ptt_noise_gate") => SettingReloadPolicy::WorkerCommand,
         // VAD backend switch requires full engine restart (different constructor path)
-        ("vad", "vad_backend")           => SettingReloadPolicy::Restart,
+        ("vad", "vad_backend") => SettingReloadPolicy::Restart,
 
         // Audio output mode — update VAD mic ducking snapshot
-        ("audio", "output_mode")         => SettingReloadPolicy::WorkerCommand,
-        ("audio", "input_device")        => SettingReloadPolicy::Restart,
+        ("audio", "output_mode") => SettingReloadPolicy::WorkerCommand,
+        ("audio", "input_device") => SettingReloadPolicy::Restart,
 
         // ASR — model change requires full pipeline restart
-        ("asr", "model")                 => SettingReloadPolicy::Restart,
+        ("asr", "model") => SettingReloadPolicy::Restart,
         ("asr", "transliterate_enabled") => SettingReloadPolicy::Hot,
 
         // LLM — most require restart (model is loaded once)
-        ("llm", "model")                 => SettingReloadPolicy::Restart,
-        ("llm", "ctx_size")              => SettingReloadPolicy::Restart,
-        ("llm", "threads")               => SettingReloadPolicy::Restart,
+        ("llm", "model") => SettingReloadPolicy::Restart,
+        ("llm", "ctx_size") => SettingReloadPolicy::Restart,
+        ("llm", "threads") => SettingReloadPolicy::Restart,
 
         // TTS — model and voice changes require restart
-        ("tts", "en_model")              => SettingReloadPolicy::Restart,
-        ("tts", "en_voice")              => SettingReloadPolicy::Restart,
-        ("tts", "hi_model")              => SettingReloadPolicy::Restart,
-        ("tts", "hi_voice")              => SettingReloadPolicy::Restart,
+        ("tts", "en_model") => SettingReloadPolicy::Restart,
+        ("tts", "en_voice") => SettingReloadPolicy::Restart,
+        ("tts", "hi_model") => SettingReloadPolicy::Restart,
+        ("tts", "hi_voice") => SettingReloadPolicy::Restart,
 
         // Interaction — sent as mode-changed event immediately
         ("interaction", "auto_sleep_timeout") => SettingReloadPolicy::Hot,
-        ("interaction", _)               => SettingReloadPolicy::Hot,
+        ("interaction", _) => SettingReloadPolicy::Hot,
 
         // Telemetry toggle — hot
-        ("telemetry", "enabled")         => SettingReloadPolicy::Hot,
+        ("telemetry", "enabled") => SettingReloadPolicy::Hot,
         // Log level — requires subscriber restart
-        ("telemetry", "log_level")       => SettingReloadPolicy::Restart,
+        ("telemetry", "log_level") => SettingReloadPolicy::Restart,
 
         // Persistence — enabled flag requires restart; limits are hot
-        ("persistence", "enabled")       => SettingReloadPolicy::Restart,
-        ("persistence", "private_mode")  => SettingReloadPolicy::Hot,
-        ("persistence", "max_sessions")  => SettingReloadPolicy::Hot,
+        ("persistence", "enabled") => SettingReloadPolicy::Restart,
+        ("persistence", "private_mode") => SettingReloadPolicy::Hot,
+        ("persistence", "max_sessions") => SettingReloadPolicy::Hot,
         ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
         // Assistant — system prompt is sent to LLM worker via channel
-        ("assistant", "system_prompt")   => SettingReloadPolicy::WorkerCommand,
+        ("assistant", "system_prompt") => SettingReloadPolicy::WorkerCommand,
 
         // Unknown — conservative default
-        _                                => SettingReloadPolicy::Restart,
+        _ => SettingReloadPolicy::Restart,
     }
 }
 
@@ -311,7 +353,7 @@ pub struct VadSettings {
 impl Default for VadSettings {
     fn default() -> Self {
         Self {
-            threshold: 0.5,        // Earshot recommends 0.5 as general default, TenVAD also optimized to 0.5
+            threshold: 0.5, // Earshot recommends 0.5 as general default, TenVAD also optimized to 0.5
             ptt_noise_gate: 0.005,
             vad_backend: VadBackendOption::Earshot,
         }
@@ -321,7 +363,7 @@ impl Default for VadSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AsrSettings {
-    pub model: String, // e.g., "qwen3_asr"
+    pub model: String, // e.g., "nvidia_nemotron"
     pub transliterate_enabled: bool,
 }
 
@@ -433,9 +475,7 @@ pub struct SetupSettings {
 
 impl Default for SetupSettings {
     fn default() -> Self {
-        Self {
-            completed: false,
-        }
+        Self { completed: false }
     }
 }
 
@@ -465,17 +505,17 @@ impl Default for AssistantSettings {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct VoxSettings {
-    pub ui:          UiSettings,
-    pub audio:       AudioSettings,
-    pub vad:         VadSettings,
-    pub asr:         AsrSettings,
-    pub llm:         LlmSettings,
-    pub tts:         TtsSettings,
+    pub ui: UiSettings,
+    pub audio: AudioSettings,
+    pub vad: VadSettings,
+    pub asr: AsrSettings,
+    pub llm: LlmSettings,
+    pub tts: TtsSettings,
     pub interaction: InteractionSettings,
-    pub telemetry:   TelemetrySettings,
+    pub telemetry: TelemetrySettings,
     pub persistence: PersistenceSettings,
-    pub assistant:   AssistantSettings,
-    pub setup:       SetupSettings,
+    pub assistant: AssistantSettings,
+    pub setup: SetupSettings,
 }
 
 impl VoxSettings {
@@ -497,7 +537,12 @@ impl VoxSettings {
 
             // 2. Try Phase 6.0 flat migration
             if let Ok(legacy) = serde_json::from_str::<serde_json::Value>(&content) {
-                if legacy.is_object() && !legacy.as_object().map(|o| o.contains_key("ui")).unwrap_or(false) {
+                if legacy.is_object()
+                    && !legacy
+                        .as_object()
+                        .map(|o| o.contains_key("ui"))
+                        .unwrap_or(false)
+                {
                     log::warn!("[Settings] Phase 6.0 legacy config detected. Migrating...");
                     return Self::migrate_from_v6_0(legacy);
                 }
@@ -505,7 +550,10 @@ impl VoxSettings {
 
             // 3. Corruption recovery: rename to .bak, return defaults
             let bak = path.with_extension("json.bak");
-            log::error!("[Settings] Corrupt settings.json — backing up to {:?} and restoring defaults", bak);
+            log::error!(
+                "[Settings] Corrupt settings.json — backing up to {:?} and restoring defaults",
+                bak
+            );
             let _ = fs::rename(&path, &bak);
         }
 
@@ -517,14 +565,14 @@ impl VoxSettings {
 
     pub fn save(&self) -> Result<()> {
         let path = paths::get().settings.clone();
-        
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
 
         let content = serde_json::to_string_pretty(self)?;
-        
+
         // Atomic write strategy:
         // 1. Write to a .tmp file
         // 2. Atomically rename to .json

@@ -1,18 +1,17 @@
-use anyhow::{anyhow, Result};
-use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
-use sherpa_onnx::{
-    GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
-    OfflineTtsKokoroModelConfig, OfflineTtsVitsModelConfig,
+use crate::core::constants::{
+    MODEL_FILE_TTS_ESPEAK, MODEL_FILE_TTS_ONNX, MODEL_FILE_TTS_TOKENS, MODEL_FILE_TTS_VOICES,
 };
 use crate::core::events::VoxEvent;
-use crate::core::constants::{
-    MODEL_FILE_TTS_ONNX, MODEL_FILE_TTS_VOICES, MODEL_FILE_TTS_TOKENS, 
-    MODEL_FILE_TTS_ESPEAK,
-};
 use crate::services::traits;
+use anyhow::{anyhow, Result};
+use sherpa_onnx::{
+    GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsKokoroModelConfig,
+    OfflineTtsModelConfig, OfflineTtsVitsModelConfig,
+};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
 
 pub struct TtsEngine {
     en_tts: OfflineTts,
@@ -22,17 +21,38 @@ pub struct TtsEngine {
 impl TtsEngine {
     pub fn new(en_model_dir: &Path, hi_model_path: &Path) -> Result<Self> {
         log::info!("[TTS] Initializing Multi-Model TTS engine...");
-        
-        let hi_model_dir = hi_model_path.parent()
+
+        let hi_model_dir = hi_model_path
+            .parent()
             .ok_or_else(|| anyhow!("[TTS] Invalid Hindi model path"))?;
 
         let en_config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 kokoro: OfflineTtsKokoroModelConfig {
-                    model: Some(en_model_dir.join(MODEL_FILE_TTS_ONNX).to_string_lossy().into()),
-                    voices: Some(en_model_dir.join(MODEL_FILE_TTS_VOICES).to_string_lossy().into()),
-                    tokens: Some(en_model_dir.join(MODEL_FILE_TTS_TOKENS).to_string_lossy().into()),
-                    data_dir: Some(en_model_dir.join(MODEL_FILE_TTS_ESPEAK).to_string_lossy().into()),
+                    model: Some(
+                        en_model_dir
+                            .join(MODEL_FILE_TTS_ONNX)
+                            .to_string_lossy()
+                            .into(),
+                    ),
+                    voices: Some(
+                        en_model_dir
+                            .join(MODEL_FILE_TTS_VOICES)
+                            .to_string_lossy()
+                            .into(),
+                    ),
+                    tokens: Some(
+                        en_model_dir
+                            .join(MODEL_FILE_TTS_TOKENS)
+                            .to_string_lossy()
+                            .into(),
+                    ),
+                    data_dir: Some(
+                        en_model_dir
+                            .join(MODEL_FILE_TTS_ESPEAK)
+                            .to_string_lossy()
+                            .into(),
+                    ),
                     length_scale: 1.0,
                     ..Default::default()
                 },
@@ -50,8 +70,18 @@ impl TtsEngine {
             model: OfflineTtsModelConfig {
                 vits: OfflineTtsVitsModelConfig {
                     model: Some(hi_model_path.to_string_lossy().into()),
-                    tokens: Some(hi_model_dir.join(MODEL_FILE_TTS_TOKENS).to_string_lossy().into()),
-                    data_dir: Some(hi_model_dir.join(MODEL_FILE_TTS_ESPEAK).to_string_lossy().into()),
+                    tokens: Some(
+                        hi_model_dir
+                            .join(MODEL_FILE_TTS_TOKENS)
+                            .to_string_lossy()
+                            .into(),
+                    ),
+                    data_dir: Some(
+                        hi_model_dir
+                            .join(MODEL_FILE_TTS_ESPEAK)
+                            .to_string_lossy()
+                            .into(),
+                    ),
                     noise_scale: 0.667,
                     noise_scale_w: 0.8,
                     length_scale: 1.0,
@@ -68,8 +98,9 @@ impl TtsEngine {
             .ok_or_else(|| anyhow!("[TTS] Failed to create Hindi (Piper) TTS instance."))?;
 
         log::info!(
-            "[TTS] Multi-model engine online. (EN: {}Hz, HI: {}Hz)", 
-            en_tts.sample_rate(), hi_tts.sample_rate()
+            "[TTS] Multi-model engine online. (EN: {}Hz, HI: {}Hz)",
+            en_tts.sample_rate(),
+            hi_tts.sample_rate()
         );
 
         Ok(Self { en_tts, hi_tts })
@@ -104,8 +135,10 @@ impl traits::TtsEngine for TtsEngine {
         };
 
         log::debug!(
-            "[TTS] Synthesizing ({}) turn {}: {:?}", 
-            if is_hi { "HI" } else { "EN" }, turn_id, text
+            "[TTS] Synthesizing ({}) turn {}: {:?}",
+            if is_hi { "HI" } else { "EN" },
+            turn_id,
+            text
         );
 
         let start = std::time::Instant::now();
@@ -147,14 +180,21 @@ impl traits::TtsEngine for TtsEngine {
             if let Some(audio_data) = audio {
                 total_samples = audio_data.samples().len();
             }
-            
+
             let elapsed = start.elapsed().as_secs_f32();
             let audio_duration = total_samples as f32 / tts_instance.sample_rate() as f32;
-            let rtf = if audio_duration > 0.0 { elapsed / audio_duration } else { 0.0 };
+            let rtf = if audio_duration > 0.0 {
+                elapsed / audio_duration
+            } else {
+                0.0
+            };
 
             log::info!(
                 "[TTS] {} Synthesis complete (turn {}). Duration: {:.2}s, RTF: {:.3}",
-                if is_hi { "HI" } else { "EN" }, turn_id, audio_duration, rtf
+                if is_hi { "HI" } else { "EN" },
+                turn_id,
+                audio_duration,
+                rtf
             );
 
             let _ = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf });
