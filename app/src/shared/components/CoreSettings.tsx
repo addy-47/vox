@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { HexColorPicker } from "react-colorful";
 import { cn } from "@/shared/lib/utils";
 import { useSettings, VoiceProfile } from "@/shared/context/SettingsContext";
@@ -171,14 +171,12 @@ const EngineCard: React.FC = React.memo(() => {
 const VoiceCard: React.FC = React.memo(() => {
   const { draftSettings, updateDraft, modelCatalog } = useSettings();
   const voices = modelCatalog?.voices || [];
-  const [activeTab, setActiveTab] = useState<"en" | "hi">("en");
   const [isTtsVerified, setIsTtsVerified] = useState(true);
 
   const checkTtsPresence = useCallback(async () => {
     try {
-      const kokoroOk = await invoke<boolean>("check_model_exists", { modelId: "kokoro_english_tts" });
-      const piperOk = await invoke<boolean>("check_model_exists", { modelId: "piper_hindi_tts" });
-      setIsTtsVerified(kokoroOk && piperOk);
+      const ok = await invoke<boolean>("check_model_exists", { modelId: "supertonic_tts" });
+      setIsTtsVerified(ok);
     } catch {
       setIsTtsVerified(false);
     }
@@ -188,82 +186,47 @@ const VoiceCard: React.FC = React.memo(() => {
     checkTtsPresence();
   }, [checkTtsPresence]);
 
-  if (!draftSettings || !modelCatalog) return null;
-
-  const filteredVoices = voices.filter(v => v.language === activeTab);
-
-  const isSelected = (v: VoiceProfile) => {
-    if (v.language === "en") return draftSettings.tts.en_voice === v.id;
-    if (v.language === "hi") return draftSettings.tts.hi_voice === v.model_file;
-    return false;
-  };
-
-  const handleSelect = (v: VoiceProfile) => {
-    if (!isTtsVerified) return;
-    if (v.language === "en") {
-      updateDraft("tts", "en_voice", v.id);
-    } else if (v.language === "hi" && v.model_file) {
-      updateDraft("tts", "hi_voice", v.model_file);
-    }
-  };
-
-  const getHeights = () => {
-    const activeVoice = activeTab === "en" 
-        ? voices.find(v => v.id === draftSettings.tts.en_voice)
-        : voices.find(v => v.model_file === draftSettings.tts.hi_voice);
-    
+  // Voice-dependent waveform heights — deterministic based on voice ID
+  const activeVoice = voices.find(v => v.id === draftSettings?.tts.voice);
+  const waveformHeights = useMemo(() => {
     const seed = activeVoice ? (activeVoice.id * 1337) % 100 : 42;
     const base = [12, 28, 48, 64, 52, 36, 72, 56, 28, 12];
     return base.map(h => Math.max(8, (h + seed) % 72));
-  };
+  }, [activeVoice]);
 
-  const currentHeights = getHeights();
+  if (!draftSettings || !modelCatalog) return null;
+
+  const isSelected = (v: VoiceProfile) => draftSettings.tts.voice === v.id;
+
+  const handleSelect = (v: VoiceProfile) => {
+    if (!isTtsVerified) return;
+    updateDraft("tts", "voice", v.id);
+  };
 
   return (
     <div className="premium-card p-6 md:p-8 flex flex-col h-full relative overflow-hidden">
       {!isTtsVerified && (
         <div className="absolute inset-0 z-20 bg-[rgb(var(--background))]/60 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
           <AlertCircle className="text-[rgb(var(--accent))] mb-3" size={28} />
-          <h3 className="text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider mb-2">TTS Models Missing</h3>
+          <h3 className="text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider mb-2">TTS Model Missing</h3>
           <p className="text-[13px] text-[rgb(var(--foreground-muted))] max-w-[240px] leading-relaxed opacity-90">
-            Kokoro or Piper Speech engines are not installed. Manage voice models in the Models tab.
+            Supertonic 3 speech engine is not installed. Manage voice models in the Models tab.
           </p>
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-8 shrink-0">
-        <div className="flex items-center gap-3">
-          <Volume2 className="text-[rgb(var(--accent))]" size={20} />
-          <div className="space-y-1">
-            <h2 className="text-lg font-bold text-[rgb(var(--foreground))]">Assistant Voice</h2>
-            <p className="text-[13px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest font-bold opacity-80">Select preferred voice</p>
-          </div>
-        </div>
-
-        {/* Language Tabs */}
-        <div className="flex bg-[rgb(var(--foreground))]/[0.05] p-1 rounded-xl border border-[rgba(var(--border),0.05)]">
-          {(["en", "hi"] as const).map((lang) => (
-            <button
-              key={lang}
-              onClick={() => setActiveTab(lang)}
-              disabled={!isTtsVerified}
-              className={cn(
-                "px-4 py-1.5 rounded-lg text-[13px] font-bold uppercase tracking-wider transition-all duration-300",
-                activeTab === lang 
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg shadow-[rgb(var(--accent))]/20" 
-                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/5",
-                !isTtsVerified ? "opacity-50 cursor-not-allowed" : ""
-              )}
-            >
-              {lang}
-            </button>
-          ))}
+      <div className="flex items-center gap-3 mb-6 shrink-0">
+        <Volume2 className="text-[rgb(var(--accent))]" size={20} />
+        <div className="space-y-1">
+          <h2 className="text-lg font-bold text-[rgb(var(--foreground))]">Assistant Voice</h2>
+          <p className="text-[13px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest font-bold opacity-80">Supertonic 3 Multilingual</p>
         </div>
       </div>
 
+      {/* Voice Selector */}
       <div className="flex-1 min-h-0">
-        <div className="flex flex-wrap gap-2.5 mb-8">
-          {filteredVoices.map((v) => (
+        <div className="flex flex-wrap gap-2.5 mb-6">
+          {voices.map((v) => (
             <button
               key={v.id}
               onClick={() => handleSelect(v)}
@@ -282,10 +245,11 @@ const VoiceCard: React.FC = React.memo(() => {
         </div>
       </div>
 
+      {/* Voice-dependent waveform */}
       <div className="mt-auto pt-4 animate-pulse">
         <div className="h-16 w-full bg-transparent border border-[rgba(var(--border),0.03)] rounded-2xl flex items-center justify-center overflow-hidden">
           <div className="flex items-center gap-2">
-            {currentHeights.map((h, i) => (
+            {waveformHeights.map((h: number, i: number) => (
               <div 
                 key={i} 
                 className="w-2 rounded-full bg-[rgb(var(--accent))] transition-all duration-500 ease-out" 

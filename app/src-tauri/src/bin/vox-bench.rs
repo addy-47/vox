@@ -125,13 +125,10 @@ fn main() -> anyhow::Result<()> {
     );
 
     let snap_5 = BenchReporter::get_memory_snapshot();
-    println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Kokoro + Piper)...");
-    let en_tts_dir = vox_lib::utils::paths::model_dir("tts").join("kokoro");
-    let hi_tts_path = vox_lib::utils::paths::model_dir("tts")
-        .join("piper_hi")
-        .join("hi_IN-priyamvada-medium.onnx");
+    println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Supertonic 3)...");
+    let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
     let tts_engine: Box<dyn vox_lib::services::traits::TtsEngine + Send> = Box::new(
-        vox_lib::services::tts::kokoro_piper::TtsEngine::new(&en_tts_dir, &hi_tts_path)
+        vox_lib::services::tts::supertonic::TtsEngine::new(&super_tts_path, 8, 1.05)
             .expect("Failed to load TTS"),
     );
     let snap_6 = BenchReporter::get_memory_snapshot();

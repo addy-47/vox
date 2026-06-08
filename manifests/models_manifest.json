@@ -1,11 +1,10 @@
 {
-  "models_version": "1.0.2",
+  "models_version": "1.1.0",
   "release_notes": [
-    "Initial stable release of Vox speech and reasoning weights.",
-    "Integrated Qwen3-ASR model and Kokoro TTS English synthesis.",
-    "Integrated Nvidia Nemotron-3.5 ASR Engine (INT8 quantized) as the default primary speech recognition model."
+    "Portable, single-instance TTS engine with 31 languages and flow-matching architecture.",
+    "Supertonic 3 replaces Kokoro (EN) + Piper (HI) as the sole TTS engine."
   ],
-  "total_size_bytes": 9811968972,
+  "total_size_bytes": 9398491074,
   "model_groups": [
     {
       "id": "ten_vad",
@@ -185,108 +184,6 @@
           "path": "llm/gemma4/Gemma-4-E2B-Uncensored-HauhauCS-Aggressive-Q2_K_P.gguf",
           "size": 3009448896,
           "sha256": "c9213a33b16d513482790bb7092243f783a450e35f7deca584a41e0470afdb97",
-          "required": false
-        }
-      ]
-    },
-    {
-      "id": "kokoro_english_tts",
-      "name": "Kokoro English TTS Engine",
-      "category": "tts",
-      "version": "1.0.0",
-      "files": [
-        {
-          "id": "tts_kokoro_onnx",
-          "path": "tts/kokoro/model.onnx",
-          "size": 345555491,
-          "sha256": "10ff414106a038ce7e9e0126c6461e4dc8a86efaa89dc91d2009d69fe635e339",
-          "required": false
-        },
-        {
-          "id": "tts_kokoro_voices",
-          "path": "tts/kokoro/voices.bin",
-          "size": 5755904,
-          "sha256": "a372c67b056ef0b695c375d39b99630d23fb07ad4c8d87aa32a19a62fca523ad",
-          "required": false
-        },
-        {
-          "id": "tts_kokoro_tokens",
-          "path": "tts/kokoro/tokens.txt",
-          "size": 1078,
-          "sha256": "4f31c71282d14af4e926cd12462078fe9d20d00c589e63fe2750a8f56d6d7f7b",
-          "required": false
-        },
-        {
-          "id": "tts_kokoro_espeak_ng_data",
-          "path": "tts/kokoro/espeak-ng-data.tar.gz",
-          "size": 8990857,
-          "sha256": "7ddfb7247e98108baeab2a3f9c79c29247e58ae7d60d837b32e28999f555bf8d",
-          "archive": "tar.gz",
-          "required": false
-        }
-      ]
-    },
-    {
-      "id": "piper_hindi_tts",
-      "name": "Piper Hindi TTS Engine",
-      "category": "tts",
-      "version": "1.0.0",
-      "files": [
-        {
-          "id": "tts_hi_pratham_onnx",
-          "path": "tts/piper_hi/hi_IN-pratham-medium.onnx",
-          "size": 63516050,
-          "sha256": "169964b0871667f6793416d4b35e97357a68ba1ad01df8580c28048989ee7693",
-          "required": false
-        },
-        {
-          "id": "tts_hi_pratham_config",
-          "path": "tts/piper_hi/hi_IN-pratham-medium.onnx.json",
-          "size": 4970,
-          "sha256": "b68edd2cd7950dd436314013b7cd12e9699e5a3f6fe5af5af94294cf6aa7b9fd",
-          "required": false
-        },
-        {
-          "id": "tts_hi_priyamvada_onnx",
-          "path": "tts/piper_hi/hi_IN-priyamvada-medium.onnx",
-          "size": 63145178,
-          "sha256": "8871f3e07adb6ca490f8dbcd3956a8647c53c35b5d0a1c2a8d097b3bf721a31b",
-          "required": false
-        },
-        {
-          "id": "tts_hi_priyamvada_config",
-          "path": "tts/piper_hi/hi_IN-priyamvada-medium.onnx.json",
-          "size": 4973,
-          "sha256": "5efc0ccf7529f3528996d46e0fac1f969f681d44a8e55bfa6236ff8841b5d52d",
-          "required": false
-        },
-        {
-          "id": "tts_hi_rohan_onnx",
-          "path": "tts/piper_hi/hi_IN-rohan-medium.onnx",
-          "size": 62950044,
-          "sha256": "b65dc80fb34d9dcd1cf684cb297966a34983bbc93bb1696fe207f32b0b33a091",
-          "required": false
-        },
-        {
-          "id": "tts_hi_rohan_config",
-          "path": "tts/piper_hi/hi_IN-rohan-medium.onnx.json",
-          "size": 4973,
-          "sha256": "5efc0ccf7529f3528996d46e0fac1f969f681d44a8e55bfa6236ff8841b5d52d",
-          "required": false
-        },
-        {
-          "id": "tts_piper_hi_tokens",
-          "path": "tts/piper_hi/tokens.txt",
-          "size": 940,
-          "sha256": "a150821b57f584b5b76219e3d26441d85b857a4ea55675eafa9168c79bdfa54c",
-          "required": false
-        },
-        {
-          "id": "tts_piper_hi_espeak_ng_data",
-          "path": "tts/piper_hi/espeak-ng-data.tar.gz",
-          "size": 8990869,
-          "sha256": "5d26294483bff947820b8ebf55fde437622c7c542eb104649e29626ab1763524",
-          "archive": "tar.gz",
           "required": false
         }
       ]

@@ -13,8 +13,6 @@ pub const SYSTEM_STATS_INTERVAL: Duration = Duration::from_secs(5);
 pub const MODEL_DIR_STT: &str = "stt/qwen3-asr";
 pub const MODEL_DIR_STT_NEMOTRON: &str = "stt/nvidia-nemotron-3.5";
 pub const MODEL_DIR_LLM: &str = "llm/llama";
-pub const MODEL_DIR_TTS_EN: &str = "tts/kokoro";
-pub const MODEL_DIR_TTS_HI: &str = "tts/piper_hi";
 pub const MODEL_DIR_VAD: &str = "vad";
 
 pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
@@ -37,17 +35,6 @@ pub const MODEL_FILE_TTS_SUPER_VOCODER: &str = "vocoder.int8.onnx";
 pub const MODEL_FILE_TTS_SUPER_CONFIG: &str = "tts.json";
 pub const MODEL_FILE_TTS_SUPER_INDEXER: &str = "unicode_indexer.bin";
 pub const MODEL_FILE_TTS_SUPER_VOICE: &str = "voice.bin";
-
-// TTS Filenames (Kokoro/Piper)
-pub const MODEL_FILE_TTS_ONNX: &str = "model.onnx";
-pub const MODEL_FILE_TTS_VOICES: &str = "voices.bin";
-pub const MODEL_FILE_TTS_TOKENS: &str = "tokens.txt";
-pub const MODEL_FILE_TTS_ESPEAK: &str = "espeak-ng-data";
-
-// Hindi Voice Filenames
-pub const MODEL_FILE_TTS_HI_PRIYAMVADA: &str = "hi_IN-priyamvada-medium.onnx";
-pub const MODEL_FILE_TTS_HI_PRATHAM: &str = "hi_IN-pratham-medium.onnx";
-pub const MODEL_FILE_TTS_HI_ROHAN: &str = "hi_IN-rohan-medium.onnx";
 
 // ─── Persistence & History ──────────────────────────────────────────────────
 pub const DB_FILENAME: &str = "vox.db";
