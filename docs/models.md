@@ -19,8 +19,7 @@ Vox is a **model-agnostic, role-based system** with a selection strategy that is
 | **STT** (Fallback) | Qwen3-ASR-0.6B | `qwen3_asr` | ~800 MB | INT8 Quantized (`sherpa-onnx`) |
 | **LLM** (Default) | Llama 3.2 1B Instruct | `llama_3_2_reasoning` | ~1.0 GB | GGUF Q6_K, context size `2048`, threads `N-2` |
 | **LLM** (Alternative) | Gemma 4 E2B-it | `gemma_4_reasoning` | ~2.2 GB | GGUF Q4_K_M |
-| **TTS** (Default) | **Supertonic 3** | `supertonic_tts` | ~400 MB | ONNX Runtime (ort), flow-matching, 31 languages |
-| **TTS** (Fallback) | Kokoro-82M (EN) + Piper VITS (HI) | `kokoro_english_tts` / `piper_hindi_tts` | ~250 MB combined | ONNX Runtime (sherpa-onnx), multi-voice profiles |
+| **TTS** (Sole) | **Supertonic 3** | `supertonic_tts` | ~144 MB | INT8 Quantized, sherpa-onnx native, 31 languages, 10 voices |
 
 ---
 
@@ -217,50 +216,21 @@ if n_cur >= ctx_size { break; }
 
 ## 7. Text-to-Speech (TTS)
 
-### Selected Models: **Supertonic 3 (Default) + Kokoro/Piper (Fallback)**
+### Selected Model: **Supertonic 3 (Sole Engine)**
 
-#### Default: Supertonic 3 (ONNX via ort crate)
-#### Fallback: Kokoro-82M (English) + Piper VITS (Hindi)
+Supertonic 3 is the sole TTS engine — a single unified 99M-parameter flow-matching model supporting **31 languages** with **10 voices** (5 male, 5 female). It uses sherpa-onnx native `OfflineTtsSupertonicModelConfig` and is INT8 quantized (~144MB).
 
-```rust
-// English TTS
-let en_config = OfflineTtsConfig {
-    model: OfflineTtsModelConfig {
-        kokoro: OfflineTtsKokoroModelConfig {
-            model: Some("kokoro/model.onnx"),
-            voices: Some("kokoro/voices.bin"),
-            tokens: Some("kokoro/tokens.txt"),
-        },
-    },
-};
-
-// Hindi TTS
-let hi_config = OfflineTtsConfig {
-    model: OfflineTtsModelConfig {
-        vits: OfflineTtsVitsModelConfig {
-            model: Some("piper/hi_IN-priyamvada-medium.onnx"),
-        },
-    },
-};
-```
-
-### Why Dual-Model?
-
-| Language | Model | Memory | Quality | Latency |
-|----------|-------|--------|---------|---------|
-| English | Kokoro | ~150MB | State-of-the-art | <200ms |
-| Hindi | Piper | ~100MB | High quality | <300ms |
-
-### Language Detection & Routing
-
-```rust
-fn is_hindi(text: &str) -> bool {
-    text.chars().any(|c| c >= '\u{0900}' && c <= '\u{097F}')
-}
-
-// Route based on Unicode ranges
-let tts_instance = if is_hindi(text) { &hi_tts } else { &en_tts };
-```
+| Feature | Detail |
+|---------|--------|
+| Architecture | Flow-matching transformer |
+| Parameters | 99M |
+| Quantization | INT8 |
+| Footprint | ~144 MB |
+| Languages | 31 (English, Hindi, and 29 more) |
+| Voices | 10 (James, David, Alex, Ryan, Ethan, Sophia, Olivia, Emma, Ava, Mia) |
+| Quality Steps | 2–12 (Speed→Quality→Best) |
+| Speed | 0.7x–2.0x |
+| Inference | sherpa-onnx native (OfflineTtsSupertonicModelConfig) |
 
 ### Chunked Synthesis (Accuracy-Quality Mandate)
 

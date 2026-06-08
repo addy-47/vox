@@ -78,7 +78,7 @@ Every component must minimize:
     ├── VAD (Actor -> Engine: Earshot / TenVAD)
     ├── STT (Actor -> Engine: Nvidia Nemotron-3.5 / Qwen3-ASR)
     ├── LLM (Actor -> Engine: llama.cpp)
-    └── TTS (Actor -> Engine: Kokoro + Piper)
+    └── TTS (Actor -> Engine: Supertonic 3)
     └── Utils (Shared logic: transliteration, chunking)
 
 ---
@@ -180,7 +180,7 @@ src/services/
 ├── tts/
 │   ├── mod.rs
 │   ├── actor.rs
-│   └── kokoro_piper.rs # Multi-model engine
+│   └── supertonic.rs # Sole TTS engine (sherpa-onnx native)
 └── vad/
     ├── mod.rs
     ├── actor.rs
@@ -386,10 +386,9 @@ tx.send(VoxEvent::LlmFinished { turn_id });
 
 ---
 
-### Models
+### Model
 
-* English: Kokoro-82M (ONNX via sherpa-onnx)
-* Hindi: Piper VITS (ONNX via sherpa-onnx)
+* Supertonic 3 — 99M param flow-matching, INT8 quantized (~144MB), 31 languages, 10 voices (sherpa-onnx native)
 
 ---
 
@@ -398,8 +397,7 @@ tx.send(VoxEvent::LlmFinished { turn_id });
 ```rust
 spawn_tts_worker(
     rx: mpsc::Receiver<TtsCommand>,
-    en_tts_dir: PathBuf,
-    hi_tts_path: PathBuf,
+    tts_dir: PathBuf,
     event_tx: mpsc::Sender<VoxEvent>,
     cancel_flag: Arc<AtomicBool>,
     is_loaded: Arc<AtomicBool>,
@@ -408,15 +406,7 @@ spawn_tts_worker(
 
 ---
 
-### Language Detection
 
-```rust
-fn is_hindi(text: &str) -> bool {
-    text.chars().any(|c| c >= '\u{0900}' && c <= '\u{097F}')
-}
-```
-
----
 
 ### Chunked Synthesis (Quality Mandate)
 

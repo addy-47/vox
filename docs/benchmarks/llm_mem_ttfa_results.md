@@ -194,3 +194,110 @@ The ultimate victor for the **Vox Voice Interaction Pipeline** is **`llama/Llama
 2.  **100% Production Stability:** Successfully completed all 5 sequential clips, handling complex inputs without a single infinite loop or timeout.
 3.  **Low Memory Footprint:** Consumed only **991 MB of RAM** for the LLM itself (total peak system footprint of just **3300 MB**), leaving **nearly 5GB of free headroom** on the standard 8GB RAM host system!
 4.  **Excellent Speeds:** Delivered a blistering **3.01 Tokens Per Second** on low-overhead CPU threads with a **sub-3 second TTFA**!
+
+---
+
+# v0.8.2 LLM Comparison: MiniCPM5-1B vs Llama-3.2-1B (Nemotron STT baseline)
+
+This benchmark compares **two new MiniCPM5-1B models** against the **current Llama-3.2-1B Q6_K champion** using **NVIDIA Nemotron STT** (`--asr nemotron`) for a fair comparison. Unlike the v0.7.0 benchmarks above (which used Qwen ASR), these results use Nemotron — a much faster STT engine (0.02–0.35× RTF vs 0.38–4.63× for Qwen).
+
+- **STT Engine:** NVIDIA Nemotron 3.5
+- **LLM Context:** 2048 tokens, 4 threads
+- **TTS Engine:** Supertonic 3 (INT8, speed 1.05, quality 8)
+- **OS Platform:** Linux, 8GB RAM CPU-first constraints
+
+---
+
+## 🧠 Model 1: Llama-3.2-1B-Instruct-Q6_K (Nemotron Baseline)
+
+### 📊 Performance Summary
+*   **Average TTFA:** `7.50s` ✅
+*   **Average LLM TPS:** `3.23 TPS` 🚀
+*   **Average STT RTF:** `0.18x` 🚀 (Nemotron much faster than Qwen)
+*   **Average Peak RSS:** `2451 MB`
+*   **LLM Memory Footprint:** `970 MB`
+*   **STT Memory Footprint:** `1234 MB`
+*   **TTS Memory Footprint:** `23 MB`
+*   **Stability:** **100% (5/5 clips)**
+
+### 📋 Run Breakdown (5-File Sequence)
+
+| Run | Input File | STT Transcript | STT RTF | LLM TPS | TTFA (s) | Tokens | Output Chars | Peak RSS (MB) |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| #1 | `AD09001.wav` | `Question is what's your favorite festival? How did you celebrate your last festival?` | 0.35x | 4.30 | 5.11s | 66 | 200 | 2453 |
+| #2 | `AD09004.wav` | `पसंद है दिवाली एंड एस शी लव्स क्रैकर्स` | 0.16x | 2.51 | 11.30s | 41 | 189 | 2446 |
+| #3 | `AD09021.wav` | `टेल मी अबाउट योर फेवरेट डैश` | 0.15x | 3.32 | 6.98s | 24 | 106 | 2476 |
+| #4 | `AD09039.wav` | *(empty transcript — "See.")* | 0.02x | 2.85 | 6.86s | 18 | 78 | 2438 |
+| #5 | `AD09051.wav` | `They felt as if someone was watching them, पर उन्होंने हिम्मत नहीं हारी` | 0.24x | 3.19 | 7.26s | 34 | 155 | 2440 |
+
+### 🔍 Semantic Quality Analysis
+*   **Fidelity:** Excellent. All responses in fluent Devanagari Hindi. Handled multi-lingual inputs (Hindi+English code-switch) gracefully.
+*   **Output quality:** Concise (24–66 tokens), relevant, and contextually appropriate. No repetition loops.
+*   **Sample AD09001 response:** *"Mera favorite festival hai, Diwali. Main iske liye diyas, rang-birange..."* (Hindi)
+
+---
+
+## 🧠 Model 2: MiniCPM5-1B-Q4_K_M
+
+### 📊 Performance Summary
+*   **Average TTFA (completed runs):** `7.16s` ✅
+*   **Average LLM TPS:** `6.50 TPS` ⚠️ *(inflated by repetitive output)*
+*   **Average STT RTF:** `0.17x`
+*   **Average Peak RSS:** `2159 MB` 🚀 (12% lower than Llama)
+*   **LLM Memory Footprint:** `654 MB` 🚀 (33% smaller than Llama!)
+*   **STT Memory Footprint:** `1253 MB`
+*   **TTS Memory Footprint:** `3 MB` *(negligible)*
+*   **Stability:** **80% (4/5 completed, 1 timeout on AD09051)**
+
+### 📋 Run Breakdown (5-File Sequence)
+
+| Run | Input File | STT Transcript | STT RTF | LLM TPS | TTFA (s) | Tokens | Output Chars | Peak RSS (MB) |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| #1 | `AD09001.wav` | `Question is what's your favorite festival?` | 0.32x | 5.15 | 4.00s | 206 | 1013 | 2121 |
+| #2 | `AD09004.wav` | `पसंद है दिवाली एंड एस शी लव्स क्रैकर्स` | 0.16x | 11.79 | 10.83s | 1511 | 5106 | 2212 |
+| #3 | `AD09021.wav` | `काइंड ऑफ फूड डू यू लाइक` | 0.15x | 3.82 | 6.66s | 397 | 1374 | 2138 |
+| #4 | `AD09039.wav` | *(empty transcript)* | 0.03x | 5.22 | 7.14s | 173 | 748 | 2163 |
+| #5 | `AD09051.wav` | `They felt as if someone was watching them, पर उन्होंने हिम्मत नहीं हारी` | — | — | **TIMEOUT** | — | — | — |
+
+### 🔍 Semantic Quality Analysis
+*   **Issues (Critical):** The model shows severe prompt-following problems with the current `Unknown` family prompt format (`System: ...` / `User: ...`):
+    - **English responses:** AD09001 responded in English: *"I'm a versatile voice, I love festivals..."* instead of Hindi
+    - **Repetition loops:** AD09004 generated **1,511 tokens** of repetitive text, primarily repeating *"The assistant's response is in Hindi"* hundreds of times
+    - **Mixed-language reasoning:** AD09039 output English reasoning steps (*"Step 2: Analyze the user's query..."*) mixed with Hindi
+    - **AD09051:** Timed out on long stream — entered infinite generation loop
+*   **Token efficiency:** Very poor — average 572 tokens vs 37 for Llama, indicating the model doesn't understand when to stop
+*   **Verdict: Unviable without proper MiniCPM prompt template support**
+
+---
+
+## 🧠 Model 3: MiniCPM5-1B-Q6_K
+
+### 📊 Performance Summary
+*   **Status:** **UNVIABLE** — All 5 clips crashed with `free(): invalid pointer` during LLM model loading
+*   **LLM Memory Footprint:** N/A (crashed before metrics)
+*   **Stability:** **0% (0/5)**
+
+### 🔍 Root Cause
+*   The `minicpm5-1b-Q6_K.gguf` (892 MB) causes a **heap corruption crash** (`free(): invalid pointer`) within the llama.cpp C++ runtime during model loading. This is likely a **GGUF format incompatibility** between this specific Q6_K quantization and the `llama-cpp-4` v0.2.61 library used by vox.
+*   The Q4_K_M variant (688 MB) loads and runs fine, confirming the crash is specific to the Q6_K GGUF file, not the MiniCPM architecture itself.
+
+---
+
+# 🏁 FINAL COMPARATIVE DASHBOARD (v0.8.2 — Nemotron STT baseline)
+
+| Model | Quant | Avg TTFA | Avg TPS | Peak RSS | LLM Mem | Stability | Semantic Quality | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- | :--- |
+| **Llama-3.2-1B-Instruct** | Q6_K | 7.50s | 3.23 TPS | 2451 MB | 970 MB | **100%** | **Excellent (Fluent Hindi)** | ✅ **Baseline Champion** |
+| **MiniCPM5-1B** | Q4_K_M | 7.16s* | 6.50 TPS* | 2159 MB | **654 MB** | 80% | Poor (Repetition, English, Reasoning leaks) | ❌ Unviable (Prompt format) |
+| **MiniCPM5-1B** | Q6_K | N/A | N/A | N/A | N/A | **0%** | N/A (Crash) | ❌ Unviable (GGUF crash) |
+
+*\* MiniCPM Q4_K_M numbers are inflated by repetitive output — tokens include thousands of "The assistant's response is in Hindi" repetitions.*
+
+# 🏆 VERDICT: Llama-3.2-1B-Instruct (Q6_K) remains the champion
+
+The **MiniCPM5-1B models are not viable replacements** for the current Llama-3.2-1B Q6_K in the Vox pipeline:
+
+1. **Q4_K_M has critical quality issues:** The `Unknown` prompt template format (`System: ...` / `User: ...`) causes MiniCPM to produce repetitive, English-mixed, and reasoning-leaking outputs. A proper MiniCPM-specific `ModelFamily` implementation with its native chat template would be needed.
+2. **Q6_K crashes:** `free(): invalid pointer` during model load — likely a `llama-cpp-4` version compatibility issue with this GGUF quantization.
+3. **However, MiniCPM is notably more memory-efficient:** At just **654 MB LLM footprint** (vs 970 MB for Llama), it could be a candidate if the prompt format issues are addressed.
+4. **Nemotron STT is a huge improvement:** With 0.02–0.35× RTF vs 0.38–4.63× for Qwen, the pipeline STT stage is now vastly faster, contributing to better overall responsiveness.

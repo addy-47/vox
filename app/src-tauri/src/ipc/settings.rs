@@ -214,13 +214,15 @@ pub async fn update_setting(
     // Schedule debounced disk write
     schedule_debounced_save(app.clone(), state.clone()).await;
 
-    let message = match policy {
-        SettingReloadPolicy::Hot           => format!("{}.{} applied immediately", domain, key),
-        SettingReloadPolicy::WorkerCommand => format!("{}.{} dispatched to worker", domain, key),
-        SettingReloadPolicy::Restart       => format!("{}.{} staged — restart required to apply", domain, key),
+    let action_label = match policy {
+        SettingReloadPolicy::Hot           => "hot-applied",
+        SettingReloadPolicy::WorkerCommand => "dispatched to worker",
+        SettingReloadPolicy::Restart       => "restart required",
     };
 
-    log::debug!("[Settings] update_setting: {}.{} = {:?} (policy: {})", domain, key, value, policy.as_str());
+    let message = format!("{}.{} = {} — {}", domain, key, value, action_label);
+
+    log::info!("[Settings] Updated: {}", message);
 
     if domain == "ui" && key == "theme" {
         let _ = app.emit("theme-changed", value.as_str().unwrap_or("dark"));
@@ -350,17 +352,14 @@ fn apply_setting_mutation(
         ("telemetry", "log_level") => {
             settings.telemetry.log_level = value.as_str().ok_or("log_level must be a string")?.to_string();
         }
-        ("tts", "en_model") => {
-            settings.tts.en_model = value.as_str().ok_or("en_model must be a string")?.to_string();
+        ("tts", "voice") => {
+            settings.tts.voice = value.as_i64().ok_or("voice must be an integer")? as i32;
         }
-        ("tts", "en_voice") => {
-            settings.tts.en_voice = value.as_i64().ok_or("en_voice must be an integer")? as i32;
+        ("tts", "quality_steps") => {
+            settings.tts.quality_steps = value.as_u64().ok_or("quality_steps must be a positive integer")? as u32;
         }
-        ("tts", "hi_model") => {
-            settings.tts.hi_model = value.as_str().ok_or("hi_model must be a string")?.to_string();
-        }
-        ("tts", "hi_voice") => {
-            settings.tts.hi_voice = value.as_str().ok_or("hi_voice must be a string")?.to_string();
+        ("tts", "speed") => {
+            settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
         }
         ("persistence", "enabled") => {
             settings.persistence.enabled = value.as_bool().ok_or("enabled must be a boolean")?;

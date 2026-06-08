@@ -39,7 +39,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run the Kokoro/Piper benchmark suite
+    /// Run the Supertonic 3 benchmark suite
     Bench,
     /// Run the multi-engine comparison framework
     Compare,
@@ -158,28 +158,9 @@ fn run_supertonic_bench(
 
 struct Prompt {
     text: &'static str,
-    category: &'static str,
-    is_hindi: bool,
-}
-
-#[allow(dead_code)]
-struct BenchResult {
-    model_name: &'static str,
-    category: &'static str,
-    prompt: &'static str,
-    load_time_ms: u128,
-    ram_mb: u64,
-    ttfa_ms: u128,
-    rtf: f32,
-    inference_ms: u128,
-    audio_duration_s: f32,
 }
 
 fn run_bench() -> anyhow::Result<()> {
-    use vox_lib::services::traits::TtsEngine as _;
-    use vox_lib::services::tts::kokoro_piper;
-    use vox_lib::utils::bench_reporter::BenchReporter;
-
     let home = dirs::home_dir().expect("Could not find home directory");
     let vox_root = home.join(".vox");
     vox_lib::utils::paths::init_with_root(vox_root);
@@ -188,138 +169,18 @@ fn run_bench() -> anyhow::Result<()> {
     let audio_out_dir = PathBuf::from("/home/addy/projects/apps/vox/docs/benchmarks/audio_outputs");
     fs::create_dir_all(&audio_out_dir).ok();
 
-    println!("\x1b[32m[TTS-Bench]\x1b[0m Starting TTS Benchmark Suite...");
+    println!("\x1b[32m[TTS-Bench]\x1b[0m Starting TTS Benchmark Suite (Supertonic 3)...");
 
     let prompts = vec![
         Prompt {
             text: "I'm just a large language model, I don't have personal experiences or emotions, but I can tell you about some popular festive activities that people enjoy: Decorating the house with lights, garlands, and festive decorations. Attending family gatherings and parties. Singing festive songs and watching holiday movies. Cooking traditional holiday dishes. Exchanging gifts with loved ones. Participating in festive events and activities.",
-            category: "English",
-            is_hindi: false,
         },
         Prompt {
             text: "नमस्ते, मैं एक बड़ा भाषा मॉडल हूँ। मुझे आपकी मदद करने में खुशी होगी। मैं विभिन्न विषयों पर जानकारी प्रदान कर सकता हूँ और सवालों के जवाब दे सकता हूँ। कृपया बेझिझक पूछें!",
-            category: "Hindi",
-            is_hindi: true,
         },
     ];
 
-    let mut results: Vec<BenchResult> = Vec::new();
-
-    println!("\x1b[32m[TTS-Bench]\x1b[0m Loading Kokoro + Piper VITS...");
-    let en_tts_dir = models_dir.join("tts/kokoro");
-    let hi_tts_path = models_dir.join("tts/piper_hi/hi_IN-priyamvada-medium.onnx");
-
-    let mut kokoro_ok = false;
-    let snap_init = BenchReporter::get_memory_snapshot();
-    let load_start = Instant::now();
-
-    match kokoro_piper::TtsEngine::new(&en_tts_dir, &hi_tts_path) {
-        Ok(mut engine) => {
-            kokoro_ok = true;
-            let load_time_kp = load_start.elapsed().as_millis();
-            let snap_loaded_kp = BenchReporter::get_memory_snapshot();
-            let ram_kp = snap_loaded_kp.rss_mb.saturating_sub(snap_init.rss_mb);
-            println!(
-                "\x1b[32m[TTS-Bench]\x1b[0m Kokoro+Piper loaded in {}ms. RAM usage: {}MB",
-                load_time_kp, ram_kp
-            );
-
-            for (i, prompt) in prompts.iter().enumerate() {
-                let model_name = if prompt.is_hindi {
-                    "Piper (Hindi)"
-                } else {
-                    "Kokoro (English)"
-                };
-                println!(
-                    "[{:?}/{:?}] Running prompt ({}): {:?}",
-                    i + 1,
-                    prompts.len(),
-                    model_name,
-                    prompt.text
-                );
-
-                let (tx, rx) = channel::<VoxEvent>();
-                let cancel = Arc::new(AtomicBool::new(false));
-                let cancel_clone = cancel.clone();
-
-                let turn_id = i as u32;
-                let voice_sid = if prompt.is_hindi { 100 } else { 0 };
-
-                let start = Instant::now();
-                let mut ttfa_ms: Option<u128> = None;
-                let mut total_samples = 0;
-                let mut rtf = 0.0f32;
-                let mut accumulated_samples = Vec::new();
-
-                std::thread::scope(|s| {
-                    s.spawn(|| {
-                        let _ = engine.synthesize_chunk(
-                            &prompt.text,
-                            voice_sid,
-                            turn_id,
-                            cancel_clone,
-                            tx,
-                        );
-                    });
-                });
-
-                while let Ok(event) = rx.recv() {
-                    match event {
-                        VoxEvent::TtsChunk { samples, .. } => {
-                            if ttfa_ms.is_none() {
-                                ttfa_ms = Some(start.elapsed().as_millis());
-                            }
-                            total_samples += samples.len();
-                            accumulated_samples.extend_from_slice(&samples);
-                        }
-                        VoxEvent::TtsFinished {
-                            rtf: finished_rtf, ..
-                        } => {
-                            rtf = finished_rtf;
-                        }
-                        _ => {}
-                    }
-                }
-                let inference_ms = start.elapsed().as_millis();
-                let sample_rate = if prompt.is_hindi { 22050 } else { 24000 };
-                let audio_duration_s = total_samples as f32 / sample_rate as f32;
-
-                let wav_name = format!(
-                    "{:02}_{}.wav",
-                    i + 1,
-                    if prompt.is_hindi { "piper" } else { "kokoro" }
-                );
-                let wav_path = audio_out_dir.join(wav_name);
-                if let Err(e) = write_wav(&accumulated_samples, sample_rate, &wav_path) {
-                    println!(
-                        "\x1b[31m[TTS-Bench] Failed to save WAV file {:?}: {}\x1b[0m",
-                        wav_path, e
-                    );
-                }
-
-                results.push(BenchResult {
-                    model_name,
-                    category: prompt.category,
-                    prompt: prompt.text,
-                    load_time_ms: load_time_kp,
-                    ram_mb: ram_kp,
-                    ttfa_ms: ttfa_ms.unwrap_or(inference_ms),
-                    rtf,
-                    inference_ms,
-                    audio_duration_s,
-                });
-            }
-            println!("\x1b[32m[TTS-Bench]\x1b[0m Kokoro + Piper benchmark complete.");
-        }
-        Err(e) => {
-            println!(
-                "\x1b[33m[TTS-Bench] Kokoro/Piper unavailable (model files missing): {}\x1b[0m",
-                e
-            );
-        }
-    }
-
-    // Run Supertonic benchmark
+    // Run Supertonic benchmark (handles both EN and HI)
     run_supertonic_bench(&models_dir, &prompts, &audio_out_dir)?;
 
     Ok(())
@@ -390,11 +251,11 @@ fn run_compare() -> anyhow::Result<()> {
         text.len()
     );
 
-    println!("\x1b[32m[TTS-Compare]\x1b[0m Loading Kokoro...");
-    let en_dir = models_dir.join("tts/kokoro");
-    let hi_path = models_dir.join("tts/piper_hi/hi_IN-priyamvada-medium.onnx");
-    let mut kokoro = vox_lib::services::tts::kokoro_piper::TtsEngine::new(&en_dir, &hi_path)?;
-    run_tts("Kokoro (English)", text, &mut kokoro)?;
+    println!("\x1b[32m[TTS-Compare]\x1b[0m Loading Supertonic 3...");
+    let super_model_path = models_dir.join("tts/supertonic-3");
+    let mut supertonic =
+        vox_lib::services::tts::supertonic::TtsEngine::new(&super_model_path, 8, 1.05)?;
+    run_tts("Supertonic 3", text, &mut supertonic)?;
 
     println!("\n\x1b[32m[TTS-Compare]\x1b[0m Done!");
     Ok(())

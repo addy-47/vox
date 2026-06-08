@@ -15,8 +15,6 @@ export interface ModelMetadata {
 export interface VoiceProfile {
   id: number;
   name: string;
-  language: string;
-  model_file?: string;
 }
 
 export interface ModelCatalog {
@@ -51,10 +49,9 @@ export interface VoxSettings {
     threads: number;
   };
   tts: {
-    en_model: string;
-    en_voice: number;
-    hi_model: string;
-    hi_voice: string;
+    voice: number;         // Supertonic voice index (0-9)
+    quality_steps: number; // Quality steps (2-12, default 8)
+    speed: number;         // Speed factor (0.7-2.0, default 1.05)
   };
   interaction: {
     main_app_mode: "Passive" | "PTT";
