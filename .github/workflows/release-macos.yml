@@ -46,7 +46,8 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
           CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
           CFLAGS: "-mmacosx-version-min=11.0"
-          CXXFLAGS: "-mmacosx-version-min=11.0"
+          CXXFLAGS: "-mmacosx-version-min=11.0 -D_LIBCPP_DISABLE_AVAILABILITY"
+          SDKROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
         run: |
           cd app
           pnpm tauri build
@@ -55,6 +56,7 @@ jobs:
 
       - name: Extract Versions and Build Info
         id: build_info
+        if: ${{ !contains(github.ref_name, '-') }}
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -64,6 +66,7 @@ jobs:
           echo "DMG_PATH=$DMG_PATH" >> $GITHUB_ENV
 
       - name: Upload to GitHub Release
+        if: ${{ !contains(github.ref_name, '-') }}
         uses: softprops/action-gh-release@v1
         with:
           files: |
