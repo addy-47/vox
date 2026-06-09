@@ -15,7 +15,7 @@ Vox is a **model-agnostic, role-based system** with a selection strategy that is
 | Pipeline Stage | Model / Engine | ID | Footprint | Key Config / Parameter |
 | :--- | :--- | :--- | :---: | :--- |
 | **VAD** | Earshot VAD | `earshot` | < 1 MB | Threshold: `0.5`, sample rate `16000` |
-| **STT** (Primary) | **Nvidia Nemotron-3.5** | `nvidia_nemotron` | ~720 MB | INT8 Quantized, FastConformer-RNNT (`parakeet-rs`) |
+| **STT** (Primary) | **Nvidia Nemotron-3.5** | `nvidia_nemotron` | ~1,265 MB | INT8 Quantized, FastConformer-RNNT (`parakeet-rs`) |
 | **STT** (Fallback) | Qwen3-ASR-0.6B | `qwen3_asr` | ~800 MB | INT8 Quantized (`sherpa-onnx`) |
 | **LLM** (Default) | Llama 3.2 1B Instruct | `llama_3_2_reasoning` | ~1.0 GB | GGUF Q6_K, context size `2048`, threads `N-2` |
 | **LLM** (Alternative) | Gemma 4 E2B-it | `gemma_4_reasoning` | ~2.2 GB | GGUF Q4_K_M |
@@ -74,10 +74,14 @@ use llama_cpp_2::{model::LlamaModel, context::LlamaContext};
 
 ## 4. Voice Activity Detection (VAD)
 
-### Default Model: **Earshot (Rust-native)**
-Vox uses **Earshot VAD** as its primary voice activity detector. It features sub-millisecond voice detection, zero ONNX overhead, and executes entirely in native Rust.
+### Default Model: **Earshot (Rust-native, energy-based)**
+Vox uses **Earshot VAD** as its primary voice activity detector. It features sub-millisecond voice detection, zero ONNX overhead (no model file required — embedded neural weights), and executes entirely in native Rust.
 
-### Legacy Option: **TenVAD (ONNX)**
+- Threshold: 0.5 (configurable)
+- Latency: ~1ms per 256-sample frame
+- ~20x faster than TenVAD
+
+### Legacy Option: **TenVAD (ONNX via sherpa-onnx)**
 
 ```rust
 let config = VadModelConfig {
@@ -91,6 +95,10 @@ let config = VadModelConfig {
     num_threads: 1,
 };
 ```
+
+- Threshold: 0.45 (configurable)
+- Latency: ~15ms per frame
+- Requires `ten_vad.onnx` model file
 
 ---
 
@@ -305,11 +313,11 @@ Supertonic 3 is the sole TTS engine — a single unified 99M-parameter flow-matc
 
 Flush to TTS on sentence/clause boundaries, with word-boundary safety to prevent mid-word splits.
 
-**Current algorithm (pipeline.rs):**
-1. **Hard boundaries** — `.!?` → flush immediately (always correct sentence unit)
-2. **Soft boundaries** — `,;—` → flush immediately (clause-level, still natural)
-3. **Time-based flush** — ≥ 1500ms AND ≥ 3 tokens AND word boundary → flush (TPS-adaptive word counts, word-boundary safe)
-4. **Word-count fallback** — ≥ 8 words AND word boundary → flush (TPS-adaptive: 4-12 words)
+**Current algorithm (`utils.rs` — fully dynamic, TPS-continuous):**
+1. **Hard boundaries** — `. ! ? ।` → flush immediately (always correct sentence unit)
+2. **Clause boundaries** — `, ; —` → flush if word count ≥ threshold (3–7 words, TPS-dependent; disabled above TPS 5.0)
+3. **Time-based flush** — wait time scales 1.0s–3.5s, word min scales 3–8 (both continuous functions of TPS)
+4. **Word-count fallback** — scales 5–20 words (continuous TPS interpolation)
 5. **Word-boundary safety** — Steps 3+4 both require `ends_at_word_boundary()` which checks
 
    the last character is whitespace or punctuation (`.!?,;:\)\]—–।`). Prevents mid-word
@@ -463,20 +471,21 @@ interface ModelSettings {
     // VAD
     vad_threshold: number;      // 0.0-1.0
     ptt_noise_gate: number;     // 0.0-1.0
+    vad_backend: string;        // "Earshot" | "TenVad"
 
     // STT
     asr_model: string;          // "nvidia_nemotron" | "qwen3_asr"
+    transliterate_enabled: boolean;
 
     // LLM
     llm_model: string;          // "llama_3_2_reasoning" | "gemma_4_reasoning"
     llm_ctx_size: number;       // 1024-4096
     llm_threads: number;        // 1-N
 
-    // TTS
-    en_model: string;           // "kokoro_english_tts"
-    en_voice: number;           // 0-10
-    hi_model: string;           // "piper_hindi_tts"
-    hi_voice: string;           // "hi_IN-priyamvada-medium.onnx"
+    // TTS (Supertonic 3 — sole engine)
+    voice: number;              // Supertonic voice index (0-9)
+    quality_steps: number;      // Diffusion steps (2-12, default 12)
+    speed: number;              // Speed factor (0.7-2.0, default 1.05)
 }
 ```
 
