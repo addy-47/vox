@@ -67,7 +67,6 @@ jobs:
           wget -q -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
-          dd if=/dev/zero bs=1 count=3 seek=8 conv=notrunc of=~/.cache/tauri/linuxdeploy-x86_64.AppImage 2>/dev/null || true
 
       - name: Build Tauri Application Bundle
         env:
@@ -80,7 +79,7 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           cd app
-          pnpm tauri build
+          pnpm tauri build -- --verbose
 
       - name: Extract Versions and Build Info
         id: build_info
