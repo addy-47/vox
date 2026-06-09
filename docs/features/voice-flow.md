@@ -48,8 +48,8 @@ If the input device is not 16 kHz, linear interpolation resamples to 16 kHz in t
 
 | Backend | Format | Threshold | Latency | Notes |
 |---------|--------|-----------|---------|-------|
-| **Ten VAD** | ONNX FP32 via sherpa-onnx | 0.45 (default) | ~15ms/frame | CPU-efficient, configurable |
-| **Earshot** | Native Rust energy-based | configurable | ~1ms | Ultra-low latency, no model file needed |
+| **Earshot** (Default) | Native Rust energy-based | 0.5 (default) | ~1ms | Ultra-low latency, no model file, ~20x faster than TenVAD |
+| **Ten VAD** (Legacy) | ONNX FP32 via sherpa-onnx | 0.45 (default) | ~15ms/frame | CPU-efficient, requires model file |
 
 ### VAD Algorithm
 
@@ -236,29 +236,43 @@ tx.send(VoxEvent::LlmFinished { turn_id });
 
 ## Stage 6: Chunked TTS Flush (Pipeline Orchestrator)
 
-### The `should_flush` Algorithm
+### The `should_flush` Algorithm (Fully Dynamic)
 
-This is the core algorithm controlling when accumulated LLM tokens are sent to TTS for synthesis. It lives in `utils.rs`.
+This is the core algorithm controlling when accumulated LLM tokens are sent to TTS for synthesis. It lives in `utils.rs` and uses **continuous TPS interpolation** — no hardcoded categories.
 
 ```rust
 pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128, tps: f32) -> bool {
-    // TPS-adaptive thresholds:
-    //   Slow (TPS ≤ 2.0):  {soft=3, time_gate=3, fallback=4}   — prioritize TTFA
-    //   Medium (2.0 < TPS ≤ 4.0): {soft=3, time_gate=3, fallback=8}  — balance
-    //   Fast (TPS > 4.0):  {soft=5, time_gate=5, fallback=12}  — prioritize prosody
+    let trimmed = buf.trim_end();
+    let last = trimmed.chars().last().unwrap_or(' ');
     
     // 1. Hard boundaries: always flush
-    if matches!(last, '.' | '!' | '?') => true
+    if matches!(last, '.' | '!' | '?' | '।') { return true; }
     
-    // 2. Soft boundaries: flush if enough words for coherent speech
-    if matches!(last, ',' | ';') && word_count >= soft_words => true
-    if ends_with(" — ") or " - " && word_count >= soft_words => true
+    // ─── Continuous dynamic parameter computation ───
+    let tps_clamped = tps.clamp(0.5, 6.0);
+    let tps_norm = (tps_clamped - 0.5) / (6.0 - 0.5); // 0.0=slow, 1.0=fast
     
-    // 3. Time-based flush: ≥1500ms + word minimum + word boundary
-    if word_count >= time_gate_words && elapsed_ms > 1500 && ends_at_word_boundary(buf) => true
+    // 2. Clause boundaries (`,`, `;`, `—`)
+    //    Fades out between TPS 3.0–5.0. Word threshold increases 3→7.
+    if matches!(last, ',' | ';') || trimmed.ends_with(" — ") || trimmed.ends_with(" - ") {
+        if tps_norm < clause_norm_high {
+            let clause_threshold = (3.0 + t * 4.0).round() as usize;
+            if word_count >= clause_threshold { return true; }
+        }
+    }
     
-    // 4. Word-count fallback: independent of time, with word boundary
-    if word_count >= fallback_words && ends_at_word_boundary(buf) => true
+    // 3. Time-based flush: scales 1.0s→3.5s, word min 3→8
+    let max_wait_ms = lerp(tps_norm, 1000.0, 3500.0) as u128;
+    let min_time_words = lerp(tps_norm, 3.0, 8.0).round() as usize;
+    if elapsed_ms >= max_wait_ms && word_count >= min_time_words && ends_at_word_boundary(buf) {
+        return true;
+    }
+    
+    // 4. Word-count fallback: scales 5→20 words
+    let max_words = lerp(tps_norm, 5.0, 20.0).round() as usize;
+    if word_count >= max_words && ends_at_word_boundary(buf) {
+        return true;
+    }
     
     false
 }
@@ -284,17 +298,17 @@ The check ensures the buffer ends at whitespace or punctuation. Together with De
 | Condition | When it fires | Example |
 |-----------|--------------|---------|
 | `. ! ?` | Always | Sentence end |
-| `, ; —` | ≥3 words | Clause boundary |
-| ≥1500ms elapsed | ≥ time_gate words + word boundary | Slow generation catch-up |
-| ≥ fallback_words | Word boundary | Large accumulated buffer |
+| `, ; —` | ≥3–7 words (TPS-dependent) | Clause boundary |
+| Time gate (1.0s–3.5s) | ≥ time_gate words + word boundary | Slow generation catch-up |
+| ≥ fallback_words (5–20) | Word boundary | Large accumulated buffer |
 
-### Dynamic Thresholds by TPS
+### Dynamic Thresholds (Sample Points)
 
-| TPS Range | soft_words | time_gate_words | fallback_words | Use Case |
-|-----------|-----------|-----------------|----------------|----------|
-| ≤ 2.0 | 3 | 3 | 4 | Slow CPU, prioritize low TTFA |
-| 2.0–4.0 | 3 | 3 | 8 | Normal operation |
-| > 4.0 | 5 | 5 | 12 | Fast generation, prioritize prosody |
+| TPS | Clause Threshold | Time Gate | Min Words | Fallback |
+|-----|:-:|:-:|:-:|:-:|
+| ~1.0 (slow) | 3 words | 1.0s / 3 words | 3 | 5 words |
+| ~3.5 (medium) | 4 words | 2.2s / 5 words | 5 | 12 words |
+| ~6.0 (fast) | Disabled | 3.5s / 8 words | 8 | 20 words |
 
 ---
 
@@ -353,6 +367,22 @@ GenerationConfig {
 }
 ```
 
+### Anti-Aliasing Low-Pass Filter (v0.8.2+)
+
+Supertonic 3's vocoder produces audio at 44.1kHz. The progress callback downsamples to 24kHz for TTS delivery. To prevent aliasing artifacts from high-frequency content near Nyquist (22.05kHz), a 2nd-order Butterworth LPF is applied before downsampling:
+
+- **Type**: Biquad low-pass filter (2nd-order Butterworth)
+- **Cutoff**: 11000 Hz (below 24kHz Nyquist of 12000 Hz, with 1kHz margin)
+- **Execution**: Applied sample-by-sample in the resampling loop
+
+```rust
+let mut lpf = BiquadFilter::new(BiquadType::Lpf, 11000.0, 44100.0);
+for i in 0..output_samples {
+    let filtered = lpf.process(supertonic_output[i]);
+    interpolated_24k[i] = filtered;
+}
+```
+
 ### Expression Tags
 `<laugh>`, `<breath>`, `<sigh>` tags in the input text are processed by the sherpa-onnx Supertonic engine to produce expressive/prosodic variation. These are injected into the LLM system prompt (Stage 4).
 
@@ -369,18 +399,22 @@ TtsChunk (24kHz PCM, f32)
   → Audio output device callback (48 kHz)
 ```
 
-### Upsampling
+### Upsampling (Cubic Hermite Catmull-Rom)
 ```rust
 pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
-    // Linear interpolation for exact 2× ratio (24kHz → 48kHz)
-    // O(n), no FFT, no external deps
-    let mut output = Vec::with_capacity(input.len() * 2);
-    for pair in input.windows(2) {
-        output.push(pair[0]);
-        output.push((pair[0] + pair[1]) / 2.0);
+    // Cubic Hermite (Catmull-Rom) interpolation for 24kHz → 48kHz (exact 2x ratio)
+    // Uses 4-point basis with weights [-1/16, 9/16, 9/16, -1/16]
+    // Produces smoother waveform than linear, continuous 1st derivatives
+    let mut out = Vec::with_capacity(len * 2);
+    for i in 0..len {
+        out.push(input[i]);
+        let p0 = if i > 0 { input[i - 1] } else { input[i] };
+        let p2 = if i + 1 < len { input[i + 1] } else { input[i] };
+        let p3 = if i + 2 < len { input[i + 2] } else { p2 };
+        let midpoint = (-p0 + 9.0 * input[i] + 9.0 * p2 - p3) / 16.0;
+        out.push(midpoint);
     }
-    output.push(*input.last().unwrap());  // Last sample
-    output
+    out
 }
 ```
 
@@ -406,6 +440,25 @@ When user speech is detected during playback:
 4. Playback stops
 5. New turn begins
 
+### Playback Underrun Protection (v0.8.2+)
+
+When the TTS ring buffer is empty (generation hasn't started or is delayed), a short linear volume fade prevents audible click/pop artifacts:
+
+```rust
+// Linear fade to avoid clicks (~10ms fade window at 48kHz)
+let step = 0.002f32;
+if current_volume < target_volume {
+    current_volume = (current_volume + step).min(target_volume);
+} else if current_volume > target_volume {
+    current_volume = (current_volume - step).max(target_volume);
+}
+```
+
+- **Duration**: ~10ms (96 samples at 48kHz, step=0.002)
+- **Direction**: Smooth transition between silence and active playback (bidirectional)
+- **State reset**: Volume resets to 1.0 on `PlaybackFinished`/`Cancelled`
+- **Tradeoff**: 10ms fade is imperceptible; prevents the DC pop that would result from abrupt ring buffer underrun
+
 ---
 
 ## Metrics & Timing
@@ -414,11 +467,12 @@ When user speech is detected during playback:
 
 | Metric | Definition | v0.8.2 Average | Target |
 |--------|-----------|---------------|--------|
-| **STT RTF** | STT processing time / audio duration | **0.18×** | < 1.0× |
-| **LLM TPS** | Tokens generated per second | **3.30** | > 1.0 |
-| **TTFA** | Time from speech end to first audio | **11.30 s** | < 15 s |
-| **TTFT** | Time from speech end to first LLM token | **3.98 s** | — |
-| **Peak RSS** | Peak process memory | **2,461 MB** | < 7,500 MB |
+| **STT RTF** | STT processing time / audio duration | **0.04–0.31×** | < 1.0× |
+| **LLM TPS** | Tokens generated per second | **1.2–3.2** | > 1.0 |
+| **TTFA** | Time from speech end to first audio | **15.5–25.3s** | < 30 s |
+| **TTFT** | Time from speech end to first LLM token | **~4.0s** | — |
+| **LLM Mem** | LLM process memory load | **969–970 MB** | < 1,500 MB |
+| **Peak RSS** | Peak process memory | **2,446–2,503 MB** | < 7,500 MB |
 
 ### Metric Collection
 Each interaction records:
@@ -460,8 +514,9 @@ Each interaction records:
 
 | Component | Memory (RSS) | Typical Latency | Notes |
 |-----------|-------------|-----------------|-------|
-| VAD (Ten) | ~50 MB | ~15ms per 256-sample frame | Always loaded |
-| STT (Nemotron) | ~1,265 MB | 0.03–0.31× RTF | ~945 MB encoder ONNX |
+| VAD (Earshot) | ~50 MB | ~1ms per frame | Always loaded, no model file |
+| VAD (Ten) | ~50 MB | ~15ms per frame | Legacy, requires model file |
+| STT (Nemotron) | ~1,265 MB | 0.04–0.31× RTF | INT8 quantized ONNX |
 | LLM (Llama-3.2-1B) | ~970 MB | 2.5–4.4 TPS | Q6_K quantization |
 | TTS (Supertonic) | ~21 MB | 0.79–1.50× RTF | INT8 quantized |
 | **Total Peak** | **~2,461 MB** | — | Well within 8 GB target |
