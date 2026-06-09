@@ -10,6 +10,7 @@ env:
 
 jobs:
   release-windows:
+
     runs-on: windows-latest
     permissions:
       contents: write
@@ -48,6 +49,7 @@ jobs:
 
       - name: Extract Versions and Build Info
         id: build_info
+        if: ${{ !contains(github.ref_name, '-') }}
         shell: bash
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
@@ -58,6 +60,7 @@ jobs:
           echo "EXE_PATH=$EXE_PATH" >> $GITHUB_ENV
 
       - name: Upload to GitHub Release
+        if: ${{ !contains(github.ref_name, '-') }}
         uses: softprops/action-gh-release@v1
         with:
           files: |

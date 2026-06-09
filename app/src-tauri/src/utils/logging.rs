@@ -22,7 +22,7 @@ pub fn init(log_dir: PathBuf) -> WorkerGuard {
     // Daily rolling appender: vox.log, vox.log.2026-05-10, etc.
     // Retains max 5 log files by default.
     let file_appender = tracing_appender::rolling::daily(log_dir, "vox.log");
-    
+
     // Wrap in non-blocking writer (dedicated background thread)
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
@@ -66,7 +66,7 @@ fn cleanup_old_logs(log_dir: &std::path::Path, max_files: usize) {
     if files.len() > max_files {
         // Sort by modification time (oldest first)
         files.sort_by_key(|&(_, m)| m);
-        
+
         let to_delete = files.len() - max_files;
         for i in 0..to_delete {
             let _ = std::fs::remove_file(&files[i].0);

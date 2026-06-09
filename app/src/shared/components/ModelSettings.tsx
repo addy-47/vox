@@ -5,9 +5,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { 
   Brain, Volume2, Database, Trash2,
-  Sliders, Languages, 
+  Wifi, Languages, 
   Activity, Sparkles, Shield, Check, ArrowLeft,
-  Download, RefreshCw
+  Download, RefreshCw, Info
 } from "lucide-react";
 
 interface ModelStatus {
@@ -65,6 +65,7 @@ export const ModelSettings: React.FC = () => {
   const [modelPresence, setModelPresence] = useState<Record<string, boolean>>({});
   const [promptTab, setPromptTab] = useState<"en" | "hi">("en");
   const [activePipelineTab, setActivePipelineTab] = useState<"vad" | "asr" | "translit" | "llm" | "tts">("llm");
+  const [activeCategoryTab, setActiveCategoryTab] = useState<"model" | "settings">("model");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [outdatedModels, setOutdatedModels] = useState<string[]>([]);
   const [manifest, setManifest] = useState<VoxManifest | null>(null);
@@ -73,9 +74,9 @@ export const ModelSettings: React.FC = () => {
     if (!manifest) {
       if (fileId.startsWith("vad")) return "ten_vad";
       if (fileId.startsWith("translit")) return "vox_translit_rnn";
-      if (fileId.startsWith("stt")) return "qwen3_asr";
-      if (fileId.startsWith("tts_kokoro")) return "kokoro_english_tts";
-      if (fileId.startsWith("tts_hi") || fileId.startsWith("tts_piper_hi")) return "piper_hindi_tts";
+      if (fileId.startsWith("stt_nemotron")) return "nvidia_nemotron";
+      if (fileId.startsWith("stt_")) return "qwen3_asr";
+      if (fileId.startsWith("tts_supertonic")) return "supertonic_tts";
       return fileId;
     }
     for (const group of manifest.model_groups) {
@@ -87,7 +88,7 @@ export const ModelSettings: React.FC = () => {
   }, [manifest]);
 
   const isGroupRequired = useCallback((groupId: string): boolean => {
-    if (!manifest) return groupId === "ten_vad" || groupId === "vox_translit_rnn" || groupId === "qwen3_asr";
+    if (!manifest) return groupId === "ten_vad" || groupId === "vox_translit_rnn" || groupId === "qwen3_asr" || groupId === "nvidia_nemotron";
     const group = manifest.model_groups.find(g => g.id === groupId);
     return group ? group.files.some(f => f.required) : false;
   }, [manifest]);
@@ -192,11 +193,11 @@ export const ModelSettings: React.FC = () => {
           "ten_vad",
           "vox_translit_rnn",
           "qwen3_asr",
+          "nvidia_nemotron",
           "gemma_4_reasoning",
           "llama_3_2_reasoning",
           "gemma_4_uncensored",
-          "kokoro_english_tts",
-          "piper_hindi_tts"
+          "supertonic_tts"
         ];
 
     for (const id of checkIds) {
@@ -224,6 +225,11 @@ export const ModelSettings: React.FC = () => {
     loadManifest();
   }, []);
 
+  // Reset to Model tab when switching categories
+  useEffect(() => {
+    setActiveCategoryTab("model");
+  }, [activePipelineTab]);
+
   useEffect(() => {
     checkPresence();
 
@@ -249,7 +255,7 @@ export const ModelSettings: React.FC = () => {
       }));
     });
 
-    const unlistenComplete = listen<string>("optional_download_complete", (event) => {
+    const unlistenComplete = listen<string>("optional_model_complete", (event) => {
       checkPresence();
       setDownloadStatuses(prev => {
         const next = { ...prev };
@@ -288,7 +294,8 @@ export const ModelSettings: React.FC = () => {
   const isVadVerified = activeVadBackend === "earshot" || modelPresence["ten_vad"];
 
   // ASR logic
-  const isAsrVerified = modelPresence["qwen3_asr"];
+  const selectedAsrId = draftSettings.asr.model;
+  const isAsrVerified = modelPresence[selectedAsrId];
 
   // Translit logic
   const isTranslitVerified = modelPresence["vox_translit_rnn"];
@@ -298,20 +305,20 @@ export const ModelSettings: React.FC = () => {
   const isLlmDownloaded = modelPresence[selectedLlmId];
 
   // TTS logic
-  const isTtsVerified = modelPresence["kokoro_english_tts"] && modelPresence["piper_hindi_tts"];
+  const isTtsVerified = modelPresence["supertonic_tts"];
 
   // Highlights state for Topology Pipeline Map
   const isVadCategoryMissing = activeVadBackend === "ten_vad" && !modelPresence["ten_vad"];
-  const isAsrCategoryMissing = !modelPresence["qwen3_asr"];
+  const isAsrCategoryMissing = !modelPresence[selectedAsrId];
   const isTranslitCategoryMissing = !modelPresence["vox_translit_rnn"];
   const isLlmCategoryMissing = !modelPresence[selectedLlmId];
-  const isTtsCategoryMissing = !modelPresence["kokoro_english_tts"] || !modelPresence["piper_hindi_tts"];
+  const isTtsCategoryMissing = !modelPresence["supertonic_tts"];
 
   const hasVadUpdate = outdatedModels.includes("ten_vad");
-  const hasAsrUpdate = outdatedModels.includes("qwen3_asr");
+  const hasAsrUpdate = outdatedModels.includes(selectedAsrId);
   const hasTranslitUpdate = outdatedModels.includes("vox_translit_rnn");
   const hasLlmUpdate = outdatedModels.includes(selectedLlmId);
-  const hasTtsUpdate = outdatedModels.includes("kokoro_english_tts") || outdatedModels.includes("piper_hindi_tts");
+  const hasTtsUpdate = outdatedModels.includes("supertonic_tts");
 
   const getPulseClass = (isMissing: boolean, hasUpdate: boolean) => {
     if (isMissing) return "pulse-missing border-red-500/30";
@@ -330,10 +337,37 @@ export const ModelSettings: React.FC = () => {
     );
   };
 
+  const renderSubTabHeader = () => (
+    <div className="flex bg-[rgb(var(--foreground))]/[0.03] p-0.5 rounded-xl border border-[rgba(var(--border),0.06)] mb-4">
+      <button
+        onClick={() => setActiveCategoryTab("model")}
+        className={cn(
+          "py-2 rounded-lg text-[13px] font-bold uppercase tracking-wider transition-all duration-300 text-center w-1/2",
+          activeCategoryTab === "model" 
+            ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
+            : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+        )}
+      >
+        Model
+      </button>
+      <button
+        onClick={() => setActiveCategoryTab("settings")}
+        className={cn(
+          "py-2 rounded-lg text-[13px] font-bold uppercase tracking-wider transition-all duration-300 text-center w-1/2",
+          activeCategoryTab === "settings" 
+            ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
+            : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+        )}
+      >
+        Settings
+      </button>
+    </div>
+  );
+
   return (
     <div className="h-full overflow-y-auto lg:overflow-hidden custom-scrollbar pr-1 -mr-1 select-none pb-10">
       <style>{pulseStyles}</style>
-      <div className="lg:h-full flex flex-col lg:grid lg:grid-cols-12 gap-8 items-stretch pb-10">
+      <div className="lg:h-full flex flex-col lg:grid lg:grid-cols-12 gap-6 items-stretch">
         
         {/* Left Column: Interactive Topology Pipeline Selector */}
         <div className="lg:col-span-7 flex flex-col lg:min-h-0">
@@ -461,195 +495,123 @@ export const ModelSettings: React.FC = () => {
               {/* TAB 1: SILENCE DETECTION (VAD) */}
               {activePipelineTab === "vad" && (
                 <div className="space-y-4">
-                  <div className="pb-2 border-b border-[rgba(var(--border),0.05)]">
-                    <span className="text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Silence Filtering</span>
-                  </div>
+                  {renderSubTabHeader()}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Option 1: Earshot */}
-                    <div 
-                      onClick={() => updateDraft("vad", "vad_backend", "earshot")}
-                      className={cn(
-                        "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
-                        activeVadBackend === "earshot" && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
-                      )}
-                    >
-                      <div>
-                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center justify-between">
-                          <span>Earshot (Built-in)</span>
-                          {activeVadBackend === "earshot" ? (
-                            <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">Active</span>
-                          ) : (
-                            <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2 py-0.5 rounded">Ready</span>
-                          )}
-                        </div>
-                        <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2 leading-relaxed">
-                          Pure Rust voice detection. Embedded weights, runs instantly with zero CPU load.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Option 2: TenVAD */}
-                    <div 
-                      onClick={() => updateDraft("vad", "vad_backend", "ten_vad")}
-                      className={cn(
-                        "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
-                        activeVadBackend === "ten_vad" && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
-                      )}
-                    >
-                      <div>
-                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center justify-between">
-                          <span className="flex items-center gap-1.5">
-                            <span>TenVAD Engine</span>
-                            {outdatedModels.includes("ten_vad") && (
-                              <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
-                            )}
-                          </span>
-                          {activeVadBackend === "ten_vad" ? (
-                            modelPresence["ten_vad"] ? (
+                  {activeCategoryTab === "model" ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Option 1: Earshot */}
+                      <div 
+                        onClick={() => updateDraft("vad", "vad_backend", "earshot")}
+                        className={cn(
+                          "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
+                          activeVadBackend === "earshot" && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
+                        )}
+                      >
+                        <div>
+                          <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center justify-between">
+                            <span>Earshot (Built-in)</span>
+                            {activeVadBackend === "earshot" ? (
                               <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">Active</span>
                             ) : (
-                              <span className="text-[13px] font-bold uppercase tracking-wider text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10">Missing</span>
-                            )
-                          ) : (
-                            modelPresence["ten_vad"] ? (
                               <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2 py-0.5 rounded">Ready</span>
-                            ) : (
-                              <span className="text-[13px] font-bold uppercase tracking-wider text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10">Missing</span>
-                            )
-                          )}
+                            )}
+                          </div>
+                          <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2 leading-relaxed">
+                            Pure Rust voice detection. Embedded weights, runs instantly with zero CPU load.
+                          </p>
                         </div>
-                        <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2 leading-relaxed">
-                          ONNX-based voice detector. Requires downloading auxiliary neural files.
-                        </p>
                       </div>
-                      
-                      {activeVadBackend === "ten_vad" && !modelPresence["ten_vad"] && (
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-[rgba(var(--border),0.05)]">
-                          <span className="text-[13px] text-[rgb(var(--foreground-muted))]">Deploy Weights</span>
-                          {downloadStatuses["ten_vad"] ? (
-                            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["ten_vad"].progress)}%</span>
-                          ) : (
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); startDownload("ten_vad"); }}
-                              className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow"
-                            >
-                              Get
-                            </button>
-                          )}
+
+                      {/* Option 2: TenVAD */}
+                      <div 
+                        onClick={() => updateDraft("vad", "vad_backend", "ten_vad")}
+                        className={cn(
+                          "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
+                          activeVadBackend === "ten_vad" && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
+                        )}
+                      >
+                        <div>
+                          <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <span>TenVAD Engine</span>
+                              {outdatedModels.includes("ten_vad") && (
+                                <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                              )}
+                            </span>
+                            {activeVadBackend === "ten_vad" ? (
+                              modelPresence["ten_vad"] ? (
+                                <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">Active</span>
+                              ) : (
+                                <span className="text-[13px] font-bold uppercase tracking-wider text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10">Missing</span>
+                              )
+                            ) : (
+                              modelPresence["ten_vad"] ? (
+                                <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2 py-0.5 rounded">Ready</span>
+                              ) : (
+                                <span className="text-[13px] font-bold uppercase tracking-wider text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10">Missing</span>
+                              )
+                            )}
+                          </div>
+                          <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2 leading-relaxed">
+                            ONNX-based voice detector. Requires downloading auxiliary neural files.
+                          </p>
                         </div>
-                      )}
+                        
+                        {activeVadBackend === "ten_vad" && !modelPresence["ten_vad"] && (
+                          <div className="flex items-center justify-between mt-2 pt-2 border-t border-[rgba(var(--border),0.05)]">
+                            <span className="text-[13px] text-[rgb(var(--foreground-muted))]">Deploy Weights</span>
+                            {downloadStatuses["ten_vad"] ? (
+                              <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["ten_vad"].progress)}%</span>
+                            ) : (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); startDownload("ten_vad"); }}
+                                className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow"
+                              >
+                                Get
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    /* VAD Settings */
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Silence Threshold</span>
+                        <div className="flex gap-1">
+                          {[
+                            { label: "Sensitive", value: 0.3 },
+                            { label: "Balanced", value: 0.5 },
+                            { label: "Conservative", value: 0.7 },
+                            { label: "Aggressive", value: 0.9 },
+                          ].map(({ label, value }) => (
+                            <button key={value} onClick={() => updateDraft("vad", "threshold", value)}
+                              className={cn(
+                                "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                                Math.abs(draftSettings.vad.threshold - value) < 0.01
+                                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
+                                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10"
+                              )}
+                            >{label}</button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* TAB 2: VOICE RECOGNITION (ASR) */}
               {activePipelineTab === "asr" && (
                 <div className="space-y-4">
-                  <div className="pb-2 border-b border-[rgba(var(--border),0.05)]">
-                    <span className="text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Voice Recognition</span>
-                  </div>
-
-                  <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] space-y-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                          <span>Qwen3-ASR Decoder</span>
-                          {outdatedModels.includes("qwen3_asr") && (
-                            <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
-                          )}
-                        </div>
-                        <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-1.5 leading-relaxed">
-                          Multilingual Speech Recognition engine. Decodes live voice streams to text completely offline (~950MB).
-                        </p>
-                      </div>
-                      <span className={cn(
-                        "text-[13px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded border",
-                        isAsrVerified ? "text-emerald-400 bg-emerald-500/5 border-emerald-500/10" : "text-red-400 bg-red-500/5 border-red-500/10"
-                      )}>
-                        {isAsrVerified ? "Active" : "Missing"}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-end gap-3 pt-3 border-t border-[rgba(var(--border),0.05)]">
-                      {!isAsrVerified ? (
-                        downloadStatuses["qwen3_asr"] ? (
-                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["qwen3_asr"].progress)}%</span>
-                        ) : (
-                          <button 
-                            onClick={() => startDownload("qwen3_asr")}
-                            className="px-4 py-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow hover:scale-[1.02] transition-all"
-                          >
-                            Download Model
-                          </button>
-                        )
-                      ) : (
-                        renderDeleteControl("qwen3_asr")
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 3: ROMAN TRANSLITERATION */}
-              {activePipelineTab === "translit" && (
-                <div className="space-y-4">
-                  <div className="pb-2 border-b border-[rgba(var(--border),0.05)]">
-                    <span className="text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Roman Transliteration</span>
-                  </div>
-
-                  <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] space-y-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                          <span>Vox Hinglish RNN</span>
-                          {outdatedModels.includes("vox_translit_rnn") && (
-                            <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
-                          )}
-                        </div>
-                        <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-1.5 leading-relaxed">
-                          Converts Devanagari (Hindi) scripts dynamically to natural Hinglish phonetic spelling (~18MB).
-                        </p>
-                      </div>
-                      <span className={cn(
-                        "text-[13px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded border",
-                        isTranslitVerified ? "text-emerald-400 bg-emerald-500/5 border-emerald-500/10" : "text-red-400 bg-red-500/5 border-red-500/10"
-                      )}>
-                        {isTranslitVerified ? "Ready" : "Missing"}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-end gap-3 pt-3 border-t border-[rgba(var(--border),0.05)]">
-                      {!isTranslitVerified ? (
-                        downloadStatuses["vox_translit_rnn"] ? (
-                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["vox_translit_rnn"].progress)}%</span>
-                        ) : (
-                          <button 
-                            onClick={() => startDownload("vox_translit_rnn")}
-                            className="px-4 py-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow hover:scale-[1.02] transition-all"
-                          >
-                            Download Model
-                          </button>
-                        )
-                      ) : (
-                        renderDeleteControl("vox_translit_rnn")
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 4: AI REASONING (LLM) */}
-              {activePipelineTab === "llm" && (
-                <div className="space-y-4">
-                  <div className="pb-2 border-b border-[rgba(var(--border),0.05)]">
-                    <span className="text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Select Active AI Reasoning Model</span>
-                  </div>
-
                   <div className="grid grid-cols-1 gap-3.5">
-                    {modelCatalog.llm.map((model) => {
-                      const isSelected = selectedLlmId === model.id;
+                    {[...modelCatalog.asr].sort((a, b) => {
+                      if (draftSettings.asr.model === a.id) return -1;
+                      if (draftSettings.asr.model === b.id) return 1;
+                      return 0;
+                    }).map((model) => {
+                      const isSelected = draftSettings.asr.model === model.id;
                       const modelGroupId = model.id;
                       const isDownloaded = modelPresence[modelGroupId];
                       const status = downloadStatuses[modelGroupId];
@@ -657,7 +619,7 @@ export const ModelSettings: React.FC = () => {
                       return (
                         <div 
                           key={model.id}
-                          onClick={() => updateDraft("llm", "model", model.id)}
+                          onClick={() => updateDraft("asr", "model", model.id)}
                           className={cn(
                             "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
                             isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
@@ -708,76 +670,267 @@ export const ModelSettings: React.FC = () => {
                 </div>
               )}
 
+              {/* TAB 3: ROMAN TRANSLITERATION */}
+              {activePipelineTab === "translit" && (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                          <span>Vox Hinglish RNN</span>
+                          {outdatedModels.includes("vox_translit_rnn") && (
+                            <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                          )}
+                        </div>
+                        <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-1.5 leading-relaxed">
+                          Converts Devanagari (Hindi) scripts dynamically to natural Hinglish phonetic spelling (~18MB).
+                        </p>
+                      </div>
+                      <span className={cn(
+                        "text-[13px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded border",
+                        isTranslitVerified ? "text-emerald-400 bg-emerald-500/5 border-emerald-500/10" : "text-red-400 bg-red-500/5 border-red-500/10"
+                      )}>
+                        {isTranslitVerified ? "Ready" : "Missing"}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-3 border-t border-[rgba(var(--border),0.05)]">
+                      {!isTranslitVerified ? (
+                        downloadStatuses["vox_translit_rnn"] ? (
+                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["vox_translit_rnn"].progress)}%</span>
+                        ) : (
+                          <button 
+                            onClick={() => startDownload("vox_translit_rnn")}
+                            className="px-4 py-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow hover:scale-[1.02] transition-all"
+                          >
+                            Download Model
+                          </button>
+                        )
+                      ) : (
+                        renderDeleteControl("vox_translit_rnn")
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: AI REASONING (LLM) */}
+              {activePipelineTab === "llm" && (
+                <div className="space-y-4">
+                  {renderSubTabHeader()}
+
+                  {activeCategoryTab === "model" ? (
+                    <div className="grid grid-cols-1 gap-3.5">
+                      {[...modelCatalog.llm].sort((a, b) => {
+                        if (selectedLlmId === a.id) return -1;
+                        if (selectedLlmId === b.id) return 1;
+                        return 0;
+                      }).map((model) => {
+                        const isSelected = selectedLlmId === model.id;
+                        const modelGroupId = model.id;
+                        const isDownloaded = modelPresence[modelGroupId];
+                        const status = downloadStatuses[modelGroupId];
+
+                        return (
+                          <div 
+                            key={model.id}
+                            onClick={() => updateDraft("llm", "model", model.id)}
+                            className={cn(
+                              "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
+                              isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
+                            )}
+                          >
+                            <div className="space-y-1 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">{model.name}</span>
+                                <span className="text-[13px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded font-normal">{model.parameters}</span>
+                                {outdatedModels.includes(modelGroupId) && (
+                                  <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                                )}
+                              </div>
+                              <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 leading-normal max-w-[420px]">
+                                {model.description}
+                              </p>
+                              {model.tradeoffs && (
+                                <div className="mt-1.5 flex items-start gap-1.5">
+                                  <Info size={12} className="text-[rgb(var(--foreground-muted))] mt-0.5 shrink-0" />
+                                  <p className="text-[12px] text-[rgb(var(--foreground-muted))] opacity-70 leading-relaxed">
+                                    {model.tradeoffs}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                              {isDownloaded ? (
+                                <div className="flex items-center gap-3">
+                                  {isSelected ? (
+                                    <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2.5 py-1 rounded border border-emerald-500/10">Active</span>
+                                  ) : (
+                                    <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2.5 py-1 rounded">Select</span>
+                                  )}
+                                  {!isGroupRequired(model.id) && (
+                                    renderDeleteControl(modelGroupId, "icon-only")
+                                  )}
+                                </div>
+                              ) : (
+                                status ? (
+                                  <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(status.progress)}%</span>
+                                ) : (
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); startDownload(modelGroupId); }}
+                                    className="px-3.5 py-1.5 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow"
+                                  >
+                                    Get
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    /* LLM Settings */
+                    <div className="space-y-5">
+                      {/* Context tokens — safe presets */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Memory Context Tokens</span>
+                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.llm.ctx_size}</span>
+                        </div>
+                        <div className="flex gap-1">
+                          {[512, 1024, 2048, 4096, 8192].map(val => (
+                            <button key={val} onClick={() => updateDraft("llm", "ctx_size", val)}
+                              className={cn(
+                                "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                                draftSettings.llm.ctx_size === val
+                                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
+                                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10"
+                              )}
+                            >{val < 1024 ? val : val >= 1024 && val < 1024 * 1024 ? `${val / 1024}k` : `${val / 1024 / 1024}M`}</button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Processor Threads — CPU-aware safe presets */}
+                      {(() => {
+                        const totalCores = (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined) || 4;
+                        const maxSafe = Math.max(2, totalCores - 2);
+                        const threadPresets = (() => {
+                          const base = [2, 4];
+                          if (maxSafe > 4 && maxSafe !== totalCores) return [...base, maxSafe, totalCores];
+                          if (maxSafe > 4) return [...base, maxSafe];
+                          return base;
+                        })();
+                        return (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Processor Threads</span>
+                              <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.llm.threads}</span>
+                            </div>
+                            <div className="flex gap-1">
+                              {threadPresets.map(val => (
+                                <button key={val} onClick={() => updateDraft("llm", "threads", val)}
+                                  className={cn(
+                                    "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                                    draftSettings.llm.threads === val
+                                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
+                                      : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10"
+                                  )}
+                                >{val}{val === maxSafe && val !== totalCores ? " (max)" : ""}{val === totalCores && val !== maxSafe ? " (all)" : ""}</button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* TAB 5: VOICE SYNTHESIS (TTS) */}
               {activePipelineTab === "tts" && (
                 <div className="space-y-4">
-                  <div className="pb-2 border-b border-[rgba(var(--border),0.05)]">
-                    <span className="text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Voice Output</span>
-                  </div>
+                  {renderSubTabHeader()}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* English Voice synthesis */}
-                    <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] flex flex-col justify-between h-36">
-                      <div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                            <span>English Voice</span>
-                            {outdatedModels.includes("kokoro_english_tts") && (
-                              <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
-                            )}
-                          </span>
-                          <span className={cn("w-2 h-2 rounded-full", modelPresence["kokoro_english_tts"] ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500")} />
+                  {activeCategoryTab === "model" ? (
+                    <div className="grid grid-cols-1 gap-4">
+                      {/* Supertonic 3 Multilingual */}
+                      <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] flex flex-col justify-between h-36">
+                        <div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                              <span>Supertonic 3 Multilingual</span>
+                              {outdatedModels.includes("supertonic_tts") && (
+                                <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                              )}
+                            </span>
+                            <span className={cn("w-2 h-2 rounded-full", modelPresence["supertonic_tts"] ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500")} />
+                          </div>
+                          <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2">
+                            31-language neural speech synthesis with 10 voices (~144MB INT8 quantized).
+                          </p>
                         </div>
-                        <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2">
-                          High quality English vocal syntheses package (~345MB).
-                        </p>
-                      </div>
 
-                      <div className="flex justify-between items-center pt-2 border-t border-[rgba(var(--border),0.05)]">
-                        <span className="text-[13px] text-[rgb(var(--foreground-muted))]">Deploy Weights</span>
-                        {!modelPresence["kokoro_english_tts"] ? (
-                          downloadStatuses["kokoro_english_tts"] ? (
-                            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["kokoro_english_tts"].progress)}%</span>
+                        <div className="flex justify-between items-center pt-2 border-t border-[rgba(var(--border),0.05)]">
+                          <span className="text-[13px] text-[rgb(var(--foreground-muted))]">Deploy Weights</span>
+                          {!modelPresence["supertonic_tts"] ? (
+                            downloadStatuses["supertonic_tts"] ? (
+                              <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["supertonic_tts"].progress)}%</span>
+                            ) : (
+                              <button onClick={() => startDownload("supertonic_tts")} className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow">Get</button>
+                            )
                           ) : (
-                            <button onClick={() => startDownload("kokoro_english_tts")} className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow">Get</button>
-                          )
-                        ) : (
-                          renderDeleteControl("kokoro_english_tts", undefined, true)
-                        )}
+                            renderDeleteControl("supertonic_tts", undefined, true)
+                          )}
+                        </div>
                       </div>
                     </div>
-
-                    {/* Hindi Voice synthesis */}
-                    <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] flex flex-col justify-between h-36">
-                      <div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                            <span>Hindi Voice</span>
-                            {outdatedModels.includes("piper_hindi_tts") && (
-                              <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
-                            )}
+                  ) : (
+                    /* TTS Settings */
+                    <div className="space-y-4">
+                      {/* Quality Steps */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Quality</span>
+                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">
+                            {draftSettings.tts.quality_steps <= 4 ? "Speed" : draftSettings.tts.quality_steps <= 8 ? "Quality" : "Best"}
                           </span>
-                          <span className={cn("w-2 h-2 rounded-full", modelPresence["piper_hindi_tts"] ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500")} />
                         </div>
-                        <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2">
-                          Highly optimized Hindi synthesis speech weights (~63MB).
-                        </p>
+                        <div className="flex gap-1">
+                          {[2, 4, 6, 8, 10, 12].map(step => (
+                            <button key={step} onClick={() => updateDraft("tts", "quality_steps", step)}
+                              className={cn(
+                                "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                                draftSettings.tts.quality_steps === step
+                                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
+                                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10"
+                              )}
+                            >{step}</button>
+                          ))}
+                        </div>
+                        <div className="flex justify-between text-[11px] text-[rgb(var(--foreground-muted))] opacity-70">
+                          <span>Speed</span>
+                          <span>Quality</span>
+                          <span>Best</span>
+                        </div>
                       </div>
-
-                      <div className="flex justify-between items-center pt-2 border-t border-[rgba(var(--border),0.05)]">
-                        <span className="text-[13px] text-[rgb(var(--foreground-muted))]">Deploy Weights</span>
-                        {!modelPresence["piper_hindi_tts"] ? (
-                          downloadStatuses["piper_hindi_tts"] ? (
-                            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["piper_hindi_tts"].progress)}%</span>
-                          ) : (
-                            <button onClick={() => startDownload("piper_hindi_tts")} className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[13px] font-bold uppercase tracking-wider shadow">Get</button>
-                          )
-                        ) : (
-                          renderDeleteControl("piper_hindi_tts", undefined, true)
-                        )}
+                      {/* Speed */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Speed</span>
+                          <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.tts.speed.toFixed(2)}x</span>
+                        </div>
+                        <input 
+                          type="range" 
+                          min="0.7" max="2.0" step="0.05"
+                          value={draftSettings.tts.speed}
+                          onChange={(e) => updateDraft("tts", "speed", Number(e.target.value))}
+                          className="w-full"
+                        />
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 
@@ -789,63 +942,48 @@ export const ModelSettings: React.FC = () => {
         {/* Right Column: Parameters Tuning & Compact System Prompts Switcher */}
         <div className="lg:col-span-5 flex flex-col gap-6 lg:min-h-0">
           
-          {/* Numerical Parameters Grid */}
+          {/* Connectivity Card (mock — cloud inference planned for v0.8.3+) */}
           <div className="premium-card p-4 sm:p-6 lg:p-8 flex flex-col gap-5 shrink-0">
             <div className="flex items-center gap-3 shrink-0">
-              <Sliders className="text-[rgb(var(--accent))]" size={22} />
+              <Wifi className="text-[rgb(var(--accent))]" size={22} />
               <div className="space-y-0.5">
-                <h2 className="text-lg font-bold text-[rgb(var(--foreground))]">Tuning</h2>
-                <p className="text-[13px] text-[rgb(var(--foreground-muted))] uppercase tracking-wider font-bold opacity-80">Precision and Audio Tuning</p>
+                <h2 className="text-lg font-bold text-[rgb(var(--foreground))]">Connectivity</h2>
+                <p className="text-[13px] text-[rgb(var(--foreground-muted))] uppercase tracking-wider font-bold opacity-80">Local vs Cloud Inference</p>
               </div>
             </div>
 
             <div className="space-y-4">
-              {/* VAD Activation Threshold */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Silence Threshold</span>
-                  <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.vad.threshold.toFixed(2)}</span>
+              {/* Local / Cloud Toggle (mock) */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)]">
+                <div className="space-y-0.5">
+                  <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">Inference Mode</span>
+                  <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-80 leading-normal">
+                    Run models locally or route to cloud
+                  </p>
                 </div>
-                <input 
-                  type="range" 
-                  min="0.1" max="0.9" step="0.05"
-                  value={draftSettings.vad.threshold}
-                  onChange={(e) => updateDraft("vad", "threshold", Number(e.target.value))}
-                  className="w-full"
+                <div className="flex bg-[rgb(var(--foreground))]/[0.05] p-0.5 rounded-lg border border-[rgba(var(--border),0.05)]">
+                  <span className="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]">Local</span>
+                  <span className="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-40">Cloud</span>
+                </div>
+              </div>
+
+              {/* API Key Input (mock) */}
+              <div className="p-3.5 rounded-xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)] space-y-2">
+                <div className="space-y-0.5">
+                  <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">API Key</span>
+                  <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-80 leading-normal">
+                    Cloud provider authentication
+                  </p>
+                </div>
+                <input
+                  type="password"
+                  placeholder="sk-... (coming in v0.8.3+)"
+                  disabled
+                  className="w-full px-3 py-2 rounded-lg bg-[rgb(var(--foreground))]/[0.05] border border-[rgba(var(--border),0.08)] text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 disabled:opacity-50 focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all"
                 />
               </div>
 
-              {/* LLM Context Limit */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Memory Context Tokens</span>
-                  <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.llm.ctx_size}</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="512" max="8192" step="512"
-                  value={draftSettings.llm.ctx_size}
-                  onChange={(e) => updateDraft("llm", "ctx_size", Number(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-
-              {/* Execution Threads */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Processor Threads</span>
-                  <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.llm.threads}</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="1" max="16" step="1"
-                  value={draftSettings.llm.threads}
-                  onChange={(e) => updateDraft("llm", "threads", Number(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-
-              <div className="h-px bg-[rgba(var(--border),0.05)] my-2" />
+              <div className="h-px bg-[rgba(var(--border),0.05)]" />
 
               {/* Transliteration Enabled/Disabled Toggle */}
               <div className="flex items-center justify-between p-3.5 rounded-xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)]">
@@ -879,7 +1017,7 @@ export const ModelSettings: React.FC = () => {
           </div>
 
           {/* Prompts Section with Switcher and Balanced Height Textarea */}
-          <div className="premium-card p-4 sm:p-6 lg:p-8 flex flex-col gap-4 lg:flex-1 lg:min-h-0">
+          <div className="premium-card p-4 sm:p-6 lg:p-4 flex flex-col gap-4 lg:flex-1 lg:min-h-0">
             
             <div className="flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
@@ -919,9 +1057,6 @@ export const ModelSettings: React.FC = () => {
 
             <div className="flex-1 min-h-0 flex flex-col space-y-3">
               <div className="flex justify-between items-center shrink-0">
-                <span className="text-[13px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-wider opacity-90">
-                  {promptTab === "en" ? "English Instructions" : "Hindi Instructions"}
-                </span>
               </div>
               
               <div className="flex-1 min-h-[200px] lg:min-h-[160px] relative h-[250px] lg:h-auto">

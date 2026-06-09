@@ -1,6 +1,6 @@
 [package]
 name = "Vox"
-version = "0.7.9"
+version = "0.8.2"
 description = "Vox - A modern desktop voice inference engine built for edge devices."
 authors = ["addy-47"]
 edition = "2021"
@@ -43,13 +43,14 @@ thread-priority = "1.1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Phase 4 — LLM runtime (llama.cpp Rust bindings, compiles llama.cpp from source, CPU-only)
-llama-cpp-2 = "0.1.146"
-llama-cpp-sys-2 = "0.1.146"
+llama-cpp-4 = "0.2.61"
+llama-cpp-sys-4 = "0.2.61"
 
 encoding_rs = "0.8.35"
 regex = "1.12.3"
-ort = { version = "2.0.0-rc.9", features = ["download-binaries", "ndarray"] }
+ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"] }
 ndarray = "0.17.2"
+parakeet-rs = "0.3.6"
 # Phase 7 — Packaging and runtime hardening
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
@@ -75,10 +76,10 @@ gtk = { version = "0.18", features = ["v3_24"] }
 cairo-rs = "0.18"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
-sherpa-onnx = { version = "1.12.39" }
+sherpa-onnx = { version = "1.13.2", default-features = false, features = ["static"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-sherpa-onnx = { version = "1.12.39", default-features = false, features = ["shared"] }
+sherpa-onnx = { version = "1.13.2", default-features = false, features = ["shared"] }
 
 [dev-dependencies]
 # Helpers for integration tests

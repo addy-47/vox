@@ -185,7 +185,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'stt',
             label: 'Voice Understanding (ASR)',
-            subLabel: 'Qwen-ASR / Int8 Quant',
+            subLabel: 'Nemotron-3.5 ASR / Int8 Quant',
             icon: <Database />,
             required: true,
             groups: manifest.model_groups.filter(g => g.category === 'stt')
@@ -209,7 +209,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'tts',
             label: 'Speech Synthesis (TTS)',
-            subLabel: 'Kokoro + Piper Multi-Voice',
+            subLabel: 'Supertonic 3 Multilingual',
             icon: <VolumeIcon />,
             required: false,
             groups: manifest.model_groups.filter(g => g.category === 'tts')
@@ -312,10 +312,10 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     if (allFiles.length === 0) return null;
 
                     const groupProgress = allFiles.reduce((acc, m) => acc + (progress[m.id]?.progress || 0), 0) / allFiles.length;
-                    const isDone = allFiles.every(m => progress[m.id]?.step === 'Verified');
+                    const isDone = allFiles.every(m => progress[m.id]?.step === 'completed');
                     const activeStep = allFiles
                         .map(m => progress[m.id])
-                        .find(p => p && p.step !== 'Verified')?.step || (isDone ? 'Ready' : 'Queued');
+                        .find(p => p && p.step !== 'completed')?.step || (isDone ? 'Ready' : 'Queued');
 
                     return (
                         <div key={cat.id} className="p-4 bg-white/[0.02] border border-white/5 rounded-xl">

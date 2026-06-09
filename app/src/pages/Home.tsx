@@ -6,6 +6,7 @@ import { cn } from "@/shared/lib/utils";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 
 type InteractionState = "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Interrupted";
 type InteractionMode = "PASSIVE" | "PTT";
@@ -18,6 +19,7 @@ export const Home: React.FC = () => {
   const [transcript, setTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
   const [isSleeping, setIsSleeping] = useState(false);
+  const [cpuWarning, setCpuWarning] = useState<{governor: string; advice: string} | null>(null);
   const telemetryRef = useTelemetry();
 
   const isUserSpeaking = interactionState === "UserSpeaking" || pttStatus === 'RECORDING';
@@ -121,6 +123,13 @@ export const Home: React.FC = () => {
           setIsSleeping(event.payload);
         }));
 
+        // CPU Governor Warning (Linux only)
+        unlisteners.push(await listen<{governor: string; optimal: boolean; advice: string}>("cpu_governor_warning", (event) => {
+          if (!event.payload.optimal) {
+            setCpuWarning({ governor: event.payload.governor, advice: event.payload.advice });
+          }
+        }));
+
         // Phase 5: Show window only after listeners are ready
         setTimeout(async () => {
           await invoke("show_main_window");
@@ -141,6 +150,25 @@ export const Home: React.FC = () => {
     <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-all duration-400 ease-in-out">
       {/* ===== CENTRAL HUD AREA ===== */}
       <div className="flex-1 flex flex-col relative overflow-visible">
+
+        {/* CPU Governor Warning Banner */}
+        {cpuWarning && (
+          <div className="mx-6 mt-3 px-4 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
+            <div className="flex items-center gap-2.5">
+              <span className="text-amber-400 text-[13px] font-bold shrink-0">⚠</span>
+              <span className="text-[12px] text-amber-300/90 leading-snug">
+                CPU governor is <span className="font-bold text-amber-200">{cpuWarning.governor}</span> — this may slow voice responses significantly.
+                <br />
+                <span className="opacity-70">{cpuWarning.advice}</span>
+              </span>
+            </div>
+            <button
+              onClick={() => setCpuWarning(null)}
+              className="text-amber-400/60 hover:text-amber-300 text-[15px] font-bold shrink-0 px-1 transition-colors"
+              title="Dismiss"
+            >✕</button>
+          </div>
+        )}
 
         {/* Status Area */}
         <div className="p-6 md:p-12 pb-0 flex flex-col items-center gap-4 shrink-0">

@@ -10,8 +10,10 @@ pub trait VadEngine {
 }
 
 /// Speech-to-Text engine contract.
-pub trait SttEngine {
+pub trait SttEngine: Send + Sync {
     fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String>;
+    fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String>;
+    fn reset_state(&self) -> anyhow::Result<()>;
 }
 
 /// Large Language Model engine contract.
@@ -36,4 +38,9 @@ pub trait TtsEngine {
         cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
         event_tx: std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
     ) -> anyhow::Result<()>;
+
+    /// Hot-update the number of quality steps (diffusion steps). Default no-op.
+    fn set_quality_steps(&mut self, _steps: u32) {}
+    /// Hot-update the speed factor. Default no-op.
+    fn set_speed(&mut self, _speed: f32) {}
 }
