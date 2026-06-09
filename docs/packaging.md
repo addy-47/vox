@@ -146,10 +146,10 @@ Includes:
 
 * ONNX Runtime
 * llama.cpp
-* TTS engine (Kokoro + espeak-ng-data)
+* TTS engine (Supertonic 3 — sherpa-onnx native, no external phonemizer deps)
 
 > [!IMPORTANT]
-> **TTS Asset Bundling**: Kokoro TTS requires `espeak-ng-data` for phonemization. These assets MUST be bundled in the application's resource directory (`app/src-tauri/assets/`).
+> **TTS Architecture**: Supertonic 3 uses sherpa-onnx native C++ with built-in phonemization. No external espeak-ng or language-specific assets need bundling.
 
 > [!IMPORTANT]
 > **Linux Build Requirement**: To avoid `std::bad_alloc` crashes in `llama.cpp` caused by `libstdc++` bugs, Linux builds MUST link against LLVM's `libc++`.

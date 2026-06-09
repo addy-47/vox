@@ -139,16 +139,83 @@ let config = OfflineRecognizerConfig {
 
 ## 6. Language Model (LLM)
 
-### Selected Model: **Gemma 4 E2B-it (GGUF, Q4_K_M)**
+### Primary Model: **Llama-3.2-1B-Instruct (GGUF, Q6_K)**
+
+
 
 ```rust
+
 let model_params = LlamaModelParams::default()
+
     .with_n_gpu_layers(0); // CPU-only
 
+
+
 let context_params = LlamaContextParams::default()
+
     .with_n_ctx(2048)
+
     .with_n_threads(n_threads);
+
 ```
+
+
+
+### Why Llama-3.2-1B?
+
+
+
+| Metric | Value | Why Important |
+
+|--------|-------|---------------|
+
+| Memory | ~970 MB | Lowest memory among viable models |
+
+| Context | 2048 tokens | Sufficient for single-turn interactions |
+
+| Stability | 100% (5/5 benchmark) | No crashes, no timeouts |
+
+| Semantic Quality | Excellent (Fluent Hindi) | Correctly generates Devanagari Hindi |
+
+
+
+### Alternative: Gemma 4 E2B-it (Q4_K_M, ~3.46 GB)
+
+- Higher memory but more powerful reasoning
+
+- Suitable for 16GB+ systems
+
+- Context window: 4096 tokens
+
+
+
+### Prompt Format (Llama 3.2 Instruct)
+
+
+
+```text
+
+<|begin_of_text|>
+
+<|start_header_id|>system<|end_header_id|>
+
+{system_prompt}<|eot_id|>
+
+<|start_header_id|>user<|end_header_id|>
+
+{user_text}<|eot_id|>
+
+<|start_header_id|>assistant<|end_header_id|>
+
+```
+
+
+
+Emotion tags `<laugh>`, `<breath>`, `<sigh>` are appended to the system prompt
+
+and processed by the TTS engine (Supertonic 3).
+
+
 
 ### Why Gemma 4?
 
@@ -236,27 +303,20 @@ Supertonic 3 is the sole TTS engine — a single unified 99M-parameter flow-matc
 
 **Goal**: Natural, complete utterances — not choppy word fragments.
 
-Flush to TTS on sentence/clause boundaries that produce coherent speech:
+Flush to TTS on sentence/clause boundaries, with word-boundary safety to prevent mid-word splits.
 
-```rust
-fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128) -> bool {
-    // Hard boundaries (immediate flush — always correct sentence unit)
-    if matches!(last_char, '.' | '!' | '?') { return true; }
+**Current algorithm (pipeline.rs):**
+1. **Hard boundaries** — `.!?` → flush immediately (always correct sentence unit)
+2. **Soft boundaries** — `,;—` → flush immediately (clause-level, still natural)
+3. **Time-based flush** — ≥ 1500ms AND ≥ 3 tokens AND word boundary → flush (TPS-adaptive word counts, word-boundary safe)
+4. **Word-count fallback** — ≥ 8 words AND word boundary → flush (TPS-adaptive: 4-12 words)
+5. **Word-boundary safety** — Steps 3+4 both require `ends_at_word_boundary()` which checks
 
-    // Soft boundaries (clause-level — still natural)
-    if matches!(last_char, ',' | ';') { return true; }
-    if buf.ends_with(" — ") || buf.ends_with(" - ") { return true; }
+   the last character is whitespace or punctuation (`.!?,;:\)\]—–।`). Prevents mid-word
 
-    // Time-based gateway: ONLY if we have enough words for natural speech
-    // 800ms/1-word caused 1-2 word utterances = robotic audio
-    if word_count >= 3 && elapsed_ms > 1500 { return true; }
+   BPE subword splits across flush boundaries.
 
-    // Word count fallback: minimum viable sentence for TTS
-    word_count >= 8
-}
-```
-
-**Never flush on 1–2 words** unless a hard sentence boundary is present.
+6. **Never flush on 1–2 words** unless a hard sentence boundary is present.
 Short TTS chunks produce robotic, staccato audio that destroys the conversational UX.
 
 Target: **Time-to-First-Audio that sounds natural** — not the shortest possible TTFA.
@@ -305,7 +365,7 @@ Total Active Budget: ~3.0GB (on 8GB Baseline)
 ├── VAD:        < 0.01GB (Earshot VAD)
 ├── STT:        ~1.25GB (Nvidia Nemotron-3.5)
 ├── LLM:        ~1.00GB (Llama 3.2 1B Instruct)
-├── TTS:        ~0.25GB (Kokoro + Piper)
+├── TTS:        ~0.02GB (Supertonic 3 INT8, ~21 MB actual))
 ├── Audio Buffers: ~0.10GB (Pre-allocated ring buffers)
 └── Safety Margin: ~1.90GB (Safety headroom to prevent OS swap)
 ```

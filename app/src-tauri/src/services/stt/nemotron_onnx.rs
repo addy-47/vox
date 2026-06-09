@@ -28,11 +28,38 @@ impl traits::SttEngine for SttEngine {
 
         let start = std::time::Instant::now();
         let mut model_lock = self.model.lock().unwrap();
-        
-        // Reset state, transcribe, and reset again to maintain stateless behavior for direct offline calls.
-        model_lock.reset();
-        let text = model_lock.transcribe_chunk(audio)
-            .map_err(|e| anyhow!("Nemotron transcription failed: {:?}", e))?;
+
+        // Nemotron uses a streaming ASR model that expects 8960-sample (560ms) chunks.
+        // The internal state persists across transcribe_chunk() calls and must not be
+        // reset() until all chunks are processed.
+        const STRIDE_SAMPLES: usize = 8960;
+        let mut full_text = String::new();
+        let mut offset = 0usize;
+
+        while offset + STRIDE_SAMPLES <= audio.len() {
+            let chunk = &audio[offset..offset + STRIDE_SAMPLES];
+            let text = model_lock.transcribe_chunk(chunk)
+                .map_err(|e| anyhow!("Nemotron transcription failed at offset {}: {:?}", offset, e))?;
+            if !text.trim().is_empty() {
+                full_text.push_str(&text);
+            }
+            offset += STRIDE_SAMPLES;
+        }
+
+        // Handle the final partial chunk by padding with zeros
+        let remaining = audio.len() - offset;
+        if remaining > 0 {
+            let mut pad = Vec::with_capacity(STRIDE_SAMPLES);
+            pad.extend_from_slice(&audio[offset..]);
+            pad.resize(STRIDE_SAMPLES, 0.0);
+            let text = model_lock.transcribe_chunk(&pad)
+                .map_err(|e| anyhow!("Nemotron final partial chunk failed: {:?}", e))?;
+            if !text.trim().is_empty() {
+                full_text.push_str(&text);
+            }
+        }
+
+        // Reset streaming state for the next utterance
         model_lock.reset();
 
         let elapsed = start.elapsed().as_secs_f32();
@@ -41,10 +68,10 @@ impl traits::SttEngine for SttEngine {
 
         log::info!(
             "[STT-Nemotron] Transcribed (Offline): {:?}. (Audio: {:.2}s, Latency: {:.2}s, RTF: {:.3})",
-            text, audio_duration, elapsed, rtf
+            full_text, audio_duration, elapsed, rtf
         );
 
-        Ok(text)
+        Ok(full_text)
     }
 
     fn transcribe_chunk(&self, chunk: &[f32], _is_final: bool) -> Result<String> {
