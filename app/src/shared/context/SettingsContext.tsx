@@ -10,6 +10,7 @@ export interface ModelMetadata {
   description: string;
   ram_usage: string;
   parameters: string;
+  tradeoffs?: string;
 }
 
 export interface VoiceProfile {

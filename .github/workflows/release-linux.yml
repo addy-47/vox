@@ -133,6 +133,8 @@ jobs:
           cp scripts/release/add-apt-repo.sh gh-pages-repo/
           cp scripts/release/detect-os.sh gh-pages-repo/
           cp scripts/release/verify-installation.sh gh-pages-repo/
+          # Export public GPG key from the imported private key for APT repo verification
+          gpg --batch --yes --output public.gpg --armor --export
           cp public.gpg gh-pages-repo/
           
           # 4. Copy App Manifest
