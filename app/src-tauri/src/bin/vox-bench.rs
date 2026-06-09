@@ -9,7 +9,7 @@ use vox_lib::core::metrics::{MetricField, PipelineMetrics};
 use vox_lib::core::state::InteractionOwner;
 use vox_lib::services::llm::llama_cpp::LlmWorker;
 use vox_lib::services::traits::{LlmEngine as _, VadEngine as _};
-use vox_lib::services::utils::{count_words, should_flush, transliterate_if_hi};
+use vox_lib::services::utils::{count_words, is_devanagari, should_flush, transliterate_if_hi};
 use vox_lib::services::vad::ten_onnx::VadEngine;
 use vox_lib::utils::bench_reporter::BenchReporter;
 
@@ -38,6 +38,10 @@ struct Args {
     /// STT engine to use: qwen (default) or nemotron
     #[arg(short, long, default_value = "qwen")]
     asr: String,
+
+    /// Prefix for output run directory (e.g. 'q6' → outputs/q6_run_20260609_...)
+    #[arg(short, long)]
+    output: Option<String>,
 }
 
 enum BenchCommand {
@@ -49,8 +53,22 @@ enum BenchCommand {
 }
 
 fn main() -> anyhow::Result<()> {
+    // CPU governor check: abort if not 'performance' (results would be misleading)
+    #[cfg(target_os = "linux")]
+    if let Some(governor) = vox_lib::utils::check_cpu_governor() {
+        if governor != "performance" {
+            eprintln!(
+                "\x1b[31m[FATAL]\x1b[0m CPU governor is '{}', not 'performance'.\n\
+                 Running benchmarks with a non-performance governor produces misleading results.\n\
+                 Switch to performance governor:\n\
+                 \x1b[33m  echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor\x1b[0m",
+                governor
+            );
+            std::process::exit(1);
+        }
+    }
     let args = Args::parse();
-    let reporter = BenchReporter::new();
+    let reporter = BenchReporter::new_with_prefix(args.output.as_deref());
     let metrics = Arc::new(std::sync::Mutex::new(PipelineMetrics::new()));
 
     // 1. Setup paths & Hardware init simulation
@@ -68,9 +86,10 @@ fn main() -> anyhow::Result<()> {
     let (tts_tx, tts_rx) = channel::<BenchCommand>();
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
+    // Default prompt for KV cache warmup (English — no text to detect language from yet)
     let system_prompt = args
         .prompt
-        .unwrap_or_else(|| vox_lib::core::constants::SYSTEM_PROMPT_HI.to_string());
+        .unwrap_or_else(|| vox_lib::core::constants::SYSTEM_PROMPT_EN.to_string());
 
     // 3. Load Models Sequentially (to avoid ONNX environment conflicts and improve memory tracking)
     println!("\x1b[32m[Bench]\x1b[0m Loading STT ({})...", args.asr);
@@ -105,9 +124,20 @@ fn main() -> anyhow::Result<()> {
         .clone()
         .unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q6_K.gguf".to_string());
     println!("\x1b[32m[Bench]\x1b[0m Loading LLM ({})...", llm_filename);
+    // Compute LLM threads: N-2 (reserve cores for system + other pipeline stages), min 2
+    let total_cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let llm_threads = (total_cores.saturating_sub(2)).min(4).max(2) as u32;
+    println!(
+        "\x1b[32m[Bench]\x1b[0m System cores: {}, LLM threads: {}",
+        total_cores, llm_threads
+    );
     let llm_path = vox_lib::utils::paths::model_dir("llm").join(&llm_filename);
     let snap_3 = BenchReporter::get_memory_snapshot();
-    let llm_engine = Box::new(LlmWorker::new(&llm_path, 2048, 4).expect("Failed to load LLM"));
+    let llm_engine = Box::new(
+        LlmWorker::new(&llm_path, 2048, llm_threads).expect("Failed to load LLM"),
+    );
     let snap_4 = BenchReporter::get_memory_snapshot();
     let llm_mem_mb = snap_4.rss_mb.saturating_sub(snap_3.rss_mb);
     metrics.lock().unwrap().llm_mem_mb = llm_mem_mb;
@@ -384,7 +414,20 @@ fn main() -> anyhow::Result<()> {
                     m_lock.mark(MetricField::LlmStart);
                     m_lock.input_len_chars = text.len();
                     println!("\x1b[34m[STT]\x1b[0m Final: \"{}\"", text);
-                    llm_tx.send(BenchCommand::Llm(text, system_prompt.clone()))?;
+
+                    // Language detection: route to Hindi or English prompt (mirrors real pipeline)
+                    let base_prompt = if is_devanagari(&text) {
+                        vox_lib::core::constants::SYSTEM_PROMPT_HI.to_string()
+                    } else {
+                        vox_lib::core::constants::SYSTEM_PROMPT_EN.to_string()
+                    };
+                    // Inject expression tag instructions (Supertonic supports <laugh>, <breath>, <sigh>)
+                    let prompt = format!(
+                        "{} You may use <laugh>, <breath>, <sigh> tags for expressive speech.",
+                        base_prompt
+                    );
+
+                    llm_tx.send(BenchCommand::Llm(text, prompt))?;
                     first_token_time = None;
                     tokens_generated = 0;
                 }
