@@ -7,8 +7,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  NO_STRIP: "true"
-  APPIMAGE_EXTRACT_AND_RUN: "1"
 
 jobs:
   release-linux:
@@ -68,10 +66,9 @@ jobs:
           CMAKE_CXX_COMPILER: clang++
           CXXFLAGS: "-stdlib=libc++"
           LDFLAGS: "-lc++"
-          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           cd app
-          pnpm tauri build
+          pnpm tauri build --bundles deb
 
       - name: Extract Versions and Build Info
         id: build_info
@@ -83,12 +80,9 @@ jobs:
           
           # Find target release assets case-insensitively (supporting both 'Vox' and 'vox')
           DEB_PATH=$(find app/src-tauri/target/release/bundle/deb/ -iname "vox_*_amd64.deb" | head -n 1)
-          APPIMAGE_PATH=$(find app/src-tauri/target/release/bundle/appimage/ -iname "vox_*_amd64.AppImage" | head -n 1)
           
           echo "DEB_PATH=$DEB_PATH" >> $GITHUB_ENV
-          echo "APPIMAGE_PATH=$APPIMAGE_PATH" >> $GITHUB_ENV
           echo "DEB_NAME=$(basename $DEB_PATH)" >> $GITHUB_ENV
-          echo "APPIMAGE_NAME=$(basename $APPIMAGE_PATH)" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         id: create_release
@@ -97,7 +91,6 @@ jobs:
         with:
           files: |
             ${{ env.DEB_PATH }}
-            ${{ env.APPIMAGE_PATH }}
           draft: false
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
