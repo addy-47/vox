@@ -32,12 +32,27 @@ pub enum InteractionMode {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct ModelMetadata {
     pub id: String,
     pub name: String,
     pub description: String,
     pub ram_usage: String,
     pub parameters: String,
+    pub tradeoffs: String,
+}
+
+impl Default for ModelMetadata {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            description: String::new(),
+            ram_usage: String::new(),
+            parameters: String::new(),
+            tradeoffs: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -111,13 +126,23 @@ pub fn get_llm_metadata() -> Vec<ModelMetadata> {
             description: "Fast and smart core for general conversation and tasks.".to_string(),
             ram_usage: " ~1.4GB".to_string(),
             parameters: "2.4B (Q4_K_M)".to_string(),
+            tradeoffs: "Agentic capabilities (function calling, tool use). Higher quality but slower TPS than Llama Q4. ~1.4GB RAM.".to_string(),
+        },
+        ModelMetadata {
+            id: "llama_3_2_reasoning_q4".to_string(),
+            name: "Llama 3.2 1B (Q4)".to_string(),
+            description: "Fast, concise — optimized for low-latency responses.".to_string(),
+            ram_usage: " ~750MB".to_string(),
+            parameters: "1.2B (Q4_K_M)".to_string(),
+            tradeoffs: "More concise, faster responses (~4.5 TPS). Slightly lower output quality than Q6. ~750MB RAM.".to_string(),
         },
         ModelMetadata {
             id: "llama_3_2_reasoning".to_string(),
-            name: "Llama 3.2 1B".to_string(),
-            description: "Highly optimized low-latency instruction-following agent.".to_string(),
+            name: "Llama 3.2 1B (Q6)".to_string(),
+            description: "Detailed, higher quality — maximises output fidelity.".to_string(),
             ram_usage: " ~1.0GB".to_string(),
             parameters: "1.2B (Q6_K)".to_string(),
+            tradeoffs: "More elaborate, higher-quality responses. Slower TPS (~3.3). Higher RAM. ~1.0GB RAM.".to_string(),
         },
         ModelMetadata {
             id: "gemma_4_uncensored".to_string(),
@@ -125,6 +150,7 @@ pub fn get_llm_metadata() -> Vec<ModelMetadata> {
             description: "Unrestricted high-speed agent with ultra-quantized weights.".to_string(),
             ram_usage: " ~2.9GB".to_string(),
             parameters: "2.4B (Q2_K_P)".to_string(),
+            tradeoffs: "Unrestricted output. Heavily quantized — may lose coherence on complex tasks. ~2.9GB RAM.".to_string(),
         },
     ]
 }
@@ -137,6 +163,7 @@ pub fn get_asr_metadata() -> Vec<ModelMetadata> {
             description: "Multi-lingual speech recognition.".to_string(),
             ram_usage: " ~800MB".to_string(),
             parameters: "Sherpa-ONNX".to_string(),
+            tradeoffs: "Good multilingual ASR. Requires ~800MB. Standard ONNX engine.".to_string(),
         },
         ModelMetadata {
             id: "nvidia_nemotron".to_string(),
@@ -144,6 +171,7 @@ pub fn get_asr_metadata() -> Vec<ModelMetadata> {
             description: "Streaming Automatic Speech Recognition (parakeet-rs).".to_string(),
             ram_usage: " ~2.5GB".to_string(),
             parameters: "0.6B".to_string(),
+            tradeoffs: "Higher accuracy streaming ASR. Larger model — requires ~2.5GB RAM. Better for noisy environments.".to_string(),
         },
     ]
 }
@@ -155,6 +183,7 @@ pub fn get_tts_metadata() -> Vec<ModelMetadata> {
         description: "Multilingual TTS with 31 languages, flow-matching architecture.".to_string(),
         ram_usage: " ~400MB".to_string(),
         parameters: "99M".to_string(),
+        tradeoffs: "31 languages, 10 voices. INT8 quantized — fast inference. ~400MB RAM.".to_string(),
     }]
 }
 
@@ -328,7 +357,7 @@ pub struct LlmSettings {
 impl Default for LlmSettings {
     fn default() -> Self {
         Self {
-            model: "llama_3_2_reasoning".to_string(),
+            model: "llama_3_2_reasoning_q4".to_string(),
             ctx_size: 2048,
             threads: 4,
         }

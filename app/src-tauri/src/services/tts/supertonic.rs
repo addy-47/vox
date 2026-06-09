@@ -173,6 +173,7 @@ impl traits::TtsEngine for TtsEngine {
             sid,
             num_steps: self.quality_steps as i32,
             speed: self.speed,
+            silence_scale: 0.1,
             extra: Some(extra),
             ..Default::default()
         };

@@ -122,7 +122,7 @@ fn main() -> anyhow::Result<()> {
     let llm_filename = args
         .llm
         .clone()
-        .unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q6_K.gguf".to_string());
+        .unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string());
     println!("\x1b[32m[Bench]\x1b[0m Loading LLM ({})...", llm_filename);
     // Compute LLM threads: N-2 (reserve cores for system + other pipeline stages), min 2
     let total_cores = std::thread::available_parallelism()
@@ -158,7 +158,7 @@ fn main() -> anyhow::Result<()> {
     println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Supertonic 3)...");
     let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
     let tts_engine: Box<dyn vox_lib::services::traits::TtsEngine + Send> = Box::new(
-        vox_lib::services::tts::supertonic::TtsEngine::new(&super_tts_path, 8, 1.05)
+        vox_lib::services::tts::supertonic::TtsEngine::new(&super_tts_path, 12, 1.05)
             .expect("Failed to load TTS"),
     );
     let snap_6 = BenchReporter::get_memory_snapshot();
