@@ -7,6 +7,8 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  NO_STRIP: "true"
+  APPIMAGE_EXTRACT_AND_RUN: "1"
 
 jobs:
   release-linux:
