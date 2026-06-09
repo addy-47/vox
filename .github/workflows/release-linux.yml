@@ -7,8 +7,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  NO_STRIP: "true"
-  APPIMAGE_EXTRACT_AND_RUN: "1"
 
 jobs:
   release-linux:
@@ -46,8 +44,7 @@ jobs:
             clang \
             dpkg-dev \
             apt-utils \
-            libasound2-dev \
-            libfuse2t64
+            libasound2-dev
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -61,6 +58,13 @@ jobs:
           cd app
           pnpm install
 
+      - name: Pre-download upstream linuxdeploy
+        run: |
+          mkdir -p ~/.cache/tauri
+          wget -q -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+
       - name: Build Tauri Application Bundle
         id: tauri_build
         uses: tauri-apps/tauri-action@v0
@@ -72,8 +76,7 @@ jobs:
           CMAKE_CXX_COMPILER: clang++
           CXXFLAGS: "-stdlib=libc++"
           LDFLAGS: "-lc++"
-          NO_STRIP: "true"
-          APPIMAGE_EXTRACT_AND_RUN: "1"
+          TAURI_BUNDLER_NEW_APPIMAGE_FORMAT: "1"
         with:
           projectPath: ./app
 
