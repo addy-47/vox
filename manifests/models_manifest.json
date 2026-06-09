@@ -1,10 +1,10 @@
 {
-  "models_version": "1.0.1",
+  "models_version": "1.1.0",
   "release_notes": [
-    "Initial stable release of Vox speech and reasoning weights.",
-    "Integrated Qwen3-ASR model and Kokoro TTS English synthesis."
+    "Portable, single-instance TTS engine with 31 languages and flow-matching architecture.",
+    "Supertonic 3 replaces Kokoro (EN) + Piper (HI) as the sole TTS engine."
   ],
-  "total_size_bytes": 9056399547,
+  "total_size_bytes": 9398491074,
   "model_groups": [
     {
       "id": "ten_vad",
@@ -58,6 +58,42 @@
       ]
     },
     {
+      "id": "nvidia_nemotron",
+      "name": "Nemotron-3.5 ASR Engine",
+      "category": "stt",
+      "version": "1.0.0",
+      "files": [
+        {
+          "id": "stt_nemotron_config",
+          "path": "stt/nvidia-nemotron-3.5/config.json",
+          "size": 602,
+          "sha256": "0592a224f30670e00f5e0f1f106f0171428b0abde0fd4cbc64237b02c2241502",
+          "required": true
+        },
+        {
+          "id": "stt_nemotron_decoder_joint",
+          "path": "stt/nvidia-nemotron-3.5/decoder_joint.onnx",
+          "size": 97590054,
+          "sha256": "634dfadf24cb4f73c2fae170b36611d68db48186426882cbc8f7e02ed9f2bb29",
+          "required": true
+        },
+        {
+          "id": "stt_nemotron_encoder",
+          "path": "stt/nvidia-nemotron-3.5/encoder.onnx",
+          "size": 657572215,
+          "sha256": "e653d494a4855ee87f6251e8a9677416a73edf6f36578841316fa2b77a53cda7",
+          "required": true
+        },
+        {
+          "id": "stt_nemotron_tokenizer",
+          "path": "stt/nvidia-nemotron-3.5/tokenizer.model",
+          "size": 406554,
+          "sha256": "ce3895e40806f02a26c3a225161b96ef682d6c0054bae32a245dec4258d7d291",
+          "required": true
+        }
+      ]
+    },
+    {
       "id": "qwen3_asr",
       "name": "Qwen3 ASR Engine",
       "category": "stt",
@@ -68,42 +104,42 @@
           "path": "stt/qwen3-asr/conv_frontend.onnx",
           "size": 44148281,
           "sha256": "1f38b879b0871c9f689b092ad4fa85c68ef473c585dcf53d50a029fe8a0ab0cb",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_encoder",
           "path": "stt/qwen3-asr/encoder.int8.onnx",
           "size": 182491662,
           "sha256": "ae0cf814d9cd5249b98a1aa9199511d0c0a0c5c8b3059532637fa3cb4785c60c",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_decoder",
           "path": "stt/qwen3-asr/decoder.int8.onnx",
           "size": 755913551,
           "sha256": "768f0cc54a804e5b9724133910071995ce03ecd1a4d5be8e5e766b022623dc8d",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_vocab",
           "path": "stt/qwen3-asr/tokenizer/vocab.json",
           "size": 2776833,
           "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_merges",
           "path": "stt/qwen3-asr/tokenizer/merges.txt",
           "size": 1671853,
           "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
-          "required": true
+          "required": false
         },
         {
           "id": "stt_config",
           "path": "stt/qwen3-asr/tokenizer/tokenizer_config.json",
           "size": 12487,
           "sha256": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c",
-          "required": true
+          "required": false
         }
       ]
     },
@@ -123,8 +159,23 @@
       ]
     },
     {
+      "id": "llama_3_2_reasoning_q4",
+      "name": "Llama-3.2 Reasoning LLM (Q4)",
+      "category": "llm",
+      "version": "1.0.0",
+      "files": [
+        {
+          "id": "llm_llama_3_2_1b_instruct_q4_k_m",
+          "path": "llm/llama/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+          "size": 807694464,
+          "sha256": "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83",
+          "required": false
+        }
+      ]
+    },
+    {
       "id": "llama_3_2_reasoning",
-      "name": "Llama-3.2 Reasoning LLM",
+      "name": "Llama-3.2 Reasoning LLM (Q6)",
       "category": "llm",
       "version": "1.0.0",
       "files": [
@@ -153,96 +204,58 @@
       ]
     },
     {
-      "id": "kokoro_english_tts",
-      "name": "Kokoro English TTS Engine",
+      "id": "supertonic_tts",
+      "name": "Supertonic 3 TTS Engine",
       "category": "tts",
-      "version": "1.0.0",
+      "version": "3.0.0",
       "files": [
         {
-          "id": "tts_kokoro_onnx",
-          "path": "tts/kokoro/model.onnx",
-          "size": 345555491,
-          "sha256": "10ff414106a038ce7e9e0126c6461e4dc8a86efaa89dc91d2009d69fe635e339",
+          "id": "tts_supertonic_duration_predictor",
+          "path": "tts/supertonic-3/duration_predictor.int8.onnx",
+          "size": 3700147,
+          "sha256": "c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db",
           "required": false
         },
         {
-          "id": "tts_kokoro_voices",
-          "path": "tts/kokoro/voices.bin",
-          "size": 5755904,
-          "sha256": "a372c67b056ef0b695c375d39b99630d23fb07ad4c8d87aa32a19a62fca523ad",
+          "id": "tts_supertonic_text_encoder",
+          "path": "tts/supertonic-3/text_encoder.int8.onnx",
+          "size": 36416150,
+          "sha256": "c7befd5ea8c3119769e8a6c1486c4edc6a3bc8365c67621c881bbb774b9902ff",
           "required": false
         },
         {
-          "id": "tts_kokoro_tokens",
-          "path": "tts/kokoro/tokens.txt",
-          "size": 1078,
-          "sha256": "4f31c71282d14af4e926cd12462078fe9d20d00c589e63fe2750a8f56d6d7f7b",
+          "id": "tts_supertonic_vector_estimator",
+          "path": "tts/supertonic-3/vector_estimator.int8.onnx",
+          "size": 78400833,
+          "sha256": "20cd86fa5c6effedfda0e7cffe5b0569ca401c440a0c3a1d72bf39286c0db3fd",
           "required": false
         },
         {
-          "id": "tts_kokoro_espeak_ng_data",
-          "path": "tts/kokoro/espeak-ng-data.tar.gz",
-          "size": 8990857,
-          "sha256": "7ddfb7247e98108baeab2a3f9c79c29247e58ae7d60d837b32e28999f555bf8d",
-          "archive": "tar.gz",
-          "required": false
-        }
-      ]
-    },
-    {
-      "id": "piper_hindi_tts",
-      "name": "Piper Hindi TTS Engine",
-      "category": "tts",
-      "version": "1.0.0",
-      "files": [
-        {
-          "id": "tts_hi_pratham_onnx",
-          "path": "tts/piper_hi/hi_IN-pratham-medium.onnx",
-          "size": 63516050,
-          "sha256": "169964b0871667f6793416d4b35e97357a68ba1ad01df8580c28048989ee7693",
+          "id": "tts_supertonic_vocoder",
+          "path": "tts/supertonic-3/vocoder.int8.onnx",
+          "size": 25991073,
+          "sha256": "e923d60f53f95eb1ce235f1dc33ec56d9c057823c96fa6f8acf98f32b0da6152",
           "required": false
         },
         {
-          "id": "tts_hi_pratham_config",
-          "path": "tts/piper_hi/hi_IN-pratham-medium.onnx.json",
-          "size": 4970,
-          "sha256": "b68edd2cd7950dd436314013b7cd12e9699e5a3f6fe5af5af94294cf6aa7b9fd",
+          "id": "tts_supertonic_config",
+          "path": "tts/supertonic-3/tts.json",
+          "size": 8253,
+          "sha256": "42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09",
           "required": false
         },
         {
-          "id": "tts_hi_priyamvada_onnx",
-          "path": "tts/piper_hi/hi_IN-priyamvada-medium.onnx",
-          "size": 63145178,
-          "sha256": "8871f3e07adb6ca490f8dbcd3956a8647c53c35b5d0a1c2a8d097b3bf721a31b",
+          "id": "tts_supertonic_indexer",
+          "path": "tts/supertonic-3/unicode_indexer.bin",
+          "size": 262144,
+          "sha256": "8402ca48e5189a8950138580b0fff64db6f072f24ac07cd54ba8b2fbb9883b30",
           "required": false
         },
         {
-          "id": "tts_hi_priyamvada_config",
-          "path": "tts/piper_hi/hi_IN-priyamvada-medium.onnx.json",
-          "size": 4973,
-          "sha256": "5efc0ccf7529f3528996d46e0fac1f969f681d44a8e55bfa6236ff8841b5d52d",
-          "required": false
-        },
-        {
-          "id": "tts_hi_rohan_onnx",
-          "path": "tts/piper_hi/hi_IN-rohan-medium.onnx",
-          "size": 62950044,
-          "sha256": "b65dc80fb34d9dcd1cf684cb297966a34983bbc93bb1696fe207f32b0b33a091",
-          "required": false
-        },
-        {
-          "id": "tts_hi_rohan_config",
-          "path": "tts/piper_hi/hi_IN-rohan-medium.onnx.json",
-          "size": 5041,
-          "sha256": "07b9ae19bd0bac7fbbc99f7ee69c91245eb5470e926632c31fc0c50ba653c817",
-          "required": false
-        },
-        {
-          "id": "tts_piper_hi_espeak_ng_data",
-          "path": "tts/piper_hi/espeak-ng-data.tar.gz",
-          "size": 8990869,
-          "sha256": "5d26294483bff947820b8ebf55fde437622c7c542eb104649e29626ab1763524",
-          "archive": "tar.gz",
+          "id": "tts_supertonic_voice_bin",
+          "path": "tts/supertonic-3/voice.bin",
+          "size": 517168,
+          "sha256": "67d5209b0ee8ce6c74105ffbe12fe6a7628aea3b4ba2fcb308a4a67938a93ce8",
           "required": false
         }
       ]

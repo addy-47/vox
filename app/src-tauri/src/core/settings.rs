@@ -1,7 +1,7 @@
+use crate::utils::paths;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use anyhow::Result;
-use crate::utils::paths;
 
 // ─── Shared Enums ─────────────────────────────────────────────────────────────
 
@@ -32,58 +32,80 @@ pub enum InteractionMode {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct ModelMetadata {
     pub id: String,
     pub name: String,
     pub description: String,
     pub ram_usage: String,
     pub parameters: String,
+    pub tradeoffs: String,
+}
+
+impl Default for ModelMetadata {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            description: String::new(),
+            ram_usage: String::new(),
+            parameters: String::new(),
+            tradeoffs: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VoiceProfile {
     pub id: i32,
     pub name: String,
-    pub language: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model_file: Option<String>,
 }
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
-    let mut voices = vec![
-        VoiceProfile { id: 0, name: "Bella".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 1, name: "Sarah".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 2, name: "Sky".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 3, name: "Adam".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 4, name: "Michael".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 5, name: "Eric".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 6, name: "Emma".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 7, name: "Isabella".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 8, name: "Jessica".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 9, name: "Nicole".to_string(), language: "en".into(), model_file: None },
-        VoiceProfile { id: 10, name: "William".to_string(), language: "en".into(), model_file: None },
-    ];
-
-    voices.push(VoiceProfile { 
-        id: 100, 
-        name: "Priyamvada".to_string(), 
-        language: "hi".into(), 
-        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.into()) 
-    });
-    voices.push(VoiceProfile { 
-        id: 101, 
-        name: "Pratham".to_string(), 
-        language: "hi".into(), 
-        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_PRATHAM.into()) 
-    });
-    voices.push(VoiceProfile { 
-        id: 102, 
-        name: "Rohan".to_string(), 
-        language: "hi".into(), 
-        model_file: Some(crate::core::constants::MODEL_FILE_TTS_HI_ROHAN.into()) 
-    });
-
-    voices
+    vec![
+        // Male voices (M1-M5)
+        VoiceProfile {
+            id: 0,
+            name: "James".to_string(),
+        },
+        VoiceProfile {
+            id: 1,
+            name: "David".to_string(),
+        },
+        VoiceProfile {
+            id: 2,
+            name: "Alex".to_string(),
+        },
+        VoiceProfile {
+            id: 3,
+            name: "Ryan".to_string(),
+        },
+        VoiceProfile {
+            id: 4,
+            name: "Ethan".to_string(),
+        },
+        // Female voices (F1-F5)
+        VoiceProfile {
+            id: 5,
+            name: "Sophia".to_string(),
+        },
+        VoiceProfile {
+            id: 6,
+            name: "Olivia".to_string(),
+        },
+        VoiceProfile {
+            id: 7,
+            name: "Emma".to_string(),
+        },
+        VoiceProfile {
+            id: 8,
+            name: "Ava".to_string(),
+        },
+        VoiceProfile {
+            id: 9,
+            name: "Mia".to_string(),
+        },
+    ]
 }
 
 pub fn get_preset_colors() -> Vec<String> {
@@ -104,13 +126,23 @@ pub fn get_llm_metadata() -> Vec<ModelMetadata> {
             description: "Fast and smart core for general conversation and tasks.".to_string(),
             ram_usage: " ~1.4GB".to_string(),
             parameters: "2.4B (Q4_K_M)".to_string(),
+            tradeoffs: "Agentic capabilities (function calling, tool use). Higher quality but slower TPS than Llama Q4. ~1.4GB RAM.".to_string(),
+        },
+        ModelMetadata {
+            id: "llama_3_2_reasoning_q4".to_string(),
+            name: "Llama 3.2 1B (Q4)".to_string(),
+            description: "Fast, concise — optimized for low-latency responses.".to_string(),
+            ram_usage: " ~750MB".to_string(),
+            parameters: "1.2B (Q4_K_M)".to_string(),
+            tradeoffs: "More concise, faster responses (~4.5 TPS). Slightly lower output quality than Q6. ~750MB RAM.".to_string(),
         },
         ModelMetadata {
             id: "llama_3_2_reasoning".to_string(),
-            name: "Llama 3.2 1B".to_string(),
-            description: "Highly optimized low-latency instruction-following agent.".to_string(),
+            name: "Llama 3.2 1B (Q6)".to_string(),
+            description: "Detailed, higher quality — maximises output fidelity.".to_string(),
             ram_usage: " ~1.0GB".to_string(),
             parameters: "1.2B (Q6_K)".to_string(),
+            tradeoffs: "More elaborate, higher-quality responses. Slower TPS (~3.3). Higher RAM. ~1.0GB RAM.".to_string(),
         },
         ModelMetadata {
             id: "gemma_4_uncensored".to_string(),
@@ -118,7 +150,8 @@ pub fn get_llm_metadata() -> Vec<ModelMetadata> {
             description: "Unrestricted high-speed agent with ultra-quantized weights.".to_string(),
             ram_usage: " ~2.9GB".to_string(),
             parameters: "2.4B (Q2_K_P)".to_string(),
-        }
+            tradeoffs: "Unrestricted output. Heavily quantized — may lose coherence on complex tasks. ~2.9GB RAM.".to_string(),
+        },
     ]
 }
 
@@ -130,27 +163,28 @@ pub fn get_asr_metadata() -> Vec<ModelMetadata> {
             description: "Multi-lingual speech recognition.".to_string(),
             ram_usage: " ~800MB".to_string(),
             parameters: "Sherpa-ONNX".to_string(),
-        }
+            tradeoffs: "Good multilingual ASR. Requires ~800MB. Standard ONNX engine.".to_string(),
+        },
+        ModelMetadata {
+            id: "nvidia_nemotron".to_string(),
+            name: "Nemotron-3.5 ASR".to_string(),
+            description: "Streaming Automatic Speech Recognition (parakeet-rs).".to_string(),
+            ram_usage: " ~2.5GB".to_string(),
+            parameters: "0.6B".to_string(),
+            tradeoffs: "Higher accuracy streaming ASR. Larger model — requires ~2.5GB RAM. Better for noisy environments.".to_string(),
+        },
     ]
 }
 
 pub fn get_tts_metadata() -> Vec<ModelMetadata> {
-    vec![
-        ModelMetadata {
-            id: "kokoro_english_tts".to_string(),
-            name: "Kokoro".to_string(),
-            description: "High-quality voice output with multiple profiles.".to_string(),
-            ram_usage: " ~150MB".to_string(),
-            parameters: "82M".to_string(),
-        },
-        ModelMetadata {
-            id: "piper_hindi_tts".to_string(),
-            name: "Piper Hindi".to_string(),
-            description: "Natural Hindi speech optimized for low power devices.".to_string(),
-            ram_usage: " ~100MB".to_string(),
-            parameters: "VITS (Medium)".to_string(),
-        }
-    ]
+    vec![ModelMetadata {
+        id: "supertonic_tts".to_string(),
+        name: "Supertonic 3".to_string(),
+        description: "Multilingual TTS with 31 languages, flow-matching architecture.".to_string(),
+        ram_usage: " ~400MB".to_string(),
+        parameters: "99M".to_string(),
+        tradeoffs: "31 languages, 10 voices. INT8 quantized — fast inference. ~400MB RAM.".to_string(),
+    }]
 }
 
 // ─── Reload Policy ────────────────────────────────────────────────────────────
@@ -172,9 +206,9 @@ pub enum SettingReloadPolicy {
 impl SettingReloadPolicy {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Hot           => "hot",
+            Self::Hot => "hot",
             Self::WorkerCommand => "worker_command",
-            Self::Restart       => "restart",
+            Self::Restart => "restart",
         }
     }
 }
@@ -186,53 +220,52 @@ impl SettingReloadPolicy {
 pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
     match (domain, key) {
         // UI — all hot: theme and accent change instantly
-        ("ui", _)                        => SettingReloadPolicy::Hot,
+        ("ui", _) => SettingReloadPolicy::Hot,
 
         // VAD — threshold and noise gate update via VadCommand channel
-        ("vad", "threshold")             => SettingReloadPolicy::WorkerCommand,
-        ("vad", "ptt_noise_gate")        => SettingReloadPolicy::WorkerCommand,
+        ("vad", "threshold") => SettingReloadPolicy::WorkerCommand,
+        ("vad", "ptt_noise_gate") => SettingReloadPolicy::WorkerCommand,
         // VAD backend switch requires full engine restart (different constructor path)
-        ("vad", "vad_backend")           => SettingReloadPolicy::Restart,
+        ("vad", "vad_backend") => SettingReloadPolicy::Restart,
 
         // Audio output mode — update VAD mic ducking snapshot
-        ("audio", "output_mode")         => SettingReloadPolicy::WorkerCommand,
-        ("audio", "input_device")        => SettingReloadPolicy::Restart,
+        ("audio", "output_mode") => SettingReloadPolicy::WorkerCommand,
+        ("audio", "input_device") => SettingReloadPolicy::Restart,
 
         // ASR — model change requires full pipeline restart
-        ("asr", "model")                 => SettingReloadPolicy::Restart,
+        ("asr", "model") => SettingReloadPolicy::Restart,
         ("asr", "transliterate_enabled") => SettingReloadPolicy::Hot,
 
         // LLM — most require restart (model is loaded once)
-        ("llm", "model")                 => SettingReloadPolicy::Restart,
-        ("llm", "ctx_size")              => SettingReloadPolicy::Restart,
-        ("llm", "threads")               => SettingReloadPolicy::Restart,
+        ("llm", "model") => SettingReloadPolicy::Restart,
+        ("llm", "ctx_size") => SettingReloadPolicy::Restart,
+        ("llm", "threads") => SettingReloadPolicy::Restart,
 
-        // TTS — model and voice changes require restart
-        ("tts", "en_model")              => SettingReloadPolicy::Restart,
-        ("tts", "en_voice")              => SettingReloadPolicy::Restart,
-        ("tts", "hi_model")              => SettingReloadPolicy::Restart,
-        ("tts", "hi_voice")              => SettingReloadPolicy::Restart,
+        // TTS — voice change requires engine restart; quality/speed are hot-updated
+        ("tts", "voice") => SettingReloadPolicy::Restart,
+        ("tts", "quality_steps") => SettingReloadPolicy::WorkerCommand,
+        ("tts", "speed") => SettingReloadPolicy::WorkerCommand,
 
         // Interaction — sent as mode-changed event immediately
         ("interaction", "auto_sleep_timeout") => SettingReloadPolicy::Hot,
-        ("interaction", _)               => SettingReloadPolicy::Hot,
+        ("interaction", _) => SettingReloadPolicy::Hot,
 
         // Telemetry toggle — hot
-        ("telemetry", "enabled")         => SettingReloadPolicy::Hot,
+        ("telemetry", "enabled") => SettingReloadPolicy::Hot,
         // Log level — requires subscriber restart
-        ("telemetry", "log_level")       => SettingReloadPolicy::Restart,
+        ("telemetry", "log_level") => SettingReloadPolicy::Restart,
 
         // Persistence — enabled flag requires restart; limits are hot
-        ("persistence", "enabled")       => SettingReloadPolicy::Restart,
-        ("persistence", "private_mode")  => SettingReloadPolicy::Hot,
-        ("persistence", "max_sessions")  => SettingReloadPolicy::Hot,
+        ("persistence", "enabled") => SettingReloadPolicy::Restart,
+        ("persistence", "private_mode") => SettingReloadPolicy::Hot,
+        ("persistence", "max_sessions") => SettingReloadPolicy::Hot,
         ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
         // Assistant — system prompt is sent to LLM worker via channel
-        ("assistant", "system_prompt")   => SettingReloadPolicy::WorkerCommand,
+        ("assistant", "system_prompt") => SettingReloadPolicy::WorkerCommand,
 
         // Unknown — conservative default
-        _                                => SettingReloadPolicy::Restart,
+        _ => SettingReloadPolicy::Restart,
     }
 }
 
@@ -291,7 +324,7 @@ pub struct VadSettings {
 impl Default for VadSettings {
     fn default() -> Self {
         Self {
-            threshold: 0.5,        // Earshot recommends 0.5 as general default, TenVAD also optimized to 0.5
+            threshold: 0.5, // Earshot recommends 0.5 as general default, TenVAD also optimized to 0.5
             ptt_noise_gate: 0.005,
             vad_backend: VadBackendOption::Earshot,
         }
@@ -301,14 +334,14 @@ impl Default for VadSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AsrSettings {
-    pub model: String, // e.g., "qwen3_asr"
+    pub model: String, // e.g., "nvidia_nemotron"
     pub transliterate_enabled: bool,
 }
 
 impl Default for AsrSettings {
     fn default() -> Self {
         Self {
-            model: "qwen3_asr".to_string(),
+            model: "nvidia_nemotron".to_string(),
             transliterate_enabled: true,
         }
     }
@@ -324,7 +357,7 @@ pub struct LlmSettings {
 impl Default for LlmSettings {
     fn default() -> Self {
         Self {
-            model: "llama_3_2_reasoning".to_string(),
+            model: "llama_3_2_reasoning_q4".to_string(),
             ctx_size: 2048,
             threads: 4,
         }
@@ -332,20 +365,19 @@ impl Default for LlmSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TtsSettings {
-    pub en_model: String, // e.g., "kokoro_english_tts"
-    pub en_voice: i32,    // Kokoro voice index (0-10)
-    pub hi_model: String, // e.g., "piper_hindi_tts"
-    pub hi_voice: String, // Specific Piper .onnx filename
+    pub voice: i32,         // Supertonic voice index (0-9)
+    pub quality_steps: u32, // Supertonic total_steps (2-12, default 8)
+    pub speed: f32,         // Supertonic speed factor (0.7-2.0, default 1.05)
 }
 
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
-            en_model: "kokoro_english_tts".to_string(),
-            en_voice: 0, // Bella
-            hi_model: "piper_hindi_tts".to_string(),
-            hi_voice: crate::core::constants::MODEL_FILE_TTS_HI_PRIYAMVADA.to_string(),
+            voice: 0,
+            quality_steps: 12,
+            speed: 1.05,
         }
     }
 }
@@ -413,9 +445,7 @@ pub struct SetupSettings {
 
 impl Default for SetupSettings {
     fn default() -> Self {
-        Self {
-            completed: false,
-        }
+        Self { completed: false }
     }
 }
 
@@ -445,17 +475,17 @@ impl Default for AssistantSettings {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct VoxSettings {
-    pub ui:          UiSettings,
-    pub audio:       AudioSettings,
-    pub vad:         VadSettings,
-    pub asr:         AsrSettings,
-    pub llm:         LlmSettings,
-    pub tts:         TtsSettings,
+    pub ui: UiSettings,
+    pub audio: AudioSettings,
+    pub vad: VadSettings,
+    pub asr: AsrSettings,
+    pub llm: LlmSettings,
+    pub tts: TtsSettings,
     pub interaction: InteractionSettings,
-    pub telemetry:   TelemetrySettings,
+    pub telemetry: TelemetrySettings,
     pub persistence: PersistenceSettings,
-    pub assistant:   AssistantSettings,
-    pub setup:       SetupSettings,
+    pub assistant: AssistantSettings,
+    pub setup: SetupSettings,
 }
 
 impl VoxSettings {
@@ -477,7 +507,12 @@ impl VoxSettings {
 
             // 2. Try Phase 6.0 flat migration
             if let Ok(legacy) = serde_json::from_str::<serde_json::Value>(&content) {
-                if legacy.is_object() && !legacy.as_object().map(|o| o.contains_key("ui")).unwrap_or(false) {
+                if legacy.is_object()
+                    && !legacy
+                        .as_object()
+                        .map(|o| o.contains_key("ui"))
+                        .unwrap_or(false)
+                {
                     log::warn!("[Settings] Phase 6.0 legacy config detected. Migrating...");
                     return Self::migrate_from_v6_0(legacy);
                 }
@@ -485,7 +520,10 @@ impl VoxSettings {
 
             // 3. Corruption recovery: rename to .bak, return defaults
             let bak = path.with_extension("json.bak");
-            log::error!("[Settings] Corrupt settings.json — backing up to {:?} and restoring defaults", bak);
+            log::error!(
+                "[Settings] Corrupt settings.json — backing up to {:?} and restoring defaults",
+                bak
+            );
             let _ = fs::rename(&path, &bak);
         }
 
@@ -497,14 +535,14 @@ impl VoxSettings {
 
     pub fn save(&self) -> Result<()> {
         let path = paths::get().settings.clone();
-        
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
 
         let content = serde_json::to_string_pretty(self)?;
-        
+
         // Atomic write strategy:
         // 1. Write to a .tmp file
         // 2. Atomically rename to .json

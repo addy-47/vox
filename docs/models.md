@@ -2,14 +2,24 @@
 
 ---
 
-## 1. Overview
+## 1. Overview & Default Stack
 
-Vox is a **model-agnostic, role-based system**, constrained by:
+Vox is a **model-agnostic, role-based system** with a selection strategy that is **hardware-constrained and user-dependent**. 
 
-* **8GB RAM baseline** (2026 hardware)
-* **CPU-only execution** (no GPU acceleration)
-* **Accuracy-first output** — correct transcription and coherent responses are non-negotiable
-* **Native C++ inference** (ONNX Runtime + llama.cpp)
+* **Hardware constraints**: While the baseline target is **8GB RAM systems** running on CPU, users with higher-end hardware (e.g. 16GB+ RAM) can select larger and more powerful reasoning backbones.
+* **Accuracy-first output**: Coherent, correct transcription and response generation are non-negotiable.
+* **Native C++ inference**: ONNX Runtime + llama.cpp.
+
+### Default Model Set at a Glance
+
+| Pipeline Stage | Model / Engine | ID | Footprint | Key Config / Parameter |
+| :--- | :--- | :--- | :---: | :--- |
+| **VAD** | Earshot VAD | `earshot` | < 1 MB | Threshold: `0.5`, sample rate `16000` |
+| **STT** (Primary) | **Nvidia Nemotron-3.5** | `nvidia_nemotron` | ~1,265 MB | INT8 Quantized, FastConformer-RNNT (`parakeet-rs`) |
+| **STT** (Fallback) | Qwen3-ASR-0.6B | `qwen3_asr` | ~800 MB | INT8 Quantized (`sherpa-onnx`) |
+| **LLM** (Default) | Llama 3.2 1B Instruct | `llama_3_2_reasoning` | ~1.0 GB | GGUF Q6_K, context size `2048`, threads `N-2` |
+| **LLM** (Alternative) | Gemma 4 E2B-it | `gemma_4_reasoning` | ~2.2 GB | GGUF Q4_K_M |
+| **TTS** (Sole) | **Supertonic 3** | `supertonic_tts` | ~144 MB | INT8 Quantized, sherpa-onnx native, 31 languages, 10 voices |
 
 ---
 
@@ -30,11 +40,11 @@ Each role has **strict memory + latency constraints** and is **replaceable** wit
 
 ### Native-First Execution
 
-**ALL inference runs in C++**, never Python:
+**ALL inference runs in C++ or Rust**, never Python:
 
 ```rust
-// ONNX Runtime (C++)
-use sherpa_onnx::{OfflineRecognizer, VadModelConfig};
+// parakeet-rs / ONNX Runtime (C++)
+use parakeet_rs::Nemotron;
 
 // llama.cpp (C++)
 use llama_cpp_2::{model::LlamaModel, context::LlamaContext};
@@ -48,94 +58,63 @@ use llama_cpp_2::{model::LlamaModel, context::LlamaContext};
 
 * **Accuracy is non-negotiable**: A wrong or truncated answer is a system failure, not a tradeoff.
 * **Speed is a result**: The system should be as fast as it can be *while* being accurate.
-* Every component is tuned to maximize output quality within resource constraints — not to minimize milliseconds at the cost of correctness.
+* Every component is tuned to maximize output quality within resource constraints.
 
-**What this rules out:**
-- `max_new_tokens` values too small to fully decode real speech (causes truncation)
-- TTS chunk sizes so small they produce robotic 1–2 word utterances
-- Any config where the sherpa-onnx truncation warning is accepted as normal
+### Memory & Hardware-Dependent Scaling
 
-### Memory-Constrained Design
-
-**Total budget: ~5.5GB usable** (of 8GB system RAM)
-
-```text
-OS + UI overhead: ~2.5GB
-Available for models: ~5.5GB
-Safety margin: 1.35GB (prevents OS swap)
-```
-
-**Hard rules:**
-- No model >3B parameters (unless heavily quantized)
-- FP16/FP32 inference forbidden
-- INT8/INT4 quantization only
-- CPU threads: N-2 (reserve for audio + VAD)
+* **Baseline budget: ~5.5GB usable** (of 8GB system RAM)
+  ```text
+  OS + UI overhead: ~2.5GB
+  Available for models: ~5.5GB
+  Safety margin: 1.35GB (prevents OS swap)
+  ```
+* **Higher-End Systems**: If a system has 16GB+ RAM, the model constraints lift, permitting the choice of larger LLMs (like Gemma 4 E4B-it) and higher-fidelity voices.
 
 ---
 
 ## 4. Voice Activity Detection (VAD)
 
-### Selected Model: **TenVAD (ONNX)**
+### Default Model: **Earshot (Rust-native, energy-based)**
+Vox uses **Earshot VAD** as its primary voice activity detector. It features sub-millisecond voice detection, zero ONNX overhead (no model file required — embedded neural weights), and executes entirely in native Rust.
+
+- Threshold: 0.5 (configurable)
+- Latency: ~1ms per 256-sample frame
+- ~20x faster than TenVAD
+
+### Legacy Option: **TenVAD (ONNX via sherpa-onnx)**
 
 ```rust
 let config = VadModelConfig {
     ten_vad: TenVadModelConfig {
         model: Some("ten_vad.onnx"),
-        threshold: 0.45,  // Configurable
+        threshold: 0.50,  // Configurable
         min_silence_duration: 0.5,
         min_speech_duration: 0.25,
     },
     sample_rate: 16000,
-    num_threads: 1,  // Single-threaded for consistency
+    num_threads: 1,
 };
 ```
 
-### Why TenVAD?
-
-| Metric | Value | Why Important |
-|--------|-------|---------------|
-| Memory | ~306KB | Minimal RAM footprint |
-| RTF | ~0.015 | Near-zero latency |
-| End Delay | ~0ms | Critical for real-time UX |
-| Accuracy | High | Robust speech detection |
-
-### Behavior Implementation
-
-```rust
-// Speech detection logic
-if detected && !in_speech {
-    in_speech = true;
-    // Emit SpeechStart event immediately
-    pipeline_tx.send(VoxEvent::SpeechStart { turn_id, owner });
-}
-
-// Silence detection
-if !detected && in_speech {
-    in_speech = false;
-    // Send final audio buffer to STT
-    stt_tx.send(SttCommand::Final(turn_id, owner, buffer));
-}
-```
-
-### Why NOT Silero VAD?
-
-* Introduces 300-500ms delay
-* Breaks real-time interaction loop
-* Higher memory usage (~2MB)
+- Threshold: 0.45 (configurable)
+- Latency: ~15ms per frame
+- Requires `ten_vad.onnx` model file
 
 ---
-
----
-
-## 4.1 Future VAD Roadmap (To Be Integrated)
-
-### **Earshot**
-* **Role**: Ultra-low latency acoustic event detection and streaming ASR.
-* **Status**: Researching integration for multi-turn context awareness.
 
 ## 5. Speech-to-Text (STT)
 
-### Selected Model: **Qwen3-ASR-0.6B (INT8 ONNX)**
+### Default Primary Engine: **Nvidia Nemotron-3.5 (INT8 quantized, parakeet-rs)**
+
+Nemotron-3.5 runs via `parakeet-rs`, integrating an INT8 quantized FastConformer-RNNT model for state-of-the-art Hindi/Hinglish speech decoding on CPU with an RTF of ~0.50.
+
+```rust
+// Load the FastConformer-RNNT model structure
+let model = Nemotron::from_pretrained(&model_dir, None)
+    .map_err(|e| anyhow!("Failed to load Nemotron: {:?}", e))?;
+```
+
+### Fallback Option: **Qwen3-ASR-0.6B (INT8 ONNX, sherpa-onnx)**
 
 ```rust
 let config = OfflineRecognizerConfig {
@@ -147,92 +126,104 @@ let config = OfflineRecognizerConfig {
         max_total_len: 2048,
         max_new_tokens: 512,
     },
-    num_threads: 2,  // Balanced for 8GB systems
+    num_threads: 4,
 };
 ```
 
-### Why Qwen3-ASR?
+### Why Nemotron-3.5?
 
-| Metric | Value | Why Important |
-|--------|-------|---------------|
-| Memory | ~800MB | Fits within budget |
-| Accuracy | High | Native Hinglish support — the primary evaluation criterion |
-| Streaming | Yes | Enables live partial transcription in UI |
-| Latency | RTF ~2.0 on CPU | Acceptable for complete, accurate output |
-
-### Key Advantages
-
-1. **Multilingual Native**: Handles code-switching (English ↔ Hindi) without separate models
-2. **Streaming Architecture**: Encoder state caching enables real-time partial transcripts
-3. **CPU Optimized**: Designed for edge deployment
-
-### Critical Configuration (ACCURACY MANDATE)
-
-The STT engine is the most critical accuracy point. Misconfiguration here corrupts every downstream output.
-
-```rust
-let config = OfflineRecognizerConfig {
-    model_config: OfflineQwen3ASRModelConfig {
-        conv_frontend: Some("conv_frontend.onnx"),
-        encoder: Some("encoder.int8.onnx"),
-        decoder: Some("decoder.int8.onnx"),
-        tokenizer: Some("tokenizer"),
-        max_total_len: 2048,
-        // CRITICAL: Must be large enough to decode without truncation.
-        // 64 caused "Result is truncated" warnings for any utterance > ~2s.
-        // 512 handles up to ~30s of natural speech at normal speaking pace.
-        // NEVER reduce this to gain speed — truncated = garbage output.
-        max_new_tokens: 512,
-    },
-    num_threads: 4,  // Use all available perf cores for faster decode
-};
-```
-
-**The sherpa-onnx warning `"Result is truncated. max_new_tokens X is too small"` is a hard bug — not acceptable.**
+| Metric | Nvidia Nemotron-3.5 (INT8) | Qwen3-ASR (Fallback) | Why Important |
+| :--- | :---: | :---: | :--- |
+| **Real-Time Factor (RTF)** | **0.50** 🚀 | **6.25** 🐌 | Nemotron is **12.5x faster** on CPU. |
+| **Accuracy** | **State-of-the-art** | High (but loops easily) | Zero hallucination loop issues. |
+| **RAM footprint** | **~1.2 GB** | **~800 MB** | Extremely comparable RAM for vastly better quality. |
 
 ### Streaming Strategy
 
-```rust
-// Overlapping audio window for streaming partial transcripts
-// Partials are UI feedback only — final transcript is authoritative
-if samples_since_partial >= 12800 {
-    let window_start = buffer.len().saturating_sub(240000); // 15s
-    stt_tx.send(SttCommand::Partial(turn_id, owner, buffer[window_start..]));
-}
-```
-
-**Partial transcripts are for live UI feedback only.** The final transcript must be the complete, accurate decode of the full utterance.
-
-### Why NOT Whisper?
-
-| Issue | Impact |
-|-------|--------|
-| Fixed 30s window | High latency, inefficient |
-| CPU performance | 5-10x slower on same hardware |
-| Memory usage | ~1.5GB (exceeds budget) |
-
-### Why NOT Moonshine?
-
-* Limited Hinglish support
-* Less robust multilingual handling
-* Higher latency on CPU
-
-
+* **Nemotron-3.5** processes streaming audio chunks using stateful FastConformer strides (560ms / 8960 samples stride).
+* **Qwen-ASR** uses a rolling overlap window (15s).
 
 ---
 
 ## 6. Language Model (LLM)
 
-### Selected Model: **Gemma 4 E2B-it (GGUF, Q4_K_M)**
+### Primary Model: **Llama-3.2-1B-Instruct (GGUF, Q6_K)**
+
+
 
 ```rust
+
 let model_params = LlamaModelParams::default()
+
     .with_n_gpu_layers(0); // CPU-only
 
+
+
 let context_params = LlamaContextParams::default()
+
     .with_n_ctx(2048)
+
     .with_n_threads(n_threads);
+
 ```
+
+
+
+### Why Llama-3.2-1B?
+
+
+
+| Metric | Value | Why Important |
+
+|--------|-------|---------------|
+
+| Memory | ~970 MB | Lowest memory among viable models |
+
+| Context | 2048 tokens | Sufficient for single-turn interactions |
+
+| Stability | 100% (5/5 benchmark) | No crashes, no timeouts |
+
+| Semantic Quality | Excellent (Fluent Hindi) | Correctly generates Devanagari Hindi |
+
+
+
+### Alternative: Gemma 4 E2B-it (Q4_K_M, ~3.46 GB)
+
+- Higher memory but more powerful reasoning
+
+- Suitable for 16GB+ systems
+
+- Context window: 4096 tokens
+
+
+
+### Prompt Format (Llama 3.2 Instruct)
+
+
+
+```text
+
+<|begin_of_text|>
+
+<|start_header_id|>system<|end_header_id|>
+
+{system_prompt}<|eot_id|>
+
+<|start_header_id|>user<|end_header_id|>
+
+{user_text}<|eot_id|>
+
+<|start_header_id|>assistant<|end_header_id|>
+
+```
+
+
+
+Emotion tags `<laugh>`, `<breath>`, `<sigh>` are appended to the system prompt
+
+and processed by the TTS engine (Supertonic 3).
+
+
 
 ### Why Gemma 4?
 
@@ -300,76 +291,40 @@ if n_cur >= ctx_size { break; }
 
 ## 7. Text-to-Speech (TTS)
 
-### Selected Models: **Dual-Model Routing**
+### Selected Model: **Supertonic 3 (Sole Engine)**
 
-#### English: Kokoro-82M (ONNX)
-#### Hindi: Piper VITS (ONNX)
+Supertonic 3 is the sole TTS engine — a single unified 99M-parameter flow-matching model supporting **31 languages** with **10 voices** (5 male, 5 female). It uses sherpa-onnx native `OfflineTtsSupertonicModelConfig` and is INT8 quantized (~144MB).
 
-```rust
-// English TTS
-let en_config = OfflineTtsConfig {
-    model: OfflineTtsModelConfig {
-        kokoro: OfflineTtsKokoroModelConfig {
-            model: Some("kokoro/model.onnx"),
-            voices: Some("kokoro/voices.bin"),
-            tokens: Some("kokoro/tokens.txt"),
-        },
-    },
-};
-
-// Hindi TTS
-let hi_config = OfflineTtsConfig {
-    model: OfflineTtsModelConfig {
-        vits: OfflineTtsVitsModelConfig {
-            model: Some("piper/hi_IN-priyamvada-medium.onnx"),
-        },
-    },
-};
-```
-
-### Why Dual-Model?
-
-| Language | Model | Memory | Quality | Latency |
-|----------|-------|--------|---------|---------|
-| English | Kokoro | ~150MB | State-of-the-art | <200ms |
-| Hindi | Piper | ~100MB | High quality | <300ms |
-
-### Language Detection & Routing
-
-```rust
-fn is_hindi(text: &str) -> bool {
-    text.chars().any(|c| c >= '\u{0900}' && c <= '\u{097F}')
-}
-
-// Route based on Unicode ranges
-let tts_instance = if is_hindi(text) { &hi_tts } else { &en_tts };
-```
+| Feature | Detail |
+|---------|--------|
+| Architecture | Flow-matching transformer |
+| Parameters | 99M |
+| Quantization | INT8 |
+| Footprint | ~144 MB |
+| Languages | 31 (English, Hindi, and 29 more) |
+| Voices | 10 (James, David, Alex, Ryan, Ethan, Sophia, Olivia, Emma, Ava, Mia) |
+| Quality Steps | 2–12 (Speed→Quality→Best) |
+| Speed | 0.7x–2.0x |
+| Inference | sherpa-onnx native (OfflineTtsSupertonicModelConfig) |
 
 ### Chunked Synthesis (Accuracy-Quality Mandate)
 
 **Goal**: Natural, complete utterances — not choppy word fragments.
 
-Flush to TTS on sentence/clause boundaries that produce coherent speech:
+Flush to TTS on sentence/clause boundaries, with word-boundary safety to prevent mid-word splits.
 
-```rust
-fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128) -> bool {
-    // Hard boundaries (immediate flush — always correct sentence unit)
-    if matches!(last_char, '.' | '!' | '?') { return true; }
+**Current algorithm (`utils.rs` — fully dynamic, TPS-continuous):**
+1. **Hard boundaries** — `. ! ? ।` → flush immediately (always correct sentence unit)
+2. **Clause boundaries** — `, ; —` → flush if word count ≥ threshold (3–7 words, TPS-dependent; disabled above TPS 5.0)
+3. **Time-based flush** — wait time scales 1.0s–3.5s, word min scales 3–8 (both continuous functions of TPS)
+4. **Word-count fallback** — scales 5–20 words (continuous TPS interpolation)
+5. **Word-boundary safety** — Steps 3+4 both require `ends_at_word_boundary()` which checks
 
-    // Soft boundaries (clause-level — still natural)
-    if matches!(last_char, ',' | ';') { return true; }
-    if buf.ends_with(" — ") || buf.ends_with(" - ") { return true; }
+   the last character is whitespace or punctuation (`.!?,;:\)\]—–।`). Prevents mid-word
 
-    // Time-based gateway: ONLY if we have enough words for natural speech
-    // 800ms/1-word caused 1-2 word utterances = robotic audio
-    if word_count >= 3 && elapsed_ms > 1500 { return true; }
+   BPE subword splits across flush boundaries.
 
-    // Word count fallback: minimum viable sentence for TTS
-    word_count >= 8
-}
-```
-
-**Never flush on 1–2 words** unless a hard sentence boundary is present.
+6. **Never flush on 1–2 words** unless a hard sentence boundary is present.
 Short TTS chunks produce robotic, staccato audio that destroys the conversational UX.
 
 Target: **Time-to-First-Audio that sounds natural** — not the shortest possible TTFA.
@@ -396,27 +351,39 @@ Target: **Time-to-First-Audio that sounds natural** — not the shortest possibl
 
 ---
 
+## 7.2 Future Cloud & Realtime Voice API Roadmap (Planned)
+
+To complement the local-first execution stack for resource-constrained or highly interactive requirements, future phases will introduce:
+
+### **Hybrid Cloud Model Pipeline**
+* **Cloud Fallback**: Route complex queries to large frontier reasoning models via API endpoints when local hardware is under heavy thermal throttling or memory pressure.
+* **Low-Latency Streaming APIs**: Support ultra-low latency cloud STT/TTS bridges as optional alternatives.
+
+### **Direct Voice-to-Voice Realtime APIs**
+* **Native Audio Streams**: Route audio buffers directly to native voice-to-voice models (e.g., Gemini Realtime API, OpenAI Realtime API) bypassing the discrete STT → LLM → TTS chain. This minimizes intermediate processing latency and preserves emotional nuances in human voice.
+
+---
+
 ## 8. Memory Budget Allocation
 
-### Per-Component Breakdown
+### Per-Component Running Memory (Active Footprint)
 
 ```text
-Total Available: 5.5GB
-├── VAD:        0.05GB (306KB)
-├── STT:        0.80GB (Qwen3-ASR)
-├── LLM:        2.20GB (Gemma 4)
-├── TTS:        0.25GB (Kokoro + Piper)
-├── KV Cache:   0.60GB (LLM context)
-├── Audio Buffers: 0.10GB (Ring buffers)
-└── Safety Margin: 1.50GB
+Total Active Budget: ~3.0GB (on 8GB Baseline)
+├── VAD:        < 0.01GB (Earshot VAD)
+├── STT:        ~1.25GB (Nvidia Nemotron-3.5)
+├── LLM:        ~1.00GB (Llama 3.2 1B Instruct)
+├── TTS:        ~0.02GB (Supertonic 3 INT8, ~21 MB actual))
+├── Audio Buffers: ~0.10GB (Pre-allocated ring buffers)
+└── Safety Margin: ~1.90GB (Safety headroom to prevent OS swap)
 ```
 
 ### Memory Safety Rules
 
-1. **Never exceed ceiling** → prevents OS swap
-2. **Explicit cleanup** → `clear_kv_cache()` after each turn
-3. **Buffer limits** → ring buffers overflow-drop with logging
-4. **Lazy loading** → models loaded only when needed
+1. **Never exceed ceiling** → prevents OS swap.
+2. **Explicit cleanup** → `clear_kv_cache()` after each turn.
+3. **Buffer limits** → ring buffers overflow-drop with logging.
+4. **Lazy loading & Auto-sleep** → models loaded only when needed; inactive models unloaded automatically.
 
 ---
 
@@ -438,8 +405,8 @@ set_current_thread_priority(ThreadPriorityValue::from(80u8).unwrap()); // STT wo
 
 | Component | Quality Target | Current Implementation |
 |-----------|----------------|----------------------|
-| VAD | Accurate onset/offset detection | Frame-level detection |
-| STT | Complete, untruncated decode | max_new_tokens=512, 4 threads |
+| VAD | Accurate onset/offset detection | Frame-level Earshot detection |
+| STT | Complete, untruncated decode | Nemotron-3.5 FastConformer-RNNT |
 | LLM | Coherent, complete responses | Token-by-token streaming |
 | TTS | Natural, sentence-level utterances | Clause-boundary chunking |
 | **Mandate** | **Accuracy First** | **No latency target overrides accuracy** |
@@ -470,13 +437,13 @@ if pre_load || first_use {
 }
 ```
 
-### Auto-Sleep (Phase 5)
+### Auto-Sleep
 
 ```rust
 if last_interaction.elapsed() > auto_sleep_timeout {
     cool_down_llm();  // Drop LLM model
     cool_down_tts();  // Drop TTS models
-    // Save ~2.5GB RAM
+    // Save ~1.5GB RAM
 }
 ```
 
@@ -504,20 +471,21 @@ interface ModelSettings {
     // VAD
     vad_threshold: number;      // 0.0-1.0
     ptt_noise_gate: number;     // 0.0-1.0
+    vad_backend: string;        // "Earshot" | "TenVad"
 
     // STT
-    asr_model: string;          // "qwen3-asr"
+    asr_model: string;          // "nvidia_nemotron" | "qwen3_asr"
+    transliterate_enabled: boolean;
 
     // LLM
-    llm_model: string;          // "gemma4"
+    llm_model: string;          // "llama_3_2_reasoning" | "gemma_4_reasoning"
     llm_ctx_size: number;       // 1024-4096
     llm_threads: number;        // 1-N
 
-    // TTS
-    en_model: string;           // "kokoro"
-    en_voice: number;           // 0-10
-    hi_model: string;           // "piper_hi"
-    hi_voice: string;           // "hi_IN-priyamvada-medium.onnx"
+    // TTS (Supertonic 3 — sole engine)
+    voice: number;              // Supertonic voice index (0-9)
+    quality_steps: number;      // Diffusion steps (2-12, default 12)
+    speed: number;              // Speed factor (0.7-2.0, default 1.05)
 }
 ```
 
@@ -574,27 +542,25 @@ if available_memory < SAFETY_MARGIN {
 }
 ```
 
-
-
 ---
 
-## 16. Final Architecture Principles
+## 13. Final Architecture Principles
 
-### 1. Hardware-Constrained Design
+### 1. Hardware-Constrained & Scalable Design
 
-Models are bounded by **physics, not capability**. Every component is chosen to fit within:
+Models are bounded by **physics, not capability**. Running parameters scale dynamically according to system RAM capacity:
 
-- **Memory**: 8GB system constraint
-- **CPU**: Available performance cores
-- **Accuracy**: Output must be correct — this is the primary constraint
+- **Baseline**: Bounded to fit cleanly inside 8GB RAM.
+- **High performance**: Automatically allocates larger contexts and higher-fidelity parameters for 16GB+ systems.
+- **Accuracy**: Output correctness remains the absolute constraints.
 
 ### 2. Native Performance
 
-**Zero Python overhead** in inference path. All heavy computation happens in optimized C++:
+**Zero Python overhead** in inference path. All heavy computation happens in optimized C++ or native Rust:
 
-- ONNX Runtime for neural networks
-- llama.cpp for transformer models
-- Sherpa-ONNX for audio processing
+- ONNX Runtime for neural networks.
+- llama.cpp for GGUF transformer models.
+- parakeet-rs for streaming speech recognition.
 
 ### 3. Streaming-First Architecture
 
@@ -604,18 +570,8 @@ Models are bounded by **physics, not capability**. Every component is chosen to 
 - LLM tokens → TTS chunks (sentence-level, not word-level)
 - Parallel execution for natural, responsive output
 
-### 4. Resilience & Safety
+### 4. Future-Proof Modularity
 
-- **Memory-safe**: Explicit limits and monitoring
-- **Cancellation-support**: Atomic flags for clean shutdowns
-- **Graceful degradation**: Continue operation even if components fail
-
-### 5. Future-Proof Modularity
-
-Each model role is **replaceable** without affecting others. New models can be swapped in by:
-
-1. Updating model files
-2. Adjusting configuration
-3. Minimal code changes (ideally zero)
+Each model role is **replaceable** without affecting others. Local-first execution is future-proofed with hooks designed for hybrid cloud fallback models and direct voice-to-voice realtime connections.
 
 This architecture ensures Vox can evolve with ML progress while maintaining its **accuracy-first, local-first** edge deployment requirements.

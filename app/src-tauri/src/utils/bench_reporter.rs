@@ -1,7 +1,7 @@
-use std::path::PathBuf;
-use std::fs;
 use chrono::Local;
 use serde::Serialize;
+use std::fs;
+use std::path::PathBuf;
 use sysinfo::System;
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -19,15 +19,20 @@ pub struct BenchReporter {
 
 impl BenchReporter {
     pub fn new() -> Self {
+        Self::new_with_prefix(None)
+    }
+
+    pub fn new_with_prefix(prefix: Option<&str>) -> Self {
         let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
         let mut run_dir = PathBuf::from("outputs");
-        run_dir.push(format!("run_{}", timestamp));
-        
+        match prefix {
+            Some(p) => run_dir.push(format!("{}_{}_{}", p, "run", timestamp)),
+            None => run_dir.push(format!("run_{}", timestamp)),
+        }
+
         fs::create_dir_all(&run_dir).expect("Failed to create run directory");
 
-        Self {
-            run_dir,
-        }
+        Self { run_dir }
     }
 
     pub fn write_artifact(&self, filename: &str, content: &str) {
@@ -54,6 +59,6 @@ impl BenchReporter {
             MemorySnapshot::default()
         }
     }
-    
+
     // Memory peak tracking moved to background thread in vox-bench.rs
 }

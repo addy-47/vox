@@ -41,6 +41,7 @@ jobs:
             patchelf \
             libc++-dev \
             libc++abi-dev \
+            clang \
             dpkg-dev \
             apt-utils \
             libasound2-dev
@@ -52,47 +53,47 @@ jobs:
         run: |
           echo "${{ secrets.APT_GPG_PRIVATE_KEY }}" | gpg --batch --import
 
-      - name: Install Frontend Dependencies & Build UI
+      - name: Install Frontend Dependencies
         run: |
           cd app
           pnpm install
-          pnpm build
 
       - name: Build Tauri Application Bundle
+        id: tauri_build
+        uses: tauri-apps/tauri-action@v0
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CC: clang
           CXX: clang++
           CMAKE_C_COMPILER: clang
           CMAKE_CXX_COMPILER: clang++
           CXXFLAGS: "-stdlib=libc++"
           LDFLAGS: "-lc++"
-        run: |
-          cd app
-          pnpm tauri build
+        with:
+          projectPath: ./app
+          args: --bundles deb
 
       - name: Extract Versions and Build Info
         id: build_info
+        if: ${{ !contains(github.ref_name, '-') }}
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           
-          # Find target release assets case-insensitively (supporting both 'Vox' and 'vox')
+          # Find the .deb release asset
           DEB_PATH=$(find app/src-tauri/target/release/bundle/deb/ -iname "vox_*_amd64.deb" | head -n 1)
-          APPIMAGE_PATH=$(find app/src-tauri/target/release/bundle/appimage/ -iname "vox_*_amd64.AppImage" | head -n 1)
           
           echo "DEB_PATH=$DEB_PATH" >> $GITHUB_ENV
-          echo "APPIMAGE_PATH=$APPIMAGE_PATH" >> $GITHUB_ENV
           echo "DEB_NAME=$(basename $DEB_PATH)" >> $GITHUB_ENV
-          echo "APPIMAGE_NAME=$(basename $APPIMAGE_PATH)" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         id: create_release
+        if: ${{ !contains(github.ref_name, '-') }}
         uses: softprops/action-gh-release@v1
         with:
           files: |
             ${{ env.DEB_PATH }}
-            ${{ env.APPIMAGE_PATH }}
           draft: false
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -110,6 +111,7 @@ jobs:
             ```
 
       - name: Checkout gh-pages Branch
+        if: ${{ !contains(github.ref_name, '-') }}
         uses: actions/checkout@v4
         with:
           ref: gh-pages
@@ -117,6 +119,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update APT Repository & Manifests
+        if: ${{ !contains(github.ref_name, '-') }}
         env:
           APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
         run: |
@@ -133,6 +136,8 @@ jobs:
           cp scripts/release/add-apt-repo.sh gh-pages-repo/
           cp scripts/release/detect-os.sh gh-pages-repo/
           cp scripts/release/verify-installation.sh gh-pages-repo/
+          # Export public GPG key from the imported private key for APT repo verification
+          gpg --batch --yes --output public.gpg --armor --export
           cp public.gpg gh-pages-repo/
           
           # 4. Copy App Manifest
@@ -171,6 +176,7 @@ jobs:
           rm -f "$PASSPHRASE_FILE"
 
       - name: Deploy Changes to GitHub Pages
+        if: ${{ !contains(github.ref_name, '-') }}
         run: |
           cd gh-pages-repo
           git config user.name "GitHub Actions Bot"

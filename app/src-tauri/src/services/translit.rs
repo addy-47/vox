@@ -19,16 +19,16 @@ impl TransliterationEngine {
         let encoder_path = model_dir.join("encoder.onnx");
         let decoder_path = model_dir.join("decoder.onnx");
 
-        if !src_vocab_path.exists()
-            || !tgt_vocab_path.exists()
-            || !encoder_path.exists()
-            || !decoder_path.exists()
-        {
-            return Err(format!("Model files not found in {:?}", model_dir));
-        }
+    if !src_vocab_path.exists()
+        || !tgt_vocab_path.exists()
+        || !encoder_path.exists()
+        || !decoder_path.exists()
+    {
+        return Err(format!("Model files not found in {:?}", model_dir));
+    }
 
-        let src_vocab_str = std::fs::read_to_string(&src_vocab_path)
-            .map_err(|e| format!("Failed to read input_vocab.json: {}", e))?;
+    let src_vocab_str = std::fs::read_to_string(&src_vocab_path)
+        .map_err(|e| format!("Failed to read input_vocab.json: {}", e))?;
         let src_vocab: HashMap<String, i64> = serde_json::from_str(&src_vocab_str)
             .map_err(|e| format!("Failed to parse input_vocab.json: {}", e))?;
 

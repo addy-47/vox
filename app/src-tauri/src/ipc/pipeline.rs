@@ -243,11 +243,12 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     app.emit(crate::core::constants::EVENT_MODEL_LOADING, "VAD")
         .ok();
 
-    let (stt_model_path, vad_model_path_opt, vad_backend_opt, pre_load, input_device) = {
-        let (vad_backend, tray_enabled, input_device) = {
+    let (stt_model_path, stt_engine_type, vad_model_path_opt, vad_backend_opt, pre_load, input_device) = {
+        let (vad_backend, asr_model, tray_enabled, input_device) = {
             let settings = state.settings.read().unwrap();
             (
                 settings.vad.vad_backend.clone(),
+                settings.asr.model.clone(),
                 settings.ui.tray_enabled,
                 settings.audio.input_device.clone(),
             )
@@ -255,7 +256,14 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let models_dir = paths::get().models.clone();
         let manifest_lock = state.manifest.read().await;
 
-        let stt = models_dir.join(crate::core::constants::MODEL_DIR_STT);
+        let stt = match asr_model.as_str() {
+            "nvidia_nemotron" => models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON),
+            "qwen3_asr" => models_dir.join(crate::core::constants::MODEL_DIR_STT),
+            _ => {
+                log::error!("[Pipeline] Unknown ASR model '{}', defaulting to nvidia_nemotron", asr_model);
+                models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON)
+            }
+        };
 
         // Only resolve the VAD model path for TenVAD — earshot has no external model file.
         let vad_path = if vad_backend == crate::core::settings::VadBackendOption::TenVad {
@@ -288,7 +296,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             None
         };
 
-        (stt, vad_path, vad_backend, tray_enabled, input_device)
+        (stt, asr_model, vad_path, vad_backend, tray_enabled, input_device)
     };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
@@ -301,6 +309,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         app.clone(),
         stt_rx_internal,
         stt_model_path,
+        stt_engine_type,
         Some(vox_event_tx.clone()),
         state.pipeline.cancel_flag.clone(),
         state.is_stt_loaded.clone(),
@@ -401,66 +410,13 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let audio_stream = AudioStream::new(producer, input_device).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
-    app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS")
-        .ok();
-    let (en_tts_dir, hi_tts_path, llm_path) = {
-        let (hi_voice, llm_model) = {
+    let (super_tts_path, llm_path) = {
+        let llm_model = {
             let settings = state.settings.read().unwrap();
-            (settings.tts.hi_voice.clone(), settings.llm.model.clone())
+            settings.llm.model.clone()
         };
         let models_dir = paths::get().models.clone();
         let manifest_lock = state.manifest.read().await;
-
-        let en_tts = if let Some(ref manifest) = *manifest_lock {
-            if let Some(group) = manifest
-                .model_groups
-                .iter()
-                .find(|g| g.id == "kokoro_english_tts")
-            {
-                if let Some(file) = group.files.first() {
-                    let path = models_dir.join(&file.path);
-                    path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| {
-                        models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
-                    })
-                } else {
-                    models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
-                }
-            } else {
-                models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
-            }
-        } else {
-            models_dir.join(crate::core::constants::MODEL_DIR_TTS_EN)
-        };
-
-        let hi_tts = if let Some(ref manifest) = *manifest_lock {
-            if let Some(group) = manifest
-                .model_groups
-                .iter()
-                .find(|g| g.id == "piper_hindi_tts")
-            {
-                if let Some(file) = group.files.first() {
-                    let path = models_dir.join(&file.path);
-                    path.parent()
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|| {
-                            models_dir.join(crate::core::constants::MODEL_DIR_TTS_HI)
-                        })
-                        .join(&hi_voice)
-                } else {
-                    models_dir
-                        .join(crate::core::constants::MODEL_DIR_TTS_HI)
-                        .join(&hi_voice)
-                }
-            } else {
-                models_dir
-                    .join(crate::core::constants::MODEL_DIR_TTS_HI)
-                    .join(&hi_voice)
-            }
-        } else {
-            models_dir
-                .join(crate::core::constants::MODEL_DIR_TTS_HI)
-                .join(&hi_voice)
-        };
 
         let llm = if let Some(ref manifest) = *manifest_lock {
             if let Some(group) = manifest.model_groups.iter().find(|g| g.id == llm_model) {
@@ -482,7 +438,10 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                 .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
         };
 
-        (en_tts, hi_tts, llm)
+        let super_tts = models_dir
+            .join(crate::core::constants::MODEL_DIR_TTS_SUPER);
+
+        (super_tts, llm)
     };
 
     let playback_energy = state.latest_playback_energy.clone();
@@ -534,8 +493,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         .spawn(move || {
             orchestrator.run_event_loop(
                 vox_event_rx,
-                en_tts_dir,
-                hi_tts_path,
+                super_tts_path,
                 playback_for_orch,
                 app_for_orch,
             );
