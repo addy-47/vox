@@ -1,5 +1,7 @@
 # Vox Roadmap
 
+> Detailed phase plans are maintained in `docs/plans/`. Each phase has a dedicated plan file with full implementation details, architectural decisions, and success criteria.
+
 ## Core Mandate
 
 > Local-first voice system.
@@ -104,23 +106,45 @@
 
 ---
 
-## v0.9.0 — Model & Provider Ecosystem
+## v0.8.3 — LLM Provider Architecture (Current — Phase 9)
 
-**Goal:** Make Vox fully model-agnostic.
+**Goal:** Refactor the LLM from a single embedded backend into a provider-based architecture.
 
-### Local Providers
+* Embeded local inference preserved
+* OpenAI-compatible remote endpoint support (Ollama, LM Studio, vLLM, etc.)
+* Streaming, cancellation, health checks, and model discovery as provider capabilities
+* Pipeline remains unchanged — only the implementation behind the provider changes
 
-* Multiple STT engines
-* Multiple LLM runtimes
-* Multiple TTS engines
-* Runtime model switching
+**Non-goals (future phases):**
+* Cloud provider integration (v0.8.5+)
+* STT/TTS provider refactor (v0.8.4/v0.8.5)
+
+---
+
+## v0.8.4 — STT Provider Architecture
+
+**Goal:** Apply the same provider architecture to STT (Embedded + Remote + Future Cloud).
+
+---
+
+## v0.8.5 — TTS Provider Architecture
+
+**Goal:** Apply the same provider architecture to TTS (Embedded + Remote + Future Cloud).
+
+---
+
+## v0.9.0 — Cloud Provider Ecosystem
+
+**Goal:** Introduce cloud provider implementations on top of the provider architecture.
 
 ### Cloud Providers
 
-* Gemini
 * OpenAI
+* Gemini
+* Anthropic
+* OpenRouter
+* Sarvam
 * ElevenLabs
-* Additional external providers
 
 ### Outcome
 

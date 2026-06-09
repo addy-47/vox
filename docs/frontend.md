@@ -35,47 +35,63 @@ Vox frontend is a **multi-surface UI system**, not a single application UI. It c
 
 ---
 
-## 3. Project Structure
+## 3. Project Structure (app/src/)
 
 ```
-frontend/
-├── src/
-│   ├── main.tsx                 # App entry point
-│   ├── App.tsx                  # Router setup
-│   ├── layout/
-│   │   ├── ResponsiveLayout.tsx # Main app layout
-│   │   ├── Sidebar.tsx          # Navigation sidebar
-│   │   ├── BottomNav.tsx        # Mobile navigation
-│   │   └── TitleBar.tsx         # Window controls
-│   ├── pages/
-│   │   ├── Home.tsx             # Orb interface page
-│   │   ├── History.tsx          # Conversation history
-│   │   ├── Settings.tsx         # Configuration page
-│   │   └── Monitoring.tsx       # System monitoring
-│   ├── tray/
-│   │   ├── TrayApp.tsx          # Overlay UI component
-│   │   └── components/
-│   │       ├── Header.tsx       # Tray header (status + controls)
-│   │       ├── TranscriptRenderer.tsx # Live transcript display
-│   │       └── Footer.tsx       # History navigation
-│   ├── shared/
-│   │   ├── components/
-│   │   │   ├── AdvancedOrb.tsx  # Central AI state orb
-│   │   │   ├── GlassCard.tsx    # Glassmorphism container
-│   │   │   ├── LiveWaveform.tsx # Audio visualization
-│   │   │   ├── PillButton.tsx   # Custom button component
-│   │   │   ├── RestartModal.tsx # Settings restart prompt
-│   │   │   └── Typography.tsx   # Text components
-│   │   ├── hooks/
-│   │   │   ├── useInteraction.ts     # Interaction session management
-│   │   │   ├── useStreamingRenderer.ts # Text streaming animation
-│   │   │   ├── useTelemetry.ts       # Telemetry data hooks
-│   │   │   ├── useVisibility.ts      # Tray visibility logic
-│   │   │   └── useSettings.ts        # Settings context hook
-│   │   ├── context/
-│   │   │   └── SettingsContext.tsx   # Settings provider
-│   │   ├── lib/
-│   │   │   └── utils.ts         # Utility functions
+app/src/
+├── main.tsx                     # App entry point
+├── App.tsx                      # Router setup
+├── layout/
+│   ├── ResponsiveLayout.tsx     # Main app layout
+│   ├── Sidebar.tsx              # Navigation sidebar
+│   ├── BottomNav.tsx            # Mobile navigation
+│   └── TitleBar.tsx             # Window controls
+├── pages/
+│   ├── Home.tsx                 # Orb interface page
+│   ├── History.tsx              # Conversation history
+│   ├── Settings.tsx             # Configuration page
+│   └── Monitoring.tsx           # System monitoring
+├── tray/
+│   ├── TrayApp.tsx              # Overlay UI component
+│   └── components/
+│       ├── Header.tsx           # Tray header (status + controls)
+│       ├── TranscriptRenderer.tsx # Live transcript display
+│       └── Footer.tsx           # History navigation
+├── wizard/
+│   ├── WizardRoot.tsx           # First-run wizard root component
+│   ├── steps/
+│   │   ├── WelcomeStep.tsx      # Welcome screen
+│   │   ├── SystemCheckStep.tsx   # Hardware/OS compatibility check
+│   │   ├── ModelSetupStep.tsx   # Model download and selection
+│   │   ├── AudioSetupStep.tsx   # Microphone/speaker test
+│   │   ├── LiveTestStep.tsx     # End-to-end voice test
+│   │   └── CompletedStep.tsx    # Setup complete confirmation
+│   └── components/
+│       ├── WizardHeader.tsx     # Wizard navigation header
+│       ├── WizardFooter.tsx     # Wizard action buttons
+│       ├── ModelCategory.tsx    # Model category selector
+│       └── StatusCard.tsx       # Status indicator card
+├── shared/
+│   ├── components/
+│   │   ├── AdvancedOrb.tsx      # Central AI state orb
+│   │   ├── GlassCard.tsx        # Glassmorphism container
+│   │   ├── LiveWaveform.tsx     # Audio visualization
+│   │   ├── PillButton.tsx       # Custom button component
+│   │   ├── RestartModal.tsx     # Settings restart prompt
+│   │   ├── Typography.tsx       # Text components
+│   │   ├── VoxLogo.tsx          # Brand logo component
+│   │   ├── CoreSettings.tsx     # Core settings panel
+│   │   ├── ModelSettings.tsx    # LLM/STT/TTS model selection
+│   │   └── TraySettings.tsx     # Tray/overlay settings panel
+│   ├── hooks/
+│   │   ├── useInteraction.ts     # Interaction session management
+│   │   ├── useStreamingRenderer.ts # Text streaming animation
+│   │   ├── useTelemetry.ts       # Telemetry data hooks
+│   │   └── useVisibility.ts      # Tray visibility logic
+│   ├── context/
+│   │   └── SettingsContext.tsx   # Settings provider
+│   └── lib/
+│       └── utils.ts              # Utility functions
 ```
 
 ---
@@ -254,13 +270,16 @@ interface VoxSettings {
   };
   audio: {
     output_mode: "Speaker" | "Headset";
+    input_device: string | null;
   };
   vad: {
     threshold: number;
     ptt_noise_gate: number;
+    vad_backend: "Earshot" | "TenVad";
   };
   asr: {
-    model: string;
+    model: string;  // "nvidia_nemotron" | "qwen3_asr"
+    transliterate_enabled: boolean;
   };
   llm: {
     model: string;
@@ -268,10 +287,9 @@ interface VoxSettings {
     threads: number;
   };
   tts: {
-    en_model: string;
-    en_voice: number;
-    hi_model: string;
-    hi_voice: string;
+    voice: number;         // Supertonic voice index (0-9)
+    quality_steps: number; // Supertonic diffusion steps (2-12)
+    speed: number;         // Speed factor (0.7-2.0)
   };
   interaction: {
     main_app_mode: "Passive" | "PTT";
@@ -290,6 +308,11 @@ interface VoxSettings {
   };
   assistant: {
     system_prompt: string;
+    hindi_prompt: string;
+    english_prompt: string;
+  };
+  setup: {
+    completed: boolean;
   };
 }
 ```
@@ -327,6 +350,7 @@ interface RuntimeSnapshot {
   tts_rtf: number;
   playback_start_ms: number;
   persistence_rate: number;
+  playback_underruns: number;
 }
 ```
 
