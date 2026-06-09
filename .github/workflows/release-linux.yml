@@ -45,7 +45,8 @@ jobs:
             libc++abi-dev \
             dpkg-dev \
             apt-utils \
-            libasound2-dev
+            libasound2-dev \
+            libfuse2t64
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -59,6 +60,14 @@ jobs:
           cd app
           pnpm install
           pnpm build
+
+      - name: Upgrade linuxdeploy for Ubuntu 24.04 compatibility
+        run: |
+          mkdir -p ~/.cache/tauri
+          wget -q -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+          dd if=/dev/zero bs=1 count=3 seek=8 conv=notrunc of=~/.cache/tauri/linuxdeploy-x86_64.AppImage 2>/dev/null || true
 
       - name: Build Tauri Application Bundle
         env:
