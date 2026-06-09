@@ -12,6 +12,7 @@ env:
 
 jobs:
   release-macos:
+    if: false
     runs-on: macos-latest
     permissions:
       contents: write
