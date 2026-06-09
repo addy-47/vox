@@ -7,7 +7,7 @@ import {
   Brain, Volume2, Database, Trash2,
   Wifi, Languages, 
   Activity, Sparkles, Shield, Check, ArrowLeft,
-  Download, RefreshCw
+  Download, RefreshCw, Info
 } from "lucide-react";
 
 interface ModelStatus {
@@ -751,6 +751,14 @@ export const ModelSettings: React.FC = () => {
                               <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 leading-normal max-w-[420px]">
                                 {model.description}
                               </p>
+                              {model.tradeoffs && (
+                                <div className="mt-1.5 flex items-start gap-1.5">
+                                  <Info size={12} className="text-[rgb(var(--foreground-muted))] mt-0.5 shrink-0" />
+                                  <p className="text-[12px] text-[rgb(var(--foreground-muted))] opacity-70 leading-relaxed">
+                                    {model.tradeoffs}
+                                  </p>
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">

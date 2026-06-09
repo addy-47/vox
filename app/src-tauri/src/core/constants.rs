@@ -24,7 +24,7 @@ pub const MODEL_FILE_ASR_DECODER: &str = "decoder.int8.onnx";
 pub const MODEL_FILE_ASR_TOKENIZER: &str = "tokenizer";
 
 // LLM Filenames (Llama 3.2 1B Instruct)
-pub const MODEL_FILE_LLM_GGUF: &str = "Llama-3.2-1B-Instruct-Q6_K.gguf";
+pub const MODEL_FILE_LLM_GGUF: &str = "Llama-3.2-1B-Instruct-Q4_K_M.gguf";
 
 // TTS Filenames (Supertonic 3)
 pub const MODEL_DIR_TTS_SUPER: &str = "tts/supertonic-3";
