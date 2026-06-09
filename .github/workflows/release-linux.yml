@@ -66,12 +66,14 @@ jobs:
           CMAKE_CXX_COMPILER: clang++
           CXXFLAGS: "-stdlib=libc++"
           LDFLAGS: "-lc++"
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           cd app
           pnpm tauri build
 
       - name: Extract Versions and Build Info
         id: build_info
+        if: ${{ !contains(github.ref_name, '-') }}
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -88,6 +90,7 @@ jobs:
 
       - name: Create GitHub Release
         id: create_release
+        if: ${{ !contains(github.ref_name, '-') }}
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -110,6 +113,7 @@ jobs:
             ```
 
       - name: Checkout gh-pages Branch
+        if: ${{ !contains(github.ref_name, '-') }}
         uses: actions/checkout@v4
         with:
           ref: gh-pages
@@ -117,6 +121,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update APT Repository & Manifests
+        if: ${{ !contains(github.ref_name, '-') }}
         env:
           APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
         run: |
@@ -173,6 +178,7 @@ jobs:
           rm -f "$PASSPHRASE_FILE"
 
       - name: Deploy Changes to GitHub Pages
+        if: ${{ !contains(github.ref_name, '-') }}
         run: |
           cd gh-pages-repo
           git config user.name "GitHub Actions Bot"
