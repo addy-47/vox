@@ -6,13 +6,22 @@
 
 ## Architecture (Non-Obvious Facts)
 
-**Vox is a Tauri 2 desktop app with a Rust core library (`vox_lib`).**
+**Vox is a Tauri 2 desktop app with a Rust core library (`vox_lib`). Current version: v0.8.2 → v0.8.3 (Phase 9 — LLM Provider Architecture).**
 
 - `app/` — Frontend workspace (React 19, Vite 7, TailwindCSS 4, TypeScript)
 - `app/src-tauri/` — Tauri backend. The lib target is `vox_lib` (not `app`). The `vox_lib` crate contains ALL core logic.
-- `app/src-tauri/src/services/` — Engine subsystems: `vad/`, `stt/`, `llm/`, `tts/`, `translit.rs`, `audio.rs`, `pipeline.rs`
+- `app/src-tauri/src/services/` — Engine subsystems: `vad/`, `stt/`, `llm/`, `tts/`, `translit.rs`, `audio.rs`, `pipeline.rs`, `ptt.rs`, `playback.rs`, `utils.rs`
+- `app/src-tauri/src/core/` — Shared core: `events.rs` (VoxEvent enum), `settings.rs` (VoxSettings), `state.rs` (InteractionState, InteractionOwner, PipelineAtomics), `constants.rs` (model paths, timing), `metrics.rs`
+- `app/src-tauri/src/ipc/` — Tauri IPC command handlers: `pipeline.rs`, `settings.rs`, `tray.rs`, `history.rs`, `audio.rs`, `monitoring.rs`, `setup.rs`
+- `app/src-tauri/src/persistence/` — SQLite session persistence (`rusqlite`)
+- `app/src-tauri/src/monitoring/` — Telemetry aggregator, system monitor, runtime snapshots
+- `app/src-tauri/src/setup/` — First-run onboarding logic
+- `app/src-tauri/src/wizard.rs` — Setup wizard window configuration + model health checks
+- `app/src-tauri/src/tray.rs` — Tray icon, overlay window management
 - `app/src-tauri/src/services/tts/` — TTS engine. `supertonic.rs` is the sole TTS engine. Uses sherpa-onnx native `OfflineTtsSupertonicModelConfig` (99M params, 31 languages, INT8 quantized ~144MB). Progress callback must capture owned Arcs/Senders (`'static`). `actor.rs` dispatches TTS commands. `mod.rs` re-exports.
 - `app/src-tauri/src/services/traits.rs` — Engine trait contracts (`VadEngine`, `SttEngine`, `LlmEngine`, `TtsEngine`). Pure sync interfaces; no thread/Tauri awareness.
+- `app/src-tauri/src/services/stt/` — Two engines: `nemotron_onnx.rs` (primary, parakeet-rs Nemotron-3.5) and `qwen_onnx.rs` (legacy, sherpa-onnx Qwen3-ASR)
+- `app/src-tauri/src/services/vad/` — Two backends: `earshot_vad.rs` (default, pure Rust) and `ten_onnx.rs` (legacy, sherpa-onnx ONNX)
 - `app/src-tauri/src/bin/` — Standalone binaries: `tts-bench.rs`, `vox-bench.rs`, `test-translit.rs`
 - `manifests/` — Model validation manifests (`app_manifest.json`, `models_manifest.json`).
 - `scripts/` — Benchmark scripts (Python) and release/packaging scripts.
@@ -30,9 +39,8 @@ Architecture and design documents that provide deep context. Read the relevant o
 
 | File | Covers |
 |------|--------|
-| `docs/vox.md` | Core project definition, system goals |
+| `docs/features/voice-flow.md` | **End-to-end voice pipeline flow** — audio capture → VAD → STT → LLM → TTS → playback, all algorithms, metrics, and event flow. THIS is the single canonical reference for the voice pipeline. |
 | `docs/backend.md` | Rust/Tauri audio pipeline, engine lifecycle, event flow |
-| `docs/voice-flow.md` | End-to-end voice pipeline flow (audio capture → VAD → STT → LLM → TTS → playback), all algorithms, metrics, and event flow |
 | `docs/frontend.md` | Dual-surface UI (main app + ephemeral overlay/tray), IPC contracts |
 | `docs/models.md` | Model stack (VAD, STT, LLM, TTS), hardware constraints, defaults |
 | `docs/design.md` | Visual design system, color tokens |
@@ -40,6 +48,19 @@ Architecture and design documents that provide deep context. Read the relevant o
 | `docs/roadmap.md` | Phased versioned roadmap |
 | `docs/decision-framework.md` | Rationale behind major architectural decisions |
 | `docs/benchmarks/` | Performance results and TTS comparison reports |
+| `docs/plans/` | Phase-based implementation plans (phase3-phase9) |
+| `docs/plan.md` | Post-stable feature ideas |
+
+**Phase Plans (in `docs/plans/`):**
+| File | Phase |
+|------|-------|
+| `phase3-tray-ux.md` | Tray/Overlay UX improvements |
+| `phase4-pipeline.md` | Pipeline architecture |
+| `phase5-realtime-ux.md` | Realtime interaction UX |
+| `phase6-persistence.md` | Persistence & telemetry |
+| `phase7-packaging-onboarding.md` | Packaging & onboarding |
+| `phase8-ci-cd.md` | CI/CD pipeline |
+| **`phase9-inference-expansion.md`** | **Current — LLM Provider Architecture (v0.8.3)** |
 
 ---
 
@@ -90,7 +111,7 @@ Output WAVs go to `docs/benchmarks/audio_outputs/`.
 - **Forgetting `--test-threads=1`** on tests that load models or use audio hardware → race conditions or OOM
 - **Running `cargo test` from repo root** — there's no root workspace. Always `cd` into `app/src-tauri`.
 - **Hardcoded absolute paths** in code — use `dirs` crate or `vox_lib::utils::paths` instead
-- **Modifying streaming/latency/VAD behavior** without reading `.agents/rules/system-architect.md` first — these are critical-path invariants
+- **Modifying streaming/latency/VAD behavior** — these are critical-path invariants. Read `docs/features/voice-flow.md` and `docs/backend.md` thoroughly first.
 - **`partial_tag_len()` UTF-8 char boundary (llama_cpp.rs):** The `partial_tag_len()` function detects incomplete emotion tags at the buffer end. It MUST iterate using `text.char_indices()` not `0..text.len()` — raw byte slicing (`&text[i..]`) panics on multi-byte UTF-8 characters (Devanagari `म` is 3 bytes). This was a crash bug introduced in v0.8.2 tag stripping rewrite; fixed by changing `for i in 0..text.len()` to `for (i, _) in text.char_indices()`.
 - **`ort::session::Session` API quirks (2.0.0-rc.12):** `Session` is at `ort::session::Session`, not `ort::Session`. Builder methods return `ort::Error<SessionBuilder>` which is `!Send` — always use `.map_err(|e| anyhow!("{:?}", e))?` instead of bare `?`. Access input/output info via `session.inputs()` / `session.outputs()` methods (not fields). `GraphOptimizationLevel` is at `ort::session::builder::GraphOptimizationLevel`.
 - **Adding new fields to settings structs:** Always add `#[serde(default)]` to the struct to avoid deserialization failures when loading old settings files missing the new field.
@@ -111,7 +132,8 @@ After completing any task, an agent should:
 1. **Update `AGENTS.md`** if the task revealed new build quirks, conventions, or pitfalls not already documented here.
 2. **Update `docs/`** if the task changed architecture, pipeline behavior, model stack, or frontend contracts. Keep the relevant doc in sync:
    - Backend/pipeline changes → `docs/backend.md`
-   - Voice pipeline/algorithm changes → `docs/voice-flow.md`
+   - Voice pipeline/algorithm changes → `docs/features/voice-flow.md`
    - Frontend/UI changes → `docs/frontend.md`
    - Model changes → `docs/models.md`
    - New architectural decisions → `docs/decision-framework.md`
+   - Phase plan progress → `docs/plans/phase9-inference-expansion.md` (current phase)

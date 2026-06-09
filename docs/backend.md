@@ -74,12 +74,31 @@ Every component must minimize:
     ├── UI IPC (Tauri Events)
     │
     ↓
+[Core Layer (Shared State & Constants)]
+    ├── events.rs (VoxEvent enum)
+    ├── settings.rs (VoxSettings struct)
+    ├── state.rs (InteractionState, PipelineAtomics)
+    ├── constants.rs (Model paths, timing)
+    └── metrics.rs (PipelineMetrics)
+    │
+    ↓
 [Services Layer (Actor-Engine Pattern)]
     ├── VAD (Actor -> Engine: Earshot / TenVAD)
     ├── STT (Actor -> Engine: Nvidia Nemotron-3.5 / Qwen3-ASR)
     ├── LLM (Actor -> Engine: llama.cpp)
-    └── TTS (Actor -> Engine: Supertonic 3)
-    └── Utils (Shared logic: transliteration, chunking)
+    ├── TTS (Actor -> Engine: Supertonic 3)
+    ├── Pipeline (Orchestrator: LLM→TTS→Playback coordination)
+    ├── Playback (CPAL output, jitter buffer, upsampling)
+    ├── PTT (Push-to-talk mode)
+    └── Utils (should_flush, transliteration, chunking, stitching)
+    │
+    ↓
+[Infrastructure Layer]
+    ├── IPC (Tauri command handlers)
+    ├── Persistence (SQLite session storage)
+    ├── Monitoring (Telemetry aggregator, system monitor)
+    ├── Setup (First-run onboarding)
+    └── Wizard (Setup wizard window + model health checks)
 
 ---
 
@@ -159,69 +178,76 @@ if pushed < resampled_buffer.len() {
 }
 ```
 
-## 5. Directory Structure (src/services)
+## 5. Directory Structure (src/)
 
+The backend is organized into domain-specific modules. Services use the **Actor-Engine pattern**:
 
-The backend services are organized into domain-specific modules using the **Actor-Engine pattern**:
-
-
-
-```text
-
-src/services/
-
-├── mod.rs          # Service registration
-
-├── traits.rs       # Engine interfaces (SttEngine, TtsEngine, etc.)
-
-├── pipeline.rs     # Main orchestrator (LLM→TTS→Playback coordination)
-
-├── utils.rs        # Shared logic (flush algorithm, Hindi detection, transliteration)
-
-├── audio.rs        # Audio capture (cpal ring buffer)
-
-├── playback.rs     # Playback engine (jitter buffer, upsampling)
-
-├── ptt.rs          # Push-to-talk mode
-
-├── translit.rs     # Transliteration (Devanagari→Roman)
-
-├── llm/
-
-│   ├── mod.rs      # Module entry
-
-│   ├── actor.rs    # Command/Event handler
-
-│   └── llama_cpp.rs # Llama.cpp engine (LLM inference)
-
-├── stt/
-
+```
+src/
+├── lib.rs            # Tauri app entry, plugin init, engine lifecycle
+├── main.rs           # Binary entry point
+├── core/
+│   ├── events.rs     # VoxEvent enum (pipeline signals)
+│   ├── settings.rs   # VoxSettings struct + reload policies
+│   ├── state.rs      # InteractionState, InteractionOwner, PipelineAtomics
+│   ├── constants.rs  # Model paths, timing, system prompts
+│   └── metrics.rs    # MetricField, PipelineMetrics
+├── services/
+│   ├── mod.rs        # Service registration
+│   ├── traits.rs     # Engine interfaces (VadEngine, SttEngine, LlmEngine, TtsEngine)
+│   ├── pipeline.rs   # Pipeline orchestrator (LLM→TTS→Playback)
+│   ├── utils.rs      # should_flush, count_words, is_devanagari, transliterate, stitch
+│   ├── audio.rs      # Audio capture (cpal ring buffer)
+│   ├── playback.rs   # Playback engine (cubic Hermite upsample, jitter buffer, fade)
+│   ├── ptt.rs        # Push-to-talk mode
+│   ├── translit.rs   # Transliteration (Devanagari→Roman, ONNX model)
+│   ├── llm/
+│   │   ├── mod.rs    # Module entry + global_llama_backend() singleton
+│   │   ├── actor.rs  # Command/Event handler (spawn_llm_worker)
+│   │   └── llama_cpp.rs # Llama.cpp engine (tag stripping, streaming)
+│   ├── stt/
+│   │   ├── mod.rs
+│   │   ├── actor.rs
+│   │   ├── nemotron_onnx.rs  # Nemotron-3.5 ASR (primary, parakeet-rs)
+│   │   └── qwen_onnx.rs      # Qwen3-ASR (legacy, sherpa-onnx)
+│   ├── tts/
+│   │   ├── mod.rs
+│   │   ├── actor.rs
+│   │   └── supertonic.rs     # Sole TTS engine (sherpa-onnx, anti-aliasing LPF)
+│   └── vad/
+│       ├── mod.rs
+│       ├── actor.rs
+│       ├── earshot_vad.rs    # Earshot (default, pure Rust energy-based)
+│       └── ten_onnx.rs       # Ten VAD (legacy, ONNX via sherpa-onnx)
+├── ipc/
 │   ├── mod.rs
-
-│   ├── actor.rs
-
-│   ├── nemotron_onnx.rs # Nemotron-3.5 ASR (default, ONNX)
-
-│   └── qwen_onnx.rs     # Qwen3-ASR (legacy, ONNX)
-
-├── tts/
-
+│   ├── pipeline.rs  # launch_engine, stop_engine, engage, check_engine_status
+│   ├── settings.rs  # get_settings, update_setting, request_model_catalog
+│   ├── tray.rs      # hide_tray_window, position_tray_window
+│   ├── history.rs   # get_sessions, get_turns, delete_session
+│   ├── audio.rs     # Audio device listing
+│   ├── monitoring.rs # Runtime snapshot retrieval
+│   └── setup.rs     # Boot state, model catalog
+├── persistence/
 │   ├── mod.rs
-
-│   ├── actor.rs
-
-│   └── supertonic.rs # Sole TTS engine (sherpa-onnx native)
-
-└── vad/
-
-    ├── mod.rs
-
-    ├── actor.rs
-
-    ├── ten_onnx.rs     # Ten VAD (ONNX via sherpa-onnx)
-
-    └── earshot_vad.rs  # Earshot (native energy-based VAD)
-
+│   ├── db.rs         # SQLite schema + connection
+│   └── events.rs     # PersistenceEvent enum
+├── monitoring/
+│   ├── mod.rs
+│   ├── aggregator.rs # TelemetryAggregator
+│   ├── collector.rs  # Metric collection from atomics
+│   ├── snapshot.rs   # RuntimeSnapshot struct
+│   └── system_monitor.rs # /proc/stat/meminfo polling
+├── setup/
+│   └── mod.rs        # First-run setup/orientation
+├── tray.rs            # Tray icon, overlay window management
+├── wizard.rs          # Setup wizard window config + model health checks
+├── utils/
+│   └── paths.rs       # Path resolution (dirs crate, cross-platform)
+└── bin/
+    ├── tts-bench.rs   # TTS-only benchmark
+    ├── vox-bench.rs   # Full pipeline benchmark
+    └── test-translit.rs # Transliteration test
 ```
 
 ## 6. Voice Activity Detection (VAD) - Tier 2
@@ -237,11 +263,20 @@ Each AI domain (VAD, STT, LLM, TTS) follows a strict separation of concerns:
 
 ---
 
-### Model
+### Models (Two Backends)
 
-* TEN VAD (ONNX via sherpa-onnx)
-* threshold: configurable (default 0.45)
-* min_silence_duration: 0.5s
+**Default: Earshot VAD (Rust-native, energy-based)**
+- No model file required — embedded neural weights
+- Ultra-low latency (~1ms per frame)
+- Threshold: configurable (default 0.5)
+- ~20x faster than TenVAD
+
+**Legacy: Ten VAD (ONNX via sherpa-onnx)**
+- Requires `ten_vad.onnx` model file
+- Higher latency (~15ms per frame)
+- threshold: configurable (default 0.45)
+- min_silence_duration: 0.5s
+- min_speech_duration: 0.25s
 
 ---
 
@@ -714,10 +749,18 @@ TtsChunk (24kHz) → upsample_2x() → ring buffer → CPAL callback (48kHz)
 
 ```rust
 pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
-    // Cubic Hermite spline interpolation for 24kHz → 48kHz (exact 2x ratio)
-    // Uses 4-point (Catmull-Rom) basis: p1, p2, p3, p4
-    // Produces smoother waveform than linear interpolation
-    // O(n), no FFT, no external deps
+    // Cubic Hermite (Catmull-Rom) interpolation for 24kHz → 48kHz (exact 2x ratio).
+    // Uses 4-point basis with weights [-1/16, 9/16, 9/16, -1/16].
+    // Produces smoother waveform than linear interpolation.
+    // O(n), no FFT, no external deps.
+    for i in 0..len {
+        out.push(input[i]);
+        let p0 = if i > 0 { input[i - 1] } else { input[i] };
+        let p2 = if i + 1 < len { input[i + 1] } else { input[i] };
+        let p3 = if i + 2 < len { input[i + 2] } else { p2 };
+        let midpoint = (-p0 + 9.0 * input[i] + 9.0 * p2 - p3) / 16.0;
+        out.push(midpoint);
+    }
 }
 ```
 
@@ -801,24 +844,39 @@ generation speed (tokens per second):
 |-----------|:---:|:---:|:---:|
 | Sentence boundary (`.!?।`) | Always flush | Always flush | Always flush |
 | Clause boundary (`,;—`) | Flush at 3 words | Flush at 4 words | Disabled |
-| Time gate | 1.0s / 3 words | 2.4s / 6 words | 3.5s / 8 words |
-| Word-count fallback | 5 words | 13 words | 20 words |
+| Time gate | 1.0s / 3 words | 2.2s / 5 words | 3.5s / 8 words |
+| Word-count fallback | 5 words | 12 words | 20 words |
 
-**Algorithm (simplified):**
+**Algorithm:**
 
-```
-tps_clamped = clamp(tps, 0.5, 6.0)
-tps_norm   = (tps_clamped - 0.5) / 5.5     // 0.0=slowest, 1.0=fastest
+```rust
+let tps_clamped = tps.clamp(0.5, 6.0);
+let tps_norm = (tps_clamped - 0.5) / (6.0 - 0.5); // 0.0=slowest, 1.0=fastest
 
-// Each threshold interpolates linearly:
-clause_threshold_words = lerp(tps_norm, 3, 7)     // 3→7 words
-max_wait_ms            = lerp(tps_norm, 1000, 3500) // 1→3.5s
-min_time_words         = lerp(tps_norm, 3, 8)
-max_words             = lerp(tps_norm, 5, 20)     // fallback
+// Clause boundary flushing (fades out between TPS 3.0 and 5.0):
+//   At low TPS: flush on `,` or `;` with ≥3 words (prioritize TTFA)
+//   At high TPS: skip clause flushes — sentences complete fast
+if tps_norm < clause_norm_high {
+    let clause_threshold = (3.0 + t * 4.0).round() as usize; // 3→7 words
+    if word_count >= clause_threshold { return true; }
+}
+
+// Time gate: scales from 1.0s at slow TPS → 3.5s at fast TPS
+let max_wait_ms = lerp(tps_norm, 1000.0, 3500.0) as u128;
+let min_time_words = lerp(tps_norm, 3.0, 8.0).round() as usize;
+if elapsed_ms >= max_wait_ms && word_count >= min_time_words && ends_at_word_boundary(buf) {
+    return true;
+}
+
+// Word-count fallback: scales from 5→20 words
+let max_words = lerp(tps_norm, 5.0, 20.0).round() as usize;
+if word_count >= max_words && ends_at_word_boundary(buf) {
+    return true;
+}
 ```
 
 Key behaviors:
-- **Clause flushing** (`{}`, `;`, `—`) fades out between TPS 3.0 and TPS 5.0.
+- **Clause flushing** (`,`, `;`, `—`) fades out between TPS 3.0 and TPS 5.0.
   Below 3.0 TPS: flush aggressively (small word threshold). Above 5.0 TPS: disabled entirely
   (sentences complete quickly enough that clause flushes would only harm prosody).
 - **Time gate** scales continuously: slow generation gets a shorter leash (1s) to keep TTFA
@@ -1359,7 +1417,80 @@ if pushed < upsampled.len() {
 
 ---
 
-## 23. Shutdown Sequence
+## 23. Phase 9 — LLM Provider Architecture (v0.8.3)
+
+---
+
+### Motivation
+
+The current LLM implementation treats inference as a single concrete backend:
+`llama_cpp.rs` embedded in the voice pipeline. This creates scaling problems:
+
+* Every new backend requires pipeline modifications
+* Cloud provider integration becomes difficult
+* Future STT/TTS provider support becomes inconsistent
+
+### Target Architecture (v0.8.3)
+
+Move from a single embedded LLM to a **provider-based architecture**:
+
+```text
+Vox
+ └─ LLM Provider Layer
+        ├─ Embedded (local GGUF via llama.cpp)
+        └─ OpenAI-Compatible (Ollama, LM Studio, vLLM, etc.)
+```
+
+### Provider Interface
+
+Every provider must support:
+
+| Capability | Description |
+|-----------|-------------|
+| Generate | Submit prompt and receive completion |
+| Streaming | Receive tokens incrementally (first-class for real-time) |
+| Cancellation | Barge-in must work identically across all providers |
+| Health Check | Determine provider availability before use |
+| Model Discovery | Fetch available models dynamically |
+
+### Pipeline Impact
+
+The voice pipeline remains unchanged:
+
+```text
+Audio → STT → LLM Provider → TTS
+```
+
+Only the implementation behind the provider changes. This prevents ripple
+effects across VAD, STT, TTS, UI, telemetry, and state management.
+
+### Future Roadmap
+
+| Phase | Scope |
+|-------|-------|
+| **v0.8.3** | LLM provider architecture (current) |
+| **v0.8.4** | STT provider architecture (same pattern) |
+| **v0.8.5** | TTS provider architecture (same pattern) |
+| **v0.8.5 → v0.9.0** | Cloud providers (OpenAI, Gemini, Anthropic, etc.) |
+
+### Design Principle
+
+The backend should care about **protocol**, not **location**:
+
+```text
+localhost
+192.168.1.20
+gpu-server.local
+api.openai.com
+```
+
+All of these are simply endpoints. The protocol remains the same.
+
+See `docs/plans/phase9-inference-expansion.md` for the full plan.
+
+---
+
+## 24. Shutdown Sequence
 
 ---
 
