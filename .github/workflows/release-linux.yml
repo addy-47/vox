@@ -43,6 +43,7 @@ jobs:
             patchelf \
             libc++-dev \
             libc++abi-dev \
+            clang \
             dpkg-dev \
             apt-utils \
             libasound2-dev \
@@ -55,27 +56,16 @@ jobs:
         run: |
           echo "${{ secrets.APT_GPG_PRIVATE_KEY }}" | gpg --batch --import
 
-      - name: Install Frontend Dependencies & Build UI
+      - name: Install Frontend Dependencies
         run: |
           cd app
           pnpm install
-          pnpm build
-
-      - name: Upgrade linuxdeploy for Ubuntu 24.04
-        run: |
-          set -e
-          mkdir -p ~/.cache/tauri
-
-          # Pre-download upstream continuous linuxdeploy AppImage.
-          # Tauri's bundled version (from tauri-apps/binary-releases) has an ancient strip
-          # that chokes on .relr.dyn ELF sections from Ubuntu 24.04 libraries.
-          # The upstream release supports NO_STRIP=true to skip stripping entirely.
-          wget -q -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
 
       - name: Build Tauri Application Bundle
+        id: tauri_build
+        uses: tauri-apps/tauri-action@v0
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CC: clang
           CXX: clang++
           CMAKE_C_COMPILER: clang
@@ -84,10 +74,8 @@ jobs:
           LDFLAGS: "-lc++"
           NO_STRIP: "true"
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          ARCH: "x86_64"
-        run: |
-          cd app
-          pnpm tauri build -- --verbose
+        with:
+          projectPath: ./app
 
       - name: Extract Versions and Build Info
         id: build_info
