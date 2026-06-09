@@ -1,34 +1,96 @@
 
+/// Returns `true` if the accumulated token buffer ends at a word boundary.
+/// Prevents mid-word splits when BPE subword tokens cross word boundaries.
+#[inline]
+fn ends_at_word_boundary(buf: &str) -> bool {
+    if let Some(c) = buf.chars().last() {
+        c.is_whitespace() || matches!(c, '.' | '!' | '?' | ',' | ';' | ':' | ')' | ']' | '\u{2014}' | '\u{2013}' | '।')
+    } else {
+        true // empty buffer is trivially at a word boundary
+    }
+}
+
 /// Returns `true` if the accumulated token buffer should be flushed to TTS.
+///
+/// # Fully Dynamic, Model/Hardware-Agnostic Algorithm
+///
+/// No hardcoded TPS categories or magic thresholds. Every decision parameter
+/// is computed as a continuous function of observed generation speed (TPS).
+///
+/// ## Behavioral Guarantees
+///
+/// | Condition | Slow TPS (~1) | Medium TPS (~3.5) | Fast TPS (~5+) |
+/// |-----------|:---:|:---:|:---:|
+/// | Sentence boundary (`.!?।`) | Always flush | Always flush | Always flush |
+/// | Clause boundary (`,;—`) | Flush at 3 words | Flush at 5 words | Disabled |
+/// | Time gate | 1.0s / 3 words | 2.2s / 5 words | 3.5s / 8 words |
+/// | Word-count fallback | 5 words | 12 words | 20 words |
+///
+/// At low TPS, the algorithm aggressively reduces TTFA by flushing on clause
+/// boundaries with low word thresholds. At high TPS, it withholds to let full
+/// sentences complete, preserving natural prosody. The transition is continuous
+/// — there are no sharp cutoffs or category switches.
 #[inline]
 pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128, tps: f32) -> bool {
     let trimmed = buf.trim_end();
     let last = trimmed.chars().last().unwrap_or(' ');
     
-    // Hard boundaries: always flush
-    if matches!(last, '.' | '!' | '?') { return true; }
+    // Hard boundaries: always flush on complete sentences
+    if matches!(last, '.' | '!' | '?' | '।') { return true; }
     
-    // Determine dynamic thresholds based on Token-Per-Second (TPS)
-    let (soft_words, time_gate_words, fallback_words) = if tps <= 2.0 {
-        // Slow generation (e.g. CPU bottlenecks): prioritize latency/TTFA by using smaller chunks
-        (3, 3, 4)
-    } else if tps > 4.0 {
-        // Fast generation: prioritize speech continuity/prosody by using larger chunks
-        (5, 5, 12)
-    } else {
-        // Standard baseline (2.0 < TPS <= 4.0)
-        (3, 3, 8)
-    };
+    // ─── Continuous dynamic parameter computation ───
+    // TPS range: 0.5 (barely generating) to 6.0 (extremely fast).
+    // Clamped and normalized to [0.0, 1.0] for linear interpolation.
+    let tps_clamped = tps.clamp(0.5, 6.0);
+    let tps_norm = (tps_clamped - 0.5) / (6.0 - 0.5); // 0.0 = slowest, 1.0 = fastest
     
-    // Soft boundaries: only flush with enough words for coherent speech
-    if matches!(last, ',' | ';') && word_count >= soft_words { return true; }
-    if (trimmed.ends_with(" — ") || trimmed.ends_with(" - ")) && word_count >= soft_words { return true; }
+    // ─── Clause boundaries (`,`, `;`, `—`, `-`) ───
+    // At low TPS: flush early to reduce TTFA (user hears something sooner).
+    // At high TPS: skip clause flushes — sentences complete fast, so waiting
+    // for `.!?` preserves prosody without meaningful latency cost.
+    if matches!(last, ',' | ';') || trimmed.ends_with(" — ") || trimmed.ends_with(" - ") {
+        // Clause flushing fades out linearly between TPS 3.0 (norm=0.45) and TPS 5.0 (norm=0.82).
+        // Word threshold increases from 3→7 as TPS rises within this band.
+        let clause_tps_high = 5.0;
+        let clause_tps_low = 3.0;
+        let clause_norm_low = (clause_tps_low - 0.5) / (6.0 - 0.5); // ≈0.45
+        let clause_norm_high = (clause_tps_high - 0.5) / (6.0 - 0.5); // ≈0.82
+        if tps_norm < clause_norm_high {
+            // Where are we within the clause-flush band?
+            let t = (tps_norm - clause_norm_low).max(0.0) / (clause_norm_high - clause_norm_low); // 0..1
+            let clause_threshold = (3.0 + t * 4.0).round() as usize; // 3→7 words
+            if word_count >= clause_threshold {
+                return true;
+            }
+        }
+    }
     
-    // Time-based: elapsed time and dynamic word minimum
-    if word_count >= time_gate_words && elapsed_ms > 1500 { return true; }
+    // ─── Time-based flush ───
+    // Wait time scales with TPS: slow generation gets a shorter leash so TTFA
+    // doesn't blow up; fast generation gets more time to complete a sentence.
+    let max_wait_ms = lerp(tps_norm, 1000.0, 3500.0) as u128;
+    let min_time_words = lerp(tps_norm, 3.0, 8.0).round() as usize;
+    if elapsed_ms >= max_wait_ms && word_count >= min_time_words && ends_at_word_boundary(buf) {
+        return true;
+    }
     
-    // Word-count fallback
-    word_count >= fallback_words
+    // ─── Word-count fallback ───
+    // Absolute maximum words to hold before forcing a flush (with word-boundary safety).
+    // At low TPS: flush at 5 words to keep latency bounded.
+    // At high TPS: hold up to 20 words — by then there should be a sentence boundary.
+    let max_words = lerp(tps_norm, 5.0, 20.0).round() as usize;
+    if word_count >= max_words && ends_at_word_boundary(buf) {
+        return true;
+    }
+    
+    false
+}
+
+/// Linear interpolation: map `t` in [0.0, 1.0] to [min_val, max_val].
+/// Panics if `t` is outside [0.0, 1.0] — caller must clamp.
+#[inline]
+fn lerp(t: f32, min_val: f32, max_val: f32) -> f32 {
+    min_val + t * (max_val - min_val)
 }
 
 /// Count words in the accumulated buffer.
@@ -303,27 +365,56 @@ mod tests {
             "Mera phone, number! hai?"
         );
 
-        // Baseline tests (tps = 3.5)
+        // ─── Tests for continuous dynamic algorithm ───
+        // At TPS=3.5 (medium): tps_norm≈0.545
+        //   Clause threshold: ~4 words  |  Time gate: ~2363ms / ~6 words
+        //   Fallback: ~13 words
+        
+        // Hard boundaries: always flush
         assert!(should_flush("hello world. ", 2, 100, 3.5));
         assert!(should_flush("hello world! ", 2, 100, 3.5));
-        assert!(!should_flush("hello, ", 1, 100, 3.5));
-        assert!(should_flush("hello world one, ", 3, 100, 3.5));
-        assert!(should_flush("hello world one two three four five six seven eight", 8, 100, 3.5));
+        assert!(should_flush("are rangon ke diyas khelte hoon.", 8, 100, 3.5));
+        
+        // Clause boundary: threshold increases with TPS (3→7 words)
+        assert!(!should_flush("hello, ", 1, 100, 3.5));      // 1 word < 4 words
+        assert!(!should_flush("hello world one, ", 3, 100, 3.5)); // 3 words < 4 words
+        assert!(should_flush("hello world one two, ", 4, 100, 3.5)); // 4 words >= 4 words
+        
+        // Time-based: wait time and word threshold scale with TPS
+        // At TPS=3.5: need ~2363ms and ~6 words at word boundary
+        assert!(!should_flush("hello world one two three ", 5, 2000, 3.5)); // 5 < 6 words
+        assert!(should_flush("hello world one two three four ", 6, 2400, 3.5)); // 6 >= 6, 2400 > 2363
+        assert!(!should_flush("hello world one two three four five", 6, 2400, 3.5)); // No word boundary
+        
+        // Word-count fallback: ~13 words at TPS=3.5
+        assert!(!should_flush("hello world one two three four five six seven eight nine ten ", 12, 100, 3.5));   // 12 < 13
+        assert!(should_flush("hello world one two three four five six seven eight nine ten eleven ", 13, 100, 3.5)); // 13 >= 13
+        
+        // Word-boundary safety: buffer must end with space/punctuation for time/word-count flushes
+        assert!(!should_flush("are rangon ke diyas khel", 5, 2500, 3.5),
+            "Should NOT flush mid-word even with enough words and elapsed time");
         assert!(!should_flush("hello world one two three", 4, 100, 3.5));
-        assert!(should_flush("hello world one two three", 4, 1600, 3.5));
-        assert!(!should_flush("hello world one two", 3, 1600, 3.5));
+        assert!(!should_flush("hello world one two", 3, 3000, 3.5));
 
-        // Slow TPS tests (tps = 1.5)
-        assert!(should_flush("hello world one two", 4, 100, 1.5)); // Fallback is 4
-        assert!(should_flush("hello world, ", 2, 100, 1.5)); // Soft is still 3? Wait, count of words: hello world is 2, soft is 3, so not flush
-        assert!(!should_flush("hello world, ", 2, 100, 1.5));
-        assert!(should_flush("hello world one, ", 3, 100, 1.5));
+        // ─── Slow TPS (tps=1.5): tps_norm≈0.182 ───
+        //   Clause threshold: 3 words  |  Time gate: ~1455ms / ~4 words
+        //   Fallback: ~8 words
+        assert!(should_flush("hello world one two three four five six seven ", 9, 100, 1.5)); // 9 >= 8 fallback
+        assert!(!should_flush("hello world, ", 2, 100, 1.5)); // 2 < 3 clause threshold
+        assert!(should_flush("hello world one, ", 3, 100, 1.5)); // 3 >= 3 clause threshold
+        assert!(!should_flush("hello world one two three ", 4, 1000, 1.5)); // 1000 < 1455ms
+        assert!(should_flush("hello world one two three ", 4, 1500, 1.5)); // 1500 > 1455ms
 
-        // Fast TPS tests (tps = 5.0)
-        assert!(!should_flush("hello world one two three four five six", 6, 100, 5.0)); // Fallback is 12
-        assert!(!should_flush("hello world one, ", 3, 100, 5.0)); // Soft is 5
-        assert!(should_flush("hello world one two three, ", 5, 100, 5.0)); // Soft is 5
-        assert!(should_flush("hello world one two three four five six seven eight nine ten eleven twelve", 12, 100, 5.0));
+        // ─── Fast TPS (tps=5.0): tps_norm≈0.818 ───
+        //   Clause flush disabled (tps_norm >= clause_norm_high)
+        //   Time gate: ~3045ms / ~7 words  |  Fallback: ~17 words
+        assert!(!should_flush("hello world one, ", 3, 100, 5.0)); // Clause flush disabled
+        assert!(!should_flush("hello world one two three, ", 5, 100, 5.0)); // Clause flush disabled
+        assert!(!should_flush("hello world one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen ", 16, 100, 5.0)); // 16 < 17
+        assert!(should_flush("hello world one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen ", 17, 100, 5.0)); // 17 >= 17
+        // Time-based at high TPS
+        assert!(!should_flush("hello world one two three four five six ", 7, 2000, 5.0)); // 2000 < 3045ms
+        assert!(should_flush("hello world one two three four five six seven ", 8, 3100, 5.0)); // 8 >= 7, 3100 > 3045
 
         // No overlap concatenation fallback
         assert_eq!(

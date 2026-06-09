@@ -13,16 +13,60 @@ use std::sync::Arc;
 
 const SUPER_SAMPLE_RATE: u32 = 44100;
 
-fn resample_44100_to_24000(input: &[f32]) -> Vec<f32> {
+struct BiquadFilter {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    x1: f32,
+    x2: f32,
+    y1: f32,
+    y2: f32,
+}
+
+impl BiquadFilter {
+    fn new_lpf_11k() -> Self {
+        // 2nd-order Butterworth LPF at fc = 11000 Hz, fs = 44100 Hz
+        Self {
+            b0: 0.291851,
+            b1: 0.583701,
+            b2: 0.291851,
+            a1: -0.004173,
+            a2: 0.171576,
+            x1: 0.0,
+            x2: 0.0,
+            y1: 0.0,
+            y2: 0.0,
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        let output = self.b0 * input + self.b1 * self.x1 + self.b2 * self.x2
+            - self.a1 * self.y1 - self.a2 * self.y2;
+        self.x2 = self.x1;
+        self.x1 = input;
+        self.y2 = self.y1;
+        self.y1 = output;
+        output
+    }
+}
+
+fn resample_44100_to_24000(input: &[f32], lpf: &mut BiquadFilter) -> Vec<f32> {
     let ratio = SUPER_SAMPLE_RATE as f32 / 24000.0;
     let out_len = (input.len() as f32 / ratio) as usize;
     let mut output = Vec::with_capacity(out_len);
+    
+    // Low-pass filter input to avoid aliasing above 12kHz Nyquist frequency
+    let filtered: Vec<f32> = input.iter().map(|&x| lpf.process(x)).collect();
+
     let mut src_idx: f32 = 0.0;
-    while (src_idx as usize) < input.len() {
+    while (src_idx as usize) < filtered.len() {
         let idx = src_idx as usize;
-        let next_idx = (idx + 1).min(input.len() - 1);
+        let next_idx = (idx + 1).min(filtered.len() - 1);
         let frac = src_idx - idx as f32;
-        output.push((1.0 - frac) * input[idx] + frac * input[next_idx]);
+        output.push((1.0 - frac) * filtered[idx] + frac * filtered[next_idx]);
         src_idx += ratio;
     }
     output
@@ -135,6 +179,7 @@ impl traits::TtsEngine for TtsEngine {
 
         let cancel_cb = cancel.clone();
         let event_tx_cb = event_tx.clone();
+        let mut lpf = BiquadFilter::new_lpf_11k();
 
         let audio = self.tts.generate_with_config(
             text,
@@ -146,7 +191,7 @@ impl traits::TtsEngine for TtsEngine {
                 if raw_samples.is_empty() {
                     return true;
                 }
-                let samples_24k = resample_44100_to_24000(raw_samples);
+                let samples_24k = resample_44100_to_24000(raw_samples, &mut lpf);
                 let _ = event_tx_cb.send(VoxEvent::TtsChunk {
                     turn_id,
                     samples: samples_24k,

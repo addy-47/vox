@@ -1,10 +1,13 @@
 {
-  "latest_version": "0.8.1",
+  "latest_version": "0.8.2",
   "release_notes": [
-    "Integrated native ONNX Runtime inference layers for low-latency VAD and ASR.",
-    "Decoupled model weight checks to prevent disk bloat on 8GB RAM environments.",
-    "Integrated persistent Glassmorphism update notification pills and tooltips.",
-    "Integrated quantized Nemotron-3.5 STT model as the default voice recognition engine."
+    "Fixed mid-word Devanagari splits: added ends_at_word_boundary() safety check in should_flush() to prevent TTS cutting words like हारी into हा+री.",
+    "Fixed Nemotron STT transcribe() chunking: audio now fed as sequential 8960-sample windows with reset_state() only at end, producing coherent Devanagari Hindi transcripts.",
+    "Confirmed Supertonic emotion tag support: <laugh>, <breath>, <sigh> tags produce audibly different TTS output (verified via integration test).",
+    "Benchmark results: 100% completion (5/5 clips), 0 mid-word splits, STT RTF 0.18x (22x faster than v0.8.0 Qwen3), peak RSS ~2.5 GB.",
+    "Replaced English STT prefix removal with whitespace normalization in pipeline for cleaner transcript handling.",
+    "CPU-aware LLM thread presets: dynamically computed from navigator.hardwareConcurrency with maxSafe = totalCores - 2.",
+    "CPU governor detection: Linux startup check emits cpu_governor_warning event if not 'performance'; frontend shows dismissible banner."
   ],
   "linux": {
     "package": "vox",

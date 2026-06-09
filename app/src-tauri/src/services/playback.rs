@@ -24,13 +24,23 @@ use ringbuf::traits::*;
 /// Zero dependency on any external resampling library.
 #[inline]
 pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
-    let mut out = Vec::with_capacity(input.len() * 2);
-    for i in 0..input.len() {
-        out.push(input[i]);
-        // Linear midpoint between current and next sample.
-        // At the last sample, repeat to avoid out-of-bounds.
-        let next = input.get(i + 1).copied().unwrap_or(input[i]);
-        out.push(0.5 * (input[i] + next));
+    if input.is_empty() {
+        return Vec::new();
+    }
+    let len = input.len();
+    let mut out = Vec::with_capacity(len * 2);
+    for i in 0..len {
+        let p1 = input[i];
+        out.push(p1);
+
+        // Cubic Hermite (Catmull-Rom) interpolation for the midpoint sample.
+        // w = [-1/16, 9/16, 9/16, -1/16]
+        let p0 = if i > 0 { input[i - 1] } else { p1 };
+        let p2 = if i + 1 < len { input[i + 1] } else { p1 };
+        let p3 = if i + 2 < len { input[i + 2] } else { p2 };
+
+        let midpoint = (-p0 + 9.0 * p1 + 9.0 * p2 - p3) / 16.0;
+        out.push(midpoint);
     }
     out
 }
@@ -192,6 +202,9 @@ impl PlaybackEngine {
             log::warn!("[Playback] 48kHz stereo f32 not reported as supported — trying anyway");
         }
 
+        let mut last_sample = 0.0f32;
+        let mut current_volume = 1.0f32;
+
         let stream = device.build_output_stream(
             &config,
             // ── CPAL data callback — ZERO computation (Directive 3) ──────────
@@ -205,6 +218,8 @@ impl PlaybackEngine {
                         consumer.skip(consumer.occupied_len());
                         buffer_samples.store(0, Ordering::SeqCst);
                     }
+                    last_sample = 0.0;
+                    current_volume = 1.0;
                     output.fill(0.0);
                     return;
                 }
@@ -215,12 +230,28 @@ impl PlaybackEngine {
                 let mut read_count = 0;
 
                 for frame in 0..frames {
-                    let sample = consumer.try_pop().unwrap_or(0.0);
-                    if sample != 0.0 { read_count += 1; }
-                    
-                    sum_sq += sample * sample;
-                    output[frame * 2]     = sample; // L
-                    output[frame * 2 + 1] = sample; // R
+                    let sample_opt = consumer.try_pop();
+                    let (sample, target_volume) = match sample_opt {
+                        Some(s) => {
+                            read_count += 1;
+                            last_sample = s;
+                            (s, 1.0)
+                        }
+                        None => (last_sample, 0.0),
+                    };
+
+                    // Linear fade to avoid clicks (approx 10ms fade window at 48kHz)
+                    let step = 0.002f32;
+                    if current_volume < target_volume {
+                        current_volume = (current_volume + step).min(target_volume);
+                    } else if current_volume > target_volume {
+                        current_volume = (current_volume - step).max(target_volume);
+                    }
+
+                    let played_sample = sample * current_volume;
+                    sum_sq += played_sample * played_sample;
+                    output[frame * 2]     = played_sample; // L
+                    output[frame * 2 + 1] = played_sample; // R
                 }
                 
                 // Atomic update of current buffer level for telemetry/logic
@@ -238,6 +269,8 @@ impl PlaybackEngine {
                     playback_active.store(false, Ordering::Relaxed);
                     playback_energy.store(0f32.to_bits(), Ordering::Relaxed);
                     buffer_samples.store(0, Ordering::SeqCst);
+                    last_sample = 0.0;
+                    current_volume = 1.0;
                 }
             },
             move |err| {

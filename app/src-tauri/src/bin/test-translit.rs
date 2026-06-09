@@ -1,5 +1,4 @@
 use std::time::Instant;
-use std::path::Path;
 use std::collections::HashMap;
 use ort::session::Session;
 use ndarray::{Array1, Array2, Array3};

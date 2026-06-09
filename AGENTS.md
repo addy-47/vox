@@ -32,6 +32,7 @@ Architecture and design documents that provide deep context. Read the relevant o
 |------|--------|
 | `docs/vox.md` | Core project definition, system goals |
 | `docs/backend.md` | Rust/Tauri audio pipeline, engine lifecycle, event flow |
+| `docs/voice-flow.md` | End-to-end voice pipeline flow (audio capture → VAD → STT → LLM → TTS → playback), all algorithms, metrics, and event flow |
 | `docs/frontend.md` | Dual-surface UI (main app + ephemeral overlay/tray), IPC contracts |
 | `docs/models.md` | Model stack (VAD, STT, LLM, TTS), hardware constraints, defaults |
 | `docs/design.md` | Visual design system, color tokens |
@@ -64,7 +65,7 @@ cargo run --bin tts-bench bench
 Output WAVs go to `docs/benchmarks/audio_outputs/`.
 
 ### Supertonic (sole TTS engine, INT8 via sherpa-onnx native)
-7 INT8 model files at `~/.vox/models/tts/supertonic-3/` (flat, no subdirectories). Uses sherpa-onnx `OfflineTtsSupertonicModelConfig` with `GenerationConfig { sid, num_steps: i32, speed, extra: { "lang" } }`. Progress callback resamples 44.1→24kHz. Model pack: `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`. Expression tags (`<laugh>`, `<breath>`, `<sigh>`) injected into LLM system prompt when engine is Supertonic (see `pipeline.rs` dynamic prompt logic).
+7 INT8 model files at `~/.vox/models/tts/supertonic-3/` (flat, no subdirectories). Uses sherpa-onnx `OfflineTtsSupertonicModelConfig` with `GenerationConfig { sid, num_steps: i32, speed, extra: { "lang" } }`. Progress callback resamples 44.1→24kHz with anti-aliasing LPF (Biquad, fc=11000Hz, 2nd-order Butterworth). Model pack: `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`. Expression tags (`<laugh>`, `<breath>`, `<sigh>`) injected into LLM system prompt when engine is Supertonic (see `pipeline.rs` dynamic prompt logic).
 
 ---
 
@@ -90,11 +91,16 @@ Output WAVs go to `docs/benchmarks/audio_outputs/`.
 - **Running `cargo test` from repo root** — there's no root workspace. Always `cd` into `app/src-tauri`.
 - **Hardcoded absolute paths** in code — use `dirs` crate or `vox_lib::utils::paths` instead
 - **Modifying streaming/latency/VAD behavior** without reading `.agents/rules/system-architect.md` first — these are critical-path invariants
+- **`partial_tag_len()` UTF-8 char boundary (llama_cpp.rs):** The `partial_tag_len()` function detects incomplete emotion tags at the buffer end. It MUST iterate using `text.char_indices()` not `0..text.len()` — raw byte slicing (`&text[i..]`) panics on multi-byte UTF-8 characters (Devanagari `म` is 3 bytes). This was a crash bug introduced in v0.8.2 tag stripping rewrite; fixed by changing `for i in 0..text.len()` to `for (i, _) in text.char_indices()`.
 - **`ort::session::Session` API quirks (2.0.0-rc.12):** `Session` is at `ort::session::Session`, not `ort::Session`. Builder methods return `ort::Error<SessionBuilder>` which is `!Send` — always use `.map_err(|e| anyhow!("{:?}", e))?` instead of bare `?`. Access input/output info via `session.inputs()` / `session.outputs()` methods (not fields). `GraphOptimizationLevel` is at `ort::session::builder::GraphOptimizationLevel`.
 - **Adding new fields to settings structs:** Always add `#[serde(default)]` to the struct to avoid deserialization failures when loading old settings files missing the new field.
 - **sherpa-onnx Supertonic native API quirks:** `OfflineTtsSupertonicModelConfig` has 7 fields: `duration_predictor`, `text_encoder`, `vector_estimator`, `vocoder`, `tts_json`, `unicode_indexer`, `voice_style`. `GenerationConfig::num_steps` is `i32` (cast `quality_steps as i32`). Progress callback is `FnMut(&[f32], f32) -> bool + 'static` — must capture owned Arcs/Senders, not references.
 - **CPU-aware LLM thread presets:** ModelSettings.tsx computes LLM thread presets from `navigator.hardwareConcurrency`. Max safe = totalCores − 2 (reserving cores for system + other pipeline stages). Presets are generated dynamically: [2, 4] always, plus `maxSafe` and `totalCores` when they differ. Always guard with `typeof navigator !== 'undefined'` for SSR/SSG compatibility. Do NOT hardcode thread options.
 - **CPU governor detection (Linux):** `utils::check_cpu_governor()` reads `/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor` at startup. If not `"performance"`, emits `cpu_governor_warning` Tauri event. Frontend (`Home.tsx`) listens and shows a dismissible warning banner. On non-Linux it's a no-op.
+- **`should_flush()` word-boundary safety (utils.rs):** The time-based flush and word-count fallback both require `ends_at_word_boundary()` to avoid mid-word splits. `ends_at_word_boundary()` checks the last character of the buffer: it must be whitespace or punctuation (`.!?,;:)\]—–।`) for a flush to proceed. This prevents BPE subword tokens from being split mid-word. The algorithm is now **fully dynamic** — all thresholds are continuous functions of TPS (`lerp(tps_norm, min, max)`) with no hardcoded TPS categories. Clause flushing fades out between TPS 3.0–5.0. Time gate scales from 1.0s→3.5s. Word fallback scales 5→20 words. See `docs/backend.md` Section 11 for the full algorithm.
+- **Nemotron STT `transcribe()` chunking (stt/nemotron.rs):** `transcribe()` chunks audio into 8960-sample windows, feeds them sequentially through the ONNX session, and only calls `reset_state()` at the very end (not between chunks). This prevents the model from forgetting context mid-utterance and produces more coherent Devanagari Hindi transcripts for multilingual clips.
+- **Emotion tags confirmed working:** `<laugh>`, `<breath>`, `<sigh>` tags in TTS input are processed correctly by sherpa-onnx Supertonic (v1.13.2). The emotion tag test (`tts_test.rs`) confirmed: tags add detectable audio differences (avg diff=0.048, max diff=0.457 for `<laugh>` which adds 18% duration vs plain baseline). The upstream issue #148 is about the upstream Rust CLI runner, not the C++ sherpa-onnx wrapper used by vox.
+- **Benchmark stability:** The 5-clip `vox-bench` suite (AD09001/004/021/039/051) achieves 100% completion with Llama-3.2-1B-Instruct Q6_K. Language detection via `is_devanagari()` correctly routes Devanagari STT transcripts to Hindi LLM prompts and English STT to English prompts. Average metrics: TTFA ~15.5-25.3s (higher with multi-utterance clips), LLM TPS ~1.2-3.2, STT RTF ~0.04-0.31, Peak RSS ~2446-2503MB, LLM mem ~969-970MB. The `vox-bench` binary now mirrors the real pipeline: dynamic prompt selection based on `is_devanagari()` + emotion tag injection (`<laugh>/<breath>/<sigh>`).
 
 ---
 
@@ -105,6 +111,7 @@ After completing any task, an agent should:
 1. **Update `AGENTS.md`** if the task revealed new build quirks, conventions, or pitfalls not already documented here.
 2. **Update `docs/`** if the task changed architecture, pipeline behavior, model stack, or frontend contracts. Keep the relevant doc in sync:
    - Backend/pipeline changes → `docs/backend.md`
+   - Voice pipeline/algorithm changes → `docs/voice-flow.md`
    - Frontend/UI changes → `docs/frontend.md`
    - Model changes → `docs/models.md`
    - New architectural decisions → `docs/decision-framework.md`

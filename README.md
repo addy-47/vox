@@ -22,7 +22,7 @@
 
 **Vox** is a real-time, local-first voice assistant designed to disappear into your desktop environment. Rather than forcing you to interact with a chat window, Vox operates as a persistent, ultra-low-latency ambient listener. It responds to voice activity instantly, streams output on the fly, and gets out of your way the second you stop speaking. 
 
-Vox prioritizes conversational rhythm and tactile edge execution over cloud dependence, ensuring complete data privacy and sub-500ms response cycles.
+Vox prioritizes conversational rhythm and tactile edge execution over cloud dependence, ensuring complete data privacy and full end-to-end voice interaction pipeline.
 
 ---
 
@@ -38,22 +38,40 @@ Vox prioritizes conversational rhythm and tactile edge execution over cloud depe
 
 ## 🏗️ Technical Architecture
 
-Vox is built on a non-blocking, multi-threaded pipeline using Rust. The audio loop parallelizes system mic captures, VAD detection, and online ASR streaming to keep input latency at a bare minimum.
+Vox is built on a sequential, multi-threaded pipeline using Rust. The pipeline processes complete utterances end-to-end: audio capture → VAD → full STT transcription → LLM generation → chunked TTS synthesis → playback.
+
+
 
 ```mermaid
+
 graph TD
-    Mic[Audio Input Device] --> VAD[Ten VAD Engine]
+
+    Mic[Audio Input Device] --> VAD[Ten VAD / Earshot]
+
     VAD --> Pipeline[Orchestration Pipeline]
-    Pipeline --> STT[Qwen3-ASR v3 Finetuned]
+
+    Pipeline --> STT[Nemotron-3.5 ASR]
+
     STT --> HUD[Vox Live HUD / UI]
-    STT --> LLM[Llama 3.2 GGUF / Gemma 4]
-    LLM --> TTS[Kokoro / Piper Engines]
+
+    STT --> LLM[Llama 3.2 1B Instruct / Gemma 4]
+
+    LLM --> TTS[Supertonic 3 TTS]
+
     TTS --> Speaker[Audio Output Device]
+
 ```
 
-*   **VAD Engine**: Powered by TEN VAD (FP32 ONNX) running at 100Hz with a sub-15ms execution time.
-*   **Speech-To-Text**: Qwen3-ASR (INT8 quantized) running offline with local BPE tokenizers and frame-level feature extractor wrappers.
-*   **TTS Generation**: Multi-voice Kokoro (English) and Piper (Hindi) synthesis engines streaming raw PCM directly into system audio outputs.
+
+
+*   **VAD Engine**: Powered by Ten VAD (ONNX FP32, ~15ms/frame) or Earshot (native energy-based, ~1ms/frame). Both dispatchable via `VadBackend` enum.
+
+*   **Speech-To-Text**: Nemotron-3.5 (INT8 ONNX, ~1,265 MB) — optimized chunked transcription with 8960-sample windows preserving context across chunks.
+
+*   **LLM**: Llama-3.2-1B-Instruct (GGUF Q6_K) — CPU-first, 2.5–4.4 TPS, 100% stability across benchmark suite. Language detection routes Devanagari STT to Hindi prompts.
+
+*   **TTS**: Supertonic 3 (sherpa-onnx native, INT8, 99M params) — sole TTS engine with 31 languages, 10 voices, and `<laugh>/<breath>/<sigh>` emotion tag support.
+
 
 ---
 
@@ -111,15 +129,28 @@ Configure system behaviors, inspect live telemetry, select models, and view tran
 
 Vox manages models locally using manifest validation. On first startup, the app validates your local models folder and downloads missing dependencies dynamically:
 
-| Engine | Model | Format | File Size | Latency (RTF) | Required |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **VAD** | Ten VAD | ONNX FP32 | ~330 KB | 0.015 | Yes (Core) |
-| **Translit**| Vox Translit RNN | ONNX | ~16 MB | 0.005 | Yes (Core) |
-| **STT** | Qwen3-ASR-0.6B (v3 Finetuned) | ONNX INT8 | ~980 MB | 0.080 | Yes (Core) |
-| **LLM** | Llama 3.2 1B Instruct | GGUF Q6_K | ~1.02 GB | ~15 tok/sec | Optional |
-| **LLM** | Gemma 4 2B Instruct | GGUF Q4_K_M | ~3.46 GB | ~9 tok/sec | Optional |
-| **TTS (EN)**| Kokoro | ONNX + Bin | ~350 MB | 0.150 | Optional |
-| **TTS (HI)**| Piper (Pratham / Priyamvada) | ONNX | ~63 MB | 0.180 | Optional |
+| Engine | Model | Format | File Size | Memory (RSS) | Latency | Required |
+
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+
+| **VAD** | Ten VAD | ONNX FP32 | ~330 KB | ~50 MB | ~15ms/frame | Yes (Core) |
+
+| **VAD** | Earshot | Native Rust | Zero | ~0 MB | ~1ms/frame | Optional |
+
+| **Translit** | Vox Translit RNN | ONNX | ~16 MB | ~16 MB | ~5ms | Yes (Core) |
+
+| **STT** | Nemotron-3.5 (Default) | ONNX INT8 | ~756 MB | ~1,265 MB | 0.02–0.35× RTF | Yes (Core) |
+
+| **STT** | Qwen3-ASR (Legacy) | ONNX INT8 | ~986 MB | ~1,177 MB | 0.38–4.63× RTF | Optional |
+
+| **LLM** | Llama 3.2 1B Instruct | GGUF Q6_K | ~1.02 GB | ~970 MB | 2.5–4.4 TPS | Optional |
+
+| **LLM** | Gemma 4 2B Instruct | GGUF Q4_K_M | ~3.46 GB | ~4,092 MB | 9 TPS | Optional |
+
+| **LLM** | MiniCPM5-1B | GGUF Q4_K_M | ~688 MB | ~654 MB | 6.5 TPS | Optional |
+
+| **TTS** | Supertonic 3 | ONNX INT8 (7 files) | ~144 MB | ~21 MB | 0.79–1.50× RTF | Yes (Core) |
+
 
 ---
 

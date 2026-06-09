@@ -119,6 +119,49 @@ impl ModelFamily {
         }
     }
 
+    pub fn tags_to_strip(&self) -> &'static [&'static str] {
+        match self {
+            ModelFamily::Gemma => &[
+                "<|turn>",
+                "<turn|>",
+                "<channel|>",
+                "system\n",
+                "user\n",
+                "model\n",
+                "<end",
+                "<eos>",
+            ],
+            ModelFamily::Qwen => &[
+                "<|im_start|>",
+                "<|im_end|>",
+                "<|turn|>",
+                "user\n",
+                "assistant\n",
+                "system\n",
+                "thought\n",
+                "<think>",
+                "</think>",
+            ],
+            ModelFamily::Llama3 => &[
+                "<|begin_of_text|>",
+                "<|start_header_id|>",
+                "<|end_header_id|>",
+                "<|eot_id|>",
+                "user\n",
+                "assistant\n",
+                "system\n",
+            ],
+            ModelFamily::Nemotron => &[
+                "<extra_id_0>",
+                "<extra_id_1>",
+                "User\n",
+                "Assistant\n",
+                "System\n",
+            ],
+            ModelFamily::Unknown => &[],
+        }
+    }
+
     pub fn strip_tags_raw(&self, text: &str) -> String {
         let mut cleaned = text.to_string();
 
@@ -215,6 +258,18 @@ pub struct LlmWorker {
 
 unsafe impl Send for LlmWorker {}
 unsafe impl Sync for LlmWorker {}
+
+fn partial_tag_len(text: &str, tags: &[&str]) -> usize {
+    for (i, _) in text.char_indices() {
+        let suffix = &text[i..];
+        for tag in tags {
+            if tag.starts_with(suffix) && suffix != *tag {
+                return suffix.len();
+            }
+        }
+    }
+    0
+}
 
 impl LlmWorker {
     pub fn new(model_path: &Path, ctx_size: u32, n_threads: u32) -> Result<Self> {
@@ -421,6 +476,7 @@ impl traits::LlmEngine for LlmWorker {
         log::info!("[LLM] >>> Generating (turn: {})...", turn_id);
 
         let mut raw_gen_buf = String::new();
+        let mut emitted_clean_len = 0;
         let stop_seqs = self.family.stop_sequences();
         let mut byte_buf = Vec::new();
 
@@ -488,12 +544,19 @@ impl traits::LlmEngine for LlmWorker {
                             stop
                         );
                         let clean_remaining = &raw_gen_buf[..pos];
-                        let cleaned = self.family.strip_tags(clean_remaining);
-                        if !cleaned.is_empty() {
-                            let _ = tx.send(VoxEvent::LlmToken {
-                                turn_id,
-                                token: cleaned,
-                            });
+                        let mut cleaned = self.family.strip_tags(clean_remaining);
+                        if let Some(think_pos) = cleaned.find("<think>") {
+                            cleaned.truncate(think_pos);
+                        }
+                        let cleaned_trimmed = cleaned.trim().to_string();
+                        if cleaned_trimmed.len() > emitted_clean_len {
+                            let delta = &cleaned_trimmed[emitted_clean_len..];
+                            if !delta.is_empty() {
+                                let _ = tx.send(VoxEvent::LlmToken {
+                                    turn_id,
+                                    token: delta.to_string(),
+                                });
+                            }
                         }
                         stop_triggered = true;
                         break;
@@ -508,13 +571,30 @@ impl traits::LlmEngine for LlmWorker {
                     ttft = Some(start_time.elapsed());
                 }
 
-                let cleaned = self.family.strip_tags_raw(&token_str);
-                if !cleaned.is_empty() {
-                    let _ = tx.send(VoxEvent::LlmToken {
-                        turn_id,
-                        token: cleaned,
-                    });
+                // Clean the entire raw buffer accumulated so far
+                let mut cleaned = self.family.strip_tags_raw(&raw_gen_buf);
+                
+                // Suppress active/incomplete thinking blocks
+                if let Some(think_pos) = cleaned.find("<think>") {
+                    cleaned.truncate(think_pos);
                 }
+
+                // Avoid leaking partial tags by holding back any suffix matching a partial tag
+                let tags = self.family.tags_to_strip();
+                let holdback = partial_tag_len(&cleaned, tags);
+                let clean_len = cleaned.len() - holdback;
+
+                if clean_len > emitted_clean_len {
+                    let delta = &cleaned[emitted_clean_len..clean_len];
+                    if !delta.is_empty() {
+                        let _ = tx.send(VoxEvent::LlmToken {
+                            turn_id,
+                            token: delta.to_string(),
+                        });
+                    }
+                    emitted_clean_len = clean_len;
+                }
+
                 tokens_generated += 1;
             }
 
