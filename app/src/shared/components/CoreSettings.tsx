@@ -43,7 +43,7 @@ const EngineCard: React.FC = React.memo(() => {
   const isVadVerified = draftSettings.vad.vad_backend === "earshot" || presence["ten_vad"];
 
   return (
-    <div className="glass-card glass-base p-6 md:p-8 flex flex-col h-full overflow-hidden relative">
+    <div className="bg-black/10 p-6 md:p-8 rounded-2xl border border-[rgba(var(--accent),0.05)] flex flex-col h-full overflow-hidden relative">
       {/* Header */}
       <div className="flex items-center gap-3 mb-8 shrink-0">
         <Brain className="text-[rgb(var(--accent))]" size={20} />
@@ -204,7 +204,7 @@ const VoiceCard: React.FC = React.memo(() => {
   };
 
   return (
-    <div className="glass-card glass-base p-6 md:p-8 flex flex-col h-full relative overflow-hidden">
+    <div className="bg-black/10 p-6 md:p-8 rounded-2xl border border-[rgba(var(--accent),0.05)] flex flex-col h-full relative overflow-hidden">
       {!isTtsVerified && (
         <div className="absolute inset-0 z-20 bg-[rgb(var(--background))]/60 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
           <AlertCircle className="text-[rgb(var(--accent))] mb-3" size={28} />
@@ -275,7 +275,7 @@ const AppearanceCard: React.FC = React.memo(() => {
   const theme = draftSettings.ui.theme;
 
   return (
-    <div className="glass-card glass-base p-6 md:p-8 flex flex-col h-full overflow-hidden">
+    <div className="bg-black/10 p-6 md:p-8 rounded-2xl border border-[rgba(var(--accent),0.05)] flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between mb-8 shrink-0">
         <div className="flex items-center gap-3">
           <Palette className="text-[rgb(var(--accent))]" size={20} />
@@ -343,7 +343,7 @@ const InteractionCard: React.FC = React.memo(() => {
   if (!draftSettings || !modelCatalog) return null;
 
   return (
-    <div className="glass-card glass-base p-6 md:p-8 flex flex-col h-full">
+    <div className="bg-black/10 p-6 md:p-8 rounded-2xl border border-[rgba(var(--accent),0.05)] flex flex-col h-full">
       <div className="flex items-center gap-3 mb-8 shrink-0">
         <MousePointerClick className="text-[rgb(var(--accent))]" size={20} />
         <div className="space-y-1">

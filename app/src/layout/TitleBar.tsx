@@ -117,7 +117,7 @@ export const TitleBar: React.FC = () => {
   if (!isTauri) return null;
 
   return (
-    <div className="relative flex items-center justify-between h-8 shrink-0 select-none z-50 glass-whisper glass-base border-b border-[rgba(var(--accent),0.06)]">
+    <div className="relative flex items-center justify-between h-7 shrink-0 select-none z-50 bg-black/15 backdrop-blur-sm border-b border-[rgba(var(--accent),0.04)]">
       {/* Absolute Drag Region */}
       <div className="absolute inset-0 z-0" data-tauri-drag-region />
 

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Save, RotateCcw, Settings as SettingsIcon } from "lucide-react";
+import React from "react";
+import { Save, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { CoreSettings } from "@/shared/components/CoreSettings";
@@ -9,16 +9,6 @@ import { GlassSkeleton } from "@/shared/components/GlassSkeleton";
 
 export const Settings: React.FC = () => {
   const { draftSettings, hasChanges, commitChanges, discardChanges, restoreDefaults } = useSettings();
-  const [activeTab, setActiveTab] = useState<"core" | "models" | "tray">("core");
-
-  // Deep link support: ?tab=models or ?tab=tray
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tab = params.get("tab");
-    if (tab === "models" || tab === "tray") {
-      setActiveTab(tab);
-    }
-  }, []);
 
   if (!draftSettings) return (
     <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10 items-center justify-center">
@@ -30,121 +20,94 @@ export const Settings: React.FC = () => {
   );
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent">
-      <header className="px-6 md:px-10 py-6 md:py-10 shrink-0">
+    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none">
+      
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <header className="px-6 md:px-10 py-6 md:py-8 border-b border-[rgba(var(--accent),0.08)] shrink-0">
         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="space-y-2">
+          <div className="space-y-1">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl glass-surface glass-base">
-                <SettingsIcon className="text-[rgb(var(--accent))]" size={24} />
-              </div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[rgb(var(--foreground))]">
-                System <span className="text-[rgb(var(--foreground-muted))] opacity-60 font-medium">Core</span>
-              </h1>
+              <span className="signal-text text-[14px]">SYSTEM configuration</span>
             </div>
-            <p className="text-sm text-[rgb(var(--foreground-muted))] max-w-md">Configure intelligence, interface, and assistant behavior.</p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 p-1 glass-whisper glass-base rounded-2xl">
-              <button 
-                onClick={() => {
-                  setActiveTab("core");
-                  window.history.replaceState(null, '', '/settings');
-                }}
-                className={cn(
-                  "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
-                  activeTab === "core" 
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Core
-              </button>
-              <button 
-                onClick={() => {
-                  setActiveTab("models");
-                  window.history.replaceState(null, '', '/settings?tab=models');
-                }}
-                className={cn(
-                  "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
-                  activeTab === "models" 
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Models
-              </button>
-              <button 
-                onClick={() => {
-                  setActiveTab("tray");
-                  window.history.replaceState(null, '', '/settings?tab=tray');
-                }}
-                className={cn(
-                  "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
-                  activeTab === "tray" 
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Tray
-              </button>
-            </div>
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))] font-light uppercase tracking-wider">
+              Configure engine intelligence parameters, interface traits, and assistant behaviors.
+            </p>
           </div>
         </div>
       </header>
 
-      {/* Main Content Area - Fixed viewport, internal scrolling only */}
-      <div className="flex-1 overflow-hidden relative px-6 md:px-10">
-        <div className="h-full max-w-[1600px] mx-auto py-6 md:py-8">
-          {activeTab === "core" ? (
+      {/* ── Scrollable Settings Panel ───────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-6 md:px-10">
+        <div className="max-w-[1600px] mx-auto py-8 space-y-16 pb-28">
+          
+          {/* Section 1: Core Engine Settings */}
+          <div className="space-y-6">
+            <div className="text-[10px] font-mono tracking-[0.25em] text-[rgb(var(--accent))]/75 uppercase flex items-center gap-4">
+              <span>── CORE INTELLIGENCE ──</span>
+              <div className="h-[1px] flex-1 bg-[rgba(var(--accent),0.08)]" />
+            </div>
             <CoreSettings />
-          ) : activeTab === "models" ? (
-            <ModelSettings />
-          ) : (
+          </div>
+
+          {/* Section 2: HUD & Overlay Interface */}
+          <div className="space-y-6">
+            <div className="text-[10px] font-mono tracking-[0.25em] text-[rgb(var(--accent))]/75 uppercase flex items-center gap-4">
+              <span>── HUD & DISPLAY INTERFACE ──</span>
+              <div className="h-[1px] flex-1 bg-[rgba(var(--accent),0.08)]" />
+            </div>
             <TraySettings />
-          )}
+          </div>
+
+          {/* Section 3: Models Catalog */}
+          <div className="space-y-6">
+            <div className="text-[10px] font-mono tracking-[0.25em] text-[rgb(var(--accent))]/75 uppercase flex items-center gap-4">
+              <span>── ENGINE MODELS CATALOG ──</span>
+              <div className="h-[1px] flex-1 bg-[rgba(var(--accent),0.08)]" />
+            </div>
+            <ModelSettings />
+          </div>
+
         </div>
       </div>
 
-      {/* Footer Actions - Fixed at bottom */}
-      <footer className="shrink-0 glass-surface glass-base px-6 md:px-10">
-        <div className="max-w-[1600px] mx-auto py-6 md:py-8 flex items-center justify-between gap-4">
+      {/* ── Sticky Control Footer ───────────────────────────────────────────── */}
+      <footer className="shrink-0 bg-black/40 backdrop-blur-xl border-t border-[rgba(var(--accent),0.08)] px-6 md:px-10 py-4 z-20">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4">
           <button 
             onClick={restoreDefaults}
-            className="hidden md:flex items-center gap-2 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-red-400 transition-colors duration-300 opacity-60 hover:opacity-60 hover:bg-red-500/10 px-3 py-2 rounded-xl"
+            className="flex items-center gap-2 text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.15em] hover:text-red-400 transition-colors duration-300 opacity-60 hover:opacity-100 hover:bg-red-500/10 px-3 py-1.5 rounded-lg border border-transparent hover:border-red-500/20"
             aria-label="Restore Defaults"
           >
-             <RotateCcw size={16} />
+             <RotateCcw size={13} />
              <span>Restore Defaults</span>
           </button>
-          <div className="flex items-center justify-between gap-3 w-full md:w-auto">
+          
+          <div className="flex items-center gap-3">
              <button 
                onClick={discardChanges}
                disabled={!hasChanges}
                className={cn(
-                  "flex-1 md:flex-none px-4 md:px-8 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.2em] transition-all duration-300 glass-whisper glass-base border border-[rgba(var(--border),0.04)]",
+                  "px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.15em] transition-all duration-300 border",
                   hasChanges 
-                   ? "text-[rgb(var(--foreground))] hover:border-[rgb(var(--accent))]/20" 
-                   : "text-[rgb(var(--foreground-muted))] opacity-60 cursor-not-allowed"
+                   ? "text-[rgb(var(--foreground))] border-[rgba(var(--accent),0.2)] bg-black/20 hover:border-[rgb(var(--accent))]/40" 
+                   : "text-[rgb(var(--foreground-muted))]/40 border-transparent cursor-not-allowed"
                )}
              >
-               <span className="hidden sm:inline">Discard Changes</span>
-               <span className="sm:hidden">Discard</span>
+               Discard
              </button>
+             
              <button 
                onClick={commitChanges}
                disabled={!hasChanges}
                className={cn(
-                 "flex-1 md:flex-none px-6 md:px-10 py-2.5 rounded-xl font-bold text-[11px] tracking-[0.2em] uppercase flex items-center justify-center gap-2 transition-all duration-300 shadow-lg",
+                 "px-8 py-2 rounded-xl font-bold text-[10px] tracking-[0.15em] uppercase flex items-center justify-center gap-2 transition-all duration-300",
                  hasChanges
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-105 active:scale-95 shadow-[rgb(var(--accent))]/20"
-                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] opacity-60 cursor-not-allowed shadow-none"
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg shadow-[rgb(var(--accent))]/15 hover:scale-102 active:scale-98"
+                  : "bg-[rgb(var(--foreground))]/[0.02] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
                )}
              >
-               <Save size={14} /> 
-               <span className="hidden sm:inline">Commit Changes</span>
-               <span className="sm:hidden">Save</span>
+               <Save size={12} /> 
+               <span>Save Changes</span>
              </button>
           </div>
         </div>

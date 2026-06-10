@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { VoxOrb } from "@/shared/components/AdvancedOrb";
 import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
 import { LiveWaveform } from "@/shared/components/LiveWaveform";
+import { PipelineField } from "@/shared/components/PipelineField";
 import { Activity, Mic, FlaskConical } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
@@ -13,7 +14,6 @@ type InteractionState = "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "As
 type InteractionMode = "PASSIVE" | "PTT";
 
 export const Home: React.FC = () => {
-  const scrollRef = useRef<HTMLDivElement>(null);
   const hasActiveTurnStarted = useRef(false);
   const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("PASSIVE");
@@ -28,8 +28,6 @@ export const Home: React.FC = () => {
   const isUserSpeaking = interactionState === "UserSpeaking" || pttStatus === 'RECORDING';
   const isThinking = interactionState === "Thinking" || pttStatus === 'PROCESSING';
 
-  // Waveform only reflects user speech activity.
-  // Fades out during Thinking/Processing/AssistantSpeaking.
   const activeSpeaking = isUserSpeaking;
 
   const [isLaunching, setIsLaunching] = useState(false);
@@ -49,13 +47,6 @@ export const Home: React.FC = () => {
       hasActiveTurnStarted.current = false;
     }
   }, [interactionState, testingClip]);
-
-  // Auto-scroll to bottom of dialogue container
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [transcript, assistantText]);
 
   const testClips = [
     { id: "short_en", name: "Quick English", duration: "~5s", desc: "Short English query" },
@@ -79,7 +70,6 @@ export const Home: React.FC = () => {
   };
 
   const handleEngage = async () => {
-    // If a test clip is running, cancel it
     if (testingClip) {
       await handleCancelTest();
       setIsEngaged(false);
@@ -91,14 +81,8 @@ export const Home: React.FC = () => {
       await invoke("engage");
       const newEngaged = !isEngaged;
       setIsEngaged(newEngaged);
-      if (newEngaged) {
-        setTranscript("");
-        setAssistantText("");
-      } else {
-        // Clear dialogue on session stop so glass card resets
-        setTranscript("");
-        setAssistantText("");
-      }
+      setTranscript("");
+      setAssistantText("");
       console.log(newEngaged ? "[Home] Pipeline engaged." : "[Home] Pipeline disengaged.");
     } catch (err) {
       console.error("[Home] Engagement failed:", err);
@@ -121,13 +105,12 @@ export const Home: React.FC = () => {
   };
 
   const handleTestClip = async (clipId: string) => {
-    // Block if already live-engaged
     if (isEngaged) return;
 
     hasActiveTurnStarted.current = false;
     setTestingClip(clipId);
     setIsEngaged(true);
-    setTestMode(false); // Collapse the dropdown
+    setTestMode(false);
     setTranscript("");
     setAssistantText("");
     try {
@@ -147,23 +130,20 @@ export const Home: React.FC = () => {
       try {
         const appWindow = getCurrentWindow();
         
-        // Initial Settings - Fix: use main_app_mode
         const settings = await invoke<any>("get_settings");
         if (settings?.main_app_mode) {
           setInteractionMode(settings.main_app_mode.toUpperCase() as InteractionMode);
         }
 
-        // Sync Engagement State
         try {
           const snapshot = await invoke<any>("get_runtime_snapshot");
           if (snapshot) {
             setIsEngaged(snapshot.is_engaged);
             setIsSleeping(snapshot.is_sleeping);
-            // Check CPU governor from snapshot (reliable — no race condition)
             if (snapshot.cpu_governor && !snapshot.cpu_governor_optimal) {
               setCpuWarning({
                 governor: snapshot.cpu_governor,
-                advice: "Switch to 'performance' governor for best voice pipeline performance",
+                advice: "Switch to 'performance' governor",
               });
             }
           }
@@ -198,7 +178,7 @@ export const Home: React.FC = () => {
         unlisteners.push(await appWindow.listen<{ state: string }>("ptt_status", (event) => {
           setPttStatus(event.payload.state as any);
           if (event.payload.state === 'RECORDING') {
-            setAssistantText(""); // Clear previous on new turn
+            setAssistantText("");
             setTranscript("");
           }
         }));
@@ -207,7 +187,6 @@ export const Home: React.FC = () => {
           setIsSleeping(event.payload);
         }));
 
-        // CPU Governor Warning (Linux only)
         unlisteners.push(await listen<{governor: string; optimal: boolean; advice: string}>("cpu_governor_warning", (event) => {
           if (!event.payload.optimal) {
             setCpuWarning({ governor: event.payload.governor, advice: event.payload.advice });
@@ -230,7 +209,6 @@ export const Home: React.FC = () => {
           }
         }));
 
-        // Phase 5: Show window only after listeners are ready
         setTimeout(async () => {
           await invoke("show_main_window");
         }, 300);
@@ -245,314 +223,174 @@ export const Home: React.FC = () => {
     };
   }, []);
 
-
   return (
-    <div className="flex-1 flex h-full w-full overflow-hidden bg-transparent transition-all duration-400 ease-in-out">
-      {/* ===== CENTRAL HUD AREA ===== */}
-      <div className="flex-1 flex flex-col relative overflow-visible">
+    <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
+      {/* Sentient Field Background Energy */}
+      <PipelineField state={interactionState} />
 
-        {/* CPU Governor Warning Banner */}
+      {/* Floating Status & Warning HUD */}
+      <div className="absolute top-4 left-6 z-30 pointer-events-none">
         {cpuWarning && (
-          <div className="mx-6 mt-3 px-4 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
-            <div className="flex items-center gap-2.5">
-              <span className="text-amber-400 text-[13px] font-bold shrink-0">⚠</span>
-              <span className="text-[12px] text-amber-300/90 leading-snug">
-                CPU governor is <span className="font-bold text-amber-200">{cpuWarning.governor}</span> — this may slow voice responses significantly.
-                <br />
-                <span className="opacity-70">{cpuWarning.advice}</span>
-              </span>
-            </div>
-            <button
-              onClick={() => setCpuWarning(null)}
-              className="text-amber-400/60 hover:text-amber-300 text-[15px] font-bold shrink-0 px-1 transition-colors"
-              aria-label="Dismiss"
-            >✕</button>
-          </div>
+          <span className="signal-text text-amber-500/80 animate-pulse text-[9px] tracking-wider uppercase">
+            ⚠ CPU: {cpuWarning.governor} (NON-OPTIMAL)
+          </span>
         )}
+      </div>
 
-        {/* Status Area */}
-        <div className="p-6 md:p-12 pb-0 flex flex-col items-center gap-4 shrink-0">
-          <div className="glass-card glass-base flex items-center gap-3 px-5 py-2">
-            {testingClip && (
-              <FlaskConical size={13} className="text-[rgb(var(--accent))] animate-pulse shrink-0" />
-            )}
-            <div className={cn(
-              "w-2.5 h-2.5 rounded-full transition-all duration-500",
-              interactionState !== "Idle" || isEngaged
-                ? "bg-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.6)] animate-pulse"
-                : "bg-[rgb(var(--foreground-muted))] opacity-60"
-            )} />
-            <span className="text-[11px] font-bold tracking-[0.3em] uppercase shimmer-text">
-              {!isEngaged && interactionState === "Idle" && !isSleeping && "System Dormant"}
-              {isSleeping && "System Sleeping (Models Offloaded)"}
-              {isEngaged && interactionState === "Idle" && pttStatus === 'IDLE' && !isSleeping && "System Ready"}
-              {pttStatus === 'RECORDING' && "Recording..."}
-              {pttStatus === 'PROCESSING' && "Processing..."}
-              {interactionState === "Thinking" && pttStatus === 'IDLE' && "Thinking..."}
-              {interactionState === "AssistantSpeaking" && "Responding..."}
-              {interactionState === "Listening" && pttStatus === 'IDLE' && "Awaiting Audio..."}
-              {interactionState === "UserSpeaking" && pttStatus === 'IDLE' && "Listening..."}
-            </span>
-          </div>
-        </div>
+      <div className="absolute top-4 right-6 z-30 pointer-events-none flex items-center gap-3">
+        {testingClip && (
+          <span className="signal-text text-amber-500 animate-pulse">TESTING</span>
+        )}
+        <span className="signal-text">
+          {isSleeping ? "SLEEPING" : isEngaged ? interactionState : "DORMANT"}
+        </span>
+      </div>
 
-        {/* Dynamic Orb Area */}
-        <div className="flex-1 w-full flex items-center justify-center relative min-h-0">
-          {/* Gradient aura behind orb */}
-          <div className="absolute inset-0 bg-gradient-radial from-[rgb(var(--accent))]/5 to-transparent pointer-events-none opacity-60" />
-          {/* Glass plateau — subtle circular stage beneath the orb */}
-          <div className={cn(
-            "absolute rounded-full glass-whisper glass-base transition-all duration-1000",
-            "w-[90vw] h-[90vw] max-w-[500px] max-h-[500px] md:w-[500px] md:h-[500px]",
-            !isEngaged ? "opacity-30 scale-95" : "opacity-60 scale-100",
-            isSleeping && "opacity-10 scale-90"
-          )} />
-          <div className={cn(
-            "relative z-10 w-[85vw] h-[85vw] max-w-[460px] max-h-[460px] md:w-[460px] md:h-[460px] transition-all duration-1000 flex items-center justify-center",
-            !isEngaged ? "grayscale-[0.8] opacity-60 blur-[2px]" : "grayscale-0 opacity-100 blur-0",
-            isSleeping && "grayscale-[0.9] opacity-30 blur-[4px]"
-          )}>
-            <ErrorBoundary name="VoxOrb">
-              <VoxOrb interactionState={interactionState} isSleeping={isSleeping} isTesting={!!testingClip} />
-            </ErrorBoundary>
-          </div>
-        </div>
+      {/* Floating Dialogue Area (Upper Field) */}
+      <div className="absolute top-[12%] left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 flex flex-col items-center justify-center text-center z-20 pointer-events-none select-text">
+        {transcript && (
+          <p className="field-text mb-4 text-[rgb(var(--foreground))]/70 animate-in fade-in duration-500 font-light">
+            {transcript}
+          </p>
+        )}
+        {assistantText && (
+          <p className="field-text text-[rgb(var(--accent))] animate-in fade-in duration-500 font-medium tracking-wide">
+            {assistantText}
+          </p>
+        )}
+        {!transcript && !assistantText && (
+          <p className="ambient-label tracking-[0.25em] text-[rgb(var(--foreground-muted))]/40 animate-pulse">
+            {isSleeping 
+              ? "Models Offloaded" 
+              : isEngaged 
+                ? (interactionMode === "PTT" ? "Hold mic button to speak" : "Voice signal active") 
+                : "Awaiting Engagement"}
+          </p>
+        )}
+      </div>
 
-        {/* Interaction Zone */}
-        <div className="p-6 md:p-12 pt-0 w-full flex flex-col items-center shrink-0">
-          <div className="w-full max-w-2xl flex items-center justify-center relative h-32 overflow-visible">
-            {/* Flanking Waveform Container */}
-            <div className={cn(
-              "absolute inset-0 flex items-center justify-center transition-all duration-700 pointer-events-none",
-              activeSpeaking && !testingClip ? "opacity-60 scale-100" : "opacity-0 scale-95 blur-md"
-            )}>
-              <LiveWaveform
-                active={activeSpeaking && !testingClip}
-                processing={false}
-                telemetryRef={telemetryRef}
-                height={60}
-                className="w-full"
-                mode="static"
-                barWidth={3}
-                barGap={2}
-                fadeWidth={120} 
-              />
-            </div>
-
-            {/* Buttons Container — Frosted Glass Container */}
-            <div className="flex items-center gap-6 relative z-20 px-8 py-5 rounded-full glass-surface glass-base border border-[rgba(var(--border),0.08)]">
-              <div className="relative">
-                <button
-                  onClick={handleEngage}
-                  className={cn(
-                    "flex items-center justify-center w-16 h-16 rounded-full transition-all duration-500 border-2",
-                    (isEngaged && isThinking || isLaunching) && "engage-btn-loading",
-                    isLaunching && "animate-spin",
-                    isEngaged
-                      ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.3)] text-[rgb(var(--accent))]"
-                      : "bg-[rgb(var(--accent))] border-transparent  text-[rgb(var(--accent-foreground))] hover:scale-105 shadow-[0_0_30px_rgba(var(--accent),0.5)]"
-                  )}
-                  disabled={isLaunching}
-                >
-                  {isLaunching ? (
-                    <Activity size={22} className="animate-pulse" />
-                  ) : (
-                    <Activity size={22} className={cn("transition-transform duration-700", isEngaged && "rotate-180")} />
-                  )}
-                </button>
-                <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-24 text-center">
-                  <span className="text-[11px] font-bold tracking-[0.2em] uppercase opacity-60">
-                    {isEngaged ? "Stop" : "Engage"}
-                  </span>
-                </div>
-              </div>
-
-              {/* PTT Mic Button — Only visible when Engaged + PTT mode and not testing */}
-              {isEngaged && !testingClip && interactionMode === "PTT" && (
-                <div className="relative animate-in fade-in slide-in-from-left-4 duration-500">
-                  <button
-                    onClick={togglePtt}
-                    className={cn(
-                      "flex items-center justify-center w-16 h-16 rounded-full transition-all duration-500 border-2",
-                      pttStatus === 'RECORDING'
-                        ? "bg-[rgb(var(--accent))] border-transparent  scale-110 text-[rgb(var(--accent-foreground))]"
-                        : "bg-[rgb(var(--background))] border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] hover:border-[rgb(var(--accent))] "
-                    )}
-                  >
-                    <Mic size={24} className={cn(pttStatus === 'RECORDING' && "animate-pulse")} />
-                  </button>
-                  <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-24 text-center">
-                    <span className={cn(
-                      "text-[11px] font-black tracking-[0.3em] uppercase transition-colors",
-                      pttStatus === 'RECORDING' ? "text-[rgb(var(--accent))]" : "opacity-60"
-                    )}>
-                      {pttStatus === 'RECORDING' ? "Live" : "MIC"}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+      {/* Sentient Orb Stage (Lower Center) */}
+      <div className="absolute top-[55%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-[340px] h-[340px] md:w-[380px] md:h-[380px] flex items-center justify-center pointer-events-none">
+        {/* Subtle dynamic ring behind orb */}
+        <div className={cn(
+          "absolute inset-0 rounded-full border border-[rgb(var(--accent))]/10 transition-all duration-1000",
+          isEngaged ? "scale-100 opacity-100 animate-field-pulse" : "scale-90 opacity-20"
+        )} />
+        <div className="relative w-full h-full flex items-center justify-center">
+          <ErrorBoundary name="VoxOrb">
+            <VoxOrb interactionState={interactionState} isSleeping={isSleeping} isTesting={!!testingClip} />
+          </ErrorBoundary>
         </div>
       </div>
 
-      {/* ===== RIGHT SIDEBAR BRIEF (Desktop Only) ===== */}
-      <div className="hidden xl:flex flex-col gap-6 py-16 pr-12 w-[420px] shrink-0 z-10">
-        <div className="glass-card glass-base p-8 min-h-[500px] flex flex-col relative group">
-          <div className="absolute top-5 right-5 p-3 opacity-[0.08] group-hover:opacity-20 transition-opacity">
-            <Mic size={48} />
-          </div>
-
-          <div className="flex items-center gap-3 mb-8 shrink-0">
-            <div className="w-1 h-7 bg-[rgb(var(--accent))] rounded-full" />
-            <span className="text-[11px] font-bold tracking-[0.3em] text-[rgb(var(--accent))] uppercase">Interaction Stream</span>
-          </div>
-
-          <div className="flex-1 flex flex-col gap-6">
-            <div className="flex-1 flex flex-col">
-              <h3 className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.25em] mb-4 opacity-50">Live Dialogue</h3>
-              
-              <div 
-                ref={scrollRef}
-                className="flex-1 flex flex-col gap-5 max-h-[360px] overflow-y-auto custom-scrollbar pr-2"
-              >
-                {/* User Bubble — glass-whisper style */}
-                <div className={cn(
-                  "transition-all duration-500 transform",
-                  transcript ? "opacity-100 translate-x-0" : "h-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden"
-                )}>
-                  <div className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] mb-2">You</div>
-                  <div className="p-4 rounded-2xl glass-whisper glass-base border border-[rgba(var(--border),0.06)]">
-                    <p className="text-base font-medium text-[rgb(var(--foreground))] leading-relaxed">
-                      {transcript}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Assistant Bubble — glass-surface with accent tint */}
-                <div className={cn(
-                  "transition-all duration-700 delay-200 transform",
-                  assistantText ? "opacity-100 translate-y-0" : "h-0 opacity-0 translate-y-4 pointer-events-none overflow-hidden"
-                )}>
-                  <div className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
-                    <div className="w-1 h-3 bg-[rgb(var(--accent))] rounded-full" />
-                    Vox
-                  </div>
-                  <div className="p-4 rounded-2xl glass-surface glass-base border border-[rgb(var(--accent))]/10">
-                    <p className="text-base font-medium text-[rgb(var(--foreground))] leading-relaxed">
-                      {assistantText}
-                    </p>
-                  </div>
-                </div>
-
-                {!transcript && !assistantText && (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center px-6 opacity-50 min-h-[200px]">
-                    <Activity size={28} className="mb-3 text-[rgb(var(--accent))] animate-pulse" />
-                    <p className="text-sm font-medium">
-                      {isEngaged 
-                        ? (interactionMode === "PTT" ? "Click the Mic button to start recording" : "Listening for your voice...") 
-                        : "System dormant. Click Engage to start."}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="pt-5 border-t border-[rgba(var(--accent),0.08)] grid grid-cols-2 gap-4 shrink-0">
-              <div className="rounded-xl glass-whisper glass-base p-3">
-                <div className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] mb-1.5 opacity-60">Pipeline</div>
-                <div className="text-sm font-mono text-[rgb(var(--accent))] uppercase tracking-wider flex items-center gap-2">
-                  <span className={cn(
-                    "inline-block w-2 h-2 rounded-full transition-all duration-500",
-                    isEngaged ? "bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.6)]" : "bg-[rgb(var(--foreground-muted))] opacity-50"
-                  )} />
-                  {isEngaged ? "Active" : "Locked"}
-                </div>
-              </div>
-              <div className="rounded-xl glass-whisper glass-base p-3">
-                <div className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] mb-1.5 opacity-60">Protocol</div>
-                <div className="text-sm font-mono text-[rgb(var(--accent))] uppercase tracking-wider">
-                  {interactionMode}
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* Interaction Controls Area (Floating bottom) */}
+      <div className="absolute bottom-[2%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4 w-full max-w-md">
+        
+        {/* Waveform under orb / above buttons */}
+        <div className={cn(
+          "w-full h-10 transition-all duration-500 pointer-events-none opacity-0 scale-95",
+          activeSpeaking && !testingClip && "opacity-75 scale-100"
+        )}>
+          <LiveWaveform
+            active={activeSpeaking && !testingClip}
+            processing={false}
+            telemetryRef={telemetryRef}
+            height={36}
+            className="w-full"
+            mode="static"
+            barWidth={2.5}
+            barGap={1.5}
+            fadeWidth={80} 
+          />
         </div>
 
-        {/* ===== TEST MODE (full width, below sidebar) ===== */}
-        <div className="relative w-full">
-          <div className={cn(
-            "glass-card glass-base w-full transition-all duration-300 overflow-hidden",
-            isEngaged && !testingClip ? "opacity-60 cursor-not-allowed" : "hover:border-[rgb(var(--accent))]/40"
-          )}>
-            {/* Header/Button part */}
-            <button
-              onClick={() => !isEngaged && setTestMode(!testMode)}
-              disabled={isEngaged && !testingClip}
-              className={cn(
-                "w-full p-4 flex items-center justify-between transition-all duration-300",
-                isEngaged && !testingClip ? "cursor-not-allowed" : "cursor-pointer"
-              )}
-            >
-              <div className="flex items-center gap-3">
-                <FlaskConical size={16} className={cn(
-                  "transition-all duration-300",
-                  testingClip ? "text-[rgb(var(--accent))] animate-pulse" : testMode ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]"
-                )} />
-                <div className="text-left">
-                  <div className="text-[11px] font-bold tracking-widest uppercase text-[rgb(var(--foreground-muted))]">
-                    {testingClip ? "Test In Progress" : "Test Mode"}
+        {/* Buttons layout */}
+        <div className="flex items-center gap-4 relative">
+          
+          {/* Test Mode Glyph Button */}
+          {!isEngaged && (
+            <div className="relative">
+              <button
+                onClick={() => setTestMode(!testMode)}
+                className={cn(
+                  "flex items-center justify-center w-11 h-11 rounded-full border border-[rgba(var(--accent),0.15)] bg-black/45 hover:bg-[rgb(var(--accent))]/10 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all duration-300",
+                  testMode && "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
+                )}
+                aria-label="Test Mode"
+              >
+                <FlaskConical size={16} />
+              </button>
+
+              {/* Expandable test clips list */}
+              {testMode && (
+                <div className="absolute bottom-14 left-1/2 -translate-x-1/2 w-56 p-2 rounded-2xl bg-black/90 border border-[rgba(var(--accent),0.25)] shadow-[0_10px_30px_rgba(0,0,0,0.6)] backdrop-blur-xl animate-in slide-in-from-bottom-2 duration-300 flex flex-col gap-1 z-30">
+                  <div className="px-2 py-1 border-b border-[rgba(var(--accent),0.1)] mb-1">
+                    <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase block">Select Test Input</span>
                   </div>
-                  {testingClip && (
-                    <div className="flex items-center gap-2 text-[13px] font-semibold text-[rgb(var(--accent))] mt-0.5 animate-pulse">
-                      <div className="w-2.5 h-2.5 rounded-full border-2 border-[rgb(var(--accent))] border-t-transparent animate-spin shrink-0" />
-                      <span className="truncate max-w-[200px] block">
-                        Running: {testClips.find(c => c.id === testingClip)?.name}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {!isEngaged && (
-                <div className={cn(
-                  "w-4 h-4 rounded-full border-2 transition-all duration-500",
-                  testMode
-                    ? "bg-[rgb(var(--accent))] border-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.4)]"
-                    : "border-[rgb(var(--foreground-muted))]/30"
-                )} />
-              )}
-            </button>
-
-            {/* Expandable clips list */}
-            {testMode && !isEngaged && (
-              <div className="border-t border-[rgba(var(--accent),0.06)] p-2 glass-whisper glass-base animate-in slide-in-from-top-2 duration-300">
-                <div className="flex flex-col gap-1">
                   {testClips.map((clip) => (
-                    <div
+                    <button
                       key={clip.id}
-                      className="flex items-center justify-between gap-3 p-3 rounded-xl glass-whisper glass-base hover:border-[rgb(var(--accent))]/20 transition-all duration-300 border border-transparent"
+                      onClick={() => handleTestClip(clip.id)}
+                      className="w-full text-left p-2 rounded-xl hover:bg-[rgb(var(--accent))]/10 transition-colors border border-transparent hover:border-[rgb(var(--accent))]/15 flex flex-col"
                     >
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-semibold text-[rgb(var(--foreground))] truncate">
-                          {clip.name}
-                        </div>
-                        <div className="text-[11px] text-[rgb(var(--foreground-muted))] truncate opacity-70">
-                          {clip.desc} · {clip.duration}
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => handleTestClip(clip.id)}
-                        className="shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-wider uppercase transition-all duration-300 bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/20"
-                      >
-                        Test
-                      </button>
-                    </div>
+                      <span className="text-[12px] font-semibold text-[rgb(var(--foreground))]">{clip.name}</span>
+                      <span className="text-[9px] text-[rgb(var(--foreground-muted))] mt-0.5">{clip.desc} · {clip.duration}</span>
+                    </button>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          )}
+
+          {/* Primary Engage Button */}
+          <div className="relative">
+            <button
+              onClick={handleEngage}
+              className={cn(
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/30 bg-black/35 hover:scale-105 active:scale-95 shadow-[0_4px_20px_rgba(0,0,0,0.4)]",
+                (isEngaged && isThinking || isLaunching) && "engage-btn-loading border-transparent",
+                isLaunching && "animate-spin",
+                isEngaged
+                  ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.2)] bg-black/45"
+                  : "bg-[rgb(var(--accent))]/10 hover:bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]"
+              )}
+              disabled={isLaunching}
+              aria-label={isEngaged ? "Stop Vox" : "Engage Vox"}
+            >
+              {isLaunching ? (
+                <Activity size={20} className="animate-pulse" />
+              ) : (
+                <Activity size={20} className={cn("transition-transform duration-700", isEngaged && "rotate-180")} />
+              )}
+            </button>
           </div>
+
+          {/* Cancel Test Button */}
+          {testingClip && (
+            <button
+              onClick={handleCancelTest}
+              className="flex items-center justify-center w-11 h-11 rounded-full border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all duration-300"
+              aria-label="Cancel Test"
+            >
+              <span className="text-[9px] font-mono font-bold tracking-wider uppercase">Stop</span>
+            </button>
+          )}
+
+          {/* PTT Mic Button */}
+          {isEngaged && !testingClip && interactionMode === "PTT" && (
+            <button
+              onClick={togglePtt}
+              className={cn(
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/30 bg-black/35 hover:scale-105 active:scale-95",
+                pttStatus === 'RECORDING'
+                  ? "bg-[rgb(var(--accent))] border-transparent text-[rgb(var(--accent-foreground))] shadow-[0_0_20px_rgba(var(--accent),0.4)]"
+                  : "text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+              )}
+              aria-label="Toggle PTT Microphone"
+            >
+              <Mic size={22} className={cn(pttStatus === 'RECORDING' && "animate-pulse")} />
+            </button>
+          )}
         </div>
       </div>
     </div>
