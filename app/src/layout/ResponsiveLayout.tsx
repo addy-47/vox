@@ -1,6 +1,5 @@
 import React from "react";
-import { Sidebar } from "./Sidebar";
-import { BottomNav } from "./BottomNav";
+import { EdgeNav } from "./EdgeNav";
 import { TitleBar } from "./TitleBar";
 import { AmbientBackground } from "@/shared/components/AmbientBackground";
 import { Outlet } from "react-router-dom";
@@ -39,17 +38,12 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         {/* Deep Space Ambient Background */}
         <AmbientBackground />
 
-        {/* Left sidebar — desktop only */}
-        <div className="hidden md:block">
-          <Sidebar />
-        </div>
-
-        {/* Bottom nav — mobile only */}
-        <BottomNav />
+        {/* Unified bottom strip navigation */}
+        <EdgeNav />
 
         {/* Page content */}
         <main style={{ position: "relative", zIndex: 10, flex: 1, height: "100%", overflow: "hidden", width: "100%" }}>
-          <div className="md:pl-[96px] h-full w-full overflow-hidden flex flex-col pb-[64px] md:pb-0">
+          <div className="h-full w-full overflow-hidden flex flex-col pb-[80px]">
             {children || <Outlet />}
           </div>
         </main>
