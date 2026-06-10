@@ -105,7 +105,7 @@ export const ModelSettings: React.FC = () => {
               setConfirmDeleteId(null);
             }}
             className="p-1 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/35 transition-colors border border-red-500/30 flex items-center justify-center"
-            title="Yes, Delete"
+            aria-label="Yes, Delete"
           >
             <Check size={12} className="font-bold" />
           </button>
@@ -115,7 +115,7 @@ export const ModelSettings: React.FC = () => {
               setConfirmDeleteId(null);
             }}
             className="p-1 rounded-lg bg-[rgb(var(--foreground))]/[0.05] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/[0.08] transition-colors border border-[rgba(var(--border),0.1)] flex items-center justify-center"
-            title="Cancel"
+            aria-label="Cancel"
           >
             <ArrowLeft size={12} />
           </button>
@@ -145,7 +145,7 @@ export const ModelSettings: React.FC = () => {
             setConfirmDeleteId(modelId);
           }}
           className="p-2 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/25 transition-colors"
-          title="Purge Weights"
+          aria-label="Purge Weights"
         >
           <Trash2 size={14} />
         </button>
@@ -338,7 +338,7 @@ export const ModelSettings: React.FC = () => {
   };
 
   const renderSubTabHeader = () => (
-    <div className="flex bg-[rgb(var(--foreground))]/[0.03] p-0.5 rounded-xl border border-[rgba(var(--border),0.06)] mb-4">
+    <div className="flex glass-whisper glass-base p-0.5 rounded-xl mb-4">
       <button
         onClick={() => setActiveCategoryTab("model")}
         className={cn(
@@ -371,7 +371,7 @@ export const ModelSettings: React.FC = () => {
         
         {/* Left Column: Interactive Topology Pipeline Selector */}
         <div className="lg:col-span-7 flex flex-col lg:min-h-0">
-          <div className="premium-card p-4 sm:p-6 lg:p-8 flex flex-col lg:h-full lg:min-h-0 relative overflow-hidden">
+          <div className="glass-card glass-base p-4 sm:p-6 lg:p-8 flex flex-col lg:h-full lg:min-h-0 relative overflow-hidden">
             
             {/* Header */}
             <div className="flex items-center justify-between mb-6 shrink-0">
@@ -385,7 +385,7 @@ export const ModelSettings: React.FC = () => {
             </div>
 
             {/* Topology Pipeline Map */}
-            <div className="grid grid-cols-6 lg:grid-cols-5 gap-2 lg:gap-3 mb-6 shrink-0 relative p-1.5 rounded-2xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.06)] overflow-visible">
+            <div className="grid grid-cols-6 lg:grid-cols-5 gap-2 lg:gap-3 mb-6 shrink-0 relative p-1.5 rounded-2xl glass-whisper glass-base overflow-visible">
               
               {/* NODE 1: VAD */}
               <button
@@ -490,7 +490,7 @@ export const ModelSettings: React.FC = () => {
             </div>
 
             {/* Direct Multi-Card/Grid Selector Workspace (Zero Jargon, Zero Ugly Select Boxes) */}
-            <div className="lg:flex-1 lg:min-h-0 flex flex-col bg-[rgb(var(--foreground))]/[0.01] border border-[rgba(var(--border),0.06)] rounded-2xl p-4 sm:p-5 relative lg:overflow-y-auto lg:custom-scrollbar">
+            <div className="lg:flex-1 lg:min-h-0 flex flex-col glass-whisper glass-base rounded-2xl p-4 sm:p-5 relative lg:overflow-y-auto lg:custom-scrollbar">
               
               {/* TAB 1: SILENCE DETECTION (VAD) */}
               {activePipelineTab === "vad" && (
@@ -503,7 +503,7 @@ export const ModelSettings: React.FC = () => {
                       <div 
                         onClick={() => updateDraft("vad", "vad_backend", "earshot")}
                         className={cn(
-                          "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
+                          "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 glass-whisper glass-base",
                           activeVadBackend === "earshot" && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
                         )}
                       >
@@ -526,7 +526,7 @@ export const ModelSettings: React.FC = () => {
                       <div 
                         onClick={() => updateDraft("vad", "vad_backend", "ten_vad")}
                         className={cn(
-                          "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
+                          "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 glass-whisper glass-base",
                           activeVadBackend === "ten_vad" && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
                         )}
                       >
@@ -591,7 +591,7 @@ export const ModelSettings: React.FC = () => {
                                 "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                                 Math.abs(draftSettings.vad.threshold - value) < 0.01
                                   ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-                                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10"
+                                  : "glass-whisper glass-base text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
                               )}
                             >{label}</button>
                           ))}
@@ -621,7 +621,7 @@ export const ModelSettings: React.FC = () => {
                           key={model.id}
                           onClick={() => updateDraft("asr", "model", model.id)}
                           className={cn(
-                            "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
+                            "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-whisper glass-base",
                             isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
                           )}
                         >
@@ -673,7 +673,7 @@ export const ModelSettings: React.FC = () => {
               {/* TAB 3: ROMAN TRANSLITERATION */}
               {activePipelineTab === "translit" && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] space-y-4">
+                  <div className="p-4 rounded-xl border glass-whisper glass-base space-y-4">
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
@@ -736,7 +736,7 @@ export const ModelSettings: React.FC = () => {
                             key={model.id}
                             onClick={() => updateDraft("llm", "model", model.id)}
                             className={cn(
-                              "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)]",
+                              "p-4 rounded-xl border transition-all duration-300 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-whisper glass-base",
                               isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
                             )}
                           >
@@ -806,7 +806,7 @@ export const ModelSettings: React.FC = () => {
                                 "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                                 draftSettings.llm.ctx_size === val
                                   ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-                                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10"
+                                  : "glass-whisper glass-base text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
                               )}
                             >{val < 1024 ? val : val >= 1024 && val < 1024 * 1024 ? `${val / 1024}k` : `${val / 1024 / 1024}M`}</button>
                           ))}
@@ -835,7 +835,7 @@ export const ModelSettings: React.FC = () => {
                                     "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                                     draftSettings.llm.threads === val
                                       ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-                                      : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10"
+                                      : "glass-whisper glass-base text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
                                   )}
                                 >{val}{val === maxSafe && val !== totalCores ? " (max)" : ""}{val === totalCores && val !== maxSafe ? " (all)" : ""}</button>
                               ))}
@@ -856,7 +856,7 @@ export const ModelSettings: React.FC = () => {
                   {activeCategoryTab === "model" ? (
                     <div className="grid grid-cols-1 gap-4">
                       {/* Supertonic 3 Multilingual */}
-                      <div className="p-4 rounded-xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.08)] flex flex-col justify-between h-36">
+                      <div className="p-4 rounded-xl border glass-whisper glass-base flex flex-col justify-between h-36">
                         <div>
                           <div className="flex justify-between items-center">
                             <span className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
@@ -904,7 +904,7 @@ export const ModelSettings: React.FC = () => {
                                 "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                                 draftSettings.tts.quality_steps === step
                                   ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-                                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10"
+                                  : "glass-whisper glass-base text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
                               )}
                             >{step}</button>
                           ))}
@@ -943,7 +943,7 @@ export const ModelSettings: React.FC = () => {
         <div className="lg:col-span-5 flex flex-col gap-6 lg:min-h-0">
           
           {/* Connectivity Card (mock — cloud inference planned for v0.8.3+) */}
-          <div className="premium-card p-4 sm:p-6 lg:p-8 flex flex-col gap-5 shrink-0">
+          <div className="glass-card glass-base p-4 sm:p-6 lg:p-8 flex flex-col gap-5 shrink-0">
             <div className="flex items-center gap-3 shrink-0">
               <Wifi className="text-[rgb(var(--accent))]" size={22} />
               <div className="space-y-0.5">
@@ -954,21 +954,21 @@ export const ModelSettings: React.FC = () => {
 
             <div className="space-y-4">
               {/* Local / Cloud Toggle (mock) */}
-              <div className="flex items-center justify-between p-3.5 rounded-xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)]">
+              <div className="flex items-center justify-between p-3.5 rounded-xl glass-whisper glass-base">
                 <div className="space-y-0.5">
                   <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">Inference Mode</span>
                   <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-80 leading-normal">
                     Run models locally or route to cloud
                   </p>
                 </div>
-                <div className="flex bg-[rgb(var(--foreground))]/[0.05] p-0.5 rounded-lg border border-[rgba(var(--border),0.05)]">
+                <div className="flex glass-whisper glass-base p-0.5 rounded-lg">
                   <span className="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]">Local</span>
                   <span className="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-40">Cloud</span>
                 </div>
               </div>
 
               {/* API Key Input (mock) */}
-              <div className="p-3.5 rounded-xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)] space-y-2">
+              <div className="p-3.5 rounded-xl glass-whisper glass-base space-y-2">
                 <div className="space-y-0.5">
                   <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">API Key</span>
                   <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-80 leading-normal">
@@ -986,7 +986,7 @@ export const ModelSettings: React.FC = () => {
               <div className="h-px bg-[rgba(var(--border),0.05)]" />
 
               {/* Transliteration Enabled/Disabled Toggle */}
-              <div className="flex items-center justify-between p-3.5 rounded-xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)]">
+              <div className="flex items-center justify-between p-3.5 rounded-xl glass-whisper glass-base">
                 <div className="space-y-0.5">
                   <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">Hinglish Transliteration</span>
                   <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-80 leading-normal">
@@ -1017,7 +1017,7 @@ export const ModelSettings: React.FC = () => {
           </div>
 
           {/* Prompts Section with Switcher and Balanced Height Textarea */}
-          <div className="premium-card p-4 sm:p-6 lg:p-4 flex flex-col gap-4 lg:flex-1 lg:min-h-0">
+          <div className="glass-card glass-base p-4 sm:p-6 lg:p-4 flex flex-col gap-4 lg:flex-1 lg:min-h-0">
             
             <div className="flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
@@ -1029,7 +1029,7 @@ export const ModelSettings: React.FC = () => {
               </div>
 
               {/* Tab Switcher */}
-              <div className="flex bg-[rgb(var(--foreground))]/[0.05] p-1 rounded-xl border border-[rgba(var(--border),0.05)]">
+              <div className="flex glass-whisper glass-base p-1 rounded-xl">
                 <button
                   onClick={() => setPromptTab("en")}
                   className={cn(
@@ -1064,14 +1064,14 @@ export const ModelSettings: React.FC = () => {
                   <textarea 
                     value={draftSettings.assistant?.english_prompt || ""}
                     onChange={(e) => updateDraft("assistant", "english_prompt", e.target.value)}
-                    className="absolute inset-0 w-full h-full p-4 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] text-[13px] text-[rgb(var(--foreground))] opacity-90 focus:opacity-100 focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all resize-none custom-scrollbar leading-relaxed"
+                    className="absolute inset-0 w-full h-full p-4 rounded-xl glass-whisper glass-base text-[13px] text-[rgb(var(--foreground))] opacity-90 focus:opacity-100 focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all resize-none custom-scrollbar leading-relaxed"
                     placeholder="Provide guidelines for the AI assistant when speaking in English..."
                   />
                 ) : (
                   <textarea 
                     value={draftSettings.assistant?.hindi_prompt || ""}
                     onChange={(e) => updateDraft("assistant", "hindi_prompt", e.target.value)}
-                    className="absolute inset-0 w-full h-full p-4 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] text-[13px] text-[rgb(var(--foreground))] opacity-90 focus:opacity-100 focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all resize-none custom-scrollbar leading-relaxed"
+                    className="absolute inset-0 w-full h-full p-4 rounded-xl glass-whisper glass-base text-[13px] text-[rgb(var(--foreground))] opacity-90 focus:opacity-100 focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all resize-none custom-scrollbar leading-relaxed"
                     placeholder="Provide guidelines for the AI assistant when replying in Hindi..."
                   />
                 )}
