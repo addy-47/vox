@@ -9,7 +9,7 @@ pub mod setup;
 pub mod wizard;
 
 use crate::core::state::AppState;
-use crate::ipc::pipeline::{check_engine_status, launch_engine, stop_engine, engage};
+use crate::ipc::pipeline::{check_engine_status, launch_engine, stop_engine, engage, test_clip, test_clip_cancel};
 use crate::ipc::tray::{
     hide_tray_window, sync_hud_visibility, set_hud_ignore_cursor, 
     update_interaction_mode, show_main_window, toggle_hud_visibility
@@ -241,8 +241,13 @@ pub fn run() {
             
             // ── 1.7.5 CPU Governor Check (Linux only — warns if not "performance") ──
             {
+                let state: tauri::State<'_, std::sync::Arc<AppState>> = app.state();
                 if let Some(governor) = crate::utils::check_cpu_governor() {
                     let is_optimal = governor == "performance";
+                    // Store in AppState so frontend can read from snapshot (avoids race with listener setup)
+                    *state.cpu_governor.lock().unwrap() = governor.clone();
+                    state.cpu_governor_optimal.store(is_optimal, std::sync::atomic::Ordering::Relaxed);
+
                     if !is_optimal {
                         log::warn!(
                             "[BOOTSTRAP] CPU governor is '{}', not 'performance'. \
@@ -250,12 +255,12 @@ pub fn run() {
                              Consider: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
                             governor
                         );
+                        let _ = app.emit("cpu_governor_warning", serde_json::json!({
+                            "governor": governor,
+                            "optimal": is_optimal,
+                            "advice": "Switch to 'performance' governor for best voice pipeline performance"
+                        }));
                     }
-                    let _ = app.emit("cpu_governor_warning", serde_json::json!({
-                        "governor": governor,
-                        "optimal": is_optimal,
-                        "advice": "Switch to 'performance' governor for best voice pipeline performance"
-                    }));
                 }
             }
 
@@ -376,6 +381,8 @@ pub fn run() {
             launch_engine,
             stop_engine,
             engage,
+            test_clip,
+            test_clip_cancel,
             hide_tray_window,
             sync_hud_visibility,
             set_hud_ignore_cursor,

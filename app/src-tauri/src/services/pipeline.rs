@@ -456,10 +456,14 @@ impl PipelineOrchestrator {
             .name("vox-translit".into())
             .spawn(move || {
                 let mut worker_turn_id = 0;
+                let mut raw_accum = String::new();
                 while let Ok(task) = translit_rx.recv() {
                     match task {
                         TranslitTask::Cancel { turn_id } => {
-                            worker_turn_id = turn_id;
+                            if turn_id >= worker_turn_id {
+                                worker_turn_id = turn_id;
+                                raw_accum.clear();
+                            }
                         }
                         TranslitTask::Token {
                             turn_id,
@@ -470,9 +474,13 @@ impl PipelineOrchestrator {
                             if turn_id < worker_turn_id {
                                 continue;
                             }
-                            worker_turn_id = turn_id;
+                            if turn_id > worker_turn_id {
+                                worker_turn_id = turn_id;
+                                raw_accum.clear();
+                            }
+                            raw_accum.push_str(&token);
                             let output =
-                                transliterate_if_hi(&token, false, local_transliterate_enabled);
+                                transliterate_if_hi(&raw_accum, false, local_transliterate_enabled);
                             let _ = app_handle_translit.emit_to(&target, "llm_token", output);
                         }
                         TranslitTask::Partial {
@@ -485,7 +493,10 @@ impl PipelineOrchestrator {
                             if turn_id < worker_turn_id {
                                 continue;
                             }
-                            worker_turn_id = turn_id;
+                            if turn_id > worker_turn_id {
+                                worker_turn_id = turn_id;
+                                raw_accum.clear();
+                            }
                             let output =
                                 transliterate_if_hi(&text, false, local_transliterate_enabled);
                             log::info!("[Translit] Emitting partial to {}: {:?}", target, output);
@@ -507,7 +518,10 @@ impl PipelineOrchestrator {
                             if turn_id < worker_turn_id {
                                 continue;
                             }
-                            worker_turn_id = turn_id;
+                            if turn_id > worker_turn_id {
+                                worker_turn_id = turn_id;
+                                raw_accum.clear();
+                            }
                             let output =
                                 transliterate_if_hi(&text, true, local_transliterate_enabled);
                             log::info!("[Translit] Emitting final to {}: {:?}", target, output);
