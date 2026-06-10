@@ -16,7 +16,7 @@ export const TraySettings: React.FC = () => {
         <div className="grid lg:grid-cols-3 gap-8 pb-8">
           {/* HUD Setup */}
           <div className="lg:col-span-2 space-y-8">
-            <div className="glass-card glass-base p-6 md:p-8">
+            <div className="bg-black/10 p-6 md:p-8 rounded-2xl border border-[rgba(var(--accent),0.05)]">
               <div className="flex items-center gap-3 mb-8 shrink-0">
                 <Monitor className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">
@@ -46,7 +46,7 @@ export const TraySettings: React.FC = () => {
             </div>
 
             {/* Look & Feel (Appearance Card spans full width of this row) */}
-            <div className="glass-card glass-base p-6 md:p-8 space-y-8">
+            <div className="bg-black/10 p-6 md:p-8 rounded-2xl border border-[rgba(var(--accent),0.05)] space-y-8">
               <div className="flex items-center gap-3 mb-8 shrink-0">
                 <Layers className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">
@@ -96,7 +96,7 @@ export const TraySettings: React.FC = () => {
 
           {/* Tray Interaction */}
           <div className="space-y-8">
-            <div className="glass-card glass-base p-6 md:p-8 space-y-8">
+            <div className="bg-black/10 p-6 md:p-8 rounded-2xl border border-[rgba(var(--accent),0.05)] space-y-8">
               <div className="flex items-center gap-3 mb-8 shrink-0">
                 <Sliders className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">
@@ -139,7 +139,7 @@ export const TraySettings: React.FC = () => {
               </div>
             </div>
 
-            <div className="glass-card glass-base p-6 md:p-8 space-y-8">
+            <div className="bg-black/10 p-6 md:p-8 rounded-2xl border border-[rgba(var(--accent),0.05)] space-y-8">
               <div className="flex items-center gap-3 mb-8 shrink-0">
                 <History className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">
