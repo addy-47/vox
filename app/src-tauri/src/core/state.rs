@@ -247,6 +247,11 @@ pub struct AppState {
     /// Phase 7 Setup
     pub model_manager: Arc<crate::setup::model_manager::ModelManager>,
     pub manifest: Arc<tokio::sync::RwLock<Option<crate::setup::manifest::VoxManifest>>>,
+
+    /// CPU frequency governor (Linux). Checked once at startup. Empty string if unavailable.
+    pub cpu_governor: std::sync::Mutex<String>,
+    /// Whether the CPU governor is optimal ("performance"). True if unavailable (non-Linux).
+    pub cpu_governor_optimal: Arc<AtomicBool>,
     pub setup_running: Arc<Mutex<bool>>,
 }
 
@@ -332,6 +337,8 @@ impl AppState {
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
             model_manager,
             manifest,
+            cpu_governor: std::sync::Mutex::new(String::new()),
+            cpu_governor_optimal: Arc::new(AtomicBool::new(true)), // optimistic default
             setup_running: Arc::new(Mutex::new(false)),
         }
     }
