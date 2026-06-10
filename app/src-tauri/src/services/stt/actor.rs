@@ -265,6 +265,7 @@ pub fn spawn_stt_worker(
                         processed_samples = 0;
                         continue;
                     }
+                    current_active_turn = tid;
 
                     if engine.is_none() {
                         match init_engine(&engine_type, &model_path) {
@@ -293,23 +294,40 @@ pub fn spawn_stt_worker(
                                 stt_audio_buffer.extend_from_slice(new_samples);
                             }
 
-                            // Finalize by draining all remaining samples, padding to 8960
+                            // Process remaining audio in 8960-sample stride chunks,
+                            // then flush with zero-padded final chunk.
+                            // This handles both:
+                            //   (a) normal VAD flow — remaining has < 8960 samples
+                            //   (b) test clip injection — remaining has full audio
+                            const STRIDE_SAMPLES: usize = 8960;
                             let mut remaining = std::mem::take(&mut stt_audio_buffer);
                             if !remaining.is_empty() {
-                                if remaining.len() < 8960 {
-                                    remaining.resize(8960, 0.0);
+                                // Process full stride chunks
+                                while remaining.len() >= STRIDE_SAMPLES {
+                                    let chunk: Vec<f32> = remaining.drain(..STRIDE_SAMPLES).collect();
+                                    match eng.transcribe_chunk(&chunk, false) {
+                                        Ok(text) => {
+                                            if !text.trim().is_empty() {
+                                                stitched_transcript.push_str(&text);
+                                            }
+                                        }
+                                        Err(e) => log::error!("[STT] Nemotron final stride failed: {}", e),
+                                    }
                                 }
-                                match eng.transcribe_chunk(&remaining, true) {
+                                // Flush remainder (< STRIDE_SAMPLES) with zero-pad
+                                let mut pad = remaining;
+                                pad.resize(STRIDE_SAMPLES, 0.0);
+                                match eng.transcribe_chunk(&pad, true) {
                                     Ok(text) => {
                                         if !text.trim().is_empty() {
                                             stitched_transcript.push_str(&text);
                                         }
                                     }
-                                    Err(e) => log::error!("[STT] Nemotron final chunk transcribe failed: {}", e),
+                                    Err(e) => log::error!("[STT] Nemotron final flush failed: {}", e),
                                 }
                             } else {
                                 // Flush cache with zero padding chunk
-                                let _ = eng.transcribe_chunk(&vec![0.0; 8960], true);
+                                let _ = eng.transcribe_chunk(&vec![0.0; STRIDE_SAMPLES], true);
                             }
 
                             let _ = eng.reset_state();

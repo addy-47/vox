@@ -55,6 +55,8 @@ pub struct PlaybackEngine {
     playback_active: Arc<AtomicBool>,
     /// Set `true` to clear the buffer and stop playback.
     cancel_flag:    Arc<AtomicBool>,
+    /// Set `true` to request the CPAL stream thread to discard all buffered audio.
+    discard_request: Arc<AtomicBool>,
     /// The active CPAL stream — kept alive until cancelled.
     _stream:        Option<cpal::Stream>,
     /// RCA Fix: Real-time safe energy telemetry (Atomic f32 via bit storage)
@@ -85,11 +87,13 @@ impl PlaybackEngine {
         let rb = ringbuf::HeapRb::<f32>::new(48_000 * 30);
         let (producer, consumer) = rb.split();
         let buffer_samples = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let discard_request = Arc::new(AtomicBool::new(false));
 
         let stream = Self::build_cpal_stream(
             consumer,
             Arc::clone(&playback_active),
             Arc::clone(&cancel_flag),
+            Arc::clone(&discard_request),
             Arc::clone(&playback_energy),
             Arc::clone(&playback_underruns),
             Arc::clone(&is_assistant_speaking),
@@ -100,6 +104,7 @@ impl PlaybackEngine {
             producer: std::sync::Mutex::new(producer),
             playback_active,
             cancel_flag,
+            discard_request,
             _stream: Some(stream),
             _playback_energy: playback_energy,
             _playback_underruns: playback_underruns,
@@ -147,6 +152,7 @@ impl PlaybackEngine {
     pub fn cancel(&self) {
         self.cancel_flag.store(true, Ordering::Relaxed);
         self.playback_active.store(false, Ordering::Relaxed);
+        self.discard_request.store(true, Ordering::Relaxed);
         if let Ok(_prod) = self.producer.lock() {
             // No easy 'clear' in ringbuf v0.4 producer, but we can't block here.
             // The callback will see cancel_flag and drop its own consumer state.
@@ -171,6 +177,7 @@ impl PlaybackEngine {
         mut consumer: HeapCons<f32>,
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
+        discard_request: Arc<AtomicBool>,
         playback_energy: Arc<AtomicU32>,
         playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
@@ -210,6 +217,14 @@ impl PlaybackEngine {
             // ── CPAL data callback — ZERO computation (Directive 3) ──────────
             // Only drains the pre-upsampled ring buffer.
             move |output: &mut [f32], _info| {
+                if discard_request.load(Ordering::Relaxed) {
+                    consumer.skip(consumer.occupied_len());
+                    buffer_samples.store(0, Ordering::SeqCst);
+                    discard_request.store(false, Ordering::Relaxed);
+                    last_sample = 0.0;
+                    current_volume = 1.0;
+                }
+
                 if !playback_active.load(Ordering::Relaxed)
                     || cancel_flag.load(Ordering::Relaxed)
                 {

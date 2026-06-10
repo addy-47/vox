@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Save, RotateCcw, Settings as SettingsIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
@@ -9,6 +9,15 @@ import { TraySettings } from "@/shared/components/TraySettings";
 export const Settings: React.FC = () => {
   const { draftSettings, hasChanges, commitChanges, discardChanges, restoreDefaults } = useSettings();
   const [activeTab, setActiveTab] = useState<"core" | "models" | "tray">("core");
+
+  // Deep link support: ?tab=models or ?tab=tray
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab === "models" || tab === "tray") {
+      setActiveTab(tab);
+    }
+  }, []);
 
   if (!draftSettings) return null;
 
@@ -31,7 +40,10 @@ export const Settings: React.FC = () => {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 p-1 bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] rounded-2xl">
               <button 
-                onClick={() => setActiveTab("core")}
+                onClick={() => {
+                  setActiveTab("core");
+                  window.history.replaceState(null, '', '/settings');
+                }}
                 className={cn(
                   "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
                   activeTab === "core" 
@@ -42,7 +54,10 @@ export const Settings: React.FC = () => {
                 Core
               </button>
               <button 
-                onClick={() => setActiveTab("models")}
+                onClick={() => {
+                  setActiveTab("models");
+                  window.history.replaceState(null, '', '/settings?tab=models');
+                }}
                 className={cn(
                   "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
                   activeTab === "models" 
@@ -53,7 +68,10 @@ export const Settings: React.FC = () => {
                 Models
               </button>
               <button 
-                onClick={() => setActiveTab("tray")}
+                onClick={() => {
+                  setActiveTab("tray");
+                  window.history.replaceState(null, '', '/settings?tab=tray');
+                }}
                 className={cn(
                   "px-5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all duration-300",
                   activeTab === "tray" 
