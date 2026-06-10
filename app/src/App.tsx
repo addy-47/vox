@@ -85,10 +85,10 @@ const App: React.FC = () => {
           {/* Main App Routes */}
           {setupCompleted && (
             <Route element={<ResponsiveLayout />}>
-              <Route path="/" element={<Home />} />
-              <Route path="/history" element={<History />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/monitoring" element={<Monitoring />} />
+              <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
+              <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
+              <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
+              <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
               <Route path="/wizard" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

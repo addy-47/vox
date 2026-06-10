@@ -13,9 +13,14 @@ import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Settings2, Shield, Mic2, Sparkles, Home } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { TitleBar } from '@/layout/TitleBar';
+import { AmbientBackground } from '@/shared/components/AmbientBackground';
+import { useSettingsStore } from '@/store/settingsStore';
+import logo from '@/assets/logo.webp';
+import logoLight from '@/assets/logo-light.webp';
 
 export const WizardRoot: React.FC = () => {
   const [state, send] = useMachine(setupMachine);
+  const theme = useSettingsStore(s => s.draftSettings?.ui.theme || 'dark');
   
   React.useEffect(() => {
     // Reveal window after a short delay to ensure React is hydrated and CSS is loaded
@@ -107,25 +112,35 @@ export const WizardRoot: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[#050505] text-white overflow-hidden font-inter selection:bg-[#00dbe9]/30">
+    <div className="flex flex-col h-screen w-full bg-[rgb(var(--background))] text-[rgb(var(--foreground))] overflow-hidden font-inter selection:bg-[rgb(var(--accent))]/30">
+      <AmbientBackground />
       <TitleBar />
       <div className="flex-1 flex relative overflow-hidden">
-        {/* Background Effects */}
-        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-[#00dbe9]/5 blur-[120px] rounded-full" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-[#d8baff]/5 blur-[120px] rounded-full" />
-          <div className="absolute inset-0 opacity-[0.015] pointer-events-none" 
-               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 250 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }} />
-        </div>
-
-        {/* Sidebar Navigation */}
-        <div className="w-[228px] border-r border-white/5 bg-white/[0.01] backdrop-blur-3xl flex flex-col p-8 z-10">
-          <div className="flex items-center gap-3 mb-12">
-            <img src="/logo.png" className="w-8 h-8" alt="Vox" />
-            <span className="text-lg font-black tracking-tighter text-white italic">VOX</span>
+        {/* Sidebar Navigation — glass-surface */}
+        <div className="w-[228px] glass-surface glass-base border-r border-[rgba(var(--accent),0.06)] flex flex-col p-6 z-10">
+          {/* Logo Area */}
+          <div className="flex flex-col items-center justify-center mb-10 mt-4">
+            <div className="relative group">
+              <div className="absolute inset-[-4px] rounded-full bg-[rgb(var(--accent))]/10 blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative transition-all duration-300 hover:scale-110 active:scale-95" style={{ width: 32, height: 32 }}>
+              <div 
+                className="absolute inset-0 bg-[rgb(var(--accent))]"
+                style={{
+                  maskImage: `url(${theme === 'light' ? logoLight : logo})`,
+                  WebkitMaskImage: `url(${theme === 'light' ? logoLight : logo})`,
+                  maskSize: 'contain',
+                  WebkitMaskSize: 'contain',
+                  maskRepeat: 'no-repeat',
+                  WebkitMaskRepeat: 'no-repeat',
+                }}
+              />
+            </div>
+            </div>
+            <span className="text-sm font-black tracking-tighter text-[rgb(var(--foreground))] italic mt-3">VOX</span>
           </div>
 
-          <nav className="flex-1 space-y-6">
+          {/* Step Navigation */}
+          <nav className="flex-1 space-y-5">
             {steps.map((s) => {
               const status = getStepStatus(s.id);
               const isReachable = steps.findIndex(step => step.id === s.id) <= state.context.maxReachedIndex;
@@ -136,29 +151,32 @@ export const WizardRoot: React.FC = () => {
                     if (isReachable) send({ type: 'GO_TO', targetStep: s.id });
                   }}
                   className={cn(
-                    "flex items-center gap-4 transition-all duration-500 w-full text-left outline-none",
-                    status === 'pending' ? 'opacity-80 grayscale cursor-not-allowed' : 'opacity-100 hover:scale-[1.02] active:scale-95 cursor-pointer'
+                    "flex items-center gap-4 transition-all duration-500 w-full text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgb(var(--accent))] rounded-lg",
+                    status === 'pending' ? 'opacity-50 grayscale cursor-not-allowed' : 'opacity-100 hover:scale-[1.02] active:scale-95 cursor-pointer'
                   )}
                 >
                   <div className={cn(
                     "w-8 h-8 rounded-xl flex items-center justify-center border transition-all duration-500 shrink-0",
-                    status === 'active' ? 'bg-[#00dbe9]/10 border-[#00dbe9]/50 shadow-[0_0_15px_rgba(0,219,233,0.2)]' : 
-                    status === 'completed' ? 'bg-[#00dbe9]/20 border-transparent' : 'bg-white/5 border-white/10'
+                    status === 'active' 
+                      ? 'bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/50 shadow-[0_0_15px_rgba(var(--accent),0.2)]' 
+                      : status === 'completed' 
+                        ? 'bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/20' 
+                        : 'glass-whisper border-[rgba(var(--border),0.06)]'
                   )}>
-                    {status === 'completed' ? <CheckCircle2 className="w-4 h-4 text-[#00dbe9]" /> : 
+                    {status === 'completed' ? <CheckCircle2 className="w-4 h-4 text-[rgb(var(--accent))]" /> : 
                      React.cloneElement(s.icon as React.ReactElement<{ className?: string }>, { 
-                       className: cn("w-4 h-4", status === 'active' ? 'text-[#00dbe9]' : 'text-white/80') 
+                       className: cn("w-4 h-4", status === 'active' ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground-muted))]') 
                      })}
                   </div>
                   <div className="flex flex-col relative w-full">
                     <span className={cn(
                       "text-[11px] font-bold tracking-widest uppercase mb-0.5 transition-colors",
-                      status === 'active' ? 'text-[#00dbe9]' : 'text-white/80'
+                      status === 'active' ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground-muted))]'
                     )}>
                       {s.label}
                     </span>
                     {status === 'active' && (
-                      <motion.div layoutId="active-indicator" className="h-0.5 w-4 bg-[#00dbe9] rounded-full absolute -bottom-1" />
+                      <motion.div layoutId="active-indicator" className="h-0.5 w-4 bg-[rgb(var(--accent))] rounded-full absolute -bottom-1" />
                     )}
                   </div>
                 </button>
@@ -166,10 +184,11 @@ export const WizardRoot: React.FC = () => {
             })}
           </nav>
 
-          <div className="mt-auto pt-8 border-t border-white/5">
-            <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/5">
+          {/* System Ready Badge */}
+          <div className="mt-auto pt-6 border-t border-[rgba(var(--border),0.05)]">
+            <div className="flex items-center gap-2 px-3 py-2 glass-whisper">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[11px] font-bold text-white/80 tracking-wider uppercase">System Ready</span>
+              <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] tracking-wider uppercase">System Ready</span>
             </div>
           </div>
         </div>

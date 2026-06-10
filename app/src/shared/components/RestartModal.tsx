@@ -25,7 +25,7 @@ export const RestartModal: React.FC<RestartModalProps> = ({
       />
       
       {/* Modal Card */}
-      <div className="relative w-full max-w-md liquid-glass p-8 space-y-8 animate-in zoom-in-95 fade-in duration-300 shadow-2xl transform-gpu">
+      <div className="relative w-full max-w-md glass-elevated glass-base p-8 space-y-8 animate-in zoom-in-95 fade-in duration-300 shadow-2xl transform-gpu">
         <button 
           onClick={onClose}
           className="absolute top-4 right-4 p-2 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"

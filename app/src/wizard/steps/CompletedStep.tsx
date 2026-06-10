@@ -58,11 +58,11 @@ export const CompletedStep: React.FC<Props> = ({ onBack }) => {
         </div>
 
         {/* Tip Card */}
-        <div className="p-4 bg-zinc-950/50 border border-white/5 rounded-2xl relative overflow-hidden group shrink-0">
-          <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-50 pointer-events-none" />
+        <div className="p-4 glass-whisper glass-base relative overflow-hidden shrink-0">
+          <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-50 pointer-events-none" />
           <div className="flex items-center gap-2 mb-2 relative z-10">
-            <Zap className="w-3 h-3 text-[#00dbe9]" />
-            <span className="text-[9px] font-black text-[#00dbe9] uppercase tracking-[0.3em]">Quick Tip</span>
+            <Zap className="w-3 h-3 text-[rgb(var(--accent))]" />
+            <span className="text-[9px] font-black text-[rgb(var(--accent))] uppercase tracking-[0.3em]">Quick Tip</span>
           </div>
           <p className="text-[11px] text-white/40 leading-relaxed relative z-10 font-medium">
             Click the Vox icon in your menu bar or press your shortcut key to start talking.
