@@ -247,7 +247,7 @@ export const Home: React.FC = () => {
 
 
   return (
-    <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-all duration-400 ease-in-out">
+    <div className="flex-1 flex h-full w-full overflow-hidden bg-transparent transition-all duration-400 ease-in-out">
       {/* ===== CENTRAL HUD AREA ===== */}
       <div className="flex-1 flex flex-col relative overflow-visible">
 
@@ -265,24 +265,24 @@ export const Home: React.FC = () => {
             <button
               onClick={() => setCpuWarning(null)}
               className="text-amber-400/60 hover:text-amber-300 text-[15px] font-bold shrink-0 px-1 transition-colors"
-              title="Dismiss"
+              aria-label="Dismiss"
             >✕</button>
           </div>
         )}
 
         {/* Status Area */}
         <div className="p-6 md:p-12 pb-0 flex flex-col items-center gap-4 shrink-0">
-          <div className="premium-card flex items-center gap-3 px-6 md:px-10 py-2.5 md:py-3">
+          <div className="glass-card glass-base flex items-center gap-3 px-5 py-2">
             {testingClip && (
-              <FlaskConical size={14} className="text-[rgb(var(--accent))] animate-pulse shrink-0" />
+              <FlaskConical size={13} className="text-[rgb(var(--accent))] animate-pulse shrink-0" />
             )}
             <div className={cn(
-              "w-2 md:w-2.5 h-2 md:h-2.5 rounded-full transition-all duration-500",
+              "w-2.5 h-2.5 rounded-full transition-all duration-500",
               interactionState !== "Idle" || isEngaged
                 ? "bg-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.6)] animate-pulse"
                 : "bg-[rgb(var(--foreground-muted))] opacity-60"
             )} />
-            <span className="text-[11px] font-bold tracking-[0.3em] md:tracking-[0.4em] uppercase shimmer-text">
+            <span className="text-[11px] font-bold tracking-[0.3em] uppercase shimmer-text">
               {!isEngaged && interactionState === "Idle" && !isSleeping && "System Dormant"}
               {isSleeping && "System Sleeping (Models Offloaded)"}
               {isEngaged && interactionState === "Idle" && pttStatus === 'IDLE' && !isSleeping && "System Ready"}
@@ -298,9 +298,17 @@ export const Home: React.FC = () => {
 
         {/* Dynamic Orb Area */}
         <div className="flex-1 w-full flex items-center justify-center relative min-h-0">
+          {/* Gradient aura behind orb */}
           <div className="absolute inset-0 bg-gradient-radial from-[rgb(var(--accent))]/5 to-transparent pointer-events-none opacity-60" />
+          {/* Glass plateau — subtle circular stage beneath the orb */}
           <div className={cn(
-            "w-[85vw] h-[85vw] max-w-[460px] max-h-[460px] md:w-[460px] md:h-[460px] transition-all duration-1000 flex items-center justify-center",
+            "absolute rounded-full glass-whisper glass-base transition-all duration-1000",
+            "w-[90vw] h-[90vw] max-w-[500px] max-h-[500px] md:w-[500px] md:h-[500px]",
+            !isEngaged ? "opacity-30 scale-95" : "opacity-60 scale-100",
+            isSleeping && "opacity-10 scale-90"
+          )} />
+          <div className={cn(
+            "relative z-10 w-[85vw] h-[85vw] max-w-[460px] max-h-[460px] md:w-[460px] md:h-[460px] transition-all duration-1000 flex items-center justify-center",
             !isEngaged ? "grayscale-[0.8] opacity-60 blur-[2px]" : "grayscale-0 opacity-100 blur-0",
             isSleeping && "grayscale-[0.9] opacity-30 blur-[4px]"
           )}>
@@ -316,7 +324,7 @@ export const Home: React.FC = () => {
             {/* Flanking Waveform Container */}
             <div className={cn(
               "absolute inset-0 flex items-center justify-center transition-all duration-700 pointer-events-none",
-              activeSpeaking && !testingClip ? "opacity-600 scale-100" : "opacity-0 scale-95 blur-md"
+              activeSpeaking && !testingClip ? "opacity-60 scale-100" : "opacity-0 scale-95 blur-md"
             )}>
               <LiveWaveform
                 active={activeSpeaking && !testingClip}
@@ -331,8 +339,8 @@ export const Home: React.FC = () => {
               />
             </div>
 
-            {/* Buttons Container — Opaque Background Mask */}
-            <div className="flex items-center gap-6 relative z-20 px-8 py-5 rounded-full bg-[rgb(var(--background))]">
+            {/* Buttons Container — Frosted Glass Container */}
+            <div className="flex items-center gap-6 relative z-20 px-8 py-5 rounded-full glass-surface glass-base border border-[rgba(var(--border),0.08)]">
               <div className="relative">
                 <button
                   onClick={handleEngage}
@@ -390,54 +398,57 @@ export const Home: React.FC = () => {
 
       {/* ===== RIGHT SIDEBAR BRIEF (Desktop Only) ===== */}
       <div className="hidden xl:flex flex-col gap-6 py-16 pr-12 w-[420px] shrink-0 z-10">
-        <div className="glass-card p-10 min-h-[500px] flex flex-col relative group">
-          <div className="absolute top-5 right-5 p-4 opacity-20 group-hover:opacity-40 transition-opacity">
+        <div className="glass-card glass-base p-8 min-h-[500px] flex flex-col relative group">
+          <div className="absolute top-5 right-5 p-3 opacity-[0.08] group-hover:opacity-20 transition-opacity">
             <Mic size={48} />
           </div>
 
-          <div className="flex items-center gap-3 mb-10 shrink-0">
-            <div className="w-1 h-8 bg-[rgb(var(--accent))] rounded-full" />
+          <div className="flex items-center gap-3 mb-8 shrink-0">
+            <div className="w-1 h-7 bg-[rgb(var(--accent))] rounded-full" />
             <span className="text-[11px] font-bold tracking-[0.3em] text-[rgb(var(--accent))] uppercase">Interaction Stream</span>
           </div>
 
-          <div className="flex-1 flex flex-col gap-8">
+          <div className="flex-1 flex flex-col gap-6">
             <div className="flex-1 flex flex-col">
-              <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] mb-6 opacity-60">Live Dialogue</h3>
+              <h3 className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.25em] mb-4 opacity-50">Live Dialogue</h3>
               
               <div 
                 ref={scrollRef}
-                className="flex-1 flex flex-col gap-6 max-h-[340px] overflow-y-auto custom-scrollbar pr-2"
+                className="flex-1 flex flex-col gap-5 max-h-[360px] overflow-y-auto custom-scrollbar pr-2"
               >
-                {/* User Bubble */}
+                {/* User Bubble — glass-whisper style */}
                 <div className={cn(
                   "transition-all duration-500 transform",
                   transcript ? "opacity-100 translate-x-0" : "h-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden"
                 )}>
-                  <div className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-2">You</div>
-                  <div className="p-4 rounded-2xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)]">
-                    <p className="text-lg font-medium text-[rgb(var(--foreground))] leading-relaxed">
+                  <div className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] mb-2">You</div>
+                  <div className="p-4 rounded-2xl glass-whisper glass-base border border-[rgba(var(--border),0.06)]">
+                    <p className="text-base font-medium text-[rgb(var(--foreground))] leading-relaxed">
                       {transcript}
                     </p>
                   </div>
                 </div>
 
-                {/* Assistant Bubble */}
+                {/* Assistant Bubble — glass-surface with accent tint */}
                 <div className={cn(
                   "transition-all duration-700 delay-200 transform",
                   assistantText ? "opacity-100 translate-y-0" : "h-0 opacity-0 translate-y-4 pointer-events-none overflow-hidden"
                 )}>
-                  <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2">Vox</div>
-                  <div className="p-4 rounded-2xl bg-[rgb(var(--accent))]/[0.03] border border-[rgb(var(--accent))]/10">
-                    <p className="text-lg font-medium text-[rgb(var(--accent))] leading-relaxed">
+                  <div className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
+                    <div className="w-1 h-3 bg-[rgb(var(--accent))] rounded-full" />
+                    Vox
+                  </div>
+                  <div className="p-4 rounded-2xl glass-surface glass-base border border-[rgb(var(--accent))]/10">
+                    <p className="text-base font-medium text-[rgb(var(--foreground))] leading-relaxed">
                       {assistantText}
                     </p>
                   </div>
                 </div>
 
                 {!transcript && !assistantText && (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center px-6 opacity-60">
-                    <Activity size={32} className="mb-4 animate-pulse" />
-                    <p className="text-sm font-medium italic">
+                  <div className="flex-1 flex flex-col items-center justify-center text-center px-6 opacity-50 min-h-[200px]">
+                    <Activity size={28} className="mb-3 text-[rgb(var(--accent))] animate-pulse" />
+                    <p className="text-sm font-medium">
                       {isEngaged 
                         ? (interactionMode === "PTT" ? "Click the Mic button to start recording" : "Listening for your voice...") 
                         : "System dormant. Click Engage to start."}
@@ -447,16 +458,20 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-8 border-t border-[rgba(var(--border),0.05)] grid grid-cols-2 gap-8 shrink-0">
-              <div>
-                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2 opacity-60">Pipeline</div>
-                <div className="text-lg font-mono text-[rgb(var(--accent))] uppercase">
+            <div className="pt-5 border-t border-[rgba(var(--accent),0.08)] grid grid-cols-2 gap-4 shrink-0">
+              <div className="rounded-xl glass-whisper glass-base p-3">
+                <div className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] mb-1.5 opacity-60">Pipeline</div>
+                <div className="text-sm font-mono text-[rgb(var(--accent))] uppercase tracking-wider flex items-center gap-2">
+                  <span className={cn(
+                    "inline-block w-2 h-2 rounded-full transition-all duration-500",
+                    isEngaged ? "bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.6)]" : "bg-[rgb(var(--foreground-muted))] opacity-50"
+                  )} />
                   {isEngaged ? "Active" : "Locked"}
                 </div>
               </div>
-              <div>
-                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2 opacity-60">Protocol</div>
-                <div className="text-lg font-mono text-[rgb(var(--accent))] uppercase">
+              <div className="rounded-xl glass-whisper glass-base p-3">
+                <div className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] mb-1.5 opacity-60">Protocol</div>
+                <div className="text-sm font-mono text-[rgb(var(--accent))] uppercase tracking-wider">
                   {interactionMode}
                 </div>
               </div>
@@ -467,7 +482,7 @@ export const Home: React.FC = () => {
         {/* ===== TEST MODE (full width, below sidebar) ===== */}
         <div className="relative w-full">
           <div className={cn(
-            "premium-card w-full transition-all duration-300 overflow-hidden",
+            "glass-card glass-base w-full transition-all duration-300 overflow-hidden",
             isEngaged && !testingClip ? "opacity-60 cursor-not-allowed" : "hover:border-[rgb(var(--accent))]/40"
           )}>
             {/* Header/Button part */}
@@ -510,12 +525,12 @@ export const Home: React.FC = () => {
 
             {/* Expandable clips list */}
             {testMode && !isEngaged && (
-              <div className="border-t border-[rgba(var(--border),0.05)] p-2 bg-[rgb(var(--foreground))]/[0.01] animate-in slide-in-from-top-2 duration-300">
+              <div className="border-t border-[rgba(var(--accent),0.06)] p-2 glass-whisper glass-base animate-in slide-in-from-top-2 duration-300">
                 <div className="flex flex-col gap-1">
                   {testClips.map((clip) => (
                     <div
                       key={clip.id}
-                      className="flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-[rgb(var(--foreground))]/[0.03] transition-all duration-300"
+                      className="flex items-center justify-between gap-3 p-3 rounded-xl glass-whisper glass-base hover:border-[rgb(var(--accent))]/20 transition-all duration-300 border border-transparent"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="text-[13px] font-semibold text-[rgb(var(--foreground))] truncate">
@@ -528,7 +543,7 @@ export const Home: React.FC = () => {
 
                       <button
                         onClick={() => handleTestClip(clip.id)}
-                        className="shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold tracking-wider uppercase transition-all duration-300 bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/20"
+                        className="shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-wider uppercase transition-all duration-300 bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/20"
                       >
                         Test
                       </button>

@@ -13,7 +13,7 @@ const navItems = [
 export const BottomNav: React.FC = () => {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around md:hidden bg-[rgb(var(--sidebar))] border-t border-[rgba(var(--border),0.05)] h-[64px] pb-safe backdrop-blur-3xl transition-colors duration-300"
+      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around md:hidden glass-surface glass-base border-t border-[rgba(var(--accent),0.06)] h-[64px] pb-safe transition-colors duration-300"
     >
       {navItems.map((item) => (
         <NavLink
@@ -32,7 +32,7 @@ export const BottomNav: React.FC = () => {
               <div
                 className={cn(
                   "flex items-center justify-center rounded-2xl transition-all duration-500 p-2.5",
-                  isActive && "bg-[rgb(var(--accent))]/5 scale-110"
+                  isActive && "bg-[rgb(var(--accent))]/10 scale-110"
                 )}
               >
                 <item.icon size={24} strokeWidth={isActive ? 2 : 1.5} />

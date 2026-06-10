@@ -68,10 +68,10 @@ const POLL_INTERVAL_MS = 1000;   // 1Hz
 
 const StatusBadge: React.FC<{ label: string; active: boolean; icon: React.ReactNode }> = ({ label, active, icon }) => (
   <div className={cn(
-    "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-300",
+    "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-300 glass-base",
     active 
-      ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]" 
-      : "bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] text-[rgb(var(--foreground-muted))]"
+      ? "glass-surface border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]" 
+      : "glass-whisper border-[rgba(var(--border),0.04)] text-[rgb(var(--foreground-muted))]"
   )}>
     <div className={cn("transition-transform duration-500", active && "animate-pulse")}>
       {icon}
@@ -87,9 +87,9 @@ const MetricCard: React.FC<{
   trend?: "up" | "down" | "neutral";
   icon: React.ReactNode;
 }> = React.memo(({ title, value, unit, icon }) => (
-  <div className="premium-card p-5 flex flex-col gap-4">
+  <div className="glass-card glass-base p-5 flex flex-col gap-4">
     <div className="flex items-center justify-between">
-      <div className="p-2 rounded-lg bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--accent))]">
+      <div className="p-2 rounded-lg glass-whisper glass-base text-[rgb(var(--accent))]">
         {icon}
       </div>
       <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">{title}</span>
@@ -156,13 +156,13 @@ export const Monitoring: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[rgb(var(--background))]">
+    <div className="flex flex-col h-screen overflow-hidden bg-transparent">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="px-6 md:px-10 py-6 md:py-10 shrink-0">
         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-2">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-[rgb(var(--accent))]/10">
+              <div className="p-2 rounded-xl glass-surface glass-base">
                 <Activity className="text-[rgb(var(--accent))]" size={24} />
               </div>
               <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[rgb(var(--foreground))]">System Monitoring</h1>
@@ -194,21 +194,21 @@ export const Monitoring: React.FC = () => {
           </div>
 
           {/* Section 2: Latency Metrics */}
-          <div className="lg:col-span-2 premium-card p-6 flex flex-col gap-6">
+          <div className="lg:col-span-2 glass-card glass-base p-6 flex flex-col gap-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">Pipeline Latency</h3>
               <Zap size={16} className="text-[rgb(var(--accent))]" />
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-3 rounded-xl glass-whisper glass-base space-y-1">
                 <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">STT</span>
                 <div className="text-xl font-mono font-bold">{latest.stt_latency_ms ?? "--"} <span className="text-[10px]">ms</span></div>
               </div>
-              <div className="space-y-1">
+              <div className="p-3 rounded-xl glass-whisper glass-base space-y-1">
                 <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">TTFT</span>
                 <div className="text-xl font-mono font-bold text-[rgb(var(--accent))]">{latest.ttft_ms ?? "--"} <span className="text-[10px]">ms</span></div>
               </div>
-              <div className="space-y-1">
+              <div className="p-3 rounded-xl glass-whisper glass-base space-y-1">
                 <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">TTS RTF</span>
                 <div className="text-xl font-mono font-bold">{latest.tts_rtf?.toFixed(2) ?? "--"} <span className="text-[10px]">x</span></div>
               </div>
@@ -219,7 +219,7 @@ export const Monitoring: React.FC = () => {
           </div>
 
           {/* Section 3: System Resources */}
-          <div className="lg:col-span-2 premium-card p-6 flex flex-col gap-6">
+          <div className="lg:col-span-2 glass-card glass-base p-6 flex flex-col gap-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex flex-col gap-1">
                 <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">System Health</h3>
@@ -291,10 +291,13 @@ export const Monitoring: React.FC = () => {
                     />
                     <Tooltip 
                       contentStyle={{ 
-                        backgroundColor: 'rgb(var(--background))', 
-                        borderColor: 'rgba(var(--border), 0.1)',
-                        borderRadius: '12px',
-                        fontSize: '10px'
+                        backgroundColor: 'rgba(var(--background), 0.85)',
+                        backdropFilter: 'blur(20px)',
+                        borderColor: 'rgba(var(--accent), 0.15)',
+                        borderTop: '2px solid rgba(var(--accent), 0.4)',
+                        borderRadius: '20px',
+                        fontSize: '10px',
+                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
                       }}
                       labelStyle={{ display: 'none' }}
                     />
@@ -338,10 +341,13 @@ export const Monitoring: React.FC = () => {
                     />
                     <Tooltip 
                       contentStyle={{ 
-                        backgroundColor: 'rgb(var(--background))', 
-                        borderColor: 'rgba(var(--border), 0.1)',
-                        borderRadius: '12px',
-                        fontSize: '10px'
+                        backgroundColor: 'rgba(var(--background), 0.85)',
+                        backdropFilter: 'blur(20px)',
+                        borderColor: 'rgba(var(--accent), 0.15)',
+                        borderTop: '2px solid rgba(var(--accent), 0.4)',
+                        borderRadius: '20px',
+                        fontSize: '10px',
+                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
                       }}
                       labelStyle={{ display: 'none' }}
                     />
@@ -369,7 +375,7 @@ export const Monitoring: React.FC = () => {
           </div>
 
           {/* Section 6: VAD / Audio Energy */}
-          <div className="lg:col-span-4 premium-card p-6 flex flex-col gap-6">
+          <div className="lg:col-span-4 glass-card glass-base p-6 flex flex-col gap-6">
             <div className="flex items-center justify-between">
               <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">VAD / Audio Activity</h3>
               <Volume2 size={16} className="text-[rgb(var(--accent))]" />
@@ -382,10 +388,13 @@ export const Monitoring: React.FC = () => {
                   <YAxis tick={{fontSize: 8, fill: 'rgb(var(--foreground-muted))'}} axisLine={false} tickLine={false} domain={[0, 1]} tickCount={3} />
                   <Tooltip 
                     contentStyle={{ 
-                      backgroundColor: 'rgb(var(--background))', 
-                      borderColor: 'rgba(var(--border), 0.1)',
-                      borderRadius: '12px',
-                      fontSize: '10px'
+                      backgroundColor: 'rgba(var(--background), 0.85)',
+                      backdropFilter: 'blur(20px)',
+                      borderColor: 'rgba(var(--accent), 0.15)',
+                      borderTop: '2px solid rgba(var(--accent), 0.4)',
+                      borderRadius: '20px',
+                      fontSize: '10px',
+                      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
                     }}
                     labelStyle={{ display: 'none' }}
                   />

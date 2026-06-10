@@ -318,7 +318,7 @@ export const TrayApp: React.FC = () => {
             exit="HIDDEN"
             transition={{ duration: 0.15, ease: "easeOut" }}
             className={cn(
-              "w-[380px] h-[250px] flex flex-col liquid-glass overflow-hidden rounded-2xl transition-all duration-1000",
+              "w-[380px] h-[250px] flex flex-col glass-elevated glass-base overflow-hidden rounded-2xl transition-all duration-1000",
               isSleeping && "grayscale-[0.8] opacity-50"
             )}
             onMouseEnter={() => setIsHovered(true)}
@@ -326,7 +326,6 @@ export const TrayApp: React.FC = () => {
             style={{ 
                backdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
                WebkitBackdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
-               backgroundColor: settings.ui.tray_glass_tint ? `rgba(var(--accent), 0.1)` : undefined,
             }}
           >
             <Header 

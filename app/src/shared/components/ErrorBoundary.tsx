@@ -1,4 +1,5 @@
 import React from 'react';
+import { cn } from '@/shared/lib/utils';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -26,36 +27,84 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     console.error('Component stack:', info.componentStack);
   }
 
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  handleGoHome = () => {
+    this.setState({ hasError: false, error: null });
+    // Use history API directly since ErrorBoundary may not be inside Router
+    window.history.pushState(null, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback;
       }
+
+      const name = this.props.name || 'Component';
+
       return (
-        <div style={{
-          padding: 16,
-          margin: 8,
-          borderRadius: 8,
-          background: 'rgba(220,38,38,0.1)',
-          border: '1px solid rgba(220,38,38,0.3)',
-          color: 'rgb(var(--foreground))',
-          fontSize: 12,
-          fontFamily: 'monospace',
-        }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 8, color: '#dc2626' }}>
-            ⚠️ Render Error: {this.props.name || 'Component'}
+        <div className="flex items-center justify-center h-full w-full p-8">
+          <div className={cn(
+            "glass-card glass-base max-w-md w-full p-8 text-center space-y-6"
+          )}>
+            {/* Error Icon */}
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+              <svg className="w-7 h-7 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+
+            {/* Error Title */}
+            <div>
+              <h2 className="text-lg font-black text-[rgb(var(--foreground))] uppercase tracking-tight mb-2">
+                Render Error
+              </h2>
+              <p className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em]">
+                {name}
+              </p>
+            </div>
+
+            {/* Error Message */}
+            <div className="glass-whisper glass-base px-4 py-3 text-left">
+              <p className="text-xs font-mono text-[rgb(var(--foreground-muted))] leading-relaxed break-words">
+                {this.state.error?.message || 'An unexpected error occurred'}
+              </p>
+            </div>
+
+            {/* Stack Trace */}
+            {this.state.error?.stack && (
+              <details className="text-left">
+                <summary className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/50 uppercase tracking-widest cursor-pointer hover:text-[rgb(var(--foreground-muted))] transition-colors">
+                  Stack Trace
+                </summary>
+                <pre className="mt-2 glass-whisper glass-base p-3 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/60 leading-relaxed overflow-auto max-h-[160px] custom-scrollbar whitespace-pre-wrap">
+                  {this.state.error.stack}
+                </pre>
+              </details>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={this.handleGoHome}
+                className="flex-1 py-3 text-[11px] font-black uppercase tracking-[0.3em] glass-whisper glass-base text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+              >
+                Home
+              </button>
+              <button
+                onClick={this.handleRetry}
+                className="flex-1 py-3 text-[11px] font-black uppercase tracking-[0.3em] glass-card glass-base hover:border-[rgb(var(--accent))]/70 transition-all active:scale-[0.98]"
+              >
+                Retry
+              </button>
+            </div>
           </div>
-          <div style={{ marginBottom: 4, opacity: 0.8 }}>
-            {this.state.error?.message || 'Unknown error'}
-          </div>
-          {this.state.error?.stack && (
-            <details>
-              <summary style={{ cursor: 'pointer', opacity: 0.6, marginTop: 4 }}>Stack trace</summary>
-              <pre style={{ fontSize: 10, marginTop: 4, whiteSpace: 'pre-wrap', opacity: 0.5 }}>
-                {this.state.error.stack}
-              </pre>
-            </details>
-          )}
         </div>
       );
     }

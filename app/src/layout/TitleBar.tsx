@@ -117,7 +117,7 @@ export const TitleBar: React.FC = () => {
   if (!isTauri) return null;
 
   return (
-    <div className="relative flex items-center justify-between h-8 shrink-0 select-none z-50 bg-[rgb(var(--background))] border-b border-[rgba(var(--border),0.05)] transition-all duration-400 ease-in-out">
+    <div className="relative flex items-center justify-between h-8 shrink-0 select-none z-50 glass-whisper glass-base border-b border-[rgba(var(--accent),0.06)]">
       {/* Absolute Drag Region */}
       <div className="absolute inset-0 z-0" data-tauri-drag-region />
 
@@ -154,7 +154,7 @@ export const TitleBar: React.FC = () => {
                 <button 
                   onClick={() => handleCopyCommand(appUpdate.update_command)}
                   className="p-1 hover:bg-[rgb(var(--foreground))]/10 rounded text-[rgb(var(--accent))] transition-colors shrink-0"
-                  title="Copy command"
+                  aria-label="Copy command"
                 >
                   {copied ? <Check size={11} /> : <Copy size={11} />}
                 </button>
@@ -205,14 +205,14 @@ export const TitleBar: React.FC = () => {
         <button 
           onClick={handleMinimize}
           className="flex items-center justify-center w-10 h-full text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--foreground))]/5 hover:text-[rgb(var(--foreground))] transition-colors"
-          title="Minimize"
+          aria-label="Minimize"
         >
           <Minus size={14} />
         </button>
         <button 
           onClick={handleMaximize}
           className="flex items-center justify-center w-10 h-full text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--foreground))]/5 hover:text-[rgb(var(--foreground))] transition-colors"
-          title="Maximize"
+          aria-label="Maximize"
         >
           <Square size={12} />
         </button>
@@ -225,7 +225,7 @@ export const TitleBar: React.FC = () => {
               ? "bg-red-500 text-white" 
               : "text-[rgb(var(--foreground-muted))]"
           }`}
-          title="Close"
+          aria-label="Close"
         >
           <X size={16} />
         </button>

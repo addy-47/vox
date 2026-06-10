@@ -19,9 +19,17 @@ Vox frontend is a **multi-surface UI system**, not a single application UI. It c
 * Tauri (desktop runtime)
 
 ### State Management
-* React hooks (useState, useEffect, useRef)
-* Custom hooks for interaction logic
-* Context API for settings
+* **zustand v5** (primary store) — `app/src/store/settingsStore.ts`
+  * Selective subscriptions via `useSettingsStore(selector)` for zero unnecessary re-renders
+  * Settings, draft settings, model catalog
+  * Hot-applies theme/accent/interaction mode changes immediately
+* **React Context (adapter)** — `SettingsContext.tsx` wraps zustand store for backward compat
+  * Existing `useSettings()` consumers unchanged
+  * **New components should use `useSettingsStore(selector)` directly**
+* Custom hooks for interaction logic (useInteraction, useVisibility, useStreamingRenderer, useTelemetry)
+* **Performance hooks** (Phase 0):
+  * `useDynamicFPS` — RAF loop with frame-skipping (60/15/0 FPS tiers)
+  * `usePerformanceMonitor` — Debug FPS tracker (dev-only)
 
 ### UI System
 * TailwindCSS
@@ -41,9 +49,11 @@ Vox frontend is a **multi-surface UI system**, not a single application UI. It c
 app/src/
 ├── main.tsx                     # App entry point
 ├── App.tsx                      # Router setup
+├── store/
+│   └── settingsStore.ts         # Zustand store for settings (v5)
 ├── layout/
-│   ├── ResponsiveLayout.tsx     # Main app layout
-│   ├── Sidebar.tsx              # Navigation sidebar
+│   ├── ResponsiveLayout.tsx     # Main app layout (uses AmbientBackground)
+│   ├── Sidebar.tsx              # Navigation sidebar (uses zustand directly)
 │   ├── BottomNav.tsx            # Mobile navigation
 │   └── TitleBar.tsx             # Window controls
 ├── pages/
@@ -73,25 +83,28 @@ app/src/
 │       └── StatusCard.tsx       # Status indicator card
 ├── shared/
 │   ├── components/
-│   │   ├── AdvancedOrb.tsx      # Central AI state orb
-│   │   ├── GlassCard.tsx        # Glassmorphism container
-│   │   ├── LiveWaveform.tsx     # Audio visualization
-│   │   ├── PillButton.tsx       # Custom button component
-│   │   ├── RestartModal.tsx     # Settings restart prompt
-│   │   ├── Typography.tsx       # Text components
-│   │   ├── VoxLogo.tsx          # Brand logo component
-│   │   ├── CoreSettings.tsx     # Core settings panel
-│   │   ├── ModelSettings.tsx    # LLM/STT/TTS model selection
-│   │   └── TraySettings.tsx     # Tray/overlay settings panel
+│   │   ├── AdvancedOrb.tsx           # Central AI state orb (useDynamicFPS optimized)
+│   │   ├── AmbientBackground.tsx     # Animated deep-space ambient background
+│   │   ├── GlassCard.tsx             # Glassmorphism container
+│   │   ├── LiveWaveform.tsx          # Audio visualization (useDynamicFPS optimized)
+│   │   ├── PillButton.tsx            # Custom button component
+│   │   ├── RestartModal.tsx          # Settings restart prompt
+│   │   ├── Typography.tsx            # Text components
+│   │   ├── VoxLogo.tsx               # Brand logo component
+│   │   ├── CoreSettings.tsx          # Core settings panel
+│   │   ├── ModelSettings.tsx         # LLM/STT/TTS model selection
+│   │   └── TraySettings.tsx          # Tray/overlay settings panel
 │   ├── hooks/
-│   │   ├── useInteraction.ts     # Interaction session management
-│   │   ├── useStreamingRenderer.ts # Text streaming animation
-│   │   ├── useTelemetry.ts       # Telemetry data hooks
-│   │   └── useVisibility.ts      # Tray visibility logic
+│   │   ├── useDynamicFPS.ts          # RAF loop with frame-skipping (60/15/0 FPS)
+│   │   ├── usePerformanceMonitor.ts  # Debug FPS tracker (dev-only)
+│   │   ├── useInteraction.ts         # Interaction session management
+│   │   ├── useStreamingRenderer.ts   # Text streaming animation
+│   │   ├── useTelemetry.ts           # Telemetry data hooks
+│   │   └── useVisibility.ts          # Tray visibility logic
 │   ├── context/
-│   │   └── SettingsContext.tsx   # Settings provider
+│   │   └── SettingsContext.tsx        # Settings provider (zustand adapter)
 │   └── lib/
-│       └── utils.ts              # Utility functions
+│       └── utils.ts                   # Utility functions
 ```
 
 ---

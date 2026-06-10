@@ -35,3 +35,4 @@ vox-*
 venv*
 gemini.py
 neutts/
+temp/

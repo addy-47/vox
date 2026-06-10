@@ -43,6 +43,11 @@ pub fn spawn_persistence_worker(
                 return;
             }
 
+            // Startup sweep: clean up zero-activity sessions from previous runs
+            if let Err(e) = cleanup_zero_turn_sessions(&db.0) {
+                tracing::warn!("[Persistence] Zero-turn startup cleanup failed (non-fatal): {}", e);
+            }
+
             tracing::info!("[Persistence] Worker started. DB at {:?}", db_path);
 
             let mut writes_last_second = 0u32;
@@ -121,7 +126,16 @@ fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow
                 "UPDATE sessions SET ended_at = ?1 WHERE id = ?2",
                 rusqlite::params![timestamp_ms as i64, id as i64],
             )?;
-            tracing::debug!("[Persistence] SessionEnded: id={}", id);
+            // Immediately delete zero-activity sessions (user engaged but never spoke)
+            let deleted = conn.execute(
+                "DELETE FROM sessions WHERE id = ?1 AND turn_count = 0",
+                rusqlite::params![id as i64],
+            )?;
+            if deleted > 0 {
+                tracing::info!("[Persistence] Cleaned up zero-activity session id={}", id);
+            } else {
+                tracing::debug!("[Persistence] SessionEnded: id={}", id);
+            }
         }
 
         PersistenceEvent::TurnCompleted {
@@ -188,6 +202,20 @@ fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow
             let _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)", []);
             return Err(anyhow::anyhow!("SHUTDOWN"));
         }
+    }
+    Ok(())
+}
+
+/// Deletes sessions where the user engaged but never completed a turn.
+/// These are clutter sessions (accidental engage, empty background noise, etc.).
+/// Safe to call at startup or any time — idempotent.
+fn cleanup_zero_turn_sessions(conn: &rusqlite::Connection) -> anyhow::Result<()> {
+    let deleted = conn.execute(
+        "DELETE FROM sessions WHERE turn_count = 0 AND ended_at IS NOT NULL",
+        [],
+    )?;
+    if deleted > 0 {
+        tracing::info!("[Persistence] Startup cleanup: removed {} zero-activity session(s)", deleted);
     }
     Ok(())
 }

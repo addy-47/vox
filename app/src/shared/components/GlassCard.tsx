@@ -4,18 +4,21 @@ import { cn } from "../lib/utils";
 interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   blur?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl";
+  elevated?: boolean;
 }
 
 export const GlassCard: React.FC<GlassCardProps> = ({ 
   children, 
   className, 
   blur = "2xl",
+  elevated = false,
   ...props 
 }) => {
   return (
     <div
       className={cn(
-        "glass-card rounded-xl transition-all duration-400 ease-in-out",
+        elevated ? "glass-elevated glass-base" : "glass-card glass-base",
+        "rounded-xl transition-all duration-400 ease-in-out",
         blur === "sm" && "backdrop-blur-sm",
         blur === "md" && "backdrop-blur-md",
         blur === "lg" && "backdrop-blur-lg",

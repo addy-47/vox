@@ -238,8 +238,8 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                             {installPath}
                         </span>
                         <div className="flex items-center gap-2">
-                            <div className="h-1.5 w-1.5 rounded-full bg-[#00dbe9] shadow-[0_0_8px_rgba(0,219,233,0.8)]" />
-                            <span className="text-[12px] font-black text-[#00dbe9]  tracking-widest">
+                            <div className="h-1.5 w-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" />
+                            <span className="text-[12px] font-black text-[rgb(var(--accent))]  tracking-widest">
                                 {formatSize(totalSize)} Total
                             </span>
                         </div>
@@ -276,12 +276,12 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     <button 
                         onClick={startSetup}
                         disabled={isFetching || selectedIds.size === 0}
-                        className="group relative flex-1 py-5 bg-zinc-950 text-white font-black rounded-2xl overflow-hidden border border-white/10 transition-all hover:bg-zinc-900 hover:border-[#00dbe9]/50 active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
+                        className="group relative flex-1 py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)] glass-card glass-base hover:border-[rgb(var(--accent))]/70"
                     >
-                        <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
                             {isFetching ? 'Fetching Catalog...' : 'Begin Synchronization'}
-                            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[#00dbe9]" />
+                            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />
                         </span>
                     </button>
                 </div>
@@ -318,18 +318,18 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                         .find(p => p && p.step !== 'completed')?.step || (isDone ? 'Ready' : 'Queued');
 
                     return (
-                        <div key={cat.id} className="p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+                        <div key={cat.id} className="p-4 glass-whisper glass-base">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
                                     <div className={cn(
                                         "p-2 rounded-lg transition-colors",
-                                        isDone ? "bg-[#00dbe9]/20 text-[#00dbe9]" : "bg-white/5 text-white/40"
+                                        isDone ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]" : "bg-white/5 text-white/40"
                                     )}>
                                         {cat.icon}
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-[11px] font-black text-white uppercase tracking-wider">{cat.label}</span>
-                                        <span className="text-[10px] text-[#00dbe9]/60 font-bold uppercase tracking-tighter">
+                                        <span className="text-[10px] text-[rgb(var(--accent))]/60 font-bold uppercase tracking-tighter">
                                             {activeStep}
                                         </span>
                                     </div>
@@ -340,7 +340,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                             </div>
                             <div className="h-1 bg-white/5 rounded-full overflow-hidden mb-2">
                                 <motion.div 
-                                    className="h-full bg-gradient-to-r from-[#00dbe9] to-[#d8baff]"
+                                    className="h-full bg-gradient-to-r from-[rgb(var(--accent))] to-[#d8baff]"
                                     initial={{ width: 0 }}
                                     animate={{ width: `${groupProgress}%` }}
                                     transition={{ duration: 0.3 }}
@@ -374,10 +374,10 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     <motion.div 
                         initial={{ scale: 0 }}
                         animate={{ scale: 1 }}
-                        className="absolute inset-0 bg-[#00dbe9] rounded-full blur-2xl opacity-20"
+                        className="absolute inset-0 bg-[rgb(var(--accent))] rounded-full blur-2xl opacity-20"
                     />
-                    <div className="relative w-full h-full bg-[#00dbe9]/10 rounded-full border border-[#00dbe9]/30 flex items-center justify-center">
-                        <Check className="w-10 h-10 text-[#00dbe9]" />
+                    <div className="relative w-full h-full bg-[rgb(var(--accent))]/10 rounded-full border border-[rgb(var(--accent))]/30 flex items-center justify-center">
+                        <Check className="w-10 h-10 text-[rgb(var(--accent))]" />
                     </div>
                 </div>
 
@@ -389,9 +389,9 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                 <div className="flex flex-col gap-4 w-full max-w-xs">
                     <button 
                         onClick={onNext}
-                        className="group relative w-full py-5 bg-zinc-950 text-white font-black rounded-2xl overflow-hidden border border-white/10 transition-all hover:bg-zinc-900 hover:border-[#00dbe9]/50 active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
+                        className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)] glass-card glass-base hover:border-[rgb(var(--accent))]/70"
                     >
-                        <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/10 to-[#d8baff]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[#d8baff]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                         <span className="relative z-10 flex items-center justify-center gap-3 tracking-widest uppercase text-xs">
                             Continue Setup <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                         </span>

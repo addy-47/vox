@@ -58,10 +58,10 @@ export const ModelCategory = ({
         <div 
             ref={elementRef}
             className={cn(
-                "w-full rounded-2xl border transition-all duration-500 overflow-hidden",
+                "w-full rounded-2xl transition-all duration-500 overflow-hidden",
                 selected 
-                    ? "bg-white/[0.04] border-white/20 shadow-[0_0_30px_rgba(0,0,0,0.3)]" 
-                    : "bg-white/[0.01] border-white/5 opacity-50 hover:opacity-100"
+                    ? "glass-surface glass-base" 
+                    : "glass-whisper glass-base opacity-60 hover:opacity-100"
             )}
         >
             <div 
@@ -71,20 +71,20 @@ export const ModelCategory = ({
                 <div className="flex items-center gap-5">
                     <div className={cn(
                         "w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-500",
-                        selected ? "bg-[#00dbe9]/10 text-[#00dbe9] shadow-[0_0_20px_rgba(0,219,233,0.1)]" : "bg-white/5 text-white/40"
+                        selected ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.1)]" : "bg-white/5 text-[rgb(var(--foreground-muted))]"
                     )}>
                         {React.cloneElement(icon as React.ReactElement<any>, { className: "w-5 h-5" })}
                     </div>
                     <div className="flex flex-col">
                         <div className="flex items-center gap-3 mb-1">
-                            <span className="text-[13px] font-black text-white uppercase tracking-[0.2em]">{label}</span>
+                            <span className="text-[13px] font-black text-[rgb(var(--foreground))] uppercase tracking-[0.2em]">{label}</span>
                             {required ? (
-                                <span className="text-[9px] font-black bg-[#00dbe9]/20 text-[#00dbe9] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[#00dbe9]/20">Mandatory</span>
+                                <span className="text-[9px] font-black bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgb(var(--accent))]/20">Mandatory</span>
                             ) : (
-                                <span className="text-[9px] font-black bg-white/5 text-white/40 px-2 py-0.5 rounded-full uppercase tracking-tighter border border-white/10">Optional Layer</span>
+                                <span className="text-[9px] font-black bg-white/5 text-[rgb(var(--foreground-muted))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgba(var(--border),0.08)]">Optional Layer</span>
                             )}
                         </div>
-                        <p className="text-[10px] text-white/60 font-bold uppercase tracking-[0.1em]">
+                        <p className="text-[10px] text-[rgb(var(--foreground-muted))] font-bold uppercase tracking-[0.1em]">
                             {subLabel}
                         </p>
                     </div>
@@ -92,7 +92,7 @@ export const ModelCategory = ({
                 
                 <div className="flex items-center gap-8">
                     <div className="flex flex-col items-end gap-1.5">
-                        <span className="text-[11px] font-black text-[#00dbe9] tracking-widest shadow-[#00dbe9]/20 drop-shadow-sm">{formatSize(totalSize)}</span>
+                        <span className="text-[11px] font-black text-[rgb(var(--accent))] tracking-widest">{formatSize(totalSize)}</span>
                         <div 
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -101,21 +101,21 @@ export const ModelCategory = ({
                             className={cn(
                                 "w-6 h-6 rounded-xl border flex items-center justify-center transition-all duration-300",
                                 selected 
-                                    ? (required ? "bg-[#00dbe9]/10 border-[#00dbe9]/40 shadow-[0_0_15px_rgba(0,219,233,0.1)]" : "bg-[#00dbe9] border-transparent shadow-[0_0_20px_rgba(0,219,233,0.5)]")
-                                    : "bg-transparent border-white/20 hover:border-white/40",
+                                    ? (required ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/40" : "bg-[rgb(var(--accent))] border-transparent shadow-[0_0_20px_rgba(var(--accent),0.5)]")
+                                    : "bg-transparent border-[rgba(var(--border),0.15)] hover:border-[rgba(var(--border),0.3)]",
                                 required && "cursor-not-allowed"
                             )}
                         >
                             {selected && (
                                 <Check className={cn(
                                     "w-4 h-4 stroke-[4]",
-                                    required ? "text-[#00dbe9]" : "text-black"
+                                    required ? "text-[rgb(var(--accent))]" : "text-black"
                                 )} />
                             )}
                         </div>
                     </div>
                     <div className={cn("transition-transform duration-500", isExpanded && "rotate-180")}>
-                        <ChevronDown className="w-5 h-5 text-white/40" />
+                        <ChevronDown className="w-5 h-5 text-[rgb(var(--foreground-muted))]" />
                     </div>
                 </div>
             </div>
@@ -127,7 +127,7 @@ export const ModelCategory = ({
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.3, ease: 'circOut' }}
-                        className="border-t border-white/5 bg-black/40"
+                        className="border-t border-[rgba(var(--border),0.05)] bg-black/20"
                     >
                         <div className="p-5 space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
                             {groups.map((group) => {
@@ -144,7 +144,7 @@ export const ModelCategory = ({
                                         key={group.id} 
                                         onClick={handleLineClick}
                                         className={cn(
-                                            "flex items-center justify-between text-[11px] font-bold py-2.5 px-4 hover:bg-[#00dbe9]/5 rounded-xl group transition-all border border-transparent hover:border-[#00dbe9]/20",
+                                            "flex items-center justify-between text-[11px] font-bold py-2.5 px-4 glass-whisper rounded-xl group transition-all border border-transparent hover:border-[rgb(var(--accent))]/20",
                                             !required && "cursor-pointer"
                                         )}
                                     >
@@ -152,26 +152,26 @@ export const ModelCategory = ({
                                             <div className={cn(
                                                 "w-4 h-4 rounded-md border flex items-center justify-center transition-all duration-300 shrink-0",
                                                 isGroupSelected 
-                                                    ? (required ? "bg-[#00dbe9]/10 border-[#00dbe9]/40" : "bg-[#00dbe9] border-transparent shadow-[0_0_10px_rgba(0,219,233,0.4)]")
-                                                    : "bg-transparent border-white/20 group-hover:border-white/40"
+                                                    ? (required ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/40" : "bg-[rgb(var(--accent))] border-transparent shadow-[0_0_10px_rgba(var(--accent),0.4)]")
+                                                    : "bg-transparent border-[rgba(var(--border),0.15)] group-hover:border-[rgba(var(--border),0.3)]"
                                             )}>
                                                 {isGroupSelected && (
                                                     <Check className={cn(
                                                         "w-2.5 h-2.5 stroke-[4]",
-                                                        required ? "text-[#00dbe9]" : "text-black"
+                                                        required ? "text-[rgb(var(--accent))]" : "text-black"
                                                     )} />
                                                 )}
                                             </div>
                                             <div className="flex flex-col">
-                                                <span className="text-white/80 group-hover:text-white transition-colors truncate max-w-[280px]">
+                                                <span className="text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))] transition-colors truncate max-w-[280px]">
                                                     {group.name}
                                                 </span>
-                                                <span className="text-white/40 text-[9px] font-mono">
+                                                <span className="text-[rgb(var(--foreground-muted))]/40 text-[9px] font-mono">
                                                     Version {group.version}
                                                 </span>
                                             </div>
                                         </div>
-                                        <span className="text-white/40 font-mono text-[10px] group-hover:text-[#00dbe9]/60 transition-colors self-center">
+                                        <span className="text-[rgb(var(--foreground-muted))]/40 font-mono text-[10px] group-hover:text-[rgb(var(--accent))]/60 transition-colors self-center">
                                             {formatSize(groupSize)}
                                         </span>
                                     </div>

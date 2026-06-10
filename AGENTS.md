@@ -31,6 +31,22 @@
 1. `app/src-tauri/` (main app)
 2. `app/src-tauri/plugins/tauri-plugin-positioner/`
 
+**Frontend redesign (Phase 0/1 — Liquid Space design system, v0.8.3):**
+- **Glass Elevation System & Page Transparency** — 4 levels using standard frosted glassmorphism (`backdrop-filter`) with elegant translucency. All page roots are transparent (`bg-transparent`) to let the underlying layouts' `AmbientBackground` and animated blobs show through. Specs: `.glass-whisper` (8px blur, 0.20 dark / 0.45 light), `.glass-surface` (16px blur, 0.45 dark / 0.65 light), `.glass-card` (24px blur, 0.65 dark / 0.80 light), `.glass-elevated` (40px blur, 0.85 dark / 0.92 light). Noise grain and sheen reside on `.glass-base::after`.
+  - Old `.liquid-glass`, `.glass-card` (old), `.premium-card` classes removed from `index.css`.
+- **AmbientBackground** (`app/src/shared/components/AmbientBackground.tsx`) — Pure CSS animated background with 3 organic blob shapes (border-radius keyframes, no canvas/WebGL), noise grain overlay, respects `prefers-reduced-motion`. Light mode variant.
+- **useDynamicFPS hook** (`app/src/shared/hooks/useDynamicFPS.ts`) — RAF loop with frame-skipping algorithm. Three FPS tiers: Active (60fps), Idle (15fps), Sleeping/Paused (0fps). Reacts to `document.visibilityState`. Integrated into AdvancedOrb (Three.js) and LiveWaveform (Canvas 2D).
+- **usePerformanceMonitor hook** (`app/src/shared/hooks/usePerformanceMonitor.ts`) — Debug-only FPS tracker (guarded by `import.meta.env.DEV`).
+- **Package.json cleanup** — Removed 6 unused deps: `gsap`, `@react-three/fiber`, `@react-three/drei`, `sonner`, `radix-ui`, `class-variance-authority`.
+
+**State management is zustand v5 (`app/src/store/`):**
+- `settingsStore.ts` replaces `SettingsContext.tsx` as the single source of truth for all settings state.
+- `SettingsContext.tsx` is now a thin adapter wrapper — existing `useSettings()` consumers still work unchanged.
+- **New components should use `useSettingsStore(selector)` directly** for selective subscriptions and zero unnecessary re-renders.
+  - Good: `const theme = useSettingsStore(s => s.draftSettings?.ui.theme || 'dark')` — only re-renders on theme change
+  - Bad: `const { draftSettings } = useSettings()` — re-renders on ANY setting change
+- `VoxSettings` type lives in `app/src/store/settingsStore.ts` and includes `audio` and `setup` domains matching the Rust backend.
+
 ---
 
 ## Documentation (`docs/`)
