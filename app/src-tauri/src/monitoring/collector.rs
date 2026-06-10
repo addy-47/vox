@@ -119,6 +119,10 @@ fn collect_snapshot(state: &AppState, threads: u32, total_ram_mb: u32, cpu_cores
         is_vad_loaded: state.is_vad_loaded.load(Ordering::Relaxed),
         is_sleeping: state.is_sleeping.load(Ordering::Relaxed),
         is_engaged: state.pipeline.is_engaged.load(Ordering::Relaxed),
+
+        cpu_governor: state.cpu_governor.lock().unwrap().clone(),
+        cpu_governor_optimal: state.cpu_governor_optimal.load(Ordering::Relaxed),
+
         timestamp_ms: now,
     }
 }
