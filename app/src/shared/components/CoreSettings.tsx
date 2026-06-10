@@ -43,7 +43,7 @@ const EngineCard: React.FC = React.memo(() => {
   const isVadVerified = draftSettings.vad.vad_backend === "earshot" || presence["ten_vad"];
 
   return (
-    <div className="premium-card p-6 md:p-8 flex flex-col h-full overflow-hidden relative">
+    <div className="glass-card glass-base p-6 md:p-8 flex flex-col h-full overflow-hidden relative">
       {/* Header */}
       <div className="flex items-center gap-3 mb-8 shrink-0">
         <Brain className="text-[rgb(var(--accent))]" size={20} />
@@ -59,7 +59,7 @@ const EngineCard: React.FC = React.memo(() => {
         {/* VAD Card */}
         <div 
           className={cn(
-            "p-5 rounded-2xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] flex flex-col justify-between relative overflow-hidden transition-all duration-300"
+            "p-5 rounded-2xl border glass-whisper glass-base flex flex-col justify-between relative overflow-hidden transition-all duration-300"
           )}
         >
           {!isVadVerified && (
@@ -87,7 +87,7 @@ const EngineCard: React.FC = React.memo(() => {
         {/* ASR Card */}
         <div 
           className={cn(
-            "p-5 rounded-2xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] flex flex-col justify-between relative overflow-hidden transition-all duration-300"
+            "p-5 rounded-2xl border glass-whisper glass-base flex flex-col justify-between relative overflow-hidden transition-all duration-300"
           )}
         >
           {!isAsrVerified && (
@@ -113,7 +113,7 @@ const EngineCard: React.FC = React.memo(() => {
         {/* Translit Card */}
         <div 
           className={cn(
-            "p-5 rounded-2xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] flex flex-col justify-between relative overflow-hidden transition-all duration-300"
+            "p-5 rounded-2xl border glass-whisper glass-base flex flex-col justify-between relative overflow-hidden transition-all duration-300"
           )}
         >
           {!isTranslitVerified && (
@@ -139,7 +139,7 @@ const EngineCard: React.FC = React.memo(() => {
         {/* LLM Card */}
         <div 
           className={cn(
-            "p-5 rounded-2xl border bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] flex flex-col justify-between relative overflow-hidden transition-all duration-300"
+            "p-5 rounded-2xl border glass-whisper glass-base flex flex-col justify-between relative overflow-hidden transition-all duration-300"
           )}
         >
           {!isLlmVerified && (
@@ -204,7 +204,7 @@ const VoiceCard: React.FC = React.memo(() => {
   };
 
   return (
-    <div className="premium-card p-6 md:p-8 flex flex-col h-full relative overflow-hidden">
+    <div className="glass-card glass-base p-6 md:p-8 flex flex-col h-full relative overflow-hidden">
       {!isTtsVerified && (
         <div className="absolute inset-0 z-20 bg-[rgb(var(--background))]/60 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
           <AlertCircle className="text-[rgb(var(--accent))] mb-3" size={28} />
@@ -235,7 +235,7 @@ const VoiceCard: React.FC = React.memo(() => {
                 "px-3 py-2.5 rounded-xl text-[13px] font-bold tracking-[0.1em] uppercase transition-all duration-300",
                 isSelected(v)
                   ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md scale-[1.02]" 
-                  : "bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/10 hover:border-[rgba(var(--border),0.1)]",
+                  : "glass-whisper glass-base text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20",
                 !isTtsVerified ? "opacity-50 cursor-not-allowed" : ""
               )}
             >
@@ -247,7 +247,7 @@ const VoiceCard: React.FC = React.memo(() => {
 
       {/* Voice-dependent waveform */}
       <div className="mt-auto pt-4 animate-pulse">
-        <div className="h-16 w-full bg-transparent border border-[rgba(var(--border),0.03)] rounded-2xl flex items-center justify-center overflow-hidden">
+        <div className="h-16 w-full glass-whisper glass-base rounded-2xl flex items-center justify-center overflow-hidden">
           <div className="flex items-center gap-2">
             {waveformHeights.map((h: number, i: number) => (
               <div 
@@ -275,7 +275,7 @@ const AppearanceCard: React.FC = React.memo(() => {
   const theme = draftSettings.ui.theme;
 
   return (
-    <div className="premium-card p-6 md:p-8 flex flex-col h-full overflow-hidden">
+    <div className="glass-card glass-base p-6 md:p-8 flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between mb-8 shrink-0">
         <div className="flex items-center gap-3">
           <Palette className="text-[rgb(var(--accent))]" size={20} />
@@ -284,7 +284,7 @@ const AppearanceCard: React.FC = React.memo(() => {
             <p className="text-[13px] text-[rgb(var(--foreground-muted))] uppercase tracking-widest font-bold opacity-80">Accent Protocol</p>
           </div>
         </div>
-        <div className="flex bg-[rgb(var(--foreground))]/[0.05] p-1 rounded-xl border border-[rgba(var(--border),0.05)]">
+        <div className="flex glass-whisper glass-base p-1 rounded-xl">
           {[
             { id: 'dark', icon: Moon },
             { id: 'light', icon: Sun }
@@ -319,7 +319,7 @@ const AppearanceCard: React.FC = React.memo(() => {
           </div>
 
         {/* Preview Section */}
-        <div className="mt-auto p-4 rounded-2xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)] flex items-center justify-between">
+        <div className="mt-auto p-4 rounded-2xl glass-whisper glass-base flex items-center justify-between">
           <div className="flex items-center gap-3">
              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg shadow-[rgb(var(--accent))]/25">
                 <Shield size={16} />
@@ -343,7 +343,7 @@ const InteractionCard: React.FC = React.memo(() => {
   if (!draftSettings || !modelCatalog) return null;
 
   return (
-    <div className="premium-card p-6 md:p-8 flex flex-col h-full">
+    <div className="glass-card glass-base p-6 md:p-8 flex flex-col h-full">
       <div className="flex items-center gap-3 mb-8 shrink-0">
         <MousePointerClick className="text-[rgb(var(--accent))]" size={20} />
         <div className="space-y-1">
@@ -353,7 +353,7 @@ const InteractionCard: React.FC = React.memo(() => {
       </div>
       
       <div className="space-y-6 flex-1 min-h-0">
-        <div className="flex items-center justify-between p-1 bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] rounded-2xl">
+        <div className="flex items-center justify-between p-1 glass-whisper glass-base rounded-2xl">
           <button 
             onClick={() => updateDraft("interaction", "main_app_mode", "Passive")}
             className={cn(

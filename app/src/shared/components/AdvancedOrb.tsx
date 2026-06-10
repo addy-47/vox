@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
+import { useDynamicFPS } from '@/shared/hooks/useDynamicFPS';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -349,16 +350,164 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
   useEffect(() => { amplitudeRef.current = amplitude;         }, [amplitude]);
   useEffect(() => { testingRef.current   = isTesting;         }, [isTesting]);
 
+  // ── Page visibility tracking ─────────────────────────────────────────────
+  const [isPageVisible, setIsPageVisible] = useState(
+    typeof document !== 'undefined' ? document.visibilityState === 'visible' : true,
+  );
+
+  useEffect(() => {
+    const handler = () => setIsPageVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, []);
+
+  // ── IntersectionObserver for component visibility ────────────────────────
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    const el = mountRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setIsVisible(entry.isIntersecting),
+      { threshold: 0.1 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // ── Dynamic FPS controls ─────────────────────────────────────────────────
+  const isActive = interactionState !== 'Idle' && interactionState !== 'Interrupted';
+
+  /**
+   * Runtime scene context — populated by the init effect below.
+   * The tick function reads from this ref so it doesn't need closure captures.
+   */
+  interface SceneContext {
+    renderer: THREE.WebGLRenderer;
+    scene: THREE.Scene;
+    camera: THREE.PerspectiveCamera;
+    sharedUni: {
+      u_time: { value: number };
+      u_amplitude: { value: number };
+      u_colorGlow: { value: THREE.Color };
+      u_colorAccent: { value: THREE.Color };
+      u_sleeping: { value: number };
+    };
+    discGroup: THREE.Group;
+    group: THREE.Group;
+    outerMat: THREE.ShaderMaterial;
+    discAnims: { speedX: number; speedY: number; speedZ: number }[];
+    curGlow: THREE.Color;
+    curAccent: THREE.Color;
+    tgtGlow: THREE.Color;
+    tgtAccent: THREE.Color;
+    whiteColor: THREE.Color;
+    t0: number;
+    discMats: THREE.ShaderMaterial[];
+    outerGeo: THREE.SphereGeometry;
+    resizeObs: ResizeObserver;
+    container: HTMLDivElement;
+  }
+
+  const sceneRef = useRef<SceneContext | null>(null);
+
+  const tickFn = useCallback((_dt: number) => {
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+
+    const t = (performance.now() - ctx.t0) / 1000;
+    const state = stateRef.current;
+    const sleeping = sleepingRef.current;
+
+    let telemAmp = 0;
+    if (telemetryRef?.current) {
+      const e = telemetryRef.current.energy;
+      if (state === 'UserSpeaking' || state === 'AssistantSpeaking') {
+        telemAmp = e * 2.2;
+      }
+    } else if (amplitudeRef.current > 0) {
+      telemAmp = amplitudeRef.current * 0.4;
+    }
+    if (state === 'Thinking') {
+      telemAmp = Math.sin(t * 2.6) * 0.13;
+    }
+
+    const targetBase = BASE_AMP[state] ?? 0.02;
+    const targetAmp = Math.min(
+      (sleeping ? targetBase * 0.08 : targetBase) + telemAmp,
+      2.5,
+    );
+    const curAmp = ctx.sharedUni.u_amplitude.value;
+    const rate = targetAmp > curAmp ? 0.08 : 0.02;
+    ctx.sharedUni.u_amplitude.value += (targetAmp - curAmp) * rate;
+    ctx.sharedUni.u_time.value = t;
+    ctx.sharedUni.u_sleeping.value += (Number(sleeping) - ctx.sharedUni.u_sleeping.value) * 0.05;
+
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    let themeAccent = getCSSColor('--accent', '#00dbe9');
+    let themeGlow = isLight
+      ? themeAccent.clone()
+      : themeAccent.clone().multiplyScalar(0.40);
+
+    if (isLight) {
+      themeAccent.lerp(ctx.whiteColor, 0.45);
+    }
+
+    if (state === 'Idle' || state === 'Interrupted') {
+      ctx.tgtGlow.copy(themeGlow);
+      ctx.tgtAccent.copy(themeGlow);
+    } else if (state === 'AssistantSpeaking') {
+      ctx.tgtGlow.copy(themeAccent);
+      ctx.tgtAccent.copy(ctx.whiteColor);
+    } else {
+      ctx.tgtGlow.copy(themeGlow);
+      ctx.tgtAccent.copy(themeAccent);
+    }
+
+    ctx.curGlow.lerp(ctx.tgtGlow, 0.03);
+    ctx.curAccent.lerp(ctx.tgtAccent, 0.03);
+
+    ctx.sharedUni.u_colorGlow.value.copy(ctx.curGlow);
+    ctx.sharedUni.u_colorAccent.value.copy(ctx.curAccent);
+
+    ctx.outerMat.uniforms['u_colorGlow'].value.copy(ctx.curGlow);
+    ctx.outerMat.uniforms['u_colorAccent'].value.copy(ctx.curAccent);
+
+    const speedMult = 1.0 + telemAmp * 2.8;
+    for (let i = 0; i < NUM_SHEETS; i++) {
+      const mesh = ctx.discGroup.children[i] as THREE.Mesh;
+      const anim = ctx.discAnims[i];
+      mesh.rotation.x += anim.speedX * speedMult;
+      mesh.rotation.y += anim.speedY * speedMult;
+      mesh.rotation.z += anim.speedZ * speedMult;
+    }
+
+    ctx.group.rotation.y = t * 0.033;
+    ctx.group.rotation.x = Math.sin(t * 0.021) * 0.055;
+
+    ctx.renderer.render(ctx.scene, ctx.camera);
+  }, [telemetryRef]);
+
+  useDynamicFPS({
+    onFrame: tickFn,
+    isVisible,
+    isPageVisible,
+    fpsActive: 60,
+    fpsIdle: 15,
+    isActive,
+    isPaused: isSleeping,
+  });
+
+  // ── Scene initialisation (runs once) ─────────────────────────────────────
   useEffect(() => {
     if (!mountRef.current) return;
 
     const container = mountRef.current;
-    let width  = container.clientWidth;
+    let width = container.clientWidth;
     let height = container.clientHeight;
 
-    // ── Renderer ────────────────────────────────────────────────────────────
-    const scene    = new THREE.Scene();
-    const camera   = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -367,20 +516,17 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       'position:absolute;top:0;left:0;width:100%;height:100%;';
     container.appendChild(renderer.domElement);
 
-    // Initial theme colors from CSS variables
     const initGlow = getCSSColor('--accent-dark', '#0891b2');
     const initAccent = getCSSColor('--accent', '#00dbe9');
 
-    // ── Shared uniforms ─────────────────────────────────────────────────────
     const sharedUni = {
-      u_time:        { value: 0.0 },
-      u_amplitude:   { value: 0.02 },
-      u_colorGlow:   { value: initGlow.clone() },
+      u_time: { value: 0.0 },
+      u_amplitude: { value: 0.02 },
+      u_colorGlow: { value: initGlow.clone() },
       u_colorAccent: { value: initAccent.clone() },
-      u_sleeping:    { value: 0.0 },
+      u_sleeping: { value: 0.0 },
     };
 
-    // ── LAYER 1 — Silk disc sheets ──────────────────────────────────────────
     const discGroup = new THREE.Group();
     const discMats: THREE.ShaderMaterial[] = [];
 
@@ -392,20 +538,20 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
 
       const mat = new THREE.ShaderMaterial({
         uniforms: {
-          u_time:        sharedUni.u_time,
-          u_amplitude:   sharedUni.u_amplitude,
-          u_colorGlow:   sharedUni.u_colorGlow,
+          u_time: sharedUni.u_time,
+          u_amplitude: sharedUni.u_amplitude,
+          u_colorGlow: sharedUni.u_colorGlow,
           u_colorAccent: sharedUni.u_colorAccent,
-          u_sleeping:    sharedUni.u_sleeping,
-          u_phase:       { value: i * 1.73 + Math.random() * 2.1 },
-          u_waveScale:   { value: 0.38 + Math.random() * 0.48 },
+          u_sleeping: sharedUni.u_sleeping,
+          u_phase: { value: i * 1.73 + Math.random() * 2.1 },
+          u_waveScale: { value: 0.38 + Math.random() * 0.48 },
           u_baseOpacity: { value: 0.11 + Math.random() * 0.28 },
         },
         transparent: true,
-        depthWrite:  false,
-        side:        THREE.DoubleSide,
-        blending:    THREE.NormalBlending, // Normal blending prevents desaturation and grey shadows on light background
-        vertexShader:   DISC_VERT,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.NormalBlending,
+        vertexShader: DISC_VERT,
         fragmentShader: DISC_FRAG,
       });
       discMats.push(mat);
@@ -413,7 +559,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       const mesh = new THREE.Mesh(geo, mat);
       mesh.rotation.order = 'ZYX';
       mesh.rotation.x = (Math.random() - 0.5) * Math.PI;
-      mesh.rotation.y =  Math.random()         * Math.PI * 2;
+      mesh.rotation.y = Math.random() * Math.PI * 2;
       mesh.rotation.z = (Math.random() - 0.5) * Math.PI * 0.5;
       discGroup.add(mesh);
 
@@ -424,38 +570,36 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       });
     }
 
-    // ── LAYER 2 — Outer glow shell (Fresnel rim) ───────────────────────────
     const outerGeo = new THREE.SphereGeometry(SHELL_R, 64, 64);
     const outerMat = new THREE.ShaderMaterial({
       uniforms: {
-        u_colorGlow:   { value: initGlow.clone() },
+        u_colorGlow: { value: initGlow.clone() },
         u_colorAccent: { value: initAccent.clone() },
-        u_amplitude:   sharedUni.u_amplitude,
-        u_sleeping:    sharedUni.u_sleeping,
+        u_amplitude: sharedUni.u_amplitude,
+        u_sleeping: sharedUni.u_sleeping,
       },
       transparent: true,
-      depthWrite:  false,
-      side:        THREE.FrontSide,
-      blending:    THREE.NormalBlending, // Normal blending for clean overlay/contrast on white/grey
-      vertexShader:   OUTER_VERT,
+      depthWrite: false,
+      side: THREE.FrontSide,
+      blending: THREE.NormalBlending,
+      vertexShader: OUTER_VERT,
       fragmentShader: OUTER_FRAG,
     });
     const outerMesh = new THREE.Mesh(outerGeo, outerMat);
 
-    discGroup.renderOrder  = 1;
-    outerMesh.renderOrder  = 2;
+    discGroup.renderOrder = 1;
+    outerMesh.renderOrder = 2;
 
     const group = new THREE.Group();
     group.add(discGroup);
     group.add(outerMesh);
     scene.add(group);
 
-    // ── Camera ──────────────────────────────────────────────────────────────
     function updateCamera(w: number, h: number) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
-      const fovRad  = (45 * Math.PI) / 180;
+      const fovRad = (45 * Math.PI) / 180;
       const fitDist = SHELL_R / Math.tan(fovRad / 2);
       camera.position.z = Math.max(fitDist * 1.08, 6.5);
     }
@@ -466,106 +610,42 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       const { width: w, height: h } = entry.contentRect;
       if (w > 0 && h > 0) {
         updateCamera(w, h);
-        renderer.render(scene, camera);
+        if (sceneRef.current) {
+          renderer.render(scene, camera);
+        }
       }
     });
     resizeObs.observe(container);
 
-    // ── Colour lerp state ────────────────────────────────────────────────────
-    const curGlow   = initGlow.clone();
+    const curGlow = initGlow.clone();
     const curAccent = initAccent.clone();
-    const tgtGlow   = new THREE.Color();
+    const tgtGlow = new THREE.Color();
     const tgtAccent = new THREE.Color();
     const whiteColor = new THREE.Color(1, 1, 1);
-    const COLOR_LERP = 0.03;
 
-    // ── Animation loop ───────────────────────────────────────────────────────
-    let raf: number;
-    const t0 = performance.now();
+    sceneRef.current = {
+      renderer,
+      scene,
+      camera,
+      sharedUni,
+      discGroup,
+      group,
+      outerMat,
+      discAnims,
+      curGlow,
+      curAccent,
+      tgtGlow,
+      tgtAccent,
+      whiteColor,
+      t0: performance.now(),
+      discMats,
+      outerGeo,
+      resizeObs,
+      container,
+    };
 
-    function animate() {
-      raf = requestAnimationFrame(animate);
-      const t       = (performance.now() - t0) / 1000;
-      const state   = stateRef.current;
-      const sleeping = sleepingRef.current;
-
-      let telemAmp = 0;
-      if (telemetryRef?.current) {
-        const e = telemetryRef.current.energy;
-        if (state === 'UserSpeaking' || state === 'AssistantSpeaking') {
-          telemAmp = e * 2.2;
-        }
-      } else if (amplitudeRef.current > 0) {
-        telemAmp = amplitudeRef.current * 0.4;
-      }
-      if (state === 'Thinking') {
-        telemAmp = Math.sin(t * 2.6) * 0.13;
-      }
-
-      const targetBase = BASE_AMP[state] ?? 0.02;
-      const targetAmp  = Math.min(
-        (sleeping ? targetBase * 0.08 : targetBase) + telemAmp,
-        2.5,
-      );
-      const curAmp = sharedUni.u_amplitude.value;
-      const rate   = targetAmp > curAmp ? 0.08 : 0.02;
-      sharedUni.u_amplitude.value += (targetAmp - curAmp) * rate;
-      sharedUni.u_time.value       = t;
-      sharedUni.u_sleeping.value  += (Number(sleeping) - sharedUni.u_sleeping.value) * 0.05;
-
-      // Extract current theme colors dynamically and handle light mode readability
-      const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-      let themeAccent = getCSSColor('--accent', '#00dbe9');
-      let themeGlow = isLight
-        ? themeAccent.clone() // Use accent directly as the base in light mode
-        : themeAccent.clone().multiplyScalar(0.40); // Dynamically derive dark accent from the user-selected accent seed!
-
-      if (isLight) {
-        // Soften and brighten accent color for light mode to avoid heavy, desaturated looks
-        themeAccent.lerp(whiteColor, 0.45);
-      }
-
-      // Adjust target colors based on state
-      if (state === 'Idle' || state === 'Interrupted') {
-        tgtGlow.copy(themeGlow);
-        tgtAccent.copy(themeGlow); // Soft glow only
-      } else if (state === 'AssistantSpeaking') {
-        tgtGlow.copy(themeAccent);
-        tgtAccent.copy(whiteColor); // Ignites to white highlight
-      } else {
-        tgtGlow.copy(themeGlow);
-        tgtAccent.copy(themeAccent);
-      }
-
-      curGlow.lerp(tgtGlow, COLOR_LERP);
-      curAccent.lerp(tgtAccent, COLOR_LERP);
-
-      sharedUni.u_colorGlow.value.copy(curGlow);
-      sharedUni.u_colorAccent.value.copy(curAccent);
-
-      outerMat.uniforms['u_colorGlow'].value.copy(curGlow);
-      outerMat.uniforms['u_colorAccent'].value.copy(curAccent);
-
-      const speedMult = 1.0 + telemAmp * 2.8;
-      for (let i = 0; i < NUM_SHEETS; i++) {
-        const mesh = discGroup.children[i] as THREE.Mesh;
-        const anim = discAnims[i];
-        mesh.rotation.x += anim.speedX * speedMult;
-        mesh.rotation.y += anim.speedY * speedMult;
-        mesh.rotation.z += anim.speedZ * speedMult;
-      }
-
-      group.rotation.y = t * 0.033;
-      group.rotation.x = Math.sin(t * 0.021) * 0.055;
-
-      renderer.render(scene, camera);
-    }
-
-    animate();
-
-    // ── Cleanup ─────────────────────────────────────────────────────────────
     return () => {
-      cancelAnimationFrame(raf);
+      sceneRef.current = null;
       resizeObs.disconnect();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);

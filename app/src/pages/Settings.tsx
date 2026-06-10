@@ -5,6 +5,7 @@ import { useSettings } from "@/shared/context/SettingsContext";
 import { CoreSettings } from "@/shared/components/CoreSettings";
 import { ModelSettings } from "@/shared/components/ModelSettings";
 import { TraySettings } from "@/shared/components/TraySettings";
+import { GlassSkeleton } from "@/shared/components/GlassSkeleton";
 
 export const Settings: React.FC = () => {
   const { draftSettings, hasChanges, commitChanges, discardChanges, restoreDefaults } = useSettings();
@@ -19,15 +20,22 @@ export const Settings: React.FC = () => {
     }
   }, []);
 
-  if (!draftSettings) return null;
+  if (!draftSettings) return (
+    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10 items-center justify-center">
+      <div className="w-full max-w-md space-y-6">
+        <GlassSkeleton variant="card" />
+        <GlassSkeleton variant="card" />
+      </div>
+    </div>
+  );
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-[rgb(var(--background))]">
+    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent">
       <header className="px-6 md:px-10 py-6 md:py-10 shrink-0">
         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-2">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-[rgb(var(--accent))]/10">
+              <div className="p-2 rounded-xl glass-surface glass-base">
                 <SettingsIcon className="text-[rgb(var(--accent))]" size={24} />
               </div>
               <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[rgb(var(--foreground))]">
@@ -38,7 +46,7 @@ export const Settings: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 p-1 bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] rounded-2xl">
+            <div className="flex items-center gap-1.5 p-1 glass-whisper glass-base rounded-2xl">
               <button 
                 onClick={() => {
                   setActiveTab("core");
@@ -100,12 +108,12 @@ export const Settings: React.FC = () => {
       </div>
 
       {/* Footer Actions - Fixed at bottom */}
-      <footer className="shrink-0 border-t border-[rgba(var(--border),0.05)] glass-panel bg-[rgb(var(--background))]/80 backdrop-blur-xl px-6 md:px-10">
+      <footer className="shrink-0 glass-surface glass-base px-6 md:px-10">
         <div className="max-w-[1600px] mx-auto py-6 md:py-8 flex items-center justify-between gap-4">
           <button 
             onClick={restoreDefaults}
-            className="hidden md:flex items-center gap-2 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-red-400 transition-colors duration-300 opacity-60 hover:opacity-600"
-            title="Restore Defaults"
+            className="hidden md:flex items-center gap-2 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em] hover:text-red-400 transition-colors duration-300 opacity-60 hover:opacity-60 hover:bg-red-500/10 px-3 py-2 rounded-xl"
+            aria-label="Restore Defaults"
           >
              <RotateCcw size={16} />
              <span>Restore Defaults</span>
@@ -115,10 +123,10 @@ export const Settings: React.FC = () => {
                onClick={discardChanges}
                disabled={!hasChanges}
                className={cn(
-                 "flex-1 md:flex-none px-4 md:px-8 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.2em] transition-all duration-300",
-                 hasChanges 
-                  ? "text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/[0.05]" 
-                  : "text-[rgb(var(--foreground-muted))] opacity-60 cursor-not-allowed"
+                  "flex-1 md:flex-none px-4 md:px-8 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.2em] transition-all duration-300 glass-whisper glass-base border border-[rgba(var(--border),0.04)]",
+                  hasChanges 
+                   ? "text-[rgb(var(--foreground))] hover:border-[rgb(var(--accent))]/20" 
+                   : "text-[rgb(var(--foreground-muted))] opacity-60 cursor-not-allowed"
                )}
              >
                <span className="hidden sm:inline">Discard Changes</span>

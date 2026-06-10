@@ -16,7 +16,7 @@ export const TraySettings: React.FC = () => {
         <div className="grid lg:grid-cols-3 gap-8 pb-8">
           {/* HUD Setup */}
           <div className="lg:col-span-2 space-y-8">
-            <div className="premium-card p-6 md:p-8">
+            <div className="glass-card glass-base p-6 md:p-8">
               <div className="flex items-center gap-3 mb-8 shrink-0">
                 <Monitor className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">
@@ -25,7 +25,7 @@ export const TraySettings: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-6 bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.03)] rounded-2xl">
+              <div className="flex items-center justify-between p-6 glass-whisper glass-base rounded-2xl">
                 <div className="space-y-1">
                   <div className="text-sm font-bold text-[rgb(var(--foreground))] opacity-80">Enable HUD</div>
                   <p className="text-[11px] text-[rgb(var(--foreground-muted))] opacity-60 uppercase tracking-widest">Show or hide the always-on-top window</p>
@@ -46,7 +46,7 @@ export const TraySettings: React.FC = () => {
             </div>
 
             {/* Look & Feel (Appearance Card spans full width of this row) */}
-            <div className="premium-card p-6 md:p-8 space-y-8">
+            <div className="glass-card glass-base p-6 md:p-8 space-y-8">
               <div className="flex items-center gap-3 mb-8 shrink-0">
                 <Layers className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">
@@ -96,7 +96,7 @@ export const TraySettings: React.FC = () => {
 
           {/* Tray Interaction */}
           <div className="space-y-8">
-            <div className="premium-card p-6 md:p-8 space-y-8">
+            <div className="glass-card glass-base p-6 md:p-8 space-y-8">
               <div className="flex items-center gap-3 mb-8 shrink-0">
                 <Sliders className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">
@@ -112,7 +112,7 @@ export const TraySettings: React.FC = () => {
                     {interaction.tray_mode === "Passive" ? "Auto Show" : "Manual Only"}
                   </div>
                 </div>
-                <div className="flex p-1 bg-[rgb(var(--foreground))]/[0.05] border border-[rgba(var(--border),0.05)] rounded-xl">
+                <div className="flex p-1 glass-whisper glass-base rounded-xl">
                   <button 
                     onClick={() => updateDraft("interaction", "tray_mode", "Passive")}
                     className={cn(
@@ -139,7 +139,7 @@ export const TraySettings: React.FC = () => {
               </div>
             </div>
 
-            <div className="premium-card p-6 md:p-8 space-y-8">
+            <div className="glass-card glass-base p-6 md:p-8 space-y-8">
               <div className="flex items-center gap-3 mb-8 shrink-0">
                 <History className="text-[rgb(var(--accent))]" size={20} />
                 <div className="space-y-1">

@@ -43,8 +43,10 @@ thread-priority = "1.1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Phase 4 — LLM runtime (llama.cpp Rust bindings, compiles llama.cpp from source, CPU-only)
-llama-cpp-4 = "0.2.61"
-llama-cpp-sys-4 = "0.2.61"
+# Dynamic linking disabled (default includes dynamic-link) — we want static linking
+# for easier distribution. Explicitly enable openmp and mtmd which were also in defaults.
+llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openmp", "mtmd"] }
+llama-cpp-sys-4 = { version = "0.2.61", default-features = false }
 
 encoding_rs = "0.8.35"
 regex = "1.12.3"
