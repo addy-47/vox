@@ -4,116 +4,156 @@ interface AmbientBackgroundProps {
   mood?: "calm" | "active" | "thinking";
 }
 
-export const AmbientBackground: React.FC<AmbientBackgroundProps> = ({ mood: _mood = "calm" }) => {
+export const AmbientBackground: React.FC<AmbientBackgroundProps> = ({ mood = "calm" }) => {
+  // Map mood to opacity and wave animation speed/scaling parameters
+  const isLight = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light';
+  
+  // Wave configurations based on mood
+  const moodConfig = {
+    calm: {
+      energy: 0.12,
+      opacity: 0.08,
+      speedMultiplier: 1.0,
+      scaleY: 1.0,
+    },
+    active: {
+      energy: 0.35,
+      opacity: 0.18,
+      speedMultiplier: 2.2,
+      scaleY: 1.8,
+    },
+    thinking: {
+      energy: 0.25,
+      opacity: 0.15,
+      speedMultiplier: 1.5,
+      scaleY: 1.4,
+    }
+  }[mood] || { energy: 0.12, opacity: 0.08, speedMultiplier: 1.0, scaleY: 1.0 };
+
   return (
     <div
-      className="fixed inset-0 pointer-events-none"
+      className="fixed inset-0 pointer-events-none overflow-hidden select-none"
       style={{ zIndex: 0, willChange: "transform", transform: "translateZ(0)" }}
       aria-hidden="true"
     >
       <style>{`
-        @keyframes ambient-blob-1 {
-          0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; transform: translate(0, 0) scale(1); }
-          25% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; transform: translate(30px, -20px) scale(1.05); }
-          50% { border-radius: 50% 60% 30% 50% / 40% 60% 50% 60%; transform: translate(-20px, 20px) scale(0.95); }
-          75% { border-radius: 40% 50% 60% 30% / 60% 40% 70% 30%; transform: translate(15px, -10px) scale(1.02); }
+        @keyframes wave-drift-1 {
+          0% { transform: translate3d(0, 0, 0) scaleY(${moodConfig.scaleY}); }
+          50% { transform: translate3d(-40px, 15px, 0) scaleY(${moodConfig.scaleY * 1.15}); }
+          100% { transform: translate3d(0, 0, 0) scaleY(${moodConfig.scaleY}); }
         }
-        @keyframes ambient-blob-2 {
-          0%, 100% { border-radius: 40% 60% 50% 50% / 40% 50% 60% 50%; transform: translate(0, 0) scale(1); }
-          33% { border-radius: 60% 40% 60% 40% / 50% 60% 40% 50%; transform: translate(-25px, 15px) scale(1.04); }
-          66% { border-radius: 50% 50% 40% 60% / 60% 40% 50% 50%; transform: translate(20px, -25px) scale(0.96); }
+        @keyframes wave-drift-2 {
+          0% { transform: translate3d(0, 0, 0) scaleY(${moodConfig.scaleY * 0.9}); }
+          50% { transform: translate3d(30px, -20px, 0) scaleY(${moodConfig.scaleY * 1.2}); }
+          100% { transform: translate3d(0, 0, 0) scaleY(${moodConfig.scaleY * 0.9}); }
         }
-        @keyframes ambient-blob-3 {
-          0%, 100% { border-radius: 50% 60% 40% 50% / 50% 40% 60% 50%; opacity: 0.08; transform: scale(1); }
-          50% { border-radius: 40% 50% 60% 40% / 60% 50% 40% 50%; opacity: 0.15; transform: scale(1.08); }
+        @keyframes wave-drift-3 {
+          0% { transform: translate3d(0, 0, 0) scaleY(${moodConfig.scaleY * 1.1}); }
+          50% { transform: translate3d(-20px, -10px, 0) scaleY(${moodConfig.scaleY * 0.85}); }
+          100% { transform: translate3d(0, 0, 0) scaleY(${moodConfig.scaleY * 1.1}); }
         }
         @media (prefers-reduced-motion: reduce) {
-          .ambient-blob { animation: none !important; }
+          .sentient-wave { animation: none !important; transform: scaleY(1) !important; }
         }
         [data-theme='light'] .ambient-base-dark { opacity: 0; }
         [data-theme='light'] .ambient-base-light { opacity: 1; }
+        [data-theme='light'] .sentient-wave { stroke: rgba(var(--signal), 0.18) !important; }
       `}</style>
 
       {/* Base dark gradient */}
       <div
         className="ambient-base-dark absolute inset-0"
         style={{
-          background: "radial-gradient(ellipse at 50% 50%, #0c0d21 0%, #06060c 60%, #020204 100%)",
-          transition: "opacity 0.3s ease",
+          background: "radial-gradient(ellipse at 50% 60%, #080915 0%, #030307 70%, #010103 100%)",
+          transition: "opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       />
 
-      {/* Base light gradient (hidden until [data-theme='light']) */}
+      {/* Base light gradient */}
       <div
         className="ambient-base-light absolute inset-0"
         style={{
-          background: "radial-gradient(ellipse at 50% 50%, #f0f3fd 0%, #e4eaf8 60%, #f4f6fc 100%)",
+          background: "radial-gradient(ellipse at 50% 60%, #f3f6fe 0%, #e8edf9 70%, #f4f6fc 100%)",
           opacity: 0,
-          transition: "opacity 0.3s ease",
+          transition: "opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       />
 
-      {/* Blob 1: cool cyan, top-left, 60s slow float + morph */}
+      {/* Sentient Field Wave Topology (SVG Overlay) */}
+      <div 
+        className="absolute inset-0 flex items-center justify-center"
+        style={{ opacity: moodConfig.opacity, transition: "opacity 0.5s ease" }}
+      >
+        <svg 
+          width="120%" 
+          height="120%" 
+          viewBox="0 0 1000 600" 
+          preserveAspectRatio="none"
+          className="absolute min-w-full min-h-full opacity-60"
+        >
+          {/* Wave 1: Cyan/Accent topology line */}
+          <path
+            className="sentient-wave"
+            d="M -100 300 C 150 150, 350 450, 500 300 C 650 150, 850 450, 1100 300"
+            fill="none"
+            stroke="rgb(var(--accent))"
+            strokeWidth="1.5"
+            strokeOpacity="0.4"
+            style={{
+              transformOrigin: "center",
+              animation: `wave-drift-1 ${45 / moodConfig.speedMultiplier}s ease-in-out infinite`,
+            }}
+          />
+          {/* Wave 2: Purple/Deep offset topology line */}
+          <path
+            className="sentient-wave"
+            d="M -100 280 C 200 400, 300 200, 500 320 C 700 440, 800 180, 1100 280"
+            fill="none"
+            stroke={mood === 'thinking' ? "rgb(var(--accent))" : "rgb(168, 85, 247)"}
+            strokeWidth="1"
+            strokeOpacity="0.3"
+            style={{
+              transformOrigin: "center",
+              animation: `wave-drift-2 ${60 / moodConfig.speedMultiplier}s ease-in-out infinite`,
+            }}
+          />
+          {/* Wave 3: Secondary highlight line */}
+          <path
+            className="sentient-wave"
+            d="M -100 320 C 100 250, 400 350, 500 280 C 600 210, 900 380, 1100 320"
+            fill="none"
+            stroke="rgb(var(--accent))"
+            strokeWidth="0.8"
+            strokeOpacity="0.25"
+            style={{
+              transformOrigin: "center",
+              animation: `wave-drift-3 ${35 / moodConfig.speedMultiplier}s ease-in-out infinite`,
+            }}
+          />
+        </svg>
+      </div>
+
+      {/* Reactive Glow Core */}
       <div
-        className="ambient-blob absolute"
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
         style={{
-          top: "10%",
-          left: "5%",
-          width: "50vw",
-          height: "50vw",
-          background: "radial-gradient(circle, rgba(0, 219, 233, 0.4) 0%, transparent 70%)",
-          filter: "blur(100px)",
-          opacity: 0.18,
-          animation: "ambient-blob-1 60s ease-in-out infinite",
-          willChange: "transform, border-radius",
+          width: "70vw",
+          height: "70vh",
+          background: `radial-gradient(circle, rgba(var(--accent), ${moodConfig.energy * 0.15}) 0%, transparent 70%)`,
+          mixBlendMode: "screen",
+          opacity: 0.8,
+          transition: "background 0.5s ease, opacity 0.5s ease",
         }}
       />
 
-      {/* Blob 2: warm purple, bottom-right, 90s slower drift */}
-      <div
-        className="ambient-blob absolute"
-        style={{
-          bottom: "5%",
-          right: "5%",
-          width: "45vw",
-          height: "45vw",
-          background: "radial-gradient(circle, rgba(216, 186, 255, 0.35) 0%, transparent 70%)",
-          filter: "blur(120px)",
-          opacity: 0.16,
-          animation: "ambient-blob-2 90s ease-in-out infinite",
-          willChange: "transform, border-radius",
-        }}
-      />
-
-      {/* Blob 3: accent cyan, center-right, 45s slow pulse */}
-      <div
-        className="ambient-blob absolute"
-        style={{
-          top: "35%",
-          right: "10%",
-          width: "40vw",
-          height: "40vw",
-          background: "radial-gradient(circle, rgba(0, 240, 255, 0.3) 0%, transparent 70%)",
-          filter: "blur(80px)",
-          opacity: 0.12,
-          animation: "ambient-blob-3 45s ease-in-out infinite",
-          willChange: "transform, border-radius, opacity",
-        }}
-      />
-
-      {/* Light mode blob overrides */}
-      <style>{`
-        [data-theme='light'] .ambient-blob { opacity: 0.14 !important; }
-      `}</style>
-
-      {/* Subtle noise grain overlay via SVG data URI */}
+      {/* Subtle Noise Grain Overlay */}
       <div
         className="absolute inset-0"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 250 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E")`,
           backgroundSize: "250px 250px",
-          opacity: 0.15,
-          mixBlendMode: "overlay",
+          opacity: isLight ? 0.08 : 0.12,
+          mixBlendMode: isLight ? "multiply" : "overlay",
         }}
         aria-hidden="true"
       />

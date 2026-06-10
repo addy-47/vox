@@ -53,8 +53,7 @@ app/src/
 │   └── settingsStore.ts         # Zustand store for settings (v5)
 ├── layout/
 │   ├── ResponsiveLayout.tsx     # Main app layout (uses AmbientBackground)
-│   ├── Sidebar.tsx              # Navigation sidebar (uses zustand directly)
-│   ├── BottomNav.tsx            # Mobile navigation
+│   ├── EdgeNav.tsx              # Unified bottom navigation strip (uses hover tooltips)
 │   └── TitleBar.tsx             # Window controls
 ├── pages/
 │   ├── Home.tsx                 # Orb interface page
