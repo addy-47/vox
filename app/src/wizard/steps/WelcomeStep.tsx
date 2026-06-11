@@ -111,7 +111,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                   desc="100% On-device"
                 />
                 <FeatureCard 
-                  icon={<Zap className="w-4 h-4 text-[#d8baff]" />}
+                  icon={<Zap className="w-4 h-4 text-[rgb(var(--accent))]" />}
                   title="Latency"
                   desc="Low-Latency Inference"
                 />

@@ -128,7 +128,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
                 </div>
                 <div className="h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
                 <motion.div 
-                    className="h-full bg-gradient-to-r from-[rgb(var(--accent))] to-[#d8baff]"
+                    className="h-full" style={{ background: `linear-gradient(90deg, rgb(var(--accent)) 0%, rgba(var(--accent), 0.3) 100%)` }}
                     animate={{ width: `${Math.min(energy, 100)}%` }}
                     transition={{ type: 'tween', ease: 'easeOut', duration: 0.15 }}
                 />
@@ -138,7 +138,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         </div>
     
         <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
-            <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest px-1">Source Selection</span>
+            <span className="text-[11px] font-bold text-white/30 uppercase tracking-widest px-1">Source Selection</span>
             <div className="space-y-2">
             {devices.map(device => (
                 <button

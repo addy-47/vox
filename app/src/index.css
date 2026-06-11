@@ -23,7 +23,7 @@
 
 /* Explicit early background to kill the flash */
 html, body {
-  background-color: #050505 !important;
+  background-color: rgb(var(--background)) !important;
 }
 
 [data-theme='light'] {
@@ -503,4 +503,58 @@ input[type="range"]:active::-webkit-slider-thumb {
 .animate-wave-flow {
   animation: wave-flow 45s linear infinite;
 }
+
+/* ── Ambient Ripple Pulses ── */
+@keyframes ripple-expand {
+  0%   { transform: scale(0); opacity: var(--ripple-energy, 0.12); }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+@keyframes ripple-expand-soft {
+  0%   { transform: scale(0.2); opacity: calc(var(--ripple-energy, 0.12) * 0.6); }
+  100% { transform: scale(2); opacity: 0; }
+}
+.ripple-layer {
+  position: absolute;
+  inset: -50%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(var(--accent), 0.12) 0%, transparent 60%);
+  will-change: transform, opacity;
+}
+.ripple-layer:nth-child(1) { animation: ripple-expand 8s cubic-bezier(0.2, 0, 0.4, 1) infinite; }
+.ripple-layer:nth-child(2) { animation: ripple-expand-soft 10s cubic-bezier(0.2, 0, 0.4, 1) infinite 2.5s; }
+.ripple-layer:nth-child(3) { animation: ripple-expand 12s cubic-bezier(0.2, 0, 0.4, 1) infinite 5s; }
+.ripple-layer:nth-child(4) { animation: ripple-expand-soft 14s cubic-bezier(0.2, 0, 0.4, 1) infinite 7.5s; }
+.ripple-layer:nth-child(5) { animation: ripple-expand 16s cubic-bezier(0.2, 0, 0.4, 1) infinite 10s; }
+@media (prefers-reduced-motion: reduce) {
+  .ripple-layer { animation: none !important; opacity: 0.04 !important; }
+}
+
+/* Status label is now rendered via the StatusCapsule React component in Home.tsx — no shimmer gradient needed */
+
+.shimmer-badge::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--accent), 0.08) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-slide 3s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* ── Slow Professional Pulse ── */
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+.animate-pulse-slow {
+  animation: pulse-slow 3s ease-in-out infinite;
+}
+
 
