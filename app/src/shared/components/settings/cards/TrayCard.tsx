@@ -3,28 +3,46 @@ import { useSettings } from "@/shared/context/SettingsContext";
 import { Eye } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
-export const TrayCard = memo(() => {
+interface TrayCardProps {
+  layoutMode?: "full-max" | "full-min" | "small";
+}
+
+export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
   const { draftSettings, updateDraft } = useSettings();
 
   if (!draftSettings) return null;
   const { ui, interaction } = draftSettings;
 
+  const isSmall = layoutMode === "small";
+  const isMin = layoutMode === "full-min";
+
   return (
-    <div className="w-full lg:w-[320px] bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30 text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85">
+    <div 
+      className={cn(
+        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85",
+        isSmall
+          ? "w-full bg-transparent p-0"
+          : "w-full lg:w-[320px] bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30"
+      )}
+    >
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4 shrink-0">
-        <Eye className="text-[rgb(var(--accent))]" size={16} />
-        <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
-          HUD & Tray HUD
-        </span>
-      </div>
+      {!isSmall && (
+        <div className="flex items-center gap-2 mb-4 shrink-0">
+          <Eye className="text-[rgb(var(--accent))]" size={16} />
+          <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+            HUD & Tray HUD
+          </span>
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* Toggle Tray Enabled */}
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
             <span className="font-bold text-[rgb(var(--foreground))]/80">Enable HUD</span>
-            <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70">Show overlay window</span>
+            {!isMin && (
+              <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70">Show overlay window</span>
+            )}
           </div>
           <button
             onClick={() => updateDraft("ui", "tray_enabled", !ui.tray_enabled)}
@@ -49,9 +67,11 @@ export const TrayCard = memo(() => {
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
             <span className="font-bold text-[rgb(var(--foreground))]/80">Tray Mode</span>
-            <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70">
-              {interaction.tray_mode === "Passive" ? "Continuous listening" : "Push-to-talk"}
-            </span>
+            {!isMin && (
+              <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70">
+                {interaction.tray_mode === "Passive" ? "Continuous listening" : "Push-to-talk"}
+              </span>
+            )}
           </div>
           <div className="flex p-0.5 bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] rounded-xl">
             <button
@@ -80,24 +100,43 @@ export const TrayCard = memo(() => {
         </div>
 
         {/* History Limit */}
-        <div className="space-y-1">
-          <div className="flex justify-between items-center">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70">
+        {(isMin || isSmall) ? (
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 shrink-0 w-24">
               History Limit
             </span>
-            <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">
-              {ui.tray_history_limit} turns
+            <input
+              type="range"
+              min="1"
+              max="15"
+              value={ui.tray_history_limit}
+              onChange={(e) => updateDraft("ui", "tray_history_limit", Number(e.target.value))}
+              className="flex-1 min-w-0"
+            />
+            <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold shrink-0 w-12 text-right">
+              {ui.tray_history_limit} t
             </span>
           </div>
-          <input
-            type="range"
-            min="1"
-            max="15"
-            value={ui.tray_history_limit}
-            onChange={(e) => updateDraft("ui", "tray_history_limit", Number(e.target.value))}
-            className="w-full"
-          />
-        </div>
+        ) : (
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70">
+                History Limit
+              </span>
+              <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">
+                {ui.tray_history_limit} turns
+              </span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="15"
+              value={ui.tray_history_limit}
+              onChange={(e) => updateDraft("ui", "tray_history_limit", Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
+        )}
       </div>
     </div>
   );
