@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "@/store/settingsStore";
-import { RestartModal } from "@/shared/components/RestartModal";
 
 export type { VoxSettings, ModelMetadata, VoiceProfile, ModelCatalog } from "@/store/settingsStore";
 import type { VoxSettings, ModelCatalog } from "@/store/settingsStore";
@@ -48,13 +47,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const modelCatalog = useSettingsStore(s => s.modelCatalog);
   const isLoading = useSettingsStore(s => s.isLoading);
   const hasChanges = useSettingsStore(s => s.hasChanges);
-  const restartKeys = useSettingsStore(s => s.restartKeys);
   const updateDraft = useSettingsStore(s => s.updateDraft);
   const commitChanges = useSettingsStore(s => s.commitChanges);
   const discardChanges = useSettingsStore(s => s.discardChanges);
   const restoreDefaults = useSettingsStore(s => s.restoreDefaults);
   const toggleTheme = useSettingsStore(s => s.toggleTheme);
-  const clearRestartKeys = useSettingsStore(s => s.clearRestartKeys);
 
   const value = useMemo(() => ({
     settings,
@@ -72,14 +69,6 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   return (
     <SettingsContext.Provider value={value}>
       {children}
-      <RestartModal
-        isOpen={restartKeys.length > 0}
-        onClose={clearRestartKeys}
-        onRestart={() => {
-          clearRestartKeys();
-        }}
-        changedSettings={restartKeys}
-      />
     </SettingsContext.Provider>
   );
 };
