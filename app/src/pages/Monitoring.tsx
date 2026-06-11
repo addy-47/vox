@@ -7,7 +7,6 @@ import React, {
   memo,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   Cpu,
@@ -16,7 +15,6 @@ import {
   Moon,
   Zap,
   MemoryStick,
-  X,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
@@ -47,12 +45,6 @@ interface RuntimeSnapshot {
 
 type LocalSnapshot = RuntimeSnapshot & { localTime: number };
 
-interface MonitoringPopoverProps {
-  open: boolean;
-  onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
-}
-
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_SAMPLES = 60;
@@ -72,9 +64,9 @@ const EngineBadge = memo(
   }) => (
     <div
       className={cn(
-        "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all duration-500",
+        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all duration-500",
         active
-          ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)]"
+          ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.1)]"
           : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.06)]"
       )}
     >
@@ -87,7 +79,6 @@ const EngineBadge = memo(
 );
 EngineBadge.displayName = "EngineBadge";
 
-// High-performance progress bar using direct DOM refs to avoid React re-renders
 const ResourceBar = memo(
   ({
     label,
@@ -99,19 +90,19 @@ const ResourceBar = memo(
     barRef: React.RefObject<HTMLDivElement | null>;
   }) => {
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         <div className="flex justify-between items-baseline">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
             {label}
           </span>
           <span
             ref={textRef}
-            className="text-[13px] font-mono font-bold text-[rgb(var(--foreground))]"
+            className="text-[14px] font-mono font-bold text-[rgb(var(--foreground))]"
           >
             0.0%
           </span>
         </div>
-        <div className="h-[3px] w-full rounded-full bg-[rgba(var(--foreground),0.06)] overflow-hidden">
+        <div className="h-[4px] w-full rounded-full bg-[rgba(var(--foreground),0.06)] overflow-hidden">
           <div
             ref={barRef}
             className="h-full rounded-full bg-[rgb(var(--accent))]"
@@ -124,7 +115,6 @@ const ResourceBar = memo(
 );
 ResourceBar.displayName = "ResourceBar";
 
-// High-performance Canvas Sparkline scrolling smoothly at 60fps
 const Sparkline = memo(
   ({
     history,
@@ -138,12 +128,10 @@ const Sparkline = memo(
     const historyRef = useRef<LocalSnapshot[]>(history);
     const dimensionsRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
 
-    // Keep history ref updated
     useEffect(() => {
       historyRef.current = history;
     }, [history]);
 
-    // Handle canvas resizing only when size actually changes
     useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -153,7 +141,6 @@ const Sparkline = memo(
         const width = canvas.offsetWidth;
         const height = canvas.offsetHeight;
         
-        // Only resize canvas buffer if dimensions actually changed
         if (width !== dimensionsRef.current.width || height !== dimensionsRef.current.height) {
           canvas.width = width * dpr;
           canvas.height = height * dpr;
@@ -166,10 +153,7 @@ const Sparkline = memo(
         }
       };
 
-      // Run initially
       resize();
-
-      // Set up ResizeObserver
       const observer = new ResizeObserver(() => {
         resize();
       });
@@ -180,7 +164,6 @@ const Sparkline = memo(
       };
     }, []);
 
-    // 60fps render loop
     useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -207,7 +190,7 @@ const Sparkline = memo(
         }
 
         const now = performance.now();
-        const maxAge = MAX_SAMPLES * POLL_MS; // 60s history window
+        const maxAge = MAX_SAMPLES * POLL_MS;
 
         const points: { x: number; y: number }[] = [];
         const values = currentHistory.map((h) => h[dataKey] as number);
@@ -224,7 +207,6 @@ const Sparkline = memo(
           const age = now - pt.localTime;
           if (age > maxAge) continue;
 
-          // x scales smoothly from left to right based on time age
           const x = width - (age / maxAge) * width;
           const val = pt[dataKey] as number;
           const y = height - ((val - minVal) / (maxVal - minVal)) * (height - 6) - 3;
@@ -236,7 +218,6 @@ const Sparkline = memo(
           return;
         }
 
-        // Draw area gradient under the curve
         const accentVal =
           getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() ||
           "0, 219, 233";
@@ -254,7 +235,6 @@ const Sparkline = memo(
         ctx.fillStyle = grad;
         ctx.fill();
 
-        // Draw smooth neon line
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length - 1; i++) {
@@ -264,21 +244,20 @@ const Sparkline = memo(
         }
         ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
         ctx.strokeStyle = `rgb(${accentVal})`;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.8;
         ctx.stroke();
 
         animationRef.current = requestAnimationFrame(render);
       };
 
       animationRef.current = requestAnimationFrame(render);
-
       return () => {
         cancelAnimationFrame(animationRef.current);
       };
     }, [dataKey]);
 
     return (
-      <div className="w-full h-[48px] relative rounded-lg overflow-hidden border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]">
+      <div className="w-full h-[64px] relative rounded-xl overflow-hidden border border-[rgba(var(--accent),0.08)] bg-black/20">
         <canvas ref={canvasRef} className="block w-full h-full" />
       </div>
     );
@@ -286,18 +265,12 @@ const Sparkline = memo(
 );
 Sparkline.displayName = "Sparkline";
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main Page Component ──────────────────────────────────────────────────────
 
-export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
-  open,
-  onClose,
-  anchorRef,
-}) => {
+export const Monitoring: React.FC = () => {
   const [history, setHistory] = useState<LocalSnapshot[]>([]);
   const latest = useMemo(() => history[history.length - 1] ?? null, [history]);
-  const popoverRef = useRef<HTMLDivElement>(null);
 
-  // DOM Refs for high-performance direct DOM updates (avoiding React re-renders at 60fps)
   const cpuTextRef = useRef<HTMLSpanElement>(null);
   const cpuBarRef = useRef<HTMLDivElement>(null);
   const ramTextRef = useRef<HTMLSpanElement>(null);
@@ -306,7 +279,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
   const latestRef = useRef<LocalSnapshot | null>(null);
   latestRef.current = latest;
 
-  // 1Hz Background Polling Loop - runs continuously to keep history populated and fresh
+  // Background Polling Loop
   useEffect(() => {
     const poll = async () => {
       try {
@@ -322,23 +295,17 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
       }
     };
 
-    poll(); // poll immediately on startup
+    poll();
     const id = setInterval(poll, POLL_MS);
-
-    return () => {
-      clearInterval(id);
-    };
+    return () => clearInterval(id);
   }, []);
 
-  // Direct DOM Interpolation Loop (EMA) running at 60fps - only active when popover is open
+  // Direct DOM Interpolation Loop (EMA) at 60fps
   useEffect(() => {
-    if (!open) return;
-
     let curCpu = 0;
     let curRam = 0;
     let rafId = 0;
 
-    // Seed initial values if available
     if (latestRef.current) {
       curCpu = latestRef.current.vox_cpu_usage;
       curRam = latestRef.current.vox_ram_mb;
@@ -350,7 +317,6 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
         const targetCpu = snap.vox_cpu_usage;
         const targetRam = snap.vox_ram_mb;
 
-        // Exponential Moving Average
         curCpu += (targetCpu - curCpu) * 0.12;
         curRam += (targetRam - curRam) * 0.12;
 
@@ -367,49 +333,13 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
           const pct = Math.min(100, Math.max(0, (curRam / snap.total_ram_mb) * 100));
           ramBarRef.current.style.width = `${pct}%`;
         }
-      } else {
-        if (cpuTextRef.current) cpuTextRef.current.textContent = "0.0%";
-        if (cpuBarRef.current) cpuBarRef.current.style.width = "0%";
-        if (ramTextRef.current) ramTextRef.current.textContent = "0 MB";
-        if (ramBarRef.current) ramBarRef.current.style.width = "0%";
       }
-
       rafId = requestAnimationFrame(tick);
     };
 
     rafId = requestAnimationFrame(tick);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-    };
-  }, [open]);
-
-  // Close on click-outside
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node) &&
-        anchorRef.current &&
-        !anchorRef.current.contains(e.target as Node)
-      ) {
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open, onClose, anchorRef]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   const formatLatency = useCallback((ms: number | null) => {
     if (ms === null) return "--";
@@ -418,131 +348,109 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
   }, []);
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          ref={popoverRef}
-          initial={{ y: 12, scale: 0.98 }}
-          animate={{ y: 0, scale: 1 }}
-          exit={{ y: 12, scale: 0.98 }}
-          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed z-[200] bottom-[72px] left-4 w-[340px] glass-elevated glass-base rounded-2xl overflow-hidden shadow-[0_24px_64px_rgba(0,0,0,0.5)]"
-          role="dialog"
-          aria-label="System Monitoring"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-[rgba(var(--accent),0.08)]">
-            <div className="flex items-center gap-2">
-              <Activity size={14} className="text-[rgb(var(--accent))]" />
-              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-                Engine Monitor
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent px-8 pt-6 z-10 select-none">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-4 shrink-0 border-b border-[rgba(var(--accent),0.06)]">
+        <div>
+          <span className="signal-text text-[13px]">System Diagnostics</span>
+          <p className="text-[10px] text-[rgb(var(--foreground-muted))]/40 font-mono uppercase tracking-[0.2em] mt-1">
+            Realtime Engine Metrics
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.15)] bg-black/20">
+          <Activity size={12} className="text-[rgb(var(--accent))] animate-pulse" />
+          <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase">
+            LIVE MONITOR
+          </span>
+        </div>
+      </div>
+
+      {/* Main Content Pane */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar pt-6 pb-10 space-y-6 min-h-0">
+        {/* Engine badges */}
+        <div className="flex flex-wrap gap-1">
+          <EngineBadge
+            label="VAD"
+            active={latest?.is_vad_loaded ?? false}
+            icon={<ShieldCheck size={11} />}
+          />
+          <EngineBadge
+            label="STT"
+            active={latest?.is_stt_loaded ?? false}
+            icon={<Activity size={11} />}
+          />
+          <EngineBadge
+            label="LLM"
+            active={latest?.is_llm_loaded ?? false}
+            icon={<Cpu size={11} />}
+          />
+          <EngineBadge
+            label="TTS"
+            active={latest?.is_tts_loaded ?? false}
+            icon={<Volume2 size={11} />}
+          />
+          {latest?.is_sleeping && (
+            <EngineBadge label="Sleep" active={true} icon={<Moon size={11} />} />
+          )}
+        </div>
+
+        {/* Resource bars */}
+        <div className="space-y-4 max-w-lg pt-5 ">
+          <ResourceBar
+            label="VOX CPU"
+            textRef={cpuTextRef}
+            barRef={cpuBarRef}
+          />
+          <ResourceBar
+            label="VOX RAM"
+            textRef={ramTextRef}
+            barRef={ramBarRef}
+          />
+        </div>
+
+        {/* Latency metrics */}
+        <div className="grid grid-cols-3 gap-3 max-w-lg">
+          {[
+            { label: "STT", val: formatLatency(latest?.stt_latency_ms ?? null) },
+            { label: "TTFT", val: formatLatency(latest?.ttft_ms ?? null) },
+            {
+              label: "RTF",
+              val: latest?.tts_rtf != null ? `${latest.tts_rtf.toFixed(2)}×` : "--",
+            },
+          ].map((m) => (
+            <div
+              key={m.label}
+              className="bg-[rgba(var(--foreground),0.03)] border border-white/5 rounded-xl px-2 py-3 flex flex-col items-center gap-1 shadow-sm"
+            >
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60">
+                {m.label}
+              </span>
+              <span className="text-[14px] font-mono font-bold text-[rgb(var(--accent))]">
+                {m.val}
               </span>
             </div>
-            <button
-              onClick={onClose}
-              className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
-              aria-label="Close monitor"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          ))}
+        </div>
 
-          <div className="px-4 pb-4 pt-3 space-y-4">
-            {/* Engine status badges */}
-            <div className="flex flex-wrap ">
-              <EngineBadge
-                label="VAD"
-                active={latest?.is_vad_loaded ?? false}
-                icon={<ShieldCheck size={10} />}
-              />
-              <EngineBadge
-                label="STT"
-                active={latest?.is_stt_loaded ?? false}
-                icon={<Activity size={10} />}
-              />
-              <EngineBadge
-                label="LLM"
-                active={latest?.is_llm_loaded ?? false}
-                icon={<Cpu size={10} />}
-              />
-              <EngineBadge
-                label="TTS"
-                active={latest?.is_tts_loaded ?? false}
-                icon={<Volume2 size={10} />}
-              />
-              {latest?.is_sleeping && (
-                <EngineBadge label="Sleep" active={true} icon={<Moon size={10} />} />
-              )}
+        {/* Live Sparkline Graphs */}
+        <div className="space-y-4 max-w-xl">
+          {[
+            { label: "CPU History", key: "vox_cpu_usage" as const, icon: Cpu },
+            { label: "RAM History", key: "vox_ram_mb" as const, icon: MemoryStick },
+            { label: "VAD Probability", key: "vad_probability" as const, icon: Zap },
+          ].map(({ label, key, icon: Icon }) => (
+            <div key={key} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Icon size={12} className="text-[rgb(var(--accent))]/70" />
+                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--foreground-muted))]/70">
+                  {label}
+                </span>
+              </div>
+              <Sparkline history={history} dataKey={key} />
             </div>
-
-            {/* Resource bars */}
-            <div className="space-y-3 pt-5">
-              <ResourceBar
-                label="VOX CPU"
-                textRef={cpuTextRef}
-                barRef={cpuBarRef}
-              />
-              <ResourceBar
-                label="VOX RAM"
-                textRef={ramTextRef}
-                barRef={ramBarRef}
-              />
-            </div>
-
-            {/* Latency row */}
-            <div className="flex gap-3 pt-1">
-              {[
-                { label: "STT", val: formatLatency(latest?.stt_latency_ms ?? null) },
-                { label: "TTFT", val: formatLatency(latest?.ttft_ms ?? null) },
-                {
-                  label: "RTF",
-                  val:
-                    latest?.tts_rtf != null ? `${latest.tts_rtf.toFixed(2)}×` : "--",
-                },
-              ].map((m) => (
-                <div
-                  key={m.label}
-                  className="flex-1 bg-[rgba(var(--foreground),0.03)] rounded-xl px-2 py-2 flex flex-col items-center gap-0.5"
-                >
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
-                    {m.label}
-                  </span>
-                  <span className="text-[13px] font-mono font-bold text-[rgb(var(--accent))]">
-                    {m.val}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Sparklines */}
-            <div className="space-y-2 pt-1">
-              {[
-                { label: "CPU", key: "vox_cpu_usage" as const },
-                { label: "RAM", key: "vox_ram_mb" as const },
-                { label: "VAD", key: "vad_probability" as const },
-              ].map(({ label, key }) => (
-                <div key={key} className="space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    {key === "vox_cpu_usage" && (
-                      <Cpu size={9} className="text-[rgb(var(--accent))]/60" />
-                    )}
-                    {key === "vox_ram_mb" && (
-                      <MemoryStick size={9} className="text-[rgb(var(--accent))]/60" />
-                    )}
-                    {key === "vad_probability" && (
-                      <Zap size={9} className="text-[rgb(var(--accent))]/60" />
-                    )}
-                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))]/60">
-                      {label}
-                    </span>
-                  </div>
-                  <Sparkline history={history} dataKey={key} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 };

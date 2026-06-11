@@ -332,13 +332,13 @@ const OUTER_FRAG = `
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export const VoxOrb: React.FC<VoxOrbProps> = ({
+export const VoxOrb = React.memo(({
   telemetryRef,
   amplitude = 0.0,
   interactionState = 'Idle',
   isSleeping = false,
   isTesting = false,
-}) => {
+}: VoxOrbProps) => {
   const mountRef     = useRef<HTMLDivElement>(null);
   const stateRef     = useRef(interactionState);
   const sleepingRef  = useRef(isSleeping);
@@ -667,4 +667,6 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
       style={{ width: '100%', height: '100%', background: 'transparent', position: 'relative' }}
     />
   );
-};
+});
+
+VoxOrb.displayName = "VoxOrb";

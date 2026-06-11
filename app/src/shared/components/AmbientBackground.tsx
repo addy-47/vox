@@ -66,11 +66,11 @@ const BLOBS: BlobDef[] = [
 
 const RIPPLE_COUNT = 5;
 
-export const AmbientBackground: React.FC<AmbientBackgroundProps> = ({
+export const AmbientBackground = React.memo(({
   mood = "calm",
   originX = "50%",
   originY = "50%",
-}) => {
+}: AmbientBackgroundProps) => {
   const cfg = MOOD_CONFIG[mood];
 
   return (
@@ -126,4 +126,6 @@ export const AmbientBackground: React.FC<AmbientBackgroundProps> = ({
       <div className="amb-noise" />
     </div>
   );
-};
+});
+
+AmbientBackground.displayName = "AmbientBackground";

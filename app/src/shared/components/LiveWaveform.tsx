@@ -1,4 +1,4 @@
-import { useEffect, useRef, type HTMLAttributes } from "react"
+import React, { useEffect, useRef, memo, type HTMLAttributes } from "react"
 import { cn } from "../lib/utils"
 import { useDynamicFPS } from "@/shared/hooks/useDynamicFPS"
 
@@ -26,7 +26,7 @@ export type LiveWaveformProps = HTMLAttributes<HTMLDivElement> & {
   telemetryRef?: React.RefObject<any>
 }
 
-export const LiveWaveform = ({
+export const LiveWaveform = memo(({
   active = false,
   processing = false,
   deviceId,
@@ -403,4 +403,6 @@ export const LiveWaveform = ({
       <canvas className="block h-full w-full" ref={canvasRef} />
     </div>
   )
-}
+})
+
+LiveWaveform.displayName = "LiveWaveform"
