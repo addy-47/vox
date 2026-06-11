@@ -19,7 +19,7 @@ if (isTray) {
 
 // Global Loading State for Window Initialization
 const WindowLoader = () => (
-  <div className="flex h-screen w-full items-center justify-center bg-[#050505]">
+  <div className="flex h-screen w-full items-center justify-center bg-[rgb(var(--background))]">
     <div className="w-10 h-10 border-2 border-white/5 border-t-white/40 rounded-full animate-spin" />
   </div>
 );

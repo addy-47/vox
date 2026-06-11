@@ -52,8 +52,8 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             "glass-card glass-base max-w-md w-full p-8 text-center space-y-6"
           )}>
             {/* Error Icon */}
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-              <svg className="w-7 h-7 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 flex items-center justify-center">
+              <svg className="w-7 h-7 text-[rgb(var(--accent))]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="8" x2="12" y2="12" />
                 <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -80,10 +80,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             {/* Stack Trace */}
             {this.state.error?.stack && (
               <details className="text-left">
-                <summary className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/50 uppercase tracking-widest cursor-pointer hover:text-[rgb(var(--foreground-muted))] transition-colors">
+                <summary className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/50 uppercase tracking-widest cursor-pointer hover:text-[rgb(var(--foreground-muted))] transition-colors">
                   Stack Trace
                 </summary>
-                <pre className="mt-2 glass-whisper glass-base p-3 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/60 leading-relaxed overflow-auto max-h-[160px] custom-scrollbar whitespace-pre-wrap">
+                <pre className="mt-2 glass-whisper glass-base p-3 text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60 leading-relaxed overflow-auto max-h-[160px] custom-scrollbar whitespace-pre-wrap">
                   {this.state.error.stack}
                 </pre>
               </details>

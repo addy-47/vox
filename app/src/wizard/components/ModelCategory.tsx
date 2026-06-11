@@ -79,12 +79,12 @@ export const ModelCategory = ({
                         <div className="flex items-center gap-3 mb-1">
                             <span className="text-[13px] font-black text-[rgb(var(--foreground))] uppercase tracking-[0.2em]">{label}</span>
                             {required ? (
-                                <span className="text-[9px] font-black bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgb(var(--accent))]/20">Mandatory</span>
+                                <span className="text-[11px] font-black bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgb(var(--accent))]/20">Mandatory</span>
                             ) : (
-                                <span className="text-[9px] font-black bg-white/5 text-[rgb(var(--foreground-muted))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgba(var(--border),0.08)]">Optional Layer</span>
+                                <span className="text-[11px] font-black bg-white/5 text-[rgb(var(--foreground-muted))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgba(var(--border),0.08)]">Optional Layer</span>
                             )}
                         </div>
-                        <p className="text-[10px] text-[rgb(var(--foreground-muted))] font-bold uppercase tracking-[0.1em]">
+                        <p className="text-[11px] text-[rgb(var(--foreground-muted))] font-bold uppercase tracking-[0.1em]">
                             {subLabel}
                         </p>
                     </div>
@@ -166,12 +166,12 @@ export const ModelCategory = ({
                                                 <span className="text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))] transition-colors truncate max-w-[280px]">
                                                     {group.name}
                                                 </span>
-                                                <span className="text-[rgb(var(--foreground-muted))]/40 text-[9px] font-mono">
+                                                <span className="text-[rgb(var(--foreground-muted))]/40 text-[11px] font-mono">
                                                     Version {group.version}
                                                 </span>
                                             </div>
                                         </div>
-                                        <span className="text-[rgb(var(--foreground-muted))]/40 font-mono text-[10px] group-hover:text-[rgb(var(--accent))]/60 transition-colors self-center">
+                                        <span className="text-[rgb(var(--foreground-muted))]/40 font-mono text-[11px] group-hover:text-[rgb(var(--accent))]/60 transition-colors self-center">
                                             {formatSize(groupSize)}
                                         </span>
                                     </div>

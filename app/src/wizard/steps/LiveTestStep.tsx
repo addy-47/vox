@@ -101,10 +101,10 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                       <X className="w-5 h-5" />
                   </div>
                   <div className="flex flex-col">
-                      <h3 className="text-white font-black uppercase tracking-widest text-[9px]">Engine Failure</h3>
+                      <h3 className="text-white font-black uppercase tracking-widest text-[11px]">Engine Failure</h3>
                       <button 
                           onClick={setup}
-                          className="text-[9px] font-black uppercase tracking-widest text-[rgb(var(--accent))] hover:underline text-left mt-0.5"
+                          className="text-[11px] font-black uppercase tracking-widest text-[rgb(var(--accent))] hover:underline text-left mt-0.5"
                       >
                           Retry Initialization
                       </button>
@@ -134,7 +134,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                     })}
                   </div>
                   
-                  <span className="text-[9px] font-black text-white/20 uppercase tracking-[0.3em] mt-4">
+                  <span className="text-[11px] font-black text-white/20 uppercase tracking-[0.3em] mt-4">
                     {isEngineReady ? (energy > 2 ? "Active speech feedback" : "Awaiting microphone input") : "Initializing audio pipeline"}
                   </span>
               </div>
@@ -147,14 +147,14 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
             testComplete ? "border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.04)]" : ""
         )}>
             <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] flex items-center gap-2">
+                <span className="text-[11px] font-black text-white/20 uppercase tracking-[0.3em] flex items-center gap-2">
                     <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))]/60" /> Live Transcript
                 </span>
                 {testComplete && (
                     <motion.span 
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="text-[9px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full uppercase tracking-tighter"
+                        className="text-[11px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full uppercase tracking-tighter"
                     >
                         Processed
                     </motion.span>

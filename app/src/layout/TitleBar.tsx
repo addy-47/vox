@@ -130,7 +130,7 @@ export const TitleBar: React.FC = () => {
         {/* App Update Pill */}
         {appUpdate && (
           <div className="relative group/app-pill pointer-events-auto flex items-center">
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] hover:from-[rgb(var(--accent))]/20 hover:to-[rgb(var(--accent))]/30 transition-all duration-300 animate-pulse">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] hover:from-[rgb(var(--accent))]/20 hover:to-[rgb(var(--accent))]/30 transition-all duration-300 animate-pulse">
               <ArrowUpCircle size={10} className="shrink-0" />
               <span className="hidden sm:inline">v{appUpdate.latest_version} Available</span>
             </button>
@@ -138,10 +138,10 @@ export const TitleBar: React.FC = () => {
             {/* Tooltip Hover Card */}
             <div className="absolute top-6 left-0 w-64 p-4 rounded-xl backdrop-blur-xl bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/app-pill:opacity-100 group-hover/app-pill:translate-y-0 group-hover/app-pill:pointer-events-auto transition-all duration-300 z-50 text-[12px] text-[rgb(var(--foreground))]">
               <div className="font-bold text-[rgb(var(--accent))] mb-1">App Update Available</div>
-              <div className="text-[10px] text-[rgb(var(--foreground-muted))] mb-2">Upgrade from v{appUpdate.current_version} to v{appUpdate.latest_version}</div>
+              <div className="text-[11px] text-[rgb(var(--foreground-muted))] mb-2">Upgrade from v{appUpdate.current_version} to v{appUpdate.latest_version}</div>
               
               <div className="mb-3">
-                <div className="font-black text-[9px] uppercase tracking-wider text-[rgb(var(--foreground-muted))] mb-1">What's New:</div>
+                <div className="font-black text-[11px] uppercase tracking-wider text-[rgb(var(--foreground-muted))] mb-1">What's New:</div>
                 <ul className="list-disc pl-3 space-y-1 text-[11px] text-[rgb(var(--foreground))]/80">
                   {appUpdate.release_notes.map((note: string, idx: number) => (
                     <li key={idx}>{note}</li>
@@ -150,7 +150,7 @@ export const TitleBar: React.FC = () => {
               </div>
               
               <div className="p-2 rounded bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.1)] flex items-center justify-between gap-2">
-                <code className="text-[9px] font-mono text-[rgb(var(--foreground))]/80 select-all truncate block flex-1">{appUpdate.update_command}</code>
+                <code className="text-[11px] font-mono text-[rgb(var(--foreground))]/80 select-all truncate block flex-1">{appUpdate.update_command}</code>
                 <button 
                   onClick={() => handleCopyCommand(appUpdate.update_command)}
                   className="p-1 hover:bg-[rgb(var(--foreground))]/10 rounded text-[rgb(var(--accent))] transition-colors shrink-0"
@@ -166,7 +166,7 @@ export const TitleBar: React.FC = () => {
         {/* Model Update Pill */}
         {modelUpdate && (
           <div className="relative group/model-pill pointer-events-auto flex items-center">
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] hover:from-[rgb(var(--accent))]/20 hover:to-[rgb(var(--accent))]/30 transition-all duration-300">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] hover:from-[rgb(var(--accent))]/20 hover:to-[rgb(var(--accent))]/30 transition-all duration-300">
               <ArrowUpCircle size={10} className="shrink-0" />
               <span className="hidden sm:inline">Models Update</span>
             </button>
@@ -178,13 +178,13 @@ export const TitleBar: React.FC = () => {
                 <span className="text-[11px] font-bold text-[rgb(var(--foreground))]">Model Updates</span>
               </div>
 
-              <div className="text-[10px] text-[rgb(var(--foreground-muted))] mb-2 leading-relaxed">
+              <div className="text-[11px] text-[rgb(var(--foreground-muted))] mb-2 leading-relaxed">
                 v{modelUpdate.remote_version} available · {modelUpdate.outdated_models.length} model{modelUpdate.outdated_models.length > 1 ? 's' : ''} outdated
               </div>
 
               <div className="mb-2">
                 {modelUpdate.outdated_models.map((m: string) => (
-                  <span key={m} className="inline-block px-1.5 py-0.5 rounded text-[9px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/8 border border-[rgb(var(--accent))]/15 mr-1 mb-0.5">
+                  <span key={m} className="inline-block px-1.5 py-0.5 rounded text-[11px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/8 border border-[rgb(var(--accent))]/15 mr-1 mb-0.5">
                     {m}
                   </span>
                 ))}
@@ -192,7 +192,7 @@ export const TitleBar: React.FC = () => {
 
               <button
                 onClick={() => navigateTo('/settings?tab=models')}
-                className="text-[10px] font-bold text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))]/80 transition-colors tracking-wide"
+                className="text-[11px] font-bold text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))]/80 transition-colors tracking-wide"
               >
                 Manage Models →
               </button>
@@ -222,7 +222,7 @@ export const TitleBar: React.FC = () => {
           onMouseLeave={() => setIsCloseHovered(false)}
           className={`flex items-center justify-center w-10 h-full transition-colors ${
             isCloseHovered 
-              ? "bg-red-500 text-white" 
+              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]" 
               : "text-[rgb(var(--foreground-muted))]"
           }`}
           aria-label="Close"

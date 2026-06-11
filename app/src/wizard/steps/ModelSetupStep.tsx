@@ -302,7 +302,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                 step="Step 2.2 • Synchronizing"
                 title="Deploying AI"
                 description="Vox is deploying selected components to your local hardware. This process is fully encrypted and sandboxed."
-                color="#d8baff"
+                color="rgb(var(--accent))"
             />
 
             <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar">
@@ -329,7 +329,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-[11px] font-black text-white uppercase tracking-wider">{cat.label}</span>
-                                        <span className="text-[10px] text-[rgb(var(--accent))]/60 font-bold uppercase tracking-tighter">
+                                        <span className="text-[11px] text-[rgb(var(--accent))]/60 font-bold uppercase tracking-tighter">
                                             {activeStep}
                                         </span>
                                     </div>
@@ -340,7 +340,8 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                             </div>
                             <div className="h-1 bg-white/5 rounded-full overflow-hidden mb-2">
                                 <motion.div 
-                                    className="h-full bg-gradient-to-r from-[rgb(var(--accent))] to-[#d8baff]"
+                                    className="h-full"
+                  style={{ background: `linear-gradient(90deg, rgb(var(--accent)) 0%, rgba(var(--accent), 0.3) 100%)` }}
                                     initial={{ width: 0 }}
                                     animate={{ width: `${groupProgress}%` }}
                                     transition={{ duration: 0.3 }}
@@ -391,7 +392,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                         onClick={onNext}
                         className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)] glass-card glass-base hover:border-[rgb(var(--accent))]/70"
                     >
-                        <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[#d8baff]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgba(var(--accent),0.03)] opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, rgba(var(--accent), 0.1) 0%, rgba(var(--accent), 0.03) 100%)` }} />
                         <span className="relative z-10 flex items-center justify-center gap-3 tracking-widest uppercase text-xs">
                             Continue Setup <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                         </span>

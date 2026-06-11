@@ -35,7 +35,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
         <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3">
           <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
           <div className="flex flex-col">
-            <span className="text-[9px] font-black text-red-500 uppercase tracking-widest mb-0.5">{errorLabel}</span>
+            <span className="text-[11px] font-black text-red-500 uppercase tracking-widest mb-0.5">{errorLabel}</span>
             <p className="text-[11px] text-red-400 font-medium uppercase tracking-wider">{error}</p>
           </div>
         </div>
