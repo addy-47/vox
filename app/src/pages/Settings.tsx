@@ -4,7 +4,7 @@ import React, {
   memo,
   useMemo,
 } from "react";
-import { Save, RotateCcw, Mic, Brain, Palette, Eye, Database, MessageSquare } from "lucide-react";
+import { RotateCcw, Mic, Brain, Palette, Eye, Database, MessageSquare } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { CoreSettings } from "@/shared/components/CoreSettings";
@@ -435,7 +435,7 @@ const HubConnectors: React.FC<{ activeDomain: DomainId | null }> = ({ activeDoma
 // ─── Main Settings Component ──────────────────────────────────────────────────
 
 export const Settings: React.FC = () => {
-  const { draftSettings, hasChanges, commitChanges, discardChanges, restoreDefaults } = useSettings();
+  const { draftSettings } = useSettings();
   const [activeDomain, setActiveDomain] = useState<DomainId | null>(null);
 
   const handleSelect = useCallback((id: DomainId) => {
@@ -479,13 +479,6 @@ export const Settings: React.FC = () => {
               transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
               className="flex flex-col items-center justify-center flex-1 w-full gap-4"
             >
-              {/* Header */}
-              <div className="text-center mb-2">
-                <span className="signal-text text-[13px]">System Configuration</span>
-                <p className="text-[10px] text-[rgb(var(--foreground-muted))]/40 font-mono uppercase tracking-[0.2em] mt-1">
-                  Select a domain to configure
-                </p>
-              </div>
 
               {/* Radial hub container */}
               <div
@@ -573,48 +566,6 @@ export const Settings: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* ── Sticky footer — save / discard ─────────────────────────────── */}
-      <footer className="shrink-0 bg-black/40 backdrop-blur-xl border-t border-[rgba(var(--accent),0.08)] px-6 md:px-10 py-4 z-20">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4">
-          <button
-            onClick={restoreDefaults}
-            className="flex items-center gap-2 text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.15em] hover:text-[rgb(var(--accent))] transition-colors duration-300 opacity-60 hover:opacity-100 hover:bg-[rgb(var(--accent))]/10 px-3 py-1.5 rounded-lg border border-transparent hover:border-[rgb(var(--accent))]/20"
-            aria-label="Restore Defaults"
-          >
-            <RotateCcw size={12} />
-            <span>Restore Defaults</span>
-          </button>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={discardChanges}
-              disabled={!hasChanges}
-              className={cn(
-                "px-5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.15em] transition-all duration-300 border",
-                hasChanges
-                  ? "text-[rgb(var(--foreground))] border-[rgba(var(--accent),0.2)] bg-black/20 hover:border-[rgb(var(--accent))]/40"
-                  : "text-[rgb(var(--foreground-muted))]/40 border-transparent cursor-not-allowed"
-              )}
-            >
-              Discard
-            </button>
-
-            <button
-              onClick={commitChanges}
-              disabled={!hasChanges}
-              className={cn(
-                "px-7 py-2 rounded-xl font-bold text-[10px] tracking-[0.15em] uppercase flex items-center justify-center gap-2 transition-all duration-300",
-                hasChanges
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg shadow-[rgb(var(--accent))]/15 hover:scale-[1.02] active:scale-[0.98]"
-                  : "bg-[rgb(var(--foreground))]/[0.02] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
-              )}
-            >
-              <Save size={11} />
-              <span>Save Changes</span>
-            </button>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };

@@ -47,7 +47,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
   // Ambient origin — on the home page the orb is at 55% vertically
   const isHome = location.pathname === "/";
-  const ambientOriginY = isHome ? "55%" : "50%";
+  const ambientOriginY = isHome ? "47%" : "50%";
 
   return (
     <div

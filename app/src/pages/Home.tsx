@@ -530,7 +530,7 @@ export const Home: React.FC = () => {
         className="absolute z-10 pointer-events-none overflow-hidden flex items-center justify-center"
         style={{
           left: "50%",
-          top: "55%",
+          top: "47%",
           transform: "translate(-50%, -50%)",
           width: isMobileScreen ? "min(92vw, 85vh)" : "min(70vw, 65vh)",
           height: isMobileScreen ? "min(92vw, 85vh)" : "min(70vw, 65vh)",
@@ -559,7 +559,7 @@ export const Home: React.FC = () => {
       </div>
 
       {/* ── Bottom Controls ─────────────────────────────────────────────── */}
-      <div className="absolute bottom-[2%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4 w-full max-w-md">
+      <div className="absolute bottom-[10%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4 w-full max-w-md">
         {/* Waveform */}
         <div
           className={cn(
