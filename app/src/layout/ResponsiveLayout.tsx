@@ -7,6 +7,8 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Activity } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
 import { cn } from "@/shared/lib/utils";
+import { ModelStatusOverlay } from "@/shared/components/settings/overlays/ModelStatusOverlay";
+import { RestoreDefaultsButton } from "@/shared/components/settings/overlays/RestoreDefaultsButton";
 
 interface ResponsiveLayoutProps {
   children?: React.ReactNode;
@@ -45,9 +47,10 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     return () => window.removeEventListener("resize", handleResize);
   }, [location.pathname, monitorOpen, navigate]);
 
-  // Ambient origin — on the home page the orb is at 55% vertically
+  // Ambient origin — on the home page the orb is at 47% vertically, settings radial hub is offset by bottom nav
   const isHome = location.pathname === "/";
-  const ambientOriginY = isHome ? "47%" : "50%";
+  const isSettings = location.pathname === "/settings";
+  const ambientOriginY = isHome ? "47%" : isSettings ? "calc(50% - 40px)" : "50%";
 
   return (
     <div
@@ -115,6 +118,15 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           onClose={() => setMonitorOpen(false)}
           anchorRef={monitorBtnRef}
         />
+
+        {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
+        {isSettings && (
+          <div className="hidden lg:flex fixed bottom-4 right-4 z-50 items-center gap-3 px-4 py-2.5 rounded-full border border-[rgba(var(--accent),0.08)] bg-black/44 backdrop-blur-xl shadow-lg shadow-[rgba(0,0,0,0.3)] h-[44px]">
+            <ModelStatusOverlay />
+            <div className="w-px h-4 bg-[rgba(var(--accent),0.15)] mx-1" />
+            <RestoreDefaultsButton />
+          </div>
+        )}
 
         {/* Page content */}
         <main

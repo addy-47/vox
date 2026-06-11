@@ -438,7 +438,7 @@ export const Home: React.FC = () => {
   return (
     <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
       {/* Reactive ambient background — responds to interaction state */}
-      <AmbientBackground mood={ambientMood} originX="50%" originY="55%" />
+      <AmbientBackground mood={ambientMood} originX="50%" originY="47%" />
 
       {/* Sentient Field Background Energy */}
       <PipelineField state={interactionState} />

@@ -1,21 +1,21 @@
-import React, {
-  useState,
-  useCallback,
-  memo,
-  useMemo,
-} from "react";
-import { RotateCcw, Mic, Brain, Palette, Eye, Database, MessageSquare } from "lucide-react";
+import { useState, useCallback, memo, useEffect, useMemo, useRef } from "react";
+import { Brain, Palette, Eye, Database, UserCircle, Sliders, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
-import { CoreSettings } from "@/shared/components/CoreSettings";
-import { ModelSettings } from "@/shared/components/ModelSettings";
-import { TraySettings } from "@/shared/components/TraySettings";
 import { GlassSkeleton } from "@/shared/components/GlassSkeleton";
 import { AnimatePresence, motion } from "framer-motion";
 
+// Import custom cards
+import { PersonaCard } from "@/shared/components/settings/cards/PersonaCard";
+import { ModelsCard } from "@/shared/components/settings/cards/ModelsCard";
+import { TrayCard } from "@/shared/components/settings/cards/TrayCard";
+import { MemoryCard } from "@/shared/components/settings/cards/MemoryCard";
+import { AppearanceCard } from "@/shared/components/settings/cards/AppearanceCard";
+import { InteractionCard } from "@/shared/components/settings/cards/InteractionCard";
+
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
-type DomainId = "voice" | "models" | "interface" | "tray" | "memory" | "assistant";
+type DomainId = "persona" | "models" | "tray" | "memory" | "appearance" | "interaction";
 
 interface Domain {
   id: DomainId;
@@ -29,12 +29,12 @@ interface Domain {
 // ─── Domain definitions ───────────────────────────────────────────────────────
 
 const DOMAINS: Domain[] = [
-  { id: "voice",     label: "Voice",     sublabel: "Signal & interaction",   icon: Mic,          angle: -90  },
-  { id: "models",    label: "Models",    sublabel: "Intelligence engines",   icon: Brain,        angle: -30  },
-  { id: "interface", label: "Interface", sublabel: "Appearance & accent",    icon: Palette,      angle: 30   },
-  { id: "tray",      label: "Tray",      sublabel: "HUD & overlay",          icon: Eye,          angle: 90   },
-  { id: "memory",    label: "Memory",    sublabel: "Persistence & privacy",  icon: Database,     angle: 150  },
-  { id: "assistant", label: "Assistant", sublabel: "Prompts & language",     icon: MessageSquare,angle: -150 },
+  { id: "persona",     label: "Persona",     sublabel: "Prompts & identity",     icon: UserCircle,   angle: -90  },
+  { id: "models",      label: "Models",      sublabel: "Intelligence engines",   icon: Brain,        angle: -30  },
+  { id: "tray",        label: "Tray",        sublabel: "HUD & overlay settings", icon: Eye,          angle: 30   },
+  { id: "memory",      label: "Memory",      sublabel: "Database & retention",   icon: Database,     angle: 90   },
+  { id: "appearance",  label: "Appearance",  sublabel: "Visual theme & colors",  icon: Palette,      angle: 150  },
+  { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: Sliders,      angle: -150 },
 ];
 
 // ─── Radial hub geometry ──────────────────────────────────────────────────────
@@ -51,233 +51,25 @@ function polarToCartesian(angleDeg: number, radius: number) {
 
 // ─── Domain content map ───────────────────────────────────────────────────────
 
-// Renders the actual settings panel for each domain.
-// We reuse the existing well-tested sub-components.
 const DomainContent = memo(({ domain }: { domain: DomainId }) => {
   switch (domain) {
-    case "voice":
-      return <CoreSettings />;
+    case "persona":
+      return <PersonaCard />;
     case "models":
-      return <ModelSettings />;
-    case "interface":
-      // AppearanceCard + InteractionCard are embedded inside CoreSettings already.
-      // For the interface domain we render CoreSettings which contains the Appearance and Interaction cards.
-      return <CoreSettings />;
+      return <ModelsCard />;
     case "tray":
-      return <TraySettings />;
+      return <TrayCard />;
     case "memory":
-      return <MemorySettings />;
-    case "assistant":
-      return <AssistantSettings />;
+      return <MemoryCard />;
+    case "appearance":
+      return <AppearanceCard />;
+    case "interaction":
+      return <InteractionCard />;
     default:
       return null;
   }
 });
 DomainContent.displayName = "DomainContent";
-
-// ─── Memory Settings ──────────────────────────────────────────────────────────
-
-const MemorySettings = memo(() => {
-  const { draftSettings, updateDraft } = useSettings();
-  if (!draftSettings) return null;
-
-  return (
-    <div className="space-y-8 max-w-lg">
-      <div className="space-y-5">
-        <SectionLabel label="Session Storage" />
-        <SettingRow
-          label="Persist sessions"
-          description="Save voice sessions to local database"
-        >
-          <Toggle
-            value={draftSettings.persistence.enabled}
-            onChange={(v) => updateDraft("persistence", "enabled", v)}
-            aria="Toggle session persistence"
-          />
-        </SettingRow>
-        <SettingRow
-          label="Private mode"
-          description="Prevent session data from being stored"
-        >
-          <Toggle
-            value={draftSettings.persistence.private_mode}
-            onChange={(v) => updateDraft("persistence", "private_mode", v)}
-            aria="Toggle private mode"
-          />
-        </SettingRow>
-      </div>
-
-      <div className="space-y-5">
-        <SectionLabel label="Retention" />
-        <SettingRow
-          label="Max sessions"
-          description={`Keep ${draftSettings.persistence.max_sessions} sessions on disk`}
-        >
-          <SliderInput
-            value={draftSettings.persistence.max_sessions}
-            min={5}
-            max={500}
-            step={5}
-            onChange={(v) => updateDraft("persistence", "max_sessions", v)}
-            format={(v) => `${v}`}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Retention period"
-          description={`Auto-delete sessions older than ${draftSettings.persistence.retention_days} days`}
-        >
-          <SliderInput
-            value={draftSettings.persistence.retention_days}
-            min={1}
-            max={365}
-            step={1}
-            onChange={(v) => updateDraft("persistence", "retention_days", v)}
-            format={(v) => `${v}d`}
-          />
-        </SettingRow>
-      </div>
-    </div>
-  );
-});
-MemorySettings.displayName = "MemorySettings";
-
-// ─── Assistant Settings ───────────────────────────────────────────────────────
-
-const AssistantSettings = memo(() => {
-  const { draftSettings, updateDraft } = useSettings();
-  if (!draftSettings) return null;
-
-  return (
-    <div className="space-y-8 max-w-2xl">
-      <div className="space-y-4">
-        <SectionLabel label="System Prompt" />
-        <p className="text-[12px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed">
-          This prompt shapes Vox's personality and behavior. Emotion tags{" "}
-          <code className="text-[rgb(var(--accent))]/80 bg-[rgba(var(--accent),0.08)] px-1.5 py-0.5 rounded text-[11px]">
-            &lt;laugh&gt;
-          </code>{" "}
-          are automatically injected when supported.
-        </p>
-        <textarea
-          value={draftSettings.assistant.system_prompt}
-          onChange={(e) => updateDraft("assistant", "system_prompt", e.target.value)}
-          rows={5}
-          className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.12)] rounded-xl px-4 py-3 text-[13px] text-[rgb(var(--foreground))]/80 font-mono leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.35)] transition-colors placeholder:text-[rgb(var(--foreground-muted))]/30"
-          placeholder="You are Vox, a calm and intelligent voice assistant..."
-          spellCheck={false}
-        />
-      </div>
-
-      <div className="space-y-4">
-        <SectionLabel label="Language Prompts" />
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/50">
-              Hindi / Hinglish
-            </label>
-            <textarea
-              value={draftSettings.assistant.hindi_prompt}
-              onChange={(e) => updateDraft("assistant", "hindi_prompt", e.target.value)}
-              rows={4}
-              className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.12)] rounded-xl px-4 py-3 text-[13px] text-[rgb(var(--foreground))]/80 font-mono leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.35)] transition-colors"
-              spellCheck={false}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/50">
-              English
-            </label>
-            <textarea
-              value={draftSettings.assistant.english_prompt}
-              onChange={(e) => updateDraft("assistant", "english_prompt", e.target.value)}
-              rows={4}
-              className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.12)] rounded-xl px-4 py-3 text-[13px] text-[rgb(var(--foreground))]/80 font-mono leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.35)] transition-colors"
-              spellCheck={false}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
-AssistantSettings.displayName = "AssistantSettings";
-
-// ─── Reusable mini-components ─────────────────────────────────────────────────
-
-const SectionLabel: React.FC<{ label: string }> = ({ label }) => (
-  <div className="flex items-center gap-3">
-    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/60">
-      {label}
-    </span>
-    <div className="flex-1 h-px bg-[rgba(var(--accent),0.06)]" />
-  </div>
-);
-
-const SettingRow: React.FC<{
-  label: string;
-  description?: string;
-  children: React.ReactNode;
-}> = ({ label, description, children }) => (
-  <div className="flex items-center justify-between gap-6">
-    <div className="flex-1 min-w-0">
-      <div className="text-[13px] font-medium text-[rgb(var(--foreground))]/80">{label}</div>
-      {description && (
-        <div className="text-[11px] text-[rgb(var(--foreground-muted))]/50 mt-0.5 leading-relaxed">
-          {description}
-        </div>
-      )}
-    </div>
-    <div className="shrink-0">{children}</div>
-  </div>
-);
-
-const Toggle: React.FC<{
-  value: boolean;
-  onChange: (v: boolean) => void;
-  aria: string;
-}> = ({ value, onChange, aria }) => (
-  <button
-    onClick={() => onChange(!value)}
-    className={cn(
-      "group relative flex items-center h-5 w-9 px-0.5 rounded-full transition-all duration-300",
-      value ? "bg-[rgb(var(--accent))]" : "bg-black/35 border border-[rgba(var(--accent),0.2)]"
-    )}
-    aria-label={aria}
-    role="switch"
-    aria-checked={value}
-  >
-    <div
-      className={cn(
-        "w-4 h-4 rounded-full bg-white transition-transform duration-300",
-        value ? "translate-x-4" : "translate-x-0"
-      )}
-    />
-  </button>
-);
-
-const SliderInput: React.FC<{
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-  format: (v: number) => string;
-}> = ({ value, min, max, step, onChange, format }) => (
-  <div className="flex items-center gap-3 w-40">
-    <input
-      type="range"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className="flex-1"
-    />
-    <span className="text-[12px] font-mono font-bold text-[rgb(var(--accent))] w-10 text-right shrink-0">
-      {format(value)}
-    </span>
-  </div>
-);
 
 // ─── Radial Hub Node ──────────────────────────────────────────────────────────
 
@@ -293,12 +85,13 @@ const RadialNode = memo(({ domain, isActive, onSelect }: RadialNodeProps) => {
 
   return (
     <button
+      id={`node-${domain.id}`}
       onClick={() => onSelect(domain.id)}
       className={cn(
-        "absolute flex flex-col items-center gap-1.5 group transition-all duration-400",
-        isActive
-          ? "text-[rgb(var(--accent))]"
-          : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
+         "absolute flex flex-col items-center gap-1.5 group transition-all duration-400 z-25",
+         isActive
+           ? "text-[rgb(var(--accent))]"
+           : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
       )}
       style={{
         left: "50%",
@@ -312,14 +105,14 @@ const RadialNode = memo(({ domain, isActive, onSelect }: RadialNodeProps) => {
         className={cn(
           "w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400",
           isActive
-            ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)] shadow-[0_0_18px_rgba(var(--accent),0.25)]"
-            : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.08)] group-hover:border-[rgba(var(--accent),0.25)] group-hover:bg-[rgba(var(--accent),0.06)]"
+             ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)] shadow-[0_0_18px_rgba(var(--accent),0.25)]"
+             : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.08)] group-hover:border-[rgba(var(--accent),0.25)] group-hover:bg-[rgba(var(--accent),0.06)]"
         )}
       >
         <Icon size={16} strokeWidth={isActive ? 2.5 : 1.5} />
       </div>
       {/* Label */}
-      <span className="text-[9px] font-bold uppercase tracking-[0.15em] leading-none">
+      <span className="text-[11px] font-bold uppercase tracking-[0.15em] leading-none">
         {domain.label}
       </span>
     </button>
@@ -334,18 +127,18 @@ const HubCenter = memo(
     <button
       onClick={onClick}
       className={cn(
-        "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full border flex items-center justify-center transition-all duration-400",
+        "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full border flex items-center justify-center transition-all duration-400 z-10",
         hasSelection
           ? "border-[rgba(var(--accent),0.15)] bg-[rgba(var(--accent),0.04)] cursor-pointer hover:border-[rgba(var(--accent),0.3)]"
           : "border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.06)] cursor-default"
       )}
-      aria-label={hasSelection ? "Return to hub" : "Configuration hub"}
+      aria-label={hasSelection ? "Clear all selections" : "Configuration hub"}
     >
       {/* Pulsing center dot */}
       <span
         className={cn(
           "w-2 h-2 rounded-full bg-[rgb(var(--accent))] transition-all duration-400",
-          hasSelection ? "opacity-30" : "opacity-80 shadow-[0_0_10px_rgba(var(--accent),0.6)]"
+          hasSelection ? "opacity-65" : "opacity-80 shadow-[0_0_10px_rgba(var(--accent),0.6)]"
         )}
         style={!hasSelection ? { animation: "pulse-slow 3s ease-in-out infinite" } : {}}
       />
@@ -354,102 +147,211 @@ const HubCenter = memo(
 );
 HubCenter.displayName = "HubCenter";
 
-// ─── Pill navigation (compact domain selector after selection) ────────────────
-
-interface PillNavProps {
-  domains: Domain[];
-  activeDomain: DomainId;
-  onSelect: (id: DomainId) => void;
-  onReset: () => void;
+// ─── Settings Card Wrapper Component (For Desktop & Tablet) ───────────
+interface SettingsCardWrapperProps {
+  domain: Domain;
+  isActive: boolean;
 }
 
-const PillNav = memo(({ domains, activeDomain, onSelect, onReset }: PillNavProps) => (
-  <div className="flex items-center justify-center gap-1 px-4 py-2 rounded-full glass-surface glass-base border border-[rgba(var(--accent),0.08)] flex-wrap">
-    {domains.map((d) => {
-      const Icon = d.icon;
-      const isActive = d.id === activeDomain;
-      return (
-        <button
-          key={d.id}
-          onClick={() => onSelect(d.id)}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-            isActive
-              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-              : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--accent),0.06)]"
-          )}
-          aria-label={`${d.label} settings`}
-          aria-current={isActive ? "true" : undefined}
-        >
-          <Icon size={11} strokeWidth={isActive ? 2.5 : 1.5} />
-          {d.label}
-        </button>
-      );
-    })}
-    <button
-      onClick={onReset}
-      className="flex items-center justify-center w-6 h-6 rounded-full text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--foreground-muted))] transition-colors ml-1"
-      aria-label="Return to hub overview"
-    >
-      <RotateCcw size={10} />
-    </button>
-  </div>
-));
-PillNav.displayName = "PillNav";
-
-// ─── Connector lines (SVG, drawn from center to each node) ───────────────────
-
-const HubConnectors: React.FC<{ activeDomain: DomainId | null }> = ({ activeDomain }) => {
-  const size = HUB_RADIUS * 2 + 120; // viewBox size
-  const cx = size / 2;
-  const cy = size / 2;
-
+const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, isActive }) => {
   return (
-    <svg
-      width={size}
-      height={size}
-      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-      aria-hidden="true"
-    >
-      {DOMAINS.map((d) => {
-        const pos = polarToCartesian(d.angle, HUB_RADIUS);
-        const isActive = activeDomain === d.id;
-        return (
-          <line
-            key={d.id}
-            x1={cx}
-            y1={cy}
-            x2={cx + pos.x}
-            y2={cy + pos.y}
-            stroke={`rgba(var(--accent), ${isActive ? 0.4 : 0.08})`}
-            strokeWidth={isActive ? 1.5 : 1}
-            strokeDasharray={isActive ? "0" : "3 4"}
-            style={{ transition: "stroke-opacity 0.4s ease, stroke-width 0.4s ease" }}
-          />
-        );
-      })}
-    </svg>
+    <AnimatePresence>
+      {isActive && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.96 }}
+          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full h-full flex items-center justify-center pointer-events-auto"
+        >
+          <div id={`card-${domain.id}`} className="shrink-0">
+            {/* Actual Card content */}
+            <DomainContent domain={domain.id} />
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
-};
+});
+SettingsCardWrapper.displayName = "SettingsCardWrapper";
 
 // ─── Main Settings Component ──────────────────────────────────────────────────
 
 export const Settings: React.FC = () => {
   const { draftSettings } = useSettings();
-  const [activeDomain, setActiveDomain] = useState<DomainId | null>(null);
+  const [activeDomains, setActiveDomains] = useState<DomainId[]>([]);
+  const [isCompact, setIsCompact] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({
+    persona: null,
+    models: null,
+    tray: null,
+    memory: null,
+    appearance: null,
+    interaction: null,
+  });
+
+  // Resize listener to check if we are in compact mobile/tablet mode (< 1024px)
+  useEffect(() => {
+    const checkSize = () => {
+      setIsCompact(window.innerWidth < 1024);
+    };
+    checkSize();
+    window.addEventListener("resize", checkSize);
+    return () => window.removeEventListener("resize", checkSize);
+  }, []);
+
+  // Outside click handler to pop active domains (LIFO order)
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (activeDomains.length === 0) return;
+
+      const target = e.target as HTMLElement;
+
+      const clickedInsideNodeOrCard = DOMAINS.some((domain) => {
+        const nodeEl = document.getElementById(`node-${domain.id}`);
+        const cardEl = document.getElementById(`card-${domain.id}`);
+        return (
+          (nodeEl && nodeEl.contains(target)) ||
+          (cardEl && cardEl.contains(target))
+        );
+      });
+
+      const centerNodeEl = document.getElementById("center-node");
+      const clickedCenter = centerNodeEl && centerNodeEl.contains(target);
+
+      if (!clickedInsideNodeOrCard && !clickedCenter) {
+        setActiveDomains((prev) => prev.slice(0, -1));
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [activeDomains]);
+
+  // Calculate dynamic line positions between active nodes and cards
+  useEffect(() => {
+    if (isCompact || activeDomains.length === 0) {
+      setLines({
+        persona: null,
+        models: null,
+        tray: null,
+        memory: null,
+        appearance: null,
+        interaction: null,
+      });
+      return;
+    }
+
+    let active = true;
+    const updateLines = () => {
+      if (!active || !containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const newLines = { ...lines };
+      let changed = false;
+
+      DOMAINS.forEach((domain) => {
+        if (!activeDomains.includes(domain.id)) {
+          if (newLines[domain.id] !== null) {
+            newLines[domain.id] = null;
+            changed = true;
+          }
+          return;
+        }
+
+        const nodeEl = document.getElementById(`node-${domain.id}`);
+        const cardEl = document.getElementById(`card-${domain.id}`);
+
+        if (nodeEl && cardEl) {
+          const nodeRect = nodeEl.getBoundingClientRect();
+          const cardRect = cardEl.getBoundingClientRect();
+
+          const x1 = (nodeRect.left + nodeRect.right) / 2 - containerRect.left;
+          const y1 = (nodeRect.top + nodeRect.bottom) / 2 - containerRect.top;
+
+          let x2 = 0;
+          let y2 = 0;
+
+          // Connect to the edge of the card nearest to the node
+          switch (domain.id) {
+            case "persona":
+              x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
+              y2 = cardRect.bottom - containerRect.top;
+              break;
+            case "memory":
+              x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
+              y2 = cardRect.top - containerRect.top;
+              break;
+            case "models":
+            case "tray":
+              x2 = cardRect.left - containerRect.left;
+              y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
+              break;
+            case "appearance":
+            case "interaction":
+              x2 = cardRect.right - containerRect.left;
+              y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
+              break;
+          }
+
+          if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
+            const existing = newLines[domain.id];
+            if (
+              !existing ||
+              Math.abs(existing.x1 - x1) > 0.5 ||
+              Math.abs(existing.y1 - y1) > 0.5 ||
+              Math.abs(existing.x2 - x2) > 0.5 ||
+              Math.abs(existing.y2 - y2) > 0.5
+            ) {
+              newLines[domain.id] = { x1, y1, x2, y2 };
+              changed = true;
+            }
+          }
+        } else {
+          if (newLines[domain.id] !== null) {
+            newLines[domain.id] = null;
+            changed = true;
+          }
+        }
+      });
+
+      if (changed) {
+        setLines(newLines);
+      }
+
+      if (active) {
+        requestAnimationFrame(updateLines);
+      }
+    };
+
+    updateLines();
+
+    return () => {
+      active = false;
+    };
+  }, [activeDomains, isCompact]);
 
   const handleSelect = useCallback((id: DomainId) => {
-    setActiveDomain(id);
+    setActiveDomains((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((d) => d !== id);
+      } else {
+        if (isCompact) {
+          return [id];
+        }
+        return [...prev, id];
+      }
+    });
+  }, [isCompact]);
+
+  const handleClearAll = useCallback(() => {
+    setActiveDomains([]);
   }, []);
 
-  const handleReset = useCallback(() => {
-    setActiveDomain(null);
-  }, []);
-
-  const activeDomainData = useMemo(
-    () => DOMAINS.find((d) => d.id === activeDomain),
-    [activeDomain]
-  );
+  // Use the last active domain for mobile/tablet panel view fallback
+  const lastActiveDomain = useMemo(() => {
+    return activeDomains.length > 0 ? activeDomains[activeDomains.length - 1] : null;
+  }, [activeDomains]);
 
   if (!draftSettings) {
     return (
@@ -462,110 +364,165 @@ export const Settings: React.FC = () => {
     );
   }
 
+  const hasSelection = activeDomains.length > 0;
+
   return (
-    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none">
+    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-6">
+      
+      {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
+      {!isCompact ? (
+        <div ref={containerRef} className="flex-1 w-full grid grid-cols-12 grid-rows-6 gap-4 items-stretch relative min-h-0">
+          
+          {/* Dynamic SVG Overlay for Node-to-Card connections */}
+          <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
+            {DOMAINS.map((domain) => {
+              const line = lines[domain.id];
+              if (!line) return null;
 
-      {/* ── Main content area ──────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col items-center justify-start min-h-0 overflow-hidden">
+              const isVertical = domain.id === "persona" || domain.id === "memory";
+              let pathD = "";
 
-        <AnimatePresence mode="wait">
-          {/* ── RADIAL HUB view ─────────────────────────────────────────── */}
-          {!activeDomain ? (
-            <motion.div
-              key="hub"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col items-center justify-center flex-1 w-full gap-4"
-            >
+              if (isVertical) {
+                pathD = `M ${line.x1} ${line.y1} L ${line.x2} ${line.y2}`;
+              } else {
+                const dx = Math.abs(line.y2 - line.y1);
+                let xMid = 0;
+                if (domain.id === "models" || domain.id === "tray") {
+                  // Card is on the right
+                  xMid = Math.min(line.x2, line.x1 + dx);
+                } else {
+                  // Card is on the left (appearance, interaction)
+                  xMid = Math.max(line.x2, line.x1 - dx);
+                }
+                pathD = `M ${line.x1} ${line.y1} L ${xMid} ${line.y2} L ${line.x2} ${line.y2}`;
+              }
 
-              {/* Radial hub container */}
-              <div
-                className="relative"
-                style={{
-                  width: HUB_RADIUS * 2 + 160,
-                  height: HUB_RADIUS * 2 + 160,
-                }}
-              >
-                {/* SVG connector lines */}
-                <HubConnectors activeDomain={activeDomain} />
-
-                {/* Domain nodes */}
-                {DOMAINS.map((domain) => (
-                  <RadialNode
-                    key={domain.id}
-                    domain={domain}
-                    isActive={false}
-                    onSelect={handleSelect}
+              return (
+                <g key={domain.id}>
+                  {/* Outer glow line */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="rgba(var(--accent), 0.15)"
+                    strokeWidth={4.5}
                   />
-                ))}
+                  {/* Sharp core line */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="rgba(var(--accent), 0.45)"
+                    strokeWidth={1.5}
+                  />
+                </g>
+              );
+            })}
+          </svg>
 
-                {/* Center node */}
-                <HubCenter onClick={() => {}} hasSelection={false} />
-              </div>
-            </motion.div>
-          ) : (
-            /* ── DOMAIN CONTENT view ─────────────────────────────────── */
-            <motion.div
-              key="content"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col items-center w-full h-full min-h-0"
+          {/* Top-Left Slot (Col 1-4, Row 1-3) -> 10:00 (Interaction Card) */}
+          <div className="col-start-1 col-span-4 row-start-1 row-span-3 flex items-end justify-end p-2 relative">
+            <SettingsCardWrapper domain={DOMAINS[5]} isActive={activeDomains.includes("interaction")} />
+          </div>
+
+          {/* Top-Center Slot (Col 5-8, Row 1-2) -> 12:00 (Persona Card) */}
+          <div className="col-start-5 col-span-4 row-start-1 row-span-2 flex items-end justify-center p-2 relative">
+            <SettingsCardWrapper domain={DOMAINS[0]} isActive={activeDomains.includes("persona")} />
+          </div>
+
+          {/* Top-Right Slot (Col 9-12, Row 2-4) -> 2:00 (Models Card) */}
+          <div className="col-start-9 col-span-4 row-start-2 row-span-3 flex items-center justify-start p-2 relative">
+            <SettingsCardWrapper domain={DOMAINS[1]} isActive={activeDomains.includes("models")} />
+          </div>
+
+          {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Appearance Card) */}
+          <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative">
+            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("appearance")} />
+          </div>
+
+          {/* Middle-Center Slot (Col 5-8, Row 3-4) -> Radial Hub Center Grid Cell */}
+          <div className="col-start-5 col-span-4 row-start-3 row-span-2 flex items-center justify-center p-2 z-20">
+            <div
+              className="relative shrink-0"
+              style={{
+                width: HUB_RADIUS * 2 + 100,
+                height: HUB_RADIUS * 2 + 100,
+              }}
             >
-              {/* Pill nav header */}
-              <div className="pt-5 pb-4 px-6 shrink-0 w-full flex justify-center">
-                <PillNav
-                  domains={DOMAINS}
-                  activeDomain={activeDomain}
+              {/* Domain nodes */}
+              {DOMAINS.map((domain) => (
+                <RadialNode
+                  key={domain.id}
+                  domain={domain}
+                  isActive={activeDomains.includes(domain.id)}
                   onSelect={handleSelect}
-                  onReset={handleReset}
                 />
-              </div>
+              ))}
 
-              {/* Domain title */}
-              {activeDomainData && (
-                <div className="pb-4 px-8 w-full shrink-0 max-w-[1400px]">
-                  <div className="flex items-center gap-3">
-                    <activeDomainData.icon
-                      size={18}
-                      className="text-[rgb(var(--accent))]"
-                      strokeWidth={2}
-                    />
-                    <div>
-                      <h1 className="text-[15px] font-bold text-[rgb(var(--foreground))]">
-                        {activeDomainData.label}
-                      </h1>
-                      <p className="text-[10px] text-[rgb(var(--foreground-muted))]/50 uppercase tracking-widest">
-                        {activeDomainData.sublabel}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Center node */}
+              <HubCenter onClick={handleClearAll} hasSelection={hasSelection} />
+            </div>
+          </div>
 
-              {/* Scrollable content area */}
-              <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-8 pb-28 min-h-0 max-w-[1400px]">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeDomain}
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -6 }}
-                    transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                    className="h-full"
+          {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Tray Card) */}
+          <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative">
+            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("tray")} />
+          </div>
+
+          {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Memory Card) */}
+          <div className="col-start-5 col-span-4 row-start-5 row-span-2 flex items-start justify-center p-2 relative">
+            <SettingsCardWrapper domain={DOMAINS[3]} isActive={activeDomains.includes("memory")} />
+          </div>
+
+        </div>
+      ) : (
+        /* ── Mobile & Compact Layout Fallback (< 1024px) ───────────────────── */
+        <div className="flex-1 flex flex-col items-center justify-center relative min-h-0 w-full animate-fade-in">
+          <div
+            className="relative transition-all duration-500 ease-in-out shrink-0"
+            style={{
+              width: HUB_RADIUS * 2 + 160,
+              height: HUB_RADIUS * 2 + 160,
+            }}
+          >
+            {DOMAINS.map((domain) => (
+              <RadialNode
+                key={domain.id}
+                domain={domain}
+                isActive={activeDomains.includes(domain.id)}
+                onSelect={handleSelect}
+              />
+            ))}
+
+            <HubCenter onClick={handleClearAll} hasSelection={hasSelection} />
+          </div>
+
+          <AnimatePresence>
+            {lastActiveDomain && (
+              <motion.div
+                key={lastActiveDomain}
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-40 w-[calc(100%-32px)] max-w-md bg-black/95 backdrop-blur-2xl border border-[rgba(var(--accent),0.15)] shadow-2xl p-5 overflow-y-auto custom-scrollbar rounded-2xl max-h-[70vh] flex flex-col justify-start pointer-events-auto"
+              >
+                <div className="relative w-full">
+                  {/* Explicit Close Button */}
+                  <button
+                    onClick={() => handleSelect(lastActiveDomain)}
+                    className="absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full border border-[rgba(var(--accent),0.18)] bg-black/40 flex items-center justify-center text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] transition-colors z-50 cursor-pointer"
+                    aria-label="Close settings panel"
                   >
-                    <DomainContent domain={activeDomain} />
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
+                    <X size={14} />
+                  </button>
+                  
+                  {/* Domain Card Content */}
+                  <DomainContent domain={lastActiveDomain} />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 };

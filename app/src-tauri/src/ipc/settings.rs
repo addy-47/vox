@@ -361,9 +361,6 @@ fn apply_setting_mutation(
         ("tts", "speed") => {
             settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
         }
-        ("persistence", "enabled") => {
-            settings.persistence.enabled = value.as_bool().ok_or("enabled must be a boolean")?;
-        }
         ("persistence", "private_mode") => {
             settings.persistence.private_mode = value.as_bool().ok_or("private_mode must be a boolean")?;
         }
@@ -373,8 +370,11 @@ fn apply_setting_mutation(
         ("persistence", "retention_days") => {
             settings.persistence.retention_days = value.as_u64().ok_or("retention_days must be a positive integer")? as u32;
         }
-        ("assistant", "system_prompt") => {
-            settings.assistant.system_prompt = value.as_str().ok_or("system_prompt must be a string")?.to_string();
+        ("assistant", "hindi_prompt") => {
+            settings.assistant.hindi_prompt = value.as_str().ok_or("hindi_prompt must be a string")?.to_string();
+        }
+        ("assistant", "english_prompt") => {
+            settings.assistant.english_prompt = value.as_str().ok_or("english_prompt must be a string")?.to_string();
         }
         _ => return Ok(false),
     }
@@ -406,10 +406,6 @@ async fn dispatch_worker_command(app: &AppHandle, domain: &str, key: &str, value
                     let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateAudioMode(mode));
                     log::debug!("[Settings] VadCommand::UpdateAudioMode dispatched");
                 }
-            }
-            ("assistant", "system_prompt") => {
-                // Phase 6.3: dispatch to LLM worker when it supports hot-update
-                log::debug!("[Settings] system_prompt change staged (LLM worker dispatch in Phase 6.3)");
             }
             _ => {}
         }

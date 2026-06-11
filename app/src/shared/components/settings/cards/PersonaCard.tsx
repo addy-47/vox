@@ -1,0 +1,83 @@
+import { useState, memo } from "react";
+import { useSettings } from "@/shared/context/SettingsContext";
+import { UserCircle } from "lucide-react";
+import { cn } from "@/shared/lib/utils";
+
+export const PersonaCard = memo(() => {
+  const { draftSettings, updateDraft } = useSettings();
+  const [activeTab, setActiveTab] = useState<"hindi" | "english">("hindi");
+
+  if (!draftSettings) return null;
+
+  return (
+    <div className="w-full lg:w-[460px] bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30 text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85">
+      {/* Header & Tabs */}
+      <div className="flex items-center justify-between mb-4 shrink-0">
+        <div className="flex items-center gap-2">
+          <UserCircle className="text-[rgb(var(--accent))]" size={16} />
+          <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+            Persona Settings
+          </span>
+        </div>
+        
+        {/* Simple hi/eng tabs */}
+        <div className="flex items-center bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-lg">
+          <button
+            onClick={() => setActiveTab("hindi")}
+            className={cn(
+              "px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+              activeTab === "hindi"
+                ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+                : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+            )}
+          >
+            hi
+          </button>
+          <button
+            onClick={() => setActiveTab("english")}
+            className={cn(
+              "px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+              activeTab === "english"
+                ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+                : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+            )}
+          >
+            eng
+          </button>
+        </div>
+      </div>
+
+      {/* Text Area Content */}
+      <div className="min-h-[140px] pt-2 flex flex-col justify-between">
+
+        {activeTab === "hindi" && (
+          <div className="space-y-2.5">
+            <textarea
+              value={draftSettings.assistant.hindi_prompt}
+              onChange={(e) => updateDraft("assistant", "hindi_prompt", e.target.value)}
+              rows={5}
+              className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.12)] rounded-xl px-3 py-2 text-[12px] text-[rgb(var(--foreground))]/80 font-mono leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.35)] transition-colors"
+              placeholder="Hindi prompt..."
+              spellCheck={false}
+            />
+          </div>
+        )}
+
+        {activeTab === "english" && (
+          <div className="space-y-2.5">
+            <textarea
+              value={draftSettings.assistant.english_prompt}
+              onChange={(e) => updateDraft("assistant", "english_prompt", e.target.value)}
+              rows={5}
+              className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.12)] rounded-xl px-3 py-2 text-[12px] text-[rgb(var(--foreground))]/80 font-mono leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.35)] transition-colors"
+              placeholder="English prompt..."
+              spellCheck={false}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+PersonaCard.displayName = "PersonaCard";
