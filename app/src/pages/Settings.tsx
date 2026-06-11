@@ -1,5 +1,5 @@
 import { useState, useCallback, memo, useEffect, useMemo, useRef } from "react";
-import { Brain, Palette, Eye, Database, UserCircle, Sliders, X } from "lucide-react";
+import { Brain, Palette, Eye, Database, UserCircle, Sliders } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { GlassSkeleton } from "@/shared/components/GlassSkeleton";
@@ -51,20 +51,20 @@ function polarToCartesian(angleDeg: number, radius: number) {
 
 // ─── Domain content map ───────────────────────────────────────────────────────
 
-const DomainContent = memo(({ domain }: { domain: DomainId }) => {
+const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
   switch (domain) {
     case "persona":
-      return <PersonaCard />;
+      return <PersonaCard layoutMode={layoutMode} />;
     case "models":
-      return <ModelsCard />;
+      return <ModelsCard layoutMode={layoutMode} />;
     case "tray":
-      return <TrayCard />;
+      return <TrayCard layoutMode={layoutMode} />;
     case "memory":
-      return <MemoryCard />;
+      return <MemoryCard layoutMode={layoutMode} />;
     case "appearance":
-      return <AppearanceCard />;
+      return <AppearanceCard layoutMode={layoutMode} />;
     case "interaction":
-      return <InteractionCard />;
+      return <InteractionCard layoutMode={layoutMode} />;
     default:
       return null;
   }
@@ -151,9 +151,10 @@ HubCenter.displayName = "HubCenter";
 interface SettingsCardWrapperProps {
   domain: Domain;
   isActive: boolean;
+  layoutMode: "full-max" | "full-min" | "small";
 }
 
-const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, isActive }) => {
+const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, isActive, layoutMode }) => {
   return (
     <AnimatePresence>
       {isActive && (
@@ -166,7 +167,7 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
         >
           <div id={`card-${domain.id}`} className="shrink-0">
             {/* Actual Card content */}
-            <DomainContent domain={domain.id} />
+            <DomainContent domain={domain.id} layoutMode={layoutMode} />
           </div>
         </motion.div>
       )}
@@ -181,6 +182,7 @@ export const Settings: React.FC = () => {
   const { draftSettings } = useSettings();
   const [activeDomains, setActiveDomains] = useState<DomainId[]>([]);
   const [isCompact, setIsCompact] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1440);
   const containerRef = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({
     persona: null,
@@ -194,6 +196,7 @@ export const Settings: React.FC = () => {
   // Resize listener to check if we are in compact mobile/tablet mode (< 1024px)
   useEffect(() => {
     const checkSize = () => {
+      setWindowWidth(window.innerWidth);
       setIsCompact(window.innerWidth < 1024);
     };
     checkSize();
@@ -201,8 +204,17 @@ export const Settings: React.FC = () => {
     return () => window.removeEventListener("resize", checkSize);
   }, []);
 
+  // Calculate layoutMode dynamically
+  const layoutMode = useMemo(() => {
+    if (isCompact) return "small";
+    if (windowWidth < 1366 || activeDomains.length > 1) return "full-min";
+    return "full-max";
+  }, [isCompact, windowWidth, activeDomains.length]);
+
   // Outside click handler to pop active domains (LIFO order)
   useEffect(() => {
+    if (isCompact) return; // Disable outside click close behavior on mobile/tablet flat view
+
     const handleOutsideClick = (e: MouseEvent) => {
       if (activeDomains.length === 0) return;
 
@@ -227,7 +239,7 @@ export const Settings: React.FC = () => {
 
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [activeDomains]);
+  }, [activeDomains, isCompact]);
 
   // Calculate dynamic line positions between active nodes and cards
   useEffect(() => {
@@ -348,10 +360,7 @@ export const Settings: React.FC = () => {
     setActiveDomains([]);
   }, []);
 
-  // Use the last active domain for mobile/tablet panel view fallback
-  const lastActiveDomain = useMemo(() => {
-    return activeDomains.length > 0 ? activeDomains[activeDomains.length - 1] : null;
-  }, [activeDomains]);
+
 
   if (!draftSettings) {
     return (
@@ -420,22 +429,22 @@ export const Settings: React.FC = () => {
 
           {/* Top-Left Slot (Col 1-4, Row 1-3) -> 10:00 (Interaction Card) */}
           <div className="col-start-1 col-span-4 row-start-1 row-span-3 flex items-end justify-end p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[5]} isActive={activeDomains.includes("interaction")} />
+            <SettingsCardWrapper domain={DOMAINS[5]} isActive={activeDomains.includes("interaction")} layoutMode={layoutMode} />
           </div>
 
           {/* Top-Center Slot (Col 5-8, Row 1-2) -> 12:00 (Persona Card) */}
           <div className="col-start-5 col-span-4 row-start-1 row-span-2 flex items-end justify-center p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[0]} isActive={activeDomains.includes("persona")} />
+            <SettingsCardWrapper domain={DOMAINS[0]} isActive={activeDomains.includes("persona")} layoutMode={layoutMode} />
           </div>
 
-          {/* Top-Right Slot (Col 9-12, Row 2-4) -> 2:00 (Models Card) */}
-          <div className="col-start-9 col-span-4 row-start-2 row-span-3 flex items-center justify-start p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[1]} isActive={activeDomains.includes("models")} />
+          {/* Top-Right Slot (Col 9-12, Row 1-3) -> 2:00 (Models Card) */}
+          <div className="col-start-9 col-span-4 row-start-1 row-span-3 flex items-end justify-start p-2 relative">
+            <SettingsCardWrapper domain={DOMAINS[1]} isActive={activeDomains.includes("models")} layoutMode={layoutMode} />
           </div>
 
           {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Appearance Card) */}
           <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("appearance")} />
+            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("appearance")} layoutMode={layoutMode} />
           </div>
 
           {/* Middle-Center Slot (Col 5-8, Row 3-4) -> Radial Hub Center Grid Cell */}
@@ -464,63 +473,44 @@ export const Settings: React.FC = () => {
 
           {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Tray Card) */}
           <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("tray")} />
+            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("tray")} layoutMode={layoutMode} />
           </div>
 
           {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Memory Card) */}
           <div className="col-start-5 col-span-4 row-start-5 row-span-2 flex items-start justify-center p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[3]} isActive={activeDomains.includes("memory")} />
+            <SettingsCardWrapper domain={DOMAINS[3]} isActive={activeDomains.includes("memory")} layoutMode={layoutMode} />
           </div>
 
         </div>
       ) : (
-        /* ── Mobile & Compact Layout Fallback (< 1024px) ───────────────────── */
-        <div className="flex-1 flex flex-col items-center justify-center relative min-h-0 w-full animate-fade-in">
-          <div
-            className="relative transition-all duration-500 ease-in-out shrink-0"
-            style={{
-              width: HUB_RADIUS * 2 + 160,
-              height: HUB_RADIUS * 2 + 160,
-            }}
-          >
-            {DOMAINS.map((domain) => (
-              <RadialNode
-                key={domain.id}
-                domain={domain}
-                isActive={activeDomains.includes(domain.id)}
-                onSelect={handleSelect}
-              />
-            ))}
-
-            <HubCenter onClick={handleClearAll} hasSelection={hasSelection} />
-          </div>
-
-          <AnimatePresence>
-            {lastActiveDomain && (
-              <motion.div
-                key={lastActiveDomain}
-                initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-40 w-[calc(100%-32px)] max-w-md bg-black/95 backdrop-blur-2xl border border-[rgba(var(--accent),0.15)] shadow-2xl p-5 overflow-y-auto custom-scrollbar rounded-2xl max-h-[70vh] flex flex-col justify-start pointer-events-auto"
-              >
-                <div className="relative w-full">
-                  {/* Explicit Close Button */}
-                  <button
-                    onClick={() => handleSelect(lastActiveDomain)}
-                    className="absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full border border-[rgba(var(--accent),0.18)] bg-black/40 flex items-center justify-center text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] transition-colors z-50 cursor-pointer"
-                    aria-label="Close settings panel"
-                  >
-                    <X size={14} />
-                  </button>
-                  
-                  {/* Domain Card Content */}
-                  <DomainContent domain={lastActiveDomain} />
+        /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
+        <div className="flex-1 w-full min-h-0 overflow-y-auto custom-scrollbar px-1 py-1 space-y-6 animate-fade-in">
+          {DOMAINS.map((domain) => {
+            const Icon = domain.icon;
+            return (
+              <div key={domain.id} className="w-full space-y-3 pb-5 border-b border-[rgba(var(--accent),0.06)] last:border-0 last:pb-0">
+                {/* Category Header */}
+                <div className="flex items-center gap-2 px-1">
+                  <div className="p-1.5 rounded-lg bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] flex items-center justify-center">
+                    <Icon size={13} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/90">
+                      {domain.label}
+                    </span>
+                    <span className="text-[10px] text-[rgb(var(--foreground-muted))]/60">
+                      {domain.sublabel}
+                    </span>
+                  </div>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                
+                {/* Content */}
+                <div className="w-full">
+                  <DomainContent domain={domain.id} layoutMode="small" />
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -4,22 +4,39 @@ import { HexColorPicker } from "react-colorful";
 import { Palette, Sun, Moon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
-export const AppearanceCard = memo(() => {
+interface AppearanceCardProps {
+  layoutMode?: "full-max" | "full-min" | "small";
+}
+
+export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardProps) => {
   const { draftSettings, updateDraft } = useSettings();
 
   if (!draftSettings) return null;
   const { ui } = draftSettings;
 
+  const isSmall = layoutMode === "small";
+
   return (
-    <div className="w-full lg:w-[320px] bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30 text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between">
+    <div 
+      className={cn(
+        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between",
+        isSmall
+          ? "w-full bg-transparent p-0"
+          : "w-full lg:w-[320px] bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30"
+      )}
+    >
       {/* Header */}
       <div className="flex items-center justify-between mb-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <Palette className="text-[rgb(var(--accent))]" size={16} />
-          <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
-            Appearance
-          </span>
-        </div>
+        {!isSmall ? (
+          <div className="flex items-center gap-2">
+            <Palette className="text-[rgb(var(--accent))]" size={16} />
+            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+              Appearance
+            </span>
+          </div>
+        ) : (
+          <div /> // spacing helper
+        )}
         
         {/* Dark/Light Theme toggle */}
         <div className="flex bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-xl">
