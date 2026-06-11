@@ -11,7 +11,7 @@ import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
 const Home = lazy(() => import("@/pages/Home").then(m => ({ default: m.Home })));
 const History = lazy(() => import("@/pages/History").then(m => ({ default: m.History })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
-const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
+// Monitoring is now a popover in ResponsiveLayout — no dedicated page
 
 // Premium Loading Overlay
 const PageLoader = () => (
@@ -88,7 +88,7 @@ const App: React.FC = () => {
               <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
               <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
               <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
-              <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
+              {/* /monitoring removed — now a popover via the Activity button in layout */}
               <Route path="/wizard" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

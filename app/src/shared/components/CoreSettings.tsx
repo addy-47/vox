@@ -236,7 +236,7 @@ const VoiceCard: React.FC = React.memo(() => {
                 isSelected(v)
                   ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md scale-[1.02]" 
                   : "glass-whisper glass-base text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20",
-                !isTtsVerified ? "opacity-50 cursor-not-allowed" : ""
+                !isTtsVerified ? "opacity-70 cursor-not-allowed" : ""
               )}
             >
               {v.name}

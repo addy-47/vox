@@ -68,15 +68,16 @@ const POLL_INTERVAL_MS = 1000;   // 1Hz
 
 const StatusBadge: React.FC<{ label: string; active: boolean; icon: React.ReactNode }> = ({ label, active, icon }) => (
   <div className={cn(
-    "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-300 glass-base",
+    "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-300 glass-base relative",
     active 
       ? "glass-surface border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]" 
       : "glass-whisper border-[rgba(var(--border),0.04)] text-[rgb(var(--foreground-muted))]"
   )}>
-    <div className={cn("transition-transform duration-500", active && "animate-pulse")}>
+    {active && <div className="shimmer-badge absolute inset-0 rounded-lg pointer-events-none" />}
+    <div className={cn("transition-transform duration-500 relative z-10", active && "scale-110")}>
       {icon}
     </div>
-    <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+    <span className="text-[11px] font-bold uppercase tracking-wider relative z-10">{label}</span>
   </div>
 );
 
@@ -92,11 +93,11 @@ const MetricCard: React.FC<{
       <div className="p-2 rounded-lg glass-whisper glass-base text-[rgb(var(--accent))]">
         {icon}
       </div>
-      <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">{title}</span>
+      <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">{title}</span>
     </div>
     <div className="flex items-baseline gap-1">
       <span className="text-2xl font-mono font-bold text-[rgb(var(--foreground))]">{value}</span>
-      {unit && <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">{unit}</span>}
+      {unit && <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase">{unit}</span>}
     </div>
   </div>
 ));
@@ -147,8 +148,8 @@ export const Monitoring: React.FC = () => {
   if (!latest) {
     return (
       <div className="flex h-full w-full items-center justify-center">
-        <div className="flex flex-col items-center gap-4 opacity-40">
-          <Activity size={32} className="animate-pulse text-[rgb(var(--accent))]" />
+        <div className="flex flex-col items-center gap-4 opacity-70">
+          <Activity size={32} className="animate-pulse-slow text-[rgb(var(--accent))]" />
           <span className="text-[11px] font-bold uppercase tracking-widest">Awaiting Runtime Snapshot...</span>
         </div>
       </div>
@@ -201,16 +202,16 @@ export const Monitoring: React.FC = () => {
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="p-3 rounded-xl glass-whisper glass-base space-y-1">
-                <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">STT</span>
-                <div className="text-xl font-mono font-bold">{latest.stt_latency_ms ?? "--"} <span className="text-[10px]">ms</span></div>
+                <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase">STT</span>
+                <div className="text-xl font-mono font-bold">{latest.stt_latency_ms ?? "--"} <span className="text-[11px]">ms</span></div>
               </div>
               <div className="p-3 rounded-xl glass-whisper glass-base space-y-1">
-                <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">TTFT</span>
-                <div className="text-xl font-mono font-bold text-[rgb(var(--accent))]">{latest.ttft_ms ?? "--"} <span className="text-[10px]">ms</span></div>
+                <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase">TTFT</span>
+                <div className="text-xl font-mono font-bold text-[rgb(var(--accent))]">{latest.ttft_ms ?? "--"} <span className="text-[11px]">ms</span></div>
               </div>
               <div className="p-3 rounded-xl glass-whisper glass-base space-y-1">
-                <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">TTS RTF</span>
-                <div className="text-xl font-mono font-bold">{latest.tts_rtf?.toFixed(2) ?? "--"} <span className="text-[10px]">x</span></div>
+                <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase">TTS RTF</span>
+                <div className="text-xl font-mono font-bold">{latest.tts_rtf?.toFixed(2) ?? "--"} <span className="text-[11px]">x</span></div>
               </div>
             </div>
             <div className="h-32 w-full mt-4">
@@ -223,28 +224,28 @@ export const Monitoring: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <div className="flex flex-col gap-1">
                 <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">System Health</h3>
-                <div className="text-[9px] font-mono font-bold text-[rgb(var(--foreground-muted))] opacity-60">
+                <div className="text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] opacity-60">
                    {latest.cpu_cores} Cores &bull; {(latest.total_ram_mb / 1024).toFixed(1)} GB Physical
                 </div>
               </div>
               <div className="flex gap-4">
                 <div className="flex items-center gap-1.5">
                   <div className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
-                  <span className="text-[9px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tighter">Vox Engine</span>
+                  <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tighter">Vox Engine</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="w-2 h-2 rounded-full bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--foreground),0.2)]" />
-                  <span className="text-[9px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tighter">Host System</span>
+                  <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tighter">Host System</span>
                 </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-8">
               <div className="space-y-3">
                 <div className="flex justify-between items-end">
-                  <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tight">CPU Load</span>
+                  <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tight">CPU Load</span>
                   <div className="flex flex-col items-end">
                     <span className="text-xl font-mono font-bold leading-none">{latest.vox_cpu_usage.toFixed(1)}%</span>
-                    <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))] mt-1">Total: {latest.system_cpu_usage.toFixed(1)}%</span>
+                    <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] mt-1">Total: {latest.system_cpu_usage.toFixed(1)}%</span>
                   </div>
                 </div>
                 <div className="h-1 w-full bg-[rgb(var(--foreground))]/[0.05] rounded-full overflow-hidden">
@@ -256,10 +257,10 @@ export const Monitoring: React.FC = () => {
               </div>
               <div className="space-y-3">
                 <div className="flex justify-between items-end">
-                  <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tight">Memory</span>
+                  <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tight">Memory</span>
                   <div className="flex flex-col items-end">
-                    <span className="text-xl font-mono font-bold leading-none">{latest.vox_ram_mb} <span className="text-[10px]">MB</span></span>
-                    <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))] mt-1">Total: {latest.system_ram_mb} MB</span>
+                    <span className="text-xl font-mono font-bold leading-none">{latest.vox_ram_mb} <span className="text-[11px]">MB</span></span>
+                    <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] mt-1">Total: {latest.system_ram_mb} MB</span>
                   </div>
                 </div>
                 <div className="h-1 w-full bg-[rgb(var(--foreground))]/[0.05] rounded-full overflow-hidden">

@@ -104,7 +104,7 @@ export const ModelSettings: React.FC = () => {
               deleteModel(modelId);
               setConfirmDeleteId(null);
             }}
-            className="p-1 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/35 transition-colors border border-red-500/30 flex items-center justify-center"
+            className="p-1 rounded-lg bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/35 transition-colors border border-[rgb(var(--accent))]/30 flex items-center justify-center"
             aria-label="Yes, Delete"
           >
             <Check size={12} className="font-bold" />
@@ -130,7 +130,7 @@ export const ModelSettings: React.FC = () => {
             e.stopPropagation();
             setConfirmDeleteId(modelId);
           }}
-          className="text-red-400 hover:text-red-500 text-[13px] font-bold uppercase tracking-wider transition-colors"
+          className="text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))]/80 text-[13px] font-bold uppercase tracking-wider transition-colors"
         >
           Purge
         </button>
@@ -144,7 +144,7 @@ export const ModelSettings: React.FC = () => {
             e.stopPropagation();
             setConfirmDeleteId(modelId);
           }}
-          className="p-2 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/25 transition-colors"
+          className="p-2 rounded-lg bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/20 hover:bg-[rgb(var(--accent))]/25 transition-colors"
           aria-label="Purge Weights"
         >
           <Trash2 size={14} />
@@ -158,7 +158,7 @@ export const ModelSettings: React.FC = () => {
           e.stopPropagation();
           setConfirmDeleteId(modelId);
         }}
-        className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all font-bold uppercase tracking-wider text-[13px]"
+        className="px-4 py-2 rounded-xl bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/20 hover:bg-[rgb(var(--accent))]/20 transition-all font-bold uppercase tracking-wider text-[13px]"
       >
         Delete Weights
       </button>
@@ -329,7 +329,7 @@ export const ModelSettings: React.FC = () => {
   const renderOverlayIcon = (isMissing: boolean, hasUpdate: boolean) => {
     if (!isMissing && !hasUpdate) return null;
     const Icon = isMissing ? Download : RefreshCw;
-    const colorClass = isMissing ? "text-red-400 animate-bounce" : "text-purple-400 animate-spin";
+    const colorClass = isMissing ? "text-[rgb(var(--accent))]/60 animate-bounce" : "text-[rgb(var(--accent))] animate-spin";
     return (
       <div className="absolute top-1 right-1 p-0.5 rounded-full bg-black/40 backdrop-blur-sm z-10">
         <Icon size={10} className={colorClass} style={{ animationDuration: isMissing ? "2s" : "4s" }} />
@@ -403,7 +403,7 @@ export const ModelSettings: React.FC = () => {
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Silence</span>
                 <span className={cn(
                   "w-1.5 h-1.5 rounded-full shrink-0 lg:mt-1",
-                  isVadVerified ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500 shadow-[0_0_8px_#EF4444]"
+                  isVadVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
                 )} />
               </button>
 
@@ -423,7 +423,7 @@ export const ModelSettings: React.FC = () => {
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">ASR</span>
                 <span className={cn(
                   "w-1.5 h-1.5 rounded-full shrink-0 lg:mt-1",
-                  isAsrVerified ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500 shadow-[0_0_8px_#EF4444]"
+                  isAsrVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
                 )} />
               </button>
 
@@ -443,7 +443,7 @@ export const ModelSettings: React.FC = () => {
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Hinglish</span>
                 <span className={cn(
                   "w-1.5 h-1.5 rounded-full shrink-0 lg:mt-1",
-                  isTranslitVerified ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500 shadow-[0_0_8px_#EF4444]"
+                  isTranslitVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
                 )} />
               </button>
 
@@ -463,7 +463,7 @@ export const ModelSettings: React.FC = () => {
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">LLM</span>
                 <span className={cn(
                   "w-1.5 h-1.5 rounded-full shrink-0 lg:mt-1",
-                  isLlmDownloaded ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500 shadow-[0_0_8px_#EF4444]"
+                  isLlmDownloaded ? "bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
                 )} />
               </button>
 
@@ -483,7 +483,7 @@ export const ModelSettings: React.FC = () => {
                 <span className="text-[11px] sm:text-[13px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">Voice</span>
                 <span className={cn(
                   "w-1.5 h-1.5 rounded-full shrink-0 lg:mt-1",
-                  isTtsVerified ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500 shadow-[0_0_8px_#EF4444]"
+                  isTtsVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
                 )} />
               </button>
 
@@ -511,7 +511,7 @@ export const ModelSettings: React.FC = () => {
                           <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center justify-between">
                             <span>Earshot (Built-in)</span>
                             {activeVadBackend === "earshot" ? (
-                              <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">Active</span>
+                              <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded border border-[rgb(var(--accent))]/10">Active</span>
                             ) : (
                               <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2 py-0.5 rounded">Ready</span>
                             )}
@@ -535,20 +535,20 @@ export const ModelSettings: React.FC = () => {
                             <span className="flex items-center gap-1.5">
                               <span>TenVAD Engine</span>
                               {outdatedModels.includes("ten_vad") && (
-                                <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                                <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1.5 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update Available</span>
                               )}
                             </span>
                             {activeVadBackend === "ten_vad" ? (
                               modelPresence["ten_vad"] ? (
-                                <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">Active</span>
+                                <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded border border-[rgb(var(--accent))]/10">Active</span>
                               ) : (
-                                <span className="text-[13px] font-bold uppercase tracking-wider text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10">Missing</span>
+                                <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]/60 bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded border border-[rgb(var(--accent))]/10">Missing</span>
                               )
                             ) : (
                               modelPresence["ten_vad"] ? (
                                 <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2 py-0.5 rounded">Ready</span>
                               ) : (
-                                <span className="text-[13px] font-bold uppercase tracking-wider text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10">Missing</span>
+                                <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]/60 bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded border border-[rgb(var(--accent))]/10">Missing</span>
                               )
                             )}
                           </div>
@@ -630,7 +630,7 @@ export const ModelSettings: React.FC = () => {
                               <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">{model.name}</span>
                               <span className="text-[13px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded font-normal">{model.parameters}</span>
                               {outdatedModels.includes(modelGroupId) && (
-                                <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                                <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1.5 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update Available</span>
                               )}
                             </div>
                             <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 leading-normal max-w-[420px]">
@@ -642,7 +642,7 @@ export const ModelSettings: React.FC = () => {
                             {isDownloaded ? (
                               <div className="flex items-center gap-3">
                                 {isSelected ? (
-                                  <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2.5 py-1 rounded border border-emerald-500/10">Active</span>
+                                  <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2.5 py-1 rounded border border-[rgb(var(--accent))]/10">Active</span>
                                 ) : (
                                   <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2.5 py-1 rounded">Select</span>
                                 )}
@@ -679,7 +679,7 @@ export const ModelSettings: React.FC = () => {
                         <div className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
                           <span>Vox Hinglish RNN</span>
                           {outdatedModels.includes("vox_translit_rnn") && (
-                            <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                            <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1.5 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update Available</span>
                           )}
                         </div>
                         <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-1.5 leading-relaxed">
@@ -688,7 +688,7 @@ export const ModelSettings: React.FC = () => {
                       </div>
                       <span className={cn(
                         "text-[13px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded border",
-                        isTranslitVerified ? "text-emerald-400 bg-emerald-500/5 border-emerald-500/10" : "text-red-400 bg-red-500/5 border-red-500/10"
+                        isTranslitVerified ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 border-[rgb(var(--accent))]/10" : "text-[rgb(var(--accent))]/60 bg-[rgb(var(--accent))]/5 border-[rgb(var(--accent))]/10"
                       )}>
                         {isTranslitVerified ? "Ready" : "Missing"}
                       </span>
@@ -745,7 +745,7 @@ export const ModelSettings: React.FC = () => {
                                 <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">{model.name}</span>
                                 <span className="text-[13px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded font-normal">{model.parameters}</span>
                                 {outdatedModels.includes(modelGroupId) && (
-                                  <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                                  <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1.5 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update Available</span>
                                 )}
                               </div>
                               <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 leading-normal max-w-[420px]">
@@ -765,7 +765,7 @@ export const ModelSettings: React.FC = () => {
                               {isDownloaded ? (
                                 <div className="flex items-center gap-3">
                                   {isSelected ? (
-                                    <span className="text-[13px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-2.5 py-1 rounded border border-emerald-500/10">Active</span>
+                                    <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2.5 py-1 rounded border border-[rgb(var(--accent))]/10">Active</span>
                                   ) : (
                                     <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-80 bg-[rgb(var(--foreground))]/5 px-2.5 py-1 rounded">Select</span>
                                   )}
@@ -862,10 +862,10 @@ export const ModelSettings: React.FC = () => {
                             <span className="text-[13px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
                               <span>Supertonic 3 Multilingual</span>
                               {outdatedModels.includes("supertonic_tts") && (
-                                <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">Update Available</span>
+                                <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1.5 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update Available</span>
                               )}
                             </span>
-                            <span className={cn("w-2 h-2 rounded-full", modelPresence["supertonic_tts"] ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-red-500")} />
+                            <span className={cn("w-2 h-2 rounded-full", modelPresence["supertonic_tts"] ? "bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30")} />
                           </div>
                           <p className="text-[13px] text-[rgb(var(--foreground-muted))] opacity-85 mt-2">
                             31-language neural speech synthesis with 10 voices (~144MB INT8 quantized).
@@ -963,7 +963,7 @@ export const ModelSettings: React.FC = () => {
                 </div>
                 <div className="flex glass-whisper glass-base p-0.5 rounded-lg">
                   <span className="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]">Local</span>
-                  <span className="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-40">Cloud</span>
+                  <span className="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] opacity-70">Cloud</span>
                 </div>
               </div>
 
@@ -979,7 +979,7 @@ export const ModelSettings: React.FC = () => {
                   type="password"
                   placeholder="sk-... (coming in v0.8.3+)"
                   disabled
-                  className="w-full px-3 py-2 rounded-lg bg-[rgb(var(--foreground))]/[0.05] border border-[rgba(var(--border),0.08)] text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 disabled:opacity-50 focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all"
+                  className="w-full px-3 py-2 rounded-lg bg-[rgb(var(--foreground))]/[0.05] border border-[rgba(var(--border),0.08)] text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/70 disabled:opacity-50 focus:outline-none focus:border-[rgb(var(--accent))]/50 transition-all"
                 />
               </div>
 

@@ -1,12 +1,13 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Settings, Database, Monitor, Activity } from "lucide-react";
+import { Settings, Database, Monitor } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
+// Monitoring is now a popover anchored to the Activity button in ResponsiveLayout.
+// EdgeNav covers primary navigation only: Home, Memory, System.
 const navItems = [
   { icon: Monitor, label: "Home", path: "/" },
   { icon: Database, label: "Memory", path: "/history" },
-  { icon: Activity, label: "Health", path: "/monitoring" },
   { icon: Settings, label: "System", path: "/settings" },
 ];
 
@@ -34,7 +35,7 @@ export const EdgeNav: React.FC = () => {
               />
               
               {/* Tooltip */}
-              <span className="absolute bottom-14 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg">
+              <span className="absolute bottom-14 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg">
                 {item.label}
               </span>
 
