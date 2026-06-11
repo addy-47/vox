@@ -2,6 +2,7 @@ import { useState, useCallback, memo, useEffect, useMemo, useRef } from "react";
 import { Brain, Palette, Eye, Database, UserCircle, Sliders } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettingsStore } from "@/store/settingsStore";
 import { GlassSkeleton } from "@/shared/components/GlassSkeleton";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -147,7 +148,76 @@ const HubCenter = memo(
 );
 HubCenter.displayName = "HubCenter";
 
-// ─── Settings Card Wrapper Component (For Desktop & Tablet) ───────────
+const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) => {
+  if (!settings || !draftSettings) return false;
+  switch (domainId) {
+    case "models":
+      return (
+        JSON.stringify(settings.vad) !== JSON.stringify(draftSettings.vad) ||
+        JSON.stringify(settings.asr) !== JSON.stringify(draftSettings.asr) ||
+        JSON.stringify(settings.llm) !== JSON.stringify(draftSettings.llm) ||
+        JSON.stringify(settings.tts) !== JSON.stringify(draftSettings.tts)
+      );
+    case "tray":
+      return (
+        settings.ui.tray_enabled !== draftSettings.ui.tray_enabled ||
+        settings.ui.tray_blur_density !== draftSettings.ui.tray_blur_density ||
+        settings.ui.tray_glass_tint !== draftSettings.ui.tray_glass_tint ||
+        settings.ui.tray_history_limit !== draftSettings.ui.tray_history_limit
+      );
+    case "persona":
+      return JSON.stringify(settings.assistant) !== JSON.stringify(draftSettings.assistant);
+    case "memory":
+      return JSON.stringify(settings.persistence) !== JSON.stringify(draftSettings.persistence);
+    case "appearance":
+      return false; // Appearance changes are applied instantly and saved automatically
+    case "interaction":
+      return JSON.stringify(settings.interaction) !== JSON.stringify(draftSettings.interaction);
+    default:
+      return false;
+  }
+};
+
+const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any) => {
+  if (!settings) return;
+  switch (domainId) {
+    case "models":
+      Object.keys(settings.vad).forEach(k => updateDraft("vad", k, (settings.vad as any)[k]));
+      Object.keys(settings.asr).forEach(k => updateDraft("asr", k, (settings.asr as any)[k]));
+      Object.keys(settings.llm).forEach(k => updateDraft("llm", k, (settings.llm as any)[k]));
+      Object.keys(settings.tts).forEach(k => updateDraft("tts", k, (settings.tts as any)[k]));
+      break;
+    case "tray":
+      updateDraft("ui", "tray_enabled", settings.ui.tray_enabled);
+      updateDraft("ui", "tray_blur_density", settings.ui.tray_blur_density);
+      updateDraft("ui", "tray_glass_tint", settings.ui.tray_glass_tint);
+      updateDraft("ui", "tray_history_limit", settings.ui.tray_history_limit);
+      break;
+    case "persona":
+      Object.keys(settings.assistant).forEach(k => updateDraft("assistant", k, (settings.assistant as any)[k]));
+      break;
+    case "memory":
+      Object.keys(settings.persistence).forEach(k => updateDraft("persistence", k, (settings.persistence as any)[k]));
+      break;
+    case "appearance":
+      updateDraft("ui", "theme", settings.ui.theme);
+      updateDraft("ui", "accent_seed", settings.ui.accent_seed);
+      break;
+    case "interaction":
+      Object.keys(settings.interaction).forEach(k => updateDraft("interaction", k, (settings.interaction as any)[k]));
+      break;
+  }
+};
+
+// Custom styles to seamlessly merge the card and the footer tray
+const unsavedStyles = `
+  .has-unsaved-changes > div:first-child {
+    border-bottom-left-radius: 0px !important;
+    border-bottom-right-radius: 0px !important;
+    border-bottom-color: rgba(var(--accent), 0.1) !important;
+  }
+`;
+
 interface SettingsCardWrapperProps {
   domain: Domain;
   isActive: boolean;
@@ -155,6 +225,44 @@ interface SettingsCardWrapperProps {
 }
 
 const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, isActive, layoutMode }) => {
+  const { settings, draftSettings, commitChanges } = useSettings();
+  const updateDraft = useSettingsStore(s => s.updateDraft);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  
+  const hasChanges = useMemo(() => {
+    return hasCardChanges(domain.id, settings, draftSettings);
+  }, [domain.id, settings, draftSettings]);
+
+  const requiresRestart = useMemo(() => {
+    if (!settings || !draftSettings) return false;
+    if (domain.id === "models") {
+      return (
+        settings.vad.vad_backend !== draftSettings.vad.vad_backend ||
+        settings.asr.model !== draftSettings.asr.model ||
+        settings.llm.model !== draftSettings.llm.model ||
+        settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
+        settings.llm.threads !== draftSettings.llm.threads ||
+        settings.tts.voice !== draftSettings.tts.voice
+      );
+    }
+    return false;
+  }, [domain.id, settings, draftSettings]);
+
+  useEffect(() => {
+    if (!hasChanges) {
+      setShowRestartConfirm(false);
+    }
+  }, [hasChanges]);
+
+  const handleSave = () => {
+    if (requiresRestart && !showRestartConfirm) {
+      setShowRestartConfirm(true);
+    } else {
+      commitChanges();
+      setShowRestartConfirm(false);
+    }
+  };
+
   return (
     <AnimatePresence>
       {isActive && (
@@ -165,9 +273,64 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
           transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
           className="w-full h-full flex items-center justify-center pointer-events-auto"
         >
-          <div id={`card-${domain.id}`} className="shrink-0">
+          <style>{unsavedStyles}</style>
+          <div 
+            id={`card-${domain.id}`} 
+            className={cn(
+              "shrink-0 flex flex-col gap-0",
+              hasChanges && "has-unsaved-changes"
+            )}
+          >
             {/* Actual Card content */}
             <DomainContent domain={domain.id} layoutMode={layoutMode} />
+
+            {/* Dynamic Save/Discard Expanded Footer */}
+            {hasChanges && (layoutMode === "full-max" || layoutMode === "full-min") && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, y: -4 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -4 }}
+                className="w-full p-3 px-5 rounded-b-2xl bg-black/15 border-x border-b border-t border-[rgba(var(--accent),0.10)] backdrop-blur-md flex items-center justify-between overflow-hidden text-[11px]"
+              >
+                {showRestartConfirm ? (
+                  <>
+                    <span className="font-bold uppercase tracking-wider text-yellow-500 animate-pulse">Restart Required. Confirm?</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSave}
+                        className="px-3.5 py-1 rounded-lg bg-yellow-500 text-black text-[11px] font-black uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all shadow-md shadow-yellow-500/10"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => setShowRestartConfirm(false)}
+                        className="px-3 py-1 rounded-lg bg-black/45 text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
+                      >
+                        No
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))]">Unsaved Changes</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSave}
+                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shadow hover:scale-[1.02] active:scale-95 transition-all"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => discardCardChanges(domain.id, settings, updateDraft)}
+                        className="px-3 py-1 rounded-lg bg-black/45 text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
+                      >
+                        Discard
+                      </button>
+                    </div>
+                  </>
+                )}
+              </motion.div>
+            )}
           </div>
         </motion.div>
       )}
@@ -179,7 +342,8 @@ SettingsCardWrapper.displayName = "SettingsCardWrapper";
 // ─── Main Settings Component ──────────────────────────────────────────────────
 
 export const Settings: React.FC = () => {
-  const { draftSettings } = useSettings();
+  const { draftSettings, settings, commitChanges, discardChanges, hasChanges, restoreDefaults } = useSettings();
+  const updateDraft = useSettingsStore(s => s.updateDraft);
   const [activeDomains, setActiveDomains] = useState<DomainId[]>([]);
   const [isCompact, setIsCompact] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1440);
@@ -192,6 +356,17 @@ export const Settings: React.FC = () => {
     appearance: null,
     interaction: null,
   });
+
+  const lastActiveDomains = useRef<DomainId[]>([]);
+  useEffect(() => {
+    const closed = lastActiveDomains.current.filter((d) => !activeDomains.includes(d));
+    if (closed.length > 0 && settings) {
+      closed.forEach((domainId) => {
+        discardCardChanges(domainId, settings, updateDraft);
+      });
+    }
+    lastActiveDomains.current = activeDomains;
+  }, [activeDomains, settings, updateDraft]);
 
   // Resize listener to check if we are in compact mobile/tablet mode (< 1024px)
   useEffect(() => {
@@ -484,33 +659,77 @@ export const Settings: React.FC = () => {
         </div>
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
-        <div className="flex-1 w-full min-h-0 overflow-y-auto custom-scrollbar px-1 py-1 space-y-6 animate-fade-in">
-          {DOMAINS.map((domain) => {
-            const Icon = domain.icon;
-            return (
-              <div key={domain.id} className="w-full space-y-3 pb-5 border-b border-[rgba(var(--accent),0.06)] last:border-0 last:pb-0">
-                {/* Category Header */}
-                <div className="flex items-center gap-2 px-1">
-                  <div className="p-1.5 rounded-lg bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] flex items-center justify-center">
-                    <Icon size={13} />
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full">
+          {/* Sticky Header - Always Visible */}
+          <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--accent),0.12)] mb-4 px-1 shrink-0">
+            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-[rgb(var(--foreground))]/75">
+              System Settings
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => restoreDefaults()}
+                className="px-3 py-1.5 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--accent),0.15)] text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))] transition-all duration-300 cursor-pointer"
+              >
+                Restore
+              </button>
+              <button
+                onClick={() => commitChanges()}
+                disabled={!hasChanges}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-300 shadow",
+                  hasChanges
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-[0_0_12px_rgba(var(--accent),0.4)] hover:scale-[1.02] active:scale-95 cursor-pointer animate-[pulse_1.5s_infinite_ease-in-out]"
+                    : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
+                )}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => discardChanges()}
+                disabled={!hasChanges}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-xl border text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                  hasChanges
+                    ? "bg-black/45 text-[rgb(var(--foreground))] border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/10 cursor-pointer"
+                    : "bg-[rgb(var(--foreground))]/5 border-[rgba(var(--border),0.04)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
+                )}
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-1 py-1 space-y-6 animate-fade-in">
+            {[...DOMAINS].sort((a, b) => {
+              const order = ["interaction", "tray", "models", "appearance", "memory", "persona"];
+              return order.indexOf(a.id) - order.indexOf(b.id);
+            }).map((domain) => {
+              const Icon = domain.icon;
+              return (
+                <div key={domain.id} className="w-full bg-black/15 border border-[rgba(var(--accent),0.05)] rounded-2xl p-4 md:p-5 shadow-sm space-y-4">
+                  {/* Category Header */}
+                  <div className="flex items-center gap-2 px-1">
+                    <div className="p-1.5 rounded-lg bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] flex items-center justify-center">
+                      <Icon size={13} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/90">
+                        {domain.label}
+                      </span>
+                      <span className="text-[10px] text-[rgb(var(--foreground-muted))]/60">
+                        {domain.sublabel}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/90">
-                      {domain.label}
-                    </span>
-                    <span className="text-[10px] text-[rgb(var(--foreground-muted))]/60">
-                      {domain.sublabel}
-                    </span>
+                  
+                  {/* Divider and Content */}
+                  <div className="border-t border-[rgba(var(--accent),0.05)] pt-4">
+                    <DomainContent domain={domain.id} layoutMode="small" />
                   </div>
                 </div>
-                
-                {/* Content */}
-                <div className="w-full">
-                  <DomainContent domain={domain.id} layoutMode="small" />
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

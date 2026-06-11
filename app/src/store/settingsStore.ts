@@ -149,15 +149,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (domain === "ui" && (key === "theme" || key === "accent_seed")) {
       applyAppearance(newDraft.ui);
       invoke("update_setting", { domain, key, value }).catch(console.error);
-    }
-
-    if (domain === "persistence" && key === "private_mode") {
-      invoke("update_setting", { domain, key, value }).catch(console.error);
-    }
-
-    if (domain === "interaction") {
-      const target = key === "main_app_mode" ? "main" : "tray";
-      invoke("update_interaction_mode", { target, mode: value }).catch(console.error);
+      
+      // Update baseline settings immediately so appearance has no unsaved changes state
+      const newSettings = structuredClone(settings);
+      (newSettings.ui as any)[key] = value;
+      set({ settings: newSettings, draftSettings: newDraft, hasChanges: false });
+      return;
     }
 
     const hasChanges = JSON.stringify(settings) !== JSON.stringify(newDraft);
@@ -178,13 +175,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         const oldVal = (settings[d] as any)[key];
 
         if (JSON.stringify(val) !== JSON.stringify(oldVal)) {
-          promises.push(
-            invoke("update_setting", { domain, key, value: val }).then((res: any) => {
-              if (res?.reload_policy === "restart") {
-                restartKeys.push(`${domain}.${key}`);
-              }
-            })
-          );
+          if (domain === "interaction" && (key === "main_app_mode" || key === "tray_mode")) {
+            const target = key === "main_app_mode" ? "main" : "tray";
+            promises.push(invoke("update_interaction_mode", { target, mode: val }));
+          } else {
+            promises.push(
+              invoke("update_setting", { domain, key, value: val }).then((res: any) => {
+                if (res?.reload_policy === "restart") {
+                  restartKeys.push(`${domain}.${key}`);
+                }
+              })
+            );
+          }
         }
       }
     }
