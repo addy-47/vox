@@ -3,8 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Vox | Ambient Intelligence</title>
+    <script>
+      // Prevent pinch-to-zoom (ctrl + wheel)
+      document.addEventListener('wheel', function(e) {
+        if (e.ctrlKey) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+
+      // Prevent macOS/Safari double-tap/pinch gesture events
+      document.addEventListener('gesturestart', function(e) {
+        e.preventDefault();
+      });
+    </script>
   </head>
 
   <body style="background: transparent !important;">
