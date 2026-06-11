@@ -58,7 +58,12 @@ const pulseStyles = `
 }
 `;
 
-export const ModelsCard = memo(() => {
+interface ModelsCardProps {
+  layoutMode?: "full-max" | "full-min" | "small";
+}
+
+export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) => {
+  void layoutMode;
   const { draftSettings, updateDraft, modelCatalog } = useSettings();
   const [downloadStatuses, setDownloadStatuses] = useState<Record<string, ModelStatus>>({});
   const [modelPresence, setModelPresence] = useState<Record<string, boolean>>({});

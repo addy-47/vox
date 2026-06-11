@@ -3,30 +3,48 @@ import { useSettings } from "@/shared/context/SettingsContext";
 import { Sliders, Lock } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
-export const InteractionCard = memo(() => {
+interface InteractionCardProps {
+  layoutMode?: "full-max" | "full-min" | "small";
+}
+
+export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCardProps) => {
   const { draftSettings, updateDraft } = useSettings();
 
   if (!draftSettings) return null;
   const { interaction } = draftSettings;
 
+  const isSmall = layoutMode === "small";
+  const isMin = layoutMode === "full-min";
+
   return (
-    <div className="w-full lg:w-[340px] bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30 text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85">
+    <div 
+      className={cn(
+        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85",
+        isSmall
+          ? "w-full bg-transparent p-0"
+          : "w-full lg:w-[340px] bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30"
+      )}
+    >
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4 shrink-0">
-        <Sliders className="text-[rgb(var(--accent))]" size={16} />
-        <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
-          Interaction
-        </span>
-      </div>
+      {!isSmall && (
+        <div className="flex items-center gap-2 mb-4 shrink-0">
+          <Sliders className="text-[rgb(var(--accent))]" size={16} />
+          <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+            Interaction
+          </span>
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* Toggle Main App Mode */}
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
             <span className="font-bold text-[rgb(var(--foreground))]/80">App Mode</span>
-            <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70">
-              {interaction.main_app_mode === "Passive" ? "Continuous listening" : "Push-to-talk"}
-            </span>
+            {!isMin && (
+              <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70">
+                {interaction.main_app_mode === "Passive" ? "Continuous listening" : "Push-to-talk"}
+              </span>
+            )}
           </div>
           <div className="flex p-0.5 bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] rounded-xl">
             <button
@@ -65,7 +83,9 @@ export const InteractionCard = memo(() => {
                 PHASE 9
               </span>
             </div>
-            <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70">Switch to Cloud API</span>
+            {!isMin && (
+              <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70">Switch to Cloud API</span>
+            )}
           </div>
           <div className="flex p-0.5 bg-[rgba(var(--foreground),0.03)] border border-transparent rounded-xl cursor-not-allowed">
             <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase bg-[rgba(var(--foreground),0.1)] text-[rgb(var(--foreground-muted))] shadow-sm flex items-center gap-1">
