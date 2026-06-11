@@ -449,7 +449,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
 
           <div className="px-4 pb-4 pt-3 space-y-4">
             {/* Engine status badges */}
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap ">
               <EngineBadge
                 label="VAD"
                 active={latest?.is_vad_loaded ?? false}
@@ -476,7 +476,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
             </div>
 
             {/* Resource bars */}
-            <div className="space-y-3">
+            <div className="space-y-3 pt-5">
               <ResourceBar
                 label="VOX CPU"
                 textRef={cpuTextRef}

@@ -1,9 +1,9 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { EdgeNav } from "./EdgeNav";
 import { TitleBar } from "./TitleBar";
 import { AmbientBackground } from "@/shared/components/AmbientBackground";
 import { MonitoringPopover } from "@/shared/components/MonitoringPopover";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Activity } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
 import { cn } from "@/shared/lib/utils";
@@ -14,9 +14,36 @@ interface ResponsiveLayoutProps {
 
 export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [monitorOpen, setMonitorOpen] = useState(false);
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
+
+  // Handle bidirectional viewport transition for Monitoring (mobile page <-> desktop popover)
+  useEffect(() => {
+    let wasMobile = window.innerWidth < 768;
+
+    const handleResize = () => {
+      const isMobile = window.innerWidth < 768;
+      if (wasMobile && !isMobile) {
+        // Mobile -> Desktop transition: switch from page route to popover panel
+        if (location.pathname === "/monitoring") {
+          navigate("/", { replace: true });
+          setMonitorOpen(true);
+        }
+      } else if (!wasMobile && isMobile) {
+        // Desktop -> Mobile transition: switch from popover panel to page route
+        if (monitorOpen) {
+          setMonitorOpen(false);
+          navigate("/monitoring");
+        }
+      }
+      wasMobile = isMobile;
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [location.pathname, monitorOpen, navigate]);
 
   // Ambient origin — on the home page the orb is at 55% vertically
   const isHome = location.pathname === "/";
@@ -56,7 +83,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         <EdgeNav />
 
         {/* ── Engine Monitor Area — bottom-left ───────────────────────────── */}
-        <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2.5">
+        <div className="hidden md:flex fixed bottom-4 left-4 z-50 items-center gap-2.5">
           {/* Monitor toggle button */}
           <button
             ref={monitorBtnRef}
