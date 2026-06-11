@@ -421,8 +421,9 @@ export const Home: React.FC = () => {
 
       {/* ── Orb Stage (center of lower half) ───────────────────────────── */}
       <div
-        className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none overflow-hidden flex items-center justify-center"
+        className="absolute z-10 pointer-events-none overflow-hidden flex items-center justify-center"
         style={{
+          left: "50%",
           top: "55%",
           transform: "translate(-50%, -50%)",
           width: "min(70vw, 65vh)",
