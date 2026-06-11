@@ -1,56 +1,64 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 /**
- * Creates a smooth "typing" illusion by draining a character queue dynamically.
- * Overrides point 6.4: pop speed scales with queue size to empty in ~200ms.
+ * Creates an ultra-smooth, jitter-free typing animation by interpolating
+ * the visible string length using requestAnimationFrame.
  */
 export const useStreamingRenderer = (targetText: string) => {
   const [displayText, setDisplayText] = useState("");
-  const queue = useRef<string[]>([]);
-  const animationFrame = useRef<number | null>(null);
-  const lastTargetText = useRef("");
+  const currentLengthRef = useRef(0);
+  const animationFrameRef = useRef<number | null>(null);
+  const prevTextRef = useRef("");
 
-  // When targetText updates, push the diff to the queue
   useEffect(() => {
-    const last = lastTargetText.current;
-    const isAdditive = targetText.startsWith(last);
+    const prevText = prevTextRef.current;
     
-    if (isAdditive && targetText.length > last.length) {
-      const diff = targetText.slice(last.length);
-      queue.current.push(...diff.split(""));
-    } else if (!isAdditive || targetText.length < last.length) {
-      // If the text was reset, corrected, or updated non-additively, sync instantly
+    // If text was reset, shortened, or changed non-additively, sync instantly
+    if (!targetText.startsWith(prevText) || targetText.length < prevText.length) {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      currentLengthRef.current = targetText.length;
       setDisplayText(targetText);
-      queue.current = [];
+      prevTextRef.current = targetText;
+      return;
     }
-    lastTargetText.current = targetText;
-  }, [targetText]);
 
-  const tick = useCallback(() => {
-    if (queue.current.length > 0) {
-      // Dynamic scaling: pop more chars if the queue is backing up
-      // Empty in ~10 ticks (approx 160-200ms at 60fps)
-      const charsToPop = Math.max(1, Math.ceil(queue.current.length / 10));
-      const popped = queue.current.splice(0, charsToPop).join("");
+    prevTextRef.current = targetText;
+
+    // Start or continue the animation loop
+    const tick = () => {
+      const targetLen = targetText.length;
+      const curLen = currentLengthRef.current;
       
-      setDisplayText(prev => prev + popped);
-      animationFrame.current = requestAnimationFrame(tick);
-    } else {
-      animationFrame.current = null;
-    }
-  }, []);
+      if (curLen < targetLen) {
+        // Smooth ease-out length transition (exponential catch-up)
+        // Minimum step of 0.8 char per frame to ensure continuous progress
+        const step = Math.max(0.8, (targetLen - curLen) * 0.18);
+        const nextLen = Math.min(targetLen, curLen + step);
+        currentLengthRef.current = nextLen;
+        
+        setDisplayText(targetText.slice(0, Math.floor(nextLen)));
+        animationFrameRef.current = requestAnimationFrame(tick);
+      } else {
+        animationFrameRef.current = null;
+      }
+    };
 
-  useEffect(() => {
-    if (queue.current.length > 0 && !animationFrame.current) {
-      animationFrame.current = requestAnimationFrame(tick);
+    if (animationFrameRef.current === null && currentLengthRef.current < targetText.length) {
+      animationFrameRef.current = requestAnimationFrame(tick);
     }
-  }, [targetText, tick]);
+  }, [targetText]);
 
   useEffect(() => {
     return () => {
-      if (animationFrame.current) cancelAnimationFrame(animationFrame.current);
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
   }, []);
 
   return displayText;
 };
+

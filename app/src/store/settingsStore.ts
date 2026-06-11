@@ -99,10 +99,6 @@ interface SettingsState {
   clearRestartKeys: () => void;
 }
 
-function deepClone<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj));
-}
-
 function applyAppearance(ui: VoxSettings["ui"]) {
   if (typeof document !== "undefined") {
     document.documentElement.setAttribute("data-theme", ui.theme);
@@ -122,7 +118,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const bootState = await invoke<{ settings: VoxSettings }>("request_boot_state");
       const fetched = bootState.settings;
-      const cloned = deepClone(fetched);
+      const cloned = structuredClone(fetched);
       set({
         settings: fetched,
         draftSettings: cloned,
@@ -149,7 +145,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { settings, draftSettings } = get();
     if (!draftSettings || !settings) return;
 
-    const newDraft = deepClone(draftSettings);
+    const newDraft = structuredClone(draftSettings);
     (newDraft[domain] as any)[key] = value;
 
     if (domain === "ui" && (key === "theme" || key === "accent_seed")) {
@@ -206,7 +202,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   discardChanges: () => {
     const { settings } = get();
     if (!settings) return;
-    const cloned = deepClone(settings);
+    const cloned = structuredClone(settings);
     applyAppearance(settings.ui);
     set({ draftSettings: cloned, hasChanges: false });
   },
@@ -214,7 +210,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   restoreDefaults: async () => {
     try {
       const defaults = await invoke<VoxSettings>("reset_settings");
-      const cloned = deepClone(defaults);
+      const cloned = structuredClone(defaults);
       applyAppearance(defaults.ui);
       set({ settings: defaults, draftSettings: cloned, hasChanges: false });
     } catch (err) {
