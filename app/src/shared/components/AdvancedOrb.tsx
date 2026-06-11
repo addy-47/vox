@@ -509,11 +509,11 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setSize(width, height);
+    renderer.setSize(width, height, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.style.cssText =
-      'position:absolute;top:0;left:0;width:100%;height:100%;';
+      'position:absolute;top:0;left:0;width:100%;height:100%;margin:0;padding:0;';
     container.appendChild(renderer.domElement);
 
     const initGlow = getCSSColor('--accent-dark', '#0891b2');
@@ -534,7 +534,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
     const discAnims: DiscAnim[] = [];
 
     for (let i = 0; i < NUM_SHEETS; i++) {
-      const geo = createDiscGeometry(DISC_R, 60, 20);
+      const geo = createDiscGeometry(DISC_R, 36, 12);
 
       const mat = new THREE.ShaderMaterial({
         uniforms: {
@@ -598,7 +598,7 @@ export const VoxOrb: React.FC<VoxOrbProps> = ({
     function updateCamera(w: number, h: number) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+      renderer.setSize(w, h, false);
       const fovRad = (45 * Math.PI) / 180;
       const fitDist = SHELL_R / Math.tan(fovRad / 2);
       camera.position.z = Math.max(fitDist * 1.08, 6.5);

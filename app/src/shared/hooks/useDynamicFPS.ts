@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 
 interface DynamicFPSOptions {
   /** Callback receives deltaTime in ms since last non-skipped frame */
@@ -59,8 +59,6 @@ export function useDynamicFPS({
   // ── RAF state ──
   const rafRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
-  const fpsCounterRef = useRef({ frames: 0, lastSecond: 0, fps: 60 });
-  const [debugFps, setDebugFps] = useState(60);
 
   // ── Stable loop body — reads from refs on each tick ──
   const loop = useCallback((timestamp: number) => {
@@ -87,15 +85,6 @@ export function useDynamicFPS({
       }
     }
 
-    // FPS counter (1-second windows)
-    fpsCounterRef.current.frames++;
-    if (timestamp - fpsCounterRef.current.lastSecond >= 1000) {
-      setDebugFps(fpsCounterRef.current.frames);
-      fpsCounterRef.current.fps = fpsCounterRef.current.frames;
-      fpsCounterRef.current.frames = 0;
-      fpsCounterRef.current.lastSecond = timestamp;
-    }
-
     rafRef.current = requestAnimationFrame(loop);
   }, []);
 
@@ -106,11 +95,6 @@ export function useDynamicFPS({
     if (shouldRun) {
       if (rafRef.current === null) {
         lastFrameTimeRef.current = performance.now();
-        fpsCounterRef.current = {
-          frames: 0,
-          lastSecond: performance.now(),
-          fps: 60,
-        };
         rafRef.current = requestAnimationFrame(loop);
       }
     } else if (rafRef.current !== null) {
@@ -130,11 +114,6 @@ export function useDynamicFPS({
   const start = useCallback(() => {
     if (rafRef.current === null) {
       lastFrameTimeRef.current = performance.now();
-      fpsCounterRef.current = {
-        frames: 0,
-        lastSecond: performance.now(),
-        fps: 60,
-      };
       rafRef.current = requestAnimationFrame(loop);
     }
   }, [loop]);
@@ -146,5 +125,5 @@ export function useDynamicFPS({
     }
   }, []);
 
-  return { start, stop, fps: debugFps };
+  return { start, stop };
 }

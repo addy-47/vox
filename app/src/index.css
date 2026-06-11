@@ -504,30 +504,119 @@ input[type="range"]:active::-webkit-slider-thumb {
   animation: wave-flow 45s linear infinite;
 }
 
-/* ── Ambient Ripple Pulses ── */
-@keyframes ripple-expand {
-  0%   { transform: scale(0); opacity: var(--ripple-energy, 0.12); }
-  100% { transform: scale(2.5); opacity: 0; }
-}
-@keyframes ripple-expand-soft {
-  0%   { transform: scale(0.2); opacity: calc(var(--ripple-energy, 0.12) * 0.6); }
-  100% { transform: scale(2); opacity: 0; }
-}
-.ripple-layer {
-  position: absolute;
-  inset: -50%;
-  border-radius: 50%;
+/* ── Ambient Background System ── */
+.amb-background-container {
+  position: fixed;
+  inset: 0;
   pointer-events: none;
-  background: radial-gradient(circle, rgba(var(--accent), 0.12) 0%, transparent 60%);
-  will-change: transform, opacity;
+  overflow: hidden;
+  user-select: none;
+  z-index: 0;
+  transform: translateZ(0);
+  will-change: transform;
 }
-.ripple-layer:nth-child(1) { animation: ripple-expand 8s cubic-bezier(0.2, 0, 0.4, 1) infinite; }
-.ripple-layer:nth-child(2) { animation: ripple-expand-soft 10s cubic-bezier(0.2, 0, 0.4, 1) infinite 2.5s; }
-.ripple-layer:nth-child(3) { animation: ripple-expand 12s cubic-bezier(0.2, 0, 0.4, 1) infinite 5s; }
-.ripple-layer:nth-child(4) { animation: ripple-expand-soft 14s cubic-bezier(0.2, 0, 0.4, 1) infinite 7.5s; }
-.ripple-layer:nth-child(5) { animation: ripple-expand 16s cubic-bezier(0.2, 0, 0.4, 1) infinite 10s; }
+
+.amb-base {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 80% 70% at var(--origin-x, 50%) var(--origin-y, 50%),
+    hsl(230 30% 6%) 0%,
+    hsl(230 20% 3%) 55%,
+    hsl(0 0% 1%) 100%
+  );
+}
+[data-theme='light'] .amb-base {
+  background: radial-gradient(
+    ellipse 80% 70% at var(--origin-x, 50%) var(--origin-y, 50%),
+    hsl(220 60% 97%) 0%,
+    hsl(220 40% 94%) 55%,
+    hsl(220 20% 92%) 100%
+  );
+}
+
+@keyframes blob-rotate-a {
+  0%, 100% { transform: translate(-50%, -50%) rotate(0deg) scale(1); }
+  33%      { transform: translate(-50%, -50%) rotate(120deg) scale(1.15); }
+  66%      { transform: translate(-50%, -50%) rotate(240deg) scale(0.9); }
+}
+@keyframes blob-rotate-b {
+  0%, 100% { transform: translate(-50%, -50%) rotate(360deg) scale(1.1); }
+  50%      { transform: translate(-50%, -50%) rotate(180deg) scale(0.95); }
+}
+@keyframes blob-rotate-c {
+  0%, 100% { transform: translate(-50%, -50%) rotate(0deg) scale(0.95); }
+  50%      { transform: translate(-50%, -50%) rotate(-180deg) scale(1.15); }
+}
+
+.amb-blob {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  will-change: transform;
+}
+
+.amb-glow {
+  position: absolute;
+  left: var(--origin-x, 50%);
+  top: var(--origin-y, 50%);
+  transform: translate(-50%, -50%);
+  width: 60vmax;
+  height: 60vmax;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(var(--accent), var(--glow-opacity, 0.05)) 0%,
+    transparent 65%
+  );
+  transition: opacity 1.5s ease;
+  pointer-events: none;
+}
+
+@keyframes ripple-out {
+  0%   { transform: translate(-50%, -50%) scale(1); opacity: var(--rp-opacity); }
+  100% { transform: translate(-50%, -50%) scale(8); opacity: 0; }
+}
+
+.rp-ring {
+  position: absolute;
+  left: var(--origin-x, 50%);
+  top: var(--origin-y, 50%);
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--accent), 0.5);
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: ripple-out var(--rp-dur, 16s) cubic-bezier(0.1, 0.4, 0.2, 1) infinite;
+}
+
+.amb-noise {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  opacity: 0.08;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+[data-theme='light'] .amb-noise {
+  mix-blend-mode: multiply;
+  opacity: 0.05;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ripple-layer { animation: none !important; opacity: 0.04 !important; }
+  .rp-ring,
+  .amb-blob {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}
+
+/* WebKitGTK transition workaround: disable backdrop-filter during animation to prevent flashing */
+.no-blur {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* Status label is now rendered via the StatusCapsule React component in Home.tsx — no shimmer gradient needed */
