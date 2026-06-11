@@ -66,13 +66,11 @@ export interface VoxSettings {
     log_level: string;
   };
   persistence: {
-    enabled: boolean;
     private_mode: boolean;
     max_sessions: number;
     retention_days: number;
   };
   assistant: {
-    system_prompt: string;
     hindi_prompt: string;
     english_prompt: string;
   };

@@ -112,7 +112,7 @@ const VoiceRippleNode = memo(
           top: y - 60,   // Offset approximate half-height
         }}
         className={cn(
-          "w-56 rounded-2xl p-4 flex flex-col text-left transition-all duration-300 select-none group cursor-pointer z-10",
+          "w-56 rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none group cursor-pointer z-10",
           "bg-[rgba(var(--foreground),0.02)] border",
           isSelected
             ? "border-[rgba(var(--accent),0.6)] shadow-[0_0_32px_rgba(var(--accent),0.18)] bg-[rgba(var(--accent),0.05)]"
@@ -297,7 +297,7 @@ export const History: React.FC = () => {
   const [pageIndex, setPageIndex] = useState(0);
   const [pageDirection, setPageDirection] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -405,7 +405,7 @@ export const History: React.FC = () => {
 
   const nodesWithPositions = useMemo(() => {
     const N = pageSessions.length;
-    if (N === 0) return [];
+    if (N === 0 || dimensions.width === 0) return [];
 
     // Simple deterministic pseudo-random number generator
     const seededRandom = (seed: number) => {
@@ -552,6 +552,9 @@ export const History: React.FC = () => {
     }
   };
 
+  const isMeasuring = dimensions.width === 0;
+  const showLoading = sessionsLoading || isMeasuring;
+
   return (
     <div className="flex-1 flex flex-col h-full relative overflow-hidden bg-transparent select-none">
       <div
@@ -559,7 +562,7 @@ export const History: React.FC = () => {
         className="flex-1 relative z-20 min-h-0 pt-6 flex flex-col"
         onClick={() => setSelectedSession(null)}
       >
-        {sessionsLoading ? (
+        {showLoading ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-50">
             <div className="w-6 h-6 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
             <span className="text-[10px] font-bold uppercase tracking-widest">Loading memories...</span>
@@ -583,7 +586,7 @@ export const History: React.FC = () => {
                     setSelectedSession(session);
                   }}
                   className={cn(
-                    "w-full rounded-2xl p-4 flex flex-col text-left transition-all duration-300 select-none cursor-pointer border relative group",
+                    "w-full rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none cursor-pointer border relative group",
                     isSelected
                       ? "border-[rgba(var(--accent),0.6)] shadow-[0_0_32px_rgba(var(--accent),0.08)] bg-[rgba(var(--accent),0.05)]"
                       : "border-[rgba(var(--accent),0.1)] bg-[rgba(var(--foreground),0.02)] hover:border-[rgba(var(--accent),0.4)] hover:bg-[rgba(var(--foreground),0.04)]"

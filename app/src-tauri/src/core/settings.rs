@@ -255,14 +255,14 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         // Log level — requires subscriber restart
         ("telemetry", "log_level") => SettingReloadPolicy::Restart,
 
-        // Persistence — enabled flag requires restart; limits are hot
-        ("persistence", "enabled") => SettingReloadPolicy::Restart,
+        // Persistence — limits are hot
         ("persistence", "private_mode") => SettingReloadPolicy::Hot,
         ("persistence", "max_sessions") => SettingReloadPolicy::Hot,
         ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
-        // Assistant — system prompt is sent to LLM worker via channel
-        ("assistant", "system_prompt") => SettingReloadPolicy::WorkerCommand,
+        // Assistant — hot update
+        ("assistant", "hindi_prompt") => SettingReloadPolicy::Hot,
+        ("assistant", "english_prompt") => SettingReloadPolicy::Hot,
 
         // Unknown — conservative default
         _ => SettingReloadPolicy::Restart,
@@ -417,8 +417,6 @@ impl Default for TelemetrySettings {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PersistenceSettings {
-    /// Enable/disable SQLite session persistence. Requires restart to take effect.
-    pub enabled: bool,
     /// Disable all database writes for the current session.
     pub private_mode: bool,
     /// Maximum sessions retained. Older entries pruned at next startup.
@@ -430,7 +428,6 @@ pub struct PersistenceSettings {
 impl Default for PersistenceSettings {
     fn default() -> Self {
         Self {
-            enabled: true,
             private_mode: false,
             max_sessions: 500,
             retention_days: 30,
@@ -452,8 +449,6 @@ impl Default for SetupSettings {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct AssistantSettings {
-    /// Generic fallback prompt.
-    pub system_prompt: String,
     /// Prompt used when Devanagari (Hindi) input is detected.
     pub hindi_prompt: String,
     /// Prompt used when English/other input is detected.
@@ -463,7 +458,6 @@ pub struct AssistantSettings {
 impl Default for AssistantSettings {
     fn default() -> Self {
         Self {
-            system_prompt: crate::core::constants::SYSTEM_PROMPT_EN.into(),
             hindi_prompt: crate::core::constants::SYSTEM_PROMPT_HI.into(),
             english_prompt: crate::core::constants::SYSTEM_PROMPT_EN.into(),
         }
