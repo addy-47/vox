@@ -50,7 +50,7 @@ export const PipelineField: React.FC<PipelineFieldProps> = ({ state, volume = 0 
         className="absolute w-[80vw] h-[80vw] max-w-[800px] max-h-[800px] rounded-full blur-[120px] opacity-[var(--field-energy)] transition-all duration-700 ease-out"
         style={{
           left: "50%",
-          top: "60%",
+          top: "55%",
           transform: "translate(-50%, -50%)",
           background: `radial-gradient(circle, rgba(var(--accent), 0.4) 0%, rgba(var(--accent), 0.05) 50%, transparent 70%)`,
           mixBlendMode: "screen",
@@ -62,7 +62,7 @@ export const PipelineField: React.FC<PipelineFieldProps> = ({ state, volume = 0 
         className="absolute w-[70vw] h-[70vw] max-w-[700px] max-h-[700px] rounded-full border border-dashed transition-all duration-1000 ease-out"
         style={{
           left: "50%",
-          top: "60%",
+          top: "55%",
           transform: `translate(-50%, -50%) scale(${0.8 + energy * 0.4})`,
           borderColor: `rgba(var(--accent), ${0.05 + energy * 0.1})`,
           opacity: state === "Idle" ? 0.2 : 0.6,
