@@ -7,7 +7,7 @@ interface PipelineFieldProps {
   volume?: number; // Optional volume parameter for AssistantSpeaking reactive expansion
 }
 
-export const PipelineField: React.FC<PipelineFieldProps> = ({ state, volume = 0 }) => {
+export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldProps) => {
   const [energy, setEnergy] = useState(0.12);
 
   useEffect(() => {
@@ -70,4 +70,6 @@ export const PipelineField: React.FC<PipelineFieldProps> = ({ state, volume = 0 
       />
     </div>
   );
-};
+});
+
+PipelineField.displayName = "PipelineField";

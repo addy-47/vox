@@ -211,7 +211,8 @@ where
 
                 if !in_speech && active_frames >= 6 {
                     in_speech = true;
-                    current_turn_id += 1;
+                    let app_state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                    current_turn_id = app_state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
                     log::info!("[VAD] >>> SPEECH START (session: {}, owner: {:?})", current_turn_id, owner);
                     
                     let _ = stt_tx.send(crate::services::stt::SttCommand::ResetStream);
