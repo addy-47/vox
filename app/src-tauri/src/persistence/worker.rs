@@ -211,7 +211,7 @@ fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow
 /// Safe to call at startup or any time — idempotent.
 fn cleanup_zero_turn_sessions(conn: &rusqlite::Connection) -> anyhow::Result<()> {
     let deleted = conn.execute(
-        "DELETE FROM sessions WHERE turn_count = 0 AND ended_at IS NOT NULL",
+        "DELETE FROM sessions WHERE turn_count = 0",
         [],
     )?;
     if deleted > 0 {

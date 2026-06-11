@@ -20,7 +20,8 @@
         "decorations": false,
         "alwaysOnTop": true,
         "resizable": true,
-        "visible": false
+        "visible": false,
+        "zoomHotkeysEnabled": false
       },
       {
         "label": "wizard",
@@ -33,7 +34,8 @@
         "alwaysOnTop": false,
         "resizable": true,
         "visible": false,
-        "center": true
+        "center": true,
+        "zoomHotkeysEnabled": false
       },
       {
         "label": "tray",
@@ -46,7 +48,8 @@
         "alwaysOnTop": true,
         "resizable": false,
         "visible": false,
-        "shadow": false
+        "shadow": false,
+        "zoomHotkeysEnabled": false
       }
     ],
     "security": {
