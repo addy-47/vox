@@ -6,7 +6,7 @@
 
 ## Architecture (Non-Obvious Facts)
 
-**Vox is a Tauri 2 desktop app with a Rust core library (`vox_lib`). Current version: v0.8.2 → v0.8.3 (Phase 9 — LLM Provider Architecture).**
+**Vox is a Tauri 2 desktop app with a Rust core library (`vox_lib`). Current version: v0.8.4 (Phase 9 — LLM Provider Architecture & Remote OpenAI Integration).**
 
 - `app/` — Frontend workspace (React 19, Vite 7, TailwindCSS 4, TypeScript)
 - `app/src-tauri/` — Tauri backend. The lib target is `vox_lib` (not `app`). The `vox_lib` crate contains ALL core logic.
