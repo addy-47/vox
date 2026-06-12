@@ -1,4 +1,5 @@
 import React from "react";
+import { useTelemetry } from "@/shared/hooks/useTelemetry";
 
 type AmbientMood = "calm" | "active" | "thinking" | "speaking";
 
@@ -34,14 +35,14 @@ const MOOD_CONFIG: Record<AmbientMood, MoodConfig> = {
     glowOpacity: 0.08,
   },
   active: {
-    rippleDuration: 8,
+    rippleDuration: 15,
     rippleOpacity: 0.18,
     blobSpeed: 18,
     blobOpacity: 0.055,
     glowOpacity: 0.1,
   },
   speaking: {
-    rippleDuration: 9,
+    rippleDuration: 14,
     rippleOpacity: 0.16,
     blobSpeed: 22,
     blobOpacity: 0.05,
@@ -72,6 +73,9 @@ export const AmbientBackground = React.memo(({
   originY = "50%",
 }: AmbientBackgroundProps) => {
   const cfg = MOOD_CONFIG[mood];
+  const telemetryRef = useTelemetry();
+  const glowRef = React.useRef<HTMLDivElement>(null);
+  const rippleRef = React.useRef<HTMLDivElement>(null);
 
   const [isLight, setIsLight] = React.useState(false);
   React.useEffect(() => {
@@ -88,15 +92,45 @@ export const AmbientBackground = React.memo(({
   const glowOpacityMultiplier = isLight ? 3.0 : 1.0;
   const rippleOpacityMultiplier = isLight ? 2.5 : 1.0;
 
+  React.useEffect(() => {
+    let animId: number;
+    let smoothedEnergy = 0;
+
+    const update = () => {
+      const energy = telemetryRef.current?.energy || 0;
+      // organic, fluid interpolation
+      smoothedEnergy += (energy - smoothedEnergy) * 0.15;
+
+      const baseGlow = cfg.glowOpacity * glowOpacityMultiplier;
+      const dynamicGlow = baseGlow + smoothedEnergy * 0.12 * glowOpacityMultiplier;
+
+      const baseRipple = cfg.rippleOpacity * rippleOpacityMultiplier;
+      const dynamicRipple = baseRipple + smoothedEnergy * 0.18 * rippleOpacityMultiplier;
+
+      if (glowRef.current) {
+        glowRef.current.style.opacity = String(dynamicGlow);
+      }
+      if (rippleRef.current) {
+        rippleRef.current.style.opacity = String(dynamicRipple);
+      }
+
+      animId = requestAnimationFrame(update);
+    };
+
+    animId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(animId);
+  }, [cfg, glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef]);
+
+  const rpAnimName = (mood === "active" || (mood as string) === "listening") ? "ripple-in" : "ripple-out";
+
   return (
     <div
       className="amb-background-container"
       style={{
         "--origin-x": originX,
         "--origin-y": originY,
-        "--rp-opacity": cfg.rippleOpacity * rippleOpacityMultiplier,
         "--rp-dur": `${cfg.rippleDuration}s`,
-        "--glow-opacity": cfg.glowOpacity * glowOpacityMultiplier,
+        "--rp-anim-name": rpAnimName,
       } as React.CSSProperties}
       aria-hidden="true"
     >
@@ -122,10 +156,10 @@ export const AmbientBackground = React.memo(({
       ))}
 
       {/* Core glow — centered at orb origin */}
-      <div className="amb-glow" />
+      <div ref={glowRef} className="amb-glow" />
 
-      {/* Ripple rings — expand from orb origin to screen edges */}
-      <div>
+      {/* Ripple rings — expand from orb origin to screen edges, composited under parent opacity */}
+      <div ref={rippleRef} className="rp-wrapper">
         {Array.from({ length: RIPPLE_COUNT }, (_, i) => (
           <div
             key={i}

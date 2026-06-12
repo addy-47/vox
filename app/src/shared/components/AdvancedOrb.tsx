@@ -5,7 +5,7 @@ import { useDynamicFPS } from '@/shared/hooks/useDynamicFPS';
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface VoxOrbProps {
-  telemetryRef?: React.MutableRefObject<{ energy: number; vad_prob: number }>;
+  telemetryRef?: React.MutableRefObject<{ energy: number; vad_prob: number; low: number; mid: number; high: number }>;
   amplitude?: number;
   interactionState?: 'Idle' | 'Listening' | 'UserSpeaking' | 'Thinking' | 'AssistantSpeaking' | 'Interrupted';
   isSleeping?: boolean;
@@ -188,6 +188,7 @@ const DISC_VERT = `
   uniform float u_amplitude;
   uniform float u_phase;
   uniform float u_waveScale;
+  uniform float u_highs;
 
   varying vec3  vWorldPos;
   varying vec3  vNormal;    // world-space sphere normal
@@ -218,9 +219,10 @@ const DISC_VERT = `
     float dispScale = 0.22 + u_amplitude * 0.95;
     float taper     = sin(vRadius * 3.14159) * smoothstep(1.0, 0.6, vRadius);
 
-    vec3 nc1 = hemi * u_waveScale
+    float currentWaveScale = u_waveScale * (1.0 + u_highs * 2.0);
+    vec3 nc1 = hemi * currentWaveScale
                + vec3(u_time * 0.11, u_time * 0.08,  u_phase);
-    vec3 nc2 = hemi * u_waveScale * 2.5
+    vec3 nc2 = hemi * currentWaveScale * 2.5
                + vec3(-u_time * 0.17, u_time * 0.14, u_phase + 5.3);
     float disp = -abs(snoise(nc1) + snoise(nc2) * 0.45) * dispScale * taper * 0.85;
 
@@ -361,6 +363,39 @@ export const VoxOrb = React.memo(({
     return () => document.removeEventListener('visibilitychange', handler);
   }, []);
 
+  // ── Theme observer to prevent Layout Thrashing during 60fps rendering ────
+  useEffect(() => {
+    let observer: MutationObserver | null = null;
+
+    const updateTheme = () => {
+      if (typeof document === 'undefined') return;
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const accent = getCSSColor('--accent', '#00dbe9');
+      const glow = currentTheme === 'light'
+        ? getCSSColor('--accent-dark', '#0891b2')
+        : accent.clone().multiplyScalar(0.40);
+
+      themeRef.current = {
+        theme: currentTheme,
+        accent,
+        glow
+      };
+    };
+
+    updateTheme();
+
+    if (typeof window !== 'undefined') {
+      observer = new MutationObserver(updateTheme);
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    }
+
+    return () => {
+      if (observer) {
+        observer.disconnect();
+      }
+    };
+  }, []);
+
   // ── IntersectionObserver for component visibility ────────────────────────
   const [isVisible, setIsVisible] = useState(true);
 
@@ -392,6 +427,7 @@ export const VoxOrb = React.memo(({
       u_colorGlow: { value: THREE.Color };
       u_colorAccent: { value: THREE.Color };
       u_sleeping: { value: number };
+      u_highs: { value: number };
     };
     discGroup: THREE.Group;
     group: THREE.Group;
@@ -407,9 +443,16 @@ export const VoxOrb = React.memo(({
     outerGeo: THREE.SphereGeometry;
     resizeObs: ResizeObserver;
     container: HTMLDivElement;
+    curScale: number;
+    curBaseVal: number;
   }
 
   const sceneRef = useRef<SceneContext | null>(null);
+  const themeRef = useRef({
+    theme: "",
+    accent: new THREE.Color('#00dbe9'),
+    glow: new THREE.Color('#0891b2'),
+  });
 
   const tickFn = useCallback((_dt: number) => {
     const ctx = sceneRef.current;
@@ -419,35 +462,67 @@ export const VoxOrb = React.memo(({
     const state = stateRef.current;
     const sleeping = sleepingRef.current;
 
-    let telemAmp = 0;
+    let telemEnergy = 0;
+    let telemLow = 0;
+    let telemMid = 0;
+    let telemHigh = 0;
+
     if (telemetryRef?.current) {
       const e = telemetryRef.current.energy;
+      const l = telemetryRef.current.low;
+      const m = telemetryRef.current.mid;
+      const h = telemetryRef.current.high;
       if (state === 'UserSpeaking' || state === 'AssistantSpeaking') {
-        telemAmp = e * 2.2;
+        telemEnergy = e * 2.2;
+        telemLow = l * 2.2;
+        telemMid = m * 2.2;
+        telemHigh = h * 2.2;
       }
     } else if (amplitudeRef.current > 0) {
-      telemAmp = amplitudeRef.current * 0.4;
+      telemEnergy = amplitudeRef.current * 0.4;
+      telemLow = telemEnergy;
+      telemMid = telemEnergy;
+      telemHigh = telemEnergy;
     }
     if (state === 'Thinking') {
-      telemAmp = Math.sin(t * 2.6) * 0.13;
+      const pulse = Math.sin(t * 2.6) * 0.13;
+      telemEnergy = pulse;
+      telemLow = pulse;
+      telemMid = pulse;
+      telemHigh = pulse;
     }
 
+    // Smoothly transition base offset value on state changes (eliminates instant state-jump visual pops)
     const targetBase = BASE_AMP[state] ?? 0.02;
-    const targetAmp = Math.min(
-      (sleeping ? targetBase * 0.08 : targetBase) + telemAmp,
-      2.5,
-    );
-    const curAmp = ctx.sharedUni.u_amplitude.value;
-    const rate = targetAmp > curAmp ? 0.08 : 0.02;
-    ctx.sharedUni.u_amplitude.value += (targetAmp - curAmp) * rate;
-    ctx.sharedUni.u_time.value = t;
-    ctx.sharedUni.u_sleeping.value += (Number(sleeping) - ctx.sharedUni.u_sleeping.value) * 0.05;
+    const baseVal = (sleeping ? targetBase * 0.08 : targetBase);
+    if (ctx.curBaseVal === undefined) {
+      ctx.curBaseVal = baseVal;
+    }
+    ctx.curBaseVal += (baseVal - ctx.curBaseVal) * 0.06;
 
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    let themeAccent = getCSSColor('--accent', '#00dbe9');
-    let themeGlow = isLight
-      ? getCSSColor('--accent-dark', '#0891b2')
-      : themeAccent.clone().multiplyScalar(0.40);
+    // 1. Bass drives the core scale of the orb group - dynamic ceiling increased to 1.35x
+    const scaleVal = ctx.curBaseVal + telemLow;
+    const targetScale = 1.0 + Math.min(scaleVal * 0.25, 0.35);
+    
+    // Smoothly lerp the final scale to absorb sudden high-frequency telemetry spikes
+    if (ctx.curScale === undefined) {
+      ctx.curScale = targetScale;
+    }
+    ctx.curScale += (targetScale - ctx.curScale) * 0.12;
+    ctx.group.scale.set(ctx.curScale, ctx.curScale, ctx.curScale);
+
+    // 2. Mids drive the main noise deformation amplitude (u_amplitude) with Fast Attack, Slow Release
+    const targetAmp = Math.min(ctx.curBaseVal + telemMid, 2.5);
+    const curAmp = ctx.sharedUni.u_amplitude.value;
+    const rate = targetAmp > curAmp ? 0.45 : 0.04;
+    ctx.sharedUni.u_amplitude.value += (targetAmp - curAmp) * rate;
+
+    ctx.sharedUni.u_highs.value = telemHigh;
+    ctx.sharedUni.u_time.value = t;
+    ctx.sharedUni.u_sleeping.value += (Number(sleeping) - ctx.sharedUni.u_sleeping.value) * 0.08;
+
+    const themeAccent = themeRef.current.accent;
+    const themeGlow = themeRef.current.glow;
 
     if (state === 'Idle' || state === 'Interrupted') {
       ctx.tgtGlow.copy(themeGlow);
@@ -460,8 +535,9 @@ export const VoxOrb = React.memo(({
       ctx.tgtAccent.copy(themeAccent);
     }
 
-    ctx.curGlow.lerp(ctx.tgtGlow, 0.03);
-    ctx.curAccent.lerp(ctx.tgtAccent, 0.03);
+    // Response morph rate increased from 0.03 to 0.08 to match the physical scale transition
+    ctx.curGlow.lerp(ctx.tgtGlow, 0.08);
+    ctx.curAccent.lerp(ctx.tgtAccent, 0.08);
 
     ctx.sharedUni.u_colorGlow.value.copy(ctx.curGlow);
     ctx.sharedUni.u_colorAccent.value.copy(ctx.curAccent);
@@ -469,7 +545,8 @@ export const VoxOrb = React.memo(({
     ctx.outerMat.uniforms['u_colorGlow'].value.copy(ctx.curGlow);
     ctx.outerMat.uniforms['u_colorAccent'].value.copy(ctx.curAccent);
 
-    const speedMult = 1.0 + telemAmp * 2.8;
+    // 3. Treble/Highs drive rotation speed multiplier
+    const speedMult = 1.0 + Math.min(telemHigh * 3.5, 8.0);
     for (let i = 0; i < NUM_SHEETS; i++) {
       const mesh = ctx.discGroup.children[i] as THREE.Mesh;
       const anim = ctx.discAnims[i];
@@ -521,6 +598,7 @@ export const VoxOrb = React.memo(({
       u_colorGlow: { value: initGlow.clone() },
       u_colorAccent: { value: initAccent.clone() },
       u_sleeping: { value: 0.0 },
+      u_highs: { value: 0.0 },
     };
 
     const discGroup = new THREE.Group();
@@ -539,6 +617,7 @@ export const VoxOrb = React.memo(({
           u_colorGlow: sharedUni.u_colorGlow,
           u_colorAccent: sharedUni.u_colorAccent,
           u_sleeping: sharedUni.u_sleeping,
+          u_highs: sharedUni.u_highs,
           u_phase: { value: i * 1.73 + Math.random() * 2.1 },
           u_waveScale: { value: 0.38 + Math.random() * 0.48 },
           u_baseOpacity: { value: 0.11 + Math.random() * 0.28 },
@@ -638,6 +717,8 @@ export const VoxOrb = React.memo(({
       outerGeo,
       resizeObs,
       container,
+      curScale: 1.0,
+      curBaseVal: 0.02,
     };
 
     return () => {
