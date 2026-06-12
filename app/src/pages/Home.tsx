@@ -443,8 +443,8 @@ export const Home: React.FC = () => {
       {/* Sentient Field Background Energy */}
       <PipelineField state={interactionState} />
 
-      {/* ── Top-right: Status Capsule (single, clean) ──────────────────── */}
-      <div className="absolute top-4 right-5 z-30 flex items-center gap-2 pointer-events-none">
+      {/* ── Top-right: Status Capsule (single, clean, centered on mobile) ── */}
+      <div className="absolute top-[10%] md:top-4 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-5 z-30 flex items-center gap-2 pointer-events-none">
         {cpuWarning && (
           <span className="text-[9px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]/60">
             CPU: {cpuWarning.governor}
