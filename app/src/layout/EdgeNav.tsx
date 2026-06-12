@@ -11,7 +11,7 @@ const navItems = [
 
 export const EdgeNav: React.FC = () => {
   return (
-    <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.08)] bg-black/44 backdrop-blur-xl shadow-[0_10px_30px_rgba(0,0,0,0.5)] h-[56px] transition-all duration-300">
+    <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full h-[56px] bg-transparent border-transparent shadow-none transition-all duration-300">
       {navItems.map((item) => (
         <NavLink
           key={item.label}
@@ -20,7 +20,7 @@ export const EdgeNav: React.FC = () => {
           className={({ isActive }) =>
             cn(
               "relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5",
-              isActive && "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/8 border border-[rgb(var(--accent))]/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]"
+              isActive && "text-[rgb(var(--accent))] bg-transparent border-transparent shadow-none"
             )
           }
         >
@@ -52,7 +52,7 @@ export const EdgeNav: React.FC = () => {
         className={({ isActive }) =>
           cn(
             "md:hidden relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5",
-            isActive && "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/8 border border-[rgb(var(--accent))]/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]"
+            isActive && "text-[rgb(var(--accent))] bg-transparent border-transparent shadow-none"
           )
         }
         aria-label="Engine Monitor"

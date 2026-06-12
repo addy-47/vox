@@ -8,7 +8,7 @@ interface StatusCapsuleProps {
 }
 
 export const StatusCapsule: React.FC<StatusCapsuleProps> = ({ label, dotActive, testing }) => (
-  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full glass-elevated glass-base border border-[rgba(var(--accent),0.15)]">
+  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[rgb(var(--accent))]/30 bg-[rgb(var(--accent))]/10 dark:glass-elevated dark:glass-base shadow-sm">
     {testing ? (
       <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse" />
     ) : (
@@ -20,7 +20,7 @@ export const StatusCapsule: React.FC<StatusCapsuleProps> = ({ label, dotActive, 
         style={dotActive ? { animation: "pulse-slow 2.5s ease-in-out infinite" } : {}}
       />
     )}
-    <span className="text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-[rgb(var(--foreground-muted))]">
+    <span className="text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))] dark:text-[rgb(var(--foreground-muted))]">
       {testing ? "Testing" : label}
     </span>
   </div>

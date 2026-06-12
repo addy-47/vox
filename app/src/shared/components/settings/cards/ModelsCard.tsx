@@ -226,11 +226,9 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
               {parameters && ` · ${parameters}`}
             </p>
           ) : (
-            layoutMode !== "full-min" && (
-              <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-normal line-clamp-2">
-                {description}
-              </p>
-            )
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-normal line-clamp-2">
+              {description}
+            </p>
           )
         )}
       </div>
@@ -454,7 +452,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
 
   return (
-    <div className="w-full lg:w-[520px] h-auto flex flex-col bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30 text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none">
+    <div className={cn(
+      "w-full h-auto flex flex-col text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
+      layoutMode === "small"
+        ? "bg-transparent p-0"
+        : "lg:w-[520px] glass-card glass-base p-5"
+    )}>
       <style>{pulseStyles}</style>
       <div className="flex flex-col gap-4">
         
