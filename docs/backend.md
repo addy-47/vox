@@ -475,189 +475,138 @@ Partials are UI feedback only. The `Final` transcript is authoritative.
 
 ## 8. Language Model (LLM) - Tier 3
 
+---
 
+### Decoupled LLM Provider Architecture
+
+The LLM subsystem is decoupled into a **provider-based architecture**. This allows Vox to switch between local embedded models and remote HTTP/API endpoints without changing the core voice pipeline loop (`pipeline.rs`):
+
+```text
+Vox Pipeline
+    └─ LLM Worker Thread (spawn_llm_worker)
+           └─ LlmProvider Trait
+                  ├─ EmbeddedProvider (local GGUF via llama.cpp)
+                  └─ OpenAiCompatProvider (Ollama, LM Studio, vLLM, custom endpoints)
+```
 
 ---
 
+### Provider Interface
 
-### Primary Model
+Every LLM provider must implement the `LlmProvider` trait:
 
+```rust
+pub trait LlmProvider: Send + Sync {
+    /// Submit a generation request and stream tokens via channels
+    fn generate(
+        &self,
+        text: &str,
+        system_prompt: &str,
+        turn_id: u32,
+        cancel_flag: &Arc<AtomicBool>,
+        tx: &mpsc::Sender<VoxEvent>,
+    ) -> anyhow::Result<()>;
 
-* **Llama-3.2-1B-Instruct** (GGUF Q6_K, ~1.02 GB)
+    /// Returns true if the provider is healthy / reachable
+    fn health_check(&self) -> bool;
 
-* llama.cpp backend via `llama-cpp-4` crate
+    /// Returns a list of model IDs the provider can serve
+    fn list_models(&self) -> anyhow::Result<Vec<RemoteModelInfo>>;
 
-* Memory: ~970 MB RSS
-
-* TPS: 2.5–4.4 (average 3.3 on CPU)
-
-* Context window: 2048 tokens (configurable)
-
-
-
-### Alternative Models
-
-
-
-* **Gemma 4 E2B-it** (Q4_K_M, ~3.46 GB, ~9 TPS) — requires more RAM, context 4096 tok
-
-* **Gemma 4 E2B Uncensored** (Q2_K_P, ~2.30 GB)
-
-* **MiniCPM5-1B** (Q4_K_M, ~688 MB, ~6.5 TPS) — memory efficient but prompt format issues
-
-
+    /// Human-readable provider kind
+    fn kind(&self) -> ProviderKind;
+}
+```
 
 ---
-
 
 ### Worker Thread
 
+The LLM subsystem runs inside a persistent worker thread spawned via `spawn_llm_worker` that listens for generation requests and coordinates with the active provider:
 
 ```rust
-
-spawn_llm_worker(
-
-    rx: mpsc::Receiver<LlmCommand>,
-
-    model_path: PathBuf,
-
-    event_tx: mpsc::Sender<VoxEvent>,
-
+pub fn spawn_llm_worker(
+    app: tauri::AppHandle,
+    rx: std::sync::mpsc::Receiver<LlmCommand>,
+    provider: Box<dyn LlmProvider>,
+    event_tx: std::sync::mpsc::Sender<VoxEvent>,
     is_loaded: Arc<AtomicBool>,
-
-)
-
+) {
+    is_loaded.store(true, Ordering::Relaxed);
+    while let Ok(cmd) = rx.recv() {
+        match cmd {
+            LlmCommand::Generate { text, system_prompt, turn_id, cancel_flag } => {
+                if let Err(e) = provider.generate(&text, &system_prompt, turn_id, &cancel_flag, &event_tx) {
+                    let _ = event_tx.send(VoxEvent::Error { turn_id, message: e.to_string() });
+                }
+            }
+            LlmCommand::Shutdown => break,
+        }
+    }
+    is_loaded.store(false, Ordering::Relaxed);
+}
 ```
 
-
-
 ---
-
 
 ### LlmCommand Types
 
+The orchestrator communicates with the LLM worker using the following message protocol:
 
 ```rust
-
 pub enum LlmCommand {
-
     Generate {
-
         text: String,
-
         system_prompt: String,
-
         turn_id: u32,
-
         cancel_flag: Arc<AtomicBool>,
-
     },
-
     Shutdown,
-
 }
-
 ```
-
-
 
 ---
 
+### Provider Implementations
 
-### Token Streaming Loop
+#### 1. Embedded Provider (`EmbeddedProvider`)
+Uses the local `llama.cpp` C++ engine bindings (via `llama-cpp-4` crate) to load and execute GGUF models directly on the host CPU.
+* **Primary Model**: Llama-3.2-1B-Instruct (GGUF Q6_K, ~1.02 GB) which consumes ~970 MB RSS memory and runs at ~3.3 TPS on CPU.
+* **Alternative Models**: Gemma 2 2B-it (Q4_K_M, ~3.46 GB), Gemma 2 2B Uncensored (Q2_K_P, ~2.30 GB), and MiniCPM5-1B (Q4_K_M, ~688 MB).
+* **Multi-Family Formatting**: Automatically detects and formats prompt structure based on the model family (Gemma, Qwen, Llama3, Nemotron, or Unknown).
 
-
-```rust
-
-loop {
-
-    if cancel_flag.load(Ordering::Relaxed) {
-
-        ctx.clear_kv_cache();
-
-        tx.send(VoxEvent::Cancelled { turn_id });
-
-        return Ok(());
-
-    }
-
-    let token = ctx.sample_greedy();
-
-    if is_eog_token(token) { break; }
-
-    let token_str = model.token_to_piece(token);
-
-    if !cleaned.is_empty() {
-
-        tx.send(VoxEvent::LlmToken { turn_id, token: cleaned });
-
-    }
-
-    ctx.decode(&mut batch);
-
-}
-
-tx.send(VoxEvent::LlmFinished { turn_id });
-
-```
-
-
+#### 2. OpenAI-Compatible Remote Provider (`OpenAiCompatProvider`)
+Connects to remote inference servers (e.g. Ollama, LM Studio, vLLM, or custom cloud endpoints) over HTTP using a non-blocking connection client via the `reqwest` crate.
+* **Streaming & Cancellation**: Submits chat completion requests with `stream: true` and processes chunks as they arrive. Continuously polls the `cancel_flag` to abort the HTTP request instantly when barge-in is triggered.
+* **Model Discovery**: Dynamically queries the standard `/v1/models` endpoint (or `/api/tags` for Ollama) to discover and list available models.
 
 ---
 
+### Language Detection & Prompt Formatting
 
-### Prompt Format (Llama 3.2 Instruct)
-
-
-
+Before dispatching to the provider, the pipeline formats the user query and system prompt:
+* **Language Detection**: The `is_devanagari(text)` function checks if the transcript contains Devanagari Unicode characters (range U+0900–U+097F). If detected, it routes Hindi prompts; otherwise, English prompts.
+* **Emotion Tags**: Emotion tags `<laugh>`, `<breath>`, and `<sigh>` are appended to the system prompt to guide the LLM's vocal emotional markers.
+* **Template Routing**: The `ModelFamily` helper generates the correct prompt layout matching the loaded model’s spec:
 ```text
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
-<|begin_of_text|>
+{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
 
-<|start_header_id|>system<|end_header_id|>
-
-{system_prompt}<|eot_id|>
-
-<|start_header_id|>user<|end_header_id|>
-
-{user_transcript}<|eot_id|>
-
-<|start_header_id|>assistant<|end_header_id|>
-
+{user_transcript}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 ```
-
-
-
-### Language Detection
-
-Before generation, the pipeline detects whether to use English or Hindi prompts:
-
-- `is_devanagari(text)` — checks for Devanagari Unicode range U+0900–U+097F
-
-- Hindi prompt used if Devanagari detected, otherwise English
-
-- Emotion tags `<laugh>`, `<breath>`, `<sigh>` are appended to system prompt
 
 ---
 
 ### Tag Stripping (Accumulated-Buffer + Delta Emission)
 
-v0.8.2+: The LLM token stream strips emotion tags (`<laugh>`, `<breath>`, `<sigh>`) before
-passing text to TTS — TTS cannot handle raw XML. The algorithm uses three safeguards:
-
-1. **Accumulated-buffer stripping**: Tags removed from the full accumulated text, not
-   individual tokens. This prevents partial-tag artifacts when a tag spans token boundaries.
-2. **Delta emission**: Only the *difference* between the old and new cleaned text is emitted
-   to the event bus. This preserves the per-token event cadence for the frontend.
-3. **Partial-tag holdback**: `partial_tag_len()` detects incomplete tags at the buffer's
-   end (e.g. `"<lau"` from buffer `"...something <lau"`) and holds them back from TTS
-   until the tag completes or proves non-tag. Uses `char_indices()` (not byte indices) to
-   safely slice multi-byte UTF-8 — critical for Devanagari text.
-4. **Think-block suppression**: `skip_think_tokens` flag suppresses content inside
-   `[think]`...`[/think]` blocks, which some model families emit as chain-of-thought.
-
+v0.8.2+: The LLM token stream strips emotion tags (`<laugh>`, `<breath>`, `<sigh>`) before passing text to the TTS engine to prevent raw tags from being read aloud:
+1. **Accumulated-buffer stripping**: Tags are removed from the full accumulated text instead of individual token slices, avoiding partial-tag leakage.
+2. **Delta emission**: Emits only the differences between current and historical cleaned strings, maintaining the per-token display cadence.
+3. **Partial-tag holdback**: The `partial_tag_len()` helper detects incomplete tags at the buffer end (e.g. `"<lau"`) using `char_indices()` to safely handle multi-byte UTF-8, holding them back until they resolve or complete.
+4. **Think-block suppression**: Suppresses internal chain-of-thought blocks enclosed in `<think>...</think>` or `[think]...[/think]` tags.
 ```rust
-// llama_cpp.rs: tag stripping in the token generation loop
+// tag stripping in the token generation / cleaning loop
 let mut cleaned = full_accumulated.clone();
 for tag in &["<laugh>", "<breath>", "<sigh>"] {
     cleaned = cleaned.replace(tag, "");
@@ -1468,10 +1417,9 @@ effects across VAD, STT, TTS, UI, telemetry, and state management.
 
 | Phase | Scope |
 |-------|-------|
-| **v0.8.3** | LLM provider architecture (current) |
-| **v0.8.4** | STT provider architecture (same pattern) |
-| **v0.8.5** | TTS provider architecture (same pattern) |
-| **v0.8.5 → v0.9.0** | Cloud providers (OpenAI, Gemini, Anthropic, etc.) |
+| **v0.8.4** | LLM provider architecture & remote OpenAI compatibility (current) |
+| **v0.8.5** | Cloud LLM integration (direct APIs with keys for OpenAI, Gemini, Anthropic, etc.) |
+| **v0.8.6 → v0.9.0** | Cloud Realtime voice-to-voice (full-duplex streaming via OpenAI/Gemini Realtime) |
 
 ### Design Principle
 

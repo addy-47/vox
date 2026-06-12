@@ -15,7 +15,7 @@ use crate::ipc::tray::{
     update_interaction_mode, show_main_window, toggle_hud_visibility
 };
 use crate::ipc::history::{get_transcript_history, commit_session_to_history, get_sessions, get_turns, delete_session};
-use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog};
+use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog, check_llm_provider_health, list_remote_llm_models};
 use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
@@ -405,6 +405,8 @@ pub fn run() {
             show_main_window,
             request_boot_state,
             request_model_catalog,
+            check_llm_provider_health,
+            list_remote_llm_models,
             get_settings,
             update_theme,
             update_setting,

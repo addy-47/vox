@@ -5,9 +5,10 @@ import { listen } from "@tauri-apps/api/event";
 import { 
   Brain, Volume2, Database, Trash2,
   Languages, Activity, Sparkles, Check, ArrowLeft,
-  Download, RefreshCw, Info
+  Download, RefreshCw, Info, AlertCircle, Network
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { RemoteModelInfo } from "@/store/settingsStore";
 
 interface ModelStatus {
   step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
@@ -252,7 +253,7 @@ interface ModelsCardProps {
 
 export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) => {
   void layoutMode;
-  const { draftSettings, updateDraft, modelCatalog } = useSettings();
+  const { settings, draftSettings, updateDraft, modelCatalog } = useSettings();
   const [downloadStatuses, setDownloadStatuses] = useState<Record<string, ModelStatus>>({});
   const [modelPresence, setModelPresence] = useState<Record<string, boolean>>({});
   const [activePipelineTab, setActivePipelineTab] = useState<"vad" | "asr" | "translit" | "llm" | "tts">("llm");
@@ -260,6 +261,35 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [outdatedModels, setOutdatedModels] = useState<string[]>([]);
   const [manifest, setManifest] = useState<VoxManifest | null>(null);
+
+  // Remote LLM models catalog live state
+  const [remoteModels, setRemoteModels] = useState<RemoteModelInfo[]>([]);
+  const [loadingRemoteModels, setLoadingRemoteModels] = useState(false);
+  const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
+
+  const provider = settings?.llm?.provider;
+  const isRemoteLlm = provider?.kind === "open_ai_compat";
+
+  useEffect(() => {
+    if (activePipelineTab === "llm" && activeCategoryTab === "model" && isRemoteLlm && provider) {
+      const fetchRemoteModels = async () => {
+        setLoadingRemoteModels(true);
+        setRemoteModelsError(null);
+        try {
+          const list = await invoke<RemoteModelInfo[]>("list_remote_llm_models", {
+            provider
+          });
+          setRemoteModels(list);
+        } catch (err) {
+          console.error(err);
+          setRemoteModelsError("Failed to fetch remote models list");
+        } finally {
+          setLoadingRemoteModels(false);
+        }
+      };
+      fetchRemoteModels();
+    }
+  }, [activePipelineTab, activeCategoryTab, isRemoteLlm, provider?.base_url, provider?.api_key]);
 
   const getGroupIdForFile = useCallback((fileId: string): string => {
     if (!manifest) {
@@ -736,41 +766,136 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           {activePipelineTab === "llm" && (
             <div className="space-y-4">
               {activeCategoryTab === "model" ? (
-                <div className="grid grid-cols-2 gap-2.5">
-                  {[...modelCatalog.llm].sort((a, b) => {
-                    if (selectedLlmId === a.id) return -1;
-                    if (selectedLlmId === b.id) return 1;
-                    return 0;
-                  }).map((model) => {
-                    const isSelected = selectedLlmId === model.id;
-                    const modelGroupId = model.id;
-                    const isDownloaded = modelPresence[modelGroupId];
-                    const status = downloadStatuses[modelGroupId];
+                isRemoteLlm ? (
+                  /* Remote Models Picker Panel */
+                  <div className="space-y-3 p-3 rounded-2xl bg-[rgba(var(--foreground),0.015)] border border-[rgba(var(--foreground),0.02)] hover:border-[rgba(var(--accent),0.1)] transition-all duration-300 w-full animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-[rgb(var(--foreground))]/90 text-[12px] flex items-center gap-1.5">
+                          <Network size={13} className="text-[rgb(var(--accent))]" /> Connected Server
+                        </span>
+                        <span className="text-[10px] text-[rgb(var(--foreground-muted))]/70 font-mono mt-0.5">
+                          {provider?.base_url || "No server configured"}
+                        </span>
+                      </div>
+                      {loadingRemoteModels ? (
+                        <span className="text-[10px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
+                          <RefreshCw size={10} className="animate-spin" /> Fetching...
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/60">
+                          {remoteModels.length} models available
+                        </span>
+                      )}
+                    </div>
 
-                    return (
-                      <SubModelCard
-                        key={model.id}
-                        id={modelGroupId}
-                        name={model.name}
-                        description={model.description}
-                        parameters={model.parameters}
-                        ramUsage={model.ram_usage}
-                        tradeoffs={model.tradeoffs}
-                        isDownloaded={isDownloaded}
-                        isActive={isSelected}
-                        isRequired={isGroupRequired(model.id)}
-                        layoutMode={layoutMode}
-                        onSelect={() => updateDraft("llm", "model", model.id)}
-                        confirmDeleteId={confirmDeleteId}
-                        setConfirmDeleteId={setConfirmDeleteId}
-                        downloadStatus={status}
-                        startDownload={() => startDownload(modelGroupId)}
-                        deleteModel={() => deleteModel(modelGroupId)}
-                        showTooltip={true}
-                      />
-                    );
-                  })}
-                </div>
+                    {remoteModelsError && (
+                      <div className="text-[11px] font-bold text-red-400/80 bg-red-400/5 border border-red-400/15 rounded-xl px-3 py-2 flex items-center gap-2">
+                        <AlertCircle size={12} />
+                        <span>{remoteModelsError}</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-1">
+                      {remoteModels.length === 0 ? (
+                        <div className="text-center py-6 text-[11px] text-[rgb(var(--foreground-muted))]/70">
+                          No remote models loaded. Ensure the server is online and configured in the Interaction Card.
+                        </div>
+                      ) : (
+                        remoteModels.map((model) => {
+                          const isSelected = provider?.model === model.id;
+                          return (
+                            <button
+                              key={model.id}
+                              onClick={() => {
+                                updateDraft("llm", "provider", {
+                                  ...provider,
+                                  model: model.id,
+                                });
+                              }}
+                              className={cn(
+                                "w-full text-left p-3 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3",
+                                isSelected
+                                  ? "bg-[rgba(var(--accent),0.05)] border-[rgb(var(--accent))] shadow-sm"
+                                  : "bg-[rgba(var(--foreground),0.01)] border-[rgba(var(--foreground),0.04)] hover:border-[rgba(var(--accent),0.2)]"
+                              )}
+                            >
+                              <div className="flex-1 space-y-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-[rgb(var(--foreground))]/90 text-[11px] truncate">
+                                    {model.name}
+                                  </span>
+                                  {model.quantization && (
+                                    <span className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground))]/70 border border-[rgba(var(--foreground),0.04)] leading-none">
+                                      {model.quantization}
+                                    </span>
+                                  )}
+                                  {model.family && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.08)] leading-none">
+                                      {model.family}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-[10px] text-[rgb(var(--foreground-muted))]/70">
+                                  <span className="font-mono truncate">{model.id}</span>
+                                  {model.size_bytes !== null && model.size_bytes !== undefined && (
+                                    <>
+                                      <span>•</span>
+                                      <span>{(model.size_bytes / (1024 * 1024 * 1024)).toFixed(2)} GB</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {isSelected && (
+                                <div className="w-5 h-5 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] flex items-center justify-center shrink-0">
+                                  <Check size={12} strokeWidth={3} />
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Local GGUF Card Grid */
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {[...modelCatalog.llm].sort((a, b) => {
+                      if (selectedLlmId === a.id) return -1;
+                      if (selectedLlmId === b.id) return 1;
+                      return 0;
+                    }).map((model) => {
+                      const isSelected = selectedLlmId === model.id;
+                      const modelGroupId = model.id;
+                      const isDownloaded = modelPresence[modelGroupId];
+                      const status = downloadStatuses[modelGroupId];
+
+                      return (
+                        <SubModelCard
+                          key={model.id}
+                          id={modelGroupId}
+                          name={model.name}
+                          description={model.description}
+                          parameters={model.parameters}
+                          ramUsage={model.ram_usage}
+                          tradeoffs={model.tradeoffs}
+                          isDownloaded={isDownloaded}
+                          isActive={isSelected}
+                          isRequired={isGroupRequired(model.id)}
+                          layoutMode={layoutMode}
+                          onSelect={() => updateDraft("llm", "model", model.id)}
+                          confirmDeleteId={confirmDeleteId}
+                          setConfirmDeleteId={setConfirmDeleteId}
+                          downloadStatus={status}
+                          startDownload={() => startDownload(modelGroupId)}
+                          deleteModel={() => deleteModel(modelGroupId)}
+                          showTooltip={true}
+                        />
+                      );
+                    })}
+                  </div>
+                )
               ) : (
                 /* LLM Settings */
                 <div className="space-y-4 p-1">

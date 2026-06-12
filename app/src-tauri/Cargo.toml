@@ -1,6 +1,6 @@
 [package]
 name = "Vox"
-version = "0.8.2"
+version = "0.8.4"
 description = "Vox - A modern desktop voice inference engine built for edge devices."
 authors = ["addy-47"]
 edition = "2021"
@@ -65,7 +65,7 @@ clap = { version = "4", features = ["derive"] }
 dirs = "6"
 walkdir = "2"
 sha2 = "0.10"
-reqwest = { version = "0.12", features = ["stream", "rustls-tls", "json"] }
+reqwest = { version = "0.12", features = ["stream", "rustls-tls", "json", "blocking"] }
 tokio-util = "0.7"
 futures-util = "0.3"
 zip = "2.0"

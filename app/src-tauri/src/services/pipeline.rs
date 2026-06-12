@@ -145,9 +145,9 @@ impl PipelineOrchestrator {
         log::info!("[Pipeline] Warming up LLM worker...");
         let (tx, rx) = std::sync::mpsc::channel();
 
-        let (llm_path, ctx_size, n_threads) = {
+        let (provider_config, ctx_size, n_threads) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
-            (self.llm_path.clone(), s.llm.ctx_size, s.llm.threads)
+            (s.llm.provider.clone(), s.llm.ctx_size, s.llm.threads)
         };
 
         let event_tx = self.event_tx.clone();
@@ -155,12 +155,43 @@ impl PipelineOrchestrator {
         let app_clone = app.clone();
         *lock = Some(tx);
 
+        let llm_path_clone = self.llm_path.clone();
         let handle = std::thread::Builder::new()
             .name("vox-llm-persistent".to_string())
             .spawn(move || {
-                crate::services::llm::spawn_llm_worker(
-                    app_clone, rx, llm_path, event_tx, is_loaded, ctx_size, n_threads,
-                );
+                use crate::services::llm::{LlmProvider, EmbeddedProvider, OpenAiCompatProvider};
+                use crate::core::settings::LlmProviderConfig;
+                use tauri::Emitter;
+
+                let _ = app_clone.emit(crate::core::constants::EVENT_MODEL_LOADING, "LLM");
+
+                let provider_res: Result<Box<dyn LlmProvider>, String> = match &provider_config {
+                    LlmProviderConfig::Embedded => {
+                        EmbeddedProvider::new(&llm_path_clone, ctx_size, n_threads)
+                            .map(|p| Box::new(p) as Box<dyn LlmProvider>)
+                            .map_err(|e| e.to_string())
+                    }
+                    LlmProviderConfig::OpenAiCompat { base_url, model, api_key, .. } => {
+                        let provider = OpenAiCompatProvider::new(base_url, model, api_key.as_deref());
+                        Ok(Box::new(provider) as Box<dyn LlmProvider>)
+                    }
+                };
+
+                match provider_res {
+                    Ok(provider) => {
+                        crate::services::llm::spawn_llm_worker(
+                            app_clone, rx, provider, event_tx, is_loaded,
+                        );
+                    }
+                    Err(e) => {
+                        log::error!("[LLM] CRITICAL: Failed to load provider: {}", e);
+                        let _ = app_clone.emit(
+                            crate::core::constants::EVENT_MODEL_FAILED,
+                            format!("LLM: {}", e),
+                        );
+                        is_loaded.store(false, Ordering::Relaxed);
+                    }
+                }
             })
             .map_err(|e| e.to_string())?;
 
