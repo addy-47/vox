@@ -19,6 +19,12 @@
   --field: 12, 14, 24;
   --signal: 0, 219, 233;
   --field-energy: 0.15;
+
+  --connection-glow: rgba(0, 219, 233, 0.15);
+  --connection-core: rgba(0, 219, 233, 0.45);
+  --hub-connector-active-opacity: 0.28;
+  --hub-connector-tick35-opacity: 0.22;
+  --hub-connector-tick65-opacity: 0.18;
 }
 
 /* Explicit early background to kill the flash */
@@ -27,7 +33,7 @@ html, body {
 }
 
 [data-theme='light'] {
-  --background: 248, 250, 252;
+  --background: 241, 245, 249;
   --foreground: 15, 23, 42;
   --foreground-muted: 71, 85, 105;
   --accent: 8, 145, 178;
@@ -36,12 +42,18 @@ html, body {
   --accent-foreground: 255, 255, 255;
   --card: 255, 255, 255;
   --border: 0, 0, 0;
-  --sidebar: 248, 250, 252;
+  --sidebar: 241, 245, 249;
 
   /* Light theme field & signal */
-  --field: 240, 243, 253;
+  --field: 235, 239, 248;
   --signal: 8, 145, 178;
   --field-energy: 0.08;
+
+  --connection-glow: rgba(8, 145, 178, 0.28);
+  --connection-core: rgba(8, 145, 178, 0.70);
+  --hub-connector-active-opacity: 0.50;
+  --hub-connector-tick35-opacity: 0.40;
+  --hub-connector-tick65-opacity: 0.30;
 }
 
 @layer base {
@@ -186,31 +198,37 @@ body.is-tray #root {
 
   /* ── Light Mode Overrides ── */
   [data-theme='light'] .glass-whisper {
-    background: rgba(255, 255, 255, 0.45);
-    border-color: rgba(var(--border), 0.03);
+    background: transparent;
+    border-color: rgba(var(--border), 0.08);
   }
 
   [data-theme='light'] .glass-surface {
-    background: rgba(255, 255, 255, 0.65);
-    border-color: rgba(var(--border), 0.06);
-    box-shadow: 0 8px 32px 0 rgba(15, 23, 42, 0.03);
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(var(--border), 0.10);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.02);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
   }
 
   [data-theme='light'] .glass-card {
-    background: rgba(255, 255, 255, 0.8);
-    border-color: rgba(var(--accent), 0.2);
-    border-top-color: rgba(var(--accent), 0.45);
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(var(--border), 0.12);
+    border-top: 1px solid rgba(var(--border), 0.12) !important;
     box-shadow: 
-      0 12px 40px 0 rgba(15, 23, 42, 0.05),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
+      0 12px 40px 0 rgba(0, 0, 0, 0.03),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
   }
 
   [data-theme='light'] .glass-elevated {
-    background: rgba(255, 255, 255, 0.92);
-    border-color: rgba(var(--accent), 0.3);
+    background: rgba(255, 255, 255, 0.4);
+    border-color: rgba(var(--border), 0.15);
     box-shadow: 
-      0 24px 64px 0 rgba(15, 23, 42, 0.06),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+      0 24px 64px 0 rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
   }
 
   .shimmer-text {
@@ -590,6 +608,10 @@ input[type="range"]:active::-webkit-slider-thumb {
   will-change: transform, opacity;
   animation: ripple-out var(--rp-dur, 16s) cubic-bezier(0.1, 0.4, 0.2, 1) infinite;
 }
+[data-theme='light'] .rp-ring {
+  border-width: 1.5px;
+  border-color: rgba(var(--accent), 0.75);
+}
 
 .amb-noise {
   position: absolute;
@@ -645,5 +667,11 @@ input[type="range"]:active::-webkit-slider-thumb {
 .animate-pulse-slow {
   animation: pulse-slow 3s ease-in-out infinite;
 }
+
+@keyframes reactor-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
 
 
