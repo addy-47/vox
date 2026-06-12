@@ -92,10 +92,10 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             ref={monitorBtnRef}
             onClick={() => setMonitorOpen((v) => !v)}
             className={cn(
-              "flex items-center justify-center w-11 h-11 rounded-full glass-surface glass-base transition-all duration-300 hover:scale-105 border shadow-lg shadow-[rgba(0,0,0,0.3)]",
+              "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer shadow-lg shadow-[rgba(var(--accent),0.06)] dark:shadow-[rgba(0,0,0,0.3)]",
               monitorOpen
-                ? "text-[rgb(var(--accent))] border-[rgba(var(--accent),0.5)] opacity-100 shadow-[0_0_18px_rgba(var(--accent),0.2)]"
-                : "text-[rgb(var(--accent))] border-[rgba(var(--accent),0.35)] opacity-85 hover:opacity-100"
+                ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))] shadow-[0_0_18px_rgba(var(--accent),0.2)]"
+                : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-black/35 dark:border-[rgba(var(--accent),0.35)] hover:bg-[rgb(var(--accent))]/20"
             )}
             aria-label="Engine Monitor"
             aria-expanded={monitorOpen}
@@ -121,7 +121,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
         {isSettings && (
-          <div className="hidden lg:flex fixed bottom-4 right-4 z-50 items-center gap-3 px-4 py-2.5 rounded-full border border-[rgba(var(--accent),0.08)] bg-black/44 backdrop-blur-xl shadow-lg shadow-[rgba(0,0,0,0.3)] h-[44px]">
+          <div className="hidden lg:flex fixed bottom-4 right-4 z-50 items-center gap-3 px-4 py-2.5 bg-transparent border-transparent shadow-none h-[44px]">
             <ModelStatusOverlay />
             <div className="w-px h-4 bg-[rgba(var(--accent),0.15)] mx-1" />
             <RestoreDefaultsButton />

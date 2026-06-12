@@ -92,7 +92,7 @@ const RadialNode = memo(({ domain, isActive, onSelect }: RadialNodeProps) => {
          "absolute flex flex-col items-center gap-1.5 group transition-all duration-400 z-25",
          isActive
            ? "text-[rgb(var(--accent))]"
-           : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
+           : "text-[rgb(var(--foreground-muted))] dark:text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
       )}
       style={{
         left: "50%",
@@ -107,7 +107,7 @@ const RadialNode = memo(({ domain, isActive, onSelect }: RadialNodeProps) => {
           "w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400",
           isActive
              ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)] shadow-[0_0_18px_rgba(var(--accent),0.25)]"
-             : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.08)] group-hover:border-[rgba(var(--accent),0.25)] group-hover:bg-[rgba(var(--accent),0.06)]"
+             : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.15)] dark:border-[rgba(var(--border),0.08)] group-hover:border-[rgba(var(--accent),0.25)] group-hover:bg-[rgba(var(--accent),0.06)]"
         )}
       >
         <Icon size={16} strokeWidth={isActive ? 2.5 : 1.5} />
@@ -121,31 +121,174 @@ const RadialNode = memo(({ domain, isActive, onSelect }: RadialNodeProps) => {
 });
 RadialNode.displayName = "RadialNode";
 
+// ─── Hub Connectors ────────────────────────────────────────────────────────────
+
+const HubConnectors: React.FC<{ activeDomains: DomainId[] }> = memo(({ activeDomains }) => {
+  const size = HUB_RADIUS * 2 + 120; // viewBox size
+  const cx = size / 2;
+  const cy = size / 2;
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-5 overflow-visible"
+      aria-hidden="true"
+    >
+      {DOMAINS.map((d) => {
+        const pos = polarToCartesian(d.angle, HUB_RADIUS);
+        const isActive = activeDomains.includes(d.id);
+        
+        const x1 = cx;
+        const y1 = cy;
+        const x2 = cx + pos.x;
+        const y2 = cy + pos.y;
+        
+        // Math for perpendicular ticks at fraction t:
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        
+        // Ticks at 35%
+        const t35 = 0.35;
+        const px35 = x1 + dx * t35;
+        const py35 = y1 + dy * t35;
+        const halfLen35 = isActive ? 4 : 3; // 8px total active vs 6px idle
+        const t35_1_x = px35 + nx * halfLen35;
+        const t35_1_y = py35 + ny * halfLen35;
+        const t35_2_x = px35 - nx * halfLen35;
+        const t35_2_y = py35 - ny * halfLen35;
+        
+        // Ticks at 65%
+        const t65 = 0.65;
+        const px65 = x1 + dx * t65;
+        const py65 = y1 + dy * t65;
+        const halfLen65 = isActive ? 5.5 : 4.5; // 11px total active vs 9px idle
+        const t65_1_x = px65 + nx * halfLen65;
+        const t65_1_y = py65 + ny * halfLen65;
+        const t65_2_x = px65 - nx * halfLen65;
+        const t65_2_y = py65 - ny * halfLen65;
+        
+        return (
+          <g key={d.id} className="transition-all duration-400">
+            {/* Main connector line */}
+            <line
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              className="transition-all duration-400"
+              stroke={isActive ? "rgba(var(--accent), var(--hub-connector-active-opacity, 0.55))" : "rgba(var(--accent), 0.12)"}
+              strokeWidth={isActive ? 1.5 : 1}
+              strokeDasharray={isActive ? "none" : "3 5"}
+            />
+            
+            {/* Tick marks at 35% */}
+            <line
+              x1={t35_1_x}
+              y1={t35_1_y}
+              x2={t35_2_x}
+              y2={t35_2_y}
+              className="transition-all duration-400"
+              stroke={isActive ? "rgba(var(--accent), var(--hub-connector-tick35-opacity, 0.45))" : "rgba(var(--accent), 0.25)"}
+              strokeWidth={1}
+              opacity={isActive ? 1 : 0.4}
+            />
+            
+            {/* Tick marks at 65% */}
+            <line
+              x1={t65_1_x}
+              y1={t65_1_y}
+              x2={t65_2_x}
+              y2={t65_2_y}
+              className="transition-all duration-400"
+              stroke={isActive ? "rgba(var(--accent), var(--hub-connector-tick65-opacity, 0.35))" : "rgba(var(--accent), 0.20)"}
+              strokeWidth={1}
+              opacity={isActive ? 1 : 0.4}
+            />
+            
+            {/* Active circle at node end */}
+            {isActive && (
+              <circle
+                cx={x2}
+                cy={y2}
+                r={2.5}
+                fill="rgb(var(--accent))"
+                className="transition-all duration-400"
+              />
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+});
+HubConnectors.displayName = "HubConnectors";
+
 // ─── Hub center ───────────────────────────────────────────────────────────────
 
-const HubCenter = memo(
-  ({ onClick, hasSelection }: { onClick: () => void; hasSelection: boolean }) => (
-    <button
-      onClick={onClick}
-      className={cn(
-        "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full border flex items-center justify-center transition-all duration-400 z-10",
-        hasSelection
-          ? "border-[rgba(var(--accent),0.15)] bg-[rgba(var(--accent),0.04)] cursor-pointer hover:border-[rgba(var(--accent),0.3)]"
-          : "border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.06)] cursor-default"
-      )}
-      aria-label={hasSelection ? "Clear all selections" : "Configuration hub"}
-    >
-      {/* Pulsing center dot */}
-      <span
-        className={cn(
-          "w-2 h-2 rounded-full bg-[rgb(var(--accent))] transition-all duration-400",
-          hasSelection ? "opacity-65" : "opacity-80 shadow-[0_0_10px_rgba(var(--accent),0.6)]"
-        )}
-        style={!hasSelection ? { animation: "pulse-slow 3s ease-in-out infinite" } : {}}
-      />
-    </button>
-  )
-);
+interface HubCenterProps {
+  onClick: () => void;
+  hasActiveCards: boolean;
+}
+
+const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
+  <button
+    onClick={onClick}
+    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full flex items-center justify-center transition-all duration-400 z-30 cursor-pointer"
+    aria-label={hasActiveCards ? "Clear all selections" : "Configure all domains"}
+  >
+    {/* Layer 1 (outermost): A circle ~52px diameter */}
+    <div
+      className="absolute rounded-full border border-dashed transition-all duration-400"
+      style={{
+        width: "52px",
+        height: "52px",
+        borderColor: `rgba(var(--accent), ${hasActiveCards ? 0.35 : 0.20})`,
+        animation: "border-rotate 18s linear infinite",
+        background: "transparent",
+      }}
+    />
+
+    {/* Layer 2: A circle ~38px diameter */}
+    <div
+      className="absolute rounded-full border transition-all duration-400"
+      style={{
+        width: "38px",
+        height: "38px",
+        borderColor: "rgba(var(--accent), 0.40)",
+        background: "transparent",
+        boxShadow: `inset 0 0 12px rgba(var(--accent), 0.15), 0 0 18px rgba(var(--accent), 0.10)`,
+      }}
+    />
+
+    {/* Layer 3: A circle ~22px diameter */}
+    <div
+      className="absolute rounded-full border transition-all duration-400"
+      style={{
+        width: "22px",
+        height: "22px",
+        borderColor: "rgba(var(--accent), 0.60)",
+        background: "radial-gradient(circle, rgba(var(--accent), 0.25) 0%, transparent 100%)",
+        boxShadow: "0 0 16px rgba(var(--accent), 0.35)",
+        animation: hasActiveCards ? "reactor-pulse 2.5s ease-in-out infinite" : "none",
+      }}
+    />
+
+    {/* Layer 4 (innermost dot): Circle 6px */}
+    <div
+      className="absolute rounded-full transition-all duration-400"
+      style={{
+        width: "6px",
+        height: "6px",
+        backgroundColor: "rgb(var(--accent))",
+        boxShadow: "0 0 8px rgba(var(--accent), 0.8)",
+      }}
+    />
+  </button>
+));
 HubCenter.displayName = "HubCenter";
 
 const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) => {
@@ -214,6 +357,9 @@ const unsavedStyles = `
   .has-unsaved-changes > div:first-child {
     border-bottom-left-radius: 0px !important;
     border-bottom-right-radius: 0px !important;
+    border-bottom-color: rgba(var(--accent), 0.25) !important;
+  }
+  [data-theme='dark'] .has-unsaved-changes > div:first-child {
     border-bottom-color: rgba(var(--accent), 0.1) !important;
   }
 `;
@@ -290,7 +436,7 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
                 initial={{ opacity: 0, height: 0, y: -4 }}
                 animate={{ opacity: 1, height: "auto", y: 0 }}
                 exit={{ opacity: 0, height: 0, y: -4 }}
-                className="w-full p-3 px-5 rounded-b-2xl bg-black/15 border-x border-b border-t border-[rgba(var(--accent),0.10)] backdrop-blur-md flex items-center justify-between overflow-hidden text-[11px]"
+                className="w-full p-3 px-5 rounded-b-2xl bg-black/5 dark:bg-black/15 border-x border-b border-t border-[rgba(var(--accent),0.25)] dark:border-[rgba(var(--accent),0.10)] backdrop-blur-md flex items-center justify-between overflow-hidden text-[11px]"
               >
                 {showRestartConfirm ? (
                   <>
@@ -394,6 +540,11 @@ export const Settings: React.FC = () => {
       if (activeDomains.length === 0) return;
 
       const target = e.target as HTMLElement;
+
+      // Only close if we clicked on the background of the settings page itself
+      if (!containerRef.current || !containerRef.current.contains(target)) {
+        return;
+      }
 
       const clickedInsideNodeOrCard = DOMAINS.some((domain) => {
         const nodeEl = document.getElementById(`node-${domain.id}`);
@@ -531,8 +682,8 @@ export const Settings: React.FC = () => {
     });
   }, [isCompact]);
 
-  const handleClearAll = useCallback(() => {
-    setActiveDomains([]);
+  const handleCenterClick = useCallback(() => {
+    setActiveDomains((prev) => (prev.length > 0 ? [] : DOMAINS.map((d) => d.id)));
   }, []);
 
 
@@ -587,14 +738,14 @@ export const Settings: React.FC = () => {
                   <path
                     d={pathD}
                     fill="none"
-                    stroke="rgba(var(--accent), 0.15)"
+                    stroke="var(--connection-glow)"
                     strokeWidth={4.5}
                   />
                   {/* Sharp core line */}
                   <path
                     d={pathD}
                     fill="none"
-                    stroke="rgba(var(--accent), 0.45)"
+                    stroke="var(--connection-core)"
                     strokeWidth={1.5}
                   />
                 </g>
@@ -631,6 +782,9 @@ export const Settings: React.FC = () => {
                 height: HUB_RADIUS * 2 + 100,
               }}
             >
+              {/* Hub connector lines */}
+              <HubConnectors activeDomains={activeDomains} />
+
               {/* Domain nodes */}
               {DOMAINS.map((domain) => (
                 <RadialNode
@@ -642,7 +796,7 @@ export const Settings: React.FC = () => {
               ))}
 
               {/* Center node */}
-              <HubCenter onClick={handleClearAll} hasSelection={hasSelection} />
+              <HubCenter onClick={handleCenterClick} hasActiveCards={hasSelection} />
             </div>
           </div>
 
@@ -706,7 +860,7 @@ export const Settings: React.FC = () => {
             }).map((domain) => {
               const Icon = domain.icon;
               return (
-                <div key={domain.id} className="w-full bg-black/15 border border-[rgba(var(--accent),0.05)] rounded-2xl p-4 md:p-5 shadow-sm space-y-4">
+                <div key={domain.id} className="w-full bg-black/5 dark:bg-black/15 border border-[rgba(var(--accent),0.15)] dark:border-[rgba(var(--accent),0.05)] rounded-2xl p-4 md:p-5 shadow-sm space-y-4">
                   {/* Category Header */}
                   <div className="flex items-center gap-2 px-1">
                     <div className="p-1.5 rounded-lg bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] flex items-center justify-center">

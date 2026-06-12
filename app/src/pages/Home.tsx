@@ -603,11 +603,11 @@ export const Home: React.FC = () => {
             <button
               onClick={handleEngage}
               className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/30 bg-black/35 hover:scale-105 active:scale-95 shadow-[0_4px_20px_rgba(0,0,0,0.4)]",
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/30 bg-transparent dark:bg-black/35 hover:scale-105 active:scale-95 shadow-[0_4px_20px_rgba(var(--accent),0.1)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)]",
                 isEngaged && isThinking && "engage-btn-loading border-transparent",
                 isLaunching && "animate-spin",
                 isEngaged
-                  ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.2)] bg-black/45"
+                  ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.2)] bg-[rgb(var(--accent))]/20 dark:bg-black/45"
                   : "bg-[rgb(var(--accent))]/10 hover:bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]"
               )}
               disabled={isLaunching}
@@ -641,8 +641,10 @@ export const Home: React.FC = () => {
                 ref={testButtonRef}
                 onClick={() => setTestMode(!testMode)}
                 className={cn(
-                  "flex items-center justify-center w-11 h-11 rounded-full border border-[rgba(var(--accent),0.15)] bg-black/45 hover:bg-[rgb(var(--accent))]/10 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all duration-300",
-                  testMode && "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
+                  "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 cursor-pointer shadow-lg shadow-[rgba(var(--accent),0.06)] dark:shadow-[rgba(0,0,0,0.3)]",
+                  testMode
+                    ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))] shadow-[0_0_18px_rgba(var(--accent),0.2)]"
+                    : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-black/35 dark:border-[rgba(var(--accent),0.15)] hover:bg-[rgb(var(--accent))]/20"
                 )}
                 aria-label="Test Mode"
               >

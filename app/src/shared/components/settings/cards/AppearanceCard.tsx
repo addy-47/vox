@@ -22,7 +22,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
         "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between",
         isSmall
           ? "w-full bg-transparent p-0"
-          : "w-full lg:w-[320px] bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30"
+          : "w-full lg:w-[320px] glass-card glass-base p-5"
       )}
     >
       {/* Header */}
