@@ -73,15 +73,30 @@ export const AmbientBackground = React.memo(({
 }: AmbientBackgroundProps) => {
   const cfg = MOOD_CONFIG[mood];
 
+  const [isLight, setIsLight] = React.useState(false);
+  React.useEffect(() => {
+    const checkTheme = () => {
+      setIsLight(document.documentElement.getAttribute('data-theme') === 'light');
+    };
+    checkTheme();
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const blobOpacityMultiplier = isLight ? 4.5 : 1.0;
+  const glowOpacityMultiplier = isLight ? 3.0 : 1.0;
+  const rippleOpacityMultiplier = isLight ? 2.5 : 1.0;
+
   return (
     <div
       className="amb-background-container"
       style={{
         "--origin-x": originX,
         "--origin-y": originY,
-        "--rp-opacity": cfg.rippleOpacity,
+        "--rp-opacity": cfg.rippleOpacity * rippleOpacityMultiplier,
         "--rp-dur": `${cfg.rippleDuration}s`,
-        "--glow-opacity": cfg.glowOpacity,
+        "--glow-opacity": cfg.glowOpacity * glowOpacityMultiplier,
       } as React.CSSProperties}
       aria-hidden="true"
     >
@@ -98,7 +113,7 @@ export const AmbientBackground = React.memo(({
             top: blob.y,
             width: blob.size,
             height: blob.size,
-            background: `radial-gradient(circle, rgba(var(--accent), ${cfg.blobOpacity}) 0%, transparent 68%)`,
+            background: `radial-gradient(circle, rgba(var(--accent), ${cfg.blobOpacity * blobOpacityMultiplier}) 0%, transparent 68%)`,
             animation: `${blob.animName} ${cfg.blobSpeed}s ease-in-out infinite`,
             animationDelay: `${blob.delay}s`,
             borderRadius: blob.borderRadius,

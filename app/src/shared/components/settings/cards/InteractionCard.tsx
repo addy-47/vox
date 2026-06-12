@@ -22,7 +22,7 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
         "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85",
         isSmall
           ? "w-full bg-transparent p-0"
-          : "w-full lg:w-[340px] bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30"
+          : "w-full lg:w-[340px] glass-card glass-base p-5"
       )}
     >
       {/* Header */}

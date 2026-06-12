@@ -446,12 +446,8 @@ export const VoxOrb = React.memo(({
     const isLight = document.documentElement.getAttribute('data-theme') === 'light';
     let themeAccent = getCSSColor('--accent', '#00dbe9');
     let themeGlow = isLight
-      ? themeAccent.clone()
+      ? getCSSColor('--accent-dark', '#0891b2')
       : themeAccent.clone().multiplyScalar(0.40);
-
-    if (isLight) {
-      themeAccent.lerp(ctx.whiteColor, 0.45);
-    }
 
     if (state === 'Idle' || state === 'Interrupted') {
       ctx.tgtGlow.copy(themeGlow);
