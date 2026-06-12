@@ -1,6 +1,6 @@
 # Phase 9 - Inference Expansion + Cloud Integration
 
-##  Vox v0.8.3 — LLM Provider Architecture Refactor - Objective
+##  Vox v0.8.4 — LLM Provider Architecture Refactor - Objective
 
 Refactor the current LLM implementation from a single embedded backend into a provider-based architecture.
 
@@ -71,7 +71,7 @@ Everything else becomes provider responsibility.
 
 ---
 
-## Provider Types (v0.8.3)
+## Provider Types (v0.8.4)
 
 ### Embedded
 
@@ -190,37 +190,20 @@ This prevents ripple effects across:
 
 ## Future Roadmap Alignment
 
-### v0.8.4
-
-Apply identical provider architecture to STT.
-
-Goal:
-
-```text
-Embedded STT
-Remote STT
-Future Cloud STT
-```
-
-using the same design principles established in v0.8.3.
-
----
-
 ### v0.8.5
 
-Apply identical provider architecture to TTS.
+Apply identical provider architecture to STT & TTS
 
 Goal:
 
 ```text
-Embedded TTS
-Remote TTS
-Future Cloud TTS
+Embedded STT, TTS
+Remote STT, TTS
+Future Cloud STT, TTS
 ```
 
-using the same provider model.
+using the same design principles established in v0.8.4 but this would reuqire palnning as remote option may not be practical for stt & tts 
 
----
 
 ### v0.8.5 → v0.9.0
 
@@ -237,7 +220,7 @@ Sarvam
 ElevenLabs
 ```
 
-These become provider implementations on top of the provider architecture created in v0.8.3.
+These become provider implementations on top of the provider architecture created in v0.8.4.
 
 ---
 
@@ -294,7 +277,7 @@ Examples:
 
 These bypass the traditional STT → LLM → TTS chain entirely.
 
-The provider architecture established in v0.8.3 is the foundational step that enables this future evolution without requiring another major refactor.
+The provider architecture established in v0.8.4 is the foundational step that enables this future evolution without requiring another major refactor.
 
 ---
 
@@ -320,7 +303,7 @@ The provider architecture established in v0.8.3 is the foundational step that en
 
 ## Non-Goals
 
-Not part of v0.8.3:
+Not part of v0.8.4:
 
 * Cloud provider integration
 * STT provider refactor

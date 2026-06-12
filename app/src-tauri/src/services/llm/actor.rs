@@ -1,7 +1,7 @@
-use super::llama_cpp::LlmWorker;
 use crate::core::events::VoxEvent;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use super::LlmProvider;
 
 pub enum LlmCommand {
     Generate {
@@ -16,31 +16,40 @@ pub enum LlmCommand {
 pub fn spawn_llm_worker(
     app: tauri::AppHandle,
     rx: std::sync::mpsc::Receiver<LlmCommand>,
-    model_path: std::path::PathBuf,
+    provider: Box<dyn LlmProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
     is_loaded: Arc<AtomicBool>,
-    ctx_size: u32,
-    n_threads: u32,
 ) {
     use tauri::Emitter;
-    let _ = app.emit(crate::core::constants::EVENT_MODEL_LOADING, "LLM");
+    
+    is_loaded.store(true, Ordering::Relaxed);
+    let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "LLM");
 
-    let worker = match LlmWorker::new(&model_path, ctx_size, n_threads) {
-        Ok(w) => {
-            is_loaded.store(true, Ordering::Relaxed);
-            let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "LLM");
-            w
-        }
-        Err(e) => {
-            log::error!("[LLM] CRITICAL: Failed to load model: {}", e);
-            let _ = app.emit(
-                crate::core::constants::EVENT_MODEL_FAILED,
-                format!("LLM: {}", e),
-            );
-            return;
-        }
-    };
+    log::info!("[LLM Worker] Persistent loop started.");
 
-    worker.run_loop(rx, event_tx);
+    while let Ok(cmd) = rx.recv() {
+        match cmd {
+            LlmCommand::Generate {
+                text,
+                system_prompt,
+                turn_id,
+                cancel_flag,
+            } => {
+                if let Err(e) = provider.generate(&text, &system_prompt, turn_id, &cancel_flag, &event_tx) {
+                    log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
+                    let _ = event_tx.send(VoxEvent::Error {
+                        turn_id,
+                        message: e.to_string(),
+                    });
+                }
+            }
+            LlmCommand::Shutdown => {
+                log::info!("[LLM Worker] Shutdown command received. Exiting loop.");
+                break;
+            }
+        }
+    }
+
     is_loaded.store(false, Ordering::Relaxed);
+    log::info!("[LLM Worker] Loop exited. Provider will be dropped.");
 }

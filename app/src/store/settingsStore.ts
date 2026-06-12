@@ -2,6 +2,26 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { hexToRgb } from "@/shared/lib/utils";
 
+export type PipelineMode = "modular" | "realtime";
+export type LlmProviderKind = "embedded" | "open_ai_compat";
+
+export interface LlmProviderConfig {
+  kind: LlmProviderKind;
+  base_url?: string;
+  model?: string;
+  api_key?: string;
+  provider_name?: string;
+}
+
+export interface RemoteModelInfo {
+  id: string;
+  name: string;
+  size_bytes: number | null;
+  quantization: string | null;
+  family: string | null;
+  provider_kind: string;
+}
+
 export interface ModelMetadata {
   id: string;
   name: string;
@@ -50,6 +70,7 @@ export interface VoxSettings {
     model: string;
     ctx_size: number;
     threads: number;
+    provider: LlmProviderConfig;
   };
   tts: {
     voice: number;
@@ -60,6 +81,7 @@ export interface VoxSettings {
     main_app_mode: "Passive" | "PTT";
     tray_mode: "Passive" | "PTT";
     auto_sleep_timeout: number;
+    pipeline_mode: PipelineMode;
   };
   telemetry: {
     enabled: boolean;
