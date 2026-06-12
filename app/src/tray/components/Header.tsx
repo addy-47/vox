@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         {interactionMode?.toUpperCase() === 'PTT' && (
           <button 
             onClick={(e) => { e.stopPropagation(); onTogglePtt(); }}
-            className={`p-2 rounded-lg transition-all active:scale-90 glass-base ${isPttActive ? 'text-[rgb(var(--accent))] glass-surface' : 'text-[rgb(var(--foreground))]/40 glass-whisper hover:text-[rgb(var(--foreground))]/80 hover:border-[rgb(var(--accent))]/20'}`}
+            className={`p-2 rounded-lg transition-all active:scale-90 border border-transparent ${isPttActive ? 'text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/20' : 'text-[rgb(var(--foreground))]/40 hover:text-[rgb(var(--foreground))]/80 hover:bg-[rgb(var(--foreground))]/5 hover:border-[rgb(var(--foreground))]/10'}`}
           >
             <Mic size={16} />
           </button>
@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         {hasContent && (
           <button 
             onClick={(e) => { e.stopPropagation(); onCopy(); }}
-            className="p-2 rounded-lg glass-whisper glass-base transition-all text-[rgb(var(--foreground))]/40 hover:text-[rgb(var(--accent))] hover:border-[rgb(var(--accent))]/20 active:scale-90"
+            className="p-2 rounded-lg border border-transparent transition-all text-[rgb(var(--foreground))]/40 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/5 hover:border-[rgb(var(--foreground))]/10 active:scale-90"
             aria-label="Copy to Clipboard"
           >
             {copied ? <Check size={16} /> : <Copy size={16} />}
@@ -58,7 +58,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
 
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="p-2 rounded-lg glass-whisper glass-base transition-all text-[rgb(var(--foreground))]/30 hover:text-[rgb(var(--foreground))]/80 hover:border-[rgb(var(--foreground))]/20 active:scale-90"
+          className="p-2 rounded-lg border border-transparent transition-all text-[rgb(var(--foreground))]/30 hover:text-[rgb(var(--foreground))]/80 hover:bg-[rgb(var(--foreground))]/5 hover:border-[rgb(var(--foreground))]/10 active:scale-90"
           aria-label="Close & Commit Session"
         >
           <X size={16} />

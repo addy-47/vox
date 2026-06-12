@@ -445,11 +445,17 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     };
 
     let playback_energy = state.latest_playback_energy.clone();
+    let playback_low = state.latest_playback_low.clone();
+    let playback_mid = state.latest_playback_mid.clone();
+    let playback_high = state.latest_playback_high.clone();
 
     let playback_engine = match PlaybackEngine::new(
         std::sync::Arc::clone(&state.pipeline.playback_active),
         std::sync::Arc::clone(&state.pipeline.cancel_flag),
         Arc::clone(&playback_energy),
+        Arc::clone(&playback_low),
+        Arc::clone(&playback_mid),
+        Arc::clone(&playback_high),
         std::sync::Arc::clone(&state.pipeline.playback_underruns),
         std::sync::Arc::clone(&state.pipeline.is_assistant_speaking),
     ) {

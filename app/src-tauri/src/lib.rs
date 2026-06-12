@@ -96,7 +96,13 @@ pub fn run() {
             // ── 0.6 Telemetry Aggregator ───────────────────────────────────────────
             let latest_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_vad_prob = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_low = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_mid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_high = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_playback_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_playback_low = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_playback_mid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_playback_high = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_sys_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_sys_ram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_vox_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
@@ -115,6 +121,9 @@ pub fn run() {
             let (telemetry_worker, telemetry_tx) = crate::monitoring::aggregator::TelemetryAggregator::new(
                 std::sync::Arc::clone(&latest_energy),
                 std::sync::Arc::clone(&latest_vad_prob),
+                std::sync::Arc::clone(&latest_low),
+                std::sync::Arc::clone(&latest_mid),
+                std::sync::Arc::clone(&latest_high),
                 std::sync::Arc::clone(&latest_sys_cpu),
                 std::sync::Arc::clone(&latest_sys_ram),
                 std::sync::Arc::clone(&latest_vox_cpu),
@@ -140,7 +149,13 @@ pub fn run() {
                 telemetry_tx,
                 latest_energy,
                 latest_vad_prob,
+                latest_low,
+                latest_mid,
+                latest_high,
                 latest_playback_energy,
+                latest_playback_low,
+                latest_playback_mid,
+                latest_playback_high,
                 latest_sys_cpu,
                 latest_sys_ram,
                 latest_vox_cpu,

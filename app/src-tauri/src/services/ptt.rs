@@ -189,6 +189,9 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
                 let _ = engine.telemetry_tx.send(crate::monitoring::aggregator::TelemetryEvent::AudioEnergy {
                     energy: gated_energy,
                     vad_prob: 0.0,
+                    low: gated_energy,
+                    mid: gated_energy,
+                    high: gated_energy,
                 });
             }
         }

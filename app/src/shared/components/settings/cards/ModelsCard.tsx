@@ -91,7 +91,6 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
   isDownloaded,
   isActive,
   isRequired,
-  layoutMode,
   onSelect,
   confirmDeleteId,
   setConfirmDeleteId,
