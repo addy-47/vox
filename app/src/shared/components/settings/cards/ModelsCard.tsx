@@ -56,7 +56,198 @@ const pulseStyles = `
   animation: premium-pulse-purple 2s infinite ease-in-out;
   border-width: 1px !important;
 }
+.tooltip-container:hover .tooltip-content {
+  display: block !important;
+}
 `;
+
+interface SubModelCardProps {
+  id: string;
+  name: string;
+  description: string;
+  parameters: string;
+  ramUsage?: string;
+  tradeoffs?: string;
+  isDownloaded: boolean;
+  isActive: boolean;
+  isRequired: boolean;
+  layoutMode: "full-max" | "full-min" | "small";
+  onSelect: () => void;
+  confirmDeleteId: string | null;
+  setConfirmDeleteId: (id: string | null) => void;
+  downloadStatus?: { step: string; progress: number };
+  startDownload: () => void;
+  deleteModel: () => void;
+  showTooltip?: boolean;
+}
+
+const SubModelCard: React.FC<SubModelCardProps> = ({
+  id,
+  name,
+  description,
+  parameters,
+  ramUsage,
+  tradeoffs,
+  isDownloaded,
+  isActive,
+  isRequired,
+  layoutMode,
+  onSelect,
+  confirmDeleteId,
+  setConfirmDeleteId,
+  downloadStatus,
+  startDownload,
+  deleteModel,
+  showTooltip = false,
+}) => {
+  const isConfirmingDelete = confirmDeleteId === id;
+
+  const renderAction = () => {
+    if (!isDownloaded) {
+      if (downloadStatus) {
+        return (
+          <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold shrink-0">
+            {Math.round(downloadStatus.progress)}%
+          </span>
+        );
+      }
+      return (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            startDownload();
+          }}
+          className="px-2.5 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shadow shrink-0 hover:scale-[1.02] active:scale-95 transition-all"
+        >
+          Get
+        </button>
+      );
+    }
+
+    if (isRequired) return null;
+
+    if (isConfirmingDelete) {
+      return (
+        <div className="flex items-center gap-1 transition-all duration-300 shrink-0">
+          <span className="text-[10px] text-red-500 font-bold uppercase tracking-wider mr-0.5">Delete?</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteModel();
+              setConfirmDeleteId(null);
+            }}
+            className="p-1 rounded-lg bg-red-500/20 text-red-500 hover:bg-red-500/35 transition-colors border border-red-500/30 flex items-center justify-center"
+            aria-label="Confirm Delete"
+          >
+            <Check size={11} className="font-bold" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmDeleteId(null);
+            }}
+            className="p-1 rounded-lg bg-[rgb(var(--foreground))]/[0.05] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/[0.08] transition-colors border border-[rgba(var(--border),0.1)] flex items-center justify-center"
+            aria-label="Cancel"
+          >
+            <ArrowLeft size={11} />
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setConfirmDeleteId(id);
+        }}
+        className="p-1.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-colors shrink-0"
+        aria-label="Delete weights"
+      >
+        <Trash2 size={12} />
+      </button>
+    );
+  };
+
+  const hasTooltip = showTooltip && !!(description || parameters || ramUsage || tradeoffs);
+
+  return (
+    <div
+      onClick={() => {
+        if (isDownloaded && !isActive) {
+          onSelect();
+        }
+      }}
+      className={cn(
+        "p-4 rounded-lg border transition-all duration-300 flex flex-col justify-between gap-2.5 glass-whisper glass-base min-h-[105px]",
+        isDownloaded && !isActive && "cursor-pointer hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.02)]",
+        isActive && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
+      )}
+    >
+      {/* Top Section */}
+      <div className="space-y-0.5">
+        <div className="flex items-start justify-between gap-2">
+          <span className="text-[12px] font-bold text-[rgb(var(--foreground))] truncate max-w-[170px]" title={name}>
+            {name}
+          </span>
+          
+          {hasTooltip && (
+            <div className="relative tooltip-container inline-block shrink-0 mt-0.5">
+              <Info size={12} className="text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
+              <div className="absolute right-full top-0 mr-2 hidden tooltip-content w-52 p-2.5 rounded-lg bg-black/95 border border-[rgba(var(--accent),0.25)] text-[11px] text-[rgb(var(--foreground))]/90 shadow-2xl leading-normal z-50">
+                <div className="space-y-1">
+                  <div className="flex justify-between border-b border-white/5 pb-0.5 mb-1 font-bold">
+                    <span className="text-[9px] text-[rgb(var(--accent))] uppercase tracking-wider">Specs</span>
+                    <span className="font-mono text-[9px] text-zinc-400">{parameters}</span>
+                  </div>
+                  {description && <div className="text-[10px] text-[rgb(var(--foreground))]/80 leading-normal mb-1">{description}</div>}
+                  {ramUsage && (
+                    <div className="text-[9px] text-[rgb(var(--foreground-muted))]/70 font-mono">
+                      RAM: {ramUsage}
+                    </div>
+                  )}
+                  {tradeoffs && (
+                    <div className="text-[9px] text-[rgb(var(--foreground-muted))]/70 italic border-t border-white/5 pt-1 mt-1 leading-normal">
+                      {tradeoffs}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Subtext metadata */}
+        {description && (
+          !showTooltip ? (
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-normal">
+              {description}
+              {ramUsage && ` · RAM: ${ramUsage}`}
+              {parameters && ` · ${parameters}`}
+            </p>
+          ) : (
+            layoutMode !== "full-min" && (
+              <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-normal line-clamp-2">
+                {description}
+              </p>
+            )
+          )
+        )}
+      </div>
+
+      {/* Bottom Section */}
+      <div className="flex items-center justify-between pt-1.5 border-t border-[rgba(var(--border),0.05)] h-6 shrink-0">
+        <span className={cn(
+          "text-[11px] font-bold uppercase tracking-wider",
+          isActive ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/70"
+        )}>
+          {isActive ? "Active" : "Ready"}
+        </span>
+        {renderAction()}
+      </div>
+    </div>
+  );
+};
 
 interface ModelsCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -96,77 +287,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     return group ? group.files.some(f => f.required) : false;
   }, [manifest]);
 
-  const renderDeleteControl = (modelId: string, className?: string, isPurgeLink = false) => {
-    if (confirmDeleteId === modelId) {
-      return (
-        <div className="flex items-center gap-1.5 transition-all duration-300">
-          <span className="text-[11px] text-[rgb(var(--foreground-muted))]/80 uppercase font-bold tracking-wider mr-1">Confirm?</span>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              deleteModel(modelId);
-              setConfirmDeleteId(null);
-            }}
-            className="p-1 rounded-lg bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/35 transition-colors border border-[rgb(var(--accent))]/30 flex items-center justify-center"
-            aria-label="Yes, Delete"
-          >
-            <Check size={11} className="font-bold" />
-          </button>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirmDeleteId(null);
-            }}
-            className="p-1 rounded-lg bg-[rgb(var(--foreground))]/[0.05] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/[0.08] transition-colors border border-[rgba(var(--border),0.1)] flex items-center justify-center"
-            aria-label="Cancel"
-          >
-            <ArrowLeft size={11} />
-          </button>
-        </div>
-      );
-    }
 
-    if (isPurgeLink) {
-      return (
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            setConfirmDeleteId(modelId);
-          }}
-          className="text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))]/85 text-[11px] font-bold uppercase tracking-wider transition-colors"
-        >
-          Purge
-        </button>
-      );
-    }
-
-    if (className === "icon-only") {
-      return (
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            setConfirmDeleteId(modelId);
-          }}
-          className="p-1.5 rounded-lg bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/20 hover:bg-[rgb(var(--accent))]/25 transition-colors"
-          aria-label="Purge Weights"
-        >
-          <Trash2 size={12} />
-        </button>
-      );
-    }
-
-    return (
-      <button 
-        onClick={(e) => {
-          e.stopPropagation();
-          setConfirmDeleteId(modelId);
-        }}
-        className="px-3 py-1.5 rounded-xl bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/20 hover:bg-[rgb(var(--accent))]/20 transition-all font-bold uppercase tracking-wider text-[11px]"
-      >
-        Delete Weights
-      </button>
-    );
-  };
 
   const checkOutdated = useCallback(async () => {
     try {
@@ -331,44 +452,47 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     );
   };
 
-  const renderSubTabHeader = () => (
-    <div className="flex glass-whisper glass-base p-0.5 rounded-xl mb-2.5 shrink-0">
-      <button
-        onClick={() => setActiveCategoryTab("model")}
-        className={cn(
-          "py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300 text-center w-1/2",
-          activeCategoryTab === "model" 
-            ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
-            : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-        )}
-      >
-        Model
-      </button>
-      <button
-        onClick={() => setActiveCategoryTab("settings")}
-        className={cn(
-          "py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300 text-center w-1/2",
-          activeCategoryTab === "settings" 
-            ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md" 
-            : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-        )}
-      >
-        Settings
-      </button>
-    </div>
-  );
 
   return (
-    <div className="w-full lg:w-[520px] lg:h-[330px] flex flex-col bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30 text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none">
+    <div className="w-full lg:w-[520px] h-auto flex flex-col bg-transparent lg:bg-black/15 lg:backdrop-blur-md border-0 lg:border border-[rgba(var(--accent),0.10)] rounded-none lg:rounded-2xl p-0 lg:p-5 shadow-none lg:shadow-xl shadow-black/30 text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none">
       <style>{pulseStyles}</style>
       <div className="flex flex-col gap-4">
         
         {/* Header */}
-        <div className="flex items-center gap-2 mb-1 shrink-0">
-          <Database className="text-[rgb(var(--accent))]" size={16} />
-          <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
-            Model Hub
-          </span>
+        <div className="flex items-center justify-between mb-1 shrink-0">
+          <div className="flex items-center gap-2">
+            <Database className="text-[rgb(var(--accent))]" size={16} />
+            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+              Model Hub
+            </span>
+          </div>
+          {/* Small Category Tabs */}
+          {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
+            <div className="flex glass-whisper glass-base p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
+              <button
+                onClick={() => setActiveCategoryTab("model")}
+                className={cn(
+                  "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                  activeCategoryTab === "model"
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+                    : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                )}
+              >
+                Model
+              </button>
+              <button
+                onClick={() => setActiveCategoryTab("settings")}
+                className={cn(
+                  "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                  activeCategoryTab === "settings"
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+                    : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                )}
+              >
+                Settings
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Topology Pipeline Map */}
@@ -477,89 +601,45 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         </div>
 
         {/* Workspace Detail Panel */}
-        <div className="flex-1 flex flex-col glass-whisper glass-base rounded-xl p-3 relative min-h-0 overflow-y-auto custom-scrollbar">
-          
-          {/* TAB 1: SILENCE DETECTION (VAD) */}
+        <div className="max-h-[190px] h-auto w-full flex flex-col glass-whisper glass-base rounded-xl p-3 relative overflow-y-auto custom-scrollbar">
+                   {/* TAB 1: SILENCE DETECTION (VAD) */}
           {activePipelineTab === "vad" && (
             <div className="space-y-3">
-              {renderSubTabHeader()}
-
               {activeCategoryTab === "model" ? (
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Option 1: Earshot */}
-                  <div 
-                    onClick={() => updateDraft("vad", "vad_backend", "earshot")}
-                    className={cn(
-                      "p-3 rounded-lg border transition-all duration-300 cursor-pointer flex flex-col justify-between h-28 glass-whisper glass-base",
-                      activeVadBackend === "earshot" && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
-                    )}
-                  >
-                    <div>
-                      <div className="text-[12px] font-bold text-[rgb(var(--foreground))] flex items-center justify-between">
-                        <span>Earshot (Built-in)</span>
-                        {activeVadBackend === "earshot" ? (
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-1.5 py-0.5 rounded border border-[rgb(var(--accent))]/10">Active</span>
-                        ) : (
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75 bg-[rgb(var(--foreground))]/5 px-1.5 py-0.5 rounded">Ready</span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 mt-1 leading-normal">
-                        Pure Rust voice detection. Embedded weights, runs instantly with zero CPU load.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Option 2: TenVAD */}
-                  <div 
-                    onClick={() => updateDraft("vad", "vad_backend", "ten_vad")}
-                    className={cn(
-                      "p-3 rounded-lg border transition-all duration-300 cursor-pointer flex flex-col justify-between h-28 glass-whisper glass-base",
-                      activeVadBackend === "ten_vad" && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
-                    )}
-                  >
-                    <div>
-                      <div className="text-[12px] font-bold text-[rgb(var(--foreground))] flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <span>TenVAD Engine</span>
-                          {outdatedModels.includes("ten_vad") && (
-                            <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update Available</span>
-                          )}
-                        </span>
-                        {activeVadBackend === "ten_vad" ? (
-                          modelPresence["ten_vad"] ? (
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-1.5 py-0.5 rounded border border-[rgb(var(--accent))]/10">Active</span>
-                          ) : (
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]/75 bg-[rgb(var(--accent))]/5 px-1.5 py-0.5 rounded border border-[rgb(var(--accent))]/10">Missing</span>
-                          )
-                        ) : (
-                          modelPresence["ten_vad"] ? (
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75 bg-[rgb(var(--foreground))]/5 px-1.5 py-0.5 rounded">Ready</span>
-                          ) : (
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]/75 bg-[rgb(var(--accent))]/5 px-1.5 py-0.5 rounded border border-[rgb(var(--accent))]/10">Missing</span>
-                          )
-                        )}
-                      </div>
-                      <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 mt-1 leading-normal">
-                        ONNX-based voice detector. Requires downloading auxiliary neural files.
-                      </p>
-                    </div>
-                    
-                    {activeVadBackend === "ten_vad" && !modelPresence["ten_vad"] && (
-                      <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-[rgba(var(--border),0.05)]">
-                        <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70 font-bold uppercase tracking-wider">Deploy Weights</span>
-                        {downloadStatuses["ten_vad"] ? (
-                          <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["ten_vad"].progress)}%</span>
-                        ) : (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); startDownload("ten_vad"); }}
-                            className="px-2.5 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shadow"
-                          >
-                            Get
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <SubModelCard
+                    id="earshot"
+                    name="Earshot (Built-in)"
+                    description="Pure Rust voice detection. Embedded weights, runs instantly with zero CPU load."
+                    parameters="Built-in"
+                    ramUsage="0 MB"
+                    isDownloaded={true}
+                    isActive={activeVadBackend === "earshot"}
+                    isRequired={true}
+                    layoutMode={layoutMode}
+                    onSelect={() => updateDraft("vad", "vad_backend", "earshot")}
+                    confirmDeleteId={confirmDeleteId}
+                    setConfirmDeleteId={setConfirmDeleteId}
+                    startDownload={() => {}}
+                    deleteModel={() => {}}
+                  />
+                  <SubModelCard
+                    id="ten_vad"
+                    name="TenVAD Engine"
+                    description="ONNX-based voice detector. Requires downloading auxiliary neural files."
+                    parameters="ONNX"
+                    ramUsage="~2 MB"
+                    isDownloaded={modelPresence["ten_vad"]}
+                    isActive={activeVadBackend === "ten_vad"}
+                    isRequired={false}
+                    layoutMode={layoutMode}
+                    onSelect={() => updateDraft("vad", "vad_backend", "ten_vad")}
+                    confirmDeleteId={confirmDeleteId}
+                    setConfirmDeleteId={setConfirmDeleteId}
+                    downloadStatus={downloadStatuses["ten_vad"]}
+                    startDownload={() => startDownload("ten_vad")}
+                    deleteModel={() => deleteModel("ten_vad")}
+                  />
                 </div>
               ) : (
                 /* VAD Settings */
@@ -593,67 +673,32 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           {activePipelineTab === "asr" && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2.5">
-                {[...modelCatalog.asr].sort((a, b) => {
-                  if (draftSettings.asr.model === a.id) return -1;
-                  if (draftSettings.asr.model === b.id) return 1;
-                  return 0;
-                }).map((model) => {
+                {modelCatalog.asr.map((model) => {
                   const isSelected = draftSettings.asr.model === model.id;
                   const modelGroupId = model.id;
                   const isDownloaded = modelPresence[modelGroupId];
                   const status = downloadStatuses[modelGroupId];
 
                   return (
-                    <div 
+                    <SubModelCard
                       key={model.id}
-                      onClick={() => updateDraft("asr", "model", model.id)}
-                      className={cn(
-                        "p-3 rounded-lg border transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2.5 glass-whisper glass-base",
-                        isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
-                      )}
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[12px] font-bold text-[rgb(var(--foreground))]">{model.name}</span>
-                          <span className="text-[11px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-1.5 py-0.5 rounded font-normal">{model.parameters}</span>
-                          {outdatedModels.includes(modelGroupId) && (
-                            <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update</span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-normal">
-                          {model.description}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1.5 border-t border-[rgba(var(--border),0.05)] h-6">
-                        <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70 font-bold uppercase tracking-wider">
-                          {isSelected ? "Active Pipeline" : "Ready"}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {isDownloaded ? (
-                            <>
-                              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded border border-[rgb(var(--accent))]/10">
-                                Ready
-                              </span>
-                              {!isGroupRequired(model.id) && (
-                                renderDeleteControl(modelGroupId, "icon-only")
-                              )}
-                            </>
-                          ) : (
-                            status ? (
-                              <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(status.progress)}%</span>
-                            ) : (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); startDownload(modelGroupId); }}
-                                className="px-2.5 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shadow"
-                              >
-                                Get
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                      id={modelGroupId}
+                      name={model.name}
+                      description={model.description}
+                      parameters={model.parameters}
+                      ramUsage={model.ram_usage}
+                      tradeoffs={model.tradeoffs}
+                      isDownloaded={isDownloaded}
+                      isActive={isSelected}
+                      isRequired={isGroupRequired(model.id)}
+                      layoutMode={layoutMode}
+                      onSelect={() => updateDraft("asr", "model", model.id)}
+                      confirmDeleteId={confirmDeleteId}
+                      setConfirmDeleteId={setConfirmDeleteId}
+                      downloadStatus={status}
+                      startDownload={() => startDownload(modelGroupId)}
+                      deleteModel={() => deleteModel(modelGroupId)}
+                    />
                   );
                 })}
               </div>
@@ -663,43 +708,24 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           {/* TAB 3: ROMAN TRANSLITERATION */}
           {activePipelineTab === "translit" && (
             <div className="space-y-4">
-              <div className="p-3 rounded-lg border glass-whisper glass-base space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="text-[12px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                      <span>Vox Hinglish RNN</span>
-                      {outdatedModels.includes("vox_translit_rnn") && (
-                        <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update</span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 mt-1 leading-normal">
-                      Converts Devanagari (Hindi) scripts dynamically to natural Hinglish phonetic spelling (~18MB).
-                    </p>
-                  </div>
-                  <span className={cn(
-                    "text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border",
-                    isTranslitVerified ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 border-[rgb(var(--accent))]/10" : "text-[rgb(var(--accent))]/75 bg-[rgb(var(--accent))]/5 border-[rgb(var(--accent))]/10"
-                  )}>
-                    {isTranslitVerified ? "Ready" : "Missing"}
-                  </span>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2 border-t border-[rgba(var(--border),0.05)]">
-                  {!isTranslitVerified ? (
-                    downloadStatuses["vox_translit_rnn"] ? (
-                      <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["vox_translit_rnn"].progress)}%</span>
-                    ) : (
-                      <button 
-                        onClick={() => startDownload("vox_translit_rnn")}
-                        className="px-3 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shadow transition-all"
-                      >
-                        Download
-                      </button>
-                    )
-                  ) : (
-                    renderDeleteControl("vox_translit_rnn")
-                  )}
-                </div>
+              <div className="grid grid-cols-1 gap-3">
+                <SubModelCard
+                  id="vox_translit_rnn"
+                  name="Vox Hinglish RNN"
+                  description="Converts Devanagari (Hindi) scripts dynamically to natural Hinglish phonetic spelling (~18MB)."
+                  parameters="18 MB"
+                  ramUsage="~18 MB"
+                  isDownloaded={isTranslitVerified}
+                  isActive={true}
+                  isRequired={false}
+                  layoutMode={layoutMode}
+                  onSelect={() => {}}
+                  confirmDeleteId={confirmDeleteId}
+                  setConfirmDeleteId={setConfirmDeleteId}
+                  downloadStatus={downloadStatuses["vox_translit_rnn"]}
+                  startDownload={() => startDownload("vox_translit_rnn")}
+                  deleteModel={() => deleteModel("vox_translit_rnn")}
+                />
               </div>
             </div>
           )}
@@ -707,8 +733,6 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           {/* TAB 4: AI REASONING (LLM) */}
           {activePipelineTab === "llm" && (
             <div className="space-y-4">
-              {renderSubTabHeader()}
-
               {activeCategoryTab === "model" ? (
                 <div className="grid grid-cols-2 gap-2.5">
                   {[...modelCatalog.llm].sort((a, b) => {
@@ -722,66 +746,26 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                     const status = downloadStatuses[modelGroupId];
 
                     return (
-                      <div 
+                      <SubModelCard
                         key={model.id}
-                        onClick={() => updateDraft("llm", "model", model.id)}
-                        className={cn(
-                          "p-3 rounded-lg border transition-all duration-300 cursor-pointer flex flex-col justify-between gap-2.5 glass-whisper glass-base relative",
-                          isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
-                        )}
-                      >
-                        <div className="space-y-0.5 relative pr-5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[12px] font-bold text-[rgb(var(--foreground))]">{model.name}</span>
-                            <span className="text-[11px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-1.5 py-0.5 rounded font-normal">{model.parameters}</span>
-                            {outdatedModels.includes(modelGroupId) && (
-                              <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update</span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-normal">
-                            {model.description}
-                          </p>
-                          
-                          {/* Hover Tooltip for tradeoffs */}
-                          {model.tradeoffs && (
-                            <div className="absolute top-0.5 right-0 group/tooltip">
-                              <Info size={12} className="text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
-                              <div className="absolute right-full mr-2 -top-1 hidden group-hover/tooltip:block w-44 p-2 rounded-lg bg-black/95 border border-[rgba(var(--accent),0.2)] text-[11px] text-[rgb(var(--foreground))]/90 shadow-xl leading-normal z-55">
-                                {model.tradeoffs}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center justify-between pt-1.5 border-t border-[rgba(var(--border),0.05)] h-6">
-                          <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70 font-bold uppercase tracking-wider">
-                            {isSelected ? "Active Pipeline" : "Ready"}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            {isDownloaded ? (
-                              <>
-                                <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded border border-[rgb(var(--accent))]/10">
-                                  Ready
-                                </span>
-                                {!isGroupRequired(model.id) && (
-                                  renderDeleteControl(modelGroupId, "icon-only")
-                                )}
-                              </>
-                            ) : (
-                              status ? (
-                                <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(status.progress)}%</span>
-                              ) : (
-                                <button 
-                                  onClick={(e) => { e.stopPropagation(); startDownload(modelGroupId); }}
-                                  className="px-2.5 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shadow"
-                                >
-                                  Get
-                                </button>
-                              )
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                        id={modelGroupId}
+                        name={model.name}
+                        description={model.description}
+                        parameters={model.parameters}
+                        ramUsage={model.ram_usage}
+                        tradeoffs={model.tradeoffs}
+                        isDownloaded={isDownloaded}
+                        isActive={isSelected}
+                        isRequired={isGroupRequired(model.id)}
+                        layoutMode={layoutMode}
+                        onSelect={() => updateDraft("llm", "model", model.id)}
+                        confirmDeleteId={confirmDeleteId}
+                        setConfirmDeleteId={setConfirmDeleteId}
+                        downloadStatus={status}
+                        startDownload={() => startDownload(modelGroupId)}
+                        deleteModel={() => deleteModel(modelGroupId)}
+                        showTooltip={true}
+                      />
                     );
                   })}
                 </div>
@@ -847,85 +831,67 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           {/* TAB 5: VOICE SYNTHESIS (TTS) */}
           {activePipelineTab === "tts" && (
             <div className="space-y-4">
-              {renderSubTabHeader()}
-
               {activeCategoryTab === "model" ? (
                 <div className="grid grid-cols-1 gap-3">
-                  {/* Supertonic 3 Multilingual */}
-                  <div className="p-3 rounded-lg border glass-whisper glass-base flex flex-col justify-between h-28">
-                    <div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-[12px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                          <span>Supertonic 3 Multilingual</span>
-                          {outdatedModels.includes("supertonic_tts") && (
-                            <span className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 px-1 py-0.5 rounded border border-[rgb(var(--accent))]/20 animate-pulse">Update</span>
-                          )}
-                        </span>
-                        <span className={cn("w-1.5 h-1.5 rounded-full", modelPresence["supertonic_tts"] ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30")} />
-                      </div>
-                      <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 mt-1 leading-normal">
-                        31-language neural speech synthesis with 10 voices (~144MB INT8 quantized).
-                      </p>
-                    </div>
-
-                    <div className="flex justify-between items-center pt-1.5 border-t border-[rgba(var(--border),0.05)]">
-                      <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70 font-bold uppercase tracking-wider">Deploy Weights</span>
-                      {!modelPresence["supertonic_tts"] ? (
-                        downloadStatuses["supertonic_tts"] ? (
-                          <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">{Math.round(downloadStatuses["supertonic_tts"].progress)}%</span>
-                        ) : (
-                          <button onClick={() => startDownload("supertonic_tts")} className="px-2.5 py-0.5 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shadow">Get</button>
-                        )
-                      ) : (
-                        renderDeleteControl("supertonic_tts", undefined, true)
-                      )}
-                    </div>
-                  </div>
+                  <SubModelCard
+                    id="supertonic_tts"
+                    name="Supertonic 3 Multilingual"
+                    description="31-language neural speech synthesis with 10 voices (~144MB INT8 quantized)."
+                    parameters="144 MB"
+                    ramUsage="~144 MB"
+                    isDownloaded={isTtsVerified}
+                    isActive={true}
+                    isRequired={false}
+                    layoutMode={layoutMode}
+                    onSelect={() => {}}
+                    confirmDeleteId={confirmDeleteId}
+                    setConfirmDeleteId={setConfirmDeleteId}
+                    downloadStatus={downloadStatuses["supertonic_tts"]}
+                    startDownload={() => startDownload("supertonic_tts")}
+                    deleteModel={() => deleteModel("supertonic_tts")}
+                  />
                 </div>
               ) : (
                 /* TTS Settings */
-                <div className="grid grid-cols-2 gap-4 p-1">
-                  {/* Left Column: Quality & Speed */}
-                  <div className="space-y-3">
-                    {/* Quality Steps */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
-                        <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
-                          {draftSettings.tts.quality_steps <= 4 ? "Speed" : draftSettings.tts.quality_steps <= 8 ? "Quality" : "Best"}
-                        </span>
-                      </div>
-                      <div className="flex gap-1">
-                        {[2, 4, 6, 8, 10, 12].map(step => (
-                          <button key={step} onClick={() => updateDraft("tts", "quality_steps", step)}
-                            className={cn(
-                              "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-                              draftSettings.tts.quality_steps === step
-                                ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-                                : "glass-whisper glass-base text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
-                            )}
-                          >{step}</button>
-                        ))}
-                      </div>
+                <div className="flex flex-col gap-3.5 p-1">
+                  {/* Quality Steps */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
+                      <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+                        {draftSettings.tts.quality_steps <= 4 ? "Speed" : draftSettings.tts.quality_steps <= 8 ? "Quality" : "Best"}
+                      </span>
                     </div>
-
-                    {/* Speed */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
-                        <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.tts.speed.toFixed(2)}x</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0.7" max="2.0" step="0.05"
-                        value={draftSettings.tts.speed}
-                        onChange={(e) => updateDraft("tts", "speed", Number(e.target.value))}
-                        className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
-                      />
+                    <div className="flex gap-1">
+                      {[2, 4, 6, 8, 10, 12].map(step => (
+                        <button key={step} onClick={() => updateDraft("tts", "quality_steps", step)}
+                          className={cn(
+                            "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                            draftSettings.tts.quality_steps === step
+                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
+                              : "glass-whisper glass-base text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
+                          )}
+                        >{step}</button>
+                      ))}
                     </div>
                   </div>
 
-                  {/* Right Column: Voice Profile */}
+                  {/* Speed */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
+                      <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.tts.speed.toFixed(2)}x</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0.7" max="2.0" step="0.05"
+                      value={draftSettings.tts.speed}
+                      onChange={(e) => updateDraft("tts", "speed", Number(e.target.value))}
+                      className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
+                    />
+                  </div>
+
+                  {/* Voice Profile */}
                   <div className="space-y-1.5">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]/75 block">Voice Profile</span>
                     {modelPresence["supertonic_tts"] ? (
