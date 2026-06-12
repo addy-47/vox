@@ -127,30 +127,30 @@
 
 ---
 
-## v0.8.5 — STT & TTS Provider Architecture
+## v0.8.5 — Cloud LLM Integration
 
-**Goal:** Apply the same provider architecture to STT and TTS (Embedded + Remote + Future Cloud).
+**Goal:** Integrate direct cloud LLM providers into the provider architecture.
+
+* Custom API key configuration interfaces and secure persistence
+* Out-of-the-box cloud provider presets: OpenAI, Gemini, Anthropic, Groq, OpenRouter, and Sarvam
+* Capability to stream responses and handle barge-in cancellations natively via standard HTTP interfaces
 
 ---
 
-## v0.8.6 - 0.9.0 — Cloud Provider Ecosystem
+## v0.8.6 - 0.9.0 — Cloud Realtime Integration
 
-**Goal:** Introduce cloud provider implementations on top of the provider architecture.
+**Goal:** Introduce full duplex cloud voice-to-voice APIs as an alternative to the local pipeline.
 
-### Cloud Providers
-
-* OpenAI
-* Gemini
-* Anthropic
-* OpenRouter
-* Sarvam
-* ElevenLabs
+* OpenAI Realtime API (WebSocket-based audio streaming)
+* Gemini Multimodal Live API integration
+* Dynamic switching between local pipeline (Local STT -> LLM -> TTS) and cloud voice-to-voice
+* Adaptive audio buffer synchronization and lower latency packet streaming
 
 ### Outcome
 
-* Unified provider abstraction
-* Local and cloud interoperability
-* User-selectable model stack
+* Unified local-first design with cloud acceleration
+* Choice of full-local privacy vs. high-capability cloud duplex streams
+* User-controlled model configuration and API provisioning
 
 ---
 

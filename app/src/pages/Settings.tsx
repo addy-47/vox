@@ -89,10 +89,10 @@ const RadialNode = memo(({ domain, isActive, onSelect }: RadialNodeProps) => {
       id={`node-${domain.id}`}
       onClick={() => onSelect(domain.id)}
       className={cn(
-         "absolute flex flex-col items-center gap-1.5 group transition-all duration-400 z-25",
+         "absolute w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400 group z-25",
          isActive
-           ? "text-[rgb(var(--accent))]"
-           : "text-[rgb(var(--foreground-muted))] dark:text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
+           ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)] shadow-[0_0_18px_rgba(var(--accent),0.25)]"
+           : "text-[rgb(var(--foreground-muted))] dark:text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.15)] dark:border-[rgba(var(--border),0.08)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.06)]"
       )}
       style={{
         left: "50%",
@@ -101,19 +101,9 @@ const RadialNode = memo(({ domain, isActive, onSelect }: RadialNodeProps) => {
       }}
       aria-label={`${domain.label} settings`}
     >
-      {/* Icon circle */}
-      <div
-        className={cn(
-          "w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400",
-          isActive
-             ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)] shadow-[0_0_18px_rgba(var(--accent),0.25)]"
-             : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.15)] dark:border-[rgba(var(--border),0.08)] group-hover:border-[rgba(var(--accent),0.25)] group-hover:bg-[rgba(var(--accent),0.06)]"
-        )}
-      >
-        <Icon size={16} strokeWidth={isActive ? 2.5 : 1.5} />
-      </div>
+      <Icon size={16} strokeWidth={isActive ? 2.5 : 1.5} />
       {/* Label */}
-      <span className="text-[11px] font-bold uppercase tracking-[0.15em] leading-none">
+      <span className="absolute top-[calc(100%+6px)] left-1/2 -translate-x-1/2 text-[11px] font-bold uppercase tracking-[0.15em] leading-none whitespace-nowrap pointer-events-none text-center">
         {domain.label}
       </span>
     </button>
@@ -151,6 +141,17 @@ const HubConnectors: React.FC<{ activeDomains: DomainId[] }> = memo(({ activeDom
         const nx = -dy / len;
         const ny = dx / len;
         
+        // Shorten the line to stop at the borders
+        const cosAngle = pos.x / HUB_RADIUS;
+        const sinAngle = pos.y / HUB_RADIUS;
+        const R_center = 26; // outer border of center reactor
+        const R_node = 20;   // border of radial node icon circle
+        
+        const lineX1 = cx + cosAngle * R_center;
+        const lineY1 = cy + sinAngle * R_center;
+        const lineX2 = cx + pos.x - cosAngle * R_node;
+        const lineY2 = cy + pos.y - sinAngle * R_node;
+        
         // Ticks at 35%
         const t35 = 0.35;
         const px35 = x1 + dx * t35;
@@ -175,10 +176,10 @@ const HubConnectors: React.FC<{ activeDomains: DomainId[] }> = memo(({ activeDom
           <g key={d.id} className="transition-all duration-400">
             {/* Main connector line */}
             <line
-              x1={x1}
-              y1={y1}
-              x2={x2}
-              y2={y2}
+              x1={lineX1}
+              y1={lineY1}
+              x2={lineX2}
+              y2={lineY2}
               className="transition-all duration-400"
               stroke={isActive ? "rgba(var(--accent), var(--hub-connector-active-opacity, 0.55))" : "rgba(var(--accent), 0.12)"}
               strokeWidth={isActive ? 1.5 : 1}
@@ -208,17 +209,6 @@ const HubConnectors: React.FC<{ activeDomains: DomainId[] }> = memo(({ activeDom
               strokeWidth={1}
               opacity={isActive ? 1 : 0.4}
             />
-            
-            {/* Active circle at node end */}
-            {isActive && (
-              <circle
-                cx={x2}
-                cy={y2}
-                r={2.5}
-                fill="rgb(var(--accent))"
-                className="transition-all duration-400"
-              />
-            )}
           </g>
         );
       })}
@@ -298,8 +288,10 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
       return (
         JSON.stringify(settings.vad) !== JSON.stringify(draftSettings.vad) ||
         JSON.stringify(settings.asr) !== JSON.stringify(draftSettings.asr) ||
-        JSON.stringify(settings.llm) !== JSON.stringify(draftSettings.llm) ||
-        JSON.stringify(settings.tts) !== JSON.stringify(draftSettings.tts)
+        JSON.stringify(settings.tts) !== JSON.stringify(draftSettings.tts) ||
+        settings.llm.model !== draftSettings.llm.model ||
+        settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
+        settings.llm.threads !== draftSettings.llm.threads
       );
     case "tray":
       return (
@@ -315,7 +307,10 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
     case "appearance":
       return false; // Appearance changes are applied instantly and saved automatically
     case "interaction":
-      return JSON.stringify(settings.interaction) !== JSON.stringify(draftSettings.interaction);
+      return (
+        JSON.stringify(settings.interaction) !== JSON.stringify(draftSettings.interaction) ||
+        JSON.stringify(settings.llm.provider) !== JSON.stringify(draftSettings.llm.provider)
+      );
     default:
       return false;
   }
@@ -327,7 +322,9 @@ const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any)
     case "models":
       Object.keys(settings.vad).forEach(k => updateDraft("vad", k, (settings.vad as any)[k]));
       Object.keys(settings.asr).forEach(k => updateDraft("asr", k, (settings.asr as any)[k]));
-      Object.keys(settings.llm).forEach(k => updateDraft("llm", k, (settings.llm as any)[k]));
+      updateDraft("llm", "model", settings.llm.model);
+      updateDraft("llm", "ctx_size", settings.llm.ctx_size);
+      updateDraft("llm", "threads", settings.llm.threads);
       Object.keys(settings.tts).forEach(k => updateDraft("tts", k, (settings.tts as any)[k]));
       break;
     case "tray":
@@ -348,6 +345,7 @@ const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any)
       break;
     case "interaction":
       Object.keys(settings.interaction).forEach(k => updateDraft("interaction", k, (settings.interaction as any)[k]));
+      updateDraft("llm", "provider", settings.llm.provider);
       break;
   }
 };
@@ -717,19 +715,35 @@ export const Settings: React.FC = () => {
               const isVertical = domain.id === "persona" || domain.id === "memory";
               let pathD = "";
 
-              if (isVertical) {
-                pathD = `M ${line.x1} ${line.y1} L ${line.x2} ${line.y2}`;
-              } else {
-                const dx = Math.abs(line.y2 - line.y1);
-                let xMid = 0;
+              // Determine the next point the line goes to after the start point (line.x1, line.y1)
+              let nextX = line.x2;
+              let nextY = line.y2;
+
+              if (!isVertical) {
+                const dx_mid = Math.abs(line.y2 - line.y1);
                 if (domain.id === "models" || domain.id === "tray") {
                   // Card is on the right
-                  xMid = Math.min(line.x2, line.x1 + dx);
+                  nextX = Math.min(line.x2, line.x1 + dx_mid);
                 } else {
                   // Card is on the left (appearance, interaction)
-                  xMid = Math.max(line.x2, line.x1 - dx);
+                  nextX = Math.max(line.x2, line.x1 - dx_mid);
                 }
-                pathD = `M ${line.x1} ${line.y1} L ${xMid} ${line.y2} L ${line.x2} ${line.y2}`;
+                nextY = line.y2;
+              }
+
+              // Compute the unit vector from node center to the next point
+              const vx = nextX - line.x1;
+              const vy = nextY - line.y1;
+              const len = Math.sqrt(vx * vx + vy * vy) || 1;
+
+              // Offset the start point by the node's radius (20px)
+              const startX = line.x1 + (vx / len) * 20;
+              const startY = line.y1 + (vy / len) * 20;
+
+              if (isVertical) {
+                pathD = `M ${startX} ${startY} L ${line.x2} ${line.y2}`;
+              } else {
+                pathD = `M ${startX} ${startY} L ${nextX} ${line.y2} L ${line.x2} ${line.y2}`;
               }
 
               return (
@@ -832,9 +846,17 @@ export const Settings: React.FC = () => {
                 className={cn(
                   "px-3.5 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-300 shadow",
                   hasChanges
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-[0_0_12px_rgba(var(--accent),0.4)] hover:scale-[1.02] active:scale-95 cursor-pointer animate-[pulse_1.5s_infinite_ease-in-out]"
+                    ? "shadow-[0_0_12px_rgba(var(--accent),0.4)] hover:scale-[1.02] active:scale-95 cursor-pointer animate-[pulse_1.5s_infinite_ease-in-out]"
                     : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
                 )}
+                style={
+                  hasChanges
+                    ? {
+                        backgroundColor: "rgb(var(--accent))",
+                        color: "rgb(var(--accent-foreground))",
+                      }
+                    : undefined
+                }
               >
                 Save
               </button>

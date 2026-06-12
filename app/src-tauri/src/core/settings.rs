@@ -31,6 +31,14 @@ pub enum InteractionMode {
     PTT,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineMode {
+    #[default]
+    Modular,
+    Realtime,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct ModelMetadata {
@@ -59,6 +67,16 @@ impl Default for ModelMetadata {
 pub struct VoiceProfile {
     pub id: i32,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RemoteModelInfo {
+    pub id: String,            // e.g. "gemma4:31b"
+    pub name: String,          // display name derived from id
+    pub size_bytes: Option<u64>,
+    pub quantization: Option<String>,  // e.g. "Q4_K_M"
+    pub family: Option<String>,        // e.g. "Gemma"
+    pub provider_kind: String, // e.g. "open_ai_compat", "embedded"
 }
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
@@ -240,6 +258,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("llm", "model") => SettingReloadPolicy::Restart,
         ("llm", "ctx_size") => SettingReloadPolicy::Restart,
         ("llm", "threads") => SettingReloadPolicy::Restart,
+        ("llm", "provider") => SettingReloadPolicy::Restart,
 
         // TTS — voice change requires engine restart; quality/speed are hot-updated
         ("tts", "voice") => SettingReloadPolicy::Restart,
@@ -248,6 +267,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
 
         // Interaction — sent as mode-changed event immediately
         ("interaction", "auto_sleep_timeout") => SettingReloadPolicy::Hot,
+        ("interaction", "pipeline_mode") => SettingReloadPolicy::Restart,
         ("interaction", _) => SettingReloadPolicy::Hot,
 
         // Telemetry toggle — hot
@@ -347,11 +367,31 @@ impl Default for AsrSettings {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LlmProviderConfig {
+    Embedded,
+    OpenAiCompat {
+        base_url: String,
+        model: String,
+        api_key: Option<String>,
+        #[serde(default)]
+        provider_name: Option<String>,
+    },
+}
+
+impl Default for LlmProviderConfig {
+    fn default() -> Self {
+        LlmProviderConfig::Embedded
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmSettings {
     pub model: String, // e.g., "llama_3_2_reasoning"
     pub ctx_size: u32,
     pub threads: u32,
+    pub provider: LlmProviderConfig,
 }
 
 impl Default for LlmSettings {
@@ -360,6 +400,7 @@ impl Default for LlmSettings {
             model: "llama_3_2_reasoning_q4".to_string(),
             ctx_size: 2048,
             threads: 4,
+            provider: LlmProviderConfig::default(),
         }
     }
 }
@@ -387,6 +428,8 @@ pub struct InteractionSettings {
     pub main_app_mode: InteractionMode,
     pub tray_mode: InteractionMode,
     pub auto_sleep_timeout: u32,
+    #[serde(default)]
+    pub pipeline_mode: PipelineMode,
 }
 
 impl Default for InteractionSettings {
@@ -395,6 +438,7 @@ impl Default for InteractionSettings {
             main_app_mode: InteractionMode::Passive,
             tray_mode: InteractionMode::Passive,
             auto_sleep_timeout: 400,
+            pipeline_mode: PipelineMode::Modular,
         }
     }
 }
