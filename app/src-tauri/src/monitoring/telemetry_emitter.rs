@@ -18,10 +18,20 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
             
             // Read output energy if assistant is speaking; otherwise read microphone energy
             let is_assistant = state.pipeline.is_assistant_speaking.load(Ordering::Relaxed);
-            let energy = if is_assistant {
-                f32::from_bits(state.latest_playback_energy.load(Ordering::Relaxed))
+            let (energy, low, mid, high) = if is_assistant {
+                (
+                    f32::from_bits(state.latest_playback_energy.load(Ordering::Relaxed)),
+                    f32::from_bits(state.latest_playback_low.load(Ordering::Relaxed)),
+                    f32::from_bits(state.latest_playback_mid.load(Ordering::Relaxed)),
+                    f32::from_bits(state.latest_playback_high.load(Ordering::Relaxed)),
+                )
             } else {
-                f32::from_bits(state.latest_energy.load(Ordering::Relaxed))
+                (
+                    f32::from_bits(state.latest_energy.load(Ordering::Relaxed)),
+                    f32::from_bits(state.latest_low.load(Ordering::Relaxed)),
+                    f32::from_bits(state.latest_mid.load(Ordering::Relaxed)),
+                    f32::from_bits(state.latest_high.load(Ordering::Relaxed)),
+                )
             };
             
             let vad_prob = f32::from_bits(state.latest_vad_prob.load(Ordering::Relaxed));
@@ -36,6 +46,9 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
             let _ = app.emit_to(target, "telemetry", crate::core::state::TelemetryData {
                 energy,
                 vad_prob,
+                low,
+                mid,
+                high,
             });
         }
     });

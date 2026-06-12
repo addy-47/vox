@@ -172,6 +172,8 @@ export const Home: React.FC = () => {
       });
       activeUserTextRef.current = "";
       activeAiTextRef.current = "";
+      setTranscript("");
+      setAssistantText("");
     }
   }, []);
 
@@ -236,6 +238,7 @@ export const Home: React.FC = () => {
       setTestingClip(null);
       setTranscript("");
       setAssistantText("");
+      setIsEngaged(false);
       hasActiveTurnStarted.current = false;
     } catch (err) {
       console.error("[Home] Test clip cancel failed:", err);
@@ -550,6 +553,7 @@ export const Home: React.FC = () => {
         <div className="relative w-full h-full flex items-center justify-center">
           <ErrorBoundary name="VoxOrb">
             <VoxOrb
+              telemetryRef={telemetryRef}
               interactionState={interactionState}
               isSleeping={isSleeping}
               isTesting={!!testingClip}
@@ -630,63 +634,65 @@ export const Home: React.FC = () => {
       <AnimatePresence>
         {!isEngaged && (
           <motion.div
+            key="test-mode-container"
             initial={{ opacity: 0, scale: 0.85, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 10 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             className="hidden md:block fixed bottom-4 right-4 z-50"
           >
-            <div className="relative">
-              <button
-                ref={testButtonRef}
-                onClick={() => setTestMode(!testMode)}
-                className={cn(
-                  "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 cursor-pointer shadow-lg shadow-[rgba(var(--accent),0.06)] dark:shadow-[rgba(0,0,0,0.3)]",
-                  testMode
-                    ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))] shadow-[0_0_18px_rgba(var(--accent),0.2)]"
-                    : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-black/35 dark:border-[rgba(var(--accent),0.15)] hover:bg-[rgb(var(--accent))]/20"
-                )}
-                aria-label="Test Mode"
-              >
-                <FlaskConical size={16} />
-              </button>
-
-              <AnimatePresence>
-                {testMode && (
-                  <motion.div
-                    ref={testPanelRef}
-                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                    className="absolute bottom-14 right-0 w-56 p-2 rounded-2xl bg-black/90 border border-[rgba(var(--accent),0.25)] shadow-[0_10px_30px_rgba(0,0,0,0.6)] backdrop-blur-xl flex flex-col gap-1 z-30"
-                  >
-                    <div className="px-2 py-1 border-b border-[rgba(var(--accent),0.1)] mb-1">
-                      <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase block">
-                        Select Test Input
-                      </span>
-                    </div>
-                    {TEST_CLIPS.map((clip) => (
-                      <button
-                        key={clip.id}
-                        onClick={() => handleTestClip(clip.id)}
-                        className="w-full text-left p-2 rounded-xl hover:bg-[rgb(var(--accent))]/10 transition-colors border border-transparent hover:border-[rgb(var(--accent))]/15 flex flex-col"
-                      >
-                        <span className="text-[13px] font-semibold text-[rgb(var(--foreground))]">
-                          {clip.name}
-                        </span>
-                        <span className="text-[11px] text-[rgb(var(--foreground-muted))] mt-0.5">
-                          {clip.desc} · {clip.duration}
-                        </span>
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+            <button
+              ref={testButtonRef}
+              onClick={() => setTestMode(!testMode)}
+              className={cn(
+                "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 cursor-pointer shadow-lg shadow-[rgba(var(--accent),0.06)] dark:shadow-[rgba(0,0,0,0.3)]",
+                testMode
+                  ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))] shadow-[0_0_18px_rgba(var(--accent),0.2)]"
+                  : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-black/35 dark:border-[rgba(var(--accent),0.15)] hover:bg-[rgb(var(--accent))]/20"
+              )}
+              aria-label="Test Mode"
+            >
+              <FlaskConical size={16} />
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Test Mode Panel ──────────────── */}
+      <AnimatePresence>
+        {testMode && !isEngaged && (
+          <motion.div
+            key="test-mode-panel"
+            ref={testPanelRef}
+            initial={{ y: 8, scale: 0.98 }}
+            animate={{ y: 0, scale: 1 }}
+            exit={{ y: 8, scale: 0.98 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-16 right-4 w-56 p-2 rounded-2xl glass-elevated glass-base border border-[rgba(var(--accent),0.15)] shadow-[0_10px_30px_rgba(0,0,0,0.15)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex flex-col gap-1 z-50"
+          >
+            <div className="px-2 py-1 border-b border-[rgba(var(--accent),0.1)] mb-1">
+              <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase block">
+                Select Test Input
+              </span>
+            </div>
+            {TEST_CLIPS.map((clip) => (
+              <button
+                key={clip.id}
+                onClick={() => handleTestClip(clip.id)}
+                className="w-full text-left p-2 rounded-xl hover:bg-[rgb(var(--accent))]/10 transition-colors border border-transparent hover:border-[rgb(var(--accent))]/15 flex flex-col"
+              >
+                <span className="text-[13px] font-semibold text-[rgb(var(--foreground))]">
+                  {clip.name}
+                </span>
+                <span className="text-[11px] text-[rgb(var(--foreground-muted))] mt-0.5">
+                  {clip.desc} · {clip.duration}
+                </span>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 };

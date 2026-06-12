@@ -106,7 +106,13 @@
 
 ---
 
-## v0.8.3 — LLM Provider Architecture (Current — Phase 9)
+## v0.8.3 - Ui revamp from ground up 
+
+**Goal** Turn vox ui from a AI SaaS app to a voice OS with new design.md as guideline
+
+---
+
+## v0.8.4 — LLM Provider Architecture (Current — Phase 9)
 
 **Goal:** Refactor the LLM from a single embedded backend into a provider-based architecture.
 
@@ -121,19 +127,13 @@
 
 ---
 
-## v0.8.4 — STT Provider Architecture
+## v0.8.5 — STT & TTS Provider Architecture
 
-**Goal:** Apply the same provider architecture to STT (Embedded + Remote + Future Cloud).
-
----
-
-## v0.8.5 — TTS Provider Architecture
-
-**Goal:** Apply the same provider architecture to TTS (Embedded + Remote + Future Cloud).
+**Goal:** Apply the same provider architecture to STT and TTS (Embedded + Remote + Future Cloud).
 
 ---
 
-## v0.9.0 — Cloud Provider Ecosystem
+## v0.8.6 - 0.9.0 — Cloud Provider Ecosystem
 
 **Goal:** Introduce cloud provider implementations on top of the provider architecture.
 

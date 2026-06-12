@@ -3,6 +3,9 @@ import { useEffect, useRef } from 'react';
 export interface TelemetryData {
   energy: number;
   vad_prob: number;
+  low: number;
+  mid: number;
+  high: number;
 }
 
 /**
@@ -11,7 +14,7 @@ export interface TelemetryData {
  * consumed by requestAnimationFrame loops.
  */
 export const useTelemetry = () => {
-  const telemetryRef = useRef<TelemetryData>({ energy: 0, vad_prob: 0 });
+  const telemetryRef = useRef<TelemetryData>({ energy: 0, vad_prob: 0, low: 0, mid: 0, high: 0 });
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
