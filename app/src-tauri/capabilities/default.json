@@ -14,6 +14,9 @@
     "core:window:allow-set-theme",
     "core:window:allow-hide",
     "dialog:default",
+    "dialog:allow-confirm",
+    "dialog:allow-message",
+    "dialog:allow-ask",
     "fs:default",
     "process:default",
     "positioner:allow-move-window"

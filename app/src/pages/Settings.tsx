@@ -5,6 +5,7 @@ import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
 import { GlassSkeleton } from "@/shared/components/GlassSkeleton";
 import { AnimatePresence, motion } from "framer-motion";
+import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
 
 // Import custom cards
 import { PersonaCard } from "@/shared/components/settings/cards/PersonaCard";
@@ -40,15 +41,6 @@ const DOMAINS: Domain[] = [
 
 // ─── Radial hub geometry ──────────────────────────────────────────────────────
 
-const HUB_RADIUS = 120; // px — distance from center to domain label center
-
-function polarToCartesian(angleDeg: number, radius: number) {
-  const rad = (angleDeg * Math.PI) / 180;
-  return {
-    x: radius * Math.cos(rad),
-    y: radius * Math.sin(rad),
-  };
-}
 
 // ─── Domain content map ───────────────────────────────────────────────────────
 
@@ -78,11 +70,18 @@ interface RadialNodeProps {
   domain: Domain;
   isActive: boolean;
   onSelect: (id: DomainId) => void;
+  radiusX: number;
+  radiusY: number;
 }
 
-const RadialNode = memo(({ domain, isActive, onSelect }: RadialNodeProps) => {
-  const pos = polarToCartesian(domain.angle, HUB_RADIUS);
+const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }: RadialNodeProps) => {
+  const rad = (domain.angle * Math.PI) / 180;
+  const pos = {
+    x: radiusX * Math.cos(rad),
+    y: radiusY * Math.sin(rad),
+  };
   const Icon = domain.icon;
+  const isUpper = domain.angle < 0;
 
   return (
     <button
@@ -103,7 +102,12 @@ const RadialNode = memo(({ domain, isActive, onSelect }: RadialNodeProps) => {
     >
       <Icon size={16} strokeWidth={isActive ? 2.5 : 1.5} />
       {/* Label */}
-      <span className="absolute top-[calc(100%+6px)] left-1/2 -translate-x-1/2 text-[11px] font-bold uppercase tracking-[0.15em] leading-none whitespace-nowrap pointer-events-none text-center">
+      <span 
+        className={cn(
+          "absolute left-1/2 -translate-x-1/2 text-[11px] font-bold uppercase tracking-[0.15em] leading-none whitespace-nowrap pointer-events-none text-center transition-all duration-400",
+          isUpper ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
+        )}
+      >
         {domain.label}
       </span>
     </button>
@@ -113,8 +117,15 @@ RadialNode.displayName = "RadialNode";
 
 // ─── Hub Connectors ────────────────────────────────────────────────────────────
 
-const HubConnectors: React.FC<{ activeDomains: DomainId[] }> = memo(({ activeDomains }) => {
-  const size = HUB_RADIUS * 2 + 120; // viewBox size
+interface HubConnectorsProps {
+  activeDomains: DomainId[];
+  radiusX: number;
+  radiusY: number;
+}
+
+const HubConnectors: React.FC<HubConnectorsProps> = memo(({ activeDomains, radiusX, radiusY }) => {
+  const maxRadius = Math.max(radiusX, radiusY);
+  const size = maxRadius * 2 + 120; // viewBox size
   const cx = size / 2;
   const cy = size / 2;
 
@@ -126,7 +137,11 @@ const HubConnectors: React.FC<{ activeDomains: DomainId[] }> = memo(({ activeDom
       aria-hidden="true"
     >
       {DOMAINS.map((d) => {
-        const pos = polarToCartesian(d.angle, HUB_RADIUS);
+        const rad = (d.angle * Math.PI) / 180;
+        const pos = {
+          x: radiusX * Math.cos(rad),
+          y: radiusY * Math.sin(rad),
+        };
         const isActive = activeDomains.includes(d.id);
         
         const x1 = cx;
@@ -142,8 +157,8 @@ const HubConnectors: React.FC<{ activeDomains: DomainId[] }> = memo(({ activeDom
         const ny = dx / len;
         
         // Shorten the line to stop at the borders
-        const cosAngle = pos.x / HUB_RADIUS;
-        const sinAngle = pos.y / HUB_RADIUS;
+        const cosAngle = pos.x / len;
+        const sinAngle = pos.y / len;
         const R_center = 26; // outer border of center reactor
         const R_node = 20;   // border of radial node icon circle
         
@@ -226,6 +241,7 @@ interface HubCenterProps {
 
 const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
   <button
+    id="center-node"
     onClick={onClick}
     className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full flex items-center justify-center transition-all duration-400 z-30 cursor-pointer"
     aria-label={hasActiveCards ? "Clear all selections" : "Configure all domains"}
@@ -298,7 +314,8 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
         settings.ui.tray_enabled !== draftSettings.ui.tray_enabled ||
         settings.ui.tray_blur_density !== draftSettings.ui.tray_blur_density ||
         settings.ui.tray_glass_tint !== draftSettings.ui.tray_glass_tint ||
-        settings.ui.tray_history_limit !== draftSettings.ui.tray_history_limit
+        settings.ui.tray_history_limit !== draftSettings.ui.tray_history_limit ||
+        settings.interaction.tray_mode !== draftSettings.interaction.tray_mode
       );
     case "persona":
       return JSON.stringify(settings.assistant) !== JSON.stringify(draftSettings.assistant);
@@ -308,7 +325,9 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
       return false; // Appearance changes are applied instantly and saved automatically
     case "interaction":
       return (
-        JSON.stringify(settings.interaction) !== JSON.stringify(draftSettings.interaction) ||
+        settings.interaction.main_app_mode !== draftSettings.interaction.main_app_mode ||
+        settings.interaction.auto_sleep_timeout !== draftSettings.interaction.auto_sleep_timeout ||
+        settings.interaction.pipeline_mode !== draftSettings.interaction.pipeline_mode ||
         JSON.stringify(settings.llm.provider) !== JSON.stringify(draftSettings.llm.provider)
       );
     default:
@@ -332,6 +351,7 @@ const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any)
       updateDraft("ui", "tray_blur_density", settings.ui.tray_blur_density);
       updateDraft("ui", "tray_glass_tint", settings.ui.tray_glass_tint);
       updateDraft("ui", "tray_history_limit", settings.ui.tray_history_limit);
+      updateDraft("interaction", "tray_mode", settings.interaction.tray_mode);
       break;
     case "persona":
       Object.keys(settings.assistant).forEach(k => updateDraft("assistant", k, (settings.assistant as any)[k]));
@@ -344,7 +364,9 @@ const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any)
       updateDraft("ui", "accent_seed", settings.ui.accent_seed);
       break;
     case "interaction":
-      Object.keys(settings.interaction).forEach(k => updateDraft("interaction", k, (settings.interaction as any)[k]));
+      updateDraft("interaction", "main_app_mode", settings.interaction.main_app_mode);
+      updateDraft("interaction", "auto_sleep_timeout", settings.interaction.auto_sleep_timeout);
+      updateDraft("interaction", "pipeline_mode", settings.interaction.pipeline_mode);
       updateDraft("llm", "provider", settings.llm.provider);
       break;
   }
@@ -426,7 +448,9 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
             )}
           >
             {/* Actual Card content */}
-            <DomainContent domain={domain.id} layoutMode={layoutMode} />
+            <ErrorBoundary name={`Settings:${domain.id}`}>
+              <DomainContent domain={domain.id} layoutMode={layoutMode} />
+            </ErrorBoundary>
 
             {/* Dynamic Save/Discard Expanded Footer */}
             {hasChanges && (layoutMode === "full-max" || layoutMode === "full-min") && (
@@ -491,6 +515,7 @@ export const Settings: React.FC = () => {
   const [activeDomains, setActiveDomains] = useState<DomainId[]>([]);
   const [isCompact, setIsCompact] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1440);
+  const [windowHeight, setWindowHeight] = useState(typeof window !== "undefined" ? window.innerHeight : 800);
   const containerRef = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({
     persona: null,
@@ -516,12 +541,16 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     const checkSize = () => {
       setWindowWidth(window.innerWidth);
+      setWindowHeight(window.innerHeight);
       setIsCompact(window.innerWidth < 1024);
     };
     checkSize();
     window.addEventListener("resize", checkSize);
     return () => window.removeEventListener("resize", checkSize);
   }, []);
+
+  const radiusX = useMemo(() => Math.max(90, Math.min(120, windowWidth * 0.09 - 10)), [windowWidth]);
+  const radiusY = useMemo(() => Math.max(75, Math.min(120, windowHeight * 0.14 - 8)), [windowHeight]);
 
   // Calculate layoutMode dynamically
   const layoutMode = useMemo(() => {
@@ -792,12 +821,12 @@ export const Settings: React.FC = () => {
             <div
               className="relative shrink-0"
               style={{
-                width: HUB_RADIUS * 2 + 100,
-                height: HUB_RADIUS * 2 + 100,
+                width: Math.max(radiusX, radiusY) * 2 + 100,
+                height: Math.max(radiusX, radiusY) * 2 + 100,
               }}
             >
               {/* Hub connector lines */}
-              <HubConnectors activeDomains={activeDomains} />
+              <HubConnectors activeDomains={activeDomains} radiusX={radiusX} radiusY={radiusY} />
 
               {/* Domain nodes */}
               {DOMAINS.map((domain) => (
@@ -806,6 +835,8 @@ export const Settings: React.FC = () => {
                   domain={domain}
                   isActive={activeDomains.includes(domain.id)}
                   onSelect={handleSelect}
+                  radiusX={radiusX}
+                  radiusY={radiusY}
                 />
               ))}
 
@@ -900,7 +931,9 @@ export const Settings: React.FC = () => {
                   
                   {/* Divider and Content */}
                   <div className="border-t border-[rgba(var(--accent),0.05)] pt-4">
-                    <DomainContent domain={domain.id} layoutMode="small" />
+                    <ErrorBoundary name={`SettingsMobile:${domain.id}`}>
+                      <DomainContent domain={domain.id} layoutMode="small" />
+                    </ErrorBoundary>
                   </div>
                 </div>
               );

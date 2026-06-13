@@ -11,8 +11,8 @@ pub fn spawn_system_monitor(app: AppHandle) {
         let mut sys = System::new_all();
         
         loop {
-            // High Throttle as per Architect Correction: 10000ms
-            tokio::time::sleep(std::time::Duration::from_millis(10000)).await;
+            // High Throttle as per Architect Correction: 30000ms (30 seconds)
+            tokio::time::sleep(std::time::Duration::from_millis(30000)).await;
             
             sys.refresh_all();
             
@@ -20,11 +20,51 @@ pub fn spawn_system_monitor(app: AppHandle) {
             let system_cpu = sys.global_cpu_info().cpu_usage();
             let system_ram_pct = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
             
-            // 2. Vox Process Metrics
-            let (vox_cpu, vox_ram_mb, thread_count): (f32, u32, u32) = if let Some(p) = pid.and_then(|id| sys.process(id)) {
-                // In 0.30, tasks() might not be available on all platforms.
-                let threads = p.tasks().map(|t| t.len()).unwrap_or(0) as u32;
-                (p.cpu_usage() / sys.cpus().len() as f32, (p.memory() / 1024 / 1024) as u32, threads)
+            // 2. Vox Process Metrics (recursive aggregation of parent + child Webview processes)
+            let (vox_cpu, vox_ram_mb, thread_count): (f32, u32, u32) = if let Some(target_pid) = pid {
+                let mut total_memory: u64 = 0;
+                let mut total_cpu: f32 = 0.0;
+                let mut total_threads: u32 = 0;
+
+                for (&p_pid, proc) in sys.processes() {
+                    #[cfg(target_os = "linux")]
+                    {
+                        if proc.tasks().is_none() {
+                            continue;
+                        }
+                    }
+
+                    let mut is_descendant = false;
+                    
+                    if p_pid == target_pid {
+                        is_descendant = true;
+                    } else {
+                        let mut curr = proc;
+                        while let Some(parent_pid) = curr.parent() {
+                            if parent_pid == target_pid {
+                                is_descendant = true;
+                                break;
+                            }
+                            if let Some(parent_proc) = sys.process(parent_pid) {
+                                curr = parent_proc;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    if is_descendant {
+                        total_memory += proc.memory();
+                        total_cpu += proc.cpu_usage();
+                        total_threads += proc.tasks().map(|t| t.len()).unwrap_or(0) as u32;
+                    }
+                }
+
+                (
+                    total_cpu / sys.cpus().len() as f32,
+                    (total_memory / 1024 / 1024) as u32,
+                    total_threads,
+                )
             } else {
                 (0.0, 0, 0)
             };

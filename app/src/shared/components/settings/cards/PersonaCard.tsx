@@ -21,7 +21,10 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85",
         isSmall
           ? "w-full bg-transparent p-0"
-          : "w-full lg:w-[460px] glass-card glass-base p-5"
+          : cn(
+              "w-full glass-card glass-base p-5",
+              layoutMode === "full-min" ? "lg:w-[320px] xl:w-[380px] 2xl:w-[460px]" : "lg:w-[460px]"
+            )
       )}
     >
       {/* Header & Tabs */}

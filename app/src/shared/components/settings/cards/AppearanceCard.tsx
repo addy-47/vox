@@ -15,6 +15,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   const { ui } = draftSettings;
 
   const isSmall = layoutMode === "small";
+  const isMin = layoutMode === "full-min";
 
   return (
     <div 
@@ -22,7 +23,10 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
         "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between",
         isSmall
           ? "w-full bg-transparent p-0"
-          : "w-full lg:w-[320px] glass-card glass-base p-5"
+          : cn(
+              "w-full glass-card glass-base p-5",
+              layoutMode === "full-min" ? "lg:w-[240px] xl:w-[280px] 2xl:w-[320px]" : "lg:w-[320px]"
+            )
       )}
     >
       {/* Header */}
@@ -62,12 +66,16 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
       </div>
 
       {/* HexColorPicker filling card width */}
-      <div className="flex-1 flex items-center justify-center py-2 min-h-[190px]">
-        <div className="w-full flex justify-center custom-color-picker-v2">
+      <div className={cn("flex-1 flex items-center justify-center py-1", isMin ? "min-h-[125px]" : "min-h-[180px]")}>
+        <div className={cn("w-full flex justify-center", !isMin && "custom-color-picker-v2")}>
           <HexColorPicker
             color={ui.accent_seed}
             onChange={(color) => updateDraft("ui", "accent_seed", color)}
-            style={{ width: "100%", height: "150px" }}
+            className={cn("custom-color-picker", isMin && "custom-color-picker-min")}
+            style={{ 
+              width: "100%", 
+              height: isMin ? "115px" : (isSmall ? "150px" : "140px") 
+            }}
           />
         </div>
       </div>
