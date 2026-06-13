@@ -1,10 +1,25 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { MessageSquare, Trash2, Check, X, Clock, CalendarDays, Hash, History as HistoryIcon, Ghost } from "lucide-react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  memo,
+} from "react";
+import { Ghost, ChevronLeft, ChevronRight, X, Trash2, Check } from "lucide-react";
+import {
+  forceSimulation,
+  forceX,
+  forceY,
+  forceCollide,
+  forceManyBody,
+  SimulationNodeDatum,
+} from "d3-force";
 import { cn } from "@/shared/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
-import { useSettings } from "@/shared/context/SettingsContext";
-import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface SessionRow {
   id: number;
@@ -25,54 +40,296 @@ interface TurnRow {
   created_at: number;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatDateShort(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDateTime(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+
+// ─── Voice Constellation Node ────────────────────────────────────────────────
+
+interface VoiceRippleNodeProps {
+  session: SessionRow;
+  isSelected: boolean;
+  confirmDeleteId: number | null;
+  onSelect: (session: SessionRow) => void;
+  onDelete: (e: React.MouseEvent, id: number) => void;
+  onCancelDelete: (e: React.MouseEvent) => void;
+  x: number;
+  y: number;
+}
+
+const VoiceRippleNode = memo(
+  ({
+    session,
+    isSelected,
+    confirmDeleteId,
+    onSelect,
+    onDelete,
+    onCancelDelete,
+    x,
+    y,
+  }: VoiceRippleNodeProps) => {
+    const isConfirmingDelete = confirmDeleteId === session.id;
+
+    // Extract first 5-6 words
+    const previewText = useMemo(() => {
+      const msg = session.first_message || "No transcript recorded";
+      const words = msg.trim().split(/\s+/);
+      if (words.length <= 6) return msg;
+      return words.slice(0, 6).join(" ") + "...";
+    }, [session.first_message]);
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.8 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        style={{
+          position: "absolute",
+          left: x - 112, // Offset half of w-56 (224px)
+          top: y - 60,   // Offset approximate half-height
+        }}
+        className={cn(
+          "w-56 rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none group cursor-pointer z-10",
+          "bg-[rgba(var(--foreground),0.02)] border",
+          isSelected
+            ? "border-[rgba(var(--accent),0.6)] shadow-[0_0_32px_rgba(var(--accent),0.18)] bg-[rgba(var(--accent),0.05)]"
+            : "border-[rgba(var(--accent),0.1)] hover:border-[rgba(var(--accent),0.4)] hover:bg-[rgba(var(--foreground),0.04)]"
+        )}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect(session);
+        }}
+      >
+        {/* Pulsating background ring for visual hierarchy */}
+        <div className="absolute top-4 left-4 w-2 h-2 rounded-full bg-[rgb(var(--accent))]/75">
+          <div className="absolute inset-[-4px] rounded-full border border-[rgb(var(--accent))]/25 animate-ping" />
+        </div>
+
+        {/* Top Info */}
+        <div className="flex items-center justify-between mb-2 pl-4">
+          <span className="text-[10px] font-mono text-[rgb(var(--accent))]/80 font-bold">
+            {formatTime(session.started_at)}
+          </span>
+          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40">
+            {session.turn_count} {session.turn_count === 1 ? "turn" : "turns"}
+          </span>
+        </div>
+
+        {/* 5-6 Words Snippet */}
+        <p className="text-[13px] font-light leading-relaxed italic text-[rgb(var(--foreground))]/75 pl-4">
+          "{previewText}"
+        </p>
+
+        {/* Delete button (only shown on hover) */}
+        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+          {isConfirmingDelete ? (
+            <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={(e) => onDelete(e, session.id)}
+                className="w-5 h-5 rounded-full bg-[rgb(var(--accent))]/25 border border-[rgb(var(--accent))]/55 flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/35"
+                aria-label="Confirm delete"
+              >
+                <Check size={9} strokeWidth={3} />
+              </button>
+              <button
+                onClick={onCancelDelete}
+                className="w-5 h-5 rounded-full bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--border),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:bg-[rgba(var(--foreground),0.2)]"
+                aria-label="Cancel delete"
+              >
+                <X size={9} strokeWidth={3} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={(e) => onDelete(e, session.id)}
+              className="w-5 h-5 rounded-full bg-[rgba(var(--foreground),0.08)] border border-[rgba(var(--border),0.1)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors"
+              aria-label="Delete session"
+            >
+              <Trash2 size={9} />
+            </button>
+          )}
+        </div>
+      </motion.div>
+    );
+  }
+);
+VoiceRippleNode.displayName = "VoiceRippleNode";
+
+// ─── Detail Panel ─────────────────────────────────────────────────────────────
+
+interface DetailPanelProps {
+  session: SessionRow;
+  turns: TurnRow[];
+  loading: boolean;
+  onClose: () => void;
+}
+
+const DetailPanel = memo(
+  ({ session, turns, loading, onClose }: DetailPanelProps) => {
+    return (
+      <motion.div
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
+        style={{
+          boxShadow: "0 -40px 80px -10px rgba(var(--accent), 0.04)",
+        }}
+        className="absolute bottom-0 left-0 right-0 h-[58%] md:h-[58%] bg-[rgb(var(--background))] border-t border-[rgba(var(--accent),0.2)] z-30 flex flex-col rounded-t-3xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-[rgba(var(--accent),0.06)] shrink-0">
+          <div>
+            <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))]/80">
+              Session #{session.id}
+            </span>
+            <div className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40 mt-0.5">
+              {formatDateTime(session.started_at)} · {session.turn_count} turns
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="flex items-center justify-center w-7 h-7 rounded-full border border-[rgba(var(--accent),0.12)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+            aria-label="Close session"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4">
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <div className="w-5 h-5 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : turns.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-2 opacity-50">
+              <Ghost size={22} />
+              <span className="text-[10px] font-bold uppercase tracking-widest">
+                No interaction data
+              </span>
+            </div>
+          ) : (
+            <div className="space-y-6 pb-4">
+              {turns.map((turn) => (
+                <div key={turn.id} className="space-y-4">
+                  <div className="flex flex-col items-end w-full">
+                    <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]/40 uppercase tracking-widest mb-1 mr-2">
+                      you
+                    </span>
+                    <div className="bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.1)] rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%]">
+                      <p className="text-[14px] text-[rgb(var(--foreground))]/85 leading-relaxed break-words">
+                        {turn.user_text}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-start w-full">
+                    <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))]/70 uppercase tracking-widest mb-1 ml-2">
+                      vox
+                    </span>
+                    <div className="bg-[rgba(var(--accent),0.03)] border border-[rgba(var(--accent),0.2)] rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%]">
+                      <p className="text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words">
+                        {turn.assistant_text}
+                      </p>
+                      <div className="flex gap-3 mt-2 border-t border-[rgba(var(--accent),0.06)] pt-1.5 shrink-0">
+                        {turn.stt_latency_ms !== null && (
+                          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30">
+                            STT {turn.stt_latency_ms}ms
+                          </span>
+                        )}
+                        {turn.ttft_ms !== null && (
+                          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30">
+                            TTFT {turn.ttft_ms}ms
+                          </span>
+                        )}
+                        <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30 ml-auto">
+                          {formatTime(turn.created_at)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
+  }
+);
+DetailPanel.displayName = "DetailPanel";
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export const History: React.FC = () => {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
   const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
   const [turns, setTurns] = useState<TurnRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [turnsLoading, setTurnsLoading] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const { draftSettings, updateDraft } = useSettings();
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
-  const [showMobileInspector, setShowMobileInspector] = useState(false);
+
+  // Pagination & Layout states
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageDirection, setPageDirection] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 1024);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        setDimensions({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
   }, []);
-
-  const selectSession = (session: SessionRow) => {
-    setSelectedSession(session);
-    if (isMobile) {
-      setShowMobileInspector(true);
-    }
-  };
 
   const fetchSessions = useCallback(async () => {
     try {
       const data = await invoke<SessionRow[]>("get_sessions");
-      setSessions(data);
-      // Removed auto-select so it doesn't force selectedSession on every poll if we implement one
+      setSessions(data.sort((a, b) => b.started_at - a.started_at));
     } catch (e) {
       console.error("Failed to fetch sessions:", e);
     }
   }, []);
 
-  // Initial fetch and auto-select first session
   useEffect(() => {
     const init = async () => {
-      try {
-        const data = await invoke<SessionRow[]>("get_sessions");
-        setSessions(data);
-        if (data.length > 0 && !selectedSession) {
-          setSelectedSession(data[0]);
-        }
-      } catch (e) {
-        console.error("Failed to fetch sessions on init:", e);
-      }
+      setSessionsLoading(true);
+      await fetchSessions();
+      setSessionsLoading(false);
     };
     init();
-  }, [selectedSession]);
+  }, [fetchSessions]);
 
   useEffect(() => {
     if (!selectedSession) {
@@ -80,308 +337,392 @@ export const History: React.FC = () => {
       return;
     }
     const fetchTurns = async () => {
-      setLoading(true);
+      setTurnsLoading(true);
       try {
         const data = await invoke<TurnRow[]>("get_turns", { sessionId: selectedSession.id });
         setTurns(data);
       } catch (e) {
         console.error("Failed to fetch turns:", e);
       } finally {
-        setLoading(false);
+        setTurnsLoading(false);
       }
     };
     fetchTurns();
   }, [selectedSession]);
 
-  const handleDelete = async (e: React.MouseEvent, id: number) => {
-    e.stopPropagation();
-    if (confirmDeleteId === id) {
-      // Confirm deletion
-      try {
-        await invoke("delete_session", { id });
-        setConfirmDeleteId(null);
-        if (selectedSession?.id === id) {
-          setSelectedSession(null);
+  const handleDelete = useCallback(
+    async (e: React.MouseEvent, id: number) => {
+      e.stopPropagation();
+      if (confirmDeleteId === id) {
+        try {
+          await invoke("delete_session", { id });
+          setConfirmDeleteId(null);
+          if (selectedSession?.id === id) setSelectedSession(null);
+          fetchSessions();
+        } catch (e) {
+          console.error("Failed to delete session:", e);
         }
-        fetchSessions();
-      } catch (e) {
-        console.error("Failed to delete session:", e);
+      } else {
+        setConfirmDeleteId(id);
+        setTimeout(() => setConfirmDeleteId((curr) => (curr === id ? null : curr)), 3000);
       }
-    } else {
-      setConfirmDeleteId(id);
-      // Auto cancel after 3 seconds
-      setTimeout(() => {
-        setConfirmDeleteId(current => current === id ? null : current);
-      }, 3000);
+    },
+    [confirmDeleteId, selectedSession, fetchSessions]
+  );
+
+  const handleCancelDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDeleteId(null);
+  }, []);
+
+  const layoutParams = useMemo(() => {
+    const paddingX = 56;
+    const paddingY = 48;
+    const usableW = Math.max(200, dimensions.width - paddingX * 2);
+    const usableH = Math.max(200, dimensions.height - paddingY * 2);
+    const cols = Math.max(2, Math.floor(usableW / 240));
+    const rows = Math.max(2, Math.floor(usableH / 140));
+    const maxPerPage = cols * rows;
+    return { cols, rows, maxPerPage, paddingX, paddingY, usableW, usableH };
+  }, [dimensions]);
+
+  const { maxPerPage, paddingX, paddingY, usableW, usableH } = layoutParams;
+  const totalPages = Math.max(1, Math.ceil(sessions.length / maxPerPage));
+
+  useEffect(() => {
+    if (pageIndex >= totalPages) setPageIndex(Math.max(0, totalPages - 1));
+  }, [totalPages, pageIndex]);
+
+  const pageSessions = useMemo(() => {
+    return sessions.slice(pageIndex * maxPerPage, (pageIndex + 1) * maxPerPage);
+  }, [sessions, pageIndex, maxPerPage]);
+
+  interface SessionNode extends SimulationNodeDatum {
+    id: number;
+    session: SessionRow;
+    dayKey: string;
+  }
+
+  const nodesWithPositions = useMemo(() => {
+    const N = pageSessions.length;
+    if (N === 0 || dimensions.width === 0) return [];
+
+    // Simple deterministic pseudo-random number generator
+    const seededRandom = (seed: number) => {
+      const x = Math.sin(seed) * 10000;
+      return x - Math.floor(x);
+    };
+
+    const isCompact = dimensions.width < 680;
+    const cols = isCompact ? 1 : Math.max(2, Math.floor(usableW / 240));
+    const rows = Math.max(2, Math.floor(usableH / 140));
+    const totalSlots = cols * rows;
+
+    if (isCompact) {
+      // Direct vertical layout for compact viewports
+      return pageSessions.map((session, index) => {
+        const cellH = usableH / N;
+        const centerX = dimensions.width / 2;
+        const centerY = paddingY + index * cellH + cellH / 2;
+        return {
+          session,
+          x: centerX,
+          y: centerY,
+          dayKey: formatDateShort(session.started_at),
+        };
+      });
+    }
+
+    // Shuffled slot indices for intermediate nodes
+    // The top-left slot is index 0, the bottom-right slot is index totalSlots - 1
+    const availableSlots = Array.from({ length: Math.max(1, totalSlots - 2) }, (_, idx) => idx + 1);
+    let seed = pageIndex + 42;
+    const nextRand = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    for (let i = availableSlots.length - 1; i > 0; i--) {
+      const j = Math.floor(nextRand() * (i + 1));
+      const temp = availableSlots[i];
+      availableSlots[i] = availableSlots[j];
+      availableSlots[j] = temp;
+    }
+
+    // Initialize nodes using a cell-grid with seeded random jitter to guarantee even spacing
+    const nodes: SessionNode[] = pageSessions.map((session, index) => {
+      let cellIdx: number;
+      if (index === 0) {
+        cellIdx = 0; // Top-left cell
+      } else if (index === N - 1 && N > 1) {
+        cellIdx = totalSlots - 1; // Bottom-right cell
+      } else {
+        const slotIdx = (index - 1) % availableSlots.length;
+        cellIdx = availableSlots[slotIdx];
+      }
+
+      const colIdx = cellIdx % cols;
+      const rowIdx = Math.floor(cellIdx / cols);
+      const cellW = usableW / cols;
+      const cellH = usableH / rows;
+
+      // Base coordinates centered inside the grid cell
+      const centerX = paddingX + colIdx * cellW + cellW / 2;
+      const centerY = paddingY + rowIdx * cellH + cellH / 2;
+
+      // Seeded jitter
+      const seedJitter = session.id * 13;
+      const rx = seededRandom(seedJitter);
+      const ry = seededRandom(seedJitter + 7);
+
+      const maxJitterX = Math.max(0, (cellW - 224) / 4);
+      const maxJitterY = Math.max(0, (cellH - 112) / 4);
+      const jitterX = (rx * 2 - 1) * maxJitterX;
+      const jitterY = (ry * 2 - 1) * maxJitterY;
+
+      return {
+        id: session.id,
+        session,
+        dayKey: formatDateShort(session.started_at),
+        x: centerX + jitterX,
+        y: centerY + jitterY,
+        vx: 0,
+        vy: 0,
+      };
+    });
+
+    // Run synchronous simulation to resolve overlaps
+    const simulation = forceSimulation<SessionNode>(nodes)
+      .force(
+        "x",
+        forceX<SessionNode>((d) => d.x ?? 0).strength(0.2)
+      )
+      .force(
+        "y",
+        forceY<SessionNode>((d) => d.y ?? 0).strength(0.2)
+      )
+      .force("charge", forceManyBody<SessionNode>().strength(-120))
+      .force("collide", forceCollide<SessionNode>().radius(135).iterations(4));
+
+    simulation.tick(120);
+    simulation.stop();
+
+    // Safe padding from the container edges
+    const edgeMarginX = 64;
+    const edgeMarginY = 64;
+
+    return nodes.map((node) => {
+      // Clamp coordinates to keep nodes inside container bounds with safe padding
+      const clampedX = Math.max(112 + edgeMarginX, Math.min(dimensions.width - 112 - edgeMarginX, node.x ?? 0));
+      const clampedY = Math.max(56 + edgeMarginY, Math.min(dimensions.height - 56 - edgeMarginY, node.y ?? 0));
+      return {
+        session: node.session,
+        x: clampedX,
+        y: clampedY,
+        dayKey: node.dayKey,
+      };
+    });
+  }, [pageSessions, pageIndex, usableW, usableH, paddingX, paddingY, dimensions]);
+
+  const dayPaths = useMemo(() => {
+    const groups: { [day: string]: typeof nodesWithPositions } = {};
+    nodesWithPositions.forEach((node) => {
+      if (!groups[node.dayKey]) groups[node.dayKey] = [];
+      groups[node.dayKey].push(node);
+    });
+    return Object.entries(groups)
+      .map(([day, nodes]) => {
+        if (nodes.length < 2) return null;
+        const sorted = [...nodes].sort((a, b) => a.session.started_at - b.session.started_at);
+        const d = sorted.map((node, i) => `${i === 0 ? "M" : "L"} ${node.x} ${node.y}`).join(" ");
+        return { day, d };
+      })
+      .filter((p): p is { day: string; d: string } => p !== null);
+  }, [nodesWithPositions]);
+
+  const handlePrevPage = () => {
+    if (pageIndex > 0) {
+      setPageDirection(-1);
+      setPageIndex((p) => p - 1);
+    }
+  };
+  const handleNextPage = () => {
+    if (pageIndex < totalPages - 1) {
+      setPageDirection(1);
+      setPageIndex((p) => p + 1);
     }
   };
 
-  const handleCancelDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmDeleteId(null);
-  };
-  
-  const formatDate = (ms: number) => {
-    return new Date(ms).toLocaleString(undefined, {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
-  };
-
-  const formatTime = (ms: number) => {
-    return new Date(ms).toLocaleTimeString(undefined, {
-      hour: '2-digit', minute: '2-digit'
-    });
-  };
+  const isMeasuring = dimensions.width === 0;
+  const showLoading = sessionsLoading || isMeasuring;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-[rgb(var(--background))]">
-      
-      <header className="px-6 md:px-10 py-6 md:py-10 shrink-0">
-        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-[rgb(var(--accent))]/10">
-                <HistoryIcon className="text-[rgb(var(--accent))]" size={24} />
-              </div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[rgb(var(--foreground))]">
-                Session <span className="text-[rgb(var(--foreground-muted))] opacity-60 font-medium">Conversations</span>
-              </h1>
-            </div>
-            <p className="text-sm text-[rgb(var(--foreground-muted))] max-w-md">Review and manage past interactions and transcriptions.</p>
+    <div className="flex-1 flex flex-col h-full relative overflow-hidden bg-transparent select-none">
+      <div
+        ref={containerRef}
+        className="flex-1 relative z-20 min-h-0 pt-6 flex flex-col"
+        onClick={() => setSelectedSession(null)}
+      >
+        {showLoading ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-50">
+            <div className="w-6 h-6 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Loading memories...</span>
           </div>
-
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))] opacity-60">
-              Privacy
-            </span>
-            <button
-              onClick={() => updateDraft("persistence", "private_mode", !(draftSettings?.persistence.private_mode))}
-              className={cn(
-                "group relative flex items-center h-8 w-14 px-1 rounded-full transition-all duration-500",
-                draftSettings?.persistence.private_mode 
-                  ? "bg-[rgb(var(--accent))] shadow-[0_0_15px_rgba(var(--accent),0.4)]" 
-                  : "bg-[rgb(var(--foreground))]/10 border border-[rgba(var(--border),0.05)]"
-              )}
-              title={draftSettings?.persistence.private_mode ? "Private Mode Active (No disk writes)" : "Enable Private Mode"}
-            >
-              <div className={cn(
-                "flex items-center justify-center w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-500 transform",
-                draftSettings?.persistence.private_mode ? "translate-x-6" : "translate-x-0"
-              )}>
-                {draftSettings?.persistence.private_mode 
-                  ? <Ghost className="text-[rgb(var(--accent))]" size={12} /> 
-                  : <Ghost className="text-slate-400" size={12} />
-                }
-              </div>
-            </button>
+        ) : sessions.length === 0 ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-40">
+            <Ghost size={28} className="text-[rgb(var(--accent))]" />
+            <span className="text-[11px] font-bold uppercase tracking-widest">No memories persisted</span>
           </div>
-        </div>
-      </header>
-
-      {/* Main Content Area: Horizontal Layout with same proportions as Settings */}
-      <div className="flex-1 overflow-hidden relative px-6 md:px-10">
-        <div className="h-full max-w-[1600px] mx-auto py-6 md:py-8">
-          <div className="grid lg:grid-cols-3 gap-8 h-full items-start pb-4">
-            
-            {/* Left Column: Sessions List (1/3 Width) */}
-            <div className="lg:col-span-1 flex flex-col h-full overflow-hidden">
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-1 space-y-3">
-                {sessions.map(session => (
-                  <div 
-                    key={session.id}
-                    onClick={() => selectSession(session)}
-                    className={cn(
-                      "group relative p-4 rounded-2xl cursor-pointer transition-all duration-300 border",
-                      selectedSession?.id === session.id 
-                        ? "bg-[rgb(var(--foreground))]/[0.04] border-[rgb(var(--accent))]/30 shadow-[0_4px_24px_-4px_rgba(var(--accent),0.1)]" 
-                        : "bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] hover:bg-[rgb(var(--foreground))]/[0.03] hover:border-[rgb(var(--accent))]/20"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <MessageSquare size={14} className={cn(
-                          "shrink-0",
-                          selectedSession?.id === session.id ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))] opacity-60"
-                        )} />
-                        <h3 className={cn(
-                          "text-sm font-bold truncate transition-colors",
-                          selectedSession?.id === session.id ? "text-[rgb(var(--foreground))]" : "text-[rgb(var(--foreground))] opacity-80"
-                        )}>
-                          {session.first_message || "New Session"}
-                        </h3>
-                      </div>
-                      
-                      <div className="shrink-0 transition-opacity">
-                        {confirmDeleteId === session.id ? (
-                          <div className="flex items-center gap-2 bg-[rgb(var(--foreground))]/[0.05] p-1 rounded-lg animate-in fade-in zoom-in duration-200">
-                            <button 
-                              onClick={(e) => handleDelete(e, session.id)}
-                              className="p-1.5 rounded-md text-emerald-400 hover:bg-emerald-400/10 transition-colors"
-                              title="Confirm Delete"
-                            >
-                              <Check size={14} strokeWidth={3} />
-                            </button>
-                            <button 
-                              onClick={handleCancelDelete}
-                              className="p-1.5 rounded-md text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                              title="Cancel"
-                            >
-                              <X size={14} strokeWidth={3} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={(e) => handleDelete(e, session.id)}
-                            className={cn(
-                              "p-2 rounded-lg transition-all",
-                              selectedSession?.id === session.id
-                                ? "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-400/10"
-                                : "opacity-0 group-hover:opacity-600 text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-400/10"
-                            )}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-4 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-1.5">
-                          <CalendarDays size={12} />
-                          {formatDate(session.started_at)}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Hash size={12} />
-                          {session.turn_count} {session.turn_count === 1 ? 'Turn' : 'Turns'}
-                        </div>
-                      </div>
-                      
-                      {isMobile && (
-                        <ChevronRight size={14} className="text-[rgb(var(--accent))] opacity-60" />
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {sessions.length === 0 && (
-                  <div className="text-center p-8 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
-                    No sessions found
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* Right Column: Chat/Turns List (2/3 Width) */}
-            <AnimatePresence mode="wait">
-              {(!isMobile || showMobileInspector) && (
-                <motion.div 
-                  key={selectedSession?.id || 'empty'}
-                  initial={{ x: '100%' }}
-                  animate={{ x: 0 }}
-                  exit={{ x: '100%' }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+        ) : dimensions.width < 680 ? (
+          <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4 custom-scrollbar">
+            {sessions.map((session) => {
+              const isSelected = selectedSession?.id === session.id;
+              const isConfirmingDelete = confirmDeleteId === session.id;
+              const previewText = session.first_message || "No transcript recorded";
+              return (
+                <div
+                  key={session.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedSession(session);
+                  }}
                   className={cn(
-                    "fixed inset-x-0 top-8 bottom-[64px] z-50 flex flex-col bg-[rgb(var(--background))] lg:static lg:flex lg:translate-x-0 lg:col-span-2 lg:rounded-3xl lg:border lg:border-[rgba(var(--border),0.05)] lg:shadow-sm"
+                    "w-full rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none cursor-pointer border relative group",
+                    isSelected
+                      ? "border-[rgba(var(--accent),0.6)] shadow-[0_0_32px_rgba(var(--accent),0.08)] bg-[rgba(var(--accent),0.05)]"
+                      : "border-[rgba(var(--accent),0.1)] bg-[rgba(var(--foreground),0.02)] hover:border-[rgba(var(--accent),0.4)] hover:bg-[rgba(var(--foreground),0.04)]"
                   )}
                 >
-                  {/* Mobile Header */}
-                  {isMobile && (
-                    <header className="flex items-center justify-between px-6 py-4 border-b border-[rgba(var(--border),0.05)] bg-[rgb(var(--background))]/80 backdrop-blur-xl z-10">
-                      <button 
-                        onClick={() => setShowMobileInspector(false)}
-                        className="flex items-center gap-2 text-sm font-bold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+                  <div className="flex items-center justify-between mb-2 pr-10">
+                    <span className="text-[10px] font-mono text-[rgb(var(--accent))]/80 font-bold">
+                      {formatDateTime(session.started_at)}
+                    </span>
+                    <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40">
+                      {session.turn_count} {session.turn_count === 1 ? "turn" : "turns"}
+                    </span>
+                  </div>
+                  <p className="text-[13px] font-light leading-relaxed italic text-[rgb(var(--foreground))]/75 pr-10">
+                    "{previewText}"
+                  </p>
+                  <div className="absolute top-4 right-4 z-20">
+                    {isConfirmingDelete ? (
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={(e) => handleDelete(e, session.id)}
+                          className="w-6 h-6 rounded-full bg-[rgb(var(--accent))]/25 border border-[rgb(var(--accent))]/55 flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/35"
+                          aria-label="Confirm delete"
+                        >
+                          <Check size={10} strokeWidth={3} />
+                        </button>
+                        <button
+                          onClick={handleCancelDelete}
+                          className="w-6 h-6 rounded-full bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--border),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:bg-[rgba(var(--foreground),0.2)]"
+                          aria-label="Cancel delete"
+                        >
+                          <X size={10} strokeWidth={3} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => handleDelete(e, session.id)}
+                        className="w-6 h-6 rounded-full bg-[rgba(var(--foreground),0.08)] border border-[rgba(var(--border),0.1)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        aria-label="Delete session"
                       >
-                        <ArrowLeft size={18} />
-                        Back
+                        <Trash2 size={10} />
                       </button>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Session ID</span>
-                        <span className="text-xs font-mono">#{selectedSession?.id}</span>
-                      </div>
-                    </header>
-                  )}
-
-                  {!selectedSession ? (
-                    <div className="flex-1 flex items-center justify-center text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-60">
-                      Select a session to view conversation
-                    </div>
-                  ) : loading ? (
-                    <div className="flex-1 flex items-center justify-center">
-                      <div className="w-6 h-6 border-2 border-[rgb(var(--accent))]/20 border-t-[rgb(var(--accent))] rounded-full animate-spin" />
-                    </div>
-                  ) : (
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10">
-                      <div className="max-w-5xl mx-auto space-y-8 pb-12">
-                        
-                        <div className="text-center pb-8 border-b border-[rgba(var(--border),0.05)] mb-8">
-                          <h2 className="text-xl font-bold text-[rgb(var(--foreground))] mb-3">
-                             {selectedSession.first_message || "Session Started"}
-                          </h2>
-                          <div className="inline-flex items-center gap-4 px-4 py-2 rounded-full bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),0.05)] text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-80">
-                            <div className="flex items-center gap-1.5">
-                              <Clock size={12} />
-                              {formatDate(selectedSession.started_at)}
-                            </div>
-                            {selectedSession.ended_at && (
-                               <>
-                                 <div className="w-1 h-1 rounded-full bg-[rgb(var(--foreground-muted))]/30" />
-                                 <div className="flex items-center gap-1.5">
-                                   Duration: {((selectedSession.ended_at - selectedSession.started_at) / 1000).toFixed(1)}s
-                                 </div>
-                               </>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="space-y-6">
-                          {turns.map((turn) => (
-                            <div key={turn.id} className="space-y-6">
-                              {/* User Message */}
-                              <div className="flex flex-col items-end gap-2">
-                                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))] opacity-60">
-                                  User • {formatTime(turn.created_at)}
-                                </span>
-                                <div className="max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-sm bg-[rgb(var(--accent))]/10 text-[rgb(var(--foreground))] border border-[rgb(var(--accent))]/20 shadow-[0_4px_24px_-4px_rgba(var(--accent),0.05)] text-sm md:text-base leading-relaxed">
-                                  {turn.user_text}
-                                </div>
-                              </div>
-
-                              {/* Assistant Message */}
-                              <div className="flex flex-col items-start gap-2">
-                                <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))] opacity-80">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgb(var(--accent))]" />
-                                  Vox
-                                </span>
-                                <div className="max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tl-sm bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--border),0.05)] text-[rgb(var(--foreground-muted))] text-sm md:text-base leading-relaxed whitespace-pre-wrap">
-                                  {turn.assistant_text}
-                                </div>
-                                {/* Turn Metadata */}
-                                <div className="flex items-center gap-4 text-[10px] font-mono tracking-wider text-[rgb(var(--foreground-muted))] opacity-60 pl-2">
-                                  {turn.stt_latency_ms !== null && (
-                                    <span>STT: {turn.stt_latency_ms}ms</span>
-                                  )}
-                                  {turn.ttft_ms !== null && (
-                                    <span>TTFT: {turn.ttft_ms}ms</span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                          {turns.length === 0 && (
-                            <div className="text-center p-8 text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))] opacity-40">
-                              No conversation data
-                            </div>
-                          )}
-                        </div>
-
-                      </div>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        ) : (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); handlePrevPage(); }}
+              disabled={pageIndex === 0}
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-[rgba(var(--accent),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.4)] disabled:opacity-10 transition-all z-30"
+              aria-label="Newer sessions page"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleNextPage(); }}
+              disabled={pageIndex === totalPages - 1}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-[rgba(var(--accent),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.4)] disabled:opacity-10 transition-all z-30"
+              aria-label="Older sessions page"
+            >
+              <ChevronRight size={18} />
+            </button>
+
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40 z-30">
+              {pageIndex + 1} / {totalPages}
+            </div>
+
+            <div className="w-full h-full relative overflow-hidden">
+              <AnimatePresence mode="popLayout" custom={pageDirection}>
+                <motion.div
+                  key={pageIndex}
+                  custom={pageDirection}
+                  initial={{ opacity: 0, x: pageDirection * 50 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -pageDirection * 50 }}
+                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                  className="w-full h-full absolute inset-0"
+                >
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+                    {dayPaths.map((path) => (
+                      <path
+                        key={path.day}
+                        d={path.d}
+                        fill="none"
+                        stroke="rgba(var(--accent), 0.18)"
+                        strokeWidth="1.5"
+                        strokeDasharray="4 6"
+                      />
+                    ))}
+                  </svg>
+                  <AnimatePresence>
+                    {nodesWithPositions.map(({ session, x, y }) => (
+                      <VoiceRippleNode
+                        key={session.id}
+                        session={session}
+                        isSelected={selectedSession?.id === session.id}
+                        confirmDeleteId={confirmDeleteId}
+                        onSelect={setSelectedSession}
+                        onDelete={handleDelete}
+                        onCancelDelete={handleCancelDelete}
+                        x={x}
+                        y={y}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          </>
+        )}
       </div>
+
+      <AnimatePresence>
+        {selectedSession && (
+          <div
+            className="absolute inset-0 bg-black/5 z-25 cursor-default"
+            onClick={() => setSelectedSession(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedSession && (
+          <DetailPanel
+            session={selectedSession}
+            turns={turns}
+            loading={turnsLoading}
+            onClose={() => setSelectedSession(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
+

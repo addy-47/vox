@@ -106,51 +106,64 @@
 
 ---
 
-## v0.8.3 — LLM Provider Architecture (Current — Phase 9)
+## v0.8.3 - Ui revamp from ground up 
 
-**Goal:** Refactor the LLM from a single embedded backend into a provider-based architecture.
+**Goal** Turn vox ui from a AI SaaS app to a voice OS with new design.md as guideline
 
-* Embeded local inference preserved
+---
+
+## v0.8.4 — LLM Provider Architecture (Released — Phase 9)
+
+**Goal:** Refactor the LLM from a single embedded backend into a provider-based architecture and integrate cloud provider support.
+
+* Embedded local inference preserved
 * OpenAI-compatible remote endpoint support (Ollama, LM Studio, vLLM, etc.)
 * Streaming, cancellation, health checks, and model discovery as provider capabilities
 * Pipeline remains unchanged — only the implementation behind the provider changes
 
+### Cloud Provider Integration (shipped in v0.8.4)
+
+Cloud LLM providers ship via the `OpenAiCompatProvider`, extended with a `provider_name` parameter that dynamically maps URLs and injects required headers:
+
+| Provider | Endpoint URL | Mechanism |
+|----------|-------------|-----------|
+| **OpenAI** | `api.openai.com` | Standard OpenAI-compatible REST |
+| **Gemini** | `generativelanguage.googleapis.com/v1beta/openai` | OpenAI-compatible wrapper |
+| **Anthropic** | `api.anthropic.com` | URL routing + `anthropic-version` header injection |
+
+All three share a single `LlmProvider` trait implementation — no new structs required per provider. This pattern will extend to Groq, OpenRouter, and others in future releases.
+
 **Non-goals (future phases):**
-* Cloud provider integration (v0.8.5+)
 * STT/TTS provider refactor (v0.8.4/v0.8.5)
 
 ---
 
-## v0.8.4 — STT Provider Architecture
+## v0.8.5 — UI Polish & System Monitoring (In Progress)
 
-**Goal:** Apply the same provider architecture to STT (Embedded + Remote + Future Cloud).
+**Goal:** Complete UI responsiveness, monitoring UX, and system-level fixes.
+
+* Settings page made responsive across window sizes
+* Monitoring page offload/reload UX (Skull/RefreshCw buttons for model lifecycle management)
+* Linux system monitor fixed (sub-task filtering)
+* General UI polish and interaction card refactors
+* Settings and interaction component stability improvements
 
 ---
 
-## v0.8.5 — TTS Provider Architecture
+## v0.8.6 - 0.9.0 — Cloud Realtime Integration
 
-**Goal:** Apply the same provider architecture to TTS (Embedded + Remote + Future Cloud).
+**Goal:** Introduce full duplex cloud voice-to-voice APIs as an alternative to the local pipeline.
 
----
-
-## v0.9.0 — Cloud Provider Ecosystem
-
-**Goal:** Introduce cloud provider implementations on top of the provider architecture.
-
-### Cloud Providers
-
-* OpenAI
-* Gemini
-* Anthropic
-* OpenRouter
-* Sarvam
-* ElevenLabs
+* OpenAI Realtime API (WebSocket-based audio streaming)
+* Gemini Multimodal Live API integration
+* Dynamic switching between local pipeline (Local STT -> LLM -> TTS) and cloud voice-to-voice
+* Adaptive audio buffer synchronization and lower latency packet streaming
 
 ### Outcome
 
-* Unified provider abstraction
-* Local and cloud interoperability
-* User-selectable model stack
+* Unified local-first design with cloud acceleration
+* Choice of full-local privacy vs. high-capability cloud duplex streams
+* User-controlled model configuration and API provisioning
 
 ---
 

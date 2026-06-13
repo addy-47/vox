@@ -19,7 +19,10 @@ Vox is a **model-agnostic, role-based system** with a selection strategy that is
 | **STT** (Fallback) | Qwen3-ASR-0.6B | `qwen3_asr` | ~800 MB | INT8 Quantized (`sherpa-onnx`) |
 | **LLM** (Default) | Llama 3.2 1B Instruct | `llama_3_2_reasoning` | ~1.0 GB | GGUF Q6_K, context size `2048`, threads `N-2` |
 | **LLM** (Alternative) | Gemma 4 E2B-it | `gemma_4_reasoning` | ~2.2 GB | GGUF Q4_K_M |
+| **LLM** (Cloud)* | OpenAI / Gemini / Anthropic | provider-configurable | 0 MB (local) | Uses `OpenAiCompatProvider` with API key |
 | **TTS** (Sole) | **Supertonic 3** | `supertonic_tts` | ~144 MB | INT8 Quantized, sherpa-onnx native, 31 languages, 10 voices |
+
+> \* Cloud LLM options are available via `OpenAiCompatProvider` — see §6.2.
 
 ---
 
@@ -37,6 +40,19 @@ Each role has **strict memory + latency constraints** and is **replaceable** wit
 ---
 
 ## 3. Selection Philosophy
+
+### Cloud vs. Local Tradeoffs
+
+Alongside the native-local stack, Vox's provider architecture supports **cloud LLM inference** as an alternative:
+
+| Aspect | Local (EmbeddedProvider) | Cloud (OpenAiCompatProvider) |
+| :--- | :--- | :--- |
+| **Data privacy** | No data leaves the device | Requires API key — data sent to provider |
+| **Memory impact** | ~1.0–2.2 GB allocated | Zero local memory for inference |
+| **Model quality** | Constrained by ~5.5 GB budget | Access to frontier models (GPT-4o, Gemini 2.5 Pro, Claude 4) |
+| **Internet** | Not required | Required |
+| **Cost** | No API costs | Per-token pricing |
+| **Latency** | Sub-500 ms pipeline target | Depends on network + provider |
 
 ### Native-First Execution
 
@@ -289,6 +305,41 @@ if n_cur >= ctx_size { break; }
 
 ---
 
+## 6.2 Cloud LLM Providers
+
+Vox supports **cloud-hosted LLM inference** as an alternative to local models, powered by the same `OpenAiCompatProvider` that handles OpenAI-compatible local servers (Ollama, LM Studio, vLLM). No new provider structs are needed — the provider uses a `provider_name` setting to dynamically map base URLs for each cloud service.
+
+### Supported Providers
+
+| Provider | `provider_name` | Base URL (internal) |
+| :--- | :--- | :--- |
+| **OpenAI** | `"openai"` | `https://api.openai.com/v1` |
+| **Gemini** | `"gemini"` | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| **Anthropic** | `"anthropic"` | `https://api.anthropic.com/v1` |
+
+Each requires the corresponding API key configured in settings. The provider name is forwarded from settings through the pipeline to the `OpenAiCompatProvider` constructor.
+
+### Architecture
+
+```rust
+// Single provider handles all cloud backends
+let provider = OpenAiCompatProvider::new(
+    settings.llm_endpoint_url,     // Auto-mapped from provider_name
+    settings.llm_api_key,          // Provider-specific API key
+    settings.llm_model,            // e.g. "gpt-4o", "gemini-2.5-pro", "claude-sonnet-4"
+    Arc::clone(&cancel_flag),      // Atomic cancellation (same as local)
+);
+```
+
+The pipeline (`services/pipeline.rs`) is **provider-agnostic** — it calls `LlmProvider` trait methods (`generate()`, `stream_tokens()`, `cancel()`, `health_check()`, `list_models()`) regardless of whether the backend is local or cloud.
+
+### When to Use Cloud vs. Local
+
+- **Choose cloud** when: you need frontier-level reasoning, have limited RAM, or want zero local memory overhead for the LLM.
+- **Choose local** when: you need offline operation, no API costs, or data must not leave the device.
+
+---
+
 ## 7. Text-to-Speech (TTS)
 
 ### Selected Model: **Supertonic 3 (Sole Engine)**
@@ -478,9 +529,11 @@ interface ModelSettings {
     transliterate_enabled: boolean;
 
     // LLM
-    llm_model: string;          // "llama_3_2_reasoning" | "gemma_4_reasoning"
-    llm_ctx_size: number;       // 1024-4096
-    llm_threads: number;        // 1-N
+    llm_backend: string;        // "local" | "openai" | "gemini" | "anthropic"
+    llm_model: string;          // "llama_3_2_reasoning" | "gemma_4_reasoning" | "gpt-4o" | "gemini-2.5-pro" | ...
+    llm_ctx_size: number;       // 1024-4096 (local only)
+    llm_threads: number;        // 1-N (local only)
+    llm_api_key: string;        // Cloud provider API key (if applicable)
 
     // TTS (Supertonic 3 — sole engine)
     voice: number;              // Supertonic voice index (0-9)

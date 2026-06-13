@@ -50,7 +50,7 @@ pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
     let models_dir_exists = paths::get().models.exists();
     let settings_path = paths::get().settings.to_string_lossy().to_string();
 
-    log::info!("[Settings] Boot state requested. models_dir={}, settings={}", models_dir_exists, settings_path);
+    log::debug!("[Settings] Boot state requested. models_dir={}, settings={}", models_dir_exists, settings_path);
 
     Ok(BootState {
         settings,
@@ -335,12 +335,20 @@ fn apply_setting_mutation(
         ("llm", "threads") => {
             settings.llm.threads = value.as_u64().ok_or("threads must be a positive integer")? as u32;
         }
+        ("llm", "provider") => {
+            settings.llm.provider = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid provider: {}", e))?;
+        }
         ("interaction", "main_app_mode") => {
             settings.interaction.main_app_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid main_app_mode: {}", e))?;
         }
         ("interaction", "auto_sleep_timeout") => {
             settings.interaction.auto_sleep_timeout = value.as_u64().ok_or("auto_sleep_timeout must be a positive integer")? as u32;
+        }
+        ("interaction", "pipeline_mode") => {
+            settings.interaction.pipeline_mode = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid pipeline_mode: {}", e))?;
         }
         ("interaction", "tray_mode") => {
             settings.interaction.tray_mode = serde_json::from_value(value.clone())
@@ -361,9 +369,6 @@ fn apply_setting_mutation(
         ("tts", "speed") => {
             settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
         }
-        ("persistence", "enabled") => {
-            settings.persistence.enabled = value.as_bool().ok_or("enabled must be a boolean")?;
-        }
         ("persistence", "private_mode") => {
             settings.persistence.private_mode = value.as_bool().ok_or("private_mode must be a boolean")?;
         }
@@ -373,8 +378,11 @@ fn apply_setting_mutation(
         ("persistence", "retention_days") => {
             settings.persistence.retention_days = value.as_u64().ok_or("retention_days must be a positive integer")? as u32;
         }
-        ("assistant", "system_prompt") => {
-            settings.assistant.system_prompt = value.as_str().ok_or("system_prompt must be a string")?.to_string();
+        ("assistant", "hindi_prompt") => {
+            settings.assistant.hindi_prompt = value.as_str().ok_or("hindi_prompt must be a string")?.to_string();
+        }
+        ("assistant", "english_prompt") => {
+            settings.assistant.english_prompt = value.as_str().ok_or("english_prompt must be a string")?.to_string();
         }
         _ => return Ok(false),
     }
@@ -406,10 +414,6 @@ async fn dispatch_worker_command(app: &AppHandle, domain: &str, key: &str, value
                     let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateAudioMode(mode));
                     log::debug!("[Settings] VadCommand::UpdateAudioMode dispatched");
                 }
-            }
-            ("assistant", "system_prompt") => {
-                // Phase 6.3: dispatch to LLM worker when it supports hot-update
-                log::debug!("[Settings] system_prompt change staged (LLM worker dispatch in Phase 6.3)");
             }
             _ => {}
         }
@@ -446,4 +450,94 @@ async fn schedule_debounced_save(_app: AppHandle, state: State<'_, std::sync::Ar
     });
 
     *debounce = Some(handle);
+}
+
+#[tauri::command]
+pub async fn check_llm_provider_health(
+    state: State<'_, std::sync::Arc<AppState>>,
+    provider: Option<crate::core::settings::LlmProviderConfig>,
+) -> Result<bool, String> {
+    use crate::services::llm::{OpenAiCompatProvider, LlmProvider};
+    use crate::core::settings::LlmProviderConfig;
+    use crate::utils::paths;
+
+    let (config, llm_model) = {
+        if let Some(prov) = provider {
+            (prov, "".to_string())
+        } else {
+            let settings = state.settings.read().map_err(|e| e.to_string())?;
+            (settings.llm.provider.clone(), settings.llm.model.clone())
+        }
+    };
+
+    match config {
+        LlmProviderConfig::Embedded => {
+            let models_dir = paths::get().models.clone();
+            let manifest_lock = state.manifest.read().await;
+
+            let llm_path = if let Some(ref manifest) = *manifest_lock {
+                if let Some(group) = manifest.model_groups.iter().find(|g| g.id == llm_model) {
+                    if let Some(file) = group.files.first() {
+                        models_dir.join(&file.path)
+                    } else {
+                        models_dir
+                            .join(crate::core::constants::MODEL_DIR_LLM)
+                            .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+                    }
+                } else {
+                    models_dir
+                        .join(crate::core::constants::MODEL_DIR_LLM)
+                        .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+                }
+            } else {
+                models_dir
+                    .join(crate::core::constants::MODEL_DIR_LLM)
+                    .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+            };
+
+            Ok(llm_path.exists())
+        }
+        LlmProviderConfig::OpenAiCompat { base_url, model, api_key, provider_name } => {
+            let provider = OpenAiCompatProvider::new(&base_url, &model, api_key.as_deref(), provider_name.as_deref());
+            let healthy = tokio::task::spawn_blocking(move || provider.health_check())
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(healthy)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn list_remote_llm_models(
+    state: State<'_, std::sync::Arc<AppState>>,
+    provider: Option<crate::core::settings::LlmProviderConfig>,
+) -> Result<Vec<crate::core::settings::RemoteModelInfo>, String> {
+    use crate::services::llm::{OpenAiCompatProvider, EmbeddedProvider, LlmProvider};
+    use crate::core::settings::LlmProviderConfig;
+    use crate::utils::paths;
+
+    let config = {
+        if let Some(prov) = provider {
+            prov
+        } else {
+            let settings = state.settings.read().map_err(|e| e.to_string())?;
+            settings.llm.provider.clone()
+        }
+    };
+
+    match config {
+        LlmProviderConfig::Embedded => {
+            let llm_dir = paths::get().models.join(crate::core::constants::MODEL_DIR_LLM);
+            let models = EmbeddedProvider::list_models_in_dir(&llm_dir).map_err(|e| e.to_string())?;
+            Ok(models)
+        }
+        LlmProviderConfig::OpenAiCompat { base_url, model, api_key, provider_name } => {
+            let provider = OpenAiCompatProvider::new(&base_url, &model, api_key.as_deref(), provider_name.as_deref());
+            let models = tokio::task::spawn_blocking(move || provider.list_models())
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+            Ok(models)
+        }
+    }
 }

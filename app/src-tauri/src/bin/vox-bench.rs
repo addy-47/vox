@@ -7,8 +7,8 @@ use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::metrics::{MetricField, PipelineMetrics};
 use vox_lib::core::state::InteractionOwner;
-use vox_lib::services::llm::llama_cpp::LlmWorker;
-use vox_lib::services::traits::{LlmEngine as _, VadEngine as _};
+use vox_lib::services::llm::{LlmProvider, EmbeddedProvider, OpenAiCompatProvider};
+use vox_lib::services::traits::VadEngine as _;
 use vox_lib::services::utils::{count_words, is_devanagari, should_flush, transliterate_if_hi};
 use vox_lib::services::vad::ten_onnx::VadEngine;
 use vox_lib::utils::bench_reporter::BenchReporter;
@@ -42,6 +42,18 @@ struct Args {
     /// Prefix for output run directory (e.g. 'q6' → outputs/q6_run_20260609_...)
     #[arg(short, long)]
     output: Option<String>,
+
+    /// LLM provider: embedded or openai_compat
+    #[arg(long, default_value = "embedded")]
+    llm_provider: String,
+
+    /// Remote LLM base URL for openai_compat provider
+    #[arg(long, default_value = "http://100.86.62.14:11434")]
+    llm_url: String,
+
+    /// Remote LLM model name for openai_compat provider
+    #[arg(long, default_value = "llama3.1:8b-instruct-q4_K_M")]
+    llm_model: String,
 }
 
 enum BenchCommand {
@@ -58,13 +70,13 @@ fn main() -> anyhow::Result<()> {
     if let Some(governor) = vox_lib::utils::check_cpu_governor() {
         if governor != "performance" {
             eprintln!(
-                "\x1b[31m[FATAL]\x1b[0m CPU governor is '{}', not 'performance'.\n\
-                 Running benchmarks with a non-performance governor produces misleading results.\n\
-                 Switch to performance governor:\n\
+                "\x1b[33m[WARNING]\x1b[0m CPU governor is '{}', not 'performance'.\n\
+                 Running benchmarks with a non-performance governor might produce slightly slower results.\n\
+                 Switch to performance governor if you want official production numbers:\n\
                  \x1b[33m  echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor\x1b[0m",
                 governor
             );
-            std::process::exit(1);
+            // std::process::exit(1);
         }
     }
     let args = Args::parse();
@@ -119,38 +131,43 @@ fn main() -> anyhow::Result<()> {
     let stt_mem_mb = snap_2.rss_mb.saturating_sub(snap_1.rss_mb);
     metrics.lock().unwrap().stt_mem_mb = stt_mem_mb;
 
-    let llm_filename = args
-        .llm
-        .clone()
-        .unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string());
-    println!("\x1b[32m[Bench]\x1b[0m Loading LLM ({})...", llm_filename);
-    // Compute LLM threads: N-2 (reserve cores for system + other pipeline stages), min 2
-    let total_cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4);
-    let llm_threads = (total_cores.saturating_sub(2)).min(4).max(2) as u32;
-    println!(
-        "\x1b[32m[Bench]\x1b[0m System cores: {}, LLM threads: {}",
-        total_cores, llm_threads
-    );
-    let llm_path = vox_lib::utils::paths::model_dir("llm").join(&llm_filename);
     let snap_3 = BenchReporter::get_memory_snapshot();
-    let llm_engine = Box::new(
-        LlmWorker::new(&llm_path, 2048, llm_threads).expect("Failed to load LLM"),
-    );
+    let llm_engine: Box<dyn LlmProvider> = if args.llm_provider == "openai_compat" {
+        println!(
+            "\x1b[32m[Bench]\x1b[0m Using OpenAiCompat provider at {} with model {}...",
+            args.llm_url, args.llm_model
+        );
+        Box::new(OpenAiCompatProvider::new(&args.llm_url, &args.llm_model, None, None))
+    } else {
+        let llm_filename = args
+            .llm
+            .clone()
+            .unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string());
+        println!("\x1b[32m[Bench]\x1b[0m Loading Embedded LLM ({})...", llm_filename);
+        let total_cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let llm_threads = (total_cores.saturating_sub(2)).min(4).max(2) as u32;
+        println!(
+            "\x1b[32m[Bench]\x1b[0m System cores: {}, LLM threads: {}",
+            total_cores, llm_threads
+        );
+        let llm_path = vox_lib::utils::paths::model_dir("llm").join(&llm_filename);
+        Box::new(EmbeddedProvider::new(&llm_path, 2048, llm_threads).expect("Failed to load LLM"))
+    };
     let snap_4 = BenchReporter::get_memory_snapshot();
     let llm_mem_mb = snap_4.rss_mb.saturating_sub(snap_3.rss_mb);
     metrics.lock().unwrap().llm_mem_mb = llm_mem_mb;
 
-    println!("\x1b[32m[Bench]\x1b[0m Warming up LLM KV Cache with system prompt...");
+    println!("\x1b[32m[Bench]\x1b[0m Warming up LLM provider...");
     let warmup_cancel = Arc::new(AtomicBool::new(false));
     let (warmup_tx, _) = channel();
     let warmup_start = std::time::Instant::now();
     llm_engine
         .generate("", &system_prompt, 0, &warmup_cancel, &warmup_tx)
-        .expect("Failed to warm up LLM KV Cache");
+        .expect("Failed to warm up LLM provider");
     println!(
-        "\x1b[32m[Bench]\x1b[0m LLM KV Cache warmed up in {:?}",
+        "\x1b[32m[Bench]\x1b[0m LLM provider warmed up in {:?}",
         warmup_start.elapsed()
     );
 

@@ -47,6 +47,9 @@ pub enum InteractionState {
 pub struct TelemetryData {
     pub energy: f32,
     pub vad_prob: f32,
+    pub low: f32,
+    pub mid: f32,
+    pub high: f32,
 }
 
 // ─── VadCommand ───────────────────────────────────────────────────────────────
@@ -214,7 +217,13 @@ pub struct AppState {
     /// Latest VAD characteristics for monitoring (Atomic f32 via bit storage).
     pub latest_energy: Arc<AtomicU32>,
     pub latest_vad_prob: Arc<AtomicU32>,
+    pub latest_low: Arc<AtomicU32>,
+    pub latest_mid: Arc<AtomicU32>,
+    pub latest_high: Arc<AtomicU32>,
     pub latest_playback_energy: Arc<AtomicU32>,
+    pub latest_playback_low: Arc<AtomicU32>,
+    pub latest_playback_mid: Arc<AtomicU32>,
+    pub latest_playback_high: Arc<AtomicU32>,
     pub latest_sys_cpu: Arc<AtomicU32>,
     pub latest_sys_ram: Arc<AtomicU32>,
     pub latest_vox_cpu: Arc<AtomicU32>,
@@ -247,6 +256,11 @@ pub struct AppState {
     /// Phase 7 Setup
     pub model_manager: Arc<crate::setup::model_manager::ModelManager>,
     pub manifest: Arc<tokio::sync::RwLock<Option<crate::setup::manifest::VoxManifest>>>,
+
+    /// CPU frequency governor (Linux). Checked once at startup. Empty string if unavailable.
+    pub cpu_governor: std::sync::Mutex<String>,
+    /// Whether the CPU governor is optimal ("performance"). True if unavailable (non-Linux).
+    pub cpu_governor_optimal: Arc<AtomicBool>,
     pub setup_running: Arc<Mutex<bool>>,
 }
 
@@ -257,7 +271,13 @@ impl AppState {
         telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
         latest_energy: Arc<AtomicU32>,
         latest_vad_prob: Arc<AtomicU32>,
+        latest_low: Arc<AtomicU32>,
+        latest_mid: Arc<AtomicU32>,
+        latest_high: Arc<AtomicU32>,
         latest_playback_energy: Arc<AtomicU32>,
+        latest_playback_low: Arc<AtomicU32>,
+        latest_playback_mid: Arc<AtomicU32>,
+        latest_playback_high: Arc<AtomicU32>,
         latest_sys_cpu: Arc<AtomicU32>,
         latest_sys_ram: Arc<AtomicU32>,
         latest_vox_cpu: Arc<AtomicU32>,
@@ -306,7 +326,13 @@ impl AppState {
             conversation_id: Arc::new(AtomicU64::new(0)),
             latest_energy,
             latest_vad_prob,
+            latest_low,
+            latest_mid,
+            latest_high,
             latest_playback_energy,
+            latest_playback_low,
+            latest_playback_mid,
+            latest_playback_high,
             latest_sys_cpu,
             latest_sys_ram,
             latest_vox_cpu,
@@ -332,6 +358,8 @@ impl AppState {
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
             model_manager,
             manifest,
+            cpu_governor: std::sync::Mutex::new(String::new()),
+            cpu_governor_optimal: Arc::new(AtomicBool::new(true)), // optimistic default
             setup_running: Arc::new(Mutex::new(false)),
         }
     }

@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
+import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
 
 // Lazy load pages for performance
 const Home = lazy(() => import("@/pages/Home").then(m => ({ default: m.Home })));
@@ -31,22 +32,34 @@ const App: React.FC = () => {
   const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
 
   useEffect(() => {
+    // Global error handler for unhandled promise rejections
+    const onRejection = (event: PromiseRejectionEvent) => {
+      console.error('[GLOBAL] Unhandled Promise Rejection:', event.reason);
+    };
+    window.addEventListener('unhandledrejection', onRejection);
+
     // Show window immediately once JS is ready to display the loader
     getCurrentWindow().show().catch(console.error);
 
     const checkSetup = async () => {
+      console.log('[App] Checking setup status...');
       const urlParams = new URLSearchParams(window.location.search);
       const forceWizard = urlParams.get('wizard') === 'true';
 
       try {
         const completed = await invoke<boolean>('get_onboarding_status');
+        console.log('[App] Setup completed:', completed);
         setSetupCompleted(forceWizard ? false : completed);
       } catch (e) {
-        console.error('Setup check failed', e);
+        console.error('[App] Setup check failed:', e);
         setSetupCompleted(false);
       }
     };
     checkSetup();
+
+    return () => {
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
   }, []);
 
   if (setupCompleted === null) return (
@@ -57,6 +70,7 @@ const App: React.FC = () => {
   );
 
   return (
+    <ErrorBoundary name="App">
     <Router>
       <Suspense fallback={<PageLoader />}>
         <Routes>
@@ -71,10 +85,10 @@ const App: React.FC = () => {
           {/* Main App Routes */}
           {setupCompleted && (
             <Route element={<ResponsiveLayout />}>
-              <Route path="/" element={<Home />} />
-              <Route path="/history" element={<History />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/monitoring" element={<Monitoring />} />
+              <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
+              <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
+              <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
+              <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
               <Route path="/wizard" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
@@ -82,6 +96,7 @@ const App: React.FC = () => {
         </Routes>
       </Suspense>
     </Router>
+    </ErrorBoundary>
   );
 };
 

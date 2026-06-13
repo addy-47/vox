@@ -1,5 +1,6 @@
-import { useEffect, useRef, type HTMLAttributes } from "react"
+import React, { useEffect, useRef, memo, type HTMLAttributes } from "react"
 import { cn } from "../lib/utils"
+import { useDynamicFPS } from "@/shared/hooks/useDynamicFPS"
 
 export type LiveWaveformProps = HTMLAttributes<HTMLDivElement> & {
   active?: boolean
@@ -25,7 +26,7 @@ export type LiveWaveformProps = HTMLAttributes<HTMLDivElement> & {
   telemetryRef?: React.RefObject<any>
 }
 
-export const LiveWaveform = ({
+export const LiveWaveform = memo(({
   active = false,
   processing = false,
   deviceId,
@@ -68,6 +69,17 @@ export const LiveWaveform = ({
   const lastHeightRef = useRef(0)
 
   const heightStyle = typeof height === "number" ? `${height}px` : height
+
+  // ── Dynamic FPS: tick function stored in ref ──
+  const tickRef = useRef<(dt: number) => void>(() => {})
+
+  useDynamicFPS({
+    onFrame: (dt) => tickRef.current(dt),
+    isActive: active || processing,
+    isPaused: !active && !processing,
+    fpsActive: 60,
+    fpsIdle: 0,
+  })
 
   // Handle canvas resizing
   useEffect(() => {
@@ -241,15 +253,11 @@ export const LiveWaveform = ({
     const ctx = canvas.getContext("2d", { alpha: true })
     if (!ctx) return
 
-    let rafId: number
-
-    const render = (currentTime: number) => {
+    tickRef.current = (_dt: number) => {
+      const currentTime = performance.now()
       const width = lastWidthRef.current
       const height = lastHeightRef.current
-      if (width === 0) {
-        rafId = requestAnimationFrame(render)
-        return
-      }
+      if (width === 0) return
 
       // 1. Data Update (Throttle to updateRate)
       if (active && (currentTime - lastUpdateRef.current > updateRate)) {
@@ -265,7 +273,6 @@ export const LiveWaveform = ({
           let relevantData: number[] = []
           if (externalData) {
             const energy = typeof externalData === 'number' ? externalData : (externalData.energy || 0)
-            // Generate pseudo-FFT from energy for static mode if not provided as array
             for (let i = 0; i < halfCount; i++) {
               const variation = (0.7 + Math.sin(i * 0.8 + currentTime * 0.005) * 0.3) * (0.9 + Math.random() * 0.1)
               relevantData.push(energy * variation)
@@ -310,11 +317,9 @@ export const LiveWaveform = ({
         const barCount = Math.floor(width / step)
         const centerY = height / 2
         
-        // Exact Centering
         const totalContentWidth = barCount * step - barGap
         const startX = (width - totalContentWidth) / 2
 
-        // Gradient Cache
         if (!barGradientCacheRef.current || lastHeightRef.current !== height) {
           const accentVal = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || "0, 219, 233";
           const g = ctx.createLinearGradient(0, 0, 0, height)
@@ -348,7 +353,6 @@ export const LiveWaveform = ({
             }
           }
         } else {
-          // Scrolling Mode - Render from right to left
           const actualData = data.length > 0 ? data : new Array(barCount).fill(0.1)
           for (let i = 0; i < barCount; i++) {
             const dataIdx = actualData.length - 1 - i
@@ -356,7 +360,6 @@ export const LiveWaveform = ({
             
             const val = actualData[dataIdx] || 0.1
             const bH = Math.max(baseBarHeight, val * height * 0.9)
-            // Fix: Centering for scrolling (draw relative to right edge of content area)
             const x = startX + totalContentWidth - (i + 1) * step + barGap
             const y = centerY - bH / 2
             
@@ -365,7 +368,6 @@ export const LiveWaveform = ({
           }
         }
 
-        // Edge Fading
         if (fadeEdges && fadeWidth > 0) {
           if (!gradientCacheRef.current || lastWidthRef.current !== width) {
             const g = ctx.createLinearGradient(0, 0, width, 0)
@@ -384,12 +386,11 @@ export const LiveWaveform = ({
         
         if (!active && !processing) needsRedrawRef.current = false
       }
-
-      rafId = requestAnimationFrame(render)
     }
 
-    rafId = requestAnimationFrame(render)
-    return () => cancelAnimationFrame(rafId)
+    return () => {
+      tickRef.current = () => {}
+    }
   }, [active, processing, sensitivity, updateRate, historySize, barWidth, baseBarHeight, barGap, barRadius, barColor, fadeEdges, fadeWidth, mode])
 
   return (
@@ -402,4 +403,6 @@ export const LiveWaveform = ({
       <canvas className="block h-full w-full" ref={canvasRef} />
     </div>
   )
-}
+})
+
+LiveWaveform.displayName = "LiveWaveform"

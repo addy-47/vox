@@ -58,6 +58,11 @@ pub struct RuntimeSnapshot {
     pub is_sleeping: bool,
     pub is_engaged: bool,
 
+    /// CPU frequency governor (Linux only, e.g. "powersave", "performance"). Empty string if unavailable.
+    pub cpu_governor: String,
+    /// Whether the CPU governor is optimal ("performance"). False if unknown/non-Linux.
+    pub cpu_governor_optimal: bool,
+
     /// Unix timestamp of the snapshot in milliseconds.
     pub timestamp_ms: u64,
 }

@@ -29,7 +29,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
   return (
     <div 
       ref={scrollRef} 
-      className="flex-1 overflow-y-auto px-5 py-4 custom-scrollbar relative z-10"
+      className="flex-1 overflow-y-auto px-5 py-2 custom-scrollbar relative z-10 mx-3"
     >
       <div className="min-h-full flex flex-col items-center justify-center relative">
         {/* Waveform Layer (Recording or Processing) */}
@@ -90,8 +90,8 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
           <motion.div 
             key="idle-layer"
             initial={{ opacity: 0 }}
-            animate={{ opacity: 0.4 }}
-            className="flex flex-col items-center justify-center"
+            animate={{ opacity: 0.5 }}
+            className="flex flex-col items-center justify-center px-5 py-6 rounded-xl bg-[rgb(var(--foreground))]/5"
           >
             <Activity size={24} className="mb-2 text-[rgb(var(--accent))]/40 animate-pulse" />
             <p className="text-[11px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/40">

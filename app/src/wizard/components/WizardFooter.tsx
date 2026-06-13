@@ -30,12 +30,12 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
   errorLabel = "Error"
 }) => {
   return (
-    <div className={cn("mt-auto pt-8 border-t border-white/5", className)}>
+    <div className={cn("mt-auto pt-8 border-t border-[rgba(var(--border),0.05)]", className)}>
       {error && (
         <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3">
           <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
           <div className="flex flex-col">
-            <span className="text-[9px] font-black text-red-500 uppercase tracking-widest mb-0.5">{errorLabel}</span>
+            <span className="text-[11px] font-black text-red-500 uppercase tracking-widest mb-0.5">{errorLabel}</span>
             <p className="text-[11px] text-red-400 font-medium uppercase tracking-wider">{error}</p>
           </div>
         </div>
@@ -45,7 +45,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
         {showBack && (
           <button
             onClick={onBack}
-            className="px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors"
+            className="px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
           >
             Back
           </button>
@@ -54,7 +54,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
         {showSkip && onSkip && (
           <button
             onClick={onSkip}
-            className="px-6 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-[#00dbe9] transition-colors border border-dashed border-white/10 hover:border-[#00dbe9]/30 rounded-2xl bg-white/[0.01] transition-all duration-300"
+            className="px-6 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors border border-dashed border-[rgba(var(--border),0.08)] hover:border-[rgb(var(--accent))]/30 rounded-2xl glass-whisper transition-all duration-300"
           >
             Skip
           </button>
@@ -64,14 +64,14 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
           onClick={onNext}
           disabled={isNextDisabled || isNextLoading}
           className={cn(
-            "group relative flex-1 py-5 bg-zinc-950 text-white font-black rounded-2xl overflow-hidden border border-white/10 transition-all shadow-[0_0_40px_rgba(0,0,0,0.5)]",
-            (isNextDisabled || isNextLoading) ? "opacity-50 cursor-not-allowed" : "hover:bg-zinc-900 hover:border-[#00dbe9]/50 active:scale-[0.98]"
+            "group relative flex-1 py-5 text-white font-black rounded-2xl overflow-hidden border transition-all shadow-[0_0_40px_rgba(0,0,0,0.5)] glass-card glass-base",
+            (isNextDisabled || isNextLoading) ? "opacity-50 cursor-not-allowed" : "hover:border-[rgb(var(--accent))]/70 active:scale-[0.98]"
           )}
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
             {isNextLoading ? 'Processing...' : nextLabel}
-            {!isNextLoading && <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[#00dbe9]" />}
+            {!isNextLoading && <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />}
           </span>
         </button>
       </div>

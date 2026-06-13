@@ -55,10 +55,15 @@ pub struct PlaybackEngine {
     playback_active: Arc<AtomicBool>,
     /// Set `true` to clear the buffer and stop playback.
     cancel_flag:    Arc<AtomicBool>,
+    /// Set `true` to request the CPAL stream thread to discard all buffered audio.
+    discard_request: Arc<AtomicBool>,
     /// The active CPAL stream — kept alive until cancelled.
     _stream:        Option<cpal::Stream>,
     /// RCA Fix: Real-time safe energy telemetry (Atomic f32 via bit storage)
     _playback_energy: Arc<AtomicU32>,
+    _playback_low: Arc<AtomicU32>,
+    _playback_mid: Arc<AtomicU32>,
+    _playback_high: Arc<AtomicU32>,
     /// Track underruns specifically when AssistantSpeaking is true.
     _playback_underruns: Arc<std::sync::atomic::AtomicU64>,
     /// Ref to the state atomic for lock-free checks.
@@ -78,6 +83,9 @@ impl PlaybackEngine {
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
         playback_energy: Arc<AtomicU32>,
+        playback_low: Arc<AtomicU32>,
+        playback_mid: Arc<AtomicU32>,
+        playback_high: Arc<AtomicU32>,
         playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
     ) -> Result<Self> {
@@ -85,12 +93,17 @@ impl PlaybackEngine {
         let rb = ringbuf::HeapRb::<f32>::new(48_000 * 30);
         let (producer, consumer) = rb.split();
         let buffer_samples = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let discard_request = Arc::new(AtomicBool::new(false));
 
         let stream = Self::build_cpal_stream(
             consumer,
             Arc::clone(&playback_active),
             Arc::clone(&cancel_flag),
+            Arc::clone(&discard_request),
             Arc::clone(&playback_energy),
+            Arc::clone(&playback_low),
+            Arc::clone(&playback_mid),
+            Arc::clone(&playback_high),
             Arc::clone(&playback_underruns),
             Arc::clone(&is_assistant_speaking),
             Arc::clone(&buffer_samples),
@@ -100,8 +113,12 @@ impl PlaybackEngine {
             producer: std::sync::Mutex::new(producer),
             playback_active,
             cancel_flag,
+            discard_request,
             _stream: Some(stream),
             _playback_energy: playback_energy,
+            _playback_low: playback_low,
+            _playback_mid: playback_mid,
+            _playback_high: playback_high,
             _playback_underruns: playback_underruns,
             _is_assistant_speaking: is_assistant_speaking,
             buffer_samples,
@@ -147,6 +164,7 @@ impl PlaybackEngine {
     pub fn cancel(&self) {
         self.cancel_flag.store(true, Ordering::Relaxed);
         self.playback_active.store(false, Ordering::Relaxed);
+        self.discard_request.store(true, Ordering::Relaxed);
         if let Ok(_prod) = self.producer.lock() {
             // No easy 'clear' in ringbuf v0.4 producer, but we can't block here.
             // The callback will see cancel_flag and drop its own consumer state.
@@ -171,7 +189,11 @@ impl PlaybackEngine {
         mut consumer: HeapCons<f32>,
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
+        discard_request: Arc<AtomicBool>,
         playback_energy: Arc<AtomicU32>,
+        playback_low: Arc<AtomicU32>,
+        playback_mid: Arc<AtomicU32>,
+        playback_high: Arc<AtomicU32>,
         playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
         buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
@@ -204,12 +226,22 @@ impl PlaybackEngine {
 
         let mut last_sample = 0.0f32;
         let mut current_volume = 1.0f32;
+        let mut filter_bank = crate::utils::audio_filters::FilterBank::new(48_000.0);
 
         let stream = device.build_output_stream(
             &config,
             // ── CPAL data callback — ZERO computation (Directive 3) ──────────
             // Only drains the pre-upsampled ring buffer.
             move |output: &mut [f32], _info| {
+                if discard_request.load(Ordering::Relaxed) {
+                    consumer.skip(consumer.occupied_len());
+                    buffer_samples.store(0, Ordering::SeqCst);
+                    discard_request.store(false, Ordering::Relaxed);
+                    last_sample = 0.0;
+                    current_volume = 1.0;
+                    filter_bank.reset();
+                }
+
                 if !playback_active.load(Ordering::Relaxed)
                     || cancel_flag.load(Ordering::Relaxed)
                 {
@@ -220,6 +252,7 @@ impl PlaybackEngine {
                     }
                     last_sample = 0.0;
                     current_volume = 1.0;
+                    filter_bank.reset();
                     output.fill(0.0);
                     return;
                 }
@@ -227,6 +260,9 @@ impl PlaybackEngine {
                 // Lock-free read from SPSC ring buffer
                 let frames = output.len() / 2; // stereo → mono frames
                 let mut sum_sq = 0.0;
+                let mut sum_low_sq = 0.0;
+                let mut sum_mid_sq = 0.0;
+                let mut sum_high_sq = 0.0;
                 let mut read_count = 0;
 
                 for frame in 0..frames {
@@ -250,6 +286,12 @@ impl PlaybackEngine {
 
                     let played_sample = sample * current_volume;
                     sum_sq += played_sample * played_sample;
+
+                    let (low, mid, high) = filter_bank.tick(played_sample);
+                    sum_low_sq += low * low;
+                    sum_mid_sq += mid * mid;
+                    sum_high_sq += high * high;
+
                     output[frame * 2]     = played_sample; // L
                     output[frame * 2 + 1] = played_sample; // R
                 }
@@ -261,6 +303,18 @@ impl PlaybackEngine {
                 let energy = (raw_energy * 15.0).clamp(0.0, 1.0);
                 playback_energy.store(energy.to_bits(), Ordering::Relaxed);
 
+                let raw_low = (sum_low_sq / frames as f32).sqrt();
+                let raw_mid = (sum_mid_sq / frames as f32).sqrt();
+                let raw_high = (sum_high_sq / frames as f32).sqrt();
+
+                let low_val = (raw_low * 15.0).clamp(0.0, 1.0).powf(0.5);
+                let mid_val = (raw_mid * 15.0).clamp(0.0, 1.0).powf(0.5);
+                let high_val = (raw_high * 15.0).clamp(0.0, 1.0).powf(0.5);
+
+                playback_low.store(low_val.to_bits(), Ordering::Relaxed);
+                playback_mid.store(mid_val.to_bits(), Ordering::Relaxed);
+                playback_high.store(high_val.to_bits(), Ordering::Relaxed);
+
                 // Buffer exhausted — signal idle
                 if consumer.is_empty() {
                     if is_assistant_speaking.load(Ordering::Relaxed) {
@@ -268,9 +322,13 @@ impl PlaybackEngine {
                     }
                     playback_active.store(false, Ordering::Relaxed);
                     playback_energy.store(0f32.to_bits(), Ordering::Relaxed);
+                    playback_low.store(0f32.to_bits(), Ordering::Relaxed);
+                    playback_mid.store(0f32.to_bits(), Ordering::Relaxed);
+                    playback_high.store(0f32.to_bits(), Ordering::Relaxed);
                     buffer_samples.store(0, Ordering::SeqCst);
                     last_sample = 0.0;
                     current_volume = 1.0;
+                    filter_bank.reset();
                 }
             },
             move |err| {

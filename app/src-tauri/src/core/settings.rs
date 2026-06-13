@@ -31,6 +31,14 @@ pub enum InteractionMode {
     PTT,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineMode {
+    #[default]
+    Modular,
+    Realtime,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct ModelMetadata {
@@ -59,6 +67,16 @@ impl Default for ModelMetadata {
 pub struct VoiceProfile {
     pub id: i32,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RemoteModelInfo {
+    pub id: String,            // e.g. "gemma4:31b"
+    pub name: String,          // display name derived from id
+    pub size_bytes: Option<u64>,
+    pub quantization: Option<String>,  // e.g. "Q4_K_M"
+    pub family: Option<String>,        // e.g. "Gemma"
+    pub provider_kind: String, // e.g. "open_ai_compat", "embedded"
 }
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
@@ -240,6 +258,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("llm", "model") => SettingReloadPolicy::Restart,
         ("llm", "ctx_size") => SettingReloadPolicy::Restart,
         ("llm", "threads") => SettingReloadPolicy::Restart,
+        ("llm", "provider") => SettingReloadPolicy::Restart,
 
         // TTS — voice change requires engine restart; quality/speed are hot-updated
         ("tts", "voice") => SettingReloadPolicy::Restart,
@@ -248,6 +267,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
 
         // Interaction — sent as mode-changed event immediately
         ("interaction", "auto_sleep_timeout") => SettingReloadPolicy::Hot,
+        ("interaction", "pipeline_mode") => SettingReloadPolicy::Restart,
         ("interaction", _) => SettingReloadPolicy::Hot,
 
         // Telemetry toggle — hot
@@ -255,14 +275,14 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         // Log level — requires subscriber restart
         ("telemetry", "log_level") => SettingReloadPolicy::Restart,
 
-        // Persistence — enabled flag requires restart; limits are hot
-        ("persistence", "enabled") => SettingReloadPolicy::Restart,
+        // Persistence — limits are hot
         ("persistence", "private_mode") => SettingReloadPolicy::Hot,
         ("persistence", "max_sessions") => SettingReloadPolicy::Hot,
         ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
-        // Assistant — system prompt is sent to LLM worker via channel
-        ("assistant", "system_prompt") => SettingReloadPolicy::WorkerCommand,
+        // Assistant — hot update
+        ("assistant", "hindi_prompt") => SettingReloadPolicy::Hot,
+        ("assistant", "english_prompt") => SettingReloadPolicy::Hot,
 
         // Unknown — conservative default
         _ => SettingReloadPolicy::Restart,
@@ -347,11 +367,31 @@ impl Default for AsrSettings {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LlmProviderConfig {
+    Embedded,
+    OpenAiCompat {
+        base_url: String,
+        model: String,
+        api_key: Option<String>,
+        #[serde(default)]
+        provider_name: Option<String>,
+    },
+}
+
+impl Default for LlmProviderConfig {
+    fn default() -> Self {
+        LlmProviderConfig::Embedded
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmSettings {
     pub model: String, // e.g., "llama_3_2_reasoning"
     pub ctx_size: u32,
     pub threads: u32,
+    pub provider: LlmProviderConfig,
 }
 
 impl Default for LlmSettings {
@@ -360,6 +400,7 @@ impl Default for LlmSettings {
             model: "llama_3_2_reasoning_q4".to_string(),
             ctx_size: 2048,
             threads: 4,
+            provider: LlmProviderConfig::default(),
         }
     }
 }
@@ -387,6 +428,8 @@ pub struct InteractionSettings {
     pub main_app_mode: InteractionMode,
     pub tray_mode: InteractionMode,
     pub auto_sleep_timeout: u32,
+    #[serde(default)]
+    pub pipeline_mode: PipelineMode,
 }
 
 impl Default for InteractionSettings {
@@ -395,6 +438,7 @@ impl Default for InteractionSettings {
             main_app_mode: InteractionMode::Passive,
             tray_mode: InteractionMode::Passive,
             auto_sleep_timeout: 400,
+            pipeline_mode: PipelineMode::Modular,
         }
     }
 }
@@ -417,8 +461,6 @@ impl Default for TelemetrySettings {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PersistenceSettings {
-    /// Enable/disable SQLite session persistence. Requires restart to take effect.
-    pub enabled: bool,
     /// Disable all database writes for the current session.
     pub private_mode: bool,
     /// Maximum sessions retained. Older entries pruned at next startup.
@@ -430,7 +472,6 @@ pub struct PersistenceSettings {
 impl Default for PersistenceSettings {
     fn default() -> Self {
         Self {
-            enabled: true,
             private_mode: false,
             max_sessions: 500,
             retention_days: 30,
@@ -452,8 +493,6 @@ impl Default for SetupSettings {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct AssistantSettings {
-    /// Generic fallback prompt.
-    pub system_prompt: String,
     /// Prompt used when Devanagari (Hindi) input is detected.
     pub hindi_prompt: String,
     /// Prompt used when English/other input is detected.
@@ -463,7 +502,6 @@ pub struct AssistantSettings {
 impl Default for AssistantSettings {
     fn default() -> Self {
         Self {
-            system_prompt: crate::core::constants::SYSTEM_PROMPT_EN.into(),
             hindi_prompt: crate::core::constants::SYSTEM_PROMPT_HI.into(),
             english_prompt: crate::core::constants::SYSTEM_PROMPT_EN.into(),
         }

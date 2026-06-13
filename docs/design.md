@@ -1,150 +1,88 @@
----
-name: Vox Intelligence System
-colors:
-  surface: '#131313'
-  surface-dim: '#131313'
-  surface-bright: '#3a3939'
-  surface-container-lowest: '#0e0e0e'
-  surface-container-low: '#1c1b1b'
-  surface-container: '#201f1f'
-  surface-container-high: '#2a2a2a'
-  surface-container-highest: '#353534'
-  on-surface: '#e5e2e1'
-  on-surface-variant: '#b9cacb'
-  inverse-surface: '#e5e2e1'
-  inverse-on-surface: '#313030'
-  outline: '#849495'
-  outline-variant: '#3b494b'
-  surface-tint: '#00dbe9'
-  primary: '#dbfcff'
-  on-primary: '#00363a'
-  primary-container: '#00f0ff'
-  on-primary-container: '#006970'
-  inverse-primary: '#006970'
-  secondary: '#d8baff'
-  on-secondary: '#440087'
-  secondary-container: '#6b01cc'
-  on-secondary-container: '#d2b0ff'
-  tertiary: '#f6f4ff'
-  on-tertiary: '#00149e'
-  tertiary-container: '#d4d6ff'
-  on-tertiary-container: '#2f44f4'
-  error: '#ffb4ab'
-  on-error: '#690005'
-  error-container: '#93000a'
-  on-error-container: '#ffdad6'
-  primary-fixed: '#7df4ff'
-  primary-fixed-dim: '#00dbe9'
-  on-primary-fixed: '#002022'
-  on-primary-fixed-variant: '#004f54'
-  secondary-fixed: '#eddcff'
-  secondary-fixed-dim: '#d8baff'
-  on-secondary-fixed: '#290055'
-  on-secondary-fixed-variant: '#6200bc'
-  tertiary-fixed: '#dfe0ff'
-  tertiary-fixed-dim: '#bdc2ff'
-  on-tertiary-fixed: '#000965'
-  on-tertiary-fixed-variant: '#0020dc'
-  background: '#131313'
-  on-background: '#e5e2e1'
-  surface-variant: '#353534'
-typography:
-  display-lg:
-    fontFamily: Space Grotesk
-    fontSize: 48px
-    fontWeight: '600'
-    lineHeight: '1.1'
-    letterSpacing: -0.02em
-  headline-md:
-    fontFamily: Space Grotesk
-    fontSize: 24px
-    fontWeight: '500'
-    lineHeight: '1.3'
-  body-md:
-    fontFamily: Inter
-    fontSize: 16px
-    fontWeight: '400'
-    lineHeight: '1.6'
-  label-sm:
-    fontFamily: Space Grotesk
-    fontSize: 12px
-    fontWeight: '600'
-    lineHeight: '1.0'
-    letterSpacing: 0.1em
-rounded:
-  sm: 0.25rem
-  DEFAULT: 0.5rem
-  md: 0.75rem
-  lg: 1rem
-  xl: 1.5rem
-  full: 9999px
-spacing:
-  base: 8px
-  container-padding: 24px
-  element-gap: 16px
-  section-margin: 40px
+# Vox Design System Spec: "Liquid Space"
+
+This specification details the design philosophy, visual aesthetics, layout rules, and performance systems of Vox, an agentic voice operating system (Jarvis-like OS).
+
 ---
 
-## Brand & Style
+## 1. Vision & Core Aesthetic
 
-This design system embodies the intersection of high-fidelity futurism and functional minimalism. It is designed to feel like a sentient companion—lightweight, responsive, and premium. By blending **Glassmorphism** with **Cyber-Minimalism**, the interface avoids the visual clutter of traditional dashboards in favor of a "heads-up display" (HUD) aesthetic. 
+Vox is designed not as a static application, but as a **sentient digital organism** that lives on the desktop. The interface feels light, organic, responsive, and alive. 
 
-The emotional response should be one of calm empowerment. Surfaces are treated as ephemeral layers of light and glass, ensuring that the primary focus remains on the "Orb"—the visual manifestation of the assistant's consciousness.
+*   **Sentience over UI**: Minimize standard widgets, borders, and input fields. Interactions should lead with voice, sound, and ambient light.
+*   **Holographic Elevation**: Elements float as translucent layers above a morphing visual core.
+*   **Aesthetics**: Glassmorphism, neon gas glows, deep space obsidian gradients, and anti-aliased micro-animations.
 
-## Colors
+---
 
-The palette is anchored by a deep **Obsidian (#050505)** to create infinite depth, allowing holographic elements to pop. 
+## 2. Glass Elevation System
 
-*   **Primary (Cyan):** Used for active states, voice ripples, and critical data points.
-*   **Secondary (Violet):** Represents the "intelligence" aspect, used for processing states and soft accents.
-*   **Iridescence:** A gradient mesh of Cyan, Violet, and Soft Blue should be applied to the central Orb and used sparingly as a background "light leak" to prevent the dark theme from feeling flat.
-*   **Functional Grays:** High-transparency whites (low opacity) are used for glass surfaces to maintain a lightweight feel.
+All cards, headers, and navigation bars use a cohesive glassmorphic styling sysytem layered on top of a fully transparent page root. This allows the animated ambient background to bleed through and unify the workspace.
 
-## Typography
+There are **4 levels of elevation** defined by blur density and tint opacity:
 
-This design system utilizes a dual-font approach to balance technical precision with readability. 
+| Elevation Level | CSS Class | Blur Radius | Tint Opacity (Dark) | Tint Opacity (Light) | Best Use Cases |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Whisper** | `.glass-whisper` | 8px | `0.20` | `0.45` | Tooltips, status badges, secondary dropdown options. |
+| **Surface** | `.glass-surface` | 16px | `0.45` | `0.65` | General content panels, navigation strips, settings containers. |
+| **Card** | `.glass-card` | 24px | `0.65` | `0.80` | Major modules, dialog boxes, settings category headers. |
+| **Elevated** | `.glass-elevated` | 40px | `0.85` | `0.92` | Modal overlays, system monitoring windows, popovers. |
 
-**Space Grotesk** is the primary display face, used for headlines, data readouts, and labels to reinforce the "cyber" aesthetic. **Inter** is utilized for body text and assistant responses to ensure maximum legibility during longer interactions. Weights should vary significantly—using Light (300) for secondary info and Medium/Semi-Bold (500-600) for core actions—to create hierarchy without relying on color.
+*   **Sheen & Noise**: Visual depth is enhanced with a noise grain overlay (`.amb-noise` / `.glass-base::after`) to simulate frosted glass texture.
 
-## Layout & Spacing
+---
 
-The layout follows a **Fixed Grid** model with high margins to create a "floating" effect. Components should never feel cramped; negative space is a functional tool used to direct the user's eye to the central Orb.
+## 3. Ambient Background & Sentient Energy
 
-*   **Safe Zones:** Large 40px+ margins on the edges of the viewport.
-*   **Verticality:** Content flows from the bottom up (mobile-first interaction pattern), mimicking a conversation history.
-*   **Alignment:** Center-aligned for voice-only modes; left-aligned for data-heavy informational cards.
+The background is a reactive canvas representing the state of the voice engine.
 
-## Elevation & Depth
+### Mood Synchronization
+The ambient background morphs color and animation velocity based on the pipeline's active phase:
+*   `calm` (Idle/Sleep): Low-energy deep obsidian, slow-flowing organic blobs, minimal ripple rings.
+*   `active` (Listening/UserSpeaking): High frequency, expanded glow, fast morphing speed.
+*   `thinking` (Processing/LLM generation): Swirling cyan/violet orbits, pulsing central energy.
+*   `speaking` (TTS playback): Fluid ripple waves spreading from the central core.
 
-Depth is achieved through **Backdrop Blurs** and **Tonal Layering** rather than traditional shadows.
+### Sentient Membrane (`PipelineField`)
+Behind the central Orb is a dashed radial membrane that expands and contracts with VAD probability and audio volume, creating a visual heart rate for the assistant.
 
-1.  **Level 0 (Base):** Deep Obsidian (#050505).
-2.  **Level 1 (Ambient):** Soft background blurs (30px - 60px radius) in iridescent colors to create a sense of atmospheric light.
-3.  **Level 2 (Glass Surfaces):** Semi-transparent cards with a `backdrop-filter: blur(20px)` and a 1px solid border at 10% opacity.
-4.  **Level 3 (Active Glow):** Elements that are "processing" or "active" emit a 15px outer glow (box-shadow) using the primary cyan color at 30% opacity.
+---
 
-## Shapes
+## 4. Holographic Dialogue Stream
 
-The shape language is sophisticated and modern. Standard cards use a **1rem (16px) corner radius**. For smaller interactive elements like buttons and chips, a **Pill-shape (Full round)** is preferred to contrast against the structured grid of the cards. The Orb remains the only perfectly fluid, organic shape in the UI, distinguishing the AI from the UI container.
+Rather than presenting standard conversation logs or overlapping single lines of text, Vox features a **Holographic Dialogue Stream**:
 
-## Components
+*   **Left/Right Separation**: User query bubbles align left; AI voice responses align right.
+*   **No Card Framing**: Text is rendered directly on the ambient field, maximizing screen space and visual integration.
+*   **Faded Scroll Boundary**: The scroll zone has a vertical CSS mask gradient (`mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)`) so older turns dissolve into space as they scroll upwards.
+*   **Micro-animations**: Words and lines float up smoothly using Framer Motion as they are streamed from the STT and LLM engines.
 
-*   **Glass Cards:** The primary container. Must have a subtle top-down linear gradient (white at 5% to white at 2%) and a `1px` stroke.
-*   **Action Buttons:** Pill-shaped. Primary buttons use a solid cyan-to-blue gradient; secondary buttons are "Ghost" style with a neon-tinged border.
-*   **Voice Ripple:** A series of concentric, semi-transparent rings that pulse from the Orb.
-*   **Status Chips:** Small, uppercase labels with a "dot" indicator to show connectivity or mode (e.g., • LIVE).
-*   **Input Fields:** Minimalist underlines or glass-morphed fields with a shimmering focus state.
-*   **The Orb:** A 3D-effect fluid sphere. It should utilize CSS/SVG filters to create an iridescent "gas" effect that moves in response to voice frequency.
+---
 
-## PTT Interaction & Waveform
+## 5. Responsive & Dynamic Layouts
 
-The **Push-To-Talk (PTT)** mode provides a high-intent capture experience.
+The desktop layout transitions dynamically to a unified layout on small screens (mobile viewports):
 
-### Visual Language
-*   **Capture Overlay:** A deep translucent obsidian layer (`rgba(10, 12, 14, 0.4)`) with high-radius backdrop blur (`20px+`) that isolates the recording action.
-*   **Waveform Aesthetic:** Real-time frequency visualization using a high-fidelity bar renderer.
-    *   **Color:** Electric Cyan (`#22d3ee`) with varying opacity based on amplitude.
-    *   **Geometry:** Rounded bars (2px-3px width) with 2px gaps, creating a technical yet organic pulse.
-*   **State Feedback:**
-    *   **RECORDING:** Pulsing "Release to Send" label and active waveform.
-    *   **PROCESSING:** A minimalist infinite spinner with a tracked "Processing" status label in uppercase tracking.
+### Central Navigation Capsule (`EdgeNav`)
+On desktop, navigation is a floating bottom capsule. On mobile, the system monitoring metrics (which float bottom-left on desktop) are hidden, and the **Activity Monitor** is integrated directly as a 4th `NavLink` tab inside the navigation capsule itself, routing directly to `/monitoring`.
+
+### Full-Page Diagnostics Monitor
+On mobile/small screens, monitoring is not rendered as a popover panel overlay (which could cause home page UI bleed-through and flashing). Instead, it renders as a dedicated page route (`/monitoring`) with a solid background containing status badges, CPU/RAM bars, latency metrics, and Sparkline graphs.
+
+### Viewport Transition Engine
+Vox handles window resizing dynamically:
+*   **Mobile ➔ Desktop**: If the user is on the `/monitoring` route page and resizes to desktop, the router redirects them back to the Home page (`/`) and automatically launches the popover panel.
+*   **Desktop ➔ Mobile**: If the user has the popover panel open on desktop and resizes to mobile, the popover closes and they are routed directly to `/monitoring` so they don't lose context.
+
+### Sentient Core Scale
+On mobile viewports, the central Orb is scaled up by **50%** (`min(92vw, 85vh)` instead of `min(70vw, 65vh)`) to act as the primary, dominant touch target and visual anchor.
+
+---
+
+## 6. Performance Constraints & Best Practices
+
+To achieve high rendering performance on baseline systems (8GB RAM, CPU-first):
+*   **Dynamic FPS (`useDynamicFPS`)**: Heavy visual loops (Three.js WebGL in the Orb, HTML5 Canvas in the Waveform) throttle their frame rate dynamically:
+    *   *Active*: 60fps (rendering active wave/orb)
+    *   *Idle*: 15fps (slow idle glow)
+    *   *Sleep*: 0fps (fully paused loop when tab is hidden or asleep)
+*   **React Memoization**: All visually intensive components (`AmbientBackground`, `PipelineField`, `VoxOrb`, `LiveWaveform`) are wrapped in `React.memo` to eliminate unnecessary rendering overhead during text streaming or database reads.

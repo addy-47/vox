@@ -1,13 +1,10 @@
 {
-  "latest_version": "0.8.2",
+  "latest_version": "0.8.5",
   "release_notes": [
-    "Fixed mid-word Devanagari splits: added ends_at_word_boundary() safety check in should_flush() to prevent TTS cutting words like हारी into हा+री.",
-    "Fixed Nemotron STT transcribe() chunking: audio now fed as sequential 8960-sample windows with reset_state() only at end, producing coherent Devanagari Hindi transcripts.",
-    "Confirmed Supertonic emotion tag support: <laugh>, <breath>, <sigh> tags produce audibly different TTS output (verified via integration test).",
-    "Benchmark results: 100% completion (5/5 clips), 0 mid-word splits, STT RTF 0.18x (22x faster than v0.8.0 Qwen3), peak RSS ~2.5 GB.",
-    "Replaced English STT prefix removal with whitespace normalization in pipeline for cleaner transcript handling.",
-    "CPU-aware LLM thread presets: dynamically computed from navigator.hardwareConcurrency with maxSafe = totalCores - 2.",
-    "CPU governor detection: Linux startup check emits cpu_governor_warning event if not 'performance'; frontend shows dismissible banner."
+    "Revamped Vox UI with the vision of a voice-first OS .",
+    "OpenAI-Compatible Remote LLM Support, fully provider agnostic and custom API endpoints alongside embedded local inference.",
+    "Added Cloud providers for llm category with dynamic model discvery and health checks ",
+    "Test clips feature and  Orb reimagined with ambient background pulses "
   ],
   "linux": {
     "package": "vox",
