@@ -15,6 +15,8 @@ import {
   Moon,
   Zap,
   MemoryStick,
+  Skull,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
@@ -271,6 +273,33 @@ export const Monitoring: React.FC = () => {
   const [history, setHistory] = useState<LocalSnapshot[]>([]);
   const latest = useMemo(() => history[history.length - 1] ?? null, [history]);
 
+  const isEngineLoaded = useMemo(() => {
+    return !!(
+      latest?.is_vad_loaded ||
+      latest?.is_stt_loaded ||
+      latest?.is_llm_loaded ||
+      latest?.is_tts_loaded
+    );
+  }, [latest]);
+
+  const [togglingEngine, setTogglingEngine] = useState(false);
+
+  const handleToggleEngine = useCallback(async () => {
+    if (togglingEngine) return;
+    setTogglingEngine(true);
+    try {
+      if (isEngineLoaded) {
+        await invoke("stop_engine");
+      } else {
+        await invoke("launch_engine");
+      }
+    } catch (e) {
+      console.error("Failed to toggle engine:", e);
+    } finally {
+      setTogglingEngine(false);
+    }
+  }, [isEngineLoaded, togglingEngine]);
+
   const cpuTextRef = useRef<HTMLSpanElement>(null);
   const cpuBarRef = useRef<HTMLDivElement>(null);
   const ramTextRef = useRef<HTMLSpanElement>(null);
@@ -327,7 +356,8 @@ export const Monitoring: React.FC = () => {
           cpuBarRef.current.style.width = `${Math.min(100, Math.max(0, curCpu))}%`;
         }
         if (ramTextRef.current) {
-          ramTextRef.current.textContent = `${Math.round(curRam)} MB`;
+          const ramGb = curRam / 1024;
+          ramTextRef.current.textContent = `${ramGb.toFixed(2)} GB`;
         }
         if (ramBarRef.current) {
           const pct = Math.min(100, Math.max(0, (curRam / snap.total_ram_mb) * 100));
@@ -357,11 +387,33 @@ export const Monitoring: React.FC = () => {
             Realtime Engine Metrics
           </p>
         </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.15)] bg-black/20">
-          <Activity size={12} className="text-[rgb(var(--accent))] animate-pulse" />
-          <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase">
-            LIVE MONITOR
-          </span>
+        <div className="flex items-center gap-3">
+          {/* Force Offload / Reload toggle */}
+          <button
+            onClick={handleToggleEngine}
+            disabled={togglingEngine}
+            title={isEngineLoaded ? "Offload all models immediately from RAM" : "Load default models"}
+            className={cn(
+              "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer",
+              togglingEngine && "opacity-50 cursor-wait",
+              isEngineLoaded
+                ? "border-[rgba(239,68,68,0.25)] text-red-500 bg-red-500/10 hover:bg-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.15)]"
+                : "border-white/10 text-white/40 hover:text-white/70 bg-white/5 hover:bg-white/10"
+            )}
+          >
+            {isEngineLoaded ? (
+              <Skull size={14} className={cn(togglingEngine && "animate-spin")} />
+            ) : (
+              <RefreshCw size={14} className={cn(togglingEngine && "animate-spin")} />
+            )}
+          </button>
+
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.15)] bg-black/20">
+            <Activity size={12} className="text-[rgb(var(--accent))] animate-pulse" />
+            <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase">
+              LIVE MONITOR
+            </span>
+          </div>
         </div>
       </div>
 

@@ -17,6 +17,8 @@ import {
   Zap,
   MemoryStick,
   X,
+  Skull,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
@@ -295,6 +297,34 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
 }) => {
   const [history, setHistory] = useState<LocalSnapshot[]>([]);
   const latest = useMemo(() => history[history.length - 1] ?? null, [history]);
+
+  const isEngineLoaded = useMemo(() => {
+    return !!(
+      latest?.is_vad_loaded ||
+      latest?.is_stt_loaded ||
+      latest?.is_llm_loaded ||
+      latest?.is_tts_loaded
+    );
+  }, [latest]);
+
+  const [togglingEngine, setTogglingEngine] = useState(false);
+
+  const handleToggleEngine = useCallback(async () => {
+    if (togglingEngine) return;
+    setTogglingEngine(true);
+    try {
+      if (isEngineLoaded) {
+        await invoke("stop_engine");
+      } else {
+        await invoke("launch_engine");
+      }
+    } catch (e) {
+      console.error("Failed to toggle engine:", e);
+    } finally {
+      setTogglingEngine(false);
+    }
+  }, [isEngineLoaded, togglingEngine]);
+
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // DOM Refs for high-performance direct DOM updates (avoiding React re-renders at 60fps)
@@ -361,7 +391,8 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
           cpuBarRef.current.style.width = `${Math.min(100, Math.max(0, curCpu))}%`;
         }
         if (ramTextRef.current) {
-          ramTextRef.current.textContent = `${Math.round(curRam)} MB`;
+          const ramGb = curRam / 1024;
+          ramTextRef.current.textContent = `${ramGb.toFixed(2)} GB`;
         }
         if (ramBarRef.current) {
           const pct = Math.min(100, Math.max(0, (curRam / snap.total_ram_mb) * 100));
@@ -370,7 +401,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
       } else {
         if (cpuTextRef.current) cpuTextRef.current.textContent = "0.0%";
         if (cpuBarRef.current) cpuBarRef.current.style.width = "0%";
-        if (ramTextRef.current) ramTextRef.current.textContent = "0 MB";
+        if (ramTextRef.current) ramTextRef.current.textContent = "0.00 GB";
         if (ramBarRef.current) ramBarRef.current.style.width = "0%";
       }
 
@@ -438,13 +469,33 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
                 Engine Monitor
               </span>
             </div>
-            <button
-              onClick={onClose}
-              className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
-              aria-label="Close monitor"
-            >
-              <X size={14} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleToggleEngine}
+                disabled={togglingEngine}
+                title={isEngineLoaded ? "Offload all models immediately from RAM" : "Load default models"}
+                className={cn(
+                  "p-1 rounded-lg transition-all duration-300 flex items-center justify-center cursor-pointer",
+                  togglingEngine && "opacity-50 cursor-wait",
+                  isEngineLoaded
+                    ? "text-red-500 hover:bg-red-500/10"
+                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-white/5"
+                )}
+              >
+                {isEngineLoaded ? (
+                  <Skull size={13} className={cn(togglingEngine && "animate-spin")} />
+                ) : (
+                  <RefreshCw size={13} className={cn(togglingEngine && "animate-spin")} />
+                )}
+              </button>
+              <button
+                onClick={onClose}
+                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+                aria-label="Close monitor"
+              >
+                <X size={14} />
+              </button>
+            </div>
           </div>
 
           <div className="px-4 pb-4 pt-3 space-y-4">

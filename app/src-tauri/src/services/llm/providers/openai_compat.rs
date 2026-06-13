@@ -12,18 +12,12 @@ pub struct OpenAiCompatProvider {
     base_url: String,
     model: String,
     api_key: Option<String>,
-    client: reqwest::blocking::Client,
     async_client: reqwest::Client,
 }
 
 impl OpenAiCompatProvider {
     pub fn new(base_url: &str, model: &str, api_key: Option<&str>) -> Self {
         let base_url = base_url.trim_end_matches('/').to_string();
-        let client = reqwest::blocking::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .build()
-            .unwrap_or_else(|_| reqwest::blocking::Client::new());
-
         let async_client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .build()
@@ -33,7 +27,6 @@ impl OpenAiCompatProvider {
             base_url,
             model: model.to_string(),
             api_key: api_key.map(|s| s.to_string()),
-            client,
             async_client,
         }
     }
@@ -133,11 +126,7 @@ impl LlmProvider for OpenAiCompatProvider {
             stream: true,
         };
 
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-
-        rt.block_on(async {
+        block_on(async {
             let url = format!("{}/v1/chat/completions", self.base_url);
             let mut builder = self.async_client.post(&url).json(&req_body);
 
@@ -230,93 +219,110 @@ impl LlmProvider for OpenAiCompatProvider {
 
     fn health_check(&self) -> bool {
         let url = format!("{}/v1/models", self.base_url);
-        let mut builder = self.client.get(&url).timeout(Duration::from_secs(3));
+        let mut builder = self.async_client.get(&url).timeout(Duration::from_secs(3));
         if let Some(ref key) = self.api_key {
             builder = builder.bearer_auth(key);
         }
 
-        match builder.send() {
-            Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
-        }
+        block_on(async {
+            match builder.send().await {
+                Ok(resp) => resp.status().is_success(),
+                Err(_) => false,
+            }
+        })
     }
 
     fn list_models(&self) -> anyhow::Result<Vec<RemoteModelInfo>> {
         use crate::core::settings::RemoteModelInfo;
 
-        // Try Ollama-specific /api/tags first
-        let ollama_url = format!("{}/api/tags", self.base_url);
-        let mut builder = self.client.get(&ollama_url).timeout(Duration::from_secs(3));
-        if let Some(ref key) = self.api_key {
-            builder = builder.bearer_auth(key);
-        }
+        block_on(async {
+            // Try Ollama-specific /api/tags first
+            let ollama_url = format!("{}/api/tags", self.base_url);
+            let mut builder = self.async_client.get(&ollama_url).timeout(Duration::from_secs(3));
+            if let Some(ref key) = self.api_key {
+                builder = builder.bearer_auth(key);
+            }
 
-        if let Ok(resp) = builder.send() {
-            if resp.status().is_success() {
-                if let Ok(ollama_resp) = resp.json::<OllamaTagsResponse>() {
-                    let models = ollama_resp
-                        .models
-                        .into_iter()
-                        .map(|m| {
-                            let clean_name = m.name
-                                .replace(':', " ")
-                                .replace('_', " ")
-                                .replace('-', " ");
-                            RemoteModelInfo {
-                                id: m.name.clone(),
-                                name: clean_name,
-                                size_bytes: Some(m.size),
-                                quantization: m.details.quantization_level,
-                                family: m.details.family.map(|f| {
-                                    let mut c = f.chars();
-                                    match c.next() {
-                                        None => String::new(),
-                                        Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
-                                    }
-                                }),
-                                provider_kind: "open_ai_compat".to_string(),
-                            }
-                        })
-                        .collect();
-                    return Ok(models);
+            if let Ok(resp) = builder.send().await {
+                if resp.status().is_success() {
+                    if let Ok(ollama_resp) = resp.json::<OllamaTagsResponse>().await {
+                        let models = ollama_resp
+                            .models
+                            .into_iter()
+                            .map(|m| {
+                                let clean_name = m.name
+                                    .replace(':', " ")
+                                    .replace('_', " ")
+                                    .replace('-', " ");
+                                RemoteModelInfo {
+                                    id: m.name.clone(),
+                                    name: clean_name,
+                                    size_bytes: Some(m.size),
+                                    quantization: m.details.quantization_level,
+                                    family: m.details.family.map(|f| {
+                                        let mut c = f.chars();
+                                        match c.next() {
+                                            None => String::new(),
+                                            Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+                                        }
+                                    }),
+                                    provider_kind: "open_ai_compat".to_string(),
+                                }
+                            })
+                            .collect();
+                        return Ok(models);
+                    }
                 }
             }
-        }
 
-        // Fallback: standard /v1/models
-        let url = format!("{}/v1/models", self.base_url);
-        let mut builder = self.client.get(&url).timeout(Duration::from_secs(3));
-        if let Some(ref key) = self.api_key {
-            builder = builder.bearer_auth(key);
-        }
+            // Fallback: standard /v1/models
+            let url = format!("{}/v1/models", self.base_url);
+            let mut builder = self.async_client.get(&url).timeout(Duration::from_secs(3));
+            if let Some(ref key) = self.api_key {
+                builder = builder.bearer_auth(key);
+            }
 
-        let resp = builder.send()?;
-        if !resp.status().is_success() {
-            return Err(anyhow::anyhow!("HTTP error listing models: {}", resp.status()));
-        }
+            let resp = builder.send().await?;
+            if !resp.status().is_success() {
+                return Err(anyhow::anyhow!("HTTP error listing models: {}", resp.status()));
+            }
 
-        let model_list = resp.json::<ModelList>()?;
-        let models = model_list
-            .data
-            .into_iter()
-            .map(|m| {
-                let (clean_name, quantization, family) = parse_heuristic_metadata(&m.id);
-                RemoteModelInfo {
-                    id: m.id,
-                    name: clean_name,
-                    size_bytes: None,
-                    quantization,
-                    family,
-                    provider_kind: "open_ai_compat".to_string(),
-                }
-            })
-            .collect();
+            let model_list = resp.json::<ModelList>().await?;
+            let models = model_list
+                .data
+                .into_iter()
+                .map(|m| {
+                    let (clean_name, quantization, family) = parse_heuristic_metadata(&m.id);
+                    RemoteModelInfo {
+                        id: m.id,
+                        name: clean_name,
+                        size_bytes: None,
+                        quantization,
+                        family,
+                        provider_kind: "open_ai_compat".to_string(),
+                    }
+                })
+                .collect();
 
-        Ok(models)
+            Ok(models)
+        })
     }
 
     fn kind(&self) -> ProviderKind {
         ProviderKind::OpenAiCompat
+    }
+}
+
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle.block_on(future),
+        Err(_) => {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build temporary tokio runtime")
+                .block_on(future)
+        }
     }
 }
 
