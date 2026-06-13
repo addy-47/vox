@@ -137,7 +137,7 @@ fn main() -> anyhow::Result<()> {
             "\x1b[32m[Bench]\x1b[0m Using OpenAiCompat provider at {} with model {}...",
             args.llm_url, args.llm_model
         );
-        Box::new(OpenAiCompatProvider::new(&args.llm_url, &args.llm_model, None))
+        Box::new(OpenAiCompatProvider::new(&args.llm_url, &args.llm_model, None, None))
     } else {
         let llm_filename = args
             .llm

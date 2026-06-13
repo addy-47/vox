@@ -10,6 +10,22 @@ import {
 import { cn } from "@/shared/lib/utils";
 import { RemoteModelInfo } from "@/store/settingsStore";
 
+const PRICING_MAP: Record<string, string> = {
+  "gpt-4o-mini": "$0.15 / $0.60",
+  "gpt-4o": "$2.50 / $10.00",
+  "gpt-4-turbo": "$10.00 / $30.00",
+  "gemini-1.5-flash": "$0.075 / $0.30",
+  "gemini-1.5-pro": "$1.25 / $5.00",
+  "gemini-2.0-flash": "$0.075 / $0.30",
+  "gemini-2.5-flash": "$0.075 / $0.30",
+  "claude-3-5-sonnet": "$3.00 / $15.00",
+  "claude-3-5-haiku": "$0.80 / $4.00",
+  "claude-3-opus": "$15.00 / $75.00",
+  "llama-3.3-70b": "$0.59 / $0.79",
+  "llama3-8b": "$0.05 / $0.08",
+  "mixtral-8x7b": "$0.24 / $0.24",
+};
+
 interface ModelStatus {
   step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
   progress: number;
@@ -267,8 +283,127 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [loadingRemoteModels, setLoadingRemoteModels] = useState(false);
   const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
 
-  const provider = settings?.llm?.provider;
+  const provider = draftSettings?.llm?.provider || settings?.llm?.provider;
   const isRemoteLlm = provider?.kind === "open_ai_compat";
+
+
+
+  const [customModelId, setCustomModelId] = useState("");
+  const [customModelStatus, setCustomModelStatus] = useState<'idle' | 'valid' | 'invalid' | 'checking'>('idle');
+
+  const getFilteredModels = useCallback(() => {
+    if (!provider || !provider.provider_name) return remoteModels;
+    const name = provider.provider_name.toLowerCase();
+    
+    let filtered: RemoteModelInfo[] = [];
+    if (remoteModels && remoteModels.length > 0) {
+      if (name.includes("openai")) {
+        filtered = remoteModels.filter(m => 
+          m.id.toLowerCase().includes("gpt") && 
+          !m.id.toLowerCase().includes("instruct") && 
+          !m.id.toLowerCase().includes("embedding") && 
+          !m.id.toLowerCase().includes("audio")
+        );
+      } else if (name.includes("gemini") || name.includes("google")) {
+        filtered = remoteModels.filter(m => 
+          m.id.toLowerCase().includes("gemini") && 
+          !m.id.toLowerCase().includes("embedding")
+        );
+      } else if (name.includes("anthropic")) {
+        filtered = remoteModels.filter(m => 
+          m.id.toLowerCase().includes("claude")
+        );
+      } else if (name.includes("groq")) {
+        filtered = remoteModels.filter(m => 
+          (m.id.toLowerCase().includes("llama") || m.id.toLowerCase().includes("mixtral") || m.id.toLowerCase().includes("gemma")) && 
+          !m.id.toLowerCase().includes("whisper")
+        );
+      } else {
+        filtered = [...remoteModels];
+      }
+
+      // Sort: newer versions first (e.g. 2.5 > 2.0 > 1.5)
+      filtered.sort((a, b) => {
+        const aId = a.id.toLowerCase();
+        const bId = b.id.toLowerCase();
+        
+        // Put experimental or preview models at the bottom
+        const aExp = aId.includes("exp") || aId.includes("preview");
+        const bExp = bId.includes("exp") || bId.includes("preview");
+        if (aExp && !bExp) return 1;
+        if (!aExp && bExp) return -1;
+
+        // Compare numbers if present
+        const aNum = parseFloat(aId.match(/\d+(\.\d+)?/)?.[0] || "0");
+        const bNum = parseFloat(bId.match(/\d+(\.\d+)?/)?.[0] || "0");
+        if (bNum !== aNum) {
+          return bNum - aNum; // Higher version number first
+        }
+        return aId.localeCompare(bId);
+      });
+
+      // Strip models/ prefix from names
+      return filtered.map(m => ({
+        ...m,
+        name: m.name.replace(/^models\//, "")
+      })).slice(0, 4);
+    }
+    return [];
+  }, [provider?.provider_name, remoteModels]);
+
+  const getModelPricing = useCallback((modelId: string): string | null => {
+    const idLower = modelId.toLowerCase().replace(/^models\//, "");
+    for (const key of Object.keys(PRICING_MAP)) {
+      if (idLower.includes(key)) {
+        return PRICING_MAP[key];
+      }
+    }
+    return null;
+  }, []);
+
+  useEffect(() => {
+    if (provider?.model) {
+      const filtered = getFilteredModels();
+      const isFiltered = filtered.some(m => m.id === provider.model);
+      if (!isFiltered) {
+        setCustomModelId(provider.model);
+      } else {
+        setCustomModelId("");
+      }
+    } else {
+      setCustomModelId("");
+    }
+    setCustomModelStatus('idle');
+  }, [provider?.base_url, provider?.provider_name, provider?.model, remoteModels, getFilteredModels]);
+
+  const handleValidateCustomModel = useCallback(() => {
+    if (!customModelId.trim() || !provider) return;
+    setCustomModelStatus('checking');
+    const modelToUse = customModelId.trim();
+    
+    const exists = remoteModels.some(m => m.id.toLowerCase() === modelToUse.toLowerCase());
+    if (exists) {
+      setCustomModelStatus('valid');
+      updateDraft("llm", "provider", {
+        ...provider,
+        model: modelToUse
+      });
+    } else {
+      if (remoteModels.length > 0) {
+        setCustomModelStatus('invalid');
+        updateDraft("llm", "provider", {
+          ...provider,
+          model: modelToUse
+        });
+      } else {
+        setCustomModelStatus('valid');
+        updateDraft("llm", "provider", {
+          ...provider,
+          model: modelToUse
+        });
+      }
+    }
+  }, [customModelId, provider, remoteModels, updateDraft]);
 
   useEffect(() => {
     if (activePipelineTab === "llm" && activeCategoryTab === "model" && isRemoteLlm && provider) {
@@ -289,7 +424,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       };
       fetchRemoteModels();
     }
-  }, [activePipelineTab, activeCategoryTab, isRemoteLlm, provider?.base_url, provider?.api_key]);
+  }, [activePipelineTab, activeCategoryTab, isRemoteLlm, provider?.base_url, provider?.api_key, provider?.provider_name]);
 
   const getGroupIdForFile = useCallback((fileId: string): string => {
     if (!manifest) {
@@ -799,13 +934,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-1">
-                      {remoteModels.length === 0 ? (
+                    <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                      {getFilteredModels().length === 0 ? (
                         <div className="text-center py-6 text-[11px] text-[rgb(var(--foreground-muted))]/70">
                           No remote models loaded. Ensure the server is online and configured in the Interaction Card.
                         </div>
                       ) : (
-                        remoteModels.map((model) => {
+                        getFilteredModels().map((model) => {
                           const isSelected = provider?.model === model.id;
                           return (
                             <button
@@ -850,14 +985,68 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                                 </div>
                               </div>
 
-                              {isSelected && (
-                                <div className="w-5 h-5 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] flex items-center justify-center shrink-0">
-                                  <Check size={12} strokeWidth={3} />
-                                </div>
-                              )}
+                              <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                                {getModelPricing(model.id) && (
+                                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--foreground),0.03)]" title="Prompt / Completion pricing per 1M tokens">
+                                    {getModelPricing(model.id)}
+                                  </span>
+                                )}
+                                {isSelected && (
+                                  <div className="w-5 h-5 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] flex items-center justify-center">
+                                    <Check size={12} strokeWidth={3} />
+                                  </div>
+                                )}
+                              </div>
                             </button>
                           );
                         })
+                      )}
+                    </div>
+
+                    {/* Custom Model ID field */}
+                    <div className="mt-3 pt-3 border-t border-[rgba(var(--foreground),0.06)] space-y-2">
+                      <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/80 uppercase tracking-wider block">
+                        Use Custom Model ID
+                      </span>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={customModelId}
+                          onChange={(e) => {
+                            setCustomModelId(e.target.value);
+                            setCustomModelStatus('idle');
+                          }}
+                          placeholder="e.g. gemini-2.5-pro"
+                          className="flex-1 min-w-0 bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] focus:border-[rgb(var(--accent))] rounded-lg px-2.5 py-1.5 text-[11px] text-[rgb(var(--foreground))] outline-none font-mono transition-colors"
+                        />
+                        <button
+                          onClick={handleValidateCustomModel}
+                          disabled={!customModelId.trim() || customModelStatus === 'checking'}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border shrink-0",
+                            customModelStatus === 'checking' && "bg-[rgba(var(--foreground),0.05)] border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground-muted))]",
+                            customModelStatus === 'valid' && "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20",
+                            customModelStatus === 'invalid' && "bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20",
+                            customModelStatus === 'idle' && "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] border-[rgba(var(--accent),0.2)] hover:scale-[1.02] active:scale-95 shadow-sm"
+                          )}
+                        >
+                          {customModelStatus === 'checking' && "Checking..."}
+                          {customModelStatus === 'valid' && "Valid ✓"}
+                          {customModelStatus === 'invalid' && "Not Listed ⚠"}
+                          {customModelStatus === 'idle' && "Validate & Use"}
+                        </button>
+                      </div>
+                      {customModelStatus === 'invalid' && (
+                        <div className="text-[9px] text-amber-400/80 leading-normal flex items-start gap-1">
+                          <span>⚠</span>
+                          <span>Model ID not in standard server list. Selected in draft anyway, but verify spelling.</span>
+                        </div>
+                      )}
+                      {customModelStatus === 'valid' && (
+                        <div className="text-[9px] text-emerald-400/80 leading-normal flex items-start gap-1">
+                          <span>✓</span>
+                          <span>Model verified successfully! Selected and ready to save.</span>
+                        </div>
                       )}
                     </div>
                   </div>

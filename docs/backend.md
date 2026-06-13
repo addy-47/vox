@@ -486,8 +486,29 @@ Vox Pipeline
     └─ LLM Worker Thread (spawn_llm_worker)
            └─ LlmProvider Trait
                   ├─ EmbeddedProvider (local GGUF via llama.cpp)
-                  └─ OpenAiCompatProvider (Ollama, LM Studio, vLLM, custom endpoints)
+                  └─ OpenAiCompatProvider (handles ALL remote/cloud providers)
+                       ├─ OpenAI-compatible servers (Ollama, LM Studio, vLLM)
+                       ├─ OpenAI cloud          (provider_name: "openai")
+                       ├─ Gemini cloud          (provider_name: "gemini")
+                       └─ Anthropic cloud       (provider_name: "anthropic")
 ```
+
+---
+
+### Cloud Provider Routing
+
+The `OpenAiCompatProvider` constructor accepts a `provider_name: Option<&str>` parameter that dynamically maps the base URL to the correct cloud endpoint:
+
+```rust
+pub fn new(base_url: &str, model: &str, api_key: Option<&str>, provider_name: Option<&str>) -> Self
+```
+
+Logic:
+- If `provider_name` is `"openai"` → `base_url = "https://api.openai.com"`
+- If `provider_name` is `"gemini"` → `base_url = "https://generativelanguage.googleapis.com/v1beta/openai"`
+- If `provider_name` is `"anthropic"` → `base_url = "https://api.anthropic.com"`
+
+For Anthropic, the `inject_headers` method adds `anthropic-version: 2023-06-01` and `x-api-key` headers alongside Bearer auth. The pipeline (`pipeline.rs`) passes `provider_name` from the user's settings when constructing the provider, enabling transparent cloud routing without changes to pipeline orchestration.
 
 ---
 
@@ -576,9 +597,10 @@ Uses the local `llama.cpp` C++ engine bindings (via `llama-cpp-4` crate) to load
 * **Multi-Family Formatting**: Automatically detects and formats prompt structure based on the model family (Gemma, Qwen, Llama3, Nemotron, or Unknown).
 
 #### 2. OpenAI-Compatible Remote Provider (`OpenAiCompatProvider`)
-Connects to remote inference servers (e.g. Ollama, LM Studio, vLLM, or custom cloud endpoints) over HTTP using a non-blocking connection client via the `reqwest` crate.
+Connects to remote inference servers and cloud APIs over HTTP using a non-blocking connection client via the `reqwest` crate. Supports both local OpenAI-compatible servers (Ollama, LM Studio, vLLM) and direct cloud LLM providers (OpenAI, Gemini, Anthropic) — all through the same provider struct, differentiated by the `provider_name` parameter.
 * **Streaming & Cancellation**: Submits chat completion requests with `stream: true` and processes chunks as they arrive. Continuously polls the `cancel_flag` to abort the HTTP request instantly when barge-in is triggered.
 * **Model Discovery**: Dynamically queries the standard `/v1/models` endpoint (or `/api/tags` for Ollama) to discover and list available models.
+* **Cloud Provider Support**: The constructor accepts `provider_name` (`"openai"`, `"gemini"`, or `"anthropic"`) to automatically resolve the correct base URL. Anthropic adds `anthropic-version` and `x-api-key` headers via `inject_headers`.
 
 ---
 
@@ -1036,8 +1058,9 @@ pub enum PersistenceEvent {
 
 ### SystemMonitor
 
-* Spawns every 5 seconds
+* Spawns every 30 seconds
 * Reads `/proc/stat`, `/proc/meminfo` for CPU/RAM
+* Filters out Linux process sub-tasks (threads) when iterating processes to prevent double-counting RSS memory — only main process entries with `tasks()` present are aggregated
 
 ---
 
@@ -1082,6 +1105,10 @@ Hot:             Apply immediately (UI)
 WorkerCommand:   Send via channel (VAD threshold, system_prompt)
 Restart:        Full pipeline restart (model changes)
 ```
+
+### Provider Health & Model Discovery
+
+IPC commands `check_llm_provider_health` and `list_remote_llm_models` (in `ipc/settings.rs`) forward `provider_name` from the user's settings when constructing the `OpenAiCompatProvider`, ensuring health checks and model discovery target the correct cloud endpoint.
 
 ---
 
@@ -1417,9 +1444,9 @@ effects across VAD, STT, TTS, UI, telemetry, and state management.
 
 | Phase | Scope |
 |-------|-------|
-| **v0.8.4** | LLM provider architecture & remote OpenAI compatibility (current) |
-| **v0.8.5** | Cloud LLM integration (direct APIs with keys for OpenAI, Gemini, Anthropic, etc.) |
-| **v0.8.6 → v0.9.0** | Cloud Realtime voice-to-voice (full-duplex streaming via OpenAI/Gemini Realtime) |
+| **v0.8.4** | LLM provider architecture & remote OpenAI compatibility |
+| **v0.8.5** | Cloud LLM integration — OpenAI, Gemini, and Anthropic cloud APIs via `OpenAiCompatProvider` with `provider_name` routing (current) |
+| **v0.9.0** | Cloud Realtime voice-to-voice (full-duplex streaming via OpenAI/Gemini Realtime) |
 
 ### Design Principle
 

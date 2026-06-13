@@ -121,10 +121,26 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
     }
   }
 
+  const savedProvider = settings?.llm?.provider || { kind: "embedded" };
+
   // Live query effect for remote/cloud health checks and provider name persistence
   useEffect(() => {
-    if (currentProvider.kind !== "open_ai_compat") return;
-    if (!currentProvider.base_url) {
+    const hasProviderChanges = 
+      currentProvider.kind !== savedProvider.kind ||
+      currentProvider.base_url !== savedProvider.base_url ||
+      currentProvider.api_key !== savedProvider.api_key;
+
+    if (hasProviderChanges || currentProvider.kind !== "open_ai_compat") {
+      setIsHealthy(null);
+      setModelsError(null);
+      return;
+    }
+
+    if (savedProvider.kind !== "open_ai_compat") {
+      setIsHealthy(null);
+      return;
+    }
+    if (!savedProvider.base_url) {
       setIsHealthy(null);
       return;
     }
@@ -135,17 +151,17 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
         setModelsError(null);
         try {
           const healthy = await invoke<boolean>("check_llm_provider_health", {
-            provider: currentProvider
+            provider: savedProvider
           });
           setIsHealthy(healthy);
 
           if (healthy) {
             // Detect and persist remote provider name (e.g. Ollama vs OpenAI Compatible Host)
             if (providerPill === "remote") {
-              const detectedName = currentProvider.base_url?.includes("11434") ? "Ollama" : "Remote Host";
-              if (currentProvider.provider_name !== detectedName) {
+              const detectedName = savedProvider.base_url?.includes("11434") ? "Ollama" : "Remote Host";
+              if (savedProvider.provider_name !== detectedName) {
                 updateDraft("llm", "provider", {
-                  ...currentProvider,
+                  ...savedProvider,
                   provider_name: detectedName
                 });
               }
@@ -165,7 +181,7 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [currentProvider.base_url, currentProvider.api_key, currentProvider.kind]);
+  }, [savedProvider.base_url, savedProvider.api_key, savedProvider.kind, currentProvider.base_url, currentProvider.api_key, currentProvider.kind]);
 
   const handleLlmPillChange = (value: string) => {
     if (value === "local") {
@@ -297,7 +313,7 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
             Interaction Console
           </span>
         </div>
-        <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60">v0.8.4</span>
+        <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60">v0.8.5</span>
       </div>
 
       <div className="flex flex-col gap-3 flex-1 justify-between">

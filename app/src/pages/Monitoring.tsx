@@ -284,21 +284,7 @@ export const Monitoring: React.FC = () => {
 
   const [togglingEngine, setTogglingEngine] = useState(false);
 
-  const handleToggleEngine = useCallback(async () => {
-    if (togglingEngine) return;
-    setTogglingEngine(true);
-    try {
-      if (isEngineLoaded) {
-        await invoke("stop_engine");
-      } else {
-        await invoke("launch_engine");
-      }
-    } catch (e) {
-      console.error("Failed to toggle engine:", e);
-    } finally {
-      setTogglingEngine(false);
-    }
-  }, [isEngineLoaded, togglingEngine]);
+
 
   const cpuTextRef = useRef<HTMLSpanElement>(null);
   const cpuBarRef = useRef<HTMLDivElement>(null);
@@ -388,25 +374,56 @@ export const Monitoring: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Force Offload / Reload toggle */}
-          <button
-            onClick={handleToggleEngine}
-            disabled={togglingEngine}
-            title={isEngineLoaded ? "Offload all models immediately from RAM" : "Load default models"}
-            className={cn(
-              "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer",
-              togglingEngine && "opacity-50 cursor-wait",
-              isEngineLoaded
-                ? "border-[rgba(239,68,68,0.25)] text-red-500 bg-red-500/10 hover:bg-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.15)]"
-                : "border-white/10 text-white/40 hover:text-white/70 bg-white/5 hover:bg-white/10"
-            )}
-          >
-            {isEngineLoaded ? (
-              <Skull size={14} className={cn(togglingEngine && "animate-spin")} />
-            ) : (
+          {/* Force Offload / Reload button */}
+          {isEngineLoaded ? (
+            <button
+              onClick={async () => {
+                if (togglingEngine) return;
+                setTogglingEngine(true);
+                try {
+                  await invoke("stop_engine");
+                } catch (e) {
+                  console.error("Failed to offload engine:", e);
+                } finally {
+                  setTogglingEngine(false);
+                }
+              }}
+              disabled={togglingEngine}
+              title="Force offload all models immediately from RAM"
+              className={cn(
+                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer",
+                togglingEngine
+                  ? "opacity-50 cursor-wait border-white/5 text-white/10 bg-white/2"
+                  : "border-[rgba(239,68,68,0.35)] text-red-500 bg-red-500/10 hover:bg-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.25)]"
+              )}
+            >
+              <Skull size={14} />
+            </button>
+          ) : (
+            <button
+              onClick={async () => {
+                if (togglingEngine) return;
+                setTogglingEngine(true);
+                try {
+                  await invoke("launch_engine");
+                } catch (e) {
+                  console.error("Failed to reload engine:", e);
+                } finally {
+                  setTogglingEngine(false);
+                }
+              }}
+              disabled={togglingEngine}
+              title="Reload default models"
+              className={cn(
+                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer",
+                togglingEngine
+                  ? "opacity-50 cursor-wait border-white/5 text-white/10 bg-white/2"
+                  : "border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.05)] hover:bg-[rgba(var(--accent),0.15)] shadow-[0_0_12px_rgba(var(--accent),0.1)]"
+              )}
+            >
               <RefreshCw size={14} className={cn(togglingEngine && "animate-spin")} />
-            )}
-          </button>
+            </button>
+          )}
 
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.15)] bg-black/20">
             <Activity size={12} className="text-[rgb(var(--accent))] animate-pulse" />
