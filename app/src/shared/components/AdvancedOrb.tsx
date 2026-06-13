@@ -463,31 +463,26 @@ export const VoxOrb = React.memo(({
     const sleeping = sleepingRef.current;
 
     let telemEnergy = 0;
-    let telemLow = 0;
     let telemMid = 0;
     let telemHigh = 0;
 
     if (telemetryRef?.current) {
       const e = telemetryRef.current.energy;
-      const l = telemetryRef.current.low;
       const m = telemetryRef.current.mid;
       const h = telemetryRef.current.high;
       if (state === 'UserSpeaking' || state === 'AssistantSpeaking') {
         telemEnergy = e * 2.2;
-        telemLow = l * 2.2;
         telemMid = m * 2.2;
         telemHigh = h * 2.2;
       }
     } else if (amplitudeRef.current > 0) {
       telemEnergy = amplitudeRef.current * 0.4;
-      telemLow = telemEnergy;
       telemMid = telemEnergy;
       telemHigh = telemEnergy;
     }
     if (state === 'Thinking') {
       const pulse = Math.sin(t * 2.6) * 0.13;
       telemEnergy = pulse;
-      telemLow = pulse;
       telemMid = pulse;
       telemHigh = pulse;
     }
@@ -500,16 +495,8 @@ export const VoxOrb = React.memo(({
     }
     ctx.curBaseVal += (baseVal - ctx.curBaseVal) * 0.06;
 
-    // 1. Bass drives the core scale of the orb group - dynamic ceiling increased to 1.35x
-    const scaleVal = ctx.curBaseVal + telemLow;
-    const targetScale = 1.0 + Math.min(scaleVal * 0.25, 0.35);
-    
-    // Smoothly lerp the final scale to absorb sudden high-frequency telemetry spikes
-    if (ctx.curScale === undefined) {
-      ctx.curScale = targetScale;
-    }
-    ctx.curScale += (targetScale - ctx.curScale) * 0.12;
-    ctx.group.scale.set(ctx.curScale, ctx.curScale, ctx.curScale);
+    // Fixed scale to keep outer boundaries stable; deformation is handled internally via u_amplitude
+    ctx.group.scale.set(1.0, 1.0, 1.0);
 
     // 2. Mids drive the main noise deformation amplitude (u_amplitude) with Fast Attack, Slow Release
     const targetAmp = Math.min(ctx.curBaseVal + telemMid, 2.5);

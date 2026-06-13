@@ -280,7 +280,12 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
   return (
     <div className={cn(
       "w-full flex flex-col text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none justify-between",
-      layoutMode === "small" ? "bg-transparent p-0 h-auto" : "lg:w-[520px] lg:h-[340px] glass-card glass-base p-5"
+      layoutMode === "small"
+        ? "bg-transparent p-0 h-auto"
+        : cn(
+            "glass-card glass-base p-5 lg:h-[340px]",
+            layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
+          )
     )}>
       <style>{interactionStyles}</style>
       

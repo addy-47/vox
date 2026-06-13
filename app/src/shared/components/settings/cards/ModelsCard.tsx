@@ -485,7 +485,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       "w-full h-auto flex flex-col text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
       layoutMode === "small"
         ? "bg-transparent p-0"
-        : "lg:w-[520px] glass-card glass-base p-5"
+        : cn(
+            "glass-card glass-base p-5",
+            layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
+          )
     )}>
       <style>{pulseStyles}</style>
       <div className="flex flex-col gap-4">

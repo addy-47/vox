@@ -36,6 +36,16 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
             .engine_shutdown
             .store(true, Ordering::Relaxed);
 
+        // Reset all loaded model atomic states immediately
+        state.is_vad_loaded.store(false, Ordering::Relaxed);
+        state.is_stt_loaded.store(false, Ordering::Relaxed);
+        state.is_llm_loaded.store(false, Ordering::Relaxed);
+        state.is_tts_loaded.store(false, Ordering::Relaxed);
+        state.pipeline.current_state_atomic.store(InteractionState::Idle as u32, Ordering::Relaxed);
+        if let Ok(mut state_lock) = state.pipeline.state.lock() {
+            *state_lock = InteractionState::Idle;
+        }
+
         // 2. Signal threads via channels (Primary exit path)
         let _ = engine.pipeline_tx.send(VoxEvent::Shutdown);
         let _ = engine.stt_tx.send(SttCommand::Shutdown);
