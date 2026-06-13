@@ -171,8 +171,8 @@ impl PipelineOrchestrator {
                             .map(|p| Box::new(p) as Box<dyn LlmProvider>)
                             .map_err(|e| e.to_string())
                     }
-                    LlmProviderConfig::OpenAiCompat { base_url, model, api_key, .. } => {
-                        let provider = OpenAiCompatProvider::new(base_url, model, api_key.as_deref());
+                    LlmProviderConfig::OpenAiCompat { base_url, model, api_key, provider_name } => {
+                        let provider = OpenAiCompatProvider::new(base_url, model, api_key.as_deref(), provider_name.as_deref());
                         Ok(Box::new(provider) as Box<dyn LlmProvider>)
                     }
                 };

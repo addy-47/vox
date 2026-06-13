@@ -307,7 +307,8 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
         JSON.stringify(settings.tts) !== JSON.stringify(draftSettings.tts) ||
         settings.llm.model !== draftSettings.llm.model ||
         settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
-        settings.llm.threads !== draftSettings.llm.threads
+        settings.llm.threads !== draftSettings.llm.threads ||
+        (settings.llm.provider?.model !== draftSettings.llm.provider?.model)
       );
     case "tray":
       return (
@@ -323,19 +324,22 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
       return JSON.stringify(settings.persistence) !== JSON.stringify(draftSettings.persistence);
     case "appearance":
       return false; // Appearance changes are applied instantly and saved automatically
-    case "interaction":
+    case "interaction": {
+      const { model: _, ...provSettings } = settings.llm.provider || {};
+      const { model: __, ...provDraft } = draftSettings.llm.provider || {};
       return (
         settings.interaction.main_app_mode !== draftSettings.interaction.main_app_mode ||
         settings.interaction.auto_sleep_timeout !== draftSettings.interaction.auto_sleep_timeout ||
         settings.interaction.pipeline_mode !== draftSettings.interaction.pipeline_mode ||
-        JSON.stringify(settings.llm.provider) !== JSON.stringify(draftSettings.llm.provider)
+        JSON.stringify(provSettings) !== JSON.stringify(provDraft)
       );
+    }
     default:
       return false;
   }
 };
 
-const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any) => {
+const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any, draftSettings?: any) => {
   if (!settings) return;
   switch (domainId) {
     case "models":
@@ -345,6 +349,12 @@ const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any)
       updateDraft("llm", "ctx_size", settings.llm.ctx_size);
       updateDraft("llm", "threads", settings.llm.threads);
       Object.keys(settings.tts).forEach(k => updateDraft("tts", k, (settings.tts as any)[k]));
+      if (settings.llm.provider && draftSettings?.llm.provider) {
+        updateDraft("llm", "provider", {
+          ...draftSettings.llm.provider,
+          model: settings.llm.provider.model
+        });
+      }
       break;
     case "tray":
       updateDraft("ui", "tray_enabled", settings.ui.tray_enabled);
@@ -363,12 +373,17 @@ const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any)
       updateDraft("ui", "theme", settings.ui.theme);
       updateDraft("ui", "accent_seed", settings.ui.accent_seed);
       break;
-    case "interaction":
+    case "interaction": {
       updateDraft("interaction", "main_app_mode", settings.interaction.main_app_mode);
       updateDraft("interaction", "auto_sleep_timeout", settings.interaction.auto_sleep_timeout);
       updateDraft("interaction", "pipeline_mode", settings.interaction.pipeline_mode);
-      updateDraft("llm", "provider", settings.llm.provider);
+      const currentDraftModel = draftSettings?.llm.provider?.model || "";
+      updateDraft("llm", "provider", {
+        ...settings.llm.provider,
+        model: currentDraftModel
+      });
       break;
+    }
   }
 };
 
@@ -408,7 +423,8 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
         settings.llm.model !== draftSettings.llm.model ||
         settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
         settings.llm.threads !== draftSettings.llm.threads ||
-        settings.tts.voice !== draftSettings.tts.voice
+        settings.tts.voice !== draftSettings.tts.voice ||
+        settings.llm.provider?.model !== draftSettings.llm.provider?.model
       );
     }
     return false;
@@ -489,7 +505,7 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
                         Save
                       </button>
                       <button
-                        onClick={() => discardCardChanges(domain.id, settings, updateDraft)}
+                        onClick={() => discardCardChanges(domain.id, settings, updateDraft, draftSettings)}
                         className="px-3 py-1 rounded-lg bg-black/45 text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
                       >
                         Discard
@@ -531,11 +547,11 @@ export const Settings: React.FC = () => {
     const closed = lastActiveDomains.current.filter((d) => !activeDomains.includes(d));
     if (closed.length > 0 && settings) {
       closed.forEach((domainId) => {
-        discardCardChanges(domainId, settings, updateDraft);
+        discardCardChanges(domainId, settings, updateDraft, draftSettings);
       });
     }
     lastActiveDomains.current = activeDomains;
-  }, [activeDomains, settings, updateDraft]);
+  }, [activeDomains, settings, updateDraft, draftSettings]);
 
   // Resize listener to check if we are in compact mobile/tablet mode (< 1024px)
   useEffect(() => {

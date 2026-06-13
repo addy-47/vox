@@ -112,28 +112,41 @@
 
 ---
 
-## v0.8.4 — LLM Provider Architecture (Current — Phase 9)
+## v0.8.4 — LLM Provider Architecture (Released — Phase 9)
 
-**Goal:** Refactor the LLM from a single embedded backend into a provider-based architecture.
+**Goal:** Refactor the LLM from a single embedded backend into a provider-based architecture and integrate cloud provider support.
 
-* Embeded local inference preserved
+* Embedded local inference preserved
 * OpenAI-compatible remote endpoint support (Ollama, LM Studio, vLLM, etc.)
 * Streaming, cancellation, health checks, and model discovery as provider capabilities
 * Pipeline remains unchanged — only the implementation behind the provider changes
 
+### Cloud Provider Integration (shipped in v0.8.4)
+
+Cloud LLM providers ship via the `OpenAiCompatProvider`, extended with a `provider_name` parameter that dynamically maps URLs and injects required headers:
+
+| Provider | Endpoint URL | Mechanism |
+|----------|-------------|-----------|
+| **OpenAI** | `api.openai.com` | Standard OpenAI-compatible REST |
+| **Gemini** | `generativelanguage.googleapis.com/v1beta/openai` | OpenAI-compatible wrapper |
+| **Anthropic** | `api.anthropic.com` | URL routing + `anthropic-version` header injection |
+
+All three share a single `LlmProvider` trait implementation — no new structs required per provider. This pattern will extend to Groq, OpenRouter, and others in future releases.
+
 **Non-goals (future phases):**
-* Cloud provider integration (v0.8.5+)
 * STT/TTS provider refactor (v0.8.4/v0.8.5)
 
 ---
 
-## v0.8.5 — Cloud LLM Integration
+## v0.8.5 — UI Polish & System Monitoring (In Progress)
 
-**Goal:** Integrate direct cloud LLM providers into the provider architecture.
+**Goal:** Complete UI responsiveness, monitoring UX, and system-level fixes.
 
-* Custom API key configuration interfaces and secure persistence
-* Out-of-the-box cloud provider presets: OpenAI, Gemini, Anthropic, Groq, OpenRouter, and Sarvam
-* Capability to stream responses and handle barge-in cancellations natively via standard HTTP interfaces
+* Settings page made responsive across window sizes
+* Monitoring page offload/reload UX (Skull/RefreshCw buttons for model lifecycle management)
+* Linux system monitor fixed (sub-task filtering)
+* General UI polish and interaction card refactors
+* Settings and interaction component stability improvements
 
 ---
 

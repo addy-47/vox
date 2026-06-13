@@ -50,7 +50,7 @@ pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
     let models_dir_exists = paths::get().models.exists();
     let settings_path = paths::get().settings.to_string_lossy().to_string();
 
-    log::info!("[Settings] Boot state requested. models_dir={}, settings={}", models_dir_exists, settings_path);
+    log::debug!("[Settings] Boot state requested. models_dir={}, settings={}", models_dir_exists, settings_path);
 
     Ok(BootState {
         settings,
@@ -497,8 +497,8 @@ pub async fn check_llm_provider_health(
 
             Ok(llm_path.exists())
         }
-        LlmProviderConfig::OpenAiCompat { base_url, model, api_key, .. } => {
-            let provider = OpenAiCompatProvider::new(&base_url, &model, api_key.as_deref());
+        LlmProviderConfig::OpenAiCompat { base_url, model, api_key, provider_name } => {
+            let provider = OpenAiCompatProvider::new(&base_url, &model, api_key.as_deref(), provider_name.as_deref());
             let healthy = tokio::task::spawn_blocking(move || provider.health_check())
                 .await
                 .map_err(|e| e.to_string())?;
@@ -531,8 +531,8 @@ pub async fn list_remote_llm_models(
             let models = EmbeddedProvider::list_models_in_dir(&llm_dir).map_err(|e| e.to_string())?;
             Ok(models)
         }
-        LlmProviderConfig::OpenAiCompat { base_url, model, api_key, .. } => {
-            let provider = OpenAiCompatProvider::new(&base_url, &model, api_key.as_deref());
+        LlmProviderConfig::OpenAiCompat { base_url, model, api_key, provider_name } => {
+            let provider = OpenAiCompatProvider::new(&base_url, &model, api_key.as_deref(), provider_name.as_deref());
             let models = tokio::task::spawn_blocking(move || provider.list_models())
                 .await
                 .map_err(|e| e.to_string())?

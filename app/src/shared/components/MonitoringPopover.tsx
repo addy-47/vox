@@ -309,21 +309,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
 
   const [togglingEngine, setTogglingEngine] = useState(false);
 
-  const handleToggleEngine = useCallback(async () => {
-    if (togglingEngine) return;
-    setTogglingEngine(true);
-    try {
-      if (isEngineLoaded) {
-        await invoke("stop_engine");
-      } else {
-        await invoke("launch_engine");
-      }
-    } catch (e) {
-      console.error("Failed to toggle engine:", e);
-    } finally {
-      setTogglingEngine(false);
-    }
-  }, [isEngineLoaded, togglingEngine]);
+
 
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -470,24 +456,57 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleToggleEngine}
-                disabled={togglingEngine}
-                title={isEngineLoaded ? "Offload all models immediately from RAM" : "Load default models"}
-                className={cn(
-                  "p-1 rounded-lg transition-all duration-300 flex items-center justify-center cursor-pointer",
-                  togglingEngine && "opacity-50 cursor-wait",
-                  isEngineLoaded
-                    ? "text-red-500 hover:bg-red-500/10"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-white/5"
-                )}
-              >
-                {isEngineLoaded ? (
-                  <Skull size={13} className={cn(togglingEngine && "animate-spin")} />
-                ) : (
+              {/* Force Offload / Reload buttons */}
+              {/* Force Offload / Reload button */}
+              {isEngineLoaded ? (
+                <button
+                  onClick={async () => {
+                    if (togglingEngine) return;
+                    setTogglingEngine(true);
+                    try {
+                      await invoke("stop_engine");
+                    } catch (e) {
+                      console.error("Failed to offload engine:", e);
+                    } finally {
+                      setTogglingEngine(false);
+                    }
+                  }}
+                  disabled={togglingEngine}
+                  title="Force offload all models immediately from RAM"
+                  className={cn(
+                    "p-1 rounded-lg transition-all duration-300 flex items-center justify-center cursor-pointer",
+                    togglingEngine
+                      ? "opacity-50 cursor-wait text-[rgb(var(--foreground-muted))]/30"
+                      : "text-red-500 hover:bg-red-500/10"
+                  )}
+                >
+                  <Skull size={13} />
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    if (togglingEngine) return;
+                    setTogglingEngine(true);
+                    try {
+                      await invoke("launch_engine");
+                    } catch (e) {
+                      console.error("Failed to reload engine:", e);
+                    } finally {
+                      setTogglingEngine(false);
+                    }
+                  }}
+                  disabled={togglingEngine}
+                  title="Reload default models"
+                  className={cn(
+                    "p-1 rounded-lg transition-all duration-300 flex items-center justify-center cursor-pointer",
+                    togglingEngine
+                      ? "opacity-50 cursor-wait text-[rgb(var(--foreground-muted))]/30"
+                      : "text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+                  )}
+                >
                   <RefreshCw size={13} className={cn(togglingEngine && "animate-spin")} />
-                )}
-              </button>
+                </button>
+              )}
               <button
                 onClick={onClose}
                 className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
