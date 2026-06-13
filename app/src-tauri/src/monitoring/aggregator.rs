@@ -24,6 +24,9 @@ pub enum TelemetryEvent {
     AudioEnergy {
         energy: f32,
         vad_prob: f32,
+        low: f32,
+        mid: f32,
+        high: f32,
     },
 }
 
@@ -38,6 +41,9 @@ pub struct TelemetryAggregator {
     rx: Receiver<TelemetryEvent>,
     latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
     latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,    
+    latest_low: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    latest_mid: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    latest_high: std::sync::Arc<std::sync::atomic::AtomicU32>,
     latest_sys_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
     latest_sys_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
     latest_vox_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -51,6 +57,9 @@ impl TelemetryAggregator {
     pub fn new(
         latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
         latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        latest_low: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        latest_mid: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        latest_high: std::sync::Arc<std::sync::atomic::AtomicU32>,
         latest_sys_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
         latest_sys_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
         latest_vox_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -64,6 +73,9 @@ impl TelemetryAggregator {
             rx, 
             latest_energy, 
             latest_vad_prob, 
+            latest_low,
+            latest_mid,
+            latest_high,
             latest_sys_cpu, 
             latest_sys_ram, 
             latest_vox_cpu, 
@@ -106,13 +118,16 @@ impl TelemetryAggregator {
                                 tracing::warn!(target: "telemetry", "Dropped {} telemetry events due to channel saturation.", dropped);
                             }
                         }
-                        TelemetryEvent::AudioEnergy { energy, vad_prob } => {
+                        TelemetryEvent::AudioEnergy { energy, vad_prob, low, mid, high } => {
                             // High-frequency debug only
                             tracing::debug!(target: "telemetry", "Audio Energy: {:?}", event);
                             // Update shared atomics for monitoring collector
                             use std::sync::atomic::Ordering;
                             self.latest_energy.store(energy.to_bits(), Ordering::Relaxed);
                             self.latest_vad_prob.store(vad_prob.to_bits(), Ordering::Relaxed);
+                            self.latest_low.store(low.to_bits(), Ordering::Relaxed);
+                            self.latest_mid.store(mid.to_bits(), Ordering::Relaxed);
+                            self.latest_high.store(high.to_bits(), Ordering::Relaxed);
                         }
                     }
                 }

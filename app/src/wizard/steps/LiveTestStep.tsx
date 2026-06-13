@@ -92,8 +92,8 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
       <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-hidden justify-center">
         {/* Reactive Flat Waveform Visualization Strip */}
-        <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-6 flex flex-col items-center justify-center relative overflow-hidden h-28 shrink-0">
-          <div className="absolute inset-0 bg-gradient-to-b from-[#00dbe9]/5 to-transparent opacity-20 pointer-events-none" />
+        <div className="glass-whisper glass-base p-6 flex flex-col items-center justify-center relative overflow-hidden h-28 shrink-0">
+          <div className="absolute inset-0 bg-gradient-to-b from-[rgb(var(--accent))]/5 to-transparent opacity-20 pointer-events-none" />
           
           {error ? (
               <div className="flex items-center gap-4 relative z-10 text-left">
@@ -101,10 +101,10 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                       <X className="w-5 h-5" />
                   </div>
                   <div className="flex flex-col">
-                      <h3 className="text-white font-black uppercase tracking-widest text-[9px]">Engine Failure</h3>
+                      <h3 className="text-white font-black uppercase tracking-widest text-[11px]">Engine Failure</h3>
                       <button 
                           onClick={setup}
-                          className="text-[9px] font-black uppercase tracking-widest text-[#00dbe9] hover:underline text-left mt-0.5"
+                          className="text-[11px] font-black uppercase tracking-widest text-[rgb(var(--accent))] hover:underline text-left mt-0.5"
                       >
                           Retry Initialization
                       </button>
@@ -126,7 +126,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                           transition={{ type: "spring", stiffness: 350, damping: 25 }}
                           className={cn(
                             "w-1 rounded-full transition-colors duration-300",
-                            energy > 2 ? "bg-[#00dbe9] shadow-[0_0_10px_rgba(0,219,233,0.5)]" : "bg-white/10"
+                            energy > 2 ? "bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.5)]" : "bg-white/10"
                           )}
                           style={{ minHeight: "3px" }}
                         />
@@ -134,7 +134,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                     })}
                   </div>
                   
-                  <span className="text-[9px] font-black text-white/20 uppercase tracking-[0.3em] mt-4">
+                  <span className="text-[11px] font-black text-white/20 uppercase tracking-[0.3em] mt-4">
                     {isEngineReady ? (energy > 2 ? "Active speech feedback" : "Awaiting microphone input") : "Initializing audio pipeline"}
                   </span>
               </div>
@@ -143,18 +143,18 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
         {/* Live Transcript Display Box */}
         <div className={cn(
-            "relative z-10 bg-zinc-950/40 border backdrop-blur-md rounded-2xl p-5 flex flex-col justify-center flex-1 min-h-[90px] max-h-[140px] transition-all duration-500",
-            testComplete ? "border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.04)]" : "border-white/5"
+            "relative z-10 glass-whisper glass-base p-5 flex flex-col justify-center flex-1 min-h-[90px] max-h-[140px] transition-all duration-500",
+            testComplete ? "border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.04)]" : ""
         )}>
             <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] flex items-center gap-2">
-                    <MessageSquare className="w-3.5 h-3.5 text-[#00dbe9]/60" /> Live Transcript
+                <span className="text-[11px] font-black text-white/20 uppercase tracking-[0.3em] flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))]/60" /> Live Transcript
                 </span>
                 {testComplete && (
                     <motion.span 
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="text-[9px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full uppercase tracking-tighter"
+                        className="text-[11px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full uppercase tracking-tighter"
                     >
                         Processed
                     </motion.span>
@@ -171,7 +171,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                             className="text-base font-bold text-white tracking-tight leading-snug overflow-y-auto max-h-full custom-scrollbar pr-1"
                         >
                             {transcript}
-                            {!testComplete && <motion.span animate={{ opacity: [1, 0.4, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="inline-block w-1.5 h-3.5 bg-[#00dbe9] ml-1.5 align-middle" />}
+                            {!testComplete && <motion.span animate={{ opacity: [1, 0.4, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="inline-block w-1.5 h-3.5 bg-[rgb(var(--accent))] ml-1.5 align-middle" />}
                         </motion.p>
                     ) : (
                          <motion.p 
@@ -189,10 +189,10 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
         {/* Diagnostics & Verification Cards */}
         <div className="grid grid-cols-2 gap-3 shrink-0">
-            <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex items-center gap-3">
+            <div className="p-3 glass-whisper glass-base flex items-center gap-3">
                 <div className={cn(
                     "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0",
-                    energy > 2 ? "bg-[#00dbe9]/10 text-[#00dbe9] scale-105" : "bg-white/5 text-white/40"
+                    energy > 2 ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] scale-105" : "bg-white/5 text-white/40"
                 )}>
                     <Activity className="w-4 h-4" />
                 </div>
@@ -203,7 +203,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                     </span>
                 </div>
             </div>
-            <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex items-center gap-3">
+            <div className="p-3 glass-whisper glass-base flex items-center gap-3">
                 <div className={cn(
                     "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0",
                     testComplete ? "bg-emerald-500/10 text-emerald-400 scale-105" : "bg-white/5 text-white/40"

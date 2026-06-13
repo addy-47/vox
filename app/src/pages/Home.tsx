@@ -1,62 +1,282 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef , useCallback} from "react";
 import { VoxOrb } from "@/shared/components/AdvancedOrb";
+import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
 import { LiveWaveform } from "@/shared/components/LiveWaveform";
-import { Activity, Mic, Shield } from "lucide-react";
+import { PipelineField } from "@/shared/components/PipelineField";
+import { AmbientBackground } from "@/shared/components/AmbientBackground";
+import { StatusCapsule } from "@/shared/components/StatusCapsule";
+import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
+import { Power, Mic, FlaskConical } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { AnimatePresence, motion } from "framer-motion";
 
-type InteractionState = "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Interrupted";
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type InteractionState =
+  | "Idle"
+  | "Listening"
+  | "UserSpeaking"
+  | "Thinking"
+  | "AssistantSpeaking"
+  | "Interrupted";
+
 type InteractionMode = "PASSIVE" | "PTT";
 
+type AmbientMood = "calm" | "active" | "thinking" | "speaking";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Map interaction state → ambient background mood */
+function toMood(
+  state: InteractionState,
+  sleeping: boolean
+): AmbientMood {
+  if (sleeping) return "calm";
+  switch (state) {
+    case "UserSpeaking":
+      return "active";
+    case "Thinking":
+      return "thinking";
+    case "AssistantSpeaking":
+      return "speaking";
+    case "Listening":
+      return "active";
+    default:
+      return "calm";
+  }
+}
+
+/** Human-readable, single label for the top-right status capsule */
+function toStatusLabel(
+  state: InteractionState,
+  engaged: boolean,
+  sleeping: boolean,
+  ptt: "IDLE" | "RECORDING" | "PROCESSING"
+): string {
+  if (!engaged) return "Dormant";
+  if (sleeping) return "Sleeping";
+  if (ptt === "RECORDING") return "Recording";
+  if (ptt === "PROCESSING") return "Processing";
+  switch (state) {
+    case "UserSpeaking":
+      return "Listening";
+    case "Thinking":
+      return "Thinking";
+    case "AssistantSpeaking":
+      return "Speaking";
+    case "Listening":
+      return "Ready";
+    case "Interrupted":
+      return "Interrupted";
+    default:
+      return "Ready";
+  }
+}
+
+/** Whether the status capsule dot should pulse */
+function isDotActive(
+  state: InteractionState,
+  engaged: boolean,
+  ptt: "IDLE" | "RECORDING" | "PROCESSING"
+): boolean {
+  if (!engaged) return false;
+  return (
+    state === "UserSpeaking" ||
+    state === "Thinking" ||
+    state === "AssistantSpeaking" ||
+    ptt === "RECORDING" ||
+    ptt === "PROCESSING"
+  );
+}
+
+// ─── Test clips metadata ──────────────────────────────────────────────────────
+
+const TEST_CLIPS = [
+  { id: "short_en", name: "Quick English", duration: "~5s", desc: "Short English query" },
+  { id: "short_hi", name: "Quick Hindi", duration: "~8s", desc: "Short Hindi query" },
+  { id: "hinglish", name: "Hinglish Mix", duration: "~10s", desc: "Code-switching (EN+HI)" },
+  { id: "command", name: "Command", duration: "~10s", desc: "Action-oriented command" },
+  { id: "expressive", name: "Expressive", duration: "~16s", desc: "Longer, triggers emotion tags" },
+] as const;
+
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export const Home: React.FC = () => {
+  const hasActiveTurnStarted = useRef(false);
   const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("PASSIVE");
   const [isEngaged, setIsEngaged] = useState(false);
-  const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
+  const [pttStatus, setPttStatus] = useState<"IDLE" | "RECORDING" | "PROCESSING">("IDLE");
   const [transcript, setTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
   const [isSleeping, setIsSleeping] = useState(false);
-  const [cpuWarning, setCpuWarning] = useState<{governor: string; advice: string} | null>(null);
+  const [cpuWarning, setCpuWarning] = useState<{ governor: string } | null>(null);
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [testMode, setTestMode] = useState(false);
+  const [testingClip, setTestingClip] = useState<string | null>(null);
+  const testingClipRef = useRef<string | null>(null);
   const telemetryRef = useTelemetry();
 
-  const isUserSpeaking = interactionState === "UserSpeaking" || pttStatus === 'RECORDING';
-  const isThinking = interactionState === "Thinking" || pttStatus === 'PROCESSING';
+  // Dialogue history system
+  const [dialogueHistory, setDialogueHistory] = useState<{ user: string; assistant: string; id: number }[]>([]);
+  const activeUserTextRef = useRef("");
+  const activeAiTextRef = useRef("");
+  const turnIdCounter = useRef(0);
 
-  // Waveform only reflects user speech activity.
-  // Fades out during Thinking/Processing/AssistantSpeaking.
+  // Layout refs
+  const testButtonRef = useRef<HTMLButtonElement>(null);
+  const testPanelRef = useRef<HTMLDivElement>(null);
+  const dialogueScrollRef = useRef<HTMLDivElement>(null);
+  const engageLockRef = useRef(false);
+
+  // Streaming text hooks
+  const streamedTranscript = useStreamingRenderer(transcript);
+  const streamedAssistantText = useStreamingRenderer(assistantText);
+
+  // Mobile layout detection
+  const [isMobileScreen, setIsMobileScreen] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => setIsMobileScreen(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  // Derived state
+  const isUserSpeaking = interactionState === "UserSpeaking" || pttStatus === "RECORDING";
+  const isThinking = interactionState === "Thinking" || pttStatus === "PROCESSING";
   const activeSpeaking = isUserSpeaking;
+  const ambientMood = toMood(interactionState, isSleeping);
+  const statusLabel = toStatusLabel(interactionState, isEngaged, isSleeping, pttStatus);
+  const dotActive = isDotActive(interactionState, isEngaged, pttStatus);
 
-  const [isLaunching, setIsLaunching] = useState(false);
+  // Keep testingClipRef in sync
+  useEffect(() => {
+    testingClipRef.current = testingClip;
+  }, [testingClip]);
+
+  // Archive current turn if there is any user or assistant content
+  const archiveCurrentTurn = useCallback(() => {
+    const userText = activeUserTextRef.current.trim();
+    const aiText = activeAiTextRef.current.trim();
+    if (userText || aiText) {
+      turnIdCounter.current += 1;
+      setDialogueHistory((prev) => {
+        const next = [...prev, { user: userText, assistant: aiText, id: turnIdCounter.current }];
+        return next.slice(-4); // Keep last 4 turns for contextual flow
+      });
+      activeUserTextRef.current = "";
+      activeAiTextRef.current = "";
+      setTranscript("");
+      setAssistantText("");
+    }
+  }, []);
+
+  // Clear dialogue history and transcript refs when session ends (isEngaged becomes false)
+  useEffect(() => {
+    if (!isEngaged) {
+      setDialogueHistory([]);
+      setTranscript("");
+      setAssistantText("");
+      activeUserTextRef.current = "";
+      activeAiTextRef.current = "";
+    }
+  }, [isEngaged]);
+
+  // Auto-scroll to bottom of dialogue zone when transcript or history updates
+  useEffect(() => {
+    if (dialogueScrollRef.current) {
+      dialogueScrollRef.current.scrollTo({
+        top: dialogueScrollRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [dialogueHistory, streamedTranscript, streamedAssistantText]);
+
+  // Click outside to close test clips panel
+  useEffect(() => {
+    if (!testMode) return;
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        testButtonRef.current &&
+        !testButtonRef.current.contains(event.target as Node) &&
+        testPanelRef.current &&
+        !testPanelRef.current.contains(event.target as Node)
+      ) {
+        setTestMode(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [testMode]);
+
+  // Auto-reset test state when pipeline finishes (returns to Idle)
+  useEffect(() => {
+    if (interactionState === "Idle" && testingClip && hasActiveTurnStarted.current) {
+      archiveCurrentTurn();
+      setTestingClip(null);
+      setIsEngaged(false);
+      hasActiveTurnStarted.current = false;
+    }
+  }, [interactionState, testingClip, archiveCurrentTurn]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  const handleCancelTest = async () => {
+    try {
+      await invoke("test_clip_cancel");
+      archiveCurrentTurn();
+      setTestingClip(null);
+      setTranscript("");
+      setAssistantText("");
+      setIsEngaged(false);
+      hasActiveTurnStarted.current = false;
+    } catch (err) {
+      console.error("[Home] Test clip cancel failed:", err);
+    }
+  };
 
   const handleEngage = async () => {
+    if (engageLockRef.current) return;
+    engageLockRef.current = true;
+
+    if (testingClip) {
+      await handleCancelTest();
+      engageLockRef.current = false;
+      return;
+    }
+    archiveCurrentTurn();
     setIsLaunching(true);
     try {
       await invoke("engage");
       const newEngaged = !isEngaged;
       setIsEngaged(newEngaged);
-      if (newEngaged) {
-        setTranscript("");
-        setAssistantText("");
-      } else {
-        // Clear dialogue on session stop so glass card resets
-        setTranscript("");
-        setAssistantText("");
-      }
-      console.log(newEngaged ? "[Home] Pipeline engaged." : "[Home] Pipeline disengaged.");
+      setTranscript("");
+      setAssistantText("");
     } catch (err) {
       console.error("[Home] Engagement failed:", err);
     } finally {
       setIsLaunching(false);
+      setTimeout(() => {
+        engageLockRef.current = false;
+      }, 800);
     }
   };
 
   const togglePtt = async () => {
     if (!isEngaged) return;
     try {
-      if (pttStatus === 'IDLE') {
+      if (pttStatus === "IDLE") {
+        archiveCurrentTurn();
         await invoke("ptt_start", { owner: "MainWindow" });
       } else {
         await invoke("ptt_stop", { owner: "MainWindow" });
@@ -66,71 +286,144 @@ export const Home: React.FC = () => {
     }
   };
 
+  const handleTestClip = async (clipId: string) => {
+    if (isEngaged) return;
+    archiveCurrentTurn();
+    hasActiveTurnStarted.current = false;
+    setTestingClip(clipId);
+    setIsEngaged(true);
+    setTestMode(false);
+    setTranscript("");
+    setAssistantText("");
+    try {
+      await invoke("test_clip", { clipId });
+    } catch (err) {
+      console.error("[Home] Test clip failed:", err);
+      setTestingClip(null);
+      setIsEngaged(false);
+    }
+  };
+
+  // ── Tauri event listeners ────────────────────────────────────────────────────
+
   useEffect(() => {
     let unlisteners: (() => void)[] = [];
 
     const setup = async () => {
       try {
         const appWindow = getCurrentWindow();
-        
-        // Initial Settings - Fix: use main_app_mode
-        const settings = await invoke<any>("get_settings");
+
+        const settings = await invoke<{ main_app_mode?: string }>("get_settings");
         if (settings?.main_app_mode) {
           setInteractionMode(settings.main_app_mode.toUpperCase() as InteractionMode);
         }
 
-        // Sync Engagement State
         try {
-          const snapshot = await invoke<any>("get_runtime_snapshot");
+          const snapshot = await invoke<{
+            is_engaged?: boolean;
+            is_sleeping?: boolean;
+            cpu_governor?: string;
+            cpu_governor_optimal?: boolean;
+          }>("get_runtime_snapshot");
           if (snapshot) {
-            setIsEngaged(snapshot.is_engaged);
-            setIsSleeping(snapshot.is_sleeping);
+            setIsEngaged(snapshot.is_engaged ?? false);
+            setIsSleeping(snapshot.is_sleeping ?? false);
+            if (snapshot.cpu_governor && !snapshot.cpu_governor_optimal) {
+              setCpuWarning({ governor: snapshot.cpu_governor });
+            }
           }
         } catch (e) {
-          console.warn("[Home] Failed to sync initial engagement state:", e);
+          console.warn("[Home] Failed to sync initial state:", e);
         }
 
-        unlisteners.push(await appWindow.listen<InteractionState>("state_changed", (event) => {
-          const newState = event.payload;
-          setInteractionState(newState);
-        }));
+        unlisteners.push(
+          await appWindow.listen<InteractionState>("state_changed", (event) => {
+            const newState = event.payload;
+            setInteractionState(newState);
+            if (newState !== "Idle") {
+              hasActiveTurnStarted.current = true;
+            }
+            // Archive old turns when starting speech or resetting to Listening/Idle
+            if (newState === "UserSpeaking" || newState === "Listening") {
+              archiveCurrentTurn();
+            }
+          })
+        );
 
-        unlisteners.push(await appWindow.listen<{text: string}>("transcript_partial", (event) => {
-          setTranscript(event.payload.text);
-        }));
+        unlisteners.push(
+          await appWindow.listen<{ text: string }>("transcript_partial", (event) => {
+            setTranscript(event.payload.text);
+            activeUserTextRef.current = event.payload.text;
+          })
+        );
 
-        unlisteners.push(await appWindow.listen<{text: string}>("transcript_final", (event) => {
-          setTranscript(event.payload.text);
-        }));
+        unlisteners.push(
+          await appWindow.listen<{ text: string }>("transcript_final", (event) => {
+            setTranscript(event.payload.text);
+            activeUserTextRef.current = event.payload.text;
+          })
+        );
 
-        unlisteners.push(await appWindow.listen<{text: string}>("llm_chunk", (event) => {
-          setAssistantText(prev => prev + event.payload.text);
-        }));
+        unlisteners.push(
+          await appWindow.listen<string>("llm_token", (event) => {
+            setAssistantText(event.payload);
+            activeAiTextRef.current = event.payload;
+          })
+        );
 
-        unlisteners.push(await appWindow.listen<string>("mode_changed_main", (event) => {
-          setInteractionMode(event.payload.toUpperCase() as InteractionMode);
-        }));
+        unlisteners.push(
+          await appWindow.listen<string>("mode_changed_main", (event) => {
+            setInteractionMode(event.payload.toUpperCase() as InteractionMode);
+          })
+        );
 
-        unlisteners.push(await appWindow.listen<{ state: string }>("ptt_status", (event) => {
-          setPttStatus(event.payload.state as any);
-          if (event.payload.state === 'RECORDING') {
-            setAssistantText(""); // Clear previous on new turn
-            setTranscript("");
-          }
-        }));
+        unlisteners.push(
+          await appWindow.listen<{ state: string }>("ptt_status", (event) => {
+            setPttStatus(event.payload.state as "IDLE" | "RECORDING" | "PROCESSING");
+            if (event.payload.state === "RECORDING") {
+              archiveCurrentTurn();
+              setAssistantText("");
+              setTranscript("");
+            }
+          })
+        );
 
-        unlisteners.push(await appWindow.listen<boolean>("auto_sleep_state", (event) => {
-          setIsSleeping(event.payload);
-        }));
+        unlisteners.push(
+          await appWindow.listen<boolean>("auto_sleep_state", (event) => {
+            setIsSleeping(event.payload);
+          })
+        );
 
-        // CPU Governor Warning (Linux only)
-        unlisteners.push(await listen<{governor: string; optimal: boolean; advice: string}>("cpu_governor_warning", (event) => {
-          if (!event.payload.optimal) {
-            setCpuWarning({ governor: event.payload.governor, advice: event.payload.advice });
-          }
-        }));
+        unlisteners.push(
+          await listen<{ governor: string; optimal: boolean }>("cpu_governor_warning", (event) => {
+            if (!event.payload.optimal) {
+              setCpuWarning({ governor: event.payload.governor });
+            }
+          })
+        );
 
-        // Phase 5: Show window only after listeners are ready
+        unlisteners.push(
+          await appWindow.listen("playback_finished", () => {
+            if (testingClipRef.current) {
+              archiveCurrentTurn();
+              setTestingClip(null);
+              setIsEngaged(false);
+              hasActiveTurnStarted.current = false;
+            }
+          })
+        );
+
+        unlisteners.push(
+          await appWindow.listen("pipeline_error", () => {
+            if (testingClipRef.current) {
+              archiveCurrentTurn();
+              setTestingClip(null);
+              setIsEngaged(false);
+              hasActiveTurnStarted.current = false;
+            }
+          })
+        );
+
         setTimeout(async () => {
           await invoke("show_main_window");
         }, 300);
@@ -140,238 +433,266 @@ export const Home: React.FC = () => {
     };
 
     setup();
-    return () => {
-      unlisteners.forEach(u => u());
-    };
-  }, []);
+    return () => unlisteners.forEach((u) => u());
+  }, [archiveCurrentTurn]);
 
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex-1 flex h-full w-full overflow-hidden bg-[rgb(var(--background))] transition-all duration-400 ease-in-out">
-      {/* ===== CENTRAL HUD AREA ===== */}
-      <div className="flex-1 flex flex-col relative overflow-visible">
+    <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
+      {/* Reactive ambient background — responds to interaction state */}
+      <AmbientBackground mood={ambientMood} originX="50%" originY="47%" />
 
-        {/* CPU Governor Warning Banner */}
+      {/* Sentient Field Background Energy */}
+      <PipelineField state={interactionState} />
+
+      {/* ── Top-right: Status Capsule (single, clean, centered on mobile) ── */}
+      <div className="absolute top-[10%] md:top-4 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-5 z-30 flex items-center gap-2 pointer-events-none">
         {cpuWarning && (
-          <div className="mx-6 mt-3 px-4 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
-            <div className="flex items-center gap-2.5">
-              <span className="text-amber-400 text-[13px] font-bold shrink-0">⚠</span>
-              <span className="text-[12px] text-amber-300/90 leading-snug">
-                CPU governor is <span className="font-bold text-amber-200">{cpuWarning.governor}</span> — this may slow voice responses significantly.
-                <br />
-                <span className="opacity-70">{cpuWarning.advice}</span>
-              </span>
-            </div>
-            <button
-              onClick={() => setCpuWarning(null)}
-              className="text-amber-400/60 hover:text-amber-300 text-[15px] font-bold shrink-0 px-1 transition-colors"
-              title="Dismiss"
-            >✕</button>
-          </div>
+          <span className="text-[9px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]/60">
+            CPU: {cpuWarning.governor}
+          </span>
         )}
+        <StatusCapsule
+          label={statusLabel}
+          dotActive={dotActive}
+          testing={!!testingClip}
+        />
+      </div>
 
-        {/* Status Area */}
-        <div className="p-6 md:p-12 pb-0 flex flex-col items-center gap-4 shrink-0">
-          <div className="premium-card flex items-center gap-3 px-6 md:px-10 py-2.5 md:py-3">
-            <div className={cn(
-              "w-2 md:w-2.5 h-2 md:h-2.5 rounded-full transition-all duration-500",
-              interactionState !== "Idle" || isEngaged
-                ? "bg-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.6)] animate-pulse"
-                : "bg-[rgb(var(--foreground-muted))] opacity-60"
-            )} />
-            <span className="text-[11px] font-bold tracking-[0.3em] md:tracking-[0.4em] uppercase shimmer-text">
-              {!isEngaged && interactionState === "Idle" && !isSleeping && "System Dormant"}
-              {isSleeping && "System Sleeping (Models Offloaded)"}
-              {isEngaged && interactionState === "Idle" && pttStatus === 'IDLE' && !isSleeping && "System Ready"}
-              {pttStatus === 'RECORDING' && "Recording..."}
-              {pttStatus === 'PROCESSING' && "Processing..."}
-              {interactionState === "Thinking" && pttStatus === 'IDLE' && "Thinking..."}
-              {interactionState === "AssistantSpeaking" && "Responding..."}
-              {interactionState === "Listening" && pttStatus === 'IDLE' && "Awaiting Audio..."}
-              {interactionState === "UserSpeaking" && pttStatus === 'IDLE' && "Listening..."}
-            </span>
-          </div>
-        </div>
-
-        {/* Dynamic Orb Area */}
-        <div className="flex-1 w-full flex items-center justify-center relative min-h-0 overflow-visible">
-          <div className="absolute inset-0 bg-gradient-radial from-[rgb(var(--accent))]/5 to-transparent pointer-events-none opacity-60" />
-          <div className="w-full h-full max-h-[60vh] min-h-[300px] flex items-center justify-center">
-            <div className={cn(
-              "w-full h-full scale-100 transition-all duration-1000 flex items-center justify-center",
-              !isEngaged ? "grayscale-[0.8] opacity-60 blur-[2px]" : "grayscale-0 opacity-600 blur-0",
-              isSleeping && "grayscale-[0.9] opacity-30 blur-[4px]"
-            )}>
-              <VoxOrb telemetryRef={telemetryRef} interactionState={interactionState} isSleeping={isSleeping} />
-            </div>
-          </div>
-        </div>
-
-        {/* Interaction Zone */}
-        <div className="p-6 md:p-12 pt-0 w-full flex flex-col items-center shrink-0">
-          <div className="w-full max-w-2xl flex items-center justify-center relative h-32 overflow-visible">
-            {/* Flanking Waveform Container */}
-            <div className={cn(
-              "absolute inset-0 flex items-center justify-center transition-all duration-700 pointer-events-none",
-              activeSpeaking ? "opacity-600 scale-100" : "opacity-0 scale-95 blur-md"
-            )}>
-              <LiveWaveform
-                active={activeSpeaking}
-                processing={false}
-                telemetryRef={telemetryRef}
-                height={60}
-                className="w-full"
-                mode="static"
-                barWidth={3}
-                barGap={2}
-                fadeWidth={120} 
-              />
-            </div>
-
-            {/* Buttons Container — Opaque Background Mask */}
-            <div className="flex items-center gap-6 relative z-20 px-8 py-5 rounded-full bg-[rgb(var(--background))]">
-              <div className="relative">
-                <button
-                  onClick={handleEngage}
-                  className={cn(
-                    "flex items-center justify-center w-16 h-16 rounded-full transition-all duration-500 border-2",
-                    (isEngaged && isThinking || isLaunching) && "engage-btn-loading",
-                    isLaunching && "animate-spin",
-                    isEngaged && isThinking
-                      ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.3)] text-[rgb(var(--accent))]"
-                      : isEngaged
-                      ? "bg-[rgb(var(--background))] border-[rgb(var(--accent))] shadow-[0_0_30px_rgba(var(--accent),0.1)] text-[rgb(var(--accent))]"
-                      : "bg-[rgb(var(--accent))] border-transparent  text-[rgb(var(--accent-foreground))] hover:scale-105 shadow-[0_0_30px_rgba(var(--accent),0.5)]"
-                  )}
-                >
-                  {isLaunching ? (
-                    <Activity size={22} className="animate-pulse" />
-                  ) : (
-                    <Activity size={22} className={cn("transition-transform duration-700", isEngaged && "rotate-180")} />
-                  )}
-                </button>
-                <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-24 text-center">
-                  <span className="text-[11px] font-bold tracking-[0.2em] uppercase opacity-60">
-                    {isEngaged ? "Stop" : "Engage"}
+      {/* ── Side Dialogue Area - Right Only (All transcripts, big screens only) ── */}
+      <div
+        className="absolute top-[64px] bottom-[20%] right-0 flex flex-col justify-end items-center pointer-events-none hidden md:flex z-20"
+        style={{ width: "calc(50vw - min(35vw, 32.5vh))" }}
+      >
+        <div
+          ref={dialogueScrollRef}
+          className="w-full max-h-[85%] overflow-y-auto scrollbar-none flex flex-col items-center gap-6 pointer-events-auto select-text px-4 pb-6"
+          style={{
+            maskImage: "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
+            WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
+          }}
+        >
+          <div className="flex-1 min-h-[4vh]" />
+          {/* Dialogue History */}
+          {dialogueHistory.map((turn) => (
+            <React.Fragment key={turn.id}>
+              {turn.user && (
+                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed">
+                  <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/40 uppercase block mb-0.5">
+                    [USER]
                   </span>
-                </div>
-              </div>
-
-              {/* PTT Mic Button — Only visible when Engaged + PTT mode */}
-              {isEngaged && interactionMode === "PTT" && (
-                <div className="relative animate-in fade-in slide-in-from-left-4 duration-500">
-                  <button
-                    onClick={togglePtt}
-                    className={cn(
-                      "flex items-center justify-center w-16 h-16 rounded-full transition-all duration-500 border-2",
-                      pttStatus === 'RECORDING'
-                        ? "bg-[rgb(var(--accent))] border-transparent  scale-110 text-[rgb(var(--accent-foreground))]"
-                        : "bg-[rgb(var(--background))] border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] hover:border-[rgb(var(--accent))] "
-                    )}
-                  >
-                    <Mic size={24} className={cn(pttStatus === 'RECORDING' && "animate-pulse")} />
-                  </button>
-                  <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-24 text-center">
-                    <span className={cn(
-                      "text-[11px] font-black tracking-[0.3em] uppercase transition-colors",
-                      pttStatus === 'RECORDING' ? "text-[rgb(var(--accent))]" : "opacity-60"
-                    )}>
-                      {pttStatus === 'RECORDING' ? "Live" : "MIC"}
-                    </span>
-                  </div>
+                  {turn.user}
                 </div>
               )}
+              {turn.assistant && (
+                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))]/80 font-medium text-[13px] leading-relaxed" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
+                  <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/50 uppercase block mb-0.5">
+                    [VOX]
+                  </span>
+                  {turn.assistant}
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+
+          {/* Active Current Turn */}
+          {(streamedTranscript || streamedAssistantText) && (
+            <div className="w-full flex flex-col gap-6 items-center">
+              {streamedTranscript && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/85 font-light text-[13px] leading-relaxed"
+                >
+                  <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/60 uppercase block mb-0.5">
+                    [USER]
+                  </span>
+                  {streamedTranscript}
+                </motion.div>
+              )}
+              {streamedAssistantText && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed" style={{ textShadow: "0 0 25px rgba(var(--accent), 0.25)" }}
+                >
+                  <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/70 uppercase block mb-0.5">
+                    [VOX]
+                  </span>
+                  {streamedAssistantText}
+                </motion.div>
+              )}
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Orb Stage (center of lower half) ───────────────────────────── */}
+      <div
+        className="absolute z-10 pointer-events-none overflow-hidden flex items-center justify-center"
+        style={{
+          left: "50%",
+          top: "47%",
+          transform: "translate(-50%, -50%)",
+          width: isMobileScreen ? "min(92vw, 85vh)" : "min(70vw, 65vh)",
+          height: isMobileScreen ? "min(92vw, 85vh)" : "min(70vw, 65vh)",
+          minWidth: 280,
+          minHeight: 280,
+          maxWidth: 660,
+          maxHeight: 660,
+        }}
+      >
+        {/* Subtle dynamic ring behind orb */}
+        <div
+          className={cn(
+            "absolute inset-0 rounded-full border border-[rgb(var(--accent))]/10 transition-all duration-1000",
+            isEngaged ? "scale-100 opacity-100 animate-field-pulse" : "scale-90 opacity-60"
+          )}
+        />
+        <div className="relative w-full h-full flex items-center justify-center">
+          <ErrorBoundary name="VoxOrb">
+            <VoxOrb
+              telemetryRef={telemetryRef}
+              interactionState={interactionState}
+              isSleeping={isSleeping}
+              isTesting={!!testingClip}
+            />
+          </ErrorBoundary>
+        </div>
+      </div>
+
+      {/* ── Bottom Controls ─────────────────────────────────────────────── */}
+      <div className="absolute bottom-[10%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4 w-full max-w-md">
+        {/* Waveform */}
+        <div
+          className={cn(
+            "w-full h-10 transition-all duration-500 pointer-events-none opacity-0 scale-95",
+            activeSpeaking && !testingClip && "opacity-75 scale-100"
+          )}
+        >
+          <LiveWaveform
+            active={activeSpeaking && !testingClip}
+            processing={false}
+            telemetryRef={telemetryRef}
+            height={36}
+            className="w-full"
+            mode="static"
+            barWidth={2.5}
+            barGap={1.5}
+            fadeWidth={80}
+          />
+        </div>
+
+        {/* Buttons */}
+        <div className="flex items-center gap-4 relative">
+          {/* PTT Mic Button */}
+          {isEngaged && !testingClip && interactionMode === "PTT" && (
+            <button
+              onClick={togglePtt}
+              className={cn(
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/30 bg-black/35 hover:scale-105 active:scale-95",
+                pttStatus === "RECORDING"
+                  ? "bg-[rgb(var(--accent))] border-transparent text-[rgb(var(--accent-foreground))] shadow-[0_0_20px_rgba(var(--accent),0.4)]"
+                  : "text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+              )}
+              aria-label="Toggle PTT Microphone"
+            >
+              <Mic size={22} className={cn(pttStatus === "RECORDING" && "animate-pulse-slow")} />
+            </button>
+          )}
+
+          {/* Primary Engage Button */}
+          <div className="relative">
+            <button
+              onClick={handleEngage}
+              className={cn(
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/30 bg-transparent dark:bg-black/35 hover:scale-105 active:scale-95 shadow-[0_4px_20px_rgba(var(--accent),0.1)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)]",
+                isEngaged && isThinking && "engage-btn-loading border-transparent",
+                isLaunching && "animate-spin",
+                isEngaged
+                  ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.2)] bg-[rgb(var(--accent))]/20 dark:bg-black/45"
+                  : "bg-[rgb(var(--accent))]/10 hover:bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]"
+              )}
+              disabled={isLaunching}
+              aria-label={isEngaged ? "Stop Vox" : "Engage Vox"}
+            >
+              {isLaunching ? (
+                <Power size={20} className="animate-pulse-slow" />
+              ) : (
+                <Power
+                  size={20}
+                  className={cn("transition-transform duration-700", isEngaged && "rotate-180")}
+                />
+              )}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* ===== RIGHT SIDEBAR BRIEF (Desktop Only) ===== */}
-      <div className="hidden xl:flex flex-col gap-6 py-16 pr-12 w-[420px] shrink-0 z-10">
-        <div className="premium-card p-10 min-h-[500px] flex flex-col relative group">
-          <div className="absolute top-5 right-5 p-4 opacity-20 group-hover:opacity-40 transition-opacity">
-            <Mic size={48} />
-          </div>
+      {/* ── Test Mode — bottom-right, hidden when engaged ──────────────── */}
+      <AnimatePresence>
+        {!isEngaged && (
+          <motion.div
+            key="test-mode-container"
+            initial={{ opacity: 0, scale: 0.85, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.85, y: 10 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="hidden md:block fixed bottom-4 right-4 z-50"
+          >
+            <button
+              ref={testButtonRef}
+              onClick={() => setTestMode(!testMode)}
+              className={cn(
+                "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 cursor-pointer shadow-lg shadow-[rgba(var(--accent),0.06)] dark:shadow-[rgba(0,0,0,0.3)]",
+                testMode
+                  ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))] shadow-[0_0_18px_rgba(var(--accent),0.2)]"
+                  : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-black/35 dark:border-[rgba(var(--accent),0.15)] hover:bg-[rgb(var(--accent))]/20"
+              )}
+              aria-label="Test Mode"
+            >
+              <FlaskConical size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          <div className="flex items-center gap-3 mb-10 shrink-0">
-            <div className="w-1 h-8 bg-[rgb(var(--accent))] rounded-full" />
-            <span className="text-[11px] font-bold tracking-[0.3em] text-[rgb(var(--accent))] uppercase">Interaction Stream</span>
-          </div>
-
-          <div className="flex-1 flex flex-col gap-8">
-            <div className="flex-1 flex flex-col">
-              <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.3em] mb-6 opacity-60">Live Dialogue</h3>
-              
-              <div className="flex-1 flex flex-col gap-6">
-                {/* User Bubble */}
-                <div className={cn(
-                  "transition-all duration-500 transform",
-                  transcript ? "opacity-600 translate-x-0" : "h-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden"
-                )}>
-                  <div className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-2">You</div>
-                  <div className="p-4 rounded-2xl bg-[rgb(var(--foreground))]/[0.02] border border-[rgba(var(--border),[0.05]">
-                    <p className="text-lg font-medium text-[rgb(var(--foreground))] leading-relaxed">
-                      {transcript}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Assistant Bubble */}
-                <div className={cn(
-                  "transition-all duration-700 delay-200 transform",
-                  assistantText ? "opacity-600 translate-y-0" : "h-0 opacity-0 translate-y-4 pointer-events-none overflow-hidden"
-                )}>
-                  <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2">Vox</div>
-                  <div className="p-4 rounded-2xl bg-[rgb(var(--accent))]/[0.03] border border-[rgb(var(--accent))]/10">
-                    <p className="text-lg font-medium text-[rgb(var(--accent))] leading-relaxed">
-                      {assistantText}
-                    </p>
-                  </div>
-                </div>
-
-                {!transcript && !assistantText && (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center px-6 opacity-60">
-                    <Activity size={32} className="mb-4 animate-pulse" />
-                    <p className="text-sm font-medium italic">
-                      {isEngaged 
-                        ? (interactionMode === "PTT" ? "Click the Mic button to start recording" : "Listening for your voice...") 
-                        : "System dormant. Click Engage to start."}
-                    </p>
-                  </div>
-                )}
-              </div>
+      {/* ── Test Mode Panel ──────────────── */}
+      <AnimatePresence>
+        {testMode && !isEngaged && (
+          <motion.div
+            key="test-mode-panel"
+            ref={testPanelRef}
+            initial={{ y: 8, scale: 0.98 }}
+            animate={{ y: 0, scale: 1 }}
+            exit={{ y: 8, scale: 0.98 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-16 right-4 w-56 p-2 rounded-2xl glass-elevated glass-base border border-[rgba(var(--accent),0.15)] shadow-[0_10px_30px_rgba(0,0,0,0.15)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex flex-col gap-1 z-50"
+          >
+            <div className="px-2 py-1 border-b border-[rgba(var(--accent),0.1)] mb-1">
+              <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase block">
+                Select Test Input
+              </span>
             </div>
+            {TEST_CLIPS.map((clip) => (
+              <button
+                key={clip.id}
+                onClick={() => handleTestClip(clip.id)}
+                className="w-full text-left p-2 rounded-xl hover:bg-[rgb(var(--accent))]/10 transition-colors border border-transparent hover:border-[rgb(var(--accent))]/15 flex flex-col"
+              >
+                <span className="text-[13px] font-semibold text-[rgb(var(--foreground))]">
+                  {clip.name}
+                </span>
+                <span className="text-[11px] text-[rgb(var(--foreground-muted))] mt-0.5">
+                  {clip.desc} · {clip.duration}
+                </span>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            <div className="pt-8 border-t border-[rgba(var(--border),[0.05] grid grid-cols-2 gap-8 shrink-0">
-              <div>
-                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2 opacity-60">Pipeline</div>
-                <div className="text-lg font-mono text-[rgb(var(--accent))] uppercase">
-                  {isEngaged ? "Active" : "Locked"}
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-2 opacity-60">Protocol</div>
-                <div className="text-lg font-mono text-[rgb(var(--accent))] uppercase">
-                  {interactionMode}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="premium-card p-6 flex items-center justify-between group hover:border-[rgb(var(--accent))]/30 transition-colors">
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-xl bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--accent))] transition-colors">
-              <Shield size={18} />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest opacity-60">Security</div>
-              <div className="text-sm font-bold text-[rgb(var(--foreground))]">End-to-End Vault</div>
-            </div>
-          </div>
-          <div className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.5)]" />
-        </div>
-      </div>
     </div>
   );
 };

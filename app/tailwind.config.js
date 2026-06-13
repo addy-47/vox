@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: ['selector', '[data-theme="dark"]'],
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -77,12 +78,16 @@ export default {
       backgroundImage: {
         'orb-gradient': 'radial-gradient(circle at 30% 30%, #00f0ff, #6b01cc)',
         'glass-gradient': 'linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)',
+        'noise': "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 250 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
       },
       animation: {
         'float': 'float 6s ease-in-out infinite',
         'rotate-slow': 'rotate-slow 20s linear infinite',
         'rotate-reverse': 'rotate-reverse 15s linear infinite',
         'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'blob': 'blob 60s ease-in-out infinite',
+        'blob-slow': 'blob-slow 90s ease-in-out infinite',
+        'blob-pulse': 'blob-pulse 45s ease-in-out infinite',
       },
       keyframes: {
         float: {
@@ -96,6 +101,21 @@ export default {
         'rotate-reverse': {
           'from': { transform: 'rotate(360deg)' },
           'to': { transform: 'rotate(0deg)' },
+        },
+        blob: {
+          '0%, 100%': { borderRadius: '60% 40% 30% 70% / 60% 30% 70% 40%' },
+          '25%': { borderRadius: '30% 60% 70% 40% / 50% 60% 30% 60%' },
+          '50%': { borderRadius: '50% 60% 30% 50% / 40% 60% 50% 60%' },
+          '75%': { borderRadius: '40% 50% 60% 30% / 60% 40% 70% 30%' },
+        },
+        'blob-slow': {
+          '0%, 100%': { borderRadius: '40% 60% 50% 50% / 40% 50% 60% 50%' },
+          '33%': { borderRadius: '60% 40% 60% 40% / 50% 60% 40% 50%' },
+          '66%': { borderRadius: '50% 50% 40% 60% / 60% 40% 50% 50%' },
+        },
+        'blob-pulse': {
+          '0%, 100%': { borderRadius: '50% 60% 40% 50% / 50% 40% 60% 50%', opacity: '0.08' },
+          '50%': { borderRadius: '40% 50% 60% 40% / 60% 50% 40% 50%', opacity: '0.15' },
         },
       },
     },

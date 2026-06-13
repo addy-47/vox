@@ -21,25 +21,25 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
       <header className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-4">
-            <div className="h-[1px] w-8 bg-[#00dbe9]/30" />
-            <span className="text-[11px] font-black tracking-[0.4em] text-[#00dbe9] uppercase">Step 1.0 • Initialization</span>
+            <div className="h-[1px] w-8 bg-[rgb(var(--accent))]/30" />
+            <span className="text-[11px] font-black tracking-[0.4em] text-[rgb(var(--accent))] uppercase">Step 1.0 • Initialization</span>
           </div>
           
-          {/* Sub-step Navigation Controls */}
+            {/* Sub-step Navigation Controls */}
           <div className="flex items-center gap-2">
             <button 
               onClick={prevSubStep}
               disabled={subStep === 1}
-              className="p-2 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 disabled:opacity-20 transition-all"
+              className="p-2 rounded-full glass-whisper border border-[rgba(var(--border),0.06)] hover:bg-white/10 disabled:opacity-20 transition-all"
             >
-              <ChevronLeft className="w-4 h-4 text-white/60" />
+              <ChevronLeft className="w-4 h-4 text-[rgb(var(--foreground-muted))]" />
             </button>
             <button 
               onClick={nextSubStep}
               disabled={subStep === 3}
-              className="p-2 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 disabled:opacity-20 transition-all"
+              className="p-2 rounded-full glass-whisper border border-[rgba(var(--border),0.06)] hover:bg-white/10 disabled:opacity-20 transition-all"
             >
-              <ChevronRight className="w-4 h-4 text-white/60" />
+              <ChevronRight className="w-4 h-4 text-[rgb(var(--foreground-muted))]" />
             </button>
           </div>
         </div>
@@ -111,12 +111,12 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                   desc="100% On-device"
                 />
                 <FeatureCard 
-                  icon={<Zap className="w-4 h-4 text-[#d8baff]" />}
+                  icon={<Zap className="w-4 h-4 text-[rgb(var(--accent))]" />}
                   title="Latency"
                   desc="Low-Latency Inference"
                 />
                 <FeatureCard 
-                  icon={<Globe className="w-4 h-4 text-[#00dbe9]" />}
+                  icon={<Globe className="w-4 h-4 text-[rgb(var(--accent))]" />}
                   title="Native"
                   desc="System Integration"
                 />
@@ -141,7 +141,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                 <div className="w-full h-full">
                    <VoxOrb interactionState="Thinking" />
                 </div>
-                <div className="absolute inset-0 bg-[#00dbe9]/10 blur-[100px] rounded-full pointer-events-none" />
+                <div className="absolute inset-0 bg-[rgb(var(--accent))]/10 blur-[100px] rounded-full pointer-events-none" />
               </div>
             </motion.div>
           )}
@@ -155,7 +155,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               className="flex flex-col h-full py-4 relative"
             >
               <div className="flex-1 flex flex-col items-center justify-center relative">
-                <div className="w-[400px] h-[200px] liquid-glass rounded-2xl border border-white/10 overflow-hidden flex flex-col text-left shadow-2xl relative z-10">
+                <div className="w-[400px] h-[200px] glass-card glass-base rounded-2xl border-[rgba(var(--accent),0.15)] overflow-hidden flex flex-col text-left shadow-2xl relative z-10">
                   <div className="px-6 py-4 flex items-center justify-between relative z-10 border-b border-white/5">
                     <div 
                       className="flex items-center gap-3 cursor-help group/status"
@@ -164,16 +164,16 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                       id="step3-status"
                     >
                       <div className="relative flex items-center justify-center">
-                        <div className="absolute w-5 h-5 rounded-full bg-[#00dbe9] blur-md opacity-40 animate-pulse" />
-                        <div className="w-2.5 h-2.5 rounded-full bg-[#00dbe9] shadow-[0_0_10px_rgba(0,219,233,0.8)] z-10" />
+                        <div className="absolute w-5 h-5 rounded-full bg-[rgb(var(--accent))] blur-md opacity-40 animate-pulse" />
+                        <div className="w-2.5 h-2.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)] z-10" />
                       </div>
                       <span className="text-[11px] font-black tracking-[0.4em] text-white/60 uppercase">
-                        Vox <span className="text-[#00dbe9]">Live</span>
+                        Vox <span className="text-[rgb(var(--accent))]">Live</span>
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                        <div 
-                         className="p-2 rounded-lg bg-[#00dbe9]/10 text-[#00dbe9] cursor-help"
+                         className="p-2 rounded-lg bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] cursor-help"
                          onMouseEnter={() => setHoveredElement('mic')}
                          onMouseLeave={() => setHoveredElement(null)}
                          id="step3-mic"
@@ -181,7 +181,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                           <Mic size={16} />
                        </div>
                        <Copy 
-                         className="w-4 h-4 text-white/40 hover:text-[#00dbe9] transition-colors cursor-help p-2 box-content rounded-lg hover:bg-white/5" 
+                         className="w-4 h-4 text-white/40 hover:text-[rgb(var(--accent))] transition-colors cursor-help p-2 box-content rounded-lg hover:bg-white/5" 
                          onMouseEnter={() => setHoveredElement('copy')}
                          onMouseLeave={() => setHoveredElement(null)}
                          id="step3-copy"
@@ -202,7 +202,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                           <motion.span 
                             animate={{ opacity: [0, 1, 0] }}
                             transition={{ repeat: Infinity, duration: 0.8 }}
-                            className="inline-block w-[2px] h-[1em] ml-1 align-middle bg-[#00dbe9] shadow-[0_0_8px_rgba(0,219,233,0.8)]"
+                            className="inline-block w-[2px] h-[1em] ml-1 align-middle bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]"
                           />
                        </div>
                     </div>
@@ -216,20 +216,20 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                   >
                      <div className="flex items-center gap-6 opacity-60">
                         <div className="flex items-center gap-2">
-                           <Activity size={12} className="text-[#00dbe9]" />
+                           <Activity size={12} className="text-[rgb(var(--accent))]" />
                            <span className="text-[11px] font-mono text-white/80 font-bold uppercase tracking-widest">Active</span>
                         </div>
                         <div className="flex items-center gap-2">
-                           <Zap size={12} className="text-[#00dbe9]" />
+                           <Zap size={12} className="text-[rgb(var(--accent))]" />
                            <span className="text-[11px] font-mono text-white/80 font-bold">42MB</span>
                         </div>
                      </div>
                      <div className="flex items-center gap-1">
                         <div className="p-1.5 rounded-md bg-white/5 border border-white/5 flex items-center justify-center">
-                           <ChevronLeft className="w-3.5 h-3.5 text-[#00dbe9]" />
+                           <ChevronLeft className="w-3.5 h-3.5 text-[rgb(var(--accent))]" />
                         </div>
                         <div className="p-1.5 rounded-md bg-white/5 border border-white/5 flex items-center justify-center">
-                           <ChevronRight className="w-3.5 h-3.5 text-[#00dbe9]" />
+                           <ChevronRight className="w-3.5 h-3.5 text-[rgb(var(--accent))]" />
                         </div>
                      </div>
                   </div>
@@ -255,11 +255,11 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                       className="space-y-3 max-w-xl"
                     >
                       <div className="flex items-center justify-center gap-2">
-                         <div className="h-[1px] w-4 bg-[#00dbe9]" />
-                         <h3 className="text-[#00dbe9] text-xs font-black uppercase tracking-[0.2em]">
+                         <div className="h-[1px] w-4 bg-[rgb(var(--accent))]" />
+                         <h3 className="text-[rgb(var(--accent))] text-xs font-black uppercase tracking-[0.2em]">
                             {tooltips[hoveredElement as keyof typeof tooltips].title}
                          </h3>
-                         <div className="h-[1px] w-4 bg-[#00dbe9]" />
+                         <div className="h-[1px] w-4 bg-[rgb(var(--accent))]" />
                       </div>
                       <p className="text-white/60 text-[13px] leading-relaxed font-medium">
                          {tooltips[hoveredElement as keyof typeof tooltips].desc}
@@ -273,11 +273,11 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                       className="space-y-3 max-w-xl"
                     >
                       <div className="flex items-center justify-center gap-2">
-                         <div className="h-[1px] w-4 bg-[#00dbe9]" />
-                         <h3 className="text-[#00dbe9] text-sm font-black uppercase tracking-[0.2em]">
+                         <div className="h-[1px] w-4 bg-[rgb(var(--accent))]" />
+                         <h3 className="text-[rgb(var(--accent))] text-sm font-black uppercase tracking-[0.2em]">
                             Interactive Demo
                          </h3>
-                         <div className="h-[1px] w-4 bg-[#00dbe9]" />
+                         <div className="h-[1px] w-4 bg-[rgb(var(--accent))]" />
                       </div>
                       <p className="text-white/40 text-[11px] italic">
                          Hover over HUD elements to explore features...
@@ -302,17 +302,17 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               <motion.div 
                 animate={{ 
                     width: subStep === i ? 24 : 8,
-                    backgroundColor: subStep === i ? '#00dbe9' : 'rgba(255,255,255,0.1)'
+                    backgroundColor: subStep === i ? 'rgb(var(--accent))' : 'rgba(255,255,255,0.1)'
                 }}
                 className={cn(
                     "h-2 rounded-full transition-all duration-500 ease-out",
-                    subStep === i && "shadow-[0_0_15px_rgba(0,219,233,0.5)]"
+                    subStep === i && "shadow-[0_0_15px_rgba(var(--accent),0.5)]"
                 )}
               />
               {subStep === i && (
                   <motion.div 
                     layoutId="dot-glow"
-                    className="absolute inset-0 bg-[#00dbe9]/20 blur-md rounded-full"
+                    className="absolute inset-0 bg-[rgb(var(--accent))]/20 blur-md rounded-full"
                   />
               )}
             </button>
@@ -326,12 +326,12 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
         >
           <button
             onClick={onNext}
-            className="group relative w-full py-5 bg-zinc-950 text-white font-black rounded-2xl overflow-hidden border border-white/10 transition-all hover:bg-zinc-900 hover:border-[#00dbe9]/50 active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
+            className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)] glass-card glass-base hover:border-[rgb(var(--accent))]/70"
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-[#00dbe9]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
               Begin Setup
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[#00dbe9]" />
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />
             </span>
           </button>
         </motion.div>
@@ -341,11 +341,11 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
 };
 
 const FeatureCard = ({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) => (
-  <div className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl hover:bg-white/[0.04] transition-all hover:border-white/10 group">
+  <div className="glass-whisper glass-base px-5 py-5 group transition-all duration-500 hover:bg-white/[0.06]">
     <div className="mb-3 w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors">
       {icon}
     </div>
-    <div className="text-[11px] font-bold text-white/80 tracking-widest uppercase mb-1">{title}</div>
+    <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] tracking-widest uppercase mb-1">{title}</div>
     <div className="text-white text-sm font-medium">{desc}</div>
   </div>
 );
@@ -384,10 +384,10 @@ const CalloutLine = ({ active, fromId, containerRef }: { active: boolean, fromId
   if (!coords) return null;
 
   return (
-    <svg className="absolute inset-0 w-full h-full">
+    <svg className="absolute inset-0 w-full h-full text-[rgb(var(--accent))]">
       <motion.path
         d={`M ${coords.x1} ${coords.y1} L ${coords.x2} ${coords.y2}`}
-        stroke="#00dbe9"
+        stroke="currentColor"
         strokeWidth="1.5"
         strokeDasharray="4 4"
         fill="none"
@@ -399,7 +399,7 @@ const CalloutLine = ({ active, fromId, containerRef }: { active: boolean, fromId
         cx={coords.x1}
         cy={coords.y1}
         r="3"
-        fill="#00dbe9"
+        fill="currentColor"
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
       />
@@ -407,7 +407,7 @@ const CalloutLine = ({ active, fromId, containerRef }: { active: boolean, fromId
         cx={coords.x2}
         cy={coords.y2}
         r="3"
-        fill="#00dbe9"
+        fill="currentColor"
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
       />

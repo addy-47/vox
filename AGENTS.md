@@ -1,139 +1,182 @@
-# AGENTS.md — Vox Repository Guide
+# AGENTS.md — Vox
 
-> Compact instructions for AI agents working in this codebase. Every line answers: "Would an agent likely miss this without help?"
-
----
-
-## Architecture (Non-Obvious Facts)
-
-**Vox is a Tauri 2 desktop app with a Rust core library (`vox_lib`). Current version: v0.8.2 → v0.8.3 (Phase 9 — LLM Provider Architecture).**
-
-- `app/` — Frontend workspace (React 19, Vite 7, TailwindCSS 4, TypeScript)
-- `app/src-tauri/` — Tauri backend. The lib target is `vox_lib` (not `app`). The `vox_lib` crate contains ALL core logic.
-- `app/src-tauri/src/services/` — Engine subsystems: `vad/`, `stt/`, `llm/`, `tts/`, `translit.rs`, `audio.rs`, `pipeline.rs`, `ptt.rs`, `playback.rs`, `utils.rs`
-- `app/src-tauri/src/core/` — Shared core: `events.rs` (VoxEvent enum), `settings.rs` (VoxSettings), `state.rs` (InteractionState, InteractionOwner, PipelineAtomics), `constants.rs` (model paths, timing), `metrics.rs`
-- `app/src-tauri/src/ipc/` — Tauri IPC command handlers: `pipeline.rs`, `settings.rs`, `tray.rs`, `history.rs`, `audio.rs`, `monitoring.rs`, `setup.rs`
-- `app/src-tauri/src/persistence/` — SQLite session persistence (`rusqlite`)
-- `app/src-tauri/src/monitoring/` — Telemetry aggregator, system monitor, runtime snapshots
-- `app/src-tauri/src/setup/` — First-run onboarding logic
-- `app/src-tauri/src/wizard.rs` — Setup wizard window configuration + model health checks
-- `app/src-tauri/src/tray.rs` — Tray icon, overlay window management
-- `app/src-tauri/src/services/tts/` — TTS engine. `supertonic.rs` is the sole TTS engine. Uses sherpa-onnx native `OfflineTtsSupertonicModelConfig` (99M params, 31 languages, INT8 quantized ~144MB). Progress callback must capture owned Arcs/Senders (`'static`). `actor.rs` dispatches TTS commands. `mod.rs` re-exports.
-- `app/src-tauri/src/services/traits.rs` — Engine trait contracts (`VadEngine`, `SttEngine`, `LlmEngine`, `TtsEngine`). Pure sync interfaces; no thread/Tauri awareness.
-- `app/src-tauri/src/services/stt/` — Two engines: `nemotron_onnx.rs` (primary, parakeet-rs Nemotron-3.5) and `qwen_onnx.rs` (legacy, sherpa-onnx Qwen3-ASR)
-- `app/src-tauri/src/services/vad/` — Two backends: `earshot_vad.rs` (default, pure Rust) and `ten_onnx.rs` (legacy, sherpa-onnx ONNX)
-- `app/src-tauri/src/bin/` — Standalone binaries: `tts-bench.rs`, `vox-bench.rs`, `test-translit.rs`
-- `manifests/` — Model validation manifests (`app_manifest.json`, `models_manifest.json`).
-- `scripts/` — Benchmark scripts (Python) and release/packaging scripts.
-- `vox-models/` — Local model storage directory.
-
-**Two separate Cargo workspaces** with independent `Cargo.lock` files:
-1. `app/src-tauri/` (main app)
-2. `app/src-tauri/plugins/tauri-plugin-positioner/`
+Compact guidance for AI agents working in this repository. Every line here is something
+you are likely to get wrong without help.
 
 ---
 
-## Documentation (`docs/`)
+## Project Identity
 
-Architecture and design documents that provide deep context. Read the relevant one before making major changes:
-
-| File | Covers |
-|------|--------|
-| `docs/features/voice-flow.md` | **End-to-end voice pipeline flow** — audio capture → VAD → STT → LLM → TTS → playback, all algorithms, metrics, and event flow. THIS is the single canonical reference for the voice pipeline. |
-| `docs/backend.md` | Rust/Tauri audio pipeline, engine lifecycle, event flow |
-| `docs/frontend.md` | Dual-surface UI (main app + ephemeral overlay/tray), IPC contracts |
-| `docs/models.md` | Model stack (VAD, STT, LLM, TTS), hardware constraints, defaults |
-| `docs/design.md` | Visual design system, color tokens |
-| `docs/packaging.md` | Native desktop distribution strategy |
-| `docs/roadmap.md` | Phased versioned roadmap |
-| `docs/decision-framework.md` | Rationale behind major architectural decisions |
-| `docs/benchmarks/` | Performance results and TTS comparison reports |
-| `docs/plans/` | Phase-based implementation plans (phase3-phase9) |
-| `docs/plan.md` | Post-stable feature ideas |
-
-**Phase Plans (in `docs/plans/`):**
-| File | Phase |
-|------|-------|
-| `phase3-tray-ux.md` | Tray/Overlay UX improvements |
-| `phase4-pipeline.md` | Pipeline architecture |
-| `phase5-realtime-ux.md` | Realtime interaction UX |
-| `phase6-persistence.md` | Persistence & telemetry |
-| `phase7-packaging-onboarding.md` | Packaging & onboarding |
-| `phase8-ci-cd.md` | CI/CD pipeline |
-| **`phase9-inference-expansion.md`** | **Current — LLM Provider Architecture (v0.8.3)** |
+- **Vox**: A real-time, local-first voice assistant for desktop (Tauri v2 + Rust + React).
+- **Phase**: `v0.8.5-dev` → `v0.9.0` — Cloud provider integration via the LLM Provider
+  Architecture (Phase 9 on roadmap). OpenAI, Gemini, and Anthropic cloud providers are
+  already supported through the unified `OpenAiCompatProvider` (no new structs needed).
+- **Core mandate**: Local-first, CPU-only (~8GB RAM), sub-500ms pipeline, streaming-first.
 
 ---
 
-## Development Commands
+## Repository Layout
 
-### Rust checks (from app/src-tauri)
-```bash
-cd app/src-tauri
-cargo check
 ```
-### Run a single integration test
-```bash
-cd app/src-tauri
-cargo test --test llm_family_test -- --nocapture
-cargo test --test tts_test -- --ignored --nocapture --test-threads=1
+.
+├── app/                      # Tauri workspace — ALL pnpm/cargo commands run from here
+│   ├── src/                  # React/TypeScript frontend (Vite)
+│   │   ├── pages/            # Home, History, Settings, Monitoring
+│   │   ├── tray/             # Ephemeral overlay UI (Tray HUD)
+│   │   ├── wizard/           # First-run setup wizard (XState-driven)
+│   │   ├── store/            # Zustand v5 (settings only)
+│   │   └── shared/           # Components, hooks, context, lib
+│   └── src-tauri/            # Rust backend
+│       ├── src/
+│       │   ├── core/         # events.rs, settings.rs, state.rs, constants.rs, metrics.rs
+│       │   ├── services/     # audio, vad/, stt/, llm/, tts/, pipeline, playback, ptt, translit
+│       │   │   └── llm/providers/  # embedded.rs, openai_compat.rs (unified cloud hub)
+│       │   ├── ipc/          # Tauri command handlers (pipeline, settings, tray, history…)
+│       │   ├── persistence/  # SQLite (rusqlite), event store
+│       │   ├── monitoring/   # Telemetry aggregator, system monitor
+│       │   └── setup/        # First-run model download, wizard state machine
+│       └── tests/            # llm_provider_tests.rs (mock HTTP servers)
+├── docs/                     # Extensive architecture docs — READ BEFORE MAKING DECISIONS
+│   ├── backend.md            # ~1500 lines — threading, events, services, memory
+│   ├── frontend.md           # ~900 lines — component tree, state, IPC, design system
+│   ├── plans/                # Phase implementation plans (phase9-inference-expansion.md etc.)
+│   └── roadmap.md            # Version roadmap v0.1 → v1.0
+├── .agents/rules/            # Agent instruction files (system-architect, code-style, finetune)
+├── manifests/                # App manifest + model manifest (SHA256 checksums)
+└── scripts/                  # Python benchmarks, release scripts
 ```
 
-### TTS benchmark (Rust)
-```bash
-cd app/src-tauri
-cargo run --bin tts-bench bench
+---
+
+## Exact Commands
+
+All paths are relative to repo root unless noted.
+
+| What | Command |
+|------|---------|
+| Dev mode | `cd app && pnpm tauri dev` |
+| Sandboxed dev | `cd app && pnpm dev:sandbox` (sets `VOX_HOME=./.vox_sandbox`) |
+| Frontend only | `cd app && pnpm build` (tsc + vite) |
+| Rust tests | `cd app/src-tauri && cargo test` |
+| Specific test | `cd app/src-tauri && cargo test --test llm_provider_tests` |
+| Lint Rust | `cd app/src-tauri && cargo clippy` |
+| Format Rust | `cd app/src-tauri && cargo fmt` |
+| Install deps | `cd app && pnpm install` |
+| Prod build | `cd app && pnpm tauri build` |
+
+Key: `pnpm` commands run from `app/`, `cargo` commands from `app/src-tauri/`. Never from root.
+
+---
+
+## Testing Quirks
+
+- Backend tests use `vox_lib::` imports (the lib crate is named `vox_lib`, not `Vox`).
+- `llm_provider_tests.rs` spawns **real mock HTTP servers** (`TcpListener`) to test the
+  `OpenAiCompatProvider`. Tests are fast and self-contained.
+- The `EmbeddedProvider` test expects a **valid GGUF file path** (or checks for init failure
+  on missing files). Not suitable for CI without models downloaded.
+- No frontend tests exist yet.
+
+---
+
+## Current Architecture — Critical Context
+
+### LLM Provider Architecture (v0.8.5, active)
+
+The LLM was refactored from a single embedded backend into a **trait-based provider system**:
+
 ```
-Output WAVs go to `docs/benchmarks/audio_outputs/`.
+LlmProvider trait:
+  └─ EmbeddedProvider          (local GGUF via llama.cpp)
+  └─ OpenAiCompatProvider      (handles ALL remote/cloud)
+       ├─ OpenAI-compatible servers (Ollama, LM Studio, vLLM)
+       ├─ OpenAI cloud          (provider_name: "openai")
+       ├─ Gemini cloud          (provider_name: "gemini")
+       └─ Anthropic cloud       (provider_name: "anthropic")
+```
 
-### Supertonic (sole TTS engine, INT8 via sherpa-onnx native)
-7 INT8 model files at `~/.vox/models/tts/supertonic-3/` (flat, no subdirectories). Uses sherpa-onnx `OfflineTtsSupertonicModelConfig` with `GenerationConfig { sid, num_steps: i32, speed, extra: { "lang" } }`. Progress callback resamples 44.1→24kHz with anti-aliasing LPF (Biquad, fc=11000Hz, 2nd-order Butterworth). Model pack: `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`. Expression tags (`<laugh>`, `<breath>`, `<sigh>`) injected into LLM system prompt when engine is Supertonic (see `pipeline.rs` dynamic prompt logic).
+New cloud providers (OpenAI, Gemini, Anthropic, Groq, OpenRouter, Sarvam) should be added
+as new `impl LlmProvider` structs in `services/llm/providers/`. The trait requires:
+`generate()`, `stream_tokens()`, `cancel()`, `health_check()`, `list_models()`.
 
----
+The pipeline (`services/pipeline.rs`) is **provider-agnostic** — it calls `LlmProvider`
+methods only. Do not modify the pipeline when adding a new provider.
 
-## Critical Build Quirks
+### Backend Threading Model
 
-- **Linux requires clang** for the Tauri build (llama.cpp compilation). Env vars `CC=clang CXX=clang++` are set in CI and may be needed locally.
-- **Linux system deps** (must be installed): `libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev patchelf libasound2-dev`
-- **`app/src-tauri/.cargo/config.toml`** forces `-lc++ -lc++abi` linker flags on Linux and `FORCE:MULTIPLE` on Windows. Required for llama.cpp symbol resolution.
+- Dedicated OS threads for inference (no async for model calls).
+- Lock-free communication: ring buffers (audio), atomics (cancellation), mpsc channels (events).
+- `global_llama_backend()` singleton in `services/llm/mod.rs` — shared by LlmWorker and
+  the TTS engine. `LlamaBackend::init()` is called exactly once per process.
+- `VoxEvent` enum with 15+ variants drives all pipeline coordination.
 
----
+### Frontend
 
-## Testing Conventions
-
-- Integration tests in `app/src-tauri/tests/` often need **real model files** at `~/.vox/models/`. Many are `#[ignore]`-d and run with `--ignored`.
-- Tests requiring actual audio hardware or models should use `--test-threads=1` to avoid resource contention.
-- `vox-bench` is the full production-parity benchmark (STT + LLM + TTS + VAD pipeline). `tts-bench` is TTS-only.
-- **Benchmark audio clips** are at `data/benchmark_clips/` as `hiacc_adult_test_AD09XXX.wav`. The 5-file benchmark suite uses clips `AD09001`, `AD09004`, `AD09021`, `AD09039`, `AD09051` (approx 5-16s each, Hindi multi-lingual). Run with: `cargo run --release --bin vox-bench -- --input /home/addy/projects/apps/vox/data/benchmark_clips/hiacc_adult_test_AD09001.wav --llm minicpm/minicpm5-1b-Q4_K_M.gguf --asr nemotron` from `app/src-tauri/`. Always use absolute paths for `--input`.
-
-
-## Common Pitfalls
-
-- **Forgetting `--test-threads=1`** on tests that load models or use audio hardware → race conditions or OOM
-- **Running `cargo test` from repo root** — there's no root workspace. Always `cd` into `app/src-tauri`.
-- **Hardcoded absolute paths** in code — use `dirs` crate or `vox_lib::utils::paths` instead
-- **Modifying streaming/latency/VAD behavior** — these are critical-path invariants. Read `docs/features/voice-flow.md` and `docs/backend.md` thoroughly first.
-- **`partial_tag_len()` UTF-8 char boundary (llama_cpp.rs):** The `partial_tag_len()` function detects incomplete emotion tags at the buffer end. It MUST iterate using `text.char_indices()` not `0..text.len()` — raw byte slicing (`&text[i..]`) panics on multi-byte UTF-8 characters (Devanagari `म` is 3 bytes). This was a crash bug introduced in v0.8.2 tag stripping rewrite; fixed by changing `for i in 0..text.len()` to `for (i, _) in text.char_indices()`.
-- **`ort::session::Session` API quirks (2.0.0-rc.12):** `Session` is at `ort::session::Session`, not `ort::Session`. Builder methods return `ort::Error<SessionBuilder>` which is `!Send` — always use `.map_err(|e| anyhow!("{:?}", e))?` instead of bare `?`. Access input/output info via `session.inputs()` / `session.outputs()` methods (not fields). `GraphOptimizationLevel` is at `ort::session::builder::GraphOptimizationLevel`.
-- **Adding new fields to settings structs:** Always add `#[serde(default)]` to the struct to avoid deserialization failures when loading old settings files missing the new field.
-- **sherpa-onnx Supertonic native API quirks:** `OfflineTtsSupertonicModelConfig` has 7 fields: `duration_predictor`, `text_encoder`, `vector_estimator`, `vocoder`, `tts_json`, `unicode_indexer`, `voice_style`. `GenerationConfig::num_steps` is `i32` (cast `quality_steps as i32`). Progress callback is `FnMut(&[f32], f32) -> bool + 'static` — must capture owned Arcs/Senders, not references.
-- **CPU-aware LLM thread presets:** ModelSettings.tsx computes LLM thread presets from `navigator.hardwareConcurrency`. Max safe = totalCores − 2 (reserving cores for system + other pipeline stages). Presets are generated dynamically: [2, 4] always, plus `maxSafe` and `totalCores` when they differ. Always guard with `typeof navigator !== 'undefined'` for SSR/SSG compatibility. Do NOT hardcode thread options.
-- **CPU governor detection (Linux):** `utils::check_cpu_governor()` reads `/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor` at startup. If not `"performance"`, emits `cpu_governor_warning` Tauri event. Frontend (`Home.tsx`) listens and shows a dismissible warning banner. On non-Linux it's a no-op.
-- **`should_flush()` word-boundary safety (utils.rs):** The time-based flush and word-count fallback both require `ends_at_word_boundary()` to avoid mid-word splits. `ends_at_word_boundary()` checks the last character of the buffer: it must be whitespace or punctuation (`.!?,;:)\]—–।`) for a flush to proceed. This prevents BPE subword tokens from being split mid-word. The algorithm is now **fully dynamic** — all thresholds are continuous functions of TPS (`lerp(tps_norm, min, max)`) with no hardcoded TPS categories. Clause flushing fades out between TPS 3.0–5.0. Time gate scales from 1.0s→3.5s. Word fallback scales 5→20 words. See `docs/backend.md` Section 11 for the full algorithm.
-- **Nemotron STT `transcribe()` chunking (stt/nemotron.rs):** `transcribe()` chunks audio into 8960-sample windows, feeds them sequentially through the ONNX session, and only calls `reset_state()` at the very end (not between chunks). This prevents the model from forgetting context mid-utterance and produces more coherent Devanagari Hindi transcripts for multilingual clips.
-- **Emotion tags confirmed working:** `<laugh>`, `<breath>`, `<sigh>` tags in TTS input are processed correctly by sherpa-onnx Supertonic (v1.13.2). The emotion tag test (`tts_test.rs`) confirmed: tags add detectable audio differences (avg diff=0.048, max diff=0.457 for `<laugh>` which adds 18% duration vs plain baseline). The upstream issue #148 is about the upstream Rust CLI runner, not the C++ sherpa-onnx wrapper used by vox.
-- **Benchmark stability:** The 5-clip `vox-bench` suite (AD09001/004/021/039/051) achieves 100% completion with Llama-3.2-1B-Instruct Q6_K. Language detection via `is_devanagari()` correctly routes Devanagari STT transcripts to Hindi LLM prompts and English STT to English prompts. Average metrics: TTFA ~15.5-25.3s (higher with multi-utterance clips), LLM TPS ~1.2-3.2, STT RTF ~0.04-0.31, Peak RSS ~2446-2503MB, LLM mem ~969-970MB. The `vox-bench` binary now mirrors the real pipeline: dynamic prompt selection based on `is_devanagari()` + emotion tag injection (`<laugh>/<breath>/<sigh>`).
+- **Dual-surface**: Main window (invoked, persistent) + Tray HUD (ephemeral overlay,
+  always-on-top, transparent).
+- **State**: Zustand v5 for settings (selective subscriptions). No context for hot paths.
+- **Performance**: `useDynamicFPS` hook (60/15/0 FPS tiers), `React.memo` on visual components,
+  refs over state for audio/transcript data.
+- **Three windows** in `tauri.conf.json`: `main` (400×800), `wizard` (900×650), `tray` (420×250).
+- **Rust is source of truth** — frontend never derives state from local computations.
 
 ---
 
-## Post-Task Protocol
+## Important Constraints
 
-After completing any task, an agent should:
+- **CPU-only** — no GPU assumption. All inference via ONNX Runtime + llama.cpp C++ bindings.
+- **8GB RAM baseline** — model memory budget ~5.5GB across VAD/STT/LLM/TTS.
+- **Accuracy → Memory → Speed** — never optimize speed at the expense of accuracy.
+- **Streaming-first** — no stage waits for completion. Barge-in must remain functional.
+- **No Python in runtime** — Python is for benchmarks/scripts only.
+- **Never silently substitute a model name** — if a user specifies a model, use it.
+  If a call fails, check the library/endpoint first, not the model name.
+  (This applies to model IDs, not endpoint URLs — the `OpenAiCompatProvider` URL mapping
+  is intentional and config-driven.)
 
-1. **Update `AGENTS.md`** if the task revealed new build quirks, conventions, or pitfalls not already documented here.
-2. **Update `docs/`** if the task changed architecture, pipeline behavior, model stack, or frontend contracts. Keep the relevant doc in sync:
-   - Backend/pipeline changes → `docs/backend.md`
-   - Voice pipeline/algorithm changes → `docs/features/voice-flow.md`
-   - Frontend/UI changes → `docs/frontend.md`
-   - Model changes → `docs/models.md`
-   - New architectural decisions → `docs/decision-framework.md`
-   - Phase plan progress → `docs/plans/phase9-inference-expansion.md` (current phase)
+---
+
+## Release & Git Workflow
+
+- **Active branch**: `dev` (not `master`).
+- **Tag conventions**: `v0.x.x` (production), `v0.x.x-test[n]` (test releases).
+- **CI**: GitHub Actions builds `.deb`/`.dmg`/`.exe` on tags matching `v*`. Linux workflow
+  also signs and publishes an APT repo to `gh-pages`.
+- **Secrets required**: `APT_GPG_PRIVATE_KEY`, `APT_GPG_PASSPHRASE`, `GITHUB_TOKEN`.
+
+---
+
+## Existing Agent Instructions
+
+These files in `.agents/rules/` contain important expanded guidance that this file
+summarizes. Read them for depth:
+
+- **`system-architect.md`** — Architecture decision workflow, Vox-specific constraints,
+  resource limits, 5-role AI assistant pipeline.
+- **`code-style-guide.md`** — Implementation conventions: no `any`, modularity, no hardcoded
+  values, pnpm only, security rules, gitignore requirements.
+- **`idea-validator.md`** — Pre-build filter for new features (DROP / VALIDATE / REFRAME / EXPLORE).
+- **`finetune.md`** — ASR fine-tuning specifics (Hindi/Hinglish, RTX 5070 Ti constraints).
+
+---
+
+## Dogfooding Rule
+
+Update this file after any major task or phase. `docs/` should also be kept in sync with
+architecture changes. The `docs/plans/` directory contains authoritative phase implementation
+plans — consult them before making architectural decisions.
+
+---
+
+## Things You Will Likely Do Wrong
+
+- Running `pnpm` or `cargo` from the repo root instead of from `app/` or `app/src-tauri/`.
+- Forgetting that `app/src-tauri/src/main.rs` just calls `vox_lib::run()` — the real entry
+  point is in `lib.rs`.
+- Adding new dependencies without approval (requires explicit sign-off).
+- Using `npm` instead of `pnpm` for frontend operations.
+- Assuming GPU availability for inference.
+- Silently substituting a user-specified model name when an API call fails.
+  (This applies to model IDs, not endpoint URLs — the `OpenAiCompatProvider` URL mapping
+  is intentional and config-driven.)
+- Modifying the pipeline when adding a new provider (don't — implement the trait instead).

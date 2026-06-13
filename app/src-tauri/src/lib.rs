@@ -9,13 +9,13 @@ pub mod setup;
 pub mod wizard;
 
 use crate::core::state::AppState;
-use crate::ipc::pipeline::{check_engine_status, launch_engine, stop_engine, engage};
+use crate::ipc::pipeline::{check_engine_status, launch_engine, stop_engine, engage, test_clip, test_clip_cancel};
 use crate::ipc::tray::{
     hide_tray_window, sync_hud_visibility, set_hud_ignore_cursor, 
     update_interaction_mode, show_main_window, toggle_hud_visibility
 };
 use crate::ipc::history::{get_transcript_history, commit_session_to_history, get_sessions, get_turns, delete_session};
-use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog};
+use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog, check_llm_provider_health, list_remote_llm_models};
 use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
@@ -96,7 +96,13 @@ pub fn run() {
             // ── 0.6 Telemetry Aggregator ───────────────────────────────────────────
             let latest_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_vad_prob = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_low = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_mid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_high = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_playback_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_playback_low = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_playback_mid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
+            let latest_playback_high = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_sys_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_sys_ram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
             let latest_vox_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
@@ -115,6 +121,9 @@ pub fn run() {
             let (telemetry_worker, telemetry_tx) = crate::monitoring::aggregator::TelemetryAggregator::new(
                 std::sync::Arc::clone(&latest_energy),
                 std::sync::Arc::clone(&latest_vad_prob),
+                std::sync::Arc::clone(&latest_low),
+                std::sync::Arc::clone(&latest_mid),
+                std::sync::Arc::clone(&latest_high),
                 std::sync::Arc::clone(&latest_sys_cpu),
                 std::sync::Arc::clone(&latest_sys_ram),
                 std::sync::Arc::clone(&latest_vox_cpu),
@@ -140,7 +149,13 @@ pub fn run() {
                 telemetry_tx,
                 latest_energy,
                 latest_vad_prob,
+                latest_low,
+                latest_mid,
+                latest_high,
                 latest_playback_energy,
+                latest_playback_low,
+                latest_playback_mid,
+                latest_playback_high,
                 latest_sys_cpu,
                 latest_sys_ram,
                 latest_vox_cpu,
@@ -241,8 +256,13 @@ pub fn run() {
             
             // ── 1.7.5 CPU Governor Check (Linux only — warns if not "performance") ──
             {
+                let state: tauri::State<'_, std::sync::Arc<AppState>> = app.state();
                 if let Some(governor) = crate::utils::check_cpu_governor() {
                     let is_optimal = governor == "performance";
+                    // Store in AppState so frontend can read from snapshot (avoids race with listener setup)
+                    *state.cpu_governor.lock().unwrap() = governor.clone();
+                    state.cpu_governor_optimal.store(is_optimal, std::sync::atomic::Ordering::Relaxed);
+
                     if !is_optimal {
                         log::warn!(
                             "[BOOTSTRAP] CPU governor is '{}', not 'performance'. \
@@ -250,12 +270,12 @@ pub fn run() {
                              Consider: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
                             governor
                         );
+                        let _ = app.emit("cpu_governor_warning", serde_json::json!({
+                            "governor": governor,
+                            "optimal": is_optimal,
+                            "advice": "Switch to 'performance' governor for best voice pipeline performance"
+                        }));
                     }
-                    let _ = app.emit("cpu_governor_warning", serde_json::json!({
-                        "governor": governor,
-                        "optimal": is_optimal,
-                        "advice": "Switch to 'performance' governor for best voice pipeline performance"
-                    }));
                 }
             }
 
@@ -376,6 +396,8 @@ pub fn run() {
             launch_engine,
             stop_engine,
             engage,
+            test_clip,
+            test_clip_cancel,
             hide_tray_window,
             sync_hud_visibility,
             set_hud_ignore_cursor,
@@ -383,6 +405,8 @@ pub fn run() {
             show_main_window,
             request_boot_state,
             request_model_catalog,
+            check_llm_provider_health,
+            list_remote_llm_models,
             get_settings,
             update_theme,
             update_setting,

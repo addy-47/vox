@@ -3,12 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Vox | Ambient Intelligence</title>
+    <script>
+      // Prevent pinch-to-zoom (ctrl + wheel)
+      document.addEventListener('wheel', function(e) {
+        if (e.ctrlKey) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+
+      // Prevent macOS/Safari double-tap/pinch gesture events
+      document.addEventListener('gesturestart', function(e) {
+        e.preventDefault();
+      });
+    </script>
   </head>
 
   <body style="background: transparent !important;">
-    <div id="root" style="background: transparent !important;"></div>
+    <div id="error-root" style="display:none; position:fixed; inset:0; z-index:99999; padding:24px; background:#0a0a0a; color:#e5e5e5; font-family:monospace; font-size:13px; overflow:auto;"></div>
+    <div id="root" style="background: transparent !important;">
+      <div id="app-loading" style="display:flex; align-items:center; justify-content:center; height:100vh; color:#666; font-family:monospace; font-size:12px; letter-spacing:2px;">Loading Vox...</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Global error handler — catches EVERYTHING, shows on screen
+      window.__VOX_ERRORS = [];
+      const errorEl = document.getElementById('error-root');
+      function showError(msg, stack) {
+        window.__VOX_ERRORS.push({msg, stack, time: new Date().toISOString()});
+        errorEl.style.display = 'block';
+        document.getElementById('app-loading') && (document.getElementById('app-loading').style.display = 'none');
+        errorEl.innerHTML = '<div style="color:#ff4444;font-weight:bold;margin-bottom:12px;font-size:16px;">⚠️ Vox Crashed</div>'
+          + '<div style="margin-bottom:16px;color:#ff8888;">' + msg + '</div>'
+          + (stack ? '<pre style="white-space:pre-wrap;opacity:0.6;font-size:11px;">' + stack + '</pre>' : '')
+          + '<div style="margin-top:16px;border-top:1px solid #333;padding-top:12px;font-size:11px;opacity:0.5;">All errors logged to window.__VOX_ERRORS</div>';
+      }
+      window.onerror = function(msg, url, line, col, err) {
+        showError(msg + ' (' + url + ':' + line + ':' + col + ')', err ? err.stack : '');
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        showError('Unhandled Promise: ' + (e.reason?.message || e.reason || 'unknown'), e.reason?.stack);
+      });
+    </script>
   </body>
 </html>

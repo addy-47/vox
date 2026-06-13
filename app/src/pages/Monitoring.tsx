@@ -1,35 +1,29 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { 
-  Activity, 
-  Cpu, 
-  Clock, 
-  Zap, 
-  ShieldCheck,
-  Volume2,
-  ListRestart,
-  Moon,
-  Hash
-} from "lucide-react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  memo,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { cn } from "@/shared/lib/utils";
 import {
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  CartesianGrid
-} from "recharts";
+  Activity,
+  Cpu,
+  Volume2,
+  ShieldCheck,
+  Moon,
+  Zap,
+  MemoryStick,
+  Skull,
+  RefreshCw,
+} from "lucide-react";
+import { cn } from "@/shared/lib/utils";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface RuntimeSnapshot {
   pipeline_state: string;
-  current_turn_id: number;
-  conversation_id: number;
-  playback_active: boolean;
-  tts_generating: boolean;
   system_cpu_usage: number;
   system_ram_mb: number;
   vox_cpu_usage: number;
@@ -41,15 +35,7 @@ interface RuntimeSnapshot {
   stt_latency_ms: number | null;
   ttft_ms: number | null;
   total_voice_latency_ms: number | null;
-  persistence_queue_depth: number;
-  dropped_persistence_events: number;
-  playback_buffer_samples: number;
-  playback_underruns: number;
-  active_owner: string;
-  active_threads: number;
   tts_rtf: number | null;
-  playback_start_ms: number | null;
-  persistence_writes_per_sec: number;
   is_db_healthy: boolean;
   is_llm_loaded: boolean;
   is_tts_loaded: boolean;
@@ -59,361 +45,481 @@ interface RuntimeSnapshot {
   timestamp_ms: number;
 }
 
+type LocalSnapshot = RuntimeSnapshot & { localTime: number };
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MAX_HISTORY_SAMPLES = 60; // ~6 seconds at 10Hz
-const POLL_INTERVAL_MS = 1000;   // 1Hz
+const MAX_SAMPLES = 60;
+const POLL_MS = 1000;
 
-// ─── Sub-Components ───────────────────────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-const StatusBadge: React.FC<{ label: string; active: boolean; icon: React.ReactNode }> = ({ label, active, icon }) => (
-  <div className={cn(
-    "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-300",
-    active 
-      ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]" 
-      : "bg-[rgb(var(--foreground))]/[0.02] border-[rgba(var(--border),0.05)] text-[rgb(var(--foreground-muted))]"
-  )}>
-    <div className={cn("transition-transform duration-500", active && "animate-pulse")}>
-      {icon}
-    </div>
-    <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
-  </div>
-);
-
-const MetricCard: React.FC<{ 
-  title: string; 
-  value: string | number; 
-  unit?: string; 
-  trend?: "up" | "down" | "neutral";
-  icon: React.ReactNode;
-}> = React.memo(({ title, value, unit, icon }) => (
-  <div className="premium-card p-5 flex flex-col gap-4">
-    <div className="flex items-center justify-between">
-      <div className="p-2 rounded-lg bg-[rgb(var(--foreground))]/[0.03] text-[rgb(var(--accent))]">
+const EngineBadge = memo(
+  ({
+    label,
+    active,
+    icon,
+  }: {
+    label: string;
+    active: boolean;
+    icon: React.ReactNode;
+  }) => (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all duration-500",
+        active
+          ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.1)]"
+          : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.06)]"
+      )}
+    >
+      <span className={cn("transition-transform duration-500", active && "scale-110")}>
         {icon}
-      </div>
-      <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">{title}</span>
+      </span>
+      {label}
     </div>
-    <div className="flex items-baseline gap-1">
-      <span className="text-2xl font-mono font-bold text-[rgb(var(--foreground))]">{value}</span>
-      {unit && <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">{unit}</span>}
-    </div>
-  </div>
-));
+  )
+);
+EngineBadge.displayName = "EngineBadge";
 
-// ─── Main Component ──────────────────────────────────────────────────────────
-
-export const Monitoring: React.FC = () => {
-  const [history, setHistory] = useState<RuntimeSnapshot[]>([]);
-  const latest = useMemo(() => history[history.length - 1] || null, [history]);
-
-  // IPC Subscription (Pull-based throttled updates)
-  useEffect(() => {
-    const fetchSnapshot = async () => {
-      try {
-        const snapshot = await invoke<RuntimeSnapshot>("get_runtime_snapshot");
-        if (snapshot) {
-          setHistory(prev => {
-            const next = [...prev, snapshot];
-            if (next.length > MAX_HISTORY_SAMPLES) {
-              return next.slice(next.length - MAX_HISTORY_SAMPLES);
-            }
-            return next;
-          });
-        }
-      } catch (e) {
-        console.error("Failed to fetch runtime snapshot:", e);
-      }
-    };
-
-    const interval = setInterval(fetchSnapshot, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Performance Optimization: Memoized chart data
-  const cpuData = useMemo(() => history.map(s => ({ 
-    time: s.timestamp_ms, 
-    system: s.system_cpu_usage,
-    vox: s.vox_cpu_usage
-  })), [history]);
-  
-  const ramData = useMemo(() => history.map(s => ({ 
-    time: s.timestamp_ms, 
-    system: s.system_ram_mb,
-    vox: s.vox_ram_mb
-  })), [history]);
-  const vadData = useMemo(() => history.map(s => ({ time: s.timestamp_ms, prob: s.vad_probability, energy: s.vad_energy })), [history]);
-
-  if (!latest) {
+const ResourceBar = memo(
+  ({
+    label,
+    textRef,
+    barRef,
+  }: {
+    label: string;
+    textRef: React.RefObject<HTMLSpanElement | null>;
+    barRef: React.RefObject<HTMLDivElement | null>;
+  }) => {
     return (
-      <div className="flex h-full w-full items-center justify-center">
-        <div className="flex flex-col items-center gap-4 opacity-40">
-          <Activity size={32} className="animate-pulse text-[rgb(var(--accent))]" />
-          <span className="text-[11px] font-bold uppercase tracking-widest">Awaiting Runtime Snapshot...</span>
+      <div className="space-y-2">
+        <div className="flex justify-between items-baseline">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
+            {label}
+          </span>
+          <span
+            ref={textRef}
+            className="text-[14px] font-mono font-bold text-[rgb(var(--foreground))]"
+          >
+            0.0%
+          </span>
+        </div>
+        <div className="h-[4px] w-full rounded-full bg-[rgba(var(--foreground),0.06)] overflow-hidden">
+          <div
+            ref={barRef}
+            className="h-full rounded-full bg-[rgb(var(--accent))]"
+            style={{ width: "0%" }}
+          />
         </div>
       </div>
     );
   }
+);
+ResourceBar.displayName = "ResourceBar";
+
+const Sparkline = memo(
+  ({
+    history,
+    dataKey,
+  }: {
+    history: LocalSnapshot[];
+    dataKey: keyof RuntimeSnapshot;
+  }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const animationRef = useRef<number>(0);
+    const historyRef = useRef<LocalSnapshot[]>(history);
+    const dimensionsRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+
+    useEffect(() => {
+      historyRef.current = history;
+    }, [history]);
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const resize = () => {
+        const dpr = window.devicePixelRatio || 1;
+        const width = canvas.offsetWidth;
+        const height = canvas.offsetHeight;
+        
+        if (width !== dimensionsRef.current.width || height !== dimensionsRef.current.height) {
+          canvas.width = width * dpr;
+          canvas.height = height * dpr;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.resetTransform();
+            ctx.scale(dpr, dpr);
+          }
+          dimensionsRef.current = { width, height };
+        }
+      };
+
+      resize();
+      const observer = new ResizeObserver(() => {
+        resize();
+      });
+      observer.observe(canvas);
+
+      return () => {
+        observer.disconnect();
+      };
+    }, []);
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const render = () => {
+        const ctx = canvas.getContext("2d", { alpha: true });
+        if (!ctx) {
+          animationRef.current = requestAnimationFrame(render);
+          return;
+        }
+
+        const { width, height } = dimensionsRef.current;
+        if (width === 0 || height === 0) {
+          animationRef.current = requestAnimationFrame(render);
+          return;
+        }
+
+        ctx.clearRect(0, 0, width, height);
+
+        const currentHistory = historyRef.current;
+        if (currentHistory.length < 2) {
+          animationRef.current = requestAnimationFrame(render);
+          return;
+        }
+
+        const now = performance.now();
+        const maxAge = MAX_SAMPLES * POLL_MS;
+
+        const points: { x: number; y: number }[] = [];
+        const values = currentHistory.map((h) => h[dataKey] as number);
+        const minVal = 0;
+        const maxVal =
+          dataKey === "vox_ram_mb"
+            ? Math.max(...values, 100)
+            : dataKey === "vox_cpu_usage"
+            ? 100
+            : 1.0;
+
+        for (let i = 0; i < currentHistory.length; i++) {
+          const pt = currentHistory[i];
+          const age = now - pt.localTime;
+          if (age > maxAge) continue;
+
+          const x = width - (age / maxAge) * width;
+          const val = pt[dataKey] as number;
+          const y = height - ((val - minVal) / (maxVal - minVal)) * (height - 6) - 3;
+          points.push({ x, y });
+        }
+
+        if (points.length < 2) {
+          animationRef.current = requestAnimationFrame(render);
+          return;
+        }
+
+        const accentVal =
+          getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() ||
+          "0, 219, 233";
+        const grad = ctx.createLinearGradient(0, 0, 0, height);
+        grad.addColorStop(0, `rgba(${accentVal}, 0.22)`);
+        grad.addColorStop(1, `rgba(${accentVal}, 0)`);
+
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, height);
+        for (let i = 0; i < points.length; i++) {
+          ctx.lineTo(points[i].x, points[i].y);
+        }
+        ctx.lineTo(points[points.length - 1].x, height);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length - 1; i++) {
+          const xc = (points[i].x + points[i + 1].x) / 2;
+          const yc = (points[i].y + points[i + 1].y) / 2;
+          ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+        }
+        ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+        ctx.strokeStyle = `rgb(${accentVal})`;
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        animationRef.current = requestAnimationFrame(render);
+      };
+
+      animationRef.current = requestAnimationFrame(render);
+      return () => {
+        cancelAnimationFrame(animationRef.current);
+      };
+    }, [dataKey]);
+
+    return (
+      <div className="w-full h-[64px] relative rounded-xl overflow-hidden border border-[rgba(var(--accent),0.08)] bg-black/20">
+        <canvas ref={canvasRef} className="block w-full h-full" />
+      </div>
+    );
+  }
+);
+Sparkline.displayName = "Sparkline";
+
+// ─── Main Page Component ──────────────────────────────────────────────────────
+
+export const Monitoring: React.FC = () => {
+  const [history, setHistory] = useState<LocalSnapshot[]>([]);
+  const latest = useMemo(() => history[history.length - 1] ?? null, [history]);
+
+  const isEngineLoaded = useMemo(() => {
+    return !!(
+      latest?.is_vad_loaded ||
+      latest?.is_stt_loaded ||
+      latest?.is_llm_loaded ||
+      latest?.is_tts_loaded
+    );
+  }, [latest]);
+
+  const [togglingEngine, setTogglingEngine] = useState(false);
+
+
+
+  const cpuTextRef = useRef<HTMLSpanElement>(null);
+  const cpuBarRef = useRef<HTMLDivElement>(null);
+  const ramTextRef = useRef<HTMLSpanElement>(null);
+  const ramBarRef = useRef<HTMLDivElement>(null);
+
+  const latestRef = useRef<LocalSnapshot | null>(null);
+  latestRef.current = latest;
+
+  // Background Polling Loop
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const snap = await invoke<RuntimeSnapshot>("get_runtime_snapshot");
+        if (snap) {
+          setHistory((prev) => {
+            const next = [...prev, { ...snap, localTime: performance.now() }];
+            return next.length > MAX_SAMPLES ? next.slice(next.length - MAX_SAMPLES) : next;
+          });
+        }
+      } catch {
+        // silent
+      }
+    };
+
+    poll();
+    const id = setInterval(poll, POLL_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  // Direct DOM Interpolation Loop (EMA) at 60fps
+  useEffect(() => {
+    let curCpu = 0;
+    let curRam = 0;
+    let rafId = 0;
+
+    if (latestRef.current) {
+      curCpu = latestRef.current.vox_cpu_usage;
+      curRam = latestRef.current.vox_ram_mb;
+    }
+
+    const tick = () => {
+      const snap = latestRef.current;
+      if (snap) {
+        const targetCpu = snap.vox_cpu_usage;
+        const targetRam = snap.vox_ram_mb;
+
+        curCpu += (targetCpu - curCpu) * 0.12;
+        curRam += (targetRam - curRam) * 0.12;
+
+        if (cpuTextRef.current) {
+          cpuTextRef.current.textContent = `${curCpu.toFixed(1)}%`;
+        }
+        if (cpuBarRef.current) {
+          cpuBarRef.current.style.width = `${Math.min(100, Math.max(0, curCpu))}%`;
+        }
+        if (ramTextRef.current) {
+          const ramGb = curRam / 1024;
+          ramTextRef.current.textContent = `${ramGb.toFixed(2)} GB`;
+        }
+        if (ramBarRef.current) {
+          const pct = Math.min(100, Math.max(0, (curRam / snap.total_ram_mb) * 100));
+          ramBarRef.current.style.width = `${pct}%`;
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  const formatLatency = useCallback((ms: number | null) => {
+    if (ms === null) return "--";
+    if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${ms}ms`;
+  }, []);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[rgb(var(--background))]">
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <header className="px-6 md:px-10 py-6 md:py-10 shrink-0">
-        <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-[rgb(var(--accent))]/10">
-                <Activity className="text-[rgb(var(--accent))]" size={24} />
-              </div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[rgb(var(--foreground))]">System Monitoring</h1>
-            </div>
-            <p className="text-sm text-[rgb(var(--foreground-muted))] max-w-md">Realtime runtime observability and pipeline health.</p>
-          </div>
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent px-8 pt-6 z-10 select-none">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-4 shrink-0 border-b border-[rgba(var(--accent),0.06)]">
+        <div>
+          <span className="signal-text text-[13px]">System Diagnostics</span>
+          <p className="text-[10px] text-[rgb(var(--foreground-muted))]/40 font-mono uppercase tracking-[0.2em] mt-1">
+            Realtime Engine Metrics
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* Force Offload / Reload button */}
+          {isEngineLoaded ? (
+            <button
+              onClick={async () => {
+                if (togglingEngine) return;
+                setTogglingEngine(true);
+                try {
+                  await invoke("stop_engine");
+                } catch (e) {
+                  console.error("Failed to offload engine:", e);
+                } finally {
+                  setTogglingEngine(false);
+                }
+              }}
+              disabled={togglingEngine}
+              title="Force offload all models immediately from RAM"
+              className={cn(
+                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer",
+                togglingEngine
+                  ? "opacity-50 cursor-wait border-white/5 text-white/10 bg-white/2"
+                  : "border-[rgba(239,68,68,0.35)] text-red-500 bg-red-500/10 hover:bg-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.25)]"
+              )}
+            >
+              <Skull size={14} />
+            </button>
+          ) : (
+            <button
+              onClick={async () => {
+                if (togglingEngine) return;
+                setTogglingEngine(true);
+                try {
+                  await invoke("launch_engine");
+                } catch (e) {
+                  console.error("Failed to reload engine:", e);
+                } finally {
+                  setTogglingEngine(false);
+                }
+              }}
+              disabled={togglingEngine}
+              title="Reload default models"
+              className={cn(
+                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer",
+                togglingEngine
+                  ? "opacity-50 cursor-wait border-white/5 text-white/10 bg-white/2"
+                  : "border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.05)] hover:bg-[rgba(var(--accent),0.15)] shadow-[0_0_12px_rgba(var(--accent),0.1)]"
+              )}
+            >
+              <RefreshCw size={14} className={cn(togglingEngine && "animate-spin")} />
+            </button>
+          )}
 
-          <div className="flex flex-wrap gap-3 items-center">
-            <StatusBadge label="VAD" active={latest.is_vad_loaded} icon={<ShieldCheck size={14} />} />
-            <StatusBadge label="STT" active={latest.is_stt_loaded} icon={<Activity size={14} />} />
-            <StatusBadge label="LLM" active={latest.is_llm_loaded} icon={<Cpu size={14} />} />
-            <StatusBadge label="TTS" active={latest.is_tts_loaded} icon={<Volume2 size={14} />} />
-            {latest.is_sleeping && (
-              <StatusBadge label="Sleep" active={true} icon={<Moon size={14} />} />
-            )}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.15)] bg-black/20">
+            <Activity size={12} className="text-[rgb(var(--accent))] animate-pulse" />
+            <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase">
+              LIVE MONITOR
+            </span>
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* ── Main Grid ───────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto custom-scrollbar px-6 md:px-10 py-6 md:py-8">
-        <div className="max-w-[1600px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pb-8">
-          
-          {/* Section 1: Interaction Metadata */}
-          <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-6">
-             <MetricCard title="Current Turn" value={latest.current_turn_id} icon={<Hash size={18} />} />
-             <MetricCard title="Session ID" value={latest.conversation_id === 0 ? "Inactive" : `#${latest.conversation_id.toString().slice(-6)}`} icon={<Clock size={18} />} />
-             <MetricCard title="Threads" value={latest.active_threads} unit="Active" icon={<ListRestart size={18} />} />
-          </div>
-
-          {/* Section 2: Latency Metrics */}
-          <div className="lg:col-span-2 premium-card p-6 flex flex-col gap-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">Pipeline Latency</h3>
-              <Zap size={16} className="text-[rgb(var(--accent))]" />
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">STT</span>
-                <div className="text-xl font-mono font-bold">{latest.stt_latency_ms ?? "--"} <span className="text-[10px]">ms</span></div>
-              </div>
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">TTFT</span>
-                <div className="text-xl font-mono font-bold text-[rgb(var(--accent))]">{latest.ttft_ms ?? "--"} <span className="text-[10px]">ms</span></div>
-              </div>
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase">TTS RTF</span>
-                <div className="text-xl font-mono font-bold">{latest.tts_rtf?.toFixed(2) ?? "--"} <span className="text-[10px]">x</span></div>
-              </div>
-            </div>
-            <div className="h-32 w-full mt-4">
-               {/* Latency History could go here */}
-            </div>
-          </div>
-
-          {/* Section 3: System Resources */}
-          <div className="lg:col-span-2 premium-card p-6 flex flex-col gap-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex flex-col gap-1">
-                <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">System Health</h3>
-                <div className="text-[9px] font-mono font-bold text-[rgb(var(--foreground-muted))] opacity-60">
-                   {latest.cpu_cores} Cores &bull; {(latest.total_ram_mb / 1024).toFixed(1)} GB Physical
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
-                  <span className="text-[9px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tighter">Vox Engine</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--foreground),0.2)]" />
-                  <span className="text-[9px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tighter">Host System</span>
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-3">
-                <div className="flex justify-between items-end">
-                  <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tight">CPU Load</span>
-                  <div className="flex flex-col items-end">
-                    <span className="text-xl font-mono font-bold leading-none">{latest.vox_cpu_usage.toFixed(1)}%</span>
-                    <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))] mt-1">Total: {latest.system_cpu_usage.toFixed(1)}%</span>
-                  </div>
-                </div>
-                <div className="h-1 w-full bg-[rgb(var(--foreground))]/[0.05] rounded-full overflow-hidden">
-                   <div 
-                    className="h-full bg-[rgb(var(--accent))] transition-all duration-500" 
-                    style={{ width: `${latest.vox_cpu_usage}%` }} 
-                  />
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-end">
-                  <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-tight">Memory</span>
-                  <div className="flex flex-col items-end">
-                    <span className="text-xl font-mono font-bold leading-none">{latest.vox_ram_mb} <span className="text-[10px]">MB</span></span>
-                    <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))] mt-1">Total: {latest.system_ram_mb} MB</span>
-                  </div>
-                </div>
-                <div className="h-1 w-full bg-[rgb(var(--foreground))]/[0.05] rounded-full overflow-hidden">
-                   <div 
-                    className="h-full bg-[rgb(var(--accent))] transition-all duration-500" 
-                    style={{ width: `${(latest.vox_ram_mb / latest.total_ram_mb) * 100}%` }} 
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="h-40 w-full mt-6 flex gap-8">
-              <div className="flex-1 h-full relative group">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={cpuData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="rgb(var(--accent))" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="rgb(var(--accent))" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} stroke="rgba(var(--foreground), 0.05)" strokeDasharray="3 3" />
-                    <XAxis dataKey="time" hide />
-                    <YAxis 
-                      domain={[0, (dataMax: number) => Math.max(20, Math.ceil(dataMax / 10) * 10 + 10)]} 
-                      tick={{fontSize: 8, fill: 'rgb(var(--foreground-muted))'}} 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tickCount={4}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'rgb(var(--background))', 
-                        borderColor: 'rgba(var(--border), 0.1)',
-                        borderRadius: '12px',
-                        fontSize: '10px'
-                      }}
-                      labelStyle={{ display: 'none' }}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="system" 
-                      stroke="rgba(var(--foreground), 0.1)" 
-                      strokeWidth={1}
-                      fill="rgba(var(--foreground), 0.02)"
-                      isAnimationActive={false}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="vox" 
-                      stroke="rgb(var(--accent))" 
-                      strokeWidth={2}
-                      fillOpacity={1} 
-                      fill="url(#cpuGradient)" 
-                      isAnimationActive={false}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex-1 h-full relative group">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={ramData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="ramGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="rgb(var(--accent))" stopOpacity={0.15}/>
-                        <stop offset="95%" stopColor="rgb(var(--accent))" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} stroke="rgba(var(--foreground), 0.05)" strokeDasharray="3 3" />
-                    <XAxis dataKey="time" hide />
-                    <YAxis 
-                      domain={['dataMin - 100', 'dataMax + 100']} 
-                      tick={{fontSize: 8, fill: 'rgb(var(--foreground-muted))'}} 
-                      axisLine={false} 
-                      tickLine={false}
-                      tickCount={4}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'rgb(var(--background))', 
-                        borderColor: 'rgba(var(--border), 0.1)',
-                        borderRadius: '12px',
-                        fontSize: '10px'
-                      }}
-                      labelStyle={{ display: 'none' }}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="system" 
-                      stroke="rgba(var(--foreground), 0.1)" 
-                      strokeWidth={1}
-                      fill="rgba(var(--foreground), 0.02)"
-                      isAnimationActive={false}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="vox" 
-                      stroke="rgb(var(--accent))" 
-                      strokeWidth={2}
-                      fillOpacity={1} 
-                      fill="url(#ramGradient)" 
-                      isAnimationActive={false}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 6: VAD / Audio Energy */}
-          <div className="lg:col-span-4 premium-card p-6 flex flex-col gap-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest">VAD / Audio Activity</h3>
-              <Volume2 size={16} className="text-[rgb(var(--accent))]" />
-            </div>
-            <div className="h-48 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={vadData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid vertical={false} stroke="rgba(var(--foreground), 0.05)" strokeDasharray="3 3" />
-                  <XAxis dataKey="time" hide />
-                  <YAxis tick={{fontSize: 8, fill: 'rgb(var(--foreground-muted))'}} axisLine={false} tickLine={false} domain={[0, 1]} tickCount={3} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'rgb(var(--background))', 
-                      borderColor: 'rgba(var(--border), 0.1)',
-                      borderRadius: '12px',
-                      fontSize: '10px'
-                    }}
-                    labelStyle={{ display: 'none' }}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="prob" 
-                    stroke="rgb(var(--accent))" 
-                    strokeWidth={2}
-                    fill="rgb(var(--accent))" 
-                    fillOpacity={0.15} 
-                    isAnimationActive={false}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="energy" 
-                    stroke="rgba(var(--foreground), 0.3)" 
-                    strokeWidth={1}
-                    fill="transparent" 
-                    strokeDasharray="3 3"
-                    isAnimationActive={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
+      {/* Main Content Pane */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar pt-6 pb-10 space-y-6 min-h-0">
+        {/* Engine badges */}
+        <div className="flex flex-wrap gap-1">
+          <EngineBadge
+            label="VAD"
+            active={latest?.is_vad_loaded ?? false}
+            icon={<ShieldCheck size={11} />}
+          />
+          <EngineBadge
+            label="STT"
+            active={latest?.is_stt_loaded ?? false}
+            icon={<Activity size={11} />}
+          />
+          <EngineBadge
+            label="LLM"
+            active={latest?.is_llm_loaded ?? false}
+            icon={<Cpu size={11} />}
+          />
+          <EngineBadge
+            label="TTS"
+            active={latest?.is_tts_loaded ?? false}
+            icon={<Volume2 size={11} />}
+          />
+          {latest?.is_sleeping && (
+            <EngineBadge label="Sleep" active={true} icon={<Moon size={11} />} />
+          )}
         </div>
-      </main>
+
+        {/* Resource bars */}
+        <div className="space-y-4 max-w-lg pt-5 ">
+          <ResourceBar
+            label="VOX CPU"
+            textRef={cpuTextRef}
+            barRef={cpuBarRef}
+          />
+          <ResourceBar
+            label="VOX RAM"
+            textRef={ramTextRef}
+            barRef={ramBarRef}
+          />
+        </div>
+
+        {/* Latency metrics */}
+        <div className="grid grid-cols-3 gap-3 max-w-lg">
+          {[
+            { label: "STT", val: formatLatency(latest?.stt_latency_ms ?? null) },
+            { label: "TTFT", val: formatLatency(latest?.ttft_ms ?? null) },
+            {
+              label: "RTF",
+              val: latest?.tts_rtf != null ? `${latest.tts_rtf.toFixed(2)}×` : "--",
+            },
+          ].map((m) => (
+            <div
+              key={m.label}
+              className="bg-[rgba(var(--foreground),0.03)] border border-white/5 rounded-xl px-2 py-3 flex flex-col items-center gap-1 shadow-sm"
+            >
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60">
+                {m.label}
+              </span>
+              <span className="text-[14px] font-mono font-bold text-[rgb(var(--accent))]">
+                {m.val}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Live Sparkline Graphs */}
+        <div className="space-y-4 max-w-xl">
+          {[
+            { label: "CPU History", key: "vox_cpu_usage" as const, icon: Cpu },
+            { label: "RAM History", key: "vox_ram_mb" as const, icon: MemoryStick },
+            { label: "VAD Probability", key: "vad_probability" as const, icon: Zap },
+          ].map(({ label, key, icon: Icon }) => (
+            <div key={key} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Icon size={12} className="text-[rgb(var(--accent))]/70" />
+                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--foreground-muted))]/70">
+                  {label}
+                </span>
+              </div>
+              <Sparkline history={history} dataKey={key} />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };

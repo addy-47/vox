@@ -68,6 +68,7 @@ where
     is_loaded.store(true, Ordering::Relaxed);
     log::info!("[VAD] Entering sync loop: threshold={}, noise_gate={}, is_earshot={}, mode={:?}", threshold, noise_gate, is_earshot, mode);
 
+    let mut filter_bank = crate::utils::audio_filters::FilterBank::new(16000.0);
     
     // 16ms chunks (256 samples at 16kHz) — matches TenVAD window_size default
     let mut chunk = vec![0.0f32; 256];
@@ -147,15 +148,28 @@ where
             consumer.pop_slice(&mut chunk);
 
             // ── Phase 5: High-Frequency Telemetry ────────────────────────
-            // Calculate RMS energy for the 16ms chunk
+            // Process the chunk through our filter bank to get low, mid, and high RMS
+            let (raw_low, raw_mid, raw_high) = filter_bank.process_chunk(&chunk);
             let raw_energy = (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt();
             
+            // Gate individual bands as well, keeping mid and high relative to low/energy
             let gated_raw = if raw_energy > noise_gate { raw_energy } else { 0.0 };
-            let energy = (gated_raw * 8.0).clamp(0.0, 1.0);
+            let energy = (gated_raw * 12.0).clamp(0.0, 1.0).powf(0.5);
+
+            let gated_low = if raw_low > noise_gate { raw_low } else { 0.0 };
+            let gated_mid = if raw_mid > noise_gate { raw_mid } else { 0.0 };
+            let gated_high = if raw_high > noise_gate { raw_high } else { 0.0 };
+
+            let low = (gated_low * 12.0).clamp(0.0, 1.0).powf(0.5);
+            let mid = (gated_mid * 12.0).clamp(0.0, 1.0).powf(0.5);
+            let high = (gated_high * 12.0).clamp(0.0, 1.0).powf(0.5);
             
             if telemetry_tx.try_send(crate::monitoring::aggregator::TelemetryEvent::AudioEnergy {
                 energy,
                 vad_prob: 0.0,
+                low,
+                mid,
+                high,
             }).is_err() {
                 dropped_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
@@ -211,7 +225,8 @@ where
 
                 if !in_speech && active_frames >= 6 {
                     in_speech = true;
-                    current_turn_id += 1;
+                    let app_state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                    current_turn_id = app_state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
                     log::info!("[VAD] >>> SPEECH START (session: {}, owner: {:?})", current_turn_id, owner);
                     
                     let _ = stt_tx.send(crate::services::stt::SttCommand::ResetStream);
