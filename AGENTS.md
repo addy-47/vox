@@ -8,9 +8,9 @@ you are likely to get wrong without help.
 ## Project Identity
 
 - **Vox**: A real-time, local-first voice assistant for desktop (Tauri v2 + Rust + React).
-- **Phase**: `v0.8.4` → `v0.9.0` — Integrating cloud providers on top of the LLM Provider
-  Architecture (Phase 9 on roadmap). New cloud LLM providers (OpenAI, Gemini, Anthropic,
-  etc.) are being added as `LlmProvider` trait implementations.
+- **Phase**: `v0.8.5-dev` → `v0.9.0` — Cloud provider integration via the LLM Provider
+  Architecture (Phase 9 on roadmap). OpenAI, Gemini, and Anthropic cloud providers are
+  already supported through the unified `OpenAiCompatProvider` (no new structs needed).
 - **Core mandate**: Local-first, CPU-only (~8GB RAM), sub-500ms pipeline, streaming-first.
 
 ---
@@ -30,7 +30,7 @@ you are likely to get wrong without help.
 │       ├── src/
 │       │   ├── core/         # events.rs, settings.rs, state.rs, constants.rs, metrics.rs
 │       │   ├── services/     # audio, vad/, stt/, llm/, tts/, pipeline, playback, ptt, translit
-│       │   │   └── llm/providers/  # embedded.rs, openai_compat.rs (CURRENT FOCUS)
+│       │   │   └── llm/providers/  # embedded.rs, openai_compat.rs (unified cloud hub)
 │       │   ├── ipc/          # Tauri command handlers (pipeline, settings, tray, history…)
 │       │   ├── persistence/  # SQLite (rusqlite), event store
 │       │   ├── monitoring/   # Telemetry aggregator, system monitor
@@ -81,14 +81,18 @@ Key: `pnpm` commands run from `app/`, `cargo` commands from `app/src-tauri/`. Ne
 
 ## Current Architecture — Critical Context
 
-### LLM Provider Architecture (v0.8.4, active)
+### LLM Provider Architecture (v0.8.5, active)
 
 The LLM was refactored from a single embedded backend into a **trait-based provider system**:
 
 ```
 LlmProvider trait:
-  └─ EmbeddedProvider      (local GGUF via llama.cpp)
-  └─ OpenAiCompatProvider  (remote Ollama, LM Studio, vLLM, etc.)
+  └─ EmbeddedProvider          (local GGUF via llama.cpp)
+  └─ OpenAiCompatProvider      (handles ALL remote/cloud)
+       ├─ OpenAI-compatible servers (Ollama, LM Studio, vLLM)
+       ├─ OpenAI cloud          (provider_name: "openai")
+       ├─ Gemini cloud          (provider_name: "gemini")
+       └─ Anthropic cloud       (provider_name: "anthropic")
 ```
 
 New cloud providers (OpenAI, Gemini, Anthropic, Groq, OpenRouter, Sarvam) should be added
@@ -127,6 +131,8 @@ methods only. Do not modify the pipeline when adding a new provider.
 - **No Python in runtime** — Python is for benchmarks/scripts only.
 - **Never silently substitute a model name** — if a user specifies a model, use it.
   If a call fails, check the library/endpoint first, not the model name.
+  (This applies to model IDs, not endpoint URLs — the `OpenAiCompatProvider` URL mapping
+  is intentional and config-driven.)
 
 ---
 
@@ -171,4 +177,6 @@ plans — consult them before making architectural decisions.
 - Using `npm` instead of `pnpm` for frontend operations.
 - Assuming GPU availability for inference.
 - Silently substituting a user-specified model name when an API call fails.
+  (This applies to model IDs, not endpoint URLs — the `OpenAiCompatProvider` URL mapping
+  is intentional and config-driven.)
 - Modifying the pipeline when adding a new provider (don't — implement the trait instead).

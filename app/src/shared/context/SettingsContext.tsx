@@ -28,18 +28,26 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     let unlisteners: (() => void)[] = [];
+    let debounceTimer: any = null;
+
     const setup = async () => {
       const win = getCurrentWindow();
       const u1 = await win.listen<string>("theme-changed", () => {
         useSettingsStore.getState().loadSettings();
       });
       const u2 = await win.listen("settings-updated", () => {
-        useSettingsStore.getState().loadSettings();
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          useSettingsStore.getState().loadSettings();
+        }, 80);
       });
       unlisteners = [u1, u2];
     };
     setup();
-    return () => { unlisteners.forEach(u => u()); };
+    return () => { 
+      unlisteners.forEach(u => u()); 
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
   }, []);
 
   const settings = useSettingsStore(s => s.settings);
