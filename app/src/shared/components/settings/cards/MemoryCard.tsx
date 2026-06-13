@@ -22,7 +22,10 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
         "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85",
         isSmall
           ? "w-full bg-transparent p-0"
-          : "w-full lg:w-[320px] glass-card glass-base p-5"
+          : cn(
+              "w-full glass-card glass-base p-5",
+              layoutMode === "full-min" ? "lg:w-[240px] xl:w-[280px] 2xl:w-[320px]" : "lg:w-[320px]"
+            )
       )}
     >
       {/* Header */}

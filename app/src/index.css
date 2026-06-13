@@ -20,8 +20,8 @@
   --signal: 0, 219, 233;
   --field-energy: 0.15;
 
-  --connection-glow: rgba(0, 219, 233, 0.15);
-  --connection-core: rgba(0, 219, 233, 0.45);
+  --connection-glow: rgba(var(--accent), 0.15);
+  --connection-core: rgba(var(--accent), 0.45);
   --hub-connector-active-opacity: 0.28;
   --hub-connector-tick35-opacity: 0.22;
   --hub-connector-tick65-opacity: 0.18;
@@ -49,8 +49,8 @@ html, body {
   --signal: 8, 145, 178;
   --field-energy: 0.08;
 
-  --connection-glow: rgba(8, 145, 178, 0.28);
-  --connection-core: rgba(8, 145, 178, 0.70);
+  --connection-glow: rgba(var(--accent), 0.28);
+  --connection-core: rgba(var(--accent), 0.70);
   --hub-connector-active-opacity: 0.50;
   --hub-connector-tick35-opacity: 0.40;
   --hub-connector-tick65-opacity: 0.30;
@@ -429,24 +429,27 @@ input[type="range"]:active::-webkit-slider-thumb {
   border-radius: 1.75rem;
 }
 
-.custom-color-picker-v2 .react-colorful {
+.custom-color-picker {
   width: 100% !important;
-  height: 200px !important;
   cursor: crosshair;
 }
 
-.custom-color-picker-v2 .react-colorful__saturation {
+.custom-color-picker .react-colorful__saturation {
   border-radius: 1rem !important;
   border-bottom: none !important;
 }
 
-.custom-color-picker-v2 .react-colorful__hue {
+.custom-color-picker .react-colorful__hue {
   height: 10px !important;
   border-radius: 5px !important;
   margin-top: 1.25rem !important;
 }
 
-.custom-color-picker-v2 .react-colorful__pointer {
+.custom-color-picker.custom-color-picker-min .react-colorful__hue {
+  margin-top: 0.75rem !important;
+}
+
+.custom-color-picker .react-colorful__pointer {
   width: 20px !important;
   height: 20px !important;
   border: 4px solid white !important;
