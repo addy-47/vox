@@ -64,12 +64,12 @@ fn test_embedded_provider_health_check() {
 fn test_openai_compat_health_check() {
     // Healthy (200 OK)
     let url = spawn_mock_server(200, "Content-Length: 0\r\nConnection: close\r\n".to_string(), "");
-    let provider = OpenAiCompatProvider::new(&url, "test-model", None);
+    let provider = OpenAiCompatProvider::new(&url, "test-model", None, None);
     assert!(provider.health_check());
 
     // Unhealthy (500 Error)
     let url = spawn_mock_server(500, "Content-Length: 0\r\nConnection: close\r\n".to_string(), "");
-    let provider = OpenAiCompatProvider::new(&url, "test-model", None);
+    let provider = OpenAiCompatProvider::new(&url, "test-model", None, None);
     assert!(!provider.health_check());
 }
 
@@ -82,7 +82,7 @@ fn test_openai_compat_list_models() {
         body
     );
     
-    let provider = OpenAiCompatProvider::new(&url, "test-model", None);
+    let provider = OpenAiCompatProvider::new(&url, "test-model", None, None);
     let models = provider.list_models().unwrap();
     let expected = vec![
         vox_lib::core::settings::RemoteModelInfo {
@@ -116,7 +116,7 @@ fn test_openai_compat_generate() {
         sse_body
     );
     
-    let provider = OpenAiCompatProvider::new(&url, "test-model", None);
+    let provider = OpenAiCompatProvider::new(&url, "test-model", None, None);
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
     

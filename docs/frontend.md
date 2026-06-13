@@ -266,6 +266,8 @@ const loadTurns = (sessionId: number) => {
 
 ### Settings Page
 
+The Settings page is **fully responsive** — cards (`AppearanceCard`, `InteractionCard`, `MemoryCard`, `ModelsCard`, `PersonaCard`, `TrayCard`) and the `RestoreDefaultsButton` overlay adapt layout across desktop and mobile viewports.
+
 #### Settings Structure
 
 ```typescript
@@ -345,6 +347,15 @@ const updateSetting = async (domain: string, key: string, value: any) => {
 ```
 
 ### Monitoring Page
+
+#### Offload / Reload Dual-Button UI
+
+The monitoring page uses **conditional button rendering** for engine lifecycle control:
+
+- **Skull button** (red): displayed when `models_loaded === true`. Clicking it invokes `stop_engine` to offload/unload models from memory.
+- **RefreshCw button**: displayed when `models_loaded === false`. Clicking it invokes `launch_engine` to reload models into memory.
+
+Only one button is visible at any time based on the current engine state.
 
 #### Runtime Metrics
 
@@ -702,6 +713,8 @@ await invoke("update_setting", { domain, key, value });
 // Engine control
 await invoke("engage");
 await invoke("check_engine_status");
+await invoke("stop_engine");   // Offload/unload models (Skull button)
+await invoke("launch_engine"); // Reload models (RefreshCw button)
 
 // History management
 const history = await invoke<string[]>("get_transcript_history");

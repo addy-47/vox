@@ -12,23 +12,62 @@ pub struct OpenAiCompatProvider {
     base_url: String,
     model: String,
     api_key: Option<String>,
+    provider_name: Option<String>,
     async_client: reqwest::Client,
 }
 
 impl OpenAiCompatProvider {
-    pub fn new(base_url: &str, model: &str, api_key: Option<&str>) -> Self {
-        let base_url = base_url.trim_end_matches('/').to_string();
+    pub fn new(base_url: &str, model: &str, api_key: Option<&str>, provider_name: Option<&str>) -> Self {
+        let mut resolved_url = base_url.trim_end_matches('/').to_string();
+        if let Some(p_name) = provider_name {
+            let p_lower = p_name.to_lowercase();
+            if resolved_url.is_empty() 
+                || resolved_url == "http://127.0.0.1:11434"
+                || resolved_url == "http://localhost:11434"
+                || resolved_url.contains("api.openai.com") 
+                || resolved_url.contains("generativelanguage.googleapis.com") 
+                || resolved_url.contains("api.anthropic.com")
+            {
+                if p_lower == "openai" {
+                    resolved_url = "https://api.openai.com".to_string();
+                } else if p_lower == "gemini" {
+                    resolved_url = "https://generativelanguage.googleapis.com/v1beta/openai".to_string();
+                } else if p_lower == "anthropic" {
+                    resolved_url = "https://api.anthropic.com".to_string();
+                }
+            }
+        }
+
         let async_client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
         Self {
-            base_url,
+            base_url: resolved_url,
             model: model.to_string(),
-            api_key: api_key.map(|s| s.to_string()),
+            api_key: api_key.map(|s| s.trim_matches(|c| c == '"' || c == '\'').to_string()),
+            provider_name: provider_name.map(|s| s.to_string()),
             async_client,
         }
+    }
+
+    fn inject_headers(&self, mut builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(ref name) = self.provider_name {
+            let name_lower = name.to_lowercase();
+            if name_lower == "anthropic" {
+                builder = builder.header("anthropic-version", "2023-06-01");
+                if let Some(ref key) = self.api_key {
+                    builder = builder.header("x-api-key", key);
+                    builder = builder.bearer_auth(key);
+                }
+                return builder;
+            }
+        }
+        if let Some(ref key) = self.api_key {
+            builder = builder.bearer_auth(key);
+        }
+        builder
     }
 }
 
@@ -129,10 +168,7 @@ impl LlmProvider for OpenAiCompatProvider {
         block_on(async {
             let url = format!("{}/v1/chat/completions", self.base_url);
             let mut builder = self.async_client.post(&url).json(&req_body);
-
-            if let Some(ref key) = self.api_key {
-                builder = builder.bearer_auth(key);
-            }
+            builder = self.inject_headers(builder);
 
             let response = builder.send().await?;
 
@@ -220,9 +256,7 @@ impl LlmProvider for OpenAiCompatProvider {
     fn health_check(&self) -> bool {
         let url = format!("{}/v1/models", self.base_url);
         let mut builder = self.async_client.get(&url).timeout(Duration::from_secs(3));
-        if let Some(ref key) = self.api_key {
-            builder = builder.bearer_auth(key);
-        }
+        builder = self.inject_headers(builder);
 
         block_on(async {
             match builder.send().await {
@@ -239,9 +273,7 @@ impl LlmProvider for OpenAiCompatProvider {
             // Try Ollama-specific /api/tags first
             let ollama_url = format!("{}/api/tags", self.base_url);
             let mut builder = self.async_client.get(&ollama_url).timeout(Duration::from_secs(3));
-            if let Some(ref key) = self.api_key {
-                builder = builder.bearer_auth(key);
-            }
+            builder = self.inject_headers(builder);
 
             if let Ok(resp) = builder.send().await {
                 if resp.status().is_success() {
@@ -278,9 +310,7 @@ impl LlmProvider for OpenAiCompatProvider {
             // Fallback: standard /v1/models
             let url = format!("{}/v1/models", self.base_url);
             let mut builder = self.async_client.get(&url).timeout(Duration::from_secs(3));
-            if let Some(ref key) = self.api_key {
-                builder = builder.bearer_auth(key);
-            }
+            builder = self.inject_headers(builder);
 
             let resp = builder.send().await?;
             if !resp.status().is_success() {
