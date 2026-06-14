@@ -143,10 +143,12 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     });
                 let msg = serde_json::json!({
                     "realtimeInput": {
-                        "audio": {
-                            "mimeType": "audio/pcm;rate=16000",
-                            "data": base64_audio
-                        }
+                        "mediaChunks": [
+                            {
+                                "mimeType": "audio/pcm;rate=16000",
+                                "data": base64_audio
+                            }
+                        ]
                     }
                 })
                 .to_string();
@@ -160,7 +162,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                 }
                 packet_count += 1;
                 if packet_count % 100 == 0 {
-                    log::debug!(
+                    log::info!(
                         "[GeminiLive] Sent {} raw audio blocks to WebSocket.",
                         packet_count
                     );
@@ -513,11 +515,31 @@ async fn perform_handshake(
     is_ptt: bool,
     resume_handle: Option<String>,
 ) -> Result<(WsWriter, WsReader)> {
+    log::info!("[GeminiLive] Connecting to Gemini Live WebSocket: {}", {
+        if let Some(pos) = url.find("key=") {
+            let key = &url[pos+4..];
+            let redacted_key = if key.len() > 8 {
+                format!("{}...", &key[..8])
+            } else {
+                "...".to_string()
+            };
+            format!("{}key={}", &url[..pos], redacted_key)
+        } else {
+            url.to_string()
+        }
+    });
+
     let ws_stream = tokio_tungstenite::connect_async(url)
         .await
-        .map_err(|e| anyhow!("WebSocket connection failed: {:?}", e))?
+        .map_err(|e| {
+            let err_msg = format!("WebSocket connection failed: {:?}", e);
+            log::error!("[GeminiLive] {}", err_msg);
+            anyhow!("{}", err_msg)
+        })?
         .0;
+        
     let (mut ws_write, mut ws_read) = ws_stream.split();
+    log::info!("[GeminiLive] WebSocket connection established. Sending setup config frame.");
 
     let formatted_model = if model.starts_with("models/") || model.starts_with("publishers/") {
         model.to_string()
@@ -555,7 +577,7 @@ async fn perform_handshake(
         }));
     }
     if !tools.is_empty() {
-        setup_json["setup"]["generationConfig"]["tools"] = serde_json::json!(tools);
+        setup_json["setup"]["tools"] = serde_json::json!(tools);
     }
 
     if !system_prompt.is_empty() {
@@ -584,6 +606,7 @@ async fn perform_handshake(
     });
 
     if let Some(ref handle) = resume_handle {
+        log::info!("[GeminiLive] Requesting session resumption with handle length {}", handle.len());
         setup_json["setup"]["sessionResumption"] = serde_json::json!({
             "handle": handle
         });
@@ -592,7 +615,13 @@ async fn perform_handshake(
     ws_write
         .send(Message::Text(setup_json.to_string().into()))
         .await
-        .map_err(|e| anyhow!("Failed to send setup JSON frame: {:?}", e))?;
+        .map_err(|e| {
+            let err_msg = format!("Failed to send setup JSON frame: {:?}", e);
+            log::error!("[GeminiLive] {}", err_msg);
+            anyhow!("{}", err_msg)
+        })?;
+
+    log::info!("[GeminiLive] Setup config frame sent. Waiting for setupComplete response...");
 
     let setup_completed = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while let Some(res) = ws_read.next().await {
@@ -600,39 +629,57 @@ async fn perform_handshake(
                 Ok(Message::Text(text)) => {
                     let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
                     if val.get("setupComplete").is_some() {
+                        log::info!("[GeminiLive] Received setupComplete from Gemini Live server.");
                         return Ok(());
                     } else if let Some(err) = val.get("error") {
-                        return Err(anyhow!("Gemini setup error response: {:?}", err));
+                        let err_msg = format!("Gemini setup error response: {:?}", err);
+                        log::error!("[GeminiLive] {}", err_msg);
+                        return Err(anyhow!("{}", err_msg));
                     }
                 }
                 Ok(Message::Binary(bytes)) => {
                     let text = String::from_utf8_lossy(&bytes);
                     let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
                     if val.get("setupComplete").is_some() {
+                        log::info!("[GeminiLive] Received setupComplete (binary) from Gemini Live server.");
                         return Ok(());
                     } else if let Some(err) = val.get("error") {
-                        return Err(anyhow!("Gemini setup error response: {:?}", err));
+                        let err_msg = format!("Gemini setup error response (binary): {:?}", err);
+                        log::error!("[GeminiLive] {}", err_msg);
+                        return Err(anyhow!("{}", err_msg));
                     }
                 }
                 Ok(msg) => {
-                    return Err(anyhow!(
-                        "Unexpected message payload during setup: {:?}",
-                        msg
-                    ));
+                    let err_msg = format!("Unexpected message payload during setup: {:?}", msg);
+                    log::error!("[GeminiLive] {}", err_msg);
+                    return Err(anyhow!("{}", err_msg));
                 }
                 Err(e) => {
-                    return Err(anyhow!("WebSocket error during handshake: {:?}", e));
+                    let err_msg = format!("WebSocket error during handshake: {:?}", e);
+                    log::error!("[GeminiLive] {}", err_msg);
+                    return Err(anyhow!("{}", err_msg));
                 }
             }
         }
-        Err(anyhow!("WebSocket stream terminated before setupComplete"))
+        let err_msg = "WebSocket stream terminated before setupComplete";
+        log::error!("[GeminiLive] {}", err_msg);
+        Err(anyhow!("{}", err_msg))
     })
     .await;
 
     match setup_completed {
-        Ok(Ok(())) => Ok((ws_write, ws_read)),
-        Ok(Err(e)) => Err(anyhow!("Handshake failed: {:?}", e)),
-        Err(_) => Err(anyhow!("Handshake timed out after 5 seconds")),
+        Ok(Ok(())) => {
+            log::info!("[GeminiLive] Setup completed successfully.");
+            Ok((ws_write, ws_read))
+        }
+        Ok(Err(e)) => {
+            log::error!("[GeminiLive] Handshake failed: {:?}", e);
+            Err(anyhow!("Handshake failed: {:?}", e))
+        }
+        Err(_) => {
+            log::error!("[GeminiLive] Handshake timed out after 5 seconds");
+            Err(anyhow!("Handshake timed out after 5 seconds"))
+        }
     }
 }
 
@@ -799,12 +846,19 @@ fn handle_gemini_server_message(
                                         .collect();
                                     if let Err(e) = playback_tx.try_send(pcm) {
                                         log::warn!("[GeminiLive] Playback bridge buffer full: {:?}", e);
+                                    } else {
+                                        static RECV_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                                        let count = RECV_COUNT.fetch_add(1, Ordering::Relaxed);
+                                        if count % 100 == 0 {
+                                            log::info!("[GeminiLive] Received {} model audio response chunks.", count + 1);
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                     if let Some(text_token) = part.get("text").and_then(|t| t.as_str()) {
+                        log::info!("[GeminiLive] Received text token: {:?}", text_token);
                         let _ = event_tx.send(VoxEvent::LlmToken {
                             turn_id: 0,
                             token: text_token.to_string(),
@@ -818,6 +872,7 @@ fn handle_gemini_server_message(
         if let Some(input_transcription) = server_content.get("inputTranscription") {
             if !s_lock.interrupt_active {
                 if let Some(text) = input_transcription.get("text").and_then(|t| t.as_str()) {
+                    log::info!("[GeminiLive] Received input transcription (ASR): {:?}", text);
                     let _ = event_tx.send(VoxEvent::TranscriptFinal {
                         turn_id: 0,
                         owner: crate::core::state::InteractionOwner::MainWindow,
@@ -831,6 +886,7 @@ fn handle_gemini_server_message(
         if let Some(output_transcription) = server_content.get("outputTranscription") {
             if !s_lock.interrupt_active {
                 if let Some(text) = output_transcription.get("text").and_then(|t| t.as_str()) {
+                    log::info!("[GeminiLive] Received output transcription (TTS): {:?}", text);
                     let _ = event_tx.send(VoxEvent::LlmToken {
                         turn_id: 0,
                         token: text.to_string(),

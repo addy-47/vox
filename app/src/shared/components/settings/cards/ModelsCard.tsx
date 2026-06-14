@@ -108,6 +108,7 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
   isDownloaded,
   isActive,
   isRequired,
+  layoutMode,
   onSelect,
   confirmDeleteId,
   setConfirmDeleteId,
@@ -203,7 +204,7 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
       {/* Top Section */}
       <div className="space-y-0.5">
         <div className="flex items-start justify-between gap-2">
-          <span className="text-[12px] font-bold text-[rgb(var(--foreground))] truncate max-w-[170px]" title={name}>
+          <span className={cn("text-[12px] font-bold text-[rgb(var(--foreground))]", layoutMode === "small" ? "" : "truncate max-w-[170px]")} title={name}>
             {name}
           </span>
           
@@ -268,7 +269,6 @@ interface ModelsCardProps {
 }
 
 export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) => {
-  void layoutMode;
   const { settings, draftSettings, updateDraft, modelCatalog } = useSettings();
   const [downloadStatuses, setDownloadStatuses] = useState<Record<string, ModelStatus>>({});
   const [modelPresence, setModelPresence] = useState<Record<string, boolean>>({});
@@ -633,44 +633,81 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       <div className="flex flex-col gap-4">
         
         {/* Header */}
-        <div className="flex items-center justify-between mb-1 shrink-0">
-          <div className="flex items-center gap-2">
-            <Database className="text-[rgb(var(--accent))]" size={20} />
-            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
-              Model Hub
-            </span>
-          </div>
-          {/* Small Category Tabs */}
-          {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
-            <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
-              <button
-                onClick={() => setActiveCategoryTab("model")}
-                className={cn(
-                  "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                  activeCategoryTab === "model"
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                    : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Model
-              </button>
-              <button
-                onClick={() => setActiveCategoryTab("settings")}
-                className={cn(
-                  "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                  activeCategoryTab === "settings"
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                    : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Settings
-              </button>
+        {layoutMode === "small" ? (
+          (activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
+            <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+              <span className="text-[10px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/70 uppercase">CATALOG VIEW</span>
+              <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
+                <button
+                  onClick={() => setActiveCategoryTab("model")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                    activeCategoryTab === "model"
+                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  Model
+                </button>
+                <button
+                  onClick={() => setActiveCategoryTab("settings")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                    activeCategoryTab === "settings"
+                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  Settings
+                </button>
+              </div>
             </div>
-          )}
-        </div>
+          )
+        ) : (
+          <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+            <div className="flex items-center gap-2">
+              <Database className="text-[rgb(var(--accent))]" size={18} />
+              <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+                Model Hub
+              </span>
+            </div>
+            {/* Small Category Tabs */}
+            {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
+              <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
+                <button
+                  onClick={() => setActiveCategoryTab("model")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                    activeCategoryTab === "model"
+                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  Model
+                </button>
+                <button
+                  onClick={() => setActiveCategoryTab("settings")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                    activeCategoryTab === "settings"
+                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  Settings
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Topology Pipeline Map */}
-        <div className="grid grid-cols-5 gap-1 shrink-0 p-1 rounded-xl glass overflow-visible mb-1 bg-[rgba(var(--foreground),0.02)]">
+        <div className={cn(
+          "gap-1 shrink-0 p-1 rounded-xl glass overflow-visible mb-1 bg-[rgba(var(--foreground),0.02)]",
+          layoutMode === "small"
+            ? "flex overflow-x-auto snap-x no-scrollbar scrollbar-none w-full scroll-smooth"
+            : "grid grid-cols-5"
+        )}>
           
           {/* NODE 1: VAD */}
           <button
@@ -680,6 +717,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               activePipelineTab === "vad"
                 ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
               getPulseClass(isVadCategoryMissing, hasVadUpdate)
             )}
           >
@@ -700,6 +738,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               activePipelineTab === "asr"
                 ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
               getPulseClass(isAsrCategoryMissing, hasAsrUpdate)
             )}
           >
@@ -720,6 +759,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               activePipelineTab === "translit"
                 ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
               getPulseClass(isTranslitCategoryMissing, hasTranslitUpdate)
             )}
           >
@@ -740,6 +780,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               activePipelineTab === "llm"
                 ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
               getPulseClass(isLlmCategoryMissing, hasLlmUpdate)
             )}
           >
@@ -760,6 +801,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               activePipelineTab === "tts"
                 ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
               getPulseClass(isTtsCategoryMissing, hasTtsUpdate)
             )}
           >
@@ -775,12 +817,15 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         </div>
 
         {/* Workspace Detail Panel */}
-        <div className="max-h-[190px] h-auto w-full flex flex-col glass rounded-xl p-3 relative overflow-y-auto custom-scrollbar bg-[rgba(var(--foreground),0.02)]">
+        <div className={cn(
+          "h-auto w-full flex flex-col glass rounded-xl p-3 relative bg-[rgba(var(--foreground),0.02)]",
+          layoutMode === "small" ? "max-h-none overflow-y-visible" : "max-h-[190px] overflow-y-auto custom-scrollbar"
+        )}>
                    {/* TAB 1: SILENCE DETECTION (VAD) */}
           {activePipelineTab === "vad" && (
             <div className="space-y-3">
               {activeCategoryTab === "model" ? (
-                <div className="grid grid-cols-2 gap-3">
+                <div className={cn("grid gap-3", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
                   <SubModelCard
                     id="earshot"
                     name="Earshot (Built-in)"
@@ -846,7 +891,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           {/* TAB 2: VOICE RECOGNITION (ASR) */}
           {activePipelineTab === "asr" && (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className={cn("grid gap-2.5", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
                 {modelCatalog.asr.map((model) => {
                   const isSelected = draftSettings.asr.model === model.id;
                   const modelGroupId = model.id;
@@ -938,7 +983,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                    <div className={cn(
+                      "grid grid-cols-1 gap-2 pr-1",
+                      layoutMode === "small" ? "max-h-none overflow-y-visible" : "max-h-[220px] overflow-y-auto"
+                    )}>
                       {getFilteredModels().length === 0 ? (
                         <div className="text-center py-6 text-[11px] text-[rgb(var(--foreground-muted))]/70">
                           No remote models loaded. Ensure the server is online and configured in the Interaction Card.
@@ -1058,7 +1106,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   </div>
                 ) : (
                   /* Local GGUF Card Grid */
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className={cn("grid gap-2.5", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
                     {[...modelCatalog.llm].sort((a, b) => {
                       if (selectedLlmId === a.id) return -1;
                       if (selectedLlmId === b.id) return 1;
@@ -1220,7 +1268,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   <div className="space-y-1.5">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]/75 block">Voice Profile</span>
                     {modelPresence["supertonic_tts"] ? (
-                      <div className="grid grid-cols-2 gap-1 pr-0.5 max-h-[110px] overflow-y-auto custom-scrollbar">
+                      <div className={cn(
+                        "grid gap-1 pr-0.5",
+                        layoutMode === "small" ? "grid-cols-1 max-h-none overflow-y-visible" : "grid-cols-2 max-h-[110px] overflow-y-auto custom-scrollbar"
+                      )}>
                         {modelCatalog.voices.map((v) => {
                           const isSelected = draftSettings.tts.voice === v.id;
                           return (

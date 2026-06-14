@@ -766,6 +766,17 @@ pub async fn start_realtime_session_internal(
         }
     };
 
+    // Update owner to MainWindow and sync VAD immediately
+    state.owner.store(
+        crate::core::state::InteractionOwner::MainWindow as u32,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    let _ = engine
+        .vad_tx
+        .send(crate::core::state::VadCommand::UpdateOwner(
+            crate::core::state::InteractionOwner::MainWindow,
+        ));
+
     // 2. Clear any existing realtime engine
     let mut rt_guard = state.realtime_engine.lock().await;
     if let Some(mut old_rt) = rt_guard.take() {
@@ -843,6 +854,12 @@ pub async fn start_realtime_session_internal(
     };
 
     // 4. Create and start RealtimeEngine
+    let is_ptt = interaction_mode == crate::core::settings::InteractionMode::PTT;
+    log::info!(
+        "[IPC] Starting realtime session: interaction_mode={:?}, is_ptt={}",
+        interaction_mode,
+        is_ptt
+    );
     let tokio_handle = tokio::runtime::Handle::current();
     let mut rt_engine =
         crate::services::realtime::engine::RealtimeEngine::new(provider, tokio_handle);
@@ -874,10 +891,18 @@ pub async fn start_realtime_session_internal(
             current_settings,
         ));
 
-    // 7. Tell VAD to start routing chunks
+    // 7. Tell VAD to start routing chunks — pass is_ptt so it applies the
+    //    correct routing policy (gated vs. unconditional).
+    log::info!(
+        "[IPC] Sending StartRealtime to VAD actor (is_ptt={})",
+        is_ptt
+    );
     let _ = engine
         .vad_tx
-        .send(crate::core::state::VadCommand::StartRealtime(audio_tx));
+        .send(crate::core::state::VadCommand::StartRealtime { tx: audio_tx, is_ptt });
+
+    // Update backend engagement state
+    state.pipeline.is_engaged.store(true, std::sync::atomic::Ordering::Relaxed);
 
     *rt_guard = Some(rt_engine);
 
@@ -924,6 +949,9 @@ pub async fn start_realtime_session_internal(
                         rt_engine.stop();
                     }
                     drop(rt_guard);
+
+                    // Update backend engagement state
+                    state_clone.pipeline.is_engaged.store(false, std::sync::atomic::Ordering::Relaxed);
 
                     // Tell VAD to stop routing chunks
                     if let Some(engine) = state_clone.engine.lock().await.as_ref() {
@@ -991,7 +1019,11 @@ pub async fn start_realtime_session(
     app: AppHandle,
     state: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<(), String> {
-    start_realtime_session_internal(&app, &state).await
+    if let Err(e) = start_realtime_session_internal(&app, &state).await {
+        log::error!("[IPC] start_realtime_session failed: {}", e);
+        return Err(e);
+    }
+    Ok(())
 }
 
 #[derive(serde::Serialize)]
@@ -1051,6 +1083,17 @@ pub async fn stop_realtime_session(
     let mut rt_guard = state.realtime_engine.lock().await;
     if let Some(mut rt_engine) = rt_guard.take() {
         rt_engine.stop();
+    }
+
+    // Update backend engagement state and owner
+    state.pipeline.is_engaged.store(false, std::sync::atomic::Ordering::Relaxed);
+    state.owner.store(crate::core::state::InteractionOwner::Tray as u32, std::sync::atomic::Ordering::Relaxed);
+    if let Some(engine) = state.engine.lock().await.as_ref() {
+        let _ = engine
+            .vad_tx
+            .send(crate::core::state::VadCommand::UpdateOwner(
+                crate::core::state::InteractionOwner::Tray,
+            ));
     }
 
     // Delete session cache file
