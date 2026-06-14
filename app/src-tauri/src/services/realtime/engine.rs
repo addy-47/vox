@@ -1,5 +1,5 @@
 use crate::core::events::VoxEvent;
-use crate::services::playback::PlaybackEngine;
+use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::{
     audio_bridge::AudioBridge, playback_bridge::PlaybackBridge, RealtimeSession,
     RealtimeVoiceProvider,
@@ -7,7 +7,6 @@ use crate::services::realtime::{
 use anyhow::{Context, Result};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedSender;
 
 pub struct RealtimeEngine {
     provider: Box<dyn RealtimeVoiceProvider>,
@@ -78,7 +77,7 @@ impl RealtimeEngine {
         self.audio_bridge.send_pcm(pcm);
     }
 
-    pub fn get_audio_sender(&self) -> Option<UnboundedSender<Vec<i16>>> {
+    pub fn get_audio_sender(&self) -> Option<tokio::sync::mpsc::Sender<Vec<i16>>> {
         self.audio_bridge.get_sender()
     }
 
@@ -106,6 +105,22 @@ impl RealtimeEngine {
             session.activity_end()
         } else {
             Ok(())
+        }
+    }
+
+    pub fn is_connected(&self) -> bool {
+        if let Some(ref session) = self.session {
+            session.is_connected()
+        } else {
+            false
+        }
+    }
+
+    pub fn last_activity_time(&self) -> u64 {
+        if let Some(ref session) = self.session {
+            session.last_activity_time()
+        } else {
+            0
         }
     }
 }

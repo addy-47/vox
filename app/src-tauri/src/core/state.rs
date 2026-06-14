@@ -73,7 +73,7 @@ pub enum VadCommand {
     /// Gracefully shutdown the VAD worker.
     Shutdown,
     /// Enable realtime S2S audio routing.
-    StartRealtime(tokio::sync::mpsc::UnboundedSender<Vec<i16>>),
+    StartRealtime(tokio::sync::mpsc::Sender<Vec<i16>>),
     /// Disable realtime S2S audio routing.
     StopRealtime,
 }
@@ -87,7 +87,7 @@ pub struct VoxEngine {
     pub vad_tx: std::sync::mpsc::Sender<VadCommand>,
     pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
     pub pipeline_tx: std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
-    pub playback_engine: Arc<crate::services::playback::PlaybackEngine>,
+    pub playback_engine: Arc<crate::services::audio::PlaybackEngine>,
 
     // Lifecycle handles for deterministic cleanup
     pub stt_handle: Option<std::thread::JoinHandle<()>>,
@@ -103,6 +103,8 @@ pub struct PttState {
     pub audio_buffer: std::sync::Mutex<Vec<f32>>,
     pub samples_since_partial: std::sync::atomic::AtomicUsize,
     pub samples_since_waveform: std::sync::atomic::AtomicUsize,
+    pub speech_detected: std::sync::atomic::AtomicBool,
+    pub ptt_start_ms: std::sync::atomic::AtomicU64,
 }
 
 // ─── PipelineAtomics ──────────────────────────────────────────────────────────
@@ -114,6 +116,8 @@ pub struct PttState {
 pub struct PipelineAtomics {
     /// Set to `true` to abort the current LLM + TTS + Playback turn immediately.
     pub cancel_flag: Arc<AtomicBool>,
+    /// Set to `true` to temporarily freeze audio routing and playback.
+    pub is_paused: Arc<AtomicBool>,
     /// `true` while the CPAL output stream is actively draining audio.
     /// In Speaker mode, the VAD loop drops mic frames while this is set.
     pub playback_active: Arc<AtomicBool>,
@@ -147,6 +151,7 @@ impl PipelineAtomics {
     pub fn new() -> Self {
         Self {
             cancel_flag: Arc::new(AtomicBool::new(false)),
+            is_paused: Arc::new(AtomicBool::new(false)),
             playback_active: Arc::new(AtomicBool::new(false)),
             llm_generating: Arc::new(AtomicBool::new(false)),
             tts_generating: Arc::new(AtomicBool::new(false)),
@@ -341,6 +346,8 @@ impl AppState {
                 audio_buffer: std::sync::Mutex::new(Vec::new()),
                 samples_since_partial: std::sync::atomic::AtomicUsize::new(0),
                 samples_since_waveform: std::sync::atomic::AtomicUsize::new(0),
+                speech_detected: std::sync::atomic::AtomicBool::new(false),
+                ptt_start_ms: std::sync::atomic::AtomicU64::new(0),
             },
             pipeline: PipelineAtomics::new(),
             save_debounce: Mutex::new(None),

@@ -70,7 +70,7 @@ where
     let mut mode = mode_init;
     let mut owner = owner_init;
     let mut audio_mode = audio_mode_init;
-    let mut realtime_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<i16>>> = None;
+    let mut realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>> = None;
 
     let (dropped_counter, engine_shutdown) = {
         let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
@@ -229,7 +229,60 @@ where
             }
 
             if mode == InteractionMode::PTT {
+                // Run VAD prediction even in PTT mode to classify speech
+                let mut detected = vad.predict(&chunk);
+
+                // Override prediction on sub-threshold noise
+                let effective_noise_gate = if is_earshot {
+                    noise_gate * 1.5
+                } else {
+                    noise_gate
+                };
+                if raw_energy < effective_noise_gate {
+                    detected = false;
+                }
+
+                if detected {
+                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                    let was_speech = state.ptt.speech_detected.swap(true, Ordering::Relaxed);
+                    if !was_speech {
+                        // SPEECH ONSET TRANSITION: Flush pre-roll buffer to avoid clipping the first word
+                        if let Some(ref tx) = realtime_tx {
+                            let pre_roll_i16: Vec<i16> = pre_roll_buffer
+                                .iter()
+                                .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
+                                .collect();
+                            let _ = tx.try_send(pre_roll_i16);
+                            pre_roll_buffer.clear();
+                        }
+                    }
+                }
+
+                // Waveform telemetry and PTT buffering
                 crate::services::ptt::handle_ptt_audio_sync(&app, &chunk);
+
+                // In Realtime PTT: Gate audio bridge forwarding
+                if let Some(ref tx) = realtime_tx {
+                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                    if state.ptt.speech_detected.load(Ordering::Relaxed) {
+                        let i16_samples: Vec<i16> = chunk
+                            .iter()
+                            .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
+                            .collect();
+                        let _ = tx.try_send(i16_samples);
+                    }
+                }
+
+                // In both Modular and Realtime PTT: Accumulate pre-roll when not in speech
+                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                if !state.ptt.speech_detected.load(Ordering::Relaxed) {
+                    pre_roll_buffer.extend_from_slice(&chunk);
+                    if pre_roll_buffer.len() > 8000 {
+                        let excess = pre_roll_buffer.len() - 8000;
+                        pre_roll_buffer.drain(0..excess);
+                    }
+                }
+
                 if in_speech {
                     in_speech = false;
                     utterance_buffer.clear();
@@ -237,6 +290,7 @@ where
                 }
                 continue;
             }
+
 
             // ── Phase 4: Speaker-mode mic ducking ────────────────────────────
             // Drop mic frames while playback is active in Speaker mode.
@@ -266,7 +320,7 @@ where
                         (clamped * 32767.0) as i16
                     })
                     .collect();
-                let _ = tx.send(i16_samples);
+                let _ = tx.try_send(i16_samples);
 
                 if in_speech {
                     in_speech = false;
@@ -376,7 +430,7 @@ where
                             (clamped * 32767.0) as i16
                         })
                         .collect();
-                    let _ = tx.send(i16_samples);
+                    let _ = tx.try_send(i16_samples);
                 }
 
                 if samples_since_partial >= 12800 {

@@ -146,8 +146,9 @@ async fn run_benchmark_for_clip(
     let provider = GeminiLiveProvider::new(
         config,
         "You are a helpful and extremely concise voice assistant. Respond in the same language the user speaks. Respond with brief, conversational statements under 2 sentences.".to_string(),
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     );
-    let (playback_tx, mut playback_rx) = mpsc::unbounded_channel::<Vec<i16>>();
+    let (playback_tx, mut playback_rx) = mpsc::channel::<Vec<i16>>(100);
     let (event_tx, event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
     let connect_start = Instant::now();
@@ -376,6 +377,9 @@ async fn run_benchmark_for_clip(
 async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
+    let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."));
+    let root = home.join(".vox");
+    vox_lib::utils::paths::init_with_root(root);
     let cli = Cli::parse();
 
     let api_key = match load_api_key() {

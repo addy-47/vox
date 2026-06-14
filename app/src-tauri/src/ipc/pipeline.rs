@@ -2,7 +2,7 @@ use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner, InteractionState, VoxEngine};
 use crate::services::audio::AudioStream;
 use crate::services::pipeline::PipelineOrchestrator;
-use crate::services::playback::PlaybackEngine;
+use crate::services::audio::PlaybackEngine;
 use crate::services::stt::{spawn_stt_worker, SttCommand};
 use crate::services::vad::{
     earshot_vad::EarshotVadEngine, ten_onnx::VadEngine as TenVadEngine, VadBackend,
@@ -751,13 +751,11 @@ pub async fn test_clip_cancel(
     Ok(())
 }
 
-/// Start the real-time speech-to-speech session with the active cloud provider.
-#[tauri::command]
-pub async fn start_realtime_session(
-    _app: AppHandle,
-    state: State<'_, std::sync::Arc<AppState>>,
+pub async fn start_realtime_session_internal(
+    app: &AppHandle,
+    state: &Arc<AppState>,
 ) -> Result<(), String> {
-    log::info!("[IPC] start_realtime_session requested");
+    log::info!("[IPC] start_realtime_session_internal requested");
 
     // 1. Ensure engine is running
     let engine_guard = state.engine.lock().await;
@@ -780,14 +778,44 @@ pub async fn start_realtime_session(
 
     // 3. Load settings to determine active provider
     let settings = state.settings.read().unwrap().clone();
+    let mut gemini_config = settings.realtime.gemini.clone();
+
+    // Try to load resumption token from cache
+    let cache_path = crate::utils::paths::cache_dir().join("realtime_session.json");
+    let mut resumed = false;
+    if cache_path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&cache_path) {
+            if let Ok(cached) = serde_json::from_str::<serde_json::Value>(&data) {
+                let expires_at = cached["expires_at"].as_u64().unwrap_or(0);
+                let now_ms = chrono::Utc::now().timestamp_millis() as u64;
+                let cached_model = cached["model"].as_str().unwrap_or("");
+                let cached_handle = cached["handle"].as_str().unwrap_or("");
+
+                if expires_at > now_ms && cached_model == gemini_config.model && !cached_handle.is_empty() {
+                    log::info!(
+                        "[Realtime] Found valid session resumption token, using handle: {}",
+                        if cached_handle.len() > 12 {
+                            &cached_handle[..12]
+                        } else {
+                            cached_handle
+                        }
+                    );
+                    gemini_config.resume_handle = Some(cached_handle.to_string());
+                    resumed = true;
+                }
+            }
+        }
+    }
+
     let provider: Box<dyn crate::services::realtime::RealtimeVoiceProvider> = match settings
         .realtime
         .provider
     {
         crate::core::settings::RealtimeProviderKind::GeminiLive => Box::new(
             crate::services::realtime::providers::gemini_live::GeminiLiveProvider::new(
-                settings.realtime.gemini.clone(),
+                gemini_config,
                 settings.assistant.realtime_prompt.clone(),
+                state.pipeline.is_paused.clone(),
             ),
         ),
         crate::core::settings::RealtimeProviderKind::OpenAiRealtime => {
@@ -835,6 +863,7 @@ pub async fn start_realtime_session(
     let current_settings = {
         let mut settings_write = state.settings.write().unwrap();
         settings_write.interaction.pipeline_mode = crate::core::settings::PipelineMode::Realtime;
+        let _ = settings_write.save();
         settings_write.clone()
     };
 
@@ -852,13 +881,161 @@ pub async fn start_realtime_session(
 
     *rt_guard = Some(rt_engine);
 
+    // Spawn 10-minute active idle timeout check task
+    let app_clone = app.clone();
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        const TIMEOUT_MS: u64 = 10 * 60 * 1000; // 10 minutes
+        const WARN_1_MS: u64 = TIMEOUT_MS - 15_000; // 9m 45s (15s warning)
+        const WARN_2_MS: u64 = TIMEOUT_MS - 5_000;  // 9m 55s (5s warning)
+
+        loop {
+            // Check if still engaged in realtime mode
+            let is_engaged = state_clone.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed);
+            let is_realtime = {
+                let settings = state_clone.settings.read().unwrap();
+                settings.interaction.pipeline_mode == crate::core::settings::PipelineMode::Realtime
+            };
+            
+            if !is_engaged || !is_realtime {
+                break;
+            }
+
+            // Get last activity time
+            let last_activity = {
+                let rt_guard = state_clone.realtime_engine.lock().await;
+                if let Some(rt_engine) = &*rt_guard {
+                    rt_engine.last_activity_time()
+                } else {
+                    0
+                }
+            };
+
+            if last_activity > 0 {
+                let now = chrono::Utc::now().timestamp_millis() as u64;
+                let elapsed = now.saturating_sub(last_activity);
+
+                if elapsed >= TIMEOUT_MS {
+                    log::warn!("[Realtime] S2S session idle for over 10 minutes. Triggering idle timeout.");
+                    
+                    // Stop the session internally
+                    let mut rt_guard = state_clone.realtime_engine.lock().await;
+                    if let Some(mut rt_engine) = rt_guard.take() {
+                        rt_engine.stop();
+                    }
+                    drop(rt_guard);
+
+                    // Tell VAD to stop routing chunks
+                    if let Some(engine) = state_clone.engine.lock().await.as_ref() {
+                        let _ = engine
+                            .vad_tx
+                            .send(crate::core::state::VadCommand::StopRealtime);
+                    }
+
+                    // Delete session cache file
+                    let cache_path = crate::utils::paths::cache_dir().join("realtime_session.json");
+                    if cache_path.exists() {
+                        let _ = std::fs::remove_file(cache_path);
+                    }
+
+                    // Reset settings pipeline mode to Modular
+                    let current_settings = {
+                        let mut settings_write = state_clone.settings.write().unwrap();
+                        settings_write.interaction.pipeline_mode = crate::core::settings::PipelineMode::Modular;
+                        settings_write.clone()
+                    };
+
+                    // Propagate settings update to the pipeline event loop
+                    if let Some(engine) = state_clone.engine.lock().await.as_ref() {
+                        let _ = engine
+                            .pipeline_tx
+                            .send(crate::core::events::VoxEvent::SettingsUpdated(
+                                current_settings,
+                            ));
+                    }
+
+                    // Emit event to frontend
+                    let _ = app_clone.emit_to("main", "realtime_session_ended", "idle_timeout".to_string());
+                    break;
+                } else if elapsed >= WARN_2_MS {
+                    let remaining = 600 - (elapsed / 1000);
+                    let _ = app_clone.emit_to("main", "realtime_idle_warning", serde_json::json!({ "seconds_remaining": remaining }));
+                    tokio::time::sleep(std::time::Duration::from_millis(TIMEOUT_MS - elapsed)).await;
+                } else if elapsed >= WARN_1_MS {
+                    let remaining = 600 - (elapsed / 1000);
+                    let _ = app_clone.emit_to("main", "realtime_idle_warning", serde_json::json!({ "seconds_remaining": remaining }));
+                    tokio::time::sleep(std::time::Duration::from_millis(WARN_2_MS - elapsed)).await;
+                } else {
+                    let time_until_warning = WARN_1_MS - elapsed;
+                    tokio::time::sleep(std::time::Duration::from_millis(time_until_warning)).await;
+                }
+            } else {
+                tokio::time::sleep(std::time::Duration::from_millis(WARN_1_MS)).await;
+            }
+        }
+    });
+
+    if resumed {
+        let _ = app.emit_to("main", "realtime_session_resumed", ());
+    } else {
+        let _ = app.emit_to("main", "realtime_session_started", ());
+    }
+
     log::info!("[IPC] Realtime S2S session started successfully.");
     Ok(())
+}
+
+/// Start the real-time speech-to-speech session with the active cloud provider.
+#[tauri::command]
+pub async fn start_realtime_session(
+    app: AppHandle,
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), String> {
+    start_realtime_session_internal(&app, &state).await
+}
+
+#[derive(serde::Serialize)]
+pub struct RealtimeSessionCache {
+    pub has_session: bool,
+    pub provider: String,
+    pub expires_in_seconds: i64,
+    pub model: String,
+}
+
+#[tauri::command]
+pub async fn get_realtime_session_cache() -> Result<RealtimeSessionCache, String> {
+    let cache_path = crate::utils::paths::cache_dir().join("realtime_session.json");
+    if cache_path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&cache_path) {
+            if let Ok(cached) = serde_json::from_str::<serde_json::Value>(&data) {
+                let expires_at = cached["expires_at"].as_u64().unwrap_or(0);
+                let now_ms = chrono::Utc::now().timestamp_millis() as u64;
+                let provider = cached["provider"].as_str().unwrap_or("").to_string();
+                let model = cached["model"].as_str().unwrap_or("").to_string();
+                let expires_in_seconds = (expires_at as i64 - now_ms as i64) / 1000;
+                
+                return Ok(RealtimeSessionCache {
+                    has_session: expires_in_seconds > 0,
+                    provider,
+                    expires_in_seconds,
+                    model,
+                });
+            }
+        }
+    }
+    
+    Ok(RealtimeSessionCache {
+        has_session: false,
+        provider: String::new(),
+        expires_in_seconds: 0,
+        model: String::new(),
+    })
 }
 
 /// Stop the active real-time speech-to-speech session and restore modular mode.
 #[tauri::command]
 pub async fn stop_realtime_session(
+    app: AppHandle,
     state: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<(), String> {
     log::info!("[IPC] stop_realtime_session requested");
@@ -876,10 +1053,20 @@ pub async fn stop_realtime_session(
         rt_engine.stop();
     }
 
+    // Delete session cache file
+    let cache_path = crate::utils::paths::cache_dir().join("realtime_session.json");
+    if cache_path.exists() {
+        let _ = std::fs::remove_file(cache_path);
+    }
+
+    // Emit event to frontend
+    let _ = app.emit_to("main", "realtime_session_ended", "user".to_string());
+
     // 3. Update pipeline mode back to Modular in settings
     let current_settings = {
         let mut settings_write = state.settings.write().unwrap();
         settings_write.interaction.pipeline_mode = crate::core::settings::PipelineMode::Modular;
+        let _ = settings_write.save();
         settings_write.clone()
     };
 
@@ -893,5 +1080,128 @@ pub async fn stop_realtime_session(
     }
 
     log::info!("[IPC] Realtime S2S session stopped successfully.");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn pause_pipeline(
+    app: AppHandle,
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), String> {
+    log::info!("[IPC] pause_pipeline requested");
+
+    let is_paused = state.pipeline.is_paused.load(Ordering::SeqCst);
+    if is_paused {
+        return Ok(());
+    }
+
+    state.pipeline.is_paused.store(true, Ordering::SeqCst);
+    state.pipeline.cancel_flag.store(true, Ordering::SeqCst);
+
+    let engine_guard = state.engine.lock().await;
+    if let Some(engine) = &*engine_guard {
+        engine.playback_engine.cancel();
+    }
+
+    let (pipeline_mode, owner) = {
+        let settings = state.settings.read().unwrap();
+        (
+            settings.interaction.pipeline_mode.clone(),
+            state.owner.load(Ordering::Relaxed).into(),
+        )
+    };
+
+    if pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+        let rt_guard = state.realtime_engine.lock().await;
+        if let Some(rt_engine) = &*rt_guard {
+            let _ = rt_engine.activity_end();
+        }
+    } else {
+        if let Some(engine) = &*engine_guard {
+            let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
+            let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id });
+            let _ = engine.stt_tx.send(SttCommand::ResetStream);
+        }
+    }
+
+    let target = match owner {
+        InteractionOwner::Tray => "tray",
+        InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
+        InteractionOwner::Wizard => "wizard",
+    };
+    let _ = app.emit_to(target, "pipeline_paused", ());
+
+    state.pipeline.update_interaction_state(InteractionState::Idle, owner, &app);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn resume_pipeline(
+    app: AppHandle,
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), String> {
+    log::info!("[IPC] resume_pipeline requested");
+
+    let is_paused = state.pipeline.is_paused.load(Ordering::SeqCst);
+    if !is_paused {
+        return Ok(());
+    }
+
+    state.pipeline.is_paused.store(false, Ordering::SeqCst);
+
+    let (pipeline_mode, interaction_mode, owner) = {
+        let settings = state.settings.read().unwrap();
+        let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+        let mode = match owner {
+            InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+            InteractionOwner::MainWindow | InteractionOwner::Ptt => settings.interaction.main_app_mode.clone(),
+            InteractionOwner::Wizard => crate::core::settings::InteractionMode::Passive,
+        };
+        (
+            settings.interaction.pipeline_mode.clone(),
+            mode,
+            owner,
+        )
+    };
+
+    if pipeline_mode == crate::core::settings::PipelineMode::Modular {
+        state.pipeline.cancel_flag.store(false, Ordering::SeqCst);
+        let engine_guard = state.engine.lock().await;
+        if let Some(engine) = &*engine_guard {
+            let _ = engine.pipeline_tx.send(VoxEvent::WarmUp);
+        }
+    } else if pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+        let is_connected = {
+            let rt_guard = state.realtime_engine.lock().await;
+            if let Some(rt_engine) = &*rt_guard {
+                rt_engine.is_connected()
+            } else {
+                false
+            }
+        };
+
+        if !is_connected {
+            log::info!("[IPC] Realtime S2S session is disconnected during pause. Reconnecting lazily on resume.");
+            if let Err(e) = start_realtime_session_internal(&app, &state).await {
+                log::error!("[IPC] Lazy S2S reconnection failed: {}", e);
+                return Err(e);
+            }
+        }
+    }
+
+    let target = match owner {
+        InteractionOwner::Tray => "tray",
+        InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
+        InteractionOwner::Wizard => "wizard",
+    };
+    let _ = app.emit_to(target, "pipeline_resumed", ());
+
+    let next_state = match interaction_mode {
+        crate::core::settings::InteractionMode::PTT => InteractionState::Idle,
+        crate::core::settings::InteractionMode::Passive => InteractionState::Listening,
+    };
+    state.pipeline.update_interaction_state(next_state, owner, &app);
+
     Ok(())
 }

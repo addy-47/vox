@@ -12,7 +12,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 use ringbuf::traits::*;
 use ringbuf::{HeapCons, HeapProd};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 // ─── Resampling (Directive 3) ─────────────────────────────────────────────────
@@ -59,10 +59,10 @@ pub struct PlaybackEngine {
     /// The active CPAL stream — kept alive until cancelled.
     _stream: Option<cpal::Stream>,
     /// RCA Fix: Real-time safe energy telemetry (Atomic f32 via bit storage)
-    _playback_energy: Arc<AtomicU32>,
-    _playback_low: Arc<AtomicU32>,
-    _playback_mid: Arc<AtomicU32>,
-    _playback_high: Arc<AtomicU32>,
+    _playback_energy: Arc<std::sync::atomic::AtomicU32>,
+    _playback_low: Arc<std::sync::atomic::AtomicU32>,
+    _playback_mid: Arc<std::sync::atomic::AtomicU32>,
+    _playback_high: Arc<std::sync::atomic::AtomicU32>,
     /// Track underruns specifically when AssistantSpeaking is true.
     _playback_underruns: Arc<std::sync::atomic::AtomicU64>,
     /// Ref to the state atomic for lock-free checks.
@@ -81,10 +81,10 @@ impl PlaybackEngine {
     pub fn new(
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
-        playback_energy: Arc<AtomicU32>,
-        playback_low: Arc<AtomicU32>,
-        playback_mid: Arc<AtomicU32>,
-        playback_high: Arc<AtomicU32>,
+        playback_energy: Arc<std::sync::atomic::AtomicU32>,
+        playback_low: Arc<std::sync::atomic::AtomicU32>,
+        playback_mid: Arc<std::sync::atomic::AtomicU32>,
+        playback_high: Arc<std::sync::atomic::AtomicU32>,
         playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
     ) -> Result<Self> {
@@ -195,10 +195,10 @@ impl PlaybackEngine {
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
         discard_request: Arc<AtomicBool>,
-        playback_energy: Arc<AtomicU32>,
-        playback_low: Arc<AtomicU32>,
-        playback_mid: Arc<AtomicU32>,
-        playback_high: Arc<AtomicU32>,
+        playback_energy: Arc<std::sync::atomic::AtomicU32>,
+        playback_low: Arc<std::sync::atomic::AtomicU32>,
+        playback_mid: Arc<std::sync::atomic::AtomicU32>,
+        playback_high: Arc<std::sync::atomic::AtomicU32>,
         playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
         buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
