@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use crossbeam_channel::{bounded, Sender};
+use std::path::PathBuf;
 
 use crate::persistence::db::VoxDb;
 use crate::persistence::events::PersistenceEvent;
@@ -184,15 +184,25 @@ fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow
 
             tracing::info!(
                 "[Persistence] TurnCompleted: session={}, turn={}, stt={}ms, ttft={}ms",
-                conversation_id, turn_id, stt_latency_ms, ttft_ms
+                conversation_id,
+                turn_id,
+                stt_latency_ms,
+                ttft_ms
             );
         }
 
-        PersistenceEvent::TurnCancelled { conversation_id, turn_id } => {
+        PersistenceEvent::TurnCancelled {
+            conversation_id,
+            turn_id,
+        } => {
             if conversation_id == 0 {
                 return Ok(());
             }
-            tracing::debug!("[Persistence] TurnCancelled: session={}, turn={}", conversation_id, turn_id);
+            tracing::debug!(
+                "[Persistence] TurnCancelled: session={}, turn={}",
+                conversation_id,
+                turn_id
+            );
             // Cancelled turns are not stored — they simply don't increment turn_count.
             // This is acceptable: the session record itself persists.
         }
@@ -210,12 +220,12 @@ fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow
 /// These are clutter sessions (accidental engage, empty background noise, etc.).
 /// Safe to call at startup or any time — idempotent.
 fn cleanup_zero_turn_sessions(conn: &rusqlite::Connection) -> anyhow::Result<()> {
-    let deleted = conn.execute(
-        "DELETE FROM sessions WHERE turn_count = 0",
-        [],
-    )?;
+    let deleted = conn.execute("DELETE FROM sessions WHERE turn_count = 0", [])?;
     if deleted > 0 {
-        tracing::info!("[Persistence] Startup cleanup: removed {} zero-activity session(s)", deleted);
+        tracing::info!(
+            "[Persistence] Startup cleanup: removed {} zero-activity session(s)",
+            deleted
+        );
     }
     Ok(())
 }

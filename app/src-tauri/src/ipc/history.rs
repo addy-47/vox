@@ -1,17 +1,22 @@
-use tauri::State;
 use crate::core::state::AppState;
 use serde::Serialize;
+use tauri::State;
 
 /// Retrieves the current in-memory transcript history (tray ephemeral buffer).
 #[tauri::command]
-pub async fn get_transcript_history(state: State<'_, std::sync::Arc<AppState>>) -> Result<Vec<String>, String> {
+pub async fn get_transcript_history(
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<Vec<String>, String> {
     let history = state.pipeline.transcript_history.lock().unwrap();
     Ok(history.iter().cloned().collect())
 }
 
 /// Commits a completed session's full text to the ephemeral history buffer.
 #[tauri::command]
-pub async fn commit_session_to_history(text: String, state: State<'_, std::sync::Arc<AppState>>) -> Result<Vec<String>, String> {
+pub async fn commit_session_to_history(
+    text: String,
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<Vec<String>, String> {
     if !text.trim().is_empty() {
         let mut history = state.pipeline.transcript_history.lock().unwrap();
         // Prevent duplicate consecutive entries
@@ -34,28 +39,30 @@ pub async fn commit_session_to_history(text: String, state: State<'_, std::sync:
 
 #[derive(Debug, Serialize, Clone)]
 pub struct SessionRow {
-    pub id:            i64,
-    pub started_at:    i64,
-    pub ended_at:      Option<i64>,
-    pub turn_count:    i64,
+    pub id: i64,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub turn_count: i64,
     pub first_message: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
 pub struct TurnRow {
-    pub id:             i64,
-    pub session_id:     i64,
-    pub turn_id:        i32,
-    pub user_text:      String,
+    pub id: i64,
+    pub session_id: i64,
+    pub turn_id: i32,
+    pub user_text: String,
     pub assistant_text: String,
     pub stt_latency_ms: Option<i64>,
-    pub ttft_ms:        Option<i64>,
-    pub created_at:     i64,
+    pub ttft_ms: Option<i64>,
+    pub created_at: i64,
 }
 
 /// Returns all sessions ordered by most recent first.
 #[tauri::command]
-pub async fn get_sessions(_state: State<'_, std::sync::Arc<AppState>>) -> Result<Vec<SessionRow>, String> {
+pub async fn get_sessions(
+    _state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<Vec<SessionRow>, String> {
     let db_path = crate::utils::paths::get().db.clone();
 
     tokio::task::spawn_blocking(move || {
@@ -87,7 +94,10 @@ pub async fn get_sessions(_state: State<'_, std::sync::Arc<AppState>>) -> Result
 
 /// Returns all turns for a given session, oldest first.
 #[tauri::command]
-pub async fn get_turns(session_id: i64, state: State<'_, std::sync::Arc<AppState>>) -> Result<Vec<TurnRow>, String> {
+pub async fn get_turns(
+    session_id: i64,
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<Vec<TurnRow>, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let _ = state; // holds the managed state lifetime
 
@@ -121,22 +131,25 @@ pub async fn get_turns(session_id: i64, state: State<'_, std::sync::Arc<AppState
 
 /// Deletes a session and all its turns (CASCADE).
 #[tauri::command]
-pub async fn delete_session(id: i64, state: State<'_, std::sync::Arc<AppState>>) -> Result<(), String> {
+pub async fn delete_session(
+    id: i64,
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), String> {
     let db_path = crate::utils::paths::get().db.clone();
     let _ = state; // holds the managed state lifetime
 
     tokio::task::spawn_blocking(move || {
-        let conn = rusqlite::Connection::open(&db_path)
-            .map_err(|e| format!("DB open failed: {}", e))?;
+        let conn =
+            rusqlite::Connection::open(&db_path).map_err(|e| format!("DB open failed: {}", e))?;
 
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| e.to_string())?;
 
-        conn.execute(
-            "DELETE FROM sessions WHERE id = ?1",
-            rusqlite::params![id],
-        ).map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM sessions WHERE id = ?1", rusqlite::params![id])
+            .map_err(|e| e.to_string())?;
 
         Ok(())
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

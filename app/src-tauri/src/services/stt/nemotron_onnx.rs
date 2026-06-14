@@ -1,8 +1,8 @@
+use crate::services::traits;
 use anyhow::{anyhow, Result};
+use parakeet_rs::Nemotron;
 use std::path::Path;
 use std::sync::Mutex;
-use parakeet_rs::Nemotron;
-use crate::services::traits;
 
 pub struct SttEngine {
     model: Mutex<Nemotron>,
@@ -11,12 +11,19 @@ pub struct SttEngine {
 impl SttEngine {
     pub fn new(model_dir: &Path) -> Result<Self> {
         log::info!("[STT] >>> Initializing parakeet-rs Nemotron-3.5 Engine...");
-        
-        let model = Nemotron::from_pretrained(model_dir, None)
-            .map_err(|e| anyhow!("Failed to load Nemotron model from {:?}: {:?}", model_dir, e))?;
-            
+
+        let model = Nemotron::from_pretrained(model_dir, None).map_err(|e| {
+            anyhow!(
+                "Failed to load Nemotron model from {:?}: {:?}",
+                model_dir,
+                e
+            )
+        })?;
+
         log::info!("[STT] Nemotron-3.5 Engine loaded successfully.");
-        Ok(Self { model: Mutex::new(model) })
+        Ok(Self {
+            model: Mutex::new(model),
+        })
     }
 }
 
@@ -38,8 +45,13 @@ impl traits::SttEngine for SttEngine {
 
         while offset + STRIDE_SAMPLES <= audio.len() {
             let chunk = &audio[offset..offset + STRIDE_SAMPLES];
-            let text = model_lock.transcribe_chunk(chunk)
-                .map_err(|e| anyhow!("Nemotron transcription failed at offset {}: {:?}", offset, e))?;
+            let text = model_lock.transcribe_chunk(chunk).map_err(|e| {
+                anyhow!(
+                    "Nemotron transcription failed at offset {}: {:?}",
+                    offset,
+                    e
+                )
+            })?;
             if !text.trim().is_empty() {
                 full_text.push_str(&text);
             }
@@ -52,7 +64,8 @@ impl traits::SttEngine for SttEngine {
             let mut pad = Vec::with_capacity(STRIDE_SAMPLES);
             pad.extend_from_slice(&audio[offset..]);
             pad.resize(STRIDE_SAMPLES, 0.0);
-            let text = model_lock.transcribe_chunk(&pad)
+            let text = model_lock
+                .transcribe_chunk(&pad)
                 .map_err(|e| anyhow!("Nemotron final partial chunk failed: {:?}", e))?;
             if !text.trim().is_empty() {
                 full_text.push_str(&text);
@@ -64,7 +77,11 @@ impl traits::SttEngine for SttEngine {
 
         let elapsed = start.elapsed().as_secs_f32();
         let audio_duration = audio.len() as f32 / 16000.0;
-        let rtf = if audio_duration > 0.0 { elapsed / audio_duration } else { 0.0 };
+        let rtf = if audio_duration > 0.0 {
+            elapsed / audio_duration
+        } else {
+            0.0
+        };
 
         log::info!(
             "[STT-Nemotron] Transcribed (Offline): {:?}. (Audio: {:.2}s, Latency: {:.2}s, RTF: {:.3})",
@@ -80,7 +97,8 @@ impl traits::SttEngine for SttEngine {
         }
 
         let mut model_lock = self.model.lock().unwrap();
-        let text = model_lock.transcribe_chunk(chunk)
+        let text = model_lock
+            .transcribe_chunk(chunk)
             .map_err(|e| anyhow!("Nemotron chunk transcription failed: {:?}", e))?;
 
         Ok(text)

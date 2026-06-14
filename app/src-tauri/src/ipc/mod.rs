@@ -1,7 +1,7 @@
-pub mod pipeline;
-pub mod settings;
-pub mod tray;
+pub mod audio;
 pub mod history;
 pub mod monitoring;
+pub mod pipeline;
+pub mod settings;
 pub mod setup;
-pub mod audio;
+pub mod tray;

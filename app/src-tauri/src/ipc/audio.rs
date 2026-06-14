@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
-use cpal::traits::{HostTrait, DeviceTrait};
+use cpal::traits::{DeviceTrait, HostTrait};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AudioDevice {
@@ -17,11 +17,12 @@ pub async fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
     for device in devices {
         if let Ok(name) = device.name() {
             let name_lower = name.to_lowercase();
-            if name_lower.contains("monitor") || 
-               name_lower.contains("null") || 
-               name_lower.contains("loopback") || 
-               name_lower.contains("dummy") ||
-               name_lower.contains("virtual") {
+            if name_lower.contains("monitor")
+                || name_lower.contains("null")
+                || name_lower.contains("loopback")
+                || name_lower.contains("dummy")
+                || name_lower.contains("virtual")
+            {
                 continue;
             }
 
@@ -36,9 +37,9 @@ pub async fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
             }
         }
     }
-    
+
     // Sort so default is first
     result.sort_by(|a, b| b.is_default.cmp(&a.is_default));
-    
+
     Ok(result)
 }

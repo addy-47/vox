@@ -1,11 +1,12 @@
-pub mod traits;
 pub mod audio;
 pub mod llm;
 pub mod pipeline;
 pub mod playback;
-pub mod stt;
-pub mod tts;
-pub mod vad;
 pub mod ptt;
-pub mod utils;
+pub mod realtime;
+pub mod stt;
+pub mod traits;
 pub mod translit;
+pub mod tts;
+pub mod utils;
+pub mod vad;

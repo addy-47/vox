@@ -23,7 +23,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
         isSmall
           ? "w-full bg-transparent p-0"
           : cn(
-              "w-full glass-card glass-base p-5",
+              "w-full glass-card p-5",
               layoutMode === "full-min" ? "lg:w-[240px] xl:w-[280px] 2xl:w-[320px]" : "lg:w-[320px]"
             )
       )}
@@ -31,7 +31,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
       {/* Header */}
       {!isSmall && (
         <div className="flex items-center gap-2 mb-4 shrink-0">
-          <Database className="text-[rgb(var(--accent))]" size={16} />
+          <Database className="text-[rgb(var(--accent))]" size={20} />
           <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
             Memory & Privacy
           </span>
@@ -59,7 +59,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
           >
             <div
               className={cn(
-                "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-300 shadow-sm",
+                "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-300",
                 persistence.private_mode ? "left-5" : "left-0.5"
               )}
             />

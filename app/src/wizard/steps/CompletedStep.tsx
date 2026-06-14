@@ -58,7 +58,7 @@ export const CompletedStep: React.FC<Props> = ({ onBack }) => {
         </div>
 
         {/* Tip Card */}
-        <div className="p-4 glass-whisper glass-base relative overflow-hidden shrink-0">
+        <div className="p-4 glass relative overflow-hidden shrink-0">
           <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-50 pointer-events-none" />
           <div className="flex items-center gap-2 mb-2 relative z-10">
             <Zap className="w-3 h-3 text-[rgb(var(--accent))]" />

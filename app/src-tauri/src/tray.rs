@@ -1,5 +1,5 @@
-use tauri::{Manager, AppHandle, WebviewWindow};
 use std::time::Duration;
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::WidgetExt;
@@ -16,7 +16,7 @@ pub fn setup_tray_window(window: &WebviewWindow) {
 // ─── Positioning Logic ───────────────────────────────────────────────────────
 
 /// Positions the tray window at the top-right of the screen.
-/// 
+///
 /// On Linux, this triggers the "virtual layer" setup for click-through support.
 pub async fn position_tray_window(window: &WebviewWindow) {
     #[cfg(target_os = "linux")]
@@ -31,15 +31,15 @@ pub async fn position_tray_window(window: &WebviewWindow) {
 
     #[cfg(not(target_os = "linux"))]
     {
-        use tauri_plugin_positioner::{WindowExt, Position};
+        use tauri_plugin_positioner::{Position, WindowExt};
         let _ = window.move_window(Position::TopRight);
         let _ = window.show();
     }
 }
 
 /// Configures a fullscreen transparent "Virtual Layer" on Linux Wayland/X11.
-/// 
-/// This creates a click-through region for the HUD while allowing it to appear 
+///
+/// This creates a click-through region for the HUD while allowing it to appear
 /// correctly above other windows despite compositor restrictions.
 #[cfg(target_os = "linux")]
 pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &str) {
@@ -48,14 +48,17 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
         None => return,
     };
 
-    let mon = window.primary_monitor().ok().flatten()
+    let mon = window
+        .primary_monitor()
+        .ok()
+        .flatten()
         .or_else(|| window.current_monitor().ok().flatten())
         .or_else(|| window.app_handle().primary_monitor().ok().flatten());
 
     if let Some(mon) = mon {
         let size = mon.size();
         let cur_size = window.outer_size().unwrap_or_default();
-        
+
         // RCA: Making the window fullscreen is what prevents dragging on Linux/Wayland.
         if cur_size.width != size.width || cur_size.height != size.height {
             let _ = window.set_size(tauri::Size::Physical(*size));
@@ -65,9 +68,9 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
 
         if let Ok(gtk_window) = window.gtk_window() {
             let scale_factor = window.scale_factor().unwrap_or(1.0);
-            
+
             // Logical units from CSS/React (Sync with TrayApp.tsx and index.css)
-            let hud_w_logical = 380.0; 
+            let hud_w_logical = 380.0;
             let hud_h_logical = 250.0;
             let padding_x_logical = 55.0;
             let padding_top_vh = 0.15; // 15vh
@@ -76,7 +79,7 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
             let hud_w = (hud_w_logical * scale_factor) as i32;
             let hud_h = (hud_h_logical * scale_factor) as i32;
             let padding_x = (padding_x_logical * scale_factor) as i32;
-            
+
             let screen_w = size.width as i32;
             let screen_h = size.height as i32;
 

@@ -1,10 +1,13 @@
-
 /// Returns `true` if the accumulated token buffer ends at a word boundary.
 /// Prevents mid-word splits when BPE subword tokens cross word boundaries.
 #[inline]
 fn ends_at_word_boundary(buf: &str) -> bool {
     if let Some(c) = buf.chars().last() {
-        c.is_whitespace() || matches!(c, '.' | '!' | '?' | ',' | ';' | ':' | ')' | ']' | '\u{2014}' | '\u{2013}' | '।')
+        c.is_whitespace()
+            || matches!(
+                c,
+                '.' | '!' | '?' | ',' | ';' | ':' | ')' | ']' | '\u{2014}' | '\u{2013}' | '।'
+            )
     } else {
         true // empty buffer is trivially at a word boundary
     }
@@ -34,16 +37,18 @@ fn ends_at_word_boundary(buf: &str) -> bool {
 pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128, tps: f32) -> bool {
     let trimmed = buf.trim_end();
     let last = trimmed.chars().last().unwrap_or(' ');
-    
+
     // Hard boundaries: always flush on complete sentences
-    if matches!(last, '.' | '!' | '?' | '।') { return true; }
-    
+    if matches!(last, '.' | '!' | '?' | '।') {
+        return true;
+    }
+
     // ─── Continuous dynamic parameter computation ───
     // TPS range: 0.5 (barely generating) to 6.0 (extremely fast).
     // Clamped and normalized to [0.0, 1.0] for linear interpolation.
     let tps_clamped = tps.clamp(0.5, 6.0);
     let tps_norm = (tps_clamped - 0.5) / (6.0 - 0.5); // 0.0 = slowest, 1.0 = fastest
-    
+
     // ─── Clause boundaries (`,`, `;`, `—`, `-`) ───
     // At low TPS: flush early to reduce TTFA (user hears something sooner).
     // At high TPS: skip clause flushes — sentences complete fast, so waiting
@@ -64,7 +69,7 @@ pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128, tps: f32) ->
             }
         }
     }
-    
+
     // ─── Time-based flush ───
     // Wait time scales with TPS: slow generation gets a shorter leash so TTFA
     // doesn't blow up; fast generation gets more time to complete a sentence.
@@ -73,7 +78,7 @@ pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128, tps: f32) ->
     if elapsed_ms >= max_wait_ms && word_count >= min_time_words && ends_at_word_boundary(buf) {
         return true;
     }
-    
+
     // ─── Word-count fallback ───
     // Absolute maximum words to hold before forcing a flush (with word-boundary safety).
     // At low TPS: flush at 5 words to keep latency bounded.
@@ -82,7 +87,7 @@ pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128, tps: f32) ->
     if word_count >= max_words && ends_at_word_boundary(buf) {
         return true;
     }
-    
+
     false
 }
 
@@ -152,7 +157,7 @@ pub fn transliterate_if_hi(text: &str, is_final: bool, transliterate_enabled: bo
         }
         current_token.push(c);
     }
-    
+
     if !current_token.is_empty() {
         if in_devanagari {
             tokens.push(Token::DevanagariWord(current_token));
@@ -195,17 +200,21 @@ fn edit_distance(s1: &str, s2: &str) -> usize {
     let v2: Vec<char> = s2.chars().collect();
     let len1 = v1.len();
     let len2 = v2.len();
-    
+
     let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
-    for i in 0..=len1 { dp[i][0] = i; }
-    for j in 0..=len2 { dp[0][j] = j; }
-    
+    for i in 0..=len1 {
+        dp[i][0] = i;
+    }
+    for j in 0..=len2 {
+        dp[0][j] = j;
+    }
+
     for i in 1..=len1 {
         for j in 1..=len2 {
-            if v1[i-1] == v2[j-1] {
-                dp[i][j] = dp[i-1][j-1];
+            if v1[i - 1] == v2[j - 1] {
+                dp[i][j] = dp[i - 1][j - 1];
             } else {
-                dp[i][j] = 1 + dp[i-1][j-1].min(dp[i-1][j].min(dp[i][j-1]));
+                dp[i][j] = 1 + dp[i - 1][j - 1].min(dp[i - 1][j].min(dp[i][j - 1]));
             }
         }
     }
@@ -213,22 +222,25 @@ fn edit_distance(s1: &str, s2: &str) -> usize {
 }
 
 fn words_soft_match(w1: &str, w2: &str) -> bool {
-    let clean1 = w1.trim_matches(|c: char| c.is_ascii_punctuation() || c == '।').to_lowercase();
-    let clean2 = w2.trim_matches(|c: char| c.is_ascii_punctuation() || c == '।').to_lowercase();
+    let clean1 = w1
+        .trim_matches(|c: char| c.is_ascii_punctuation() || c == '।')
+        .to_lowercase();
+    let clean2 = w2
+        .trim_matches(|c: char| c.is_ascii_punctuation() || c == '।')
+        .to_lowercase();
     if clean1 == clean2 {
         return true;
     }
-    
+
     let dist = edit_distance(&clean1, &clean2);
     let len = clean1.chars().count().max(clean2.chars().count());
-    
+
     if len <= 3 {
         dist <= 1
     } else {
         dist <= (len / 3).max(1)
     }
 }
-
 
 fn is_soft_subslice(p_words: &[&str], s_words: &[&str]) -> bool {
     if s_words.is_empty() {
@@ -237,7 +249,7 @@ fn is_soft_subslice(p_words: &[&str], s_words: &[&str]) -> bool {
     if p_words.len() < s_words.len() {
         return false;
     }
-    
+
     for i in 0..=(p_words.len() - s_words.len()) {
         let mut matched = true;
         for j in 0..s_words.len() {
@@ -311,7 +323,7 @@ pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
     for k in (1..=max_overlap).rev() {
         let p_slice = &p_words[p_words.len() - k..];
         let s_slice = &s_words[..k];
-        
+
         let mut matched = true;
         for i in 0..k {
             if !words_soft_match(p_slice[i], s_slice[i]) {
@@ -319,7 +331,7 @@ pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
                 break;
             }
         }
-        
+
         if matched {
             best_overlap_len = k;
             break;
@@ -369,37 +381,69 @@ mod tests {
         // At TPS=3.5 (medium): tps_norm≈0.545
         //   Clause threshold: ~4 words  |  Time gate: ~2363ms / ~6 words
         //   Fallback: ~13 words
-        
+
         // Hard boundaries: always flush
         assert!(should_flush("hello world. ", 2, 100, 3.5));
         assert!(should_flush("hello world! ", 2, 100, 3.5));
-        assert!(should_flush("are rangon ke diyas khelte hoon.", 8, 100, 3.5));
-        
+        assert!(should_flush(
+            "are rangon ke diyas khelte hoon.",
+            8,
+            100,
+            3.5
+        ));
+
         // Clause boundary: threshold increases with TPS (3→7 words)
-        assert!(!should_flush("hello, ", 1, 100, 3.5));      // 1 word < 4 words
+        assert!(!should_flush("hello, ", 1, 100, 3.5)); // 1 word < 4 words
         assert!(!should_flush("hello world one, ", 3, 100, 3.5)); // 3 words < 4 words
         assert!(should_flush("hello world one two, ", 4, 100, 3.5)); // 4 words >= 4 words
-        
+
         // Time-based: wait time and word threshold scale with TPS
         // At TPS=3.5: need ~2363ms and ~6 words at word boundary
         assert!(!should_flush("hello world one two three ", 5, 2000, 3.5)); // 5 < 6 words
-        assert!(should_flush("hello world one two three four ", 6, 2400, 3.5)); // 6 >= 6, 2400 > 2363
-        assert!(!should_flush("hello world one two three four five", 6, 2400, 3.5)); // No word boundary
-        
+        assert!(should_flush(
+            "hello world one two three four ",
+            6,
+            2400,
+            3.5
+        )); // 6 >= 6, 2400 > 2363
+        assert!(!should_flush(
+            "hello world one two three four five",
+            6,
+            2400,
+            3.5
+        )); // No word boundary
+
         // Word-count fallback: ~13 words at TPS=3.5
-        assert!(!should_flush("hello world one two three four five six seven eight nine ten ", 12, 100, 3.5));   // 12 < 13
-        assert!(should_flush("hello world one two three four five six seven eight nine ten eleven ", 13, 100, 3.5)); // 13 >= 13
-        
+        assert!(!should_flush(
+            "hello world one two three four five six seven eight nine ten ",
+            12,
+            100,
+            3.5
+        )); // 12 < 13
+        assert!(should_flush(
+            "hello world one two three four five six seven eight nine ten eleven ",
+            13,
+            100,
+            3.5
+        )); // 13 >= 13
+
         // Word-boundary safety: buffer must end with space/punctuation for time/word-count flushes
-        assert!(!should_flush("are rangon ke diyas khel", 5, 2500, 3.5),
-            "Should NOT flush mid-word even with enough words and elapsed time");
+        assert!(
+            !should_flush("are rangon ke diyas khel", 5, 2500, 3.5),
+            "Should NOT flush mid-word even with enough words and elapsed time"
+        );
         assert!(!should_flush("hello world one two three", 4, 100, 3.5));
         assert!(!should_flush("hello world one two", 3, 3000, 3.5));
 
         // ─── Slow TPS (tps=1.5): tps_norm≈0.182 ───
         //   Clause threshold: 3 words  |  Time gate: ~1455ms / ~4 words
         //   Fallback: ~8 words
-        assert!(should_flush("hello world one two three four five six seven ", 9, 100, 1.5)); // 9 >= 8 fallback
+        assert!(should_flush(
+            "hello world one two three four five six seven ",
+            9,
+            100,
+            1.5
+        )); // 9 >= 8 fallback
         assert!(!should_flush("hello world, ", 2, 100, 1.5)); // 2 < 3 clause threshold
         assert!(should_flush("hello world one, ", 3, 100, 1.5)); // 3 >= 3 clause threshold
         assert!(!should_flush("hello world one two three ", 4, 1000, 1.5)); // 1000 < 1455ms
@@ -412,9 +456,19 @@ mod tests {
         assert!(!should_flush("hello world one two three, ", 5, 100, 5.0)); // Clause flush disabled
         assert!(!should_flush("hello world one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen ", 16, 100, 5.0)); // 16 < 17
         assert!(should_flush("hello world one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen ", 17, 100, 5.0)); // 17 >= 17
-        // Time-based at high TPS
-        assert!(!should_flush("hello world one two three four five six ", 7, 2000, 5.0)); // 2000 < 3045ms
-        assert!(should_flush("hello world one two three four five six seven ", 8, 3100, 5.0)); // 8 >= 7, 3100 > 3045
+                                                                                                                                                                        // Time-based at high TPS
+        assert!(!should_flush(
+            "hello world one two three four five six ",
+            7,
+            2000,
+            5.0
+        )); // 2000 < 3045ms
+        assert!(should_flush(
+            "hello world one two three four five six seven ",
+            8,
+            3100,
+            5.0
+        )); // 8 >= 7, 3100 > 3045
 
         // No overlap concatenation fallback
         assert_eq!(
@@ -461,4 +515,3 @@ mod tests {
         );
     }
 }
-
