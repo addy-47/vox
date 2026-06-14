@@ -133,7 +133,7 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
             e.stopPropagation();
             startDownload();
           }}
-          className="px-2.5 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shadow shrink-0 hover:scale-[1.02] active:scale-95 transition-all"
+          className="px-2.5 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shrink-0 hover:scale-[1.02] active:scale-95 transition-all"
         >
           Get
         </button>
@@ -155,7 +155,7 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
             className="p-1 rounded-lg bg-red-500/20 text-red-500 hover:bg-red-500/35 transition-colors border border-red-500/30 flex items-center justify-center"
             aria-label="Confirm Delete"
           >
-            <Check size={11} className="font-bold" />
+            <Check size={14} className="font-bold" />
           </button>
           <button
             onClick={(e) => {
@@ -165,7 +165,7 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
             className="p-1 rounded-lg bg-[rgb(var(--foreground))]/[0.05] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/[0.08] transition-colors border border-[rgba(var(--border),0.1)] flex items-center justify-center"
             aria-label="Cancel"
           >
-            <ArrowLeft size={11} />
+            <ArrowLeft size={14} />
           </button>
         </div>
       );
@@ -180,7 +180,7 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
         className="p-1.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-colors shrink-0"
         aria-label="Delete weights"
       >
-        <Trash2 size={12} />
+        <Trash2 size={16} />
       </button>
     );
   };
@@ -195,7 +195,7 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
         }
       }}
       className={cn(
-        "p-4 rounded-lg border transition-all duration-300 flex flex-col justify-between gap-2.5 glass-whisper glass-base min-h-[105px]",
+        "p-4 rounded-lg border transition-all duration-300 flex flex-col justify-between gap-2.5 glass min-h-[105px]",
         isDownloaded && !isActive && "cursor-pointer hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.02)]",
         isActive && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5"
       )}
@@ -209,12 +209,12 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
           
           {hasTooltip && (
             <div className="relative tooltip-container inline-block shrink-0 mt-0.5">
-              <Info size={12} className="text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
-              <div className="absolute right-full top-0 mr-2 hidden tooltip-content w-52 p-2.5 rounded-lg bg-black/95 border border-[rgba(var(--accent),0.25)] text-[11px] text-[rgb(var(--foreground))]/90 shadow-2xl leading-normal z-50">
+              <Info size={16} className="text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
+              <div className="absolute right-full top-0 mr-2 hidden tooltip-content w-52 p-2.5 rounded-lg bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.25)] text-[11px] text-[rgb(var(--foreground-muted))]/80 shadow-2xl leading-normal z-50">
                 <div className="space-y-1">
-                  <div className="flex justify-between border-b border-white/5 pb-0.5 mb-1 font-bold">
+                  <div className="flex justify-between border-b border-[rgba(var(--accent),0.06)] pb-0.5 mb-1 font-bold">
                     <span className="text-[9px] text-[rgb(var(--accent))] uppercase tracking-wider">Specs</span>
-                    <span className="font-mono text-[9px] text-zinc-400">{parameters}</span>
+                    <span className="font-mono text-[9px] text-[rgb(var(--foreground-muted))]/60">{parameters}</span>
                   </div>
                   {description && <div className="text-[10px] text-[rgb(var(--foreground))]/80 leading-normal mb-1">{description}</div>}
                   {ramUsage && (
@@ -223,7 +223,7 @@ const SubModelCard: React.FC<SubModelCardProps> = ({
                     </div>
                   )}
                   {tradeoffs && (
-                    <div className="text-[9px] text-[rgb(var(--foreground-muted))]/70 italic border-t border-white/5 pt-1 mt-1 leading-normal">
+                    <div className="text-[9px] text-[rgb(var(--foreground-muted))]/70 italic border-t border-[rgba(var(--accent),0.06)] pt-1 mt-1 leading-normal">
                       {tradeoffs}
                     </div>
                   )}
@@ -283,8 +283,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [loadingRemoteModels, setLoadingRemoteModels] = useState(false);
   const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
 
-  const provider = draftSettings?.llm?.provider || settings?.llm?.provider;
-  const isRemoteLlm = provider?.kind === "open_ai_compat";
+  // Fix: Base layout decisions on committed settings to prevent uncommitted leaks
+  const savedProvider = settings?.llm?.provider;
+  const isRemoteLlm = savedProvider?.kind === "open_ai_compat";
+  const provider = (draftSettings?.llm?.provider?.kind === savedProvider?.kind)
+    ? draftSettings?.llm?.provider
+    : savedProvider;
 
 
 
@@ -608,8 +612,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     const Icon = isMissing ? Download : RefreshCw;
     const colorClass = isMissing ? "text-[rgb(var(--accent))]/75 animate-bounce" : "text-[rgb(var(--accent))] animate-spin";
     return (
-      <div className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/60 backdrop-blur-sm z-10">
-        <Icon size={9} className={colorClass} style={{ animationDuration: isMissing ? "2s" : "4s" }} />
+      <div className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.2)] backdrop-blur-sm z-10">
+        <Icon size={12} className={colorClass} style={{ animationDuration: isMissing ? "2s" : "4s" }} />
       </div>
     );
   };
@@ -621,7 +625,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       layoutMode === "small"
         ? "bg-transparent p-0"
         : cn(
-            "glass-card glass-base p-5",
+            "glass-card p-5",
             layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
           )
     )}>
@@ -631,20 +635,20 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         {/* Header */}
         <div className="flex items-center justify-between mb-1 shrink-0">
           <div className="flex items-center gap-2">
-            <Database className="text-[rgb(var(--accent))]" size={16} />
+            <Database className="text-[rgb(var(--accent))]" size={20} />
             <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
               Model Hub
             </span>
           </div>
           {/* Small Category Tabs */}
           {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
-            <div className="flex glass-whisper glass-base p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
+            <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
               <button
                 onClick={() => setActiveCategoryTab("model")}
                 className={cn(
                   "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
                   activeCategoryTab === "model"
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                     : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
                 )}
               >
@@ -655,7 +659,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                 className={cn(
                   "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
                   activeCategoryTab === "settings"
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                     : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
                 )}
               >
@@ -666,7 +670,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         </div>
 
         {/* Topology Pipeline Map */}
-        <div className="grid grid-cols-5 gap-1 shrink-0 p-1 rounded-xl glass-whisper glass-base overflow-visible mb-1">
+        <div className="grid grid-cols-5 gap-1 shrink-0 p-1 rounded-xl glass overflow-visible mb-1 bg-[rgba(var(--foreground),0.02)]">
           
           {/* NODE 1: VAD */}
           <button
@@ -674,13 +678,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             className={cn(
               "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
               activePipelineTab === "vad"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.15)] scale-[1.02]"
+                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
               getPulseClass(isVadCategoryMissing, hasVadUpdate)
             )}
           >
             {renderOverlayIcon(isVadCategoryMissing, hasVadUpdate)}
-            <Activity size={14} className={cn("transition-colors shrink-0", activePipelineTab === "vad" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
+            <Activity size={18} className={cn("transition-colors shrink-0", activePipelineTab === "vad" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
             <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">Silence</span>
             <span className={cn(
               "w-1 h-1 rounded-full shrink-0 mt-0.5",
@@ -694,13 +698,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             className={cn(
               "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
               activePipelineTab === "asr"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.15)] scale-[1.02]"
+                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
               getPulseClass(isAsrCategoryMissing, hasAsrUpdate)
             )}
           >
             {renderOverlayIcon(isAsrCategoryMissing, hasAsrUpdate)}
-            <Sparkles size={14} className={cn("transition-colors shrink-0", activePipelineTab === "asr" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
+            <Sparkles size={18} className={cn("transition-colors shrink-0", activePipelineTab === "asr" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
             <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">ASR</span>
             <span className={cn(
               "w-1 h-1 rounded-full shrink-0 mt-0.5",
@@ -714,13 +718,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             className={cn(
               "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
               activePipelineTab === "translit"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.15)] scale-[1.02]"
+                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
               getPulseClass(isTranslitCategoryMissing, hasTranslitUpdate)
             )}
           >
             {renderOverlayIcon(isTranslitCategoryMissing, hasTranslitUpdate)}
-            <Languages size={14} className={cn("transition-colors shrink-0", activePipelineTab === "translit" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
+            <Languages size={18} className={cn("transition-colors shrink-0", activePipelineTab === "translit" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
             <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">Hinglish</span>
             <span className={cn(
               "w-1 h-1 rounded-full shrink-0 mt-0.5",
@@ -734,13 +738,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             className={cn(
               "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
               activePipelineTab === "llm"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.15)] scale-[1.02]"
+                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
               getPulseClass(isLlmCategoryMissing, hasLlmUpdate)
             )}
           >
             {renderOverlayIcon(isLlmCategoryMissing, hasLlmUpdate)}
-            <Brain size={14} className={cn("transition-colors shrink-0", activePipelineTab === "llm" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
+            <Brain size={18} className={cn("transition-colors shrink-0", activePipelineTab === "llm" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
             <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">LLM</span>
             <span className={cn(
               "w-1 h-1 rounded-full shrink-0 mt-0.5",
@@ -754,13 +758,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             className={cn(
               "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
               activePipelineTab === "tts"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.15)] scale-[1.02]"
+                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
               getPulseClass(isTtsCategoryMissing, hasTtsUpdate)
             )}
           >
             {renderOverlayIcon(isTtsCategoryMissing, hasTtsUpdate)}
-            <Volume2 size={14} className={cn("transition-colors shrink-0", activePipelineTab === "tts" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
+            <Volume2 size={18} className={cn("transition-colors shrink-0", activePipelineTab === "tts" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
             <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">Voice</span>
             <span className={cn(
               "w-1 h-1 rounded-full shrink-0 mt-0.5",
@@ -771,7 +775,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         </div>
 
         {/* Workspace Detail Panel */}
-        <div className="max-h-[190px] h-auto w-full flex flex-col glass-whisper glass-base rounded-xl p-3 relative overflow-y-auto custom-scrollbar">
+        <div className="max-h-[190px] h-auto w-full flex flex-col glass rounded-xl p-3 relative overflow-y-auto custom-scrollbar bg-[rgba(var(--foreground),0.02)]">
                    {/* TAB 1: SILENCE DETECTION (VAD) */}
           {activePipelineTab === "vad" && (
             <div className="space-y-3">
@@ -827,8 +831,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                           className={cn(
                             "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                             Math.abs(draftSettings.vad.threshold - value) < 0.01
-                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-                              : "glass-whisper glass-base text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
+                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                              : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
                           )}
                         >{label}</button>
                       ))}
@@ -910,7 +914,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                     <div className="flex items-center justify-between">
                       <div className="flex flex-col">
                         <span className="font-bold text-[rgb(var(--foreground))]/90 text-[12px] flex items-center gap-1.5">
-                          <Network size={13} className="text-[rgb(var(--accent))]" /> Connected Server
+                          <Network size={16} className="text-[rgb(var(--accent))]" /> Connected Server
                         </span>
                         <span className="text-[10px] text-[rgb(var(--foreground-muted))]/70 font-mono mt-0.5">
                           {provider?.base_url || "No server configured"}
@@ -918,7 +922,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                       </div>
                       {loadingRemoteModels ? (
                         <span className="text-[10px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
-                          <RefreshCw size={10} className="animate-spin" /> Fetching...
+                          <RefreshCw size={14} className="animate-spin" /> Fetching...
                         </span>
                       ) : (
                         <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/60">
@@ -929,7 +933,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
                     {remoteModelsError && (
                       <div className="text-[11px] font-bold text-red-400/80 bg-red-400/5 border border-red-400/15 rounded-xl px-3 py-2 flex items-center gap-2">
-                        <AlertCircle size={12} />
+                        <AlertCircle size={16} />
                         <span>{remoteModelsError}</span>
                       </div>
                     )}
@@ -954,7 +958,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                               className={cn(
                                 "w-full text-left p-3 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3",
                                 isSelected
-                                  ? "bg-[rgba(var(--accent),0.05)] border-[rgb(var(--accent))] shadow-sm"
+                                  ? "bg-[rgba(var(--accent),0.05)] border-[rgb(var(--accent))]"
                                   : "bg-[rgba(var(--foreground),0.01)] border-[rgba(var(--foreground),0.04)] hover:border-[rgba(var(--accent),0.2)]"
                               )}
                             >
@@ -993,7 +997,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                                 )}
                                 {isSelected && (
                                   <div className="w-5 h-5 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] flex items-center justify-center">
-                                    <Check size={12} strokeWidth={3} />
+                                    <Check size={16} strokeWidth={3} />
                                   </div>
                                 )}
                               </div>
@@ -1009,16 +1013,18 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                         Use Custom Model ID
                       </span>
                       <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={customModelId}
-                          onChange={(e) => {
-                            setCustomModelId(e.target.value);
-                            setCustomModelStatus('idle');
-                          }}
-                          placeholder="e.g. gemini-2.5-pro"
-                          className="flex-1 min-w-0 bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] focus:border-[rgb(var(--accent))] rounded-lg px-2.5 py-1.5 text-[11px] text-[rgb(var(--foreground))] outline-none font-mono transition-colors"
-                        />
+                        <div className="flex-1 border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
+                          <input
+                            type="text"
+                            value={customModelId}
+                            onChange={(e) => {
+                              setCustomModelId(e.target.value);
+                              setCustomModelStatus('idle');
+                            }}
+                            placeholder="e.g. gemini-2.5-pro"
+                            className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
+                          />
+                        </div>
                         <button
                           onClick={handleValidateCustomModel}
                           disabled={!customModelId.trim() || customModelStatus === 'checking'}
@@ -1027,7 +1033,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                             customModelStatus === 'checking' && "bg-[rgba(var(--foreground),0.05)] border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground-muted))]",
                             customModelStatus === 'valid' && "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20",
                             customModelStatus === 'invalid' && "bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20",
-                            customModelStatus === 'idle' && "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] border-[rgba(var(--accent),0.2)] hover:scale-[1.02] active:scale-95 shadow-sm"
+                            customModelStatus === 'idle' && "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] border-[rgba(var(--accent),0.2)] hover:scale-[1.02] active:scale-95"
                           )}
                         >
                           {customModelStatus === 'checking' && "Checking..."}
@@ -1103,8 +1109,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                           className={cn(
                             "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                             draftSettings.llm.ctx_size === val
-                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-                              : "glass-whisper glass-base text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
+                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                              : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
                           )}
                         >{val < 1024 ? val : `${val / 1024}k`}</button>
                       ))}
@@ -1133,8 +1139,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                               className={cn(
                                 "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                                 draftSettings.llm.threads === val
-                                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-                                  : "glass-whisper glass-base text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
+                                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                                  : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
                               )}
                             >{val}{val === maxSafe && val !== totalCores ? " (max)" : ""}{val === totalCores && val !== maxSafe ? " (all)" : ""}</button>
                           ))}
@@ -1187,8 +1193,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                           className={cn(
                             "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                             draftSettings.tts.quality_steps === step
-                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
-                              : "glass-whisper glass-base text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
+                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                              : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
                           )}
                         >{step}</button>
                       ))}
@@ -1225,7 +1231,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                                 "py-1 px-2 rounded-lg text-left text-[11px] font-bold uppercase tracking-wider transition-all duration-300 border flex items-center justify-between",
                                 isSelected
                                   ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] text-[rgb(var(--accent))]"
-                                  : "glass-whisper border-transparent text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--border),0.1)]"
+                                  : "glass border-transparent text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--border),0.1)]"
                               )}
                             >
                               <span className="truncate mr-1">{v.name}</span>

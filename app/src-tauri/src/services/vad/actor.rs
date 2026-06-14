@@ -1,13 +1,13 @@
+use super::VadBackend;
+use crate::core::settings::InteractionMode;
+use crate::core::state::{InteractionOwner, VadCommand};
+use crate::services::traits::VadEngine as _;
 use anyhow::Result;
+use serde_json::json;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::mpsc;
-use serde_json::json;
-use crate::core::state::{VadCommand, InteractionOwner};
-use crate::core::settings::InteractionMode;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use crate::services::traits::VadEngine as _;
-use super::VadBackend;
 
 pub fn spawn_vad_actor<C>(
     mut vad: VadBackend,
@@ -19,18 +19,21 @@ pub fn spawn_vad_actor<C>(
     telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
     vox_event_tx: Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>,
     is_loaded: Arc<std::sync::atomic::AtomicBool>,
-) -> Result<()> 
-where 
-    C: ringbuf::traits::Consumer<Item = f32> 
+) -> Result<()>
+where
+    C: ringbuf::traits::Consumer<Item = f32>,
 {
     // ── Phase 1: Thread Prioritization (Tier 1 - Realtime) ───────────────
     use thread_priority::*;
     if let Err(e) = set_current_thread_priority(ThreadPriority::Max) {
-        log::warn!("[VAD] Failed to set max priority (likely non-root/cap_sys_nice): {:?}", e);
+        log::warn!(
+            "[VAD] Failed to set max priority (likely non-root/cap_sys_nice): {:?}",
+            e
+        );
     }
 
     log::info!("[VAD] Starting synchronous VAD loop on dedicated thread.");
-    
+
     let mut in_speech = false;
     let mut current_turn_id: u32 = 0;
     let mut utterance_buffer: Vec<f32> = Vec::new();
@@ -40,39 +43,58 @@ where
     let mut inactive_frames = 0;
 
     // Local state initialized once, updated via vad_rx to avoid hot-path locks
-        let (threshold_init, noise_gate_init, mode_init, owner_init, audio_mode_init) = {
-            let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
-            let settings = state.settings.read().unwrap();
-            let owner: InteractionOwner = state.owner.load(std::sync::atomic::Ordering::Relaxed).into();
-            let mode = match owner {
-                InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
-                InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
-                InteractionOwner::Ptt => InteractionMode::PTT,
-                InteractionOwner::Wizard => InteractionMode::Passive,
-            };
-            (settings.vad.threshold, settings.vad.ptt_noise_gate, mode, owner, settings.audio.output_mode.clone())
+    let (threshold_init, noise_gate_init, mode_init, owner_init, audio_mode_init) = {
+        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+        let settings = state.settings.read().unwrap();
+        let owner: InteractionOwner = state
+            .owner
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .into();
+        let mode = match owner {
+            InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+            InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
+            InteractionOwner::Ptt => InteractionMode::PTT,
+            InteractionOwner::Wizard => InteractionMode::Passive,
         };
-        
-        let mut threshold = threshold_init;
-        let mut noise_gate = noise_gate_init;
-        let mut mode = mode_init;
-        let mut owner = owner_init;
-        let mut audio_mode = audio_mode_init;
-    
+        (
+            settings.vad.threshold,
+            settings.vad.ptt_noise_gate,
+            mode,
+            owner,
+            settings.audio.output_mode.clone(),
+        )
+    };
+
+    let mut threshold = threshold_init;
+    let mut noise_gate = noise_gate_init;
+    let mut mode = mode_init;
+    let mut owner = owner_init;
+    let mut audio_mode = audio_mode_init;
+    let mut realtime_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<i16>>> = None;
+
     let (dropped_counter, engine_shutdown) = {
         let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
-        (state.dropped_telemetry_events.clone(), state.pipeline.engine_shutdown.clone())
+        (
+            state.dropped_telemetry_events.clone(),
+            state.pipeline.engine_shutdown.clone(),
+        )
     };
 
     let is_earshot = matches!(vad, VadBackend::Earshot(_));
     is_loaded.store(true, Ordering::Relaxed);
-    log::info!("[VAD] Entering sync loop: threshold={}, noise_gate={}, is_earshot={}, mode={:?}", threshold, noise_gate, is_earshot, mode);
+    log::info!(
+        "[VAD] Entering sync loop: threshold={}, noise_gate={}, is_earshot={}, mode={:?}",
+        threshold,
+        noise_gate,
+        is_earshot,
+        mode
+    );
 
     let mut filter_bank = crate::utils::audio_filters::FilterBank::new(16000.0);
-    
+
     // 16ms chunks (256 samples at 16kHz) — matches TenVAD window_size default
     let mut chunk = vec![0.0f32; 256];
-    
+
     let mut ui_emit_counter = 0;
 
     loop {
@@ -107,8 +129,9 @@ where
                 VadCommand::UpdateOwner(o) => {
                     log::info!("[VAD] Updating interaction owner to {:?}", o);
                     owner = o;
-                    
-                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+
+                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                        app.state();
                     let settings = state.settings.read().unwrap();
                     mode = match owner {
                         InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
@@ -116,7 +139,10 @@ where
                         InteractionOwner::Ptt => InteractionMode::PTT,
                         InteractionOwner::Wizard => InteractionMode::Passive,
                     };
-                    log::info!("[VAD] Automatically recalculated interaction mode to {:?}", mode);
+                    log::info!(
+                        "[VAD] Automatically recalculated interaction mode to {:?}",
+                        mode
+                    );
                 }
                 VadCommand::UpdateAudioMode(m) => {
                     log::info!("[VAD] Updating audio output mode to {:?}", m);
@@ -126,6 +152,14 @@ where
                     log::info!("[VAD] Shutdown signal received. Exiting loop.");
                     should_exit = true;
                     break;
+                }
+                VadCommand::StartRealtime(tx) => {
+                    log::info!("[VAD] Starting realtime S2S audio routing.");
+                    realtime_tx = Some(tx);
+                }
+                VadCommand::StopRealtime => {
+                    log::info!("[VAD] Stopping realtime S2S audio routing.");
+                    realtime_tx = None;
                 }
             }
         }
@@ -150,10 +184,15 @@ where
             // ── Phase 5: High-Frequency Telemetry ────────────────────────
             // Process the chunk through our filter bank to get low, mid, and high RMS
             let (raw_low, raw_mid, raw_high) = filter_bank.process_chunk(&chunk);
-            let raw_energy = (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt();
-            
+            let raw_energy =
+                (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt();
+
             // Gate individual bands as well, keeping mid and high relative to low/energy
-            let gated_raw = if raw_energy > noise_gate { raw_energy } else { 0.0 };
+            let gated_raw = if raw_energy > noise_gate {
+                raw_energy
+            } else {
+                0.0
+            };
             let energy = (gated_raw * 12.0).clamp(0.0, 1.0).powf(0.5);
 
             let gated_low = if raw_low > noise_gate { raw_low } else { 0.0 };
@@ -163,14 +202,17 @@ where
             let low = (gated_low * 12.0).clamp(0.0, 1.0).powf(0.5);
             let mid = (gated_mid * 12.0).clamp(0.0, 1.0).powf(0.5);
             let high = (gated_high * 12.0).clamp(0.0, 1.0).powf(0.5);
-            
-            if telemetry_tx.try_send(crate::monitoring::aggregator::TelemetryEvent::AudioEnergy {
-                energy,
-                vad_prob: 0.0,
-                low,
-                mid,
-                high,
-            }).is_err() {
+
+            if telemetry_tx
+                .try_send(crate::monitoring::aggregator::TelemetryEvent::AudioEnergy {
+                    energy,
+                    vad_prob: 0.0,
+                    low,
+                    mid,
+                    high,
+                })
+                .is_err()
+            {
                 dropped_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
 
@@ -195,49 +237,87 @@ where
                 }
                 continue;
             }
-            
+
             // ── Phase 4: Speaker-mode mic ducking ────────────────────────────
             // Drop mic frames while playback is active in Speaker mode.
             // Prevents TTS audio from looping back through the mic and re-triggering VAD.
             // In Headset mode, mic stays live for barge-in (pipeline cancellation handles it).
+            // In Realtime S2S mode, bypass entirely — cloud providers handle their own
+            // echo cancellation and barge-in internally.
             {
-                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
-                let is_playing = state.pipeline.playback_active.load(std::sync::atomic::Ordering::Relaxed);
-                if is_playing && audio_mode == crate::core::settings::AudioOutputMode::Speaker {
+                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                    app.state();
+                let is_playing = state
+                    .pipeline
+                    .playback_active
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                if realtime_tx.is_none() && is_playing && audio_mode == crate::core::settings::AudioOutputMode::Speaker {
                     // Drop this frame — do NOT advance utterance buffer or VAD state
                     continue;
                 }
             }
 
+            // Route audio directly to S2S if realtime session is active, bypassing local VAD
+            if let Some(ref tx) = realtime_tx {
+                let i16_samples: Vec<i16> = chunk
+                    .iter()
+                    .map(|&x| {
+                        let clamped = x.clamp(-1.0, 1.0);
+                        (clamped * 32767.0) as i16
+                    })
+                    .collect();
+                let _ = tx.send(i16_samples);
+
+                if in_speech {
+                    in_speech = false;
+                    utterance_buffer.clear();
+                    samples_since_partial = 0;
+                }
+                continue;
+            }
+
             // Classify chunk as speech or silence
             // We must ALWAYS call vad.predict to keep its internal context windows synchronized.
             let mut detected = vad.predict(&chunk);
-            
+
             // Override hallucinated speech on sub-threshold noise
-            let effective_noise_gate = if is_earshot { noise_gate * 1.5 } else { noise_gate };
+            let effective_noise_gate = if is_earshot {
+                noise_gate * 1.5
+            } else {
+                noise_gate
+            };
             if raw_energy < effective_noise_gate {
                 detected = false;
             }
-            
+
             if detected {
                 active_frames += 1;
                 inactive_frames = 0;
 
                 if !in_speech && active_frames >= 6 {
                     in_speech = true;
-                    let app_state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
-                    current_turn_id = app_state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
-                    log::info!("[VAD] >>> SPEECH START (session: {}, owner: {:?})", current_turn_id, owner);
-                    
+                    let app_state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                        app.state();
+                    current_turn_id =
+                        app_state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
+                    log::info!(
+                        "[VAD] >>> SPEECH START (session: {}, owner: {:?})",
+                        current_turn_id,
+                        owner
+                    );
+
                     let _ = stt_tx.send(crate::services::stt::SttCommand::ResetStream);
 
                     if let Some(ref tx) = vox_event_tx {
-                        let _ = tx.send(crate::core::events::VoxEvent::SpeechStart { turn_id: current_turn_id, owner });
+                        let _ = tx.send(crate::core::events::VoxEvent::SpeechStart {
+                            turn_id: current_turn_id,
+                            owner,
+                        });
                     }
 
-                    let _ = event_tx.try_send(json!({ 
-                        "type": "speech_start", 
-                        "session_id": current_turn_id 
+                    let _ = event_tx.try_send(json!({
+                        "type": "speech_start",
+                        "session_id": current_turn_id
                     }));
                     utterance_buffer.clear();
                     utterance_buffer.extend_from_slice(&pre_roll_buffer);
@@ -250,44 +330,64 @@ where
 
                 if in_speech && inactive_frames >= 50 {
                     in_speech = false;
-                    log::info!("[VAD] <<< SPEECH END (session: {}, owner: {:?})", current_turn_id, owner);
-                    
+                    log::info!(
+                        "[VAD] <<< SPEECH END (session: {}, owner: {:?})",
+                        current_turn_id,
+                        owner
+                    );
+
                     if let Some(ref tx) = vox_event_tx {
-                        let _ = tx.send(crate::core::events::VoxEvent::SpeechEnd { turn_id: current_turn_id, owner });
+                        let _ = tx.send(crate::core::events::VoxEvent::SpeechEnd {
+                            turn_id: current_turn_id,
+                            owner,
+                        });
                     }
-                    
-                    let _ = event_tx.try_send(json!({ 
+
+                    let _ = event_tx.try_send(json!({
                         "type": "speech_end",
-                        "session_id": current_turn_id 
+                        "session_id": current_turn_id
                     }));
 
                     vad.flush();
-                    
-                    if utterance_buffer.len() >= 4800 { 
+
+                    if utterance_buffer.len() >= 4800 && realtime_tx.is_none() {
                         let _ = stt_tx.send(crate::services::stt::SttCommand::Final(
-                            current_turn_id, 
+                            current_turn_id,
                             owner,
-                            utterance_buffer.clone()
+                            utterance_buffer.clone(),
                         ));
                     }
-                    
+
                     utterance_buffer.clear();
                     samples_since_partial = 0;
                 }
             }
-            
+
             // Append chunk to the appropriate buffer
             if in_speech {
                 utterance_buffer.extend_from_slice(&chunk);
                 samples_since_partial += chunk.len();
 
+                if let Some(ref tx) = realtime_tx {
+                    let i16_samples: Vec<i16> = chunk
+                        .iter()
+                        .map(|&x| {
+                            let clamped = x.clamp(-1.0, 1.0);
+                            (clamped * 32767.0) as i16
+                        })
+                        .collect();
+                    let _ = tx.send(i16_samples);
+                }
+
                 if samples_since_partial >= 12800 {
-                    let start_idx = utterance_buffer.len().saturating_sub(240000);
-                    let _ = stt_tx.send(crate::services::stt::SttCommand::Partial(
-                        current_turn_id, 
-                        owner,
-                        utterance_buffer[start_idx..].to_vec()
-                    ));
+                    if realtime_tx.is_none() {
+                        let start_idx = utterance_buffer.len().saturating_sub(240000);
+                        let _ = stt_tx.send(crate::services::stt::SttCommand::Partial(
+                            current_turn_id,
+                            owner,
+                            utterance_buffer[start_idx..].to_vec(),
+                        ));
+                    }
                     samples_since_partial = 0;
                 }
             } else {

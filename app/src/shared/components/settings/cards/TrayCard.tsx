@@ -34,7 +34,7 @@ export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
         isSmall
           ? "w-full bg-transparent p-0 h-auto"
           : cn(
-              "glass-card glass-base p-5 lg:h-[240px]",
+              "glass-card p-5 lg:h-[240px]",
               layoutMode === "full-min" ? "lg:w-[300px] xl:w-[340px] 2xl:w-[380px]" : "lg:w-[380px]"
             )
       )}
@@ -45,7 +45,7 @@ export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
       {!isSmall && (
         <div className="flex items-center justify-between mb-2 shrink-0">
           <div className="flex items-center gap-2">
-            <Eye className="text-[rgb(var(--accent))]" size={16} />
+            <Eye className="text-[rgb(var(--accent))]" size={20} />
             <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
               HUD & Tray HUD
             </span>
@@ -66,11 +66,11 @@ export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
               <span className="text-[11px] font-bold tracking-widest text-[rgb(var(--foreground-muted))]/70 whitespace-nowrap">HUD Window</span>
               <div className="flex items-center gap-3">
                 {isSmall ? (
-                  <RefreshCw size={10} className="text-[rgb(var(--accent))]/70 group-hover:rotate-180 transition-transform duration-500 shrink-0" />
+                  <RefreshCw size={14} className="text-[rgb(var(--accent))]/70 group-hover:rotate-180 transition-transform duration-500 shrink-0" />
                 ) : (
                   <span className="text-[9px] tracking-wider text-[rgb(var(--accent))]/70 opacity-0 group-hover:opacity-100 transition-opacity duration-300">Click to Toggle</span>
                 )}
-                {ui.tray_enabled ? <Eye size={12} className="text-[rgb(var(--accent))]" /> : <EyeOff size={12} className="text-[rgb(var(--accent))]" />}
+                {ui.tray_enabled ? <Eye size={16} className="text-[rgb(var(--accent))]" /> : <EyeOff size={16} className="text-[rgb(var(--accent))]" />}
               </div>
             </div>
             
@@ -109,11 +109,11 @@ export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
               <span className="text-[11px] font-bold tracking-widest text-[rgb(var(--foreground-muted))]/70 whitespace-nowrap">Tray Mode</span>
               <div className="flex items-center gap-3">
                 {isSmall ? (
-                  <RefreshCw size={10} className="text-[rgb(var(--accent))]/70 group-hover:rotate-180 transition-transform duration-500 shrink-0" />
+                  <RefreshCw size={14} className="text-[rgb(var(--accent))]/70 group-hover:rotate-180 transition-transform duration-500 shrink-0" />
                 ) : (
                   <span className="text-[9px] tracking-wider text-[rgb(var(--accent))]/70 opacity-0 group-hover:opacity-100 transition-opacity duration-300">Click to Switch</span>
                 )}
-                {interaction.tray_mode === "Passive" ? <Activity size={12} className="text-[rgb(var(--accent))]" /> : <Radio size={12} className="text-[rgb(var(--accent))]" />}
+                {interaction.tray_mode === "Passive" ? <Activity size={16} className="text-[rgb(var(--accent))]" /> : <Radio size={16} className="text-[rgb(var(--accent))]" />}
               </div>
             </div>
             

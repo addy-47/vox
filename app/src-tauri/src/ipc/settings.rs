@@ -1,9 +1,9 @@
-use tauri::{AppHandle, State, Emitter, Manager};
-use std::time::Duration;
+use crate::core::settings::{reload_policy_for, InteractionMode, SettingReloadPolicy, VoxSettings};
 use crate::core::state::AppState;
-use crate::core::settings::{VoxSettings, SettingReloadPolicy, reload_policy_for, InteractionMode};
-use crate::utils::paths;
 use crate::ipc::pipeline::{launch_engine, stop_engine};
+use crate::utils::paths;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 // ─── Debounce constant ────────────────────────────────────────────────────────
 
@@ -50,7 +50,11 @@ pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
     let models_dir_exists = paths::get().models.exists();
     let settings_path = paths::get().settings.to_string_lossy().to_string();
 
-    log::debug!("[Settings] Boot state requested. models_dir={}, settings={}", models_dir_exists, settings_path);
+    log::debug!(
+        "[Settings] Boot state requested. models_dir={}, settings={}",
+        models_dir_exists,
+        settings_path
+    );
 
     Ok(BootState {
         settings,
@@ -72,8 +76,14 @@ pub async fn request_model_catalog() -> Result<ModelCatalog, String> {
 
 /// Returns the current settings snapshot.
 #[tauri::command]
-pub async fn get_settings(state: State<'_, std::sync::Arc<AppState>>) -> Result<VoxSettings, String> {
-    state.settings.read().map_err(|e| e.to_string()).map(|s| s.clone())
+pub async fn get_settings(
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<VoxSettings, String> {
+    state
+        .settings
+        .read()
+        .map_err(|e| e.to_string())
+        .map(|s| s.clone())
 }
 
 /// Generic settings update command.
@@ -101,7 +111,9 @@ pub async fn update_setting(
 
     if applied && domain == "persistence" && key == "private_mode" {
         let is_private = value.as_bool().unwrap_or(false);
-        state.is_private_mode.store(is_private, std::sync::atomic::Ordering::Relaxed);
+        state
+            .is_private_mode
+            .store(is_private, std::sync::atomic::Ordering::Relaxed);
         log::info!("[Settings] Privacy Mode updated: enabled={}", is_private);
     }
 
@@ -127,12 +139,17 @@ pub async fn update_setting(
 
         if !enabled {
             // Disable Tray: Hide window and check if we can stop engine
-            log::info!("[Settings] Disabling Tray HUD: Hiding window and evaluating engine offload...");
+            log::info!(
+                "[Settings] Disabling Tray HUD: Hiding window and evaluating engine offload..."
+            );
             if let Some(tray_win) = app.get_webview_window("tray") {
                 let _ = tray_win.hide();
             }
-            
-            let is_engaged = state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed);
+
+            let is_engaged = state
+                .pipeline
+                .is_engaged
+                .load(std::sync::atomic::Ordering::Relaxed);
 
             log::info!("[Settings] Offload evaluation: engaged={}", is_engaged);
 
@@ -161,7 +178,14 @@ pub async fn update_setting(
         // Evaluate offload: If switching to PTT and Tray is disabled, we might want to stop engine
         let (tray_enabled, is_engaged, is_passive) = {
             let s = state.settings.read().unwrap();
-            (s.ui.tray_enabled, state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed), s.interaction.main_app_mode == InteractionMode::Passive)
+            (
+                s.ui.tray_enabled,
+                state
+                    .pipeline
+                    .is_engaged
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                s.interaction.main_app_mode == InteractionMode::Passive,
+            )
         };
 
         if !tray_enabled && !is_engaged && !is_passive {
@@ -171,7 +195,9 @@ pub async fn update_setting(
                 let _ = stop_engine(app_clone).await;
             });
         } else if is_passive {
-            log::info!("[Settings] Main App mode changed to Passive. Ensuring engine is launched...");
+            log::info!(
+                "[Settings] Main App mode changed to Passive. Ensuring engine is launched..."
+            );
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = launch_engine(app_clone).await;
@@ -179,11 +205,18 @@ pub async fn update_setting(
         }
 
         // Notify VAD of mode change if Main App is owner
-        let owner: crate::core::state::InteractionOwner = state.owner.load(std::sync::atomic::Ordering::Relaxed).into();
+        let owner: crate::core::state::InteractionOwner = state
+            .owner
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .into();
         if owner == crate::core::state::InteractionOwner::MainWindow {
             if let Some(engine) = state.engine.lock().await.as_ref() {
-                if let Ok(mode) = serde_json::from_value::<crate::core::settings::InteractionMode>(value.clone()) {
-                    let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateMode(mode));
+                if let Ok(mode) =
+                    serde_json::from_value::<crate::core::settings::InteractionMode>(value.clone())
+                {
+                    let _ = engine
+                        .vad_tx
+                        .send(crate::core::state::VadCommand::UpdateMode(mode));
                 }
             }
         }
@@ -215,9 +248,9 @@ pub async fn update_setting(
     schedule_debounced_save(app.clone(), state.clone()).await;
 
     let action_label = match policy {
-        SettingReloadPolicy::Hot           => "hot-applied",
+        SettingReloadPolicy::Hot => "hot-applied",
         SettingReloadPolicy::WorkerCommand => "dispatched to worker",
-        SettingReloadPolicy::Restart       => "restart required",
+        SettingReloadPolicy::Restart => "restart required",
     };
 
     let message = format!("{}.{} = {} — {}", domain, key, value, action_label);
@@ -231,7 +264,11 @@ pub async fn update_setting(
     // Notify Pipeline Orchestrator of settings change for local caching
     if let Some(engine) = state.engine.lock().await.as_ref() {
         let current_settings = state.settings.read().unwrap().clone();
-        let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::SettingsUpdated(current_settings));
+        let _ = engine
+            .pipeline_tx
+            .send(crate::core::events::VoxEvent::SettingsUpdated(
+                current_settings,
+            ));
     }
 
     let _ = app.emit("settings-updated", ());
@@ -268,12 +305,12 @@ pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
         *settings = defaults.clone();
     }
-    
+
     // Immediate apply for theme and other hot settings
     let _ = app.emit("theme-changed", defaults.ui.theme.clone());
-    
+
     schedule_debounced_save(app.clone(), state.clone()).await;
-    
+
     Ok(defaults)
 }
 
@@ -292,25 +329,36 @@ fn apply_setting_mutation(
             settings.ui.theme = value.as_str().ok_or("theme must be a string")?.to_string();
         }
         ("ui", "accent_seed") => {
-            settings.ui.accent_seed = value.as_str().ok_or("accent_seed must be a string")?.to_string();
+            settings.ui.accent_seed = value
+                .as_str()
+                .ok_or("accent_seed must be a string")?
+                .to_string();
         }
         ("ui", "tray_enabled") => {
             settings.ui.tray_enabled = value.as_bool().ok_or("tray_enabled must be a boolean")?;
         }
         ("ui", "tray_blur_density") => {
-            settings.ui.tray_blur_density = value.as_u64().ok_or("tray_blur_density must be a positive integer")? as u32;
+            settings.ui.tray_blur_density = value
+                .as_u64()
+                .ok_or("tray_blur_density must be a positive integer")?
+                as u32;
         }
         ("ui", "tray_glass_tint") => {
-            settings.ui.tray_glass_tint = value.as_bool().ok_or("tray_glass_tint must be a boolean")?;
+            settings.ui.tray_glass_tint =
+                value.as_bool().ok_or("tray_glass_tint must be a boolean")?;
         }
         ("ui", "tray_history_limit") => {
-            settings.ui.tray_history_limit = value.as_u64().ok_or("tray_history_limit must be a positive integer")? as u32;
+            settings.ui.tray_history_limit = value
+                .as_u64()
+                .ok_or("tray_history_limit must be a positive integer")?
+                as u32;
         }
         ("vad", "threshold") => {
             settings.vad.threshold = value.as_f64().ok_or("threshold must be a number")? as f32;
         }
         ("vad", "ptt_noise_gate") => {
-            settings.vad.ptt_noise_gate = value.as_f64().ok_or("ptt_noise_gate must be a number")? as f32;
+            settings.vad.ptt_noise_gate =
+                value.as_f64().ok_or("ptt_noise_gate must be a number")? as f32;
         }
         ("vad", "vad_backend") => {
             settings.vad.vad_backend = serde_json::from_value(value.clone())
@@ -320,7 +368,9 @@ fn apply_setting_mutation(
             settings.asr.model = value.as_str().ok_or("model must be a string")?.to_string();
         }
         ("asr", "transliterate_enabled") => {
-            settings.asr.transliterate_enabled = value.as_bool().ok_or("transliterate_enabled must be a boolean")?;
+            settings.asr.transliterate_enabled = value
+                .as_bool()
+                .ok_or("transliterate_enabled must be a boolean")?;
         }
         ("audio", "output_mode") => {
             settings.audio.output_mode = serde_json::from_value(value.clone())
@@ -330,10 +380,14 @@ fn apply_setting_mutation(
             settings.llm.model = value.as_str().ok_or("model must be a string")?.to_string();
         }
         ("llm", "ctx_size") => {
-            settings.llm.ctx_size = value.as_u64().ok_or("ctx_size must be a positive integer")? as u32;
+            settings.llm.ctx_size = value
+                .as_u64()
+                .ok_or("ctx_size must be a positive integer")?
+                as u32;
         }
         ("llm", "threads") => {
-            settings.llm.threads = value.as_u64().ok_or("threads must be a positive integer")? as u32;
+            settings.llm.threads =
+                value.as_u64().ok_or("threads must be a positive integer")? as u32;
         }
         ("llm", "provider") => {
             settings.llm.provider = serde_json::from_value(value.clone())
@@ -344,7 +398,10 @@ fn apply_setting_mutation(
                 .map_err(|e| format!("Invalid main_app_mode: {}", e))?;
         }
         ("interaction", "auto_sleep_timeout") => {
-            settings.interaction.auto_sleep_timeout = value.as_u64().ok_or("auto_sleep_timeout must be a positive integer")? as u32;
+            settings.interaction.auto_sleep_timeout = value
+                .as_u64()
+                .ok_or("auto_sleep_timeout must be a positive integer")?
+                as u32;
         }
         ("interaction", "pipeline_mode") => {
             settings.interaction.pipeline_mode = serde_json::from_value(value.clone())
@@ -358,31 +415,70 @@ fn apply_setting_mutation(
             settings.telemetry.enabled = value.as_bool().ok_or("enabled must be a boolean")?;
         }
         ("telemetry", "log_level") => {
-            settings.telemetry.log_level = value.as_str().ok_or("log_level must be a string")?.to_string();
+            settings.telemetry.log_level = value
+                .as_str()
+                .ok_or("log_level must be a string")?
+                .to_string();
         }
         ("tts", "voice") => {
             settings.tts.voice = value.as_i64().ok_or("voice must be an integer")? as i32;
         }
         ("tts", "quality_steps") => {
-            settings.tts.quality_steps = value.as_u64().ok_or("quality_steps must be a positive integer")? as u32;
+            settings.tts.quality_steps = value
+                .as_u64()
+                .ok_or("quality_steps must be a positive integer")?
+                as u32;
         }
         ("tts", "speed") => {
             settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
         }
         ("persistence", "private_mode") => {
-            settings.persistence.private_mode = value.as_bool().ok_or("private_mode must be a boolean")?;
+            settings.persistence.private_mode =
+                value.as_bool().ok_or("private_mode must be a boolean")?;
         }
         ("persistence", "max_sessions") => {
-            settings.persistence.max_sessions = value.as_u64().ok_or("max_sessions must be a positive integer")? as u32;
+            settings.persistence.max_sessions = value
+                .as_u64()
+                .ok_or("max_sessions must be a positive integer")?
+                as u32;
         }
         ("persistence", "retention_days") => {
-            settings.persistence.retention_days = value.as_u64().ok_or("retention_days must be a positive integer")? as u32;
+            settings.persistence.retention_days = value
+                .as_u64()
+                .ok_or("retention_days must be a positive integer")?
+                as u32;
         }
-        ("assistant", "hindi_prompt") => {
-            settings.assistant.hindi_prompt = value.as_str().ok_or("hindi_prompt must be a string")?.to_string();
+        ("assistant", "modular_prompt") => {
+            settings.assistant.modular_prompt = value
+                .as_str()
+                .ok_or("modular_prompt must be a string")?
+                .to_string();
         }
-        ("assistant", "english_prompt") => {
-            settings.assistant.english_prompt = value.as_str().ok_or("english_prompt must be a string")?.to_string();
+        ("assistant", "realtime_prompt") => {
+            settings.assistant.realtime_prompt = value
+                .as_str()
+                .ok_or("realtime_prompt must be a string")?
+                .to_string();
+        }
+        ("realtime", "provider") => {
+            settings.realtime.provider = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid realtime provider: {}", e))?;
+        }
+        ("realtime", "gemini") => {
+            settings.realtime.gemini = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid gemini config: {}", e))?;
+        }
+        ("realtime", "openai") => {
+            settings.realtime.openai = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid openai config: {}", e))?;
+        }
+        ("realtime", "deepgram") => {
+            settings.realtime.deepgram = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid deepgram config: {}", e))?;
+        }
+        ("realtime", "elevenlabs") => {
+            settings.realtime.elevenlabs = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid elevenlabs config: {}", e))?;
         }
         _ => return Ok(false),
     }
@@ -391,7 +487,12 @@ fn apply_setting_mutation(
 
 /// Dispatches a hot-update command to the appropriate worker thread.
 /// Called only for `WorkerCommand` policy settings.
-async fn dispatch_worker_command(app: &AppHandle, domain: &str, key: &str, value: &serde_json::Value) {
+async fn dispatch_worker_command(
+    app: &AppHandle,
+    domain: &str,
+    key: &str,
+    value: &serde_json::Value,
+) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let engine_lock = state.engine.lock().await;
 
@@ -399,19 +500,27 @@ async fn dispatch_worker_command(app: &AppHandle, domain: &str, key: &str, value
         match (domain, key) {
             ("vad", "threshold") => {
                 if let Some(v) = value.as_f64() {
-                    let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateThreshold(v as f32));
+                    let _ = engine
+                        .vad_tx
+                        .send(crate::core::state::VadCommand::UpdateThreshold(v as f32));
                     log::debug!("[Settings] VadCommand::UpdateThreshold({}) dispatched", v);
                 }
             }
             ("vad", "ptt_noise_gate") => {
                 if let Some(v) = value.as_f64() {
-                    let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateNoiseGate(v as f32));
+                    let _ = engine
+                        .vad_tx
+                        .send(crate::core::state::VadCommand::UpdateNoiseGate(v as f32));
                     log::debug!("[Settings] VadCommand::UpdateNoiseGate({}) dispatched", v);
                 }
             }
             ("audio", "output_mode") => {
-                if let Ok(mode) = serde_json::from_value::<crate::core::settings::AudioOutputMode>(value.clone()) {
-                    let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateAudioMode(mode));
+                if let Ok(mode) =
+                    serde_json::from_value::<crate::core::settings::AudioOutputMode>(value.clone())
+                {
+                    let _ = engine
+                        .vad_tx
+                        .send(crate::core::state::VadCommand::UpdateAudioMode(mode));
                     log::debug!("[Settings] VadCommand::UpdateAudioMode dispatched");
                 }
             }
@@ -430,18 +539,18 @@ async fn schedule_debounced_save(_app: AppHandle, state: State<'_, std::sync::Ar
         handle.abort();
     }
 
-    let settings_snapshot = {
-        state.settings.read().ok().map(|s| s.clone())
-    };
+    let settings_snapshot = { state.settings.read().ok().map(|s| s.clone()) };
 
-    let Some(snapshot) = settings_snapshot else { return; };
+    let Some(snapshot) = settings_snapshot else {
+        return;
+    };
 
     let handle = tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(SETTINGS_SAVE_DEBOUNCE_MS)).await;
-        
+
         // Use spawn_blocking to avoid stalling the async executor with synchronous I/O
         let result = tokio::task::spawn_blocking(move || snapshot.save()).await;
-        
+
         match result {
             Ok(Ok(_)) => log::debug!("[Settings] Debounced save completed."),
             Ok(Err(e)) => log::error!("[Settings] Debounced save failed: {}", e),
@@ -457,8 +566,8 @@ pub async fn check_llm_provider_health(
     state: State<'_, std::sync::Arc<AppState>>,
     provider: Option<crate::core::settings::LlmProviderConfig>,
 ) -> Result<bool, String> {
-    use crate::services::llm::{OpenAiCompatProvider, LlmProvider};
     use crate::core::settings::LlmProviderConfig;
+    use crate::services::llm::{LlmProvider, OpenAiCompatProvider};
     use crate::utils::paths;
 
     let (config, llm_model) = {
@@ -497,8 +606,18 @@ pub async fn check_llm_provider_health(
 
             Ok(llm_path.exists())
         }
-        LlmProviderConfig::OpenAiCompat { base_url, model, api_key, provider_name } => {
-            let provider = OpenAiCompatProvider::new(&base_url, &model, api_key.as_deref(), provider_name.as_deref());
+        LlmProviderConfig::OpenAiCompat {
+            base_url,
+            model,
+            api_key,
+            provider_name,
+        } => {
+            let provider = OpenAiCompatProvider::new(
+                &base_url,
+                &model,
+                api_key.as_deref(),
+                provider_name.as_deref(),
+            );
             let healthy = tokio::task::spawn_blocking(move || provider.health_check())
                 .await
                 .map_err(|e| e.to_string())?;
@@ -512,8 +631,8 @@ pub async fn list_remote_llm_models(
     state: State<'_, std::sync::Arc<AppState>>,
     provider: Option<crate::core::settings::LlmProviderConfig>,
 ) -> Result<Vec<crate::core::settings::RemoteModelInfo>, String> {
-    use crate::services::llm::{OpenAiCompatProvider, EmbeddedProvider, LlmProvider};
     use crate::core::settings::LlmProviderConfig;
+    use crate::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
     use crate::utils::paths;
 
     let config = {
@@ -527,12 +646,25 @@ pub async fn list_remote_llm_models(
 
     match config {
         LlmProviderConfig::Embedded => {
-            let llm_dir = paths::get().models.join(crate::core::constants::MODEL_DIR_LLM);
-            let models = EmbeddedProvider::list_models_in_dir(&llm_dir).map_err(|e| e.to_string())?;
+            let llm_dir = paths::get()
+                .models
+                .join(crate::core::constants::MODEL_DIR_LLM);
+            let models =
+                EmbeddedProvider::list_models_in_dir(&llm_dir).map_err(|e| e.to_string())?;
             Ok(models)
         }
-        LlmProviderConfig::OpenAiCompat { base_url, model, api_key, provider_name } => {
-            let provider = OpenAiCompatProvider::new(&base_url, &model, api_key.as_deref(), provider_name.as_deref());
+        LlmProviderConfig::OpenAiCompat {
+            base_url,
+            model,
+            api_key,
+            provider_name,
+        } => {
+            let provider = OpenAiCompatProvider::new(
+                &base_url,
+                &model,
+                api_key.as_deref(),
+                provider_name.as_deref(),
+            );
             let models = tokio::task::spawn_blocking(move || provider.list_models())
                 .await
                 .map_err(|e| e.to_string())?

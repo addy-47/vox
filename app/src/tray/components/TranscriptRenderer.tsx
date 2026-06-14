@@ -90,11 +90,11 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
           <motion.div 
             key="idle-layer"
             initial={{ opacity: 0 }}
-            animate={{ opacity: 0.5 }}
-            className="flex flex-col items-center justify-center px-5 py-6 rounded-xl bg-[rgb(var(--foreground))]/5"
+            animate={{ opacity: 0.7 }}
+            className="flex flex-col items-center justify-center px-5 py-6"
           >
-            <Activity size={24} className="mb-2 text-[rgb(var(--accent))]/40 animate-pulse" />
-            <p className="text-[11px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/40">
+            <Activity size={24} className="mb-2 text-[rgb(var(--accent))]/50 animate-pulse " />
+            <p className="text-[11px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/60 ">
               Standby
             </p>
           </motion.div>

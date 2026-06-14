@@ -26,7 +26,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
-        "
+        ",
     )?;
     Ok(())
 }

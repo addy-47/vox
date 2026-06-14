@@ -276,7 +276,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     <button 
                         onClick={startSetup}
                         disabled={isFetching || selectedIds.size === 0}
-                        className="group relative flex-1 py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)] glass-card glass-base hover:border-[rgb(var(--accent))]/70"
+                        className="group relative flex-1 py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
@@ -318,7 +318,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                         .find(p => p && p.step !== 'completed')?.step || (isDone ? 'Ready' : 'Queued');
 
                     return (
-                        <div key={cat.id} className="p-4 glass-whisper glass-base">
+                        <div key={cat.id} className="p-4 glass">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
                                     <div className={cn(
@@ -390,7 +390,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                 <div className="flex flex-col gap-4 w-full max-w-xs">
                     <button 
                         onClick={onNext}
-                        className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)] glass-card glass-base hover:border-[rgb(var(--accent))]/70"
+                        className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgba(var(--accent),0.03)] opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, rgba(var(--accent), 0.1) 0%, rgba(var(--accent), 0.03) 100%)` }} />
                         <span className="relative z-10 flex items-center justify-center gap-3 tracking-widest uppercase text-xs">

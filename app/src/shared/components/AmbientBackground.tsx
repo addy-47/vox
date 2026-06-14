@@ -88,9 +88,9 @@ export const AmbientBackground = React.memo(({
     return () => observer.disconnect();
   }, []);
 
-  const blobOpacityMultiplier = isLight ? 4.5 : 1.0;
-  const glowOpacityMultiplier = isLight ? 3.0 : 1.0;
-  const rippleOpacityMultiplier = isLight ? 2.5 : 1.0;
+  const blobOpacityMultiplier = isLight ? 4.5 : 2.5;
+  const glowOpacityMultiplier = isLight ? 3.0 : 2.0;
+  const rippleOpacityMultiplier = isLight ? 2.5 : 1.8;
 
   React.useEffect(() => {
     let animId: number;

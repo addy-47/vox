@@ -11,7 +11,7 @@ const navItems = [
 
 export const EdgeNav: React.FC = () => {
   return (
-    <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full h-[56px] bg-transparent border-transparent shadow-none transition-all duration-300">
+    <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card border-0 rounded-full">
       {navItems.map((item) => (
         <NavLink
           key={item.label}
@@ -20,14 +20,14 @@ export const EdgeNav: React.FC = () => {
           className={({ isActive }) =>
             cn(
               "relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5",
-              isActive && "text-[rgb(var(--accent))] bg-transparent border-transparent shadow-none"
+              isActive && "text-[rgb(var(--accent))] bg-transparent"
             )
           }
         >
           {({ isActive }) => (
             <>
               <item.icon
-                size={20}
+                size={24}
                 strokeWidth={isActive ? 2 : 1.5}
                 className={cn("transition-transform duration-500", !isActive && "group-hover:scale-110")}
               />
@@ -39,20 +39,20 @@ export const EdgeNav: React.FC = () => {
 
               {/* Active Indicator dot */}
               {isActive && (
-                <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" />
+                <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-[rgb(var(--accent))]" />
               )}
             </>
           )}
         </NavLink>
       ))}
 
-      {/* Mobile-only Activity item */}
+      {/* Compact layout — monitoring in EdgeNav instead of corner */}
       <NavLink
         to="/monitoring"
         className={({ isActive }) =>
           cn(
-            "md:hidden relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5",
-            isActive && "text-[rgb(var(--accent))] bg-transparent border-transparent shadow-none"
+            "lg:hidden relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5",
+            isActive && "text-[rgb(var(--accent))] bg-transparent"
           )
         }
         aria-label="Engine Monitor"
@@ -60,7 +60,7 @@ export const EdgeNav: React.FC = () => {
         {({ isActive }) => (
           <>
             <Activity
-              size={20}
+              size={24}
               strokeWidth={isActive ? 2 : 1.5}
               className={cn("transition-transform duration-500", !isActive && "group-hover:scale-110")}
             />
@@ -70,7 +70,7 @@ export const EdgeNav: React.FC = () => {
             </span>
             {/* Active Indicator dot */}
             {isActive && (
-              <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" />
+              <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-[rgb(var(--accent))]" />
             )}
           </>
         )}

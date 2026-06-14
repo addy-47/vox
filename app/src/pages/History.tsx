@@ -112,11 +112,10 @@ const VoiceRippleNode = memo(
           top: y - 60,   // Offset approximate half-height
         }}
         className={cn(
-          "w-56 rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none group cursor-pointer z-10",
-          "bg-[rgba(var(--foreground),0.02)] border",
+          "w-56 rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none group cursor-pointer z-10 glass-card",
           isSelected
-            ? "border-[rgba(var(--accent),0.6)] shadow-[0_0_32px_rgba(var(--accent),0.18)] bg-[rgba(var(--accent),0.05)]"
-            : "border-[rgba(var(--accent),0.1)] hover:border-[rgba(var(--accent),0.4)] hover:bg-[rgba(var(--foreground),0.04)]"
+            ? "border-[rgba(var(--accent),0.6)] bg-[rgba(var(--accent),0.12)]"
+            : "hover:bg-[rgba(var(--accent),0.04)]"
         )}
         onClick={(e) => {
           e.stopPropagation();
@@ -149,26 +148,26 @@ const VoiceRippleNode = memo(
             <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={(e) => onDelete(e, session.id)}
-                className="w-5 h-5 rounded-full bg-[rgb(var(--accent))]/25 border border-[rgb(var(--accent))]/55 flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/35"
+                className="w-5 h-5 rounded-full glass-card flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20"
                 aria-label="Confirm delete"
               >
-                <Check size={9} strokeWidth={3} />
+                <Check size={14} strokeWidth={3} />
               </button>
               <button
                 onClick={onCancelDelete}
-                className="w-5 h-5 rounded-full bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--border),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:bg-[rgba(var(--foreground),0.2)]"
+                className="w-5 h-5 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
                 aria-label="Cancel delete"
               >
-                <X size={9} strokeWidth={3} />
+                <X size={14} strokeWidth={3} />
               </button>
             </div>
           ) : (
             <button
               onClick={(e) => onDelete(e, session.id)}
-              className="w-5 h-5 rounded-full bg-[rgba(var(--foreground),0.08)] border border-[rgba(var(--border),0.1)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors"
+              className="w-5 h-5 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors"
               aria-label="Delete session"
             >
-              <Trash2 size={9} />
+              <Trash2 size={14} />
             </button>
           )}
         </div>
@@ -195,10 +194,7 @@ const DetailPanel = memo(
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
-        style={{
-          boxShadow: "0 -40px 80px -10px rgba(var(--accent), 0.04)",
-        }}
-        className="absolute bottom-0 left-0 right-0 h-[58%] md:h-[58%] bg-[rgb(var(--background))] border-t border-[rgba(var(--accent),0.2)] z-30 flex flex-col rounded-t-3xl overflow-hidden"
+        className="absolute bottom-0 left-0 right-0 h-[65%] md:h-[65%] z-30 flex flex-col rounded-t-3xl overflow-hidden glass-card border-0"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-[rgba(var(--accent),0.06)] shrink-0">
@@ -213,21 +209,21 @@ const DetailPanel = memo(
 
           <button
             onClick={onClose}
-            className="flex items-center justify-center w-7 h-7 rounded-full border border-[rgba(var(--accent),0.12)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+            className="flex items-center justify-center w-7 h-7 rounded-full glass text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
             aria-label="Close session"
           >
-            <X size={14} />
+            <X size={18} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4">
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4 min-h-0">
           {loading ? (
             <div className="flex justify-center py-12">
               <div className="w-5 h-5 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : turns.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-2 opacity-50">
-              <Ghost size={22} />
+              <Ghost size={28} />
               <span className="text-[10px] font-bold uppercase tracking-widest">
                 No interaction data
               </span>
@@ -240,7 +236,7 @@ const DetailPanel = memo(
                     <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]/40 uppercase tracking-widest mb-1 mr-2">
                       you
                     </span>
-                    <div className="bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.1)] rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%]">
+                    <div className="glass rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%]">
                       <p className="text-[14px] text-[rgb(var(--foreground))]/85 leading-relaxed break-words">
                         {turn.user_text}
                       </p>
@@ -251,7 +247,7 @@ const DetailPanel = memo(
                     <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))]/70 uppercase tracking-widest mb-1 ml-2">
                       vox
                     </span>
-                    <div className="bg-[rgba(var(--accent),0.03)] border border-[rgba(var(--accent),0.2)] rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%]">
+                    <div className="glass rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%]">
                       <p className="text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words">
                         {turn.assistant_text}
                       </p>
@@ -569,7 +565,7 @@ export const History: React.FC = () => {
           </div>
         ) : sessions.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-40">
-            <Ghost size={28} className="text-[rgb(var(--accent))]" />
+            <Ghost size={32} className="text-[rgb(var(--accent))]" />
             <span className="text-[11px] font-bold uppercase tracking-widest">No memories persisted</span>
           </div>
         ) : dimensions.width < 680 ? (
@@ -586,10 +582,10 @@ export const History: React.FC = () => {
                     setSelectedSession(session);
                   }}
                   className={cn(
-                    "w-full rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none cursor-pointer border relative group",
+                    "w-full rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none cursor-pointer relative group glass-card",
                     isSelected
-                      ? "border-[rgba(var(--accent),0.6)] shadow-[0_0_32px_rgba(var(--accent),0.08)] bg-[rgba(var(--accent),0.05)]"
-                      : "border-[rgba(var(--accent),0.1)] bg-[rgba(var(--foreground),0.02)] hover:border-[rgba(var(--accent),0.4)] hover:bg-[rgba(var(--foreground),0.04)]"
+                      ? "border-[rgba(var(--accent),0.6)] bg-[rgba(var(--accent),0.12)]"
+                      : "hover:bg-[rgba(var(--accent),0.04)]"
                   )}
                 >
                   <div className="flex items-center justify-between mb-2 pr-10">
@@ -608,26 +604,26 @@ export const History: React.FC = () => {
                       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={(e) => handleDelete(e, session.id)}
-                          className="w-6 h-6 rounded-full bg-[rgb(var(--accent))]/25 border border-[rgb(var(--accent))]/55 flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/35"
+                          className="w-6 h-6 rounded-full glass-card flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20"
                           aria-label="Confirm delete"
                         >
-                          <Check size={10} strokeWidth={3} />
+                          <Check size={14} strokeWidth={3} />
                         </button>
                         <button
                           onClick={handleCancelDelete}
-                          className="w-6 h-6 rounded-full bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--border),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:bg-[rgba(var(--foreground),0.2)]"
+                          className="w-6 h-6 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
                           aria-label="Cancel delete"
                         >
-                          <X size={10} strokeWidth={3} />
+                          <X size={14} strokeWidth={3} />
                         </button>
                       </div>
                     ) : (
                       <button
                         onClick={(e) => handleDelete(e, session.id)}
-                        className="w-6 h-6 rounded-full bg-[rgba(var(--foreground),0.08)] border border-[rgba(var(--border),0.1)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        className="w-6 h-6 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                         aria-label="Delete session"
                       >
-                        <Trash2 size={10} />
+                        <Trash2 size={14} />
                       </button>
                     )}
                   </div>
@@ -640,18 +636,18 @@ export const History: React.FC = () => {
             <button
               onClick={(e) => { e.stopPropagation(); handlePrevPage(); }}
               disabled={pageIndex === 0}
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-[rgba(var(--accent),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.4)] disabled:opacity-10 transition-all z-30"
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-10 transition-all z-30"
               aria-label="Newer sessions page"
             >
-              <ChevronLeft size={18} />
+              <ChevronLeft size={22} />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); handleNextPage(); }}
               disabled={pageIndex === totalPages - 1}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-[rgba(var(--accent),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.4)] disabled:opacity-10 transition-all z-30"
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-10 transition-all z-30"
               aria-label="Older sessions page"
             >
-              <ChevronRight size={18} />
+              <ChevronRight size={22} />
             </button>
 
             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40 z-30">
@@ -706,7 +702,7 @@ export const History: React.FC = () => {
       <AnimatePresence>
         {selectedSession && (
           <div
-            className="absolute inset-0 bg-black/5 z-25 cursor-default"
+            className="absolute inset-0 z-25 cursor-default glass"
             onClick={() => setSelectedSession(null)}
           />
         )}

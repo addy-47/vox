@@ -324,6 +324,8 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
 
   // 1Hz Background Polling Loop - runs continuously to keep history populated and fresh
   useEffect(() => {
+    if (!open) return;
+
     const poll = async () => {
       try {
         const snap = await invoke<RuntimeSnapshot>("get_runtime_snapshot");
@@ -344,7 +346,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
     return () => {
       clearInterval(id);
     };
-  }, []);
+  }, [open]);
 
   // Direct DOM Interpolation Loop (EMA) running at 60fps - only active when popover is open
   useEffect(() => {
@@ -439,18 +441,18 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
       {open && (
         <motion.div
           ref={popoverRef}
-          initial={{ y: 12, scale: 0.98 }}
-          animate={{ y: 0, scale: 1 }}
-          exit={{ y: 12, scale: 0.98 }}
-          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed z-[200] bottom-[72px] left-4 w-[340px] glass-elevated glass-base rounded-2xl overflow-hidden shadow-[0_24px_64px_rgba(0,0,0,0.5)]"
+          initial={{ opacity: 0, y: 12, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12, scale: 0.98 }}
+          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1], opacity: { duration: 0.1 } }}
+          className="fixed z-[200] bottom-[72px] left-4 w-[340px] glass-card no-blur"
           role="dialog"
           aria-label="System Monitoring"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-[rgba(var(--accent),0.08)]">
             <div className="flex items-center gap-2">
-              <Activity size={14} className="text-[rgb(var(--accent))]" />
+              <Activity size={16} className="text-[rgb(var(--accent))]" />
               <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
                 Engine Monitor
               </span>
@@ -480,7 +482,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
                       : "text-red-500 hover:bg-red-500/10"
                   )}
                 >
-                  <Skull size={13} />
+                  <Skull size={16} />
                 </button>
               ) : (
                 <button
@@ -504,7 +506,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
                       : "text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
                   )}
                 >
-                  <RefreshCw size={13} className={cn(togglingEngine && "animate-spin")} />
+                  <RefreshCw size={16} className={cn(togglingEngine && "animate-spin")} />
                 </button>
               )}
               <button
@@ -512,7 +514,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
                 className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
                 aria-label="Close monitor"
               >
-                <X size={14} />
+                <X size={16} />
               </button>
             </div>
           </div>
@@ -523,25 +525,25 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
               <EngineBadge
                 label="VAD"
                 active={latest?.is_vad_loaded ?? false}
-                icon={<ShieldCheck size={10} />}
+                icon={<ShieldCheck size={14} />}
               />
               <EngineBadge
                 label="STT"
                 active={latest?.is_stt_loaded ?? false}
-                icon={<Activity size={10} />}
+                icon={<Activity size={14} />}
               />
               <EngineBadge
                 label="LLM"
                 active={latest?.is_llm_loaded ?? false}
-                icon={<Cpu size={10} />}
+                icon={<Cpu size={14} />}
               />
               <EngineBadge
                 label="TTS"
                 active={latest?.is_tts_loaded ?? false}
-                icon={<Volume2 size={10} />}
+                icon={<Volume2 size={14} />}
               />
               {latest?.is_sleeping && (
-                <EngineBadge label="Sleep" active={true} icon={<Moon size={10} />} />
+                <EngineBadge label="Sleep" active={true} icon={<Moon size={14} />} />
               )}
             </div>
 
@@ -594,13 +596,13 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
                 <div key={key} className="space-y-1">
                   <div className="flex items-center gap-1.5">
                     {key === "vox_cpu_usage" && (
-                      <Cpu size={9} className="text-[rgb(var(--accent))]/60" />
+                      <Cpu size={12} className="text-[rgb(var(--accent))]/60" />
                     )}
                     {key === "vox_ram_mb" && (
-                      <MemoryStick size={9} className="text-[rgb(var(--accent))]/60" />
+                      <MemoryStick size={12} className="text-[rgb(var(--accent))]/60" />
                     )}
                     {key === "vad_probability" && (
-                      <Zap size={9} className="text-[rgb(var(--accent))]/60" />
+                      <Zap size={12} className="text-[rgb(var(--accent))]/60" />
                     )}
                     <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))]/60">
                       {label}

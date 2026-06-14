@@ -120,115 +120,48 @@ body.is-tray #root {
   border: none !important;
 }
 
-/* ── Glass Elevation System ──
+/* ── Glass System ──
  *
- * Premium frosted glassmorphism system using backdrop-filter and translucent backdrops.
- * Mapped to 4 distinct elevation levels with light mode parity and dynamic accent support.
+ * Two-tier minimal frosted glass. No outer shadows, no noise overlay, no thick borders.
+ * Hierarchy communicated through opacity + blur + border subtly alone.
+ *
+ * .glass       — ambient surface (no border weight, blur-8)
+ * .glass-card  — elevated container (1px border, blur-20, inset highlight only)
  */
 @layer components {
-  /* Glass Base: shared stacking context, overflow clipping, micro-tactility */
-  .glass-base {
+
+  /* glass — ambient surface, ultra-subtle border, no shadow */
+  .glass {
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  /* Specular sheen & subtle noise grain overlay (on top of content) */
-  .glass-base::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    z-index: 1;
-    background:
-      /* Specular highlight — diagonal light sweep */
-      linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, transparent 40%, rgba(255, 255, 255, 0.01) 100%),
-      /* Faint noise grain texture */
-      url("data:image/svg+xml,%3Csvg viewBox='0 0 250 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E")
-      0 0 / 250px 250px;
-    background-repeat: no-repeat, repeat;
-    opacity: 0.8;
-  }
-
-  /* glass-whisper — page-level ambient surface */
-  .glass-whisper {
-    background: rgba(10, 12, 14, 0.2);
+    background: rgba(10, 12, 14, 0.18);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(var(--border), 0.03);
+    border: 1px solid rgba(var(--border), 0.02);
     border-radius: 0.75rem;
   }
-
-  /* glass-surface — section panels, sidebar, titlebar */
-  .glass-surface {
-    background: rgba(15, 18, 22, 0.45);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(var(--border), 0.06);
-    border-radius: 1rem;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+  [data-theme='light'] .glass {
+    background: rgba(255, 255, 255, 0.35);
+    border-color: rgba(var(--border), 0.04);
   }
 
-  /* glass-card — cards, dialog panels, settings panels */
+  /* glass-card — elevated container, 1px subtle border, inset highlight, no outer shadow */
   .glass-card {
-    background: rgba(20, 24, 30, 0.65);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(var(--accent), 0.15);
-    border-top: 2px solid rgba(var(--accent), 0.45);
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background: rgba(20, 24, 30, 0.60);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(var(--accent), 0.08);
     border-radius: 1.25rem;
-    box-shadow: 
-      0 12px 40px 0 rgba(0, 0, 0, 0.3),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
   }
-
-  /* glass-elevated — modals, tooltips, dropdowns, overlays */
-  .glass-elevated {
-    background: rgba(8, 10, 12, 0.85);
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
-    border: 1px solid rgba(var(--accent), 0.25);
-    border-radius: 1rem;
-    box-shadow: 
-      0 24px 64px 0 rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
-  }
-
-  /* ── Light Mode Overrides ── */
-  [data-theme='light'] .glass-whisper {
-    background: rgba(255, 255, 255, 0.45);
-    border-color: rgba(var(--border), 0.06);
-  }
-
-  [data-theme='light'] .glass-surface {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: rgba(var(--border), 0.10);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.02);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-  }
-
   [data-theme='light'] .glass-card {
-    background: rgba(255, 255, 255, 0.3);
-    border-color: rgba(var(--border), 0.12);
-    border-top: 1px solid rgba(var(--border), 0.12) !important;
-    box-shadow: 
-      0 12px 40px 0 rgba(0, 0, 0, 0.03),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.4);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-  }
-
-  [data-theme='light'] .glass-elevated {
-    background: rgba(255, 255, 255, 0.88);
+    background: rgba(255, 255, 255, 0.35);
     border-color: rgba(var(--border), 0.10);
-    box-shadow: 
-      0 24px 64px 0 rgba(15, 23, 42, 0.08),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.4);
   }
 
   .shimmer-text {

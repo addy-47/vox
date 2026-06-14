@@ -26,7 +26,7 @@ export const WizardHeader: React.FC<WizardHeaderProps> = ({
           <div className="flex items-center gap-4 mb-4">
             <div className="h-[1px] w-8" style={{ backgroundColor: `${effectiveColor}4D` }} />
             <span className={cn(
-              "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-black tracking-[0.4em] uppercase glass-whisper"
+              "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-black tracking-[0.4em] uppercase glass"
             )} style={{ color: effectiveColor }}>
               {step}
             </span>

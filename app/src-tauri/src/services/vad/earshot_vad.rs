@@ -1,6 +1,6 @@
+use crate::services::traits;
 use anyhow::Result;
 use earshot::Detector;
-use crate::services::traits;
 
 /// Earshot VAD Engine — pure Rust, no ONNX Runtime dependency.
 ///
@@ -20,7 +20,7 @@ pub struct EarshotVadEngine {
     /// Earshot recommends 0.5 as a general-purpose default.
     /// Stored here so hot-updates are a free f32 write (no model reload).
     threshold: f32,
-    
+
     // Temporal state machine variables for debouncing voice triggers
     is_speech: bool,
     active_frames: usize,
@@ -34,13 +34,16 @@ impl EarshotVadEngine {
     /// - `threshold`: Voice probability threshold in [0.0, 1.0].
     ///   Earshot recommends `0.5`. Values above this are classified as speech.
     pub fn new(threshold: f32) -> Result<Self> {
-        log::info!("[VAD] Initializing Earshot VAD Engine (threshold={:.3}, pure-Rust, no ONNX)...", threshold);
+        log::info!(
+            "[VAD] Initializing Earshot VAD Engine (threshold={:.3}, pure-Rust, no ONNX)...",
+            threshold
+        );
         // `default_boxed()` creates the Detector directly on the heap,
         // avoiding an 8 KiB stack allocation before the Box move.
         let detector = Detector::default_boxed();
         log::info!("[VAD] Earshot VAD Engine ready (~8 KiB heap, ~110 KiB binary footprint).");
-        Ok(Self { 
-            detector, 
+        Ok(Self {
+            detector,
             threshold,
             is_speech: false,
             active_frames: 0,
@@ -52,7 +55,11 @@ impl EarshotVadEngine {
     ///
     /// Unlike TenVAD, this is a free f32 write — no ONNX detector re-creation needed.
     pub fn update_threshold(&mut self, threshold: f32) {
-        log::info!("[VAD/Earshot] Threshold updated: {:.3} → {:.3}", self.threshold, threshold);
+        log::info!(
+            "[VAD/Earshot] Threshold updated: {:.3} → {:.3}",
+            self.threshold,
+            threshold
+        );
         self.threshold = threshold;
     }
 
@@ -104,8 +111,9 @@ impl traits::VadEngine for EarshotVadEngine {
             if !self.is_speech && self.active_frames >= 15 {
                 self.is_speech = true;
                 log::debug!(
-                    "[VAD/Earshot] SPEECH START CONFIRMED (raw_score={:.4}, frames={})", 
-                    score, self.active_frames
+                    "[VAD/Earshot] SPEECH START CONFIRMED (raw_score={:.4}, frames={})",
+                    score,
+                    self.active_frames
                 );
             }
         } else {
@@ -114,8 +122,9 @@ impl traits::VadEngine for EarshotVadEngine {
             if self.is_speech && self.inactive_frames >= 40 {
                 self.is_speech = false;
                 log::debug!(
-                    "[VAD/Earshot] SILENCE CONFIRMED (raw_score={:.4}, frames={})", 
-                    score, self.inactive_frames
+                    "[VAD/Earshot] SILENCE CONFIRMED (raw_score={:.4}, frames={})",
+                    score,
+                    self.inactive_frames
                 );
             }
         }

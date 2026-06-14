@@ -116,8 +116,8 @@ export const WizardRoot: React.FC = () => {
       <AmbientBackground />
       <TitleBar />
       <div className="flex-1 flex relative overflow-hidden">
-        {/* Sidebar Navigation — glass-surface */}
-        <div className="w-[228px] glass-surface glass-base border-r border-[rgba(var(--accent),0.06)] flex flex-col p-6 z-10">
+        {/* Sidebar Navigation */}
+        <div className="w-[228px] glass border-r border-[rgba(var(--accent),0.06)] flex flex-col p-6 z-10">
           {/* Logo Area */}
           <div className="flex flex-col items-center justify-center mb-10 mt-4">
             <div className="relative group">
@@ -161,7 +161,7 @@ export const WizardRoot: React.FC = () => {
                       ? 'bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/50 shadow-[0_0_15px_rgba(var(--accent),0.2)]' 
                       : status === 'completed' 
                         ? 'bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/20' 
-                        : 'glass-whisper border-[rgba(var(--border),0.06)]'
+                        : 'glass border-[rgba(var(--border),0.06)]'
                   )}>
                     {status === 'completed' ? <CheckCircle2 className="w-4 h-4 text-[rgb(var(--accent))]" /> : 
                      React.cloneElement(s.icon as React.ReactElement<{ className?: string }>, { 
@@ -186,7 +186,7 @@ export const WizardRoot: React.FC = () => {
 
           {/* System Ready Badge */}
           <div className="mt-auto pt-6 border-t border-[rgba(var(--border),0.05)]">
-            <div className="flex items-center gap-2 px-3 py-2 glass-whisper">
+            <div className="flex items-center gap-2 px-3 py-2 glass">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] tracking-wider uppercase">System Ready</span>
             </div>

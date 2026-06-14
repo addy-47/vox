@@ -1,13 +1,13 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Emitter};
-use serde::{Serialize, Deserialize};
-use futures_util::StreamExt;
-use std::io::Write;
-use reqwest::Client;
-use std::path::Path;
-use sha2::{Sha256, Digest};
 use crate::setup::manifest::{ModelEntry, VerifiedMarker};
+use futures_util::StreamExt;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::io::Write;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -32,7 +32,7 @@ pub struct ModelSetupStatus {
 }
 
 /// Orchestrates model downloads, extraction, and verification.
-/// 
+///
 /// Implements Part 2 Directives:
 /// - No RAM buffering (Streaming only)
 /// - Backend owns state
@@ -59,7 +59,12 @@ impl ModelManager {
     }
 
     /// Sets up a model based on the manifest entry.
-    pub async fn setup_model(&self, entry: &ModelEntry, base_url: &str, models_dir: &Path) -> anyhow::Result<()> {
+    pub async fn setup_model(
+        &self,
+        entry: &ModelEntry,
+        base_url: &str,
+        models_dir: &Path,
+    ) -> anyhow::Result<()> {
         let model_id = &entry.id;
         let url = format!("{}/{}", base_url, entry.path);
         let dest_path = models_dir.join(&entry.path);
@@ -72,8 +77,18 @@ impl ModelManager {
         if verified_path.exists() {
             if let Ok(marker) = VerifiedMarker::load(&verified_path) {
                 if marker.sha256 == entry.sha256 && dest_path.exists() {
-                    log::info!("[ModelManager] Model {} already verified. Skipping setup.", model_id);
-                    self.emit_status(model_id, SetupStep::Completed, 100.0, entry.size_bytes, entry.size_bytes, None);
+                    log::info!(
+                        "[ModelManager] Model {} already verified. Skipping setup.",
+                        model_id
+                    );
+                    self.emit_status(
+                        model_id,
+                        SetupStep::Completed,
+                        100.0,
+                        entry.size_bytes,
+                        entry.size_bytes,
+                        None,
+                    );
                     return Ok(());
                 }
             }
@@ -88,40 +103,85 @@ impl ModelManager {
         }
 
         // ── 1. Download & Hash ───────────────────────────────────────────────
-        self.emit_status(model_id, SetupStep::Downloading, 0.0, 0, entry.size_bytes, None);
-        
+        self.emit_status(
+            model_id,
+            SetupStep::Downloading,
+            0.0,
+            0,
+            entry.size_bytes,
+            None,
+        );
+
         let temp_path = dest_path.with_extension("tmp");
-        let hash = match self.download_and_hash(model_id, &url, &temp_path, entry.size_bytes).await {
+        let hash = match self
+            .download_and_hash(model_id, &url, &temp_path, entry.size_bytes)
+            .await
+        {
             Ok(h) => h,
             Err(e) => {
-                let step = if self.cancel_flag.load(Ordering::Relaxed) { SetupStep::Cancelled } else { SetupStep::Failed };
-                self.emit_status(model_id, step, 0.0, 0, entry.size_bytes, Some(e.to_string()));
+                let step = if self.cancel_flag.load(Ordering::Relaxed) {
+                    SetupStep::Cancelled
+                } else {
+                    SetupStep::Failed
+                };
+                self.emit_status(
+                    model_id,
+                    step,
+                    0.0,
+                    0,
+                    entry.size_bytes,
+                    Some(e.to_string()),
+                );
                 let _ = std::fs::remove_file(&temp_path);
                 return Err(e);
             }
         };
 
         // ── 2. Verify Hash ───────────────────────────────────────────────────
-        self.emit_status(model_id, SetupStep::Verifying, 100.0, entry.size_bytes, entry.size_bytes, None);
+        self.emit_status(
+            model_id,
+            SetupStep::Verifying,
+            100.0,
+            entry.size_bytes,
+            entry.size_bytes,
+            None,
+        );
         if hash != entry.sha256 {
-            let mut err = format!("Hash mismatch for {}. Expected {}, got {}", model_id, entry.sha256, hash);
-            
+            let mut err = format!(
+                "Hash mismatch for {}. Expected {}, got {}",
+                model_id, entry.sha256, hash
+            );
+
             // Diagnostic: Check if we downloaded something large but the manifest hash is for a pointer
             if entry.size_bytes > 1024 && entry.sha256.len() == 64 {
                 log::warn!("[ModelManager] Hash mismatch detected. Diagnostic: If you are using Git LFS, ensure your models_manifest.json contains hashes of smudged files, not pointer files.");
                 err.push_str("\n\nTip: Manifest hash may be for an LFS pointer. Re-verify models_manifest.json.");
             }
 
-            self.emit_status(model_id, SetupStep::Failed, 100.0, entry.size_bytes, entry.size_bytes, Some(err.clone()));
+            self.emit_status(
+                model_id,
+                SetupStep::Failed,
+                100.0,
+                entry.size_bytes,
+                entry.size_bytes,
+                Some(err.clone()),
+            );
             let _ = std::fs::remove_file(&temp_path);
             return Err(anyhow::anyhow!(err));
         }
 
         // ── 3. Extract if needed ──────────────────────────────────────────────
         if let Some(ref archive_type) = entry.archive_type {
-            self.emit_status(model_id, SetupStep::Extracting, 100.0, entry.size_bytes, entry.size_bytes, None);
-            
-            // For archives, we extract into a directory. 
+            self.emit_status(
+                model_id,
+                SetupStep::Extracting,
+                100.0,
+                entry.size_bytes,
+                entry.size_bytes,
+                None,
+            );
+
+            // For archives, we extract into a directory.
             // Usually path in manifest is the directory or main file.
             let extract_dest = if entry.path.contains('/') {
                 models_dir.join(Path::new(&entry.path).parent().unwrap())
@@ -135,18 +195,33 @@ impl ModelManager {
 
             let extract_res = tauri::async_runtime::spawn_blocking(move || {
                 Self::do_extract(&temp_path_clone, &archive_type_clone, &extract_dest_clone)
-            }).await;
+            })
+            .await;
 
             match extract_res {
-                Ok(Ok(_)) => {},
+                Ok(Ok(_)) => {}
                 Ok(Err(e)) => {
-                    self.emit_status(model_id, SetupStep::Failed, 100.0, entry.size_bytes, entry.size_bytes, Some(e.to_string()));
+                    self.emit_status(
+                        model_id,
+                        SetupStep::Failed,
+                        100.0,
+                        entry.size_bytes,
+                        entry.size_bytes,
+                        Some(e.to_string()),
+                    );
                     let _ = std::fs::remove_file(&temp_path);
                     return Err(e);
                 }
                 Err(e) => {
                     let err = format!("Extraction task panicked: {}", e);
-                    self.emit_status(model_id, SetupStep::Failed, 100.0, entry.size_bytes, entry.size_bytes, Some(err.clone()));
+                    self.emit_status(
+                        model_id,
+                        SetupStep::Failed,
+                        100.0,
+                        entry.size_bytes,
+                        entry.size_bytes,
+                        Some(err.clone()),
+                    );
                     let _ = std::fs::remove_file(&temp_path);
                     return Err(anyhow::anyhow!(err));
                 }
@@ -168,16 +243,32 @@ impl ModelManager {
         };
         marker.save(&verified_path)?;
 
-        self.emit_status(model_id, SetupStep::Completed, 100.0, entry.size_bytes, entry.size_bytes, None);
+        self.emit_status(
+            model_id,
+            SetupStep::Completed,
+            100.0,
+            entry.size_bytes,
+            entry.size_bytes,
+            None,
+        );
         log::info!("[ModelManager] Setup completed for: {}", model_id);
 
         Ok(())
     }
 
-    async fn download_and_hash(&self, model_id: &str, url: &str, dest: &Path, expected_size: u64) -> anyhow::Result<String> {
+    async fn download_and_hash(
+        &self,
+        model_id: &str,
+        url: &str,
+        dest: &Path,
+        expected_size: u64,
+    ) -> anyhow::Result<String> {
         let response = self.client.get(url).send().await?;
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Server returned status {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Server returned status {}",
+                response.status()
+            ));
         }
 
         let mut file = std::fs::File::create(dest)?;
@@ -198,7 +289,14 @@ impl ModelManager {
 
             if last_emit.elapsed() > std::time::Duration::from_millis(150) {
                 let progress = (downloaded as f32 / expected_size as f32) * 100.0;
-                self.emit_status(model_id, SetupStep::Downloading, progress, downloaded, expected_size, None);
+                self.emit_status(
+                    model_id,
+                    SetupStep::Downloading,
+                    progress,
+                    downloaded,
+                    expected_size,
+                    None,
+                );
                 last_emit = std::time::Instant::now();
             }
         }
@@ -210,7 +308,7 @@ impl ModelManager {
 
     fn do_extract(archive_path: &Path, archive_type: &str, dest_dir: &Path) -> anyhow::Result<()> {
         let file = std::fs::File::open(archive_path)?;
-        
+
         match archive_type {
             "zip" => {
                 let mut archive = zip::ZipArchive::new(file)?;
@@ -221,31 +319,50 @@ impl ModelManager {
                 let mut archive = tar::Archive::new(tar_gz);
                 archive.unpack(dest_dir)?;
             }
-            _ => return Err(anyhow::anyhow!("Unsupported archive type: {}", archive_type)),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Unsupported archive type: {}",
+                    archive_type
+                ))
+            }
         }
         Ok(())
     }
 
-    fn emit_status(&self, model_id: &str, step: SetupStep, progress: f32, bytes: u64, total: u64, error: Option<String>) {
+    fn emit_status(
+        &self,
+        model_id: &str,
+        step: SetupStep,
+        progress: f32,
+        bytes: u64,
+        total: u64,
+        error: Option<String>,
+    ) {
         if let Some(app) = &self.app {
-            let _ = app.emit("model_setup_status", ModelSetupStatus {
-                model_id: model_id.to_string(),
-                step,
-                progress,
-                bytes_downloaded: bytes,
-                total_bytes: total,
-                error,
-            });
+            let _ = app.emit(
+                "model_setup_status",
+                ModelSetupStatus {
+                    model_id: model_id.to_string(),
+                    step,
+                    progress,
+                    bytes_downloaded: bytes,
+                    total_bytes: total,
+                    error,
+                },
+            );
         }
     }
 
     fn cleanup_old_versions(&self, model_id: &str, current_sha: &str, models_dir: &Path) {
-        log::info!("[ModelManager] Checking for old versions of model: {}", model_id);
-        
+        log::info!(
+            "[ModelManager] Checking for old versions of model: {}",
+            model_id
+        );
+
         let walk_dir = |dir: &Path| -> Vec<std::path::PathBuf> {
             let mut verified_files = Vec::new();
             let mut stack = vec![dir.to_path_buf()];
-            
+
             while let Some(current_dir) = stack.pop() {
                 if let Ok(entries) = std::fs::read_dir(current_dir) {
                     for entry in entries.flatten() {
@@ -263,15 +380,17 @@ impl ModelManager {
 
         for verified_path in walk_dir(models_dir) {
             if let Ok(marker) = VerifiedMarker::load(&verified_path) {
-                let matches_id = marker.model_id.as_ref().map_or(false, |id| id == model_id) || 
-                    verified_path.file_stem().map_or(false, |stem| stem == model_id); // fallback to filename match
-                
+                let matches_id = marker.model_id.as_ref().map_or(false, |id| id == model_id)
+                    || verified_path
+                        .file_stem()
+                        .map_or(false, |stem| stem == model_id); // fallback to filename match
+
                 if matches_id && marker.sha256 != current_sha {
                     log::info!(
                         "[ModelManager] Found outdated model version. Deleting files for: {} (Old Hash: {})", 
                         model_id, marker.sha256
                     );
-                    
+
                     let model_file_path = verified_path.with_extension("");
                     if model_file_path.exists() {
                         if model_file_path.is_dir() {

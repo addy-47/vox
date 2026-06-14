@@ -17,7 +17,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   return (
     <div
       className={cn(
-        elevated ? "glass-elevated glass-base" : "glass-card glass-base",
+        elevated ? "glass-card" : "glass",
         "rounded-xl transition-all duration-400 ease-in-out",
         blur === "sm" && "backdrop-blur-sm",
         blur === "md" && "backdrop-blur-md",

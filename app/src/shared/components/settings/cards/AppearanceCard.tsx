@@ -24,7 +24,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
         isSmall
           ? "w-full bg-transparent p-0"
           : cn(
-              "w-full glass-card glass-base p-5",
+              "w-full glass-card p-5",
               layoutMode === "full-min" ? "lg:w-[240px] xl:w-[280px] 2xl:w-[320px]" : "lg:w-[320px]"
             )
       )}
@@ -33,7 +33,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
       <div className="flex items-center justify-between mb-4 shrink-0">
         {!isSmall ? (
           <div className="flex items-center gap-2">
-            <Palette className="text-[rgb(var(--accent))]" size={16} />
+            <Palette className="text-[rgb(var(--accent))]" size={20} />
             <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
               Appearance
             </span>
@@ -54,19 +54,19 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
               className={cn(
                 "p-1.5 rounded-lg transition-all duration-300",
                 ui.theme === t.id
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-md"
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                   : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
               )}
               aria-label={`Switch to ${t.id} theme`}
             >
-              <t.icon size={13} />
+              <t.icon size={16} />
             </button>
           ))}
         </div>
       </div>
 
       {/* HexColorPicker filling card width */}
-      <div className={cn("flex-1 flex items-center justify-center py-1", isMin ? "min-h-[125px]" : "min-h-[180px]")}>
+      <div className="flex-1 flex items-center justify-center py-1 min-h-[180px]">
         <div className={cn("w-full flex justify-center", !isMin && "custom-color-picker-v2")}>
           <HexColorPicker
             color={ui.accent_seed}
@@ -74,7 +74,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
             className={cn("custom-color-picker", isMin && "custom-color-picker-min")}
             style={{ 
               width: "100%", 
-              height: isMin ? "115px" : (isSmall ? "150px" : "140px") 
+              height: isSmall ? "165px" : "155px" 
             }}
           />
         </div>

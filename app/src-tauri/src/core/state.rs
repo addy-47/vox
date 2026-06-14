@@ -1,11 +1,11 @@
 // use tauri::AppHandle;
-use tokio::sync::Mutex;
-use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use crate::core::settings::VoxSettings;
 use crate::services::audio::AudioStream;
 use crate::services::stt::SttCommand;
-use crate::core::settings::VoxSettings;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub enum InteractionOwner {
@@ -72,6 +72,10 @@ pub enum VadCommand {
     UpdateAudioMode(crate::core::settings::AudioOutputMode),
     /// Gracefully shutdown the VAD worker.
     Shutdown,
+    /// Enable realtime S2S audio routing.
+    StartRealtime(tokio::sync::mpsc::UnboundedSender<Vec<i16>>),
+    /// Disable realtime S2S audio routing.
+    StopRealtime,
 }
 
 // ─── VoxEngine ────────────────────────────────────────────────────────────────
@@ -94,10 +98,10 @@ pub struct VoxEngine {
 // ─── PttState ─────────────────────────────────────────────────────────────────
 
 pub struct PttState {
-    pub is_recording:           std::sync::atomic::AtomicBool,
-    pub turn_id:                Arc<AtomicU32>,
-    pub audio_buffer:           std::sync::Mutex<Vec<f32>>,
-    pub samples_since_partial:  std::sync::atomic::AtomicUsize,
+    pub is_recording: std::sync::atomic::AtomicBool,
+    pub turn_id: Arc<AtomicU32>,
+    pub audio_buffer: std::sync::Mutex<Vec<f32>>,
+    pub samples_since_partial: std::sync::atomic::AtomicUsize,
     pub samples_since_waveform: std::sync::atomic::AtomicUsize,
 }
 
@@ -109,23 +113,23 @@ pub struct PttState {
 /// execute in blocking C++ loops that cannot be interrupted via Rust async primitives.
 pub struct PipelineAtomics {
     /// Set to `true` to abort the current LLM + TTS + Playback turn immediately.
-    pub cancel_flag:     Arc<AtomicBool>,
+    pub cancel_flag: Arc<AtomicBool>,
     /// `true` while the CPAL output stream is actively draining audio.
     /// In Speaker mode, the VAD loop drops mic frames while this is set.
     pub playback_active: Arc<AtomicBool>,
     /// `true` while the LLM worker is generating tokens.
-    pub llm_generating:  Arc<AtomicBool>,
+    pub llm_generating: Arc<AtomicBool>,
     /// `true` while the TTS worker is synthesizing audio.
-    pub tts_generating:  Arc<AtomicBool>,
+    pub tts_generating: Arc<AtomicBool>,
     /// Monotonically increasing turn counter. Increments on every TranscriptFinal.
     /// Used to reject stale pipeline events. NEVER persisted.
     /// Persistence identity is AppState::conversation_id.
-    pub turn_id:      Arc<AtomicU32>,
+    pub turn_id: Arc<AtomicU32>,
     /// Current interaction state (Idle, Listening, etc.)
-    pub state:           Arc<std::sync::Mutex<InteractionState>>,
+    pub state: Arc<std::sync::Mutex<InteractionState>>,
     /// `true` if the main application is "engaged" (active interaction).
     /// If false, the pipeline remains in a dormant, STT-only state.
-    pub is_engaged:      Arc<AtomicBool>,
+    pub is_engaged: Arc<AtomicBool>,
     /// In-memory history of recent transcripts. Bridge to Phase 6.3 persistence.
     pub transcript_history: Arc<std::sync::Mutex<VecDeque<String>>>,
     /// Track playback underruns for monitoring.
@@ -142,33 +146,48 @@ pub struct PipelineAtomics {
 impl PipelineAtomics {
     pub fn new() -> Self {
         Self {
-            cancel_flag:        Arc::new(AtomicBool::new(false)),
-            playback_active:    Arc::new(AtomicBool::new(false)),
-            llm_generating:     Arc::new(AtomicBool::new(false)),
-            tts_generating:     Arc::new(AtomicBool::new(false)),
-            turn_id:            Arc::new(AtomicU32::new(0)),
-            state:              Arc::new(std::sync::Mutex::new(InteractionState::Idle)),
-            is_engaged:         Arc::new(AtomicBool::new(false)),
-            transcript_history: Arc::new(std::sync::Mutex::new(
-                VecDeque::with_capacity(crate::core::constants::TRANSCRIPT_HISTORY_LIMIT)
-            )),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            playback_active: Arc::new(AtomicBool::new(false)),
+            llm_generating: Arc::new(AtomicBool::new(false)),
+            tts_generating: Arc::new(AtomicBool::new(false)),
+            turn_id: Arc::new(AtomicU32::new(0)),
+            state: Arc::new(std::sync::Mutex::new(InteractionState::Idle)),
+            is_engaged: Arc::new(AtomicBool::new(false)),
+            transcript_history: Arc::new(std::sync::Mutex::new(VecDeque::with_capacity(
+                crate::core::constants::TRANSCRIPT_HISTORY_LIMIT,
+            ))),
             playback_underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             is_assistant_speaking: Arc::new(AtomicBool::new(false)),
-            current_state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(InteractionState::Idle as u32)),
-            engine_shutdown:    Arc::new(AtomicBool::new(false)),
+            current_state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
+                InteractionState::Idle as u32,
+            )),
+            engine_shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Update internal state and emit IPC event to the **owning** window only.
-    pub fn update_interaction_state(&self, new_state: InteractionState, owner: InteractionOwner, app_handle: &tauri::AppHandle) {
+    pub fn update_interaction_state(
+        &self,
+        new_state: InteractionState,
+        owner: InteractionOwner,
+        app_handle: &tauri::AppHandle,
+    ) {
         let mut state_lock = self.state.lock().unwrap();
         if *state_lock != new_state {
-            log::debug!("[Pipeline] State changed -> {:?} (Owner: {:?})", new_state, owner);
+            log::debug!(
+                "[Pipeline] State changed -> {:?} (Owner: {:?})",
+                new_state,
+                owner
+            );
             *state_lock = new_state;
 
             // Update atomic flags for lock-free access in monitoring and audio callback
-            self.is_assistant_speaking.store(new_state == InteractionState::AssistantSpeaking, Ordering::Relaxed);
-            self.current_state_atomic.store(new_state as u32, Ordering::Relaxed);
+            self.is_assistant_speaking.store(
+                new_state == InteractionState::AssistantSpeaking,
+                Ordering::Relaxed,
+            );
+            self.current_state_atomic
+                .store(new_state as u32, Ordering::Relaxed);
 
             let target = match owner {
                 InteractionOwner::Tray => "tray",
@@ -183,9 +202,10 @@ impl PipelineAtomics {
 // ─── AppState ─────────────────────────────────────────────────────────────────
 
 pub struct AppState {
-    pub engine:        Mutex<Option<VoxEngine>>,
-    pub owner:         Arc<AtomicU32>,
-    pub hud_visible:   Mutex<bool>,
+    pub engine: Mutex<Option<VoxEngine>>,
+    pub realtime_engine: Mutex<Option<crate::services::realtime::engine::RealtimeEngine>>,
+    pub owner: Arc<AtomicU32>,
+    pub hud_visible: Mutex<bool>,
 
     /// Settings protected by RwLock for concurrent read access.
     ///
@@ -194,26 +214,26 @@ pub struct AppState {
     /// - NO real-time thread (VAD, STT, LLM, TTS, Playback callback) may call `read()` on the hot path
     /// - Hot-path settings (VAD threshold, noise gate) are snapshotted into worker-local variables
     ///   at startup and updated via `VadCommand` / other worker channels on change
-    pub settings:      Arc<RwLock<VoxSettings>>,
+    pub settings: Arc<RwLock<VoxSettings>>,
 
     pub hud_menu_item: Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>,
-    pub ptt:           PttState,
+    pub ptt: PttState,
 
     /// Phase 4: shared pipeline cancellation and status atomics.
-    pub pipeline:      PipelineAtomics,
+    pub pipeline: PipelineAtomics,
 
     /// Debounce handle for settings disk writes.
     /// Cancelled and respawned on each `update_setting` IPC call.
     pub save_debounce: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 
     /// Async log writer guard. Must be held to ensure logs are flushed.
-    pub _log_guard:    Option<tracing_appender::non_blocking::WorkerGuard>,
+    pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
     /// Structured telemetry bus (crossbeam — lock-free, safe for hot-path threads).
-    pub telemetry_tx:  crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
+    pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
     /// Long-lived conversation session ID. 0 = no active session (Tray mode).
     /// Created on Engage, destroyed on Disengage. Persistence worker ignores events with id == 0.
     pub conversation_id: Arc<AtomicU64>,
-    
+
     /// Latest VAD characteristics for monitoring (Atomic f32 via bit storage).
     pub latest_energy: Arc<AtomicU32>,
     pub latest_vad_prob: Arc<AtomicU32>,
@@ -245,14 +265,16 @@ pub struct AppState {
     pub runtime_status: Arc<std::sync::atomic::AtomicU32>, // RuntimeStatus as u32
 
     /// Persistence worker channel. None if persistence is disabled or hibernating.
-    pub persist_tx: std::sync::Mutex<Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>>,
+    pub persist_tx: std::sync::Mutex<
+        Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
+    >,
     /// Track dropped persistence events for monitoring.
     pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
     /// Track dropped telemetry events to prevent I/O blocking on hot-paths.
     pub dropped_telemetry_events: Arc<std::sync::atomic::AtomicU64>,
     /// Monitoring state (snapshots + history).
     pub monitoring: Arc<crate::monitoring::runtime_state::MonitoringState>,
-    
+
     /// Phase 7 Setup
     pub model_manager: Arc<crate::setup::model_manager::ModelManager>,
     pub manifest: Arc<tokio::sync::RwLock<Option<crate::setup::manifest::VoxManifest>>>,
@@ -297,31 +319,32 @@ impl AppState {
         let settings = VoxSettings::load();
         is_private_mode.store(settings.persistence.private_mode, Ordering::Relaxed);
 
-        let model_manager = Arc::new(crate::setup::model_manager::ModelManager::new(Some(app_handle.clone())));
+        let model_manager = Arc::new(crate::setup::model_manager::ModelManager::new(Some(
+            app_handle.clone(),
+        )));
         let manifest = Arc::new(tokio::sync::RwLock::new(None));
 
         Self {
-            engine:        Mutex::new(None),
-            owner:         Arc::new(AtomicU32::new(
-                if settings.setup.completed {
-                    InteractionOwner::Tray as u32
-                } else {
-                    InteractionOwner::Wizard as u32
-                }
-            )),
-            hud_visible:   Mutex::new(true),
-            settings:      Arc::new(RwLock::new(settings)),
+            engine: Mutex::new(None),
+            realtime_engine: Mutex::new(None),
+            owner: Arc::new(AtomicU32::new(if settings.setup.completed {
+                InteractionOwner::Tray as u32
+            } else {
+                InteractionOwner::Wizard as u32
+            })),
+            hud_visible: Mutex::new(true),
+            settings: Arc::new(RwLock::new(settings)),
             hud_menu_item: Mutex::new(None),
             ptt: PttState {
-                is_recording:           std::sync::atomic::AtomicBool::new(false),
-                turn_id:                Arc::new(AtomicU32::new(0)),
-                audio_buffer:           std::sync::Mutex::new(Vec::new()),
-                samples_since_partial:  std::sync::atomic::AtomicUsize::new(0),
+                is_recording: std::sync::atomic::AtomicBool::new(false),
+                turn_id: Arc::new(AtomicU32::new(0)),
+                audio_buffer: std::sync::Mutex::new(Vec::new()),
+                samples_since_partial: std::sync::atomic::AtomicUsize::new(0),
                 samples_since_waveform: std::sync::atomic::AtomicUsize::new(0),
             },
-            pipeline:      PipelineAtomics::new(),
+            pipeline: PipelineAtomics::new(),
             save_debounce: Mutex::new(None),
-            _log_guard:    log_guard,
+            _log_guard: log_guard,
             telemetry_tx,
             conversation_id: Arc::new(AtomicU64::new(0)),
             latest_energy,

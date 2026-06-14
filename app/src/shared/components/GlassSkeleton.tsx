@@ -25,7 +25,7 @@ export const GlassSkeleton: React.FC<GlassSkeletonProps> = ({
     return (
       <div className={cn('flex items-center justify-center', className)}>
         <div className={cn(
-          'glass-whisper glass-base rounded-full',
+          'glass rounded-full',
           width || 'w-10 h-10',
           !noPulse && 'animate-pulse'
         )} />
@@ -35,10 +35,10 @@ export const GlassSkeleton: React.FC<GlassSkeletonProps> = ({
 
   if (variant === 'card') {
     return (
-      <div className={cn('glass-whisper glass-base p-5 space-y-4', !noPulse && 'animate-pulse', className)}>
-        <div className="h-3 glass-whisper rounded w-1/4" />
-        <div className="h-4 glass-whisper rounded w-3/4" />
-        <div className="h-3 glass-whisper rounded w-1/2" />
+      <div className={cn('glass p-5 space-y-4', !noPulse && 'animate-pulse', className)}>
+        <div className="h-3 glass rounded w-1/4" />
+        <div className="h-4 glass rounded w-3/4" />
+        <div className="h-3 glass rounded w-1/2" />
       </div>
     );
   }
@@ -50,7 +50,7 @@ export const GlassSkeleton: React.FC<GlassSkeletonProps> = ({
         <div
           key={i}
           className={cn(
-            'h-3 glass-whisper rounded',
+            'h-3 glass rounded',
             !noPulse && 'animate-pulse',
             width || (i === lines - 1 ? 'w-3/4' : 'w-full')
           )}

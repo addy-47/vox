@@ -20,7 +20,7 @@ export const StatusCard: React.FC<StatusCardProps> = ({
   loading 
 }) => (
   <div className={cn(
-    "glass-whisper glass-base px-5 py-5 group transition-all duration-500 hover:bg-white/[0.06] relative overflow-hidden",
+    "glass px-5 py-5 group transition-all duration-500 hover:bg-white/[0.06] relative overflow-hidden",
     loading && "opacity-70"
   )}>
     {/* Subtle Loading Bar */}

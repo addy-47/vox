@@ -7,7 +7,7 @@ use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::metrics::{MetricField, PipelineMetrics};
 use vox_lib::core::state::InteractionOwner;
-use vox_lib::services::llm::{LlmProvider, EmbeddedProvider, OpenAiCompatProvider};
+use vox_lib::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
 use vox_lib::services::traits::VadEngine as _;
 use vox_lib::services::utils::{count_words, is_devanagari, should_flush, transliterate_if_hi};
 use vox_lib::services::vad::ten_onnx::VadEngine;
@@ -101,7 +101,7 @@ fn main() -> anyhow::Result<()> {
     // Default prompt for KV cache warmup (English — no text to detect language from yet)
     let system_prompt = args
         .prompt
-        .unwrap_or_else(|| vox_lib::core::constants::SYSTEM_PROMPT_EN.to_string());
+        .unwrap_or_else(|| vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.replace("<lang>", "English").replace("<script>", "Latin"));
 
     // 3. Load Models Sequentially (to avoid ONNX environment conflicts and improve memory tracking)
     println!("\x1b[32m[Bench]\x1b[0m Loading STT ({})...", args.asr);
@@ -137,13 +137,21 @@ fn main() -> anyhow::Result<()> {
             "\x1b[32m[Bench]\x1b[0m Using OpenAiCompat provider at {} with model {}...",
             args.llm_url, args.llm_model
         );
-        Box::new(OpenAiCompatProvider::new(&args.llm_url, &args.llm_model, None, None))
+        Box::new(OpenAiCompatProvider::new(
+            &args.llm_url,
+            &args.llm_model,
+            None,
+            None,
+        ))
     } else {
         let llm_filename = args
             .llm
             .clone()
             .unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string());
-        println!("\x1b[32m[Bench]\x1b[0m Loading Embedded LLM ({})...", llm_filename);
+        println!(
+            "\x1b[32m[Bench]\x1b[0m Loading Embedded LLM ({})...",
+            llm_filename
+        );
         let total_cores = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
@@ -434,9 +442,9 @@ fn main() -> anyhow::Result<()> {
 
                     // Language detection: route to Hindi or English prompt (mirrors real pipeline)
                     let base_prompt = if is_devanagari(&text) {
-                        vox_lib::core::constants::SYSTEM_PROMPT_HI.to_string()
+                        vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.replace("<lang>", "Hindi").replace("<script>", "Devanagari")
                     } else {
-                        vox_lib::core::constants::SYSTEM_PROMPT_EN.to_string()
+                        vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.replace("<lang>", "English").replace("<script>", "Latin")
                     };
                     // Inject expression tag instructions (Supertonic supports <laugh>, <breath>, <sigh>)
                     let prompt = format!(

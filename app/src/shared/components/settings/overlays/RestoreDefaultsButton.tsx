@@ -26,17 +26,17 @@ export const RestoreDefaultsButton = memo(() => {
     <button
       onClick={handleRestore}
       className={cn(
-        "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer shadow-lg shadow-[rgba(var(--accent),0.06)] dark:shadow-[rgba(0,0,0,0.3)] relative group",
+        "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer relative group",
         isConfirming
           ? "border-red-500 bg-red-500/20 text-red-500 shadow-[0_0_18px_rgba(239,68,68,0.3)] animate-[pulse_1.5s_infinite]"
-          : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-black/35 dark:border-[rgba(var(--accent),0.35)] hover:bg-[rgb(var(--accent))]/20"
+          : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-[rgba(var(--foreground),0.12)] dark:border-[rgba(var(--accent),0.35)] hover:bg-[rgb(var(--accent))]/20"
       )}
       aria-label={isConfirming ? "Confirm restore defaults" : "Restore default settings"}
     >
       {isConfirming ? (
-        <AlertTriangle size={18} className="animate-bounce" />
+        <AlertTriangle size={22} className="animate-bounce" />
       ) : (
-        <RotateCcw size={18} className="group-hover:rotate-45 transition-transform duration-300" />
+        <RotateCcw size={22} className="group-hover:rotate-45 transition-transform duration-300" />
       )}
       {/* Tooltip */}
       <div 

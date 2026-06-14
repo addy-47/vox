@@ -1,37 +1,45 @@
 pub mod core;
-pub mod services;
-pub mod tray;
 pub mod ipc;
-pub mod utils;
-pub mod persistence;
 pub mod monitoring;
+pub mod persistence;
+pub mod services;
 pub mod setup;
+pub mod tray;
+pub mod utils;
 pub mod wizard;
 
 use crate::core::state::AppState;
-use crate::ipc::pipeline::{check_engine_status, launch_engine, stop_engine, engage, test_clip, test_clip_cancel};
-use crate::ipc::tray::{
-    hide_tray_window, sync_hud_visibility, set_hud_ignore_cursor, 
-    update_interaction_mode, show_main_window, toggle_hud_visibility
+use crate::ipc::history::{
+    commit_session_to_history, delete_session, get_sessions, get_transcript_history, get_turns,
 };
-use crate::ipc::history::{get_transcript_history, commit_session_to_history, get_sessions, get_turns, delete_session};
-use crate::ipc::settings::{get_settings, update_theme, update_setting, reset_settings, request_boot_state, request_model_catalog, check_llm_provider_health, list_remote_llm_models};
-use crate::services::ptt::{ptt_start, ptt_stop, ptt_cancel};
+use crate::ipc::pipeline::{
+    check_engine_status, engage, launch_engine, start_realtime_session, stop_engine,
+    stop_realtime_session, test_clip, test_clip_cancel,
+};
+use crate::ipc::settings::{
+    check_llm_provider_health, get_settings, list_remote_llm_models, request_boot_state,
+    request_model_catalog, reset_settings, update_setting, update_theme,
+};
+use crate::ipc::tray::{
+    hide_tray_window, set_hud_ignore_cursor, show_main_window, sync_hud_visibility,
+    toggle_hud_visibility, update_interaction_mode,
+};
+use crate::services::ptt::{ptt_cancel, ptt_start, ptt_stop};
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
-use crate::tray::{setup_tray_window, position_tray_window};
+use crate::tray::{position_tray_window, setup_tray_window};
 
 use crate::monitoring::system_monitor::spawn_system_monitor;
 
 use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, State, Emitter};
+use tauri::{Emitter, Manager, State};
 
 // ─── App Entry Point ─────────────────────────────────────────────────────────
 
 /// Main entry point for the Vox application.
-/// 
-/// Sets up tray icon, menu events, window management, and auto-launches the 
+///
+/// Sets up tray icon, menu events, window management, and auto-launches the
 /// engine on startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -398,6 +406,8 @@ pub fn run() {
             engage,
             test_clip,
             test_clip_cancel,
+            start_realtime_session,
+            stop_realtime_session,
             hide_tray_window,
             sync_hud_visibility,
             set_hud_ignore_cursor,

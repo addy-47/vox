@@ -21,26 +21,26 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
 
-  // Handle bidirectional viewport transition for Monitoring (mobile page <-> desktop popover)
+  // Bidirectional viewport transition: compact (EdgeNav route) ↔ full-max (corner popover)
   useEffect(() => {
-    let wasMobile = window.innerWidth < 768;
+    let wasCompact = window.innerWidth < 1024;
 
     const handleResize = () => {
-      const isMobile = window.innerWidth < 768;
-      if (wasMobile && !isMobile) {
-        // Mobile -> Desktop transition: switch from page route to popover panel
+      const isCompact = window.innerWidth < 1024;
+      if (wasCompact && !isCompact) {
+        // Compact → Full-max: switch from route page to popover
         if (location.pathname === "/monitoring") {
           navigate("/", { replace: true });
           setMonitorOpen(true);
         }
-      } else if (!wasMobile && isMobile) {
-        // Desktop -> Mobile transition: switch from popover panel to page route
+      } else if (!wasCompact && isCompact) {
+        // Full-max → Compact: switch from popover to route page
         if (monitorOpen) {
           setMonitorOpen(false);
           navigate("/monitoring");
         }
       }
-      wasMobile = isMobile;
+      wasCompact = isCompact;
     };
 
     window.addEventListener("resize", handleResize);
@@ -86,27 +86,27 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         <EdgeNav />
 
         {/* ── Engine Monitor Area — bottom-left ───────────────────────────── */}
-        <div className="hidden md:flex fixed bottom-4 left-4 z-50 items-center gap-2.5">
+        <div className="hidden lg:flex fixed bottom-4 left-4 z-50 items-center gap-2.5">
           {/* Monitor toggle button */}
           <button
             ref={monitorBtnRef}
             onClick={() => setMonitorOpen((v) => !v)}
             className={cn(
-              "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer shadow-lg shadow-[rgba(var(--accent),0.06)] dark:shadow-[rgba(0,0,0,0.3)]",
+              "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer glass-card",
               monitorOpen
-                ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))] shadow-[0_0_18px_rgba(var(--accent),0.2)]"
-                : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-black/35 dark:border-[rgba(var(--accent),0.35)] hover:bg-[rgb(var(--accent))]/20"
+                ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
+                : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
             )}
             aria-label="Engine Monitor"
             aria-expanded={monitorOpen}
             aria-haspopup="dialog"
           >
-            <Activity size={18} strokeWidth={2} />
+            <Activity size={24} strokeWidth={2} />
           </button>
 
           {/* Mini footprint HUD — CPU% · RAM MB */}
           {isReady && (
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 leading-none select-none tabular-nums pointer-events-none">
+            <span className="text-[14px] font-mono text-[rgb(var(--foreground-muted))]/80 leading-none select-none tabular-nums pointer-events-none">
               {voxCpu.toFixed(1)}% · {Math.round(voxRam)} MB
             </span>
           )}
@@ -121,9 +121,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
         {isSettings && (
-          <div className="hidden lg:flex fixed bottom-4 right-4 z-50 items-center gap-3 px-4 py-2.5 bg-transparent border-transparent shadow-none h-[44px]">
+          <div className="hidden lg:flex fixed bottom-4 right-4 z-50 items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2.5 bg-transparent border-transparent shadow-none max-w-[calc(100vw-320px)]">
             <ModelStatusOverlay />
-            <div className="w-px h-4 bg-[rgba(var(--accent),0.15)] mx-1" />
+            <div className="w-px h-4 bg-[rgba(var(--accent),0.15)] shrink-0" />
             <RestoreDefaultsButton />
           </div>
         )}
@@ -139,7 +139,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             width: "100%",
           }}
         >
-          <div className="h-full w-full overflow-hidden flex flex-col pb-[80px]">
+          <div className="h-full w-full overflow-hidden flex flex-col">
             {children || <Outlet />}
           </div>
         </main>
