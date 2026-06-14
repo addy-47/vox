@@ -24,7 +24,7 @@ pub trait RealtimeVoiceProvider: Send + Sync {
     fn connect(
         &self,
         interaction_mode: crate::core::settings::InteractionMode,
-        playback_tx: UnboundedSender<Vec<i16>>,
+        playback_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
         event_tx: Sender<VoxEvent>,
     ) -> Result<Box<dyn RealtimeSession>>;
     fn health_check(&self) -> bool;
@@ -36,4 +36,10 @@ pub trait RealtimeSession: Send + Sync {
     fn disconnect(&self) -> Result<()>;
     fn activity_start(&self) -> Result<()>;
     fn activity_end(&self) -> Result<()>;
+    fn is_connected(&self) -> bool {
+        true
+    }
+    fn last_activity_time(&self) -> u64 {
+        0
+    }
 }

@@ -1,19 +1,14 @@
 use crate::services::realtime::{resampler::AudioResampler, RealtimeAudioConfig, RealtimeSession};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{channel, Sender};
 
 pub struct AudioBridge {
-    tx: Option<UnboundedSender<Vec<i16>>>,
-    queue_depth: Arc<AtomicUsize>,
+    tx: Option<Sender<Vec<i16>>>,
 }
 
 impl AudioBridge {
     pub fn new() -> Self {
-        Self {
-            tx: None,
-            queue_depth: Arc::new(AtomicUsize::new(0)),
-        }
+        Self { tx: None }
     }
 
     pub fn start(
@@ -22,10 +17,8 @@ impl AudioBridge {
         config: RealtimeAudioConfig,
         handle: &tokio::runtime::Handle,
     ) {
-        let (tx, mut rx) = unbounded_channel::<Vec<i16>>();
+        let (tx, mut rx) = channel::<Vec<i16>>(100);
         self.tx = Some(tx);
-        self.queue_depth.store(0, Ordering::SeqCst);
-        let queue_depth = self.queue_depth.clone();
 
         handle.spawn(async move {
             let mut resampler = if config.requires_input_resampling {
@@ -41,8 +34,6 @@ impl AudioBridge {
             };
 
             while let Some(pcm) = rx.recv().await {
-                queue_depth.fetch_sub(1, Ordering::SeqCst);
-
                 let resampled = if let Some(ref mut r) = resampler {
                     match r.process_i16(&pcm) {
                         Ok(out) => out,
@@ -65,32 +56,31 @@ impl AudioBridge {
 
     pub fn stop(&mut self) {
         self.tx = None;
-        self.queue_depth.store(0, Ordering::SeqCst);
     }
 
-    pub fn get_sender(&self) -> Option<UnboundedSender<Vec<i16>>> {
+    pub fn get_sender(&self) -> Option<Sender<Vec<i16>>> {
         self.tx.clone()
     }
 
     pub fn send_pcm(&self, samples: &[i16]) {
         if let Some(ref tx) = self.tx {
-            let depth = self.queue_depth.load(Ordering::SeqCst);
-            if depth > 100 {
-                static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
-                let prev = DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-                if prev % 100 == 0 {
-                    log::warn!(
-                        "[AudioBridge] Queue depth is {}, dropping input audio chunk. Dropped {} chunks so far.",
-                        depth,
-                        prev + 1
-                    );
+            if let Err(e) = tx.try_send(samples.to_vec()) {
+                match e {
+                    tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                        static DROP_COUNT: std::sync::atomic::AtomicUsize =
+                            std::sync::atomic::AtomicUsize::new(0);
+                        let prev = DROP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if prev % 100 == 0 {
+                            log::warn!(
+                                "[AudioBridge] Channel buffer full, dropping input audio chunk. Dropped {} chunks so far.",
+                                prev + 1
+                            );
+                        }
+                    }
+                    tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                        log::debug!("[AudioBridge] Channel closed.");
+                    }
                 }
-                return;
-            }
-
-            self.queue_depth.fetch_add(1, Ordering::SeqCst);
-            if let Err(_) = tx.send(samples.to_vec()) {
-                self.queue_depth.fetch_sub(1, Ordering::SeqCst);
             }
         }
     }

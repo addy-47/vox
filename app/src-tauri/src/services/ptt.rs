@@ -27,16 +27,12 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
     };
 
     let turn = {
-        let mut buffer = state.ptt.audio_buffer.lock().unwrap();
-
         // Sync PTT turn with global pipeline turn
         let current_global = state.pipeline.turn_id.load(Ordering::Relaxed);
         state.ptt.turn_id.store(current_global, Ordering::Relaxed);
         let turn = current_global;
 
-        buffer.clear();
-        state.ptt.samples_since_partial.store(0, Ordering::Relaxed);
-        state.ptt.samples_since_waveform.store(0, Ordering::Relaxed);
+        reset_ptt_state_inner(&state.ptt);
         turn
     };
 
@@ -94,11 +90,37 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
 pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    let (turn, owner, buffer_clone, is_realtime) = {
-        if !state.ptt.is_recording.load(Ordering::SeqCst) {
-            return Ok(());
-        }
+    if !state.ptt.is_recording.load(Ordering::SeqCst) {
+        return Ok(());
+    }
 
+    let speech_detected = state.ptt.speech_detected.load(Ordering::Relaxed);
+    let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+    let target = match owner {
+        crate::core::state::InteractionOwner::Tray => "tray",
+        crate::core::state::InteractionOwner::MainWindow
+        | crate::core::state::InteractionOwner::Ptt => "main",
+        crate::core::state::InteractionOwner::Wizard => "wizard",
+    };
+
+    if !speech_detected {
+        log::info!("[PTT] Silence only detected. Discarding PTT hold.");
+        discard_ptt_hold_inner(&state.ptt);
+
+        let _ = app.emit_to(
+            target,
+            "ptt_status",
+            json!({ "state": "IDLE" }),
+        );
+        state.pipeline.update_interaction_state(
+            crate::core::state::InteractionState::Idle,
+            owner,
+            &app,
+        );
+        return Ok(());
+    }
+
+    let (turn, buffer_clone, is_realtime) = {
         let buffer = state.ptt.audio_buffer.lock().unwrap();
         let turn = state.ptt.turn_id.load(Ordering::Relaxed);
 
@@ -112,10 +134,7 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
             "[PTT] <<< Recording stopped. Finalizing {} samples...",
             buffer.len()
         );
-
-        let owner: crate::core::state::InteractionOwner =
-            state.owner.load(Ordering::Relaxed).into();
-        (turn, owner, buffer.clone(), is_realtime)
+        (turn, buffer.clone(), is_realtime)
     };
 
     // Determine the owning window target
@@ -236,6 +255,20 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
     };
 
     if is_realtime {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let start_ms = state.ptt.ptt_start_ms.load(Ordering::SeqCst);
+        if start_ms > 0 && now_ms.saturating_sub(start_ms) > 30_000 {
+            log::warn!("[PTT] Realtime PTT hold exceeded 30s. Auto-stopping.");
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = ptt_stop(app_clone).await;
+            });
+            return;
+        }
+
         // Waveform telemetry calculated on user audio
         let samples_waveform = state
             .ptt
@@ -363,3 +396,58 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
         state.ptt.samples_since_waveform.store(0, Ordering::SeqCst);
     }
 }
+
+pub fn reset_ptt_state_inner(ptt: &crate::core::state::PttState) {
+    ptt.audio_buffer.lock().unwrap().clear();
+    ptt.samples_since_partial.store(0, Ordering::Relaxed);
+    ptt.samples_since_waveform.store(0, Ordering::Relaxed);
+    ptt.speech_detected.store(false, Ordering::SeqCst);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    ptt.ptt_start_ms.store(now_ms, Ordering::SeqCst);
+}
+
+pub fn discard_ptt_hold_inner(ptt: &crate::core::state::PttState) {
+    ptt.is_recording.store(false, Ordering::SeqCst);
+    ptt.audio_buffer.lock().unwrap().clear();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::state::PttState;
+    use std::sync::atomic::AtomicU32;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_ptt_state_reset_and_discard() {
+        let ptt = PttState {
+            is_recording: std::sync::atomic::AtomicBool::new(true),
+            turn_id: Arc::new(AtomicU32::new(5)),
+            audio_buffer: std::sync::Mutex::new(vec![1.0, 2.0, 3.0]),
+            samples_since_partial: std::sync::atomic::AtomicUsize::new(100),
+            samples_since_waveform: std::sync::atomic::AtomicUsize::new(200),
+            speech_detected: std::sync::atomic::AtomicBool::new(true),
+            ptt_start_ms: std::sync::atomic::AtomicU64::new(12345),
+        };
+
+        // Test reset_ptt_state_inner
+        reset_ptt_state_inner(&ptt);
+        assert_eq!(ptt.audio_buffer.lock().unwrap().len(), 0);
+        assert_eq!(ptt.samples_since_partial.load(Ordering::Relaxed), 0);
+        assert_eq!(ptt.samples_since_waveform.load(Ordering::Relaxed), 0);
+        assert!(!ptt.speech_detected.load(Ordering::SeqCst));
+        assert!(ptt.ptt_start_ms.load(Ordering::SeqCst) > 12345);
+
+        // Test discard_ptt_hold_inner
+        ptt.is_recording.store(true, Ordering::SeqCst);
+        ptt.audio_buffer.lock().unwrap().extend_from_slice(&[1.0, 2.0]);
+        discard_ptt_hold_inner(&ptt);
+        assert!(!ptt.is_recording.load(Ordering::SeqCst));
+        assert_eq!(ptt.audio_buffer.lock().unwrap().len(), 0);
+    }
+}
+

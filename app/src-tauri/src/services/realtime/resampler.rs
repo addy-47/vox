@@ -57,9 +57,9 @@ impl AudioResampler {
 
         // 2. Process in blocks of nbr_frames_needed
         while self.input_buf.len() >= self.nbr_frames_needed {
-            // Drain nbr_frames_needed from input_buf
-            let block: Vec<f32> = self.input_buf.drain(..self.nbr_frames_needed).collect();
-            self.resampler_in_buf[0] = block;
+            self.resampler_in_buf[0].clear();
+            self.resampler_in_buf[0].extend_from_slice(&self.input_buf[..self.nbr_frames_needed]);
+            self.input_buf.drain(..self.nbr_frames_needed);
 
             // Wrap in SequentialSliceOfVecs adapters (1 channel)
             let input_adapter =
@@ -93,5 +93,20 @@ impl AudioResampler {
             .collect();
 
         Ok(output_i16)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resampler_process() {
+        let mut resampler = AudioResampler::new(16000, 24000, 256).unwrap();
+        let input = vec![0i16; 512];
+        let output = resampler.process_i16(&input).unwrap();
+        // Since input is 512 samples at 16kHz resampled to 24kHz,
+        // we expect output to be around 768 samples (or non-empty).
+        assert!(!output.is_empty());
     }
 }
