@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, memo, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { Brain, Palette, Eye, Database, UserCircle, Sliders } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
@@ -7,13 +7,14 @@ import { GlassSkeleton } from "@/shared/components/GlassSkeleton";
 import { AnimatePresence, motion } from "framer-motion";
 import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
 
-// Import custom cards
-import { PersonaCard } from "@/shared/components/settings/cards/PersonaCard";
-import { ModelsCard } from "@/shared/components/settings/cards/ModelsCard";
-import { TrayCard } from "@/shared/components/settings/cards/TrayCard";
-import { MemoryCard } from "@/shared/components/settings/cards/MemoryCard";
-import { AppearanceCard } from "@/shared/components/settings/cards/AppearanceCard";
-import { InteractionCard } from "@/shared/components/settings/cards/InteractionCard";
+// Lazy-load settings cards for optimized bundle size and performance
+const PersonaCard = lazy(() => import("@/shared/components/settings/cards/PersonaCard").then(m => ({ default: m.PersonaCard })));
+const ModelsCard = lazy(() => import("@/shared/components/settings/cards/ModelsCard").then(m => ({ default: m.ModelsCard })));
+const RealtimeCard = lazy(() => import("@/shared/components/settings/cards/RealtimeCard").then(m => ({ default: m.RealtimeCard })));
+const TrayCard = lazy(() => import("@/shared/components/settings/cards/TrayCard").then(m => ({ default: m.TrayCard })));
+const MemoryCard = lazy(() => import("@/shared/components/settings/cards/MemoryCard").then(m => ({ default: m.MemoryCard })));
+const AppearanceCard = lazy(() => import("@/shared/components/settings/cards/AppearanceCard").then(m => ({ default: m.AppearanceCard })));
+const InteractionCard = lazy(() => import("@/shared/components/settings/cards/InteractionCard").then(m => ({ default: m.InteractionCard })));
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -45,22 +46,30 @@ const DOMAINS: Domain[] = [
 // ─── Domain content map ───────────────────────────────────────────────────────
 
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
-  switch (domain) {
-    case "persona":
-      return <PersonaCard layoutMode={layoutMode} />;
-    case "models":
-      return <ModelsCard layoutMode={layoutMode} />;
-    case "tray":
-      return <TrayCard layoutMode={layoutMode} />;
-    case "memory":
-      return <MemoryCard layoutMode={layoutMode} />;
-    case "appearance":
-      return <AppearanceCard layoutMode={layoutMode} />;
-    case "interaction":
-      return <InteractionCard layoutMode={layoutMode} />;
-    default:
-      return null;
-  }
+  const { draftSettings } = useSettings();
+  const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+  return (
+    <Suspense fallback={<GlassSkeleton variant="card" />}>
+      {(() => {
+        switch (domain) {
+          case "persona":
+            return <PersonaCard layoutMode={layoutMode} />;
+          case "models":
+            return isRealtime ? <RealtimeCard layoutMode={layoutMode} /> : <ModelsCard layoutMode={layoutMode} />;
+          case "tray":
+            return <TrayCard layoutMode={layoutMode} />;
+          case "memory":
+            return <MemoryCard layoutMode={layoutMode} />;
+          case "appearance":
+            return <AppearanceCard layoutMode={layoutMode} />;
+          case "interaction":
+            return <InteractionCard layoutMode={layoutMode} />;
+          default:
+            return null;
+        }
+      })()}
+    </Suspense>
+  );
 });
 DomainContent.displayName = "DomainContent";
 
@@ -90,7 +99,7 @@ const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }: Radia
       className={cn(
          "absolute w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400 group z-25",
          isActive
-           ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)] shadow-[0_0_18px_rgba(var(--accent),0.25)]"
+           ?            "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)]"
            : "text-[rgb(var(--foreground-muted))] dark:text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.15)] dark:border-[rgba(var(--border),0.08)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.06)]"
       )}
       style={{
@@ -100,7 +109,7 @@ const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }: Radia
       }}
       aria-label={`${domain.label} settings`}
     >
-      <Icon size={16} strokeWidth={isActive ? 2.5 : 1.5} />
+      <Icon size={20} strokeWidth={isActive ? 2.5 : 1.5} />
       {/* Label */}
       <span 
         className={cn(
@@ -300,7 +309,11 @@ HubCenter.displayName = "HubCenter";
 const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) => {
   if (!settings || !draftSettings) return false;
   switch (domainId) {
-    case "models":
+    case "models": {
+      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+      if (isRealtime) {
+        return JSON.stringify(settings.realtime) !== JSON.stringify(draftSettings.realtime);
+      }
       return (
         JSON.stringify(settings.vad) !== JSON.stringify(draftSettings.vad) ||
         JSON.stringify(settings.asr) !== JSON.stringify(draftSettings.asr) ||
@@ -310,6 +323,7 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
         settings.llm.threads !== draftSettings.llm.threads ||
         (settings.llm.provider?.model !== draftSettings.llm.provider?.model)
       );
+    }
     case "tray":
       return (
         settings.ui.tray_enabled !== draftSettings.ui.tray_enabled ||
@@ -342,20 +356,26 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
 const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any, draftSettings?: any) => {
   if (!settings) return;
   switch (domainId) {
-    case "models":
-      Object.keys(settings.vad).forEach(k => updateDraft("vad", k, (settings.vad as any)[k]));
-      Object.keys(settings.asr).forEach(k => updateDraft("asr", k, (settings.asr as any)[k]));
-      updateDraft("llm", "model", settings.llm.model);
-      updateDraft("llm", "ctx_size", settings.llm.ctx_size);
-      updateDraft("llm", "threads", settings.llm.threads);
-      Object.keys(settings.tts).forEach(k => updateDraft("tts", k, (settings.tts as any)[k]));
-      if (settings.llm.provider && draftSettings?.llm.provider) {
-        updateDraft("llm", "provider", {
-          ...draftSettings.llm.provider,
-          model: settings.llm.provider.model
-        });
+    case "models": {
+      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+      if (isRealtime) {
+        Object.keys(settings.realtime).forEach(k => updateDraft("realtime", k, (settings.realtime as any)[k]));
+      } else {
+        Object.keys(settings.vad).forEach(k => updateDraft("vad", k, (settings.vad as any)[k]));
+        Object.keys(settings.asr).forEach(k => updateDraft("asr", k, (settings.asr as any)[k]));
+        updateDraft("llm", "model", settings.llm.model);
+        updateDraft("llm", "ctx_size", settings.llm.ctx_size);
+        updateDraft("llm", "threads", settings.llm.threads);
+        Object.keys(settings.tts).forEach(k => updateDraft("tts", k, (settings.tts as any)[k]));
+        if (settings.llm.provider && draftSettings?.llm.provider) {
+          updateDraft("llm", "provider", {
+            ...draftSettings.llm.provider,
+            model: settings.llm.provider.model
+          });
+        }
       }
       break;
+    }
     case "tray":
       updateDraft("ui", "tray_enabled", settings.ui.tray_enabled);
       updateDraft("ui", "tray_blur_density", settings.ui.tray_blur_density);
@@ -417,6 +437,8 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
   const requiresRestart = useMemo(() => {
     if (!settings || !draftSettings) return false;
     if (domain.id === "models") {
+      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+      if (isRealtime) return false;
       return (
         settings.vad.vad_backend !== draftSettings.vad.vad_backend ||
         settings.asr.model !== draftSettings.asr.model ||
@@ -474,7 +496,7 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
                 initial={{ opacity: 0, height: 0, y: -4 }}
                 animate={{ opacity: 1, height: "auto", y: 0 }}
                 exit={{ opacity: 0, height: 0, y: -4 }}
-                className="w-full p-3 px-5 rounded-b-2xl bg-black/5 dark:bg-black/15 border-x border-b border-t border-[rgba(var(--accent),0.25)] dark:border-[rgba(var(--accent),0.10)] backdrop-blur-md flex items-center justify-between overflow-hidden text-[11px]"
+                className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none glass-card border-t-0 flex items-center justify-between overflow-hidden text-[11px]"
               >
                 {showRestartConfirm ? (
                   <>
@@ -482,13 +504,13 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
                     <div className="flex gap-2">
                       <button
                         onClick={handleSave}
-                        className="px-3.5 py-1 rounded-lg bg-yellow-500 text-black text-[11px] font-black uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all shadow-md shadow-yellow-500/10"
+                        className="px-3.5 py-1 rounded-lg bg-yellow-500 text-black text-[11px] font-black uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all"
                       >
                         Yes
                       </button>
                       <button
                         onClick={() => setShowRestartConfirm(false)}
-                        className="px-3 py-1 rounded-lg bg-black/45 text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
+                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
                       >
                         No
                       </button>
@@ -500,13 +522,13 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
                     <div className="flex gap-2">
                       <button
                         onClick={handleSave}
-                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider shadow hover:scale-[1.02] active:scale-95 transition-all"
+                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all"
                       >
                         Save
                       </button>
                       <button
                         onClick={() => discardCardChanges(domain.id, settings, updateDraft, draftSettings)}
-                        className="px-3 py-1 rounded-lg bg-black/45 text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
+                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
                       >
                         Discard
                       </button>
@@ -529,6 +551,17 @@ export const Settings: React.FC = () => {
   const { draftSettings, settings, commitChanges, discardChanges, hasChanges, restoreDefaults } = useSettings();
   const updateDraft = useSettingsStore(s => s.updateDraft);
   const [activeDomains, setActiveDomains] = useState<DomainId[]>([]);
+
+  // Preload all settings card modules in the background as soon as Settings mounts to ensure instant transitions
+  useEffect(() => {
+    import("@/shared/components/settings/cards/PersonaCard").catch(() => {});
+    import("@/shared/components/settings/cards/ModelsCard").catch(() => {});
+    import("@/shared/components/settings/cards/RealtimeCard").catch(() => {});
+    import("@/shared/components/settings/cards/TrayCard").catch(() => {});
+    import("@/shared/components/settings/cards/MemoryCard").catch(() => {});
+    import("@/shared/components/settings/cards/AppearanceCard").catch(() => {});
+    import("@/shared/components/settings/cards/InteractionCard").catch(() => {});
+  }, []);
   const [isCompact, setIsCompact] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1440);
   const [windowHeight, setWindowHeight] = useState(typeof window !== "undefined" ? window.innerHeight : 800);
@@ -610,7 +643,7 @@ export const Settings: React.FC = () => {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [activeDomains, isCompact]);
 
-  // Calculate dynamic line positions between active nodes and cards
+  // Calculate dynamic line positions between active nodes and cards (without continuously polling layout rects)
   useEffect(() => {
     if (isCompact || activeDomains.length === 0) {
       setLines({
@@ -624,9 +657,8 @@ export const Settings: React.FC = () => {
       return;
     }
 
-    let active = true;
-    const updateLines = () => {
-      if (!active || !containerRef.current) return;
+    const calculate = () => {
+      if (!containerRef.current) return;
       const containerRect = containerRef.current.getBoundingClientRect();
       const newLines = { ...lines };
       let changed = false;
@@ -699,18 +731,18 @@ export const Settings: React.FC = () => {
       if (changed) {
         setLines(newLines);
       }
-
-      if (active) {
-        requestAnimationFrame(updateLines);
-      }
     };
 
-    updateLines();
+    // Calculate immediately on selection or size changes
+    calculate();
+
+    // Trigger recalculation after card entry animation finishes
+    const timer = setTimeout(calculate, 320);
 
     return () => {
-      active = false;
+      clearTimeout(timer);
     };
-  }, [activeDomains, isCompact]);
+  }, [activeDomains, isCompact, windowWidth, windowHeight]);
 
   const handleSelect = useCallback((id: DomainId) => {
     setActiveDomains((prev) => {
@@ -891,9 +923,9 @@ export const Settings: React.FC = () => {
                 onClick={() => commitChanges()}
                 disabled={!hasChanges}
                 className={cn(
-                  "px-3.5 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-300 shadow",
+                  "px-3.5 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
                   hasChanges
-                    ? "shadow-[0_0_12px_rgba(var(--accent),0.4)] hover:scale-[1.02] active:scale-95 cursor-pointer animate-[pulse_1.5s_infinite_ease-in-out]"
+                    ? "hover:scale-[1.02] active:scale-95 cursor-pointer"
                     : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
                 )}
                 style={
@@ -913,7 +945,7 @@ export const Settings: React.FC = () => {
                 className={cn(
                   "px-3.5 py-1.5 rounded-xl border text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
                   hasChanges
-                    ? "bg-black/45 text-[rgb(var(--foreground))] border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/10 cursor-pointer"
+                    ? "bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/10 cursor-pointer"
                     : "bg-[rgb(var(--foreground))]/5 border-[rgba(var(--border),0.04)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
                 )}
               >
@@ -922,18 +954,18 @@ export const Settings: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-1 py-1 space-y-6 animate-fade-in">
-            {[...DOMAINS].sort((a, b) => {
-              const order = ["interaction", "tray", "models", "appearance", "memory", "persona"];
-              return order.indexOf(a.id) - order.indexOf(b.id);
-            }).map((domain) => {
-              const Icon = domain.icon;
-              return (
-                <div key={domain.id} className="w-full bg-black/5 dark:bg-black/15 border border-[rgba(var(--accent),0.15)] dark:border-[rgba(var(--accent),0.05)] rounded-2xl p-4 md:p-5 shadow-sm space-y-4">
+           <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-1 py-1 pb-[80px] space-y-6 animate-fade-in">
+             {[...DOMAINS].sort((a, b) => {
+               const order = ["interaction", "tray", "models", "appearance", "memory", "persona"];
+               return order.indexOf(a.id) - order.indexOf(b.id);
+             }).map((domain) => {
+               const Icon = domain.icon;
+               return (
+                 <div key={domain.id} className="w-full glass rounded-2xl p-4 md:p-5 space-y-4">
                   {/* Category Header */}
                   <div className="flex items-center gap-2 px-1">
                     <div className="p-1.5 rounded-lg bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] flex items-center justify-center">
-                      <Icon size={13} />
+                      <Icon size={16} />
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/90">

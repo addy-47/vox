@@ -44,7 +44,8 @@ impl BiquadFilter {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let output = self.b0 * input + self.b1 * self.x1 + self.b2 * self.x2
-            - self.a1 * self.y1 - self.a2 * self.y2;
+            - self.a1 * self.y1
+            - self.a2 * self.y2;
         self.x2 = self.x1;
         self.x1 = input;
         self.y2 = self.y1;
@@ -57,7 +58,7 @@ fn resample_44100_to_24000(input: &[f32], lpf: &mut BiquadFilter) -> Vec<f32> {
     let ratio = SUPER_SAMPLE_RATE as f32 / 24000.0;
     let out_len = (input.len() as f32 / ratio) as usize;
     let mut output = Vec::with_capacity(out_len);
-    
+
     // Low-pass filter input to avoid aliasing above 12kHz Nyquist frequency
     let filtered: Vec<f32> = input.iter().map(|&x| lpf.process(x)).collect();
 

@@ -50,7 +50,11 @@ fn synthesize_text(
     Ok(all_samples)
 }
 
-fn save_wav(path: &PathBuf, samples: &[f32], sample_rate: u32) -> Result<(), Box<dyn std::error::Error>> {
+fn save_wav(
+    path: &PathBuf,
+    samples: &[f32],
+    sample_rate: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate,
@@ -67,7 +71,9 @@ fn save_wav(path: &PathBuf, samples: &[f32], sample_rate: u32) -> Result<(), Box
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup paths
-    let vox_root = dirs::home_dir().expect("Could not find home directory").join(".vox");
+    let vox_root = dirs::home_dir()
+        .expect("Could not find home directory")
+        .join(".vox");
     vox_lib::utils::paths::init_with_root(vox_root);
 
     let dir = model_dir();
@@ -100,30 +106,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n=== Synthesizing PLAIN text ===");
     let plain_samples = synthesize_text(&mut engine, plain_text, 0)?;
-    println!("  {} samples ({:.2}s at 24kHz)", plain_samples.len(), plain_samples.len() as f32 / 24000.0);
+    println!(
+        "  {} samples ({:.2}s at 24kHz)",
+        plain_samples.len(),
+        plain_samples.len() as f32 / 24000.0
+    );
 
     println!("\n=== Synthesizing TAGGED text ===");
     let tagged_samples = synthesize_text(&mut engine, tagged_text, 1)?;
-    println!("  {} samples ({:.2}s at 24kHz)", tagged_samples.len(), tagged_samples.len() as f32 / 24000.0);
+    println!(
+        "  {} samples ({:.2}s at 24kHz)",
+        tagged_samples.len(),
+        tagged_samples.len() as f32 / 24000.0
+    );
 
     // Also test breath and sigh
     let breath_text = "Let me think about that <breath> okay.";
     println!("\n=== Synthesizing BREATH text ===");
     let breath_samples = synthesize_text(&mut engine, breath_text, 2)?;
-    println!("  {} samples ({:.2}s at 24kHz)", breath_samples.len(), breath_samples.len() as f32 / 24000.0);
+    println!(
+        "  {} samples ({:.2}s at 24kHz)",
+        breath_samples.len(),
+        breath_samples.len() as f32 / 24000.0
+    );
 
     let sigh_text = "I don't know <sigh> maybe.";
     println!("\n=== Synthesizing SIGH text ===");
     let sigh_samples = synthesize_text(&mut engine, sigh_text, 3)?;
-    println!("  {} samples ({:.2}s at 24kHz)", sigh_samples.len(), sigh_samples.len() as f32 / 24000.0);
+    println!(
+        "  {} samples ({:.2}s at 24kHz)",
+        sigh_samples.len(),
+        sigh_samples.len() as f32 / 24000.0
+    );
 
     // Save WAVs
     let output_dir = PathBuf::from("outputs/emotion_tag_test");
     fs::create_dir_all(&output_dir)?;
 
     save_wav(&output_dir.join("plain_funny.wav"), &plain_samples, 24000)?;
-    save_wav(&output_dir.join("tagged_laugh_funny.wav"), &tagged_samples, 24000)?;
-    save_wav(&output_dir.join("tagged_breath.wav"), &breath_samples, 24000)?;
+    save_wav(
+        &output_dir.join("tagged_laugh_funny.wav"),
+        &tagged_samples,
+        24000,
+    )?;
+    save_wav(
+        &output_dir.join("tagged_breath.wav"),
+        &breath_samples,
+        24000,
+    )?;
     save_wav(&output_dir.join("tagged_sigh.wav"), &sigh_samples, 24000)?;
 
     println!("\n=== Analysis ===");
@@ -133,10 +163,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if (tagged_samples.len() as isize - plain_samples.len() as isize).abs() < 100 {
         println!("⚠️  LENGTH: Plain and tagged have nearly identical sample counts — tags may be silently ignored.");
     } else {
-        println!("📏 LENGTH: Tagged is {:.2}x the plain length ({:.2}s vs {:.2}s)",
+        println!(
+            "📏 LENGTH: Tagged is {:.2}x the plain length ({:.2}s vs {:.2}s)",
             len_ratio,
             tagged_samples.len() as f32 / 24000.0,
-            plain_samples.len() as f32 / 24000.0);
+            plain_samples.len() as f32 / 24000.0
+        );
     }
 
     // 2. Compare raw audio — identical samples = tags not processed
@@ -146,12 +178,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         // Compute simple difference metric
         let min_len = plain_samples.len().min(tagged_samples.len());
-        let diff_sum: f64 = plain_samples[..min_len].iter()
+        let diff_sum: f64 = plain_samples[..min_len]
+            .iter()
             .zip(tagged_samples[..min_len].iter())
             .map(|(a, b)| (a - b).abs() as f64)
             .sum();
         let avg_diff = diff_sum / min_len as f64;
-        let max_diff = plain_samples[..min_len].iter()
+        let max_diff = plain_samples[..min_len]
+            .iter()
             .zip(tagged_samples[..min_len].iter())
             .map(|(a, b)| (a - b).abs())
             .fold(0.0f32, f32::max);
@@ -173,7 +207,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // but we can listen to the WAVs. Print a note.
     println!("\n   ⚠️  Manual verification recommended:");
     println!("      Listen to: {:?}", output_dir.join("plain_funny.wav"));
-    println!("           vs:  {:?}", output_dir.join("tagged_laugh_funny.wav"));
+    println!(
+        "           vs:  {:?}",
+        output_dir.join("tagged_laugh_funny.wav")
+    );
     println!("      If you hear \"less than laugh greater than\" in the tagged version, tags are spoken literally.");
     println!("      If you hear a laughing prosody, tags work correctly.");
 

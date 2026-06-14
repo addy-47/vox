@@ -1,7 +1,7 @@
+use super::LlmProvider;
 use crate::core::events::VoxEvent;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use super::LlmProvider;
 
 pub enum LlmCommand {
     Generate {
@@ -21,7 +21,7 @@ pub fn spawn_llm_worker(
     is_loaded: Arc<AtomicBool>,
 ) {
     use tauri::Emitter;
-    
+
     is_loaded.store(true, Ordering::Relaxed);
     let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "LLM");
 
@@ -35,7 +35,9 @@ pub fn spawn_llm_worker(
                 turn_id,
                 cancel_flag,
             } => {
-                if let Err(e) = provider.generate(&text, &system_prompt, turn_id, &cancel_flag, &event_tx) {
+                if let Err(e) =
+                    provider.generate(&text, &system_prompt, turn_id, &cancel_flag, &event_tx)
+                {
                     log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
                     let _ = event_tx.send(VoxEvent::Error {
                         turn_id,

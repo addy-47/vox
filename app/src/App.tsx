@@ -38,6 +38,13 @@ const App: React.FC = () => {
     };
     window.addEventListener('unhandledrejection', onRejection);
 
+    // Preload all other primary page route chunks in the background after mounting App
+    // to guarantee instant transitions between tabs
+    import("@/pages/Home").catch(() => {});
+    import("@/pages/History").catch(() => {});
+    import("@/pages/Settings").catch(() => {});
+    import("@/pages/Monitoring").catch(() => {});
+
     // Show window immediately once JS is ready to display the loader
     getCurrentWindow().show().catch(console.error);
 

@@ -10,35 +10,29 @@
 pub enum PersistenceEvent {
     /// A new conversation session has started (user pressed Engage on Main UI).
     SessionStarted {
-        id:           u64,  // epoch milliseconds — used as primary key
+        id: u64, // epoch milliseconds — used as primary key
         timestamp_ms: u64,
     },
 
     /// The active conversation session has ended (user pressed Disengage).
-    SessionEnded {
-        id:           u64,
-        timestamp_ms: u64,
-    },
+    SessionEnded { id: u64, timestamp_ms: u64 },
 
     /// A single interaction turn has completed successfully.
     ///
     /// Emitted ONLY after PlaybackFinished (or polled-drain detection confirms
     /// all audio has been delivered). Never emitted on raw LLM tokens.
     TurnCompleted {
-        conversation_id:  u64,
-        turn_id:          u32,
-        user_text:        String,
-        assistant_text:   String,
-        stt_latency_ms:   u32,
-        ttft_ms:          u32,
+        conversation_id: u64,
+        turn_id: u32,
+        user_text: String,
+        assistant_text: String,
+        stt_latency_ms: u32,
+        ttft_ms: u32,
     },
 
     /// A turn was interrupted before completion (barge-in or explicit cancel).
     /// The persistence layer records the partial state — it does NOT discard the turn.
-    TurnCancelled {
-        conversation_id: u64,
-        turn_id:         u32,
-    },
+    TurnCancelled { conversation_id: u64, turn_id: u32 },
 
     /// Signals the persistence worker to flush and exit cleanly.
     Shutdown,

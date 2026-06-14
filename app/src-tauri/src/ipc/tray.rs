@@ -1,22 +1,23 @@
-use tauri::{AppHandle, Manager, State, WebviewWindow, Emitter};
-use crate::core::state::AppState;
 use crate::core::settings::InteractionMode;
+use crate::core::state::AppState;
+use crate::tray::position_tray_window;
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
-use crate::tray::position_tray_window;
-
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 /// Toggles the tray window visibility and updates the menu checkmark state.
 pub async fn toggle_hud_visibility(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
-    
+
     // Check if setup is completed and tray is even enabled
     let (tray_enabled, setup_completed) = {
         let s = state.settings.read().unwrap();
         (s.ui.tray_enabled, s.setup.completed)
     };
     if !setup_completed || !tray_enabled {
-        log::warn!("[Tray] Blocked toggle_hud_visibility: Setup not completed or Tray HUD is disabled.");
+        log::warn!(
+            "[Tray] Blocked toggle_hud_visibility: Setup not completed or Tray HUD is disabled."
+        );
         return;
     }
 
@@ -58,7 +59,7 @@ pub async fn hide_tray_window(app: AppHandle) {
 #[tauri::command]
 pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
-    
+
     let tray_enabled = {
         let s = state.settings.read().unwrap();
         s.ui.tray_enabled
@@ -113,11 +114,15 @@ pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
 }
 
 #[tauri::command]
-pub async fn update_interaction_mode(app: AppHandle, target: String, mode: String) -> Result<(), String> {
+pub async fn update_interaction_mode(
+    app: AppHandle,
+    target: String,
+    mode: String,
+) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
-        
+
         let new_mode = match mode.to_uppercase().as_str() {
             "PASSIVE" => InteractionMode::Passive,
             "PTT" => InteractionMode::PTT,
@@ -133,15 +138,15 @@ pub async fn update_interaction_mode(app: AppHandle, target: String, mode: Strin
             }
             _ => return Err(format!("Invalid target window: {}", target)),
         }
-        
+
         let _ = settings.save();
     }
-    
+
     let event_name = format!("mode_changed_{}", target.to_lowercase());
     let _ = app.emit(&event_name, mode.clone());
     let _ = app.emit("mode_changed", mode);
     let _ = app.emit("settings-updated", ());
-    
+
     Ok(())
 }
 

@@ -9,7 +9,7 @@ interface PersonaCardProps {
 
 export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) => {
   const { draftSettings, updateDraft } = useSettings();
-  const [activeTab, setActiveTab] = useState<"hindi" | "english">("hindi");
+  const [activeTab, setActiveTab] = useState<"modular" | "realtime">("modular");
 
   if (!draftSettings) return null;
 
@@ -22,7 +22,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         isSmall
           ? "w-full bg-transparent p-0"
           : cn(
-              "w-full glass-card glass-base p-5",
+              "w-full glass-card p-5",
               layoutMode === "full-min" ? "lg:w-[320px] xl:w-[380px] 2xl:w-[460px]" : "lg:w-[460px]"
             )
       )}
@@ -31,7 +31,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       <div className="flex items-center justify-between mb-4 shrink-0">
         {!isSmall ? (
           <div className="flex items-center gap-2">
-            <UserCircle className="text-[rgb(var(--accent))]" size={16} />
+            <UserCircle className="text-[rgb(var(--accent))]" size={20} />
             <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
               Persona Settings
             </span>
@@ -40,58 +40,64 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
           <div /> // spacing helper
         )}
         
-        {/* Simple hi/eng tabs */}
+        {/* Simple modular/realtime tabs */}
         <div className="flex items-center bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-lg">
           <button
-            onClick={() => setActiveTab("hindi")}
+            onClick={() => setActiveTab("modular")}
             className={cn(
-              "px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-              activeTab === "hindi"
-                ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+              "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+              activeTab === "modular"
+                ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                 : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
             )}
           >
-            hi
+            Modular
           </button>
           <button
-            onClick={() => setActiveTab("english")}
+            onClick={() => setActiveTab("realtime")}
             className={cn(
-              "px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-              activeTab === "english"
-                ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+              "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+              activeTab === "realtime"
+                ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                 : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
             )}
           >
-            eng
+            Realtime
           </button>
         </div>
       </div>
 
       {/* Text Area Content */}
       <div className={cn("pt-2 flex flex-col justify-between", isSmall ? "min-h-[200px]" : "min-h-[140px]")}>
-        {activeTab === "hindi" && (
-          <div className="space-y-2.5">
+        {activeTab === "modular" && (
+          <div className="space-y-2">
             <textarea
-              value={draftSettings.assistant.hindi_prompt}
-              onChange={(e) => updateDraft("assistant", "hindi_prompt", e.target.value)}
-              rows={layoutMode === "full-max" ? 7 : isSmall ? 8 : 5}
+              value={draftSettings.assistant.modular_prompt}
+              onChange={(e) => updateDraft("assistant", "modular_prompt", e.target.value)}
+              rows={layoutMode === "full-max" ? 6 : isSmall ? 8 : 4}
               className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.12)] rounded-xl px-3 py-2 text-[12px] text-[rgb(var(--foreground))]/80 font-mono leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.35)] transition-colors"
-              placeholder="Hindi prompt..."
+              placeholder="Modular instruction prompt..."
               spellCheck={false}
             />
+            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold uppercase tracking-wide">
+              Supports <code className="text-[rgb(var(--accent))] font-mono">&lt;lang&gt;</code> and <code className="text-[rgb(var(--accent))] font-mono">&lt;script&gt;</code> template variables, dynamically resolved based on user speech language.
+            </p>
           </div>
         )}
 
-        {activeTab === "english" && (
-          <div className="space-y-2.5">
+        {activeTab === "realtime" && (
+          <div className="space-y-2">
             <textarea
-              value={draftSettings.assistant.english_prompt}
-              onChange={(e) => updateDraft("assistant", "english_prompt", e.target.value)}
-              rows={layoutMode === "full-max" ? 7 : isSmall ? 8 : 5}
+              value={draftSettings.assistant.realtime_prompt}
+              onChange={(e) => updateDraft("assistant", "realtime_prompt", e.target.value)}
+              rows={layoutMode === "full-max" ? 6 : isSmall ? 8 : 4}
               className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.12)] rounded-xl px-3 py-2 text-[12px] text-[rgb(var(--foreground))]/80 font-mono leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.35)] transition-colors"
-              placeholder="English prompt..."
+              placeholder="Realtime instruction prompt..."
               spellCheck={false}
             />
+            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold uppercase tracking-wide">
+              Instructions supplied to duplex cloud speech-to-speech models (e.g. Gemini Live).
+            </p>
           </div>
         )}
       </div>

@@ -573,7 +573,7 @@ impl traits::LlmEngine for LlmWorker {
 
                 // Clean the entire raw buffer accumulated so far
                 let mut cleaned = self.family.strip_tags_raw(&raw_gen_buf);
-                
+
                 // Suppress active/incomplete thinking blocks
                 if let Some(think_pos) = cleaned.find("<think>") {
                     cleaned.truncate(think_pos);

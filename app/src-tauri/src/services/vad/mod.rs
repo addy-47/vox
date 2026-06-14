@@ -1,6 +1,6 @@
 pub mod actor;
-pub mod ten_onnx;
 pub mod earshot_vad;
+pub mod ten_onnx;
 
 pub use actor::spawn_vad_actor;
 
@@ -18,7 +18,7 @@ pub enum VadBackend {
 impl VadEngineTrait for VadBackend {
     fn predict(&mut self, chunk: &[f32]) -> bool {
         match self {
-            VadBackend::Ten(e)     => e.predict(chunk),
+            VadBackend::Ten(e) => e.predict(chunk),
             VadBackend::Earshot(e) => e.predict(chunk),
         }
     }
@@ -31,15 +31,18 @@ impl VadBackend {
     /// For Earshot: free f32 write, no reinitialization.
     pub fn update_threshold(&mut self, threshold: f32) -> anyhow::Result<()> {
         match self {
-            VadBackend::Ten(e)     => e.update_detector(threshold),
-            VadBackend::Earshot(e) => { e.update_threshold(threshold); Ok(()) },
+            VadBackend::Ten(e) => e.update_detector(threshold),
+            VadBackend::Earshot(e) => {
+                e.update_threshold(threshold);
+                Ok(())
+            }
         }
     }
 
     /// Flush/reset the detector state at utterance boundaries.
     pub fn flush(&mut self) {
         match self {
-            VadBackend::Ten(e)     => e.flush(),
+            VadBackend::Ten(e) => e.flush(),
             VadBackend::Earshot(e) => e.flush(),
         }
     }

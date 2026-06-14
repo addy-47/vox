@@ -1,6 +1,6 @@
+use crate::monitoring::snapshot::RuntimeSnapshot;
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
-use crate::monitoring::snapshot::RuntimeSnapshot;
 
 /// Maximum number of snapshots to retain in memory (~60 seconds at 10Hz).
 const MAX_SNAPSHOT_HISTORY: usize = 600;

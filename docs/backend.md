@@ -1461,7 +1461,7 @@ api.openai.com
 
 All of these are simply endpoints. The protocol remains the same.
 
-See `docs/plans/phase9-inference-expansion.md` for the full plan.
+See `docs/plans/phase9/` for modular implementation plans.
 
 ---
 

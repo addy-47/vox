@@ -1,22 +1,63 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { Brain, Sparkles, Volume2, AlertTriangle } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+
+/** Extract a compact single-word model identifier from a display name.
+ *  "Meta Llama 3.2 8B" → "Llama3.2"
+ *  "Gemma Instruct 3B" → "Gemma3B"
+ *  "Nemotron-3.5 8B ASR" → "Nemotron3.5"
+ *  "Supertonic 3" → "Supertonic3"
+ */
+const compactModelName = (name: string): string => {
+  if (!name) return "—";
+  // Already short enough
+  if (name.length <= 10) return name;
+
+  // Try to extract a meaningful short form:
+  // Strip known filler words and join remaining tokens
+  const tokens = name.split(/[\s-]+/);
+  const fillers = new Set(["instruct", "8b", "7b", "3b", "1b", "13b", "70b", "asr", "v2", "v3", "text", "base", "small", "large", "medium", "chat", "hf", "gguf", "q4", "q8", "fp16", "int8", "int4"]);
+  
+  // Filter out fillers but keep the meaningful tokens
+  const meaningful = tokens.filter(t => !fillers.has(t.toLowerCase()));
+  
+  if (meaningful.length === 0) {
+    // All tokens were fillers — just take the first 10 chars
+    return name.slice(0, 10);
+  }
+
+  // Take first meaningful token + append numeric version if present
+  const first = meaningful[0];
+  const version = tokens.find(t => /^[\d.]+$/.test(t)) || "";
+  return version ? `${first}${version}` : first;
+};
 
 export const ModelStatusOverlay = memo(() => {
   const { draftSettings, modelCatalog } = useSettings();
   const [presence, setPresence] = useState<Record<string, boolean>>({});
+  const [vw, setVw] = useState(typeof window !== "undefined" ? window.innerWidth : 1200);
+
+  // Track viewport width
+  useEffect(() => {
+    const handleResize = () => setVw(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Below 1200px the right footer area starts bumping into EdgeNav
+  const isNarrow = vw < 1200;
 
   const checkPresence = useCallback(async () => {
     if (!modelCatalog || !draftSettings) return;
-    const items = [
+    const items: string[] = [
       "supertonic_tts",
       draftSettings.asr.model,
-      draftSettings.llm.model
-    ];
+      draftSettings.llm.model,
+    ].filter(Boolean);
     const results: Record<string, boolean> = {};
     for (const id of items) {
       try {
+        const { invoke } = await import("@tauri-apps/api/core");
         results[id] = await invoke<boolean>("check_model_exists", { modelId: id });
       } catch {
         results[id] = false;
@@ -39,21 +80,30 @@ export const ModelStatusOverlay = memo(() => {
   const asrExists = presence[activeAsr.id] ?? true;
   const ttsExists = presence["supertonic_tts"] ?? true;
 
+  // Resolve display names — compact when viewport is narrow
+  const llmName = isNarrow ? compactModelName(activeLlm.name) : activeLlm.name;
+  const asrName = isNarrow ? compactModelName(activeAsr.name) : activeAsr.name;
+
   return (
-    <div className="flex items-center gap-12 text-[10px] leading-relaxed text-[rgb(var(--foreground-muted))]/60 select-none">
+    <div
+      className="flex items-center text-[10px] leading-relaxed text-[rgb(var(--foreground-muted))]/60 select-none"
+      style={{ gap: isNarrow ? "clamp(0.25rem, 2vw, 0.75rem)" : "1.5rem" }}
+    >
       {/* LLM Status Chip */}
-      <div className="flex items-center gap-2 group relative cursor-help">
+      <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1">
         {llmExists ? (
-          <Brain size={13} className="text-[rgb(var(--accent))]/80" />
+          <Brain size={isNarrow ? 12 : 16} className="text-[rgb(var(--accent))]/80 shrink-0" />
         ) : (
-          <AlertTriangle size={13} className="text-yellow-500 animate-pulse" />
+          <AlertTriangle size={isNarrow ? 12 : 16} className="text-yellow-500 animate-pulse shrink-0" />
         )}
-        <div>
-          <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1">
-            {activeLlm.name}
-            {!llmExists && <span className="text-[7px] text-yellow-500 font-bold uppercase tracking-wide leading-none">Missing</span>}
+        <div className="min-w-0 overflow-hidden">
+          <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
+            {llmName}
+            {!llmExists && <span className="text-[7px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
           </div>
-          <div className="text-[8px] font-mono mt-0.5 leading-none">{activeLlm.parameters} · LLM</div>
+          {!isNarrow && (
+            <div className="text-[8px] font-mono mt-0.5 leading-none truncate">{activeLlm.parameters} · LLM</div>
+          )}
         </div>
         {/* Tooltip */}
         <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
@@ -65,18 +115,20 @@ export const ModelStatusOverlay = memo(() => {
       </div>
 
       {/* ASR Status Chip */}
-      <div className="flex items-center gap-2 group relative cursor-help">
+      <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1">
         {asrExists ? (
-          <Sparkles size={13} className="text-[rgb(var(--accent))]/80" />
+          <Sparkles size={isNarrow ? 12 : 16} className="text-[rgb(var(--accent))]/80 shrink-0" />
         ) : (
-          <AlertTriangle size={13} className="text-yellow-500 animate-pulse" />
+          <AlertTriangle size={isNarrow ? 12 : 16} className="text-yellow-500 animate-pulse shrink-0" />
         )}
-        <div>
-          <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1">
-            {activeAsr.name}
-            {!asrExists && <span className="text-[7px] text-yellow-500 font-bold uppercase tracking-wide leading-none">Missing</span>}
+        <div className="min-w-0 overflow-hidden">
+          <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
+            {asrName}
+            {!asrExists && <span className="text-[7px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
           </div>
-          <div className="text-[8px] font-mono mt-0.5 leading-none">ASR Engine</div>
+          {!isNarrow && (
+            <div className="text-[8px] font-mono mt-0.5 leading-none truncate">ASR Engine</div>
+          )}
         </div>
         {/* Tooltip */}
         <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
@@ -87,18 +139,20 @@ export const ModelStatusOverlay = memo(() => {
       </div>
 
       {/* TTS Status Chip */}
-      <div className="flex items-center gap-2 group relative cursor-help">
+      <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1">
         {ttsExists ? (
-          <Volume2 size={13} className="text-[rgb(var(--accent))]/80" />
+          <Volume2 size={isNarrow ? 12 : 16} className="text-[rgb(var(--accent))]/80 shrink-0" />
         ) : (
-          <AlertTriangle size={13} className="text-yellow-500 animate-pulse" />
+          <AlertTriangle size={isNarrow ? 12 : 16} className="text-yellow-500 animate-pulse shrink-0" />
         )}
-        <div>
-          <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1">
-            Supertonic 3
-            {!ttsExists && <span className="text-[7px] text-yellow-500 font-bold uppercase tracking-wide leading-none">Missing</span>}
+        <div className="min-w-0 overflow-hidden">
+          <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none truncate flex items-center gap-1">
+            {isNarrow ? "TTS" : "Supertonic 3"}
+            {!ttsExists && <span className="text-[7px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
           </div>
-          <div className="text-[8px] font-mono mt-0.5 leading-none">{activeVoice.name} · Voice</div>
+          {!isNarrow && (
+            <div className="text-[8px] font-mono mt-0.5 leading-none truncate">{activeVoice.name} · Voice</div>
+          )}
         </div>
         {/* Tooltip */}
         <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">

@@ -10,10 +10,10 @@
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
+use ringbuf::traits::*;
+use ringbuf::{HeapCons, HeapProd};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use ringbuf::{HeapCons, HeapProd};
-use ringbuf::traits::*;
 
 // ─── Resampling (Directive 3) ─────────────────────────────────────────────────
 
@@ -45,20 +45,19 @@ pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
     out
 }
 
-
 // ─── Playback Engine ──────────────────────────────────────────────────────────
 
 pub struct PlaybackEngine {
     /// Producer half of the lock-free ring buffer (Mono 48kHz).
-    producer:       std::sync::Mutex<HeapProd<f32>>,
+    producer: std::sync::Mutex<HeapProd<f32>>,
     /// `true` while CPAL is actively draining (used for mic ducking in Speaker mode).
     playback_active: Arc<AtomicBool>,
     /// Set `true` to clear the buffer and stop playback.
-    cancel_flag:    Arc<AtomicBool>,
+    cancel_flag: Arc<AtomicBool>,
     /// Set `true` to request the CPAL stream thread to discard all buffered audio.
     discard_request: Arc<AtomicBool>,
     /// The active CPAL stream — kept alive until cancelled.
-    _stream:        Option<cpal::Stream>,
+    _stream: Option<cpal::Stream>,
     /// RCA Fix: Real-time safe energy telemetry (Atomic f32 via bit storage)
     _playback_energy: Arc<AtomicU32>,
     _playback_low: Arc<AtomicU32>,
@@ -137,12 +136,15 @@ impl PlaybackEngine {
 
         let upsampled = upsample_2x(chunk_24khz);
         let mut prod = self.producer.lock().unwrap();
-        
+
         let pushed = prod.push_slice(&upsampled);
         if pushed < upsampled.len() {
-            log::warn!("[Playback] Buffer overflow — dropped {} samples", upsampled.len() - pushed);
+            log::warn!(
+                "[Playback] Buffer overflow — dropped {} samples",
+                upsampled.len() - pushed
+            );
         }
-        
+
         self.buffer_samples.fetch_add(pushed, Ordering::SeqCst);
     }
 
@@ -154,7 +156,10 @@ impl PlaybackEngine {
         if !self.playback_active.load(Ordering::Relaxed) {
             let current_len = self.buffer_samples.load(Ordering::SeqCst);
             if current_len > 0 {
-                log::info!("[Playback] start_playback requested ({} samples buffered) — starting output", current_len);
+                log::info!(
+                    "[Playback] start_playback requested ({} samples buffered) — starting output",
+                    current_len
+                );
                 self.playback_active.store(true, Ordering::Relaxed);
             }
         }
@@ -198,20 +203,22 @@ impl PlaybackEngine {
         is_assistant_speaking: Arc<AtomicBool>,
         buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
     ) -> Result<cpal::Stream> {
-        let host   = cpal::default_host();
-        let device = host.default_output_device()
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
             .ok_or_else(|| anyhow!("[Playback] No default output device found"))?;
 
         log::info!("[Playback] Output device: {:?}", device.name());
 
         // Request 48kHz stereo output (most common default)
         let config = StreamConfig {
-            channels:    2,
+            channels: 2,
             sample_rate: cpal::SampleRate(48_000),
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let supported = device.supported_output_configs()
+        let supported = device
+            .supported_output_configs()
             .map_err(|e| anyhow!("[Playback] Failed to query output configs: {}", e))?
             .find(|c| {
                 c.channels() == 2
@@ -228,116 +235,123 @@ impl PlaybackEngine {
         let mut current_volume = 1.0f32;
         let mut filter_bank = crate::utils::audio_filters::FilterBank::new(48_000.0);
 
-        let stream = device.build_output_stream(
-            &config,
-            // ── CPAL data callback — ZERO computation (Directive 3) ──────────
-            // Only drains the pre-upsampled ring buffer.
-            move |output: &mut [f32], _info| {
-                if discard_request.load(Ordering::Relaxed) {
-                    consumer.skip(consumer.occupied_len());
-                    buffer_samples.store(0, Ordering::SeqCst);
-                    discard_request.store(false, Ordering::Relaxed);
-                    last_sample = 0.0;
-                    current_volume = 1.0;
-                    filter_bank.reset();
-                }
-
-                if !playback_active.load(Ordering::Relaxed)
-                    || cancel_flag.load(Ordering::Relaxed)
-                {
-                    // Clear the consumer if cancelled to drop old audio
-                    if cancel_flag.load(Ordering::Relaxed) {
+        let stream = device
+            .build_output_stream(
+                &config,
+                // ── CPAL data callback — ZERO computation (Directive 3) ──────────
+                // Only drains the pre-upsampled ring buffer.
+                move |output: &mut [f32], _info| {
+                    if discard_request.load(Ordering::Relaxed) {
                         consumer.skip(consumer.occupied_len());
                         buffer_samples.store(0, Ordering::SeqCst);
+                        discard_request.store(false, Ordering::Relaxed);
+                        last_sample = 0.0;
+                        current_volume = 1.0;
+                        filter_bank.reset();
                     }
-                    last_sample = 0.0;
-                    current_volume = 1.0;
-                    filter_bank.reset();
-                    output.fill(0.0);
-                    return;
-                }
 
-                // Lock-free read from SPSC ring buffer
-                let frames = output.len() / 2; // stereo → mono frames
-                let mut sum_sq = 0.0;
-                let mut sum_low_sq = 0.0;
-                let mut sum_mid_sq = 0.0;
-                let mut sum_high_sq = 0.0;
-                let mut read_count = 0;
-
-                for frame in 0..frames {
-                    let sample_opt = consumer.try_pop();
-                    let (sample, target_volume) = match sample_opt {
-                        Some(s) => {
-                            read_count += 1;
-                            last_sample = s;
-                            (s, 1.0)
+                    if !playback_active.load(Ordering::Relaxed)
+                        || cancel_flag.load(Ordering::Relaxed)
+                    {
+                        // Clear the consumer if cancelled to drop old audio
+                        if cancel_flag.load(Ordering::Relaxed) {
+                            consumer.skip(consumer.occupied_len());
+                            buffer_samples.store(0, Ordering::SeqCst);
                         }
-                        None => (last_sample, 0.0),
-                    };
-
-                    // Linear fade to avoid clicks (approx 10ms fade window at 48kHz)
-                    let step = 0.002f32;
-                    if current_volume < target_volume {
-                        current_volume = (current_volume + step).min(target_volume);
-                    } else if current_volume > target_volume {
-                        current_volume = (current_volume - step).max(target_volume);
+                        last_sample = 0.0;
+                        current_volume = 1.0;
+                        filter_bank.reset();
+                        output.fill(0.0);
+                        return;
                     }
 
-                    let played_sample = sample * current_volume;
-                    sum_sq += played_sample * played_sample;
+                    // Lock-free read from SPSC ring buffer
+                    let frames = output.len() / 2; // stereo → mono frames
+                    let mut sum_sq = 0.0;
+                    let mut sum_low_sq = 0.0;
+                    let mut sum_mid_sq = 0.0;
+                    let mut sum_high_sq = 0.0;
+                    let mut read_count = 0;
 
-                    let (low, mid, high) = filter_bank.tick(played_sample);
-                    sum_low_sq += low * low;
-                    sum_mid_sq += mid * mid;
-                    sum_high_sq += high * high;
+                    for frame in 0..frames {
+                        let sample_opt = consumer.try_pop();
+                        let (sample, target_volume) = match sample_opt {
+                            Some(s) => {
+                                read_count += 1;
+                                last_sample = s;
+                                (s, 1.0)
+                            }
+                            None => (last_sample, 0.0),
+                        };
 
-                    output[frame * 2]     = played_sample; // L
-                    output[frame * 2 + 1] = played_sample; // R
-                }
-                
-                // Atomic update of current buffer level for telemetry/logic
-                buffer_samples.fetch_sub(read_count.min(buffer_samples.load(Ordering::Relaxed)), Ordering::SeqCst);
+                        // Linear fade to avoid clicks (approx 10ms fade window at 48kHz)
+                        let step = 0.002f32;
+                        if current_volume < target_volume {
+                            current_volume = (current_volume + step).min(target_volume);
+                        } else if current_volume > target_volume {
+                            current_volume = (current_volume - step).max(target_volume);
+                        }
 
-                let raw_energy = (sum_sq / frames as f32).sqrt();
-                let energy = (raw_energy * 15.0).clamp(0.0, 1.0);
-                playback_energy.store(energy.to_bits(), Ordering::Relaxed);
+                        let played_sample = sample * current_volume;
+                        sum_sq += played_sample * played_sample;
 
-                let raw_low = (sum_low_sq / frames as f32).sqrt();
-                let raw_mid = (sum_mid_sq / frames as f32).sqrt();
-                let raw_high = (sum_high_sq / frames as f32).sqrt();
+                        let (low, mid, high) = filter_bank.tick(played_sample);
+                        sum_low_sq += low * low;
+                        sum_mid_sq += mid * mid;
+                        sum_high_sq += high * high;
 
-                let low_val = (raw_low * 15.0).clamp(0.0, 1.0).powf(0.5);
-                let mid_val = (raw_mid * 15.0).clamp(0.0, 1.0).powf(0.5);
-                let high_val = (raw_high * 15.0).clamp(0.0, 1.0).powf(0.5);
-
-                playback_low.store(low_val.to_bits(), Ordering::Relaxed);
-                playback_mid.store(mid_val.to_bits(), Ordering::Relaxed);
-                playback_high.store(high_val.to_bits(), Ordering::Relaxed);
-
-                // Buffer exhausted — signal idle
-                if consumer.is_empty() {
-                    if is_assistant_speaking.load(Ordering::Relaxed) {
-                        playback_underruns.fetch_add(1, Ordering::Relaxed);
+                        output[frame * 2] = played_sample; // L
+                        output[frame * 2 + 1] = played_sample; // R
                     }
-                    playback_active.store(false, Ordering::Relaxed);
-                    playback_energy.store(0f32.to_bits(), Ordering::Relaxed);
-                    playback_low.store(0f32.to_bits(), Ordering::Relaxed);
-                    playback_mid.store(0f32.to_bits(), Ordering::Relaxed);
-                    playback_high.store(0f32.to_bits(), Ordering::Relaxed);
-                    buffer_samples.store(0, Ordering::SeqCst);
-                    last_sample = 0.0;
-                    current_volume = 1.0;
-                    filter_bank.reset();
-                }
-            },
-            move |err| {
-                log::error!("[Playback] CPAL output error: {}", err);
-            },
-            None,
-        ).map_err(|e| anyhow!("[Playback] Failed to build output stream: {}", e))?;
 
-        stream.play().map_err(|e| anyhow!("[Playback] Failed to start stream: {}", e))?;
+                    // Atomic update of current buffer level for telemetry/logic
+                    buffer_samples.fetch_sub(
+                        read_count.min(buffer_samples.load(Ordering::Relaxed)),
+                        Ordering::SeqCst,
+                    );
+
+                    let raw_energy = (sum_sq / frames as f32).sqrt();
+                    let energy = (raw_energy * 15.0).clamp(0.0, 1.0);
+                    playback_energy.store(energy.to_bits(), Ordering::Relaxed);
+
+                    let raw_low = (sum_low_sq / frames as f32).sqrt();
+                    let raw_mid = (sum_mid_sq / frames as f32).sqrt();
+                    let raw_high = (sum_high_sq / frames as f32).sqrt();
+
+                    let low_val = (raw_low * 15.0).clamp(0.0, 1.0).powf(0.5);
+                    let mid_val = (raw_mid * 15.0).clamp(0.0, 1.0).powf(0.5);
+                    let high_val = (raw_high * 15.0).clamp(0.0, 1.0).powf(0.5);
+
+                    playback_low.store(low_val.to_bits(), Ordering::Relaxed);
+                    playback_mid.store(mid_val.to_bits(), Ordering::Relaxed);
+                    playback_high.store(high_val.to_bits(), Ordering::Relaxed);
+
+                    // Buffer exhausted — signal idle
+                    if consumer.is_empty() {
+                        if is_assistant_speaking.load(Ordering::Relaxed) {
+                            playback_underruns.fetch_add(1, Ordering::Relaxed);
+                        }
+                        playback_active.store(false, Ordering::Relaxed);
+                        playback_energy.store(0f32.to_bits(), Ordering::Relaxed);
+                        playback_low.store(0f32.to_bits(), Ordering::Relaxed);
+                        playback_mid.store(0f32.to_bits(), Ordering::Relaxed);
+                        playback_high.store(0f32.to_bits(), Ordering::Relaxed);
+                        buffer_samples.store(0, Ordering::SeqCst);
+                        last_sample = 0.0;
+                        current_volume = 1.0;
+                        filter_bank.reset();
+                    }
+                },
+                move |err| {
+                    log::error!("[Playback] CPAL output error: {}", err);
+                },
+                None,
+            )
+            .map_err(|e| anyhow!("[Playback] Failed to build output stream: {}", e))?;
+
+        stream
+            .play()
+            .map_err(|e| anyhow!("[Playback] Failed to start stream: {}", e))?;
         log::info!("[Playback] CPAL stream started (48kHz stereo f32)");
 
         Ok(stream)

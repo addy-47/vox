@@ -40,7 +40,7 @@ pub fn init(log_dir: PathBuf) -> WorkerGuard {
                 .with_writer(non_blocking)
                 .with_ansi(false) // No ANSI codes in files
                 .with_target(true)
-                .with_thread_ids(true)
+                .with_thread_ids(true),
         )
         .init();
 

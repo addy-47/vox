@@ -40,7 +40,7 @@ pub enum TelemetryEvent {
 pub struct TelemetryAggregator {
     rx: Receiver<TelemetryEvent>,
     latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,    
+    latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,
     latest_low: std::sync::Arc<std::sync::atomic::AtomicU32>,
     latest_mid: std::sync::Arc<std::sync::atomic::AtomicU32>,
     latest_high: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -69,21 +69,24 @@ impl TelemetryAggregator {
         dropped_events: std::sync::Arc<std::sync::atomic::AtomicU64>,
     ) -> (Self, Sender<TelemetryEvent>) {
         let (tx, rx) = bounded(4096);
-        (Self { 
-            rx, 
-            latest_energy, 
-            latest_vad_prob, 
-            latest_low,
-            latest_mid,
-            latest_high,
-            latest_sys_cpu, 
-            latest_sys_ram, 
-            latest_vox_cpu, 
-            latest_vox_ram, 
-            latest_stt_ms, 
-            latest_ttft_ms,
-            dropped_events
-        }, tx)
+        (
+            Self {
+                rx,
+                latest_energy,
+                latest_vad_prob,
+                latest_low,
+                latest_mid,
+                latest_high,
+                latest_sys_cpu,
+                latest_sys_ram,
+                latest_vox_cpu,
+                latest_vox_ram,
+                latest_stt_ms,
+                latest_ttft_ms,
+                dropped_events,
+            },
+            tx,
+        )
     }
 
     /// Spawns the aggregator loop on a dedicated OS thread.

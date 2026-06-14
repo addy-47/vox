@@ -97,7 +97,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
  
       <div className="flex-1 flex flex-col gap-6 min-h-0">
         {/* Live Analysis Card */}
-        <div className="flex-shrink-0 p-5 glass-whisper glass-base relative overflow-hidden">
+        <div className="flex-shrink-0 p-5 glass relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-[rgb(var(--accent))]/5 to-transparent opacity-50 pointer-events-none" />
             
             <div className="relative z-10 flex items-center gap-6">
@@ -147,8 +147,8 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
                 className={cn(
                     "w-full p-4 rounded-xl transition-all text-left flex items-center justify-between group",
                     selected === device.name 
-                    ? "glass-surface glass-base text-white" 
-                    : "glass-whisper glass-base text-[rgb(var(--foreground-muted))]"
+                    ? "glass text-white" 
+                    : "glass text-[rgb(var(--foreground-muted))]"
                 )}
                 >
                 <div className="flex items-center gap-3">
@@ -159,7 +159,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
                 </button>
             ))}
             {devices.length === 0 && (
-                <div className="p-8 text-center border border-dashed border-[rgba(var(--border),0.08)] rounded-xl glass-whisper">
+                <div className="p-8 text-center border border-dashed border-[rgba(var(--border),0.08)] rounded-xl glass">
                 <span className="text-[11px] font-bold text-white/40 uppercase tracking-widest">No devices detected</span>
                 </div>
             )}

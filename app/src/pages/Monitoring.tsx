@@ -259,7 +259,7 @@ const Sparkline = memo(
     }, [dataKey]);
 
     return (
-      <div className="w-full h-[64px] relative rounded-xl overflow-hidden border border-[rgba(var(--accent),0.08)] bg-black/20">
+      <div className="w-full h-[64px] relative rounded-xl overflow-hidden glass">
         <canvas ref={canvasRef} className="block w-full h-full" />
       </div>
     );
@@ -368,9 +368,9 @@ export const Monitoring: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between pb-4 shrink-0 border-b border-[rgba(var(--accent),0.06)]">
         <div>
-          <span className="signal-text text-[13px]">System Diagnostics</span>
-          <p className="text-[10px] text-[rgb(var(--foreground-muted))]/40 font-mono uppercase tracking-[0.2em] mt-1">
-            Realtime Engine Metrics
+          <span className="signal-text text-[13px]">Monitoring</span>
+          <p className="text-[10px] text-[rgb(var(--foreground-muted))]/40 font-mono  tracking-[0.2em] mt-1">
+            System Metrics
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -397,7 +397,7 @@ export const Monitoring: React.FC = () => {
                   : "border-[rgba(239,68,68,0.35)] text-red-500 bg-red-500/10 hover:bg-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.25)]"
               )}
             >
-              <Skull size={14} />
+              <Skull size={16} />
             </button>
           ) : (
             <button
@@ -418,15 +418,15 @@ export const Monitoring: React.FC = () => {
                 "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer",
                 togglingEngine
                   ? "opacity-50 cursor-wait border-white/5 text-white/10 bg-white/2"
-                  : "border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.05)] hover:bg-[rgba(var(--accent),0.15)] shadow-[0_0_12px_rgba(var(--accent),0.1)]"
+                  : "border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.05)] hover:bg-[rgba(var(--accent),0.15)]"
               )}
             >
-              <RefreshCw size={14} className={cn(togglingEngine && "animate-spin")} />
+              <RefreshCw size={16} className={cn(togglingEngine && "animate-spin")} />
             </button>
           )}
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.15)] bg-black/20">
-            <Activity size={12} className="text-[rgb(var(--accent))] animate-pulse" />
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.12)] glass">
+            <Activity size={16} className="text-[rgb(var(--accent))] animate-pulse" />
             <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase">
               LIVE MONITOR
             </span>
@@ -441,25 +441,25 @@ export const Monitoring: React.FC = () => {
           <EngineBadge
             label="VAD"
             active={latest?.is_vad_loaded ?? false}
-            icon={<ShieldCheck size={11} />}
+            icon={<ShieldCheck size={16} />}
           />
           <EngineBadge
             label="STT"
             active={latest?.is_stt_loaded ?? false}
-            icon={<Activity size={11} />}
+            icon={<Activity size={16} />}
           />
           <EngineBadge
             label="LLM"
             active={latest?.is_llm_loaded ?? false}
-            icon={<Cpu size={11} />}
+            icon={<Cpu size={16} />}
           />
           <EngineBadge
             label="TTS"
             active={latest?.is_tts_loaded ?? false}
-            icon={<Volume2 size={11} />}
+            icon={<Volume2 size={16} />}
           />
           {latest?.is_sleeping && (
-            <EngineBadge label="Sleep" active={true} icon={<Moon size={11} />} />
+            <EngineBadge label="Sleep" active={true} icon={<Moon size={16} />} />
           )}
         </div>
 
@@ -489,7 +489,7 @@ export const Monitoring: React.FC = () => {
           ].map((m) => (
             <div
               key={m.label}
-              className="bg-[rgba(var(--foreground),0.03)] border border-white/5 rounded-xl px-2 py-3 flex flex-col items-center gap-1 shadow-sm"
+              className="glass px-2 py-3 flex flex-col items-center gap-1"
             >
               <span className="text-[9px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60">
                 {m.label}
@@ -510,7 +510,7 @@ export const Monitoring: React.FC = () => {
           ].map(({ label, key, icon: Icon }) => (
             <div key={key} className="space-y-2">
               <div className="flex items-center gap-2">
-                <Icon size={12} className="text-[rgb(var(--accent))]/70" />
+                <Icon size={16} className="text-[rgb(var(--accent))]/70" />
                 <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--foreground-muted))]/70">
                   {label}
                 </span>

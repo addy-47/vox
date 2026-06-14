@@ -60,8 +60,8 @@ export const ModelCategory = ({
             className={cn(
                 "w-full rounded-2xl transition-all duration-500 overflow-hidden",
                 selected 
-                    ? "glass-surface glass-base" 
-                    : "glass-whisper glass-base opacity-60 hover:opacity-100"
+                    ? "glass" 
+                    : "glass opacity-60 hover:opacity-100"
             )}
         >
             <div 
@@ -144,7 +144,7 @@ export const ModelCategory = ({
                                         key={group.id} 
                                         onClick={handleLineClick}
                                         className={cn(
-                                            "flex items-center justify-between text-[11px] font-bold py-2.5 px-4 glass-whisper rounded-xl group transition-all border border-transparent hover:border-[rgb(var(--accent))]/20",
+                                            "flex items-center justify-between text-[11px] font-bold py-2.5 px-4 glass rounded-xl group transition-all border border-transparent hover:border-[rgb(var(--accent))]/20",
                                             !required && "cursor-pointer"
                                         )}
                                     >

@@ -93,11 +93,36 @@ export interface VoxSettings {
     retention_days: number;
   };
   assistant: {
-    hindi_prompt: string;
-    english_prompt: string;
+    modular_prompt: string;
+    realtime_prompt: string;
   };
   setup: {
     completed: boolean;
+  };
+  realtime: {
+    provider: "gemini_live" | "openai_realtime" | "deepgram_voice_agent" | "elevenlabs_convai";
+    gemini: {
+      api_key: string;
+      model: string;
+      voice_name: string;
+      language_code: string;
+      temperature: number;
+      enable_web_search: boolean;
+      resume_handle: string | null;
+    };
+    openai: {
+      api_key: string;
+      model: string;
+      voice: string;
+    };
+    deepgram: {
+      api_key: string;
+      model: string;
+    };
+    elevenlabs: {
+      api_key: string;
+      agent_id: string;
+    };
   };
 }
 

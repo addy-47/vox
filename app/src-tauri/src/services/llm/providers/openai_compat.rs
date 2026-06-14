@@ -1,12 +1,12 @@
 use super::{LlmProvider, ProviderKind};
 use crate::core::events::VoxEvent;
 use crate::core::settings::RemoteModelInfo;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::sync::mpsc;
-use std::time::Duration;
-use serde::{Deserialize, Serialize};
 use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::time::Duration;
 
 pub struct OpenAiCompatProvider {
     base_url: String,
@@ -17,21 +17,27 @@ pub struct OpenAiCompatProvider {
 }
 
 impl OpenAiCompatProvider {
-    pub fn new(base_url: &str, model: &str, api_key: Option<&str>, provider_name: Option<&str>) -> Self {
+    pub fn new(
+        base_url: &str,
+        model: &str,
+        api_key: Option<&str>,
+        provider_name: Option<&str>,
+    ) -> Self {
         let mut resolved_url = base_url.trim_end_matches('/').to_string();
         if let Some(p_name) = provider_name {
             let p_lower = p_name.to_lowercase();
-            if resolved_url.is_empty() 
+            if resolved_url.is_empty()
                 || resolved_url == "http://127.0.0.1:11434"
                 || resolved_url == "http://localhost:11434"
-                || resolved_url.contains("api.openai.com") 
-                || resolved_url.contains("generativelanguage.googleapis.com") 
+                || resolved_url.contains("api.openai.com")
+                || resolved_url.contains("generativelanguage.googleapis.com")
                 || resolved_url.contains("api.anthropic.com")
             {
                 if p_lower == "openai" {
                     resolved_url = "https://api.openai.com".to_string();
                 } else if p_lower == "gemini" {
-                    resolved_url = "https://generativelanguage.googleapis.com/v1beta/openai".to_string();
+                    resolved_url =
+                        "https://generativelanguage.googleapis.com/v1beta/openai".to_string();
                 } else if p_lower == "anthropic" {
                     resolved_url = "https://api.anthropic.com".to_string();
                 }
@@ -174,7 +180,10 @@ impl LlmProvider for OpenAiCompatProvider {
 
             if !response.status().is_success() {
                 let status = response.status();
-                let err_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                let err_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
                 return Err(anyhow::anyhow!(
                     "HTTP Error: {} - Content: {}",
                     status,
@@ -194,25 +203,24 @@ impl LlmProvider for OpenAiCompatProvider {
                 }
 
                 // Await the next stream chunk with a 150ms timeout to ensure we check cancel_flag frequently
-                let chunk_opt = match tokio::time::timeout(Duration::from_millis(150), stream.next()).await {
-                    Ok(Some(chunk_result)) => {
-                        match chunk_result {
+                let chunk_opt =
+                    match tokio::time::timeout(Duration::from_millis(150), stream.next()).await {
+                        Ok(Some(chunk_result)) => match chunk_result {
                             Ok(c) => Some(c),
                             Err(e) => {
                                 log::error!("[OpenAiCompat] Stream read error: {}", e);
                                 break;
                             }
+                        },
+                        Ok(None) => {
+                            // EOF
+                            break;
                         }
-                    }
-                    Ok(None) => {
-                        // EOF
-                        break;
-                    }
-                    Err(_) => {
-                        // Timeout hit, loop again to check cancel_flag
-                        None
-                    }
-                };
+                        Err(_) => {
+                            // Timeout hit, loop again to check cancel_flag
+                            None
+                        }
+                    };
 
                 if let Some(chunk) = chunk_opt {
                     buffer.extend_from_slice(&chunk);
@@ -272,7 +280,10 @@ impl LlmProvider for OpenAiCompatProvider {
         block_on(async {
             // Try Ollama-specific /api/tags first
             let ollama_url = format!("{}/api/tags", self.base_url);
-            let mut builder = self.async_client.get(&ollama_url).timeout(Duration::from_secs(3));
+            let mut builder = self
+                .async_client
+                .get(&ollama_url)
+                .timeout(Duration::from_secs(3));
             builder = self.inject_headers(builder);
 
             if let Ok(resp) = builder.send().await {
@@ -282,10 +293,8 @@ impl LlmProvider for OpenAiCompatProvider {
                             .models
                             .into_iter()
                             .map(|m| {
-                                let clean_name = m.name
-                                    .replace(':', " ")
-                                    .replace('_', " ")
-                                    .replace('-', " ");
+                                let clean_name =
+                                    m.name.replace(':', " ").replace('_', " ").replace('-', " ");
                                 RemoteModelInfo {
                                     id: m.name.clone(),
                                     name: clean_name,
@@ -295,7 +304,10 @@ impl LlmProvider for OpenAiCompatProvider {
                                         let mut c = f.chars();
                                         match c.next() {
                                             None => String::new(),
-                                            Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+                                            Some(first) => {
+                                                first.to_uppercase().collect::<String>()
+                                                    + c.as_str()
+                                            }
                                         }
                                     }),
                                     provider_kind: "open_ai_compat".to_string(),
@@ -314,7 +326,10 @@ impl LlmProvider for OpenAiCompatProvider {
 
             let resp = builder.send().await?;
             if !resp.status().is_success() {
-                return Err(anyhow::anyhow!("HTTP error listing models: {}", resp.status()));
+                return Err(anyhow::anyhow!(
+                    "HTTP error listing models: {}",
+                    resp.status()
+                ));
             }
 
             let model_list = resp.json::<ModelList>().await?;
@@ -346,13 +361,11 @@ impl LlmProvider for OpenAiCompatProvider {
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => handle.block_on(future),
-        Err(_) => {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to build temporary tokio runtime")
-                .block_on(future)
-        }
+        Err(_) => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to build temporary tokio runtime")
+            .block_on(future),
     }
 }
 
@@ -360,12 +373,7 @@ fn user_text_is_warmup(text: &str) -> bool {
     text.is_empty() || text == "[WARMUP]"
 }
 
-fn process_line(
-    line: &str,
-    turn_id: u32,
-    tx: &mpsc::Sender<VoxEvent>,
-    finished: &mut bool,
-) {
+fn process_line(line: &str, turn_id: u32, tx: &mpsc::Sender<VoxEvent>, finished: &mut bool) {
     if line.is_empty() {
         return;
     }
@@ -394,17 +402,18 @@ fn process_line(
 
 fn parse_heuristic_metadata(id: &str) -> (String, Option<String>, Option<String>) {
     let id_lower = id.to_lowercase();
-    let quantization = if id_lower.contains("q4_k_m") || id_lower.contains("q4_k") || id_lower.contains("q4") {
-        Some("Q4_K_M".to_string())
-    } else if id_lower.contains("q6_k") || id_lower.contains("q6") {
-        Some("Q6_K".to_string())
-    } else if id_lower.contains("q2_k") || id_lower.contains("q2") {
-        Some("Q2_K".to_string())
-    } else if id_lower.contains("fp16") {
-        Some("FP16".to_string())
-    } else {
-        None
-    };
+    let quantization =
+        if id_lower.contains("q4_k_m") || id_lower.contains("q4_k") || id_lower.contains("q4") {
+            Some("Q4_K_M".to_string())
+        } else if id_lower.contains("q6_k") || id_lower.contains("q6") {
+            Some("Q6_K".to_string())
+        } else if id_lower.contains("q2_k") || id_lower.contains("q2") {
+            Some("Q2_K".to_string())
+        } else if id_lower.contains("fp16") {
+            Some("FP16".to_string())
+        } else {
+            None
+        };
 
     let family = if id_lower.contains("gemma") {
         Some("Gemma".to_string())
@@ -414,10 +423,7 @@ fn parse_heuristic_metadata(id: &str) -> (String, Option<String>, Option<String>
         None
     };
 
-    let clean_name = id
-        .replace(':', " ")
-        .replace('_', " ")
-        .replace('-', " ");
+    let clean_name = id.replace(':', " ").replace('_', " ").replace('-', " ");
 
     (clean_name, quantization, family)
 }

@@ -30,14 +30,14 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
             <button 
               onClick={prevSubStep}
               disabled={subStep === 1}
-              className="p-2 rounded-full glass-whisper border border-[rgba(var(--border),0.06)] hover:bg-white/10 disabled:opacity-20 transition-all"
+              className="p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-white/10 disabled:opacity-20 transition-all"
             >
               <ChevronLeft className="w-4 h-4 text-[rgb(var(--foreground-muted))]" />
             </button>
             <button 
               onClick={nextSubStep}
               disabled={subStep === 3}
-              className="p-2 rounded-full glass-whisper border border-[rgba(var(--border),0.06)] hover:bg-white/10 disabled:opacity-20 transition-all"
+              className="p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-white/10 disabled:opacity-20 transition-all"
             >
               <ChevronRight className="w-4 h-4 text-[rgb(var(--foreground-muted))]" />
             </button>
@@ -155,7 +155,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               className="flex flex-col h-full py-4 relative"
             >
               <div className="flex-1 flex flex-col items-center justify-center relative">
-                <div className="w-[400px] h-[200px] glass-card glass-base rounded-2xl border-[rgba(var(--accent),0.15)] overflow-hidden flex flex-col text-left shadow-2xl relative z-10">
+                <div className="w-[400px] h-[200px] glass-card rounded-2xl border-[rgba(var(--accent),0.15)] overflow-hidden flex flex-col text-left relative z-10">
                   <div className="px-6 py-4 flex items-center justify-between relative z-10 border-b border-white/5">
                     <div 
                       className="flex items-center gap-3 cursor-help group/status"
@@ -326,7 +326,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
         >
           <button
             onClick={onNext}
-            className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] shadow-[0_0_40px_rgba(0,0,0,0.5)] glass-card glass-base hover:border-[rgb(var(--accent))]/70"
+            className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
@@ -341,7 +341,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
 };
 
 const FeatureCard = ({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) => (
-  <div className="glass-whisper glass-base px-5 py-5 group transition-all duration-500 hover:bg-white/[0.06]">
+  <div className="glass px-5 py-5 group transition-all duration-500 hover:bg-white/[0.06]">
     <div className="mb-3 w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors">
       {icon}
     </div>

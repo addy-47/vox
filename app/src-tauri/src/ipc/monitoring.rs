@@ -1,6 +1,6 @@
-use tauri::State;
 use crate::core::state::AppState;
 use crate::monitoring::snapshot::RuntimeSnapshot;
+use tauri::State;
 
 /// Get the most recent runtime snapshot.
 /// Throttled pull-based IPC for frontend monitoring.

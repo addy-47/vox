@@ -1,7 +1,7 @@
+pub mod audio_filters;
 pub mod bench_reporter;
 pub mod logging;
 pub mod paths;
-pub mod audio_filters;
 
 /// Checks the Linux CPU frequency governor. Returns `true` if it's "performance",
 /// `false` if it's something else (e.g. "powersave"), `None` if unable to detect

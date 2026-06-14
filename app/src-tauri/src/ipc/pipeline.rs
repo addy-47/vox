@@ -41,7 +41,10 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
         state.is_stt_loaded.store(false, Ordering::Relaxed);
         state.is_llm_loaded.store(false, Ordering::Relaxed);
         state.is_tts_loaded.store(false, Ordering::Relaxed);
-        state.pipeline.current_state_atomic.store(InteractionState::Idle as u32, Ordering::Relaxed);
+        state
+            .pipeline
+            .current_state_atomic
+            .store(InteractionState::Idle as u32, Ordering::Relaxed);
         if let Ok(mut state_lock) = state.pipeline.state.lock() {
             *state_lock = InteractionState::Idle;
         }
@@ -149,7 +152,10 @@ pub async fn engage(
             // Persist Session End
             let conv_id = state.conversation_id.swap(0, Ordering::Relaxed);
             if conv_id != 0 {
-                log::info!("[Session] <<< USER SESSION ENDED (User Disengaged): id={}", conv_id);
+                log::info!(
+                    "[Session] <<< USER SESSION ENDED (User Disengaged): id={}",
+                    conv_id
+                );
                 let persist_tx = state.persist_tx.lock().unwrap();
                 if let Some(ref tx) = *persist_tx {
                     let now = std::time::SystemTime::now()
@@ -253,7 +259,14 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     app.emit(crate::core::constants::EVENT_MODEL_LOADING, "VAD")
         .ok();
 
-    let (stt_model_path, stt_engine_type, vad_model_path_opt, vad_backend_opt, pre_load, input_device) = {
+    let (
+        stt_model_path,
+        stt_engine_type,
+        vad_model_path_opt,
+        vad_backend_opt,
+        pre_load,
+        input_device,
+    ) = {
         let (vad_backend, asr_model, tray_enabled, input_device) = {
             let settings = state.settings.read().unwrap();
             (
@@ -270,7 +283,10 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             "nvidia_nemotron" => models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON),
             "qwen3_asr" => models_dir.join(crate::core::constants::MODEL_DIR_STT),
             _ => {
-                log::error!("[Pipeline] Unknown ASR model '{}', defaulting to nvidia_nemotron", asr_model);
+                log::error!(
+                    "[Pipeline] Unknown ASR model '{}', defaulting to nvidia_nemotron",
+                    asr_model
+                );
                 models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON)
             }
         };
@@ -306,7 +322,14 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             None
         };
 
-        (stt, asr_model, vad_path, vad_backend, tray_enabled, input_device)
+        (
+            stt,
+            asr_model,
+            vad_path,
+            vad_backend,
+            tray_enabled,
+            input_device,
+        )
     };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
@@ -448,8 +471,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                 .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
         };
 
-        let super_tts = models_dir
-            .join(crate::core::constants::MODEL_DIR_TTS_SUPER);
+        let super_tts = models_dir.join(crate::core::constants::MODEL_DIR_TTS_SUPER);
 
         (super_tts, llm)
     };
@@ -538,8 +560,8 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
 /// Decode a WAV file to mono f32 samples.
 /// Handles both integer and float sample formats. Stereo is averaged to mono.
 fn decode_wav_to_mono_f32(path: &std::path::Path) -> Result<Vec<f32>, String> {
-    let mut reader =
-        hound::WavReader::open(path).map_err(|e| format!("Failed to open WAV '{}': {}", path.display(), e))?;
+    let mut reader = hound::WavReader::open(path)
+        .map_err(|e| format!("Failed to open WAV '{}': {}", path.display(), e))?;
     let spec = reader.spec();
 
     let samples: Vec<f32> = match spec.sample_format {
@@ -621,7 +643,11 @@ pub async fn test_clip(
         return Err("Decoded audio is empty".to_string());
     }
 
-    log::info!("[TestClip] Decoded {} samples from '{}'", audio.len(), clip_id);
+    log::info!(
+        "[TestClip] Decoded {} samples from '{}'",
+        audio.len(),
+        clip_id
+    );
 
     // 3. Auto-launch engine if not running
     {
@@ -634,20 +660,33 @@ pub async fn test_clip(
     }
 
     // 4. Set owner to MainWindow so state_changed / llm_token events route to main window
+    state.owner.store(
+        InteractionOwner::MainWindow as u32,
+        std::sync::atomic::Ordering::Relaxed,
+    );
     state
-        .owner
-        .store(InteractionOwner::MainWindow as u32, std::sync::atomic::Ordering::Relaxed);
-    state.pipeline.is_engaged.store(true, std::sync::atomic::Ordering::Relaxed);
+        .pipeline
+        .is_engaged
+        .store(true, std::sync::atomic::Ordering::Relaxed);
 
     // Re-acquire engine lock and send clip into the pipeline
     let engine_lock = state.engine.lock().await;
-    let engine = engine_lock.as_ref().ok_or_else(|| "Engine failed to start after launch".to_string())?;
+    let engine = engine_lock
+        .as_ref()
+        .ok_or_else(|| "Engine failed to start after launch".to_string())?;
 
-    let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(InteractionOwner::MainWindow));
+    let _ = engine
+        .vad_tx
+        .send(crate::core::state::VadCommand::UpdateOwner(
+            InteractionOwner::MainWindow,
+        ));
 
     // Generate a unique turn_id (bump atomic to avoid collision with VAD)
-    let turn_id =
-        state.pipeline.turn_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let turn_id = state
+        .pipeline
+        .turn_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
 
     // WarmUp first — spawns LLM + TTS workers so they're ready when STT finishes
     let _ = engine.pipeline_tx.send(VoxEvent::WarmUp);
@@ -661,10 +700,17 @@ pub async fn test_clip(
     // Send the audio as a Final STT command (bypasses VAD completely)
     engine
         .stt_tx
-        .send(SttCommand::Final(turn_id, InteractionOwner::MainWindow, audio))
+        .send(SttCommand::Final(
+            turn_id,
+            InteractionOwner::MainWindow,
+            audio,
+        ))
         .map_err(|e| format!("STT channel closed: {}", e))?;
 
-    log::info!("[TestClip] Injected turn_id={} into pipeline (WarmUp sent)", turn_id);
+    log::info!(
+        "[TestClip] Injected turn_id={} into pipeline (WarmUp sent)",
+        turn_id
+    );
 
     Ok(())
 }
@@ -677,17 +723,175 @@ pub async fn test_clip_cancel(
 ) -> Result<(), String> {
     log::info!("[TestClip] Cancel requested — flushing pipeline.");
 
-    state.pipeline.cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-    state.pipeline.is_engaged.store(false, std::sync::atomic::Ordering::Relaxed);
+    state
+        .pipeline
+        .cancel_flag
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    state
+        .pipeline
+        .is_engaged
+        .store(false, std::sync::atomic::Ordering::Relaxed);
 
     if let Some(engine) = state.engine.lock().await.as_ref() {
-        let turn_id = state.pipeline.turn_id.load(std::sync::atomic::Ordering::Relaxed);
+        let turn_id = state
+            .pipeline
+            .turn_id
+            .load(std::sync::atomic::Ordering::Relaxed);
         let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id });
         let _ = engine.stt_tx.send(SttCommand::ResetStream);
-        let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(InteractionOwner::Tray));
+        let _ = engine
+            .vad_tx
+            .send(crate::core::state::VadCommand::UpdateOwner(
+                InteractionOwner::Tray,
+            ));
     } else {
         log::warn!("[TestClip] No engine to cancel.");
     }
 
+    Ok(())
+}
+
+/// Start the real-time speech-to-speech session with the active cloud provider.
+#[tauri::command]
+pub async fn start_realtime_session(
+    _app: AppHandle,
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), String> {
+    log::info!("[IPC] start_realtime_session requested");
+
+    // 1. Ensure engine is running
+    let engine_guard = state.engine.lock().await;
+    let engine = match &*engine_guard {
+        Some(e) => e,
+        None => {
+            return Err("Audio engine is not running. Please start the engine first.".to_string())
+        }
+    };
+
+    // 2. Clear any existing realtime engine
+    let mut rt_guard = state.realtime_engine.lock().await;
+    if let Some(mut old_rt) = rt_guard.take() {
+        log::info!("[IPC] Stopping existing realtime session...");
+        old_rt.stop();
+        let _ = engine
+            .vad_tx
+            .send(crate::core::state::VadCommand::StopRealtime);
+    }
+
+    // 3. Load settings to determine active provider
+    let settings = state.settings.read().unwrap().clone();
+    let provider: Box<dyn crate::services::realtime::RealtimeVoiceProvider> = match settings
+        .realtime
+        .provider
+    {
+        crate::core::settings::RealtimeProviderKind::GeminiLive => Box::new(
+            crate::services::realtime::providers::gemini_live::GeminiLiveProvider::new(
+                settings.realtime.gemini.clone(),
+                settings.assistant.realtime_prompt.clone(),
+            ),
+        ),
+        crate::core::settings::RealtimeProviderKind::OpenAiRealtime => {
+            return Err("OpenAI Realtime provider is not yet implemented".to_string());
+        }
+        crate::core::settings::RealtimeProviderKind::DeepgramVoiceAgent => {
+            return Err("Deepgram Voice Agent provider is not yet implemented".to_string());
+        }
+        crate::core::settings::RealtimeProviderKind::ElevenLabsConvai => {
+            return Err("ElevenLabs Conversational AI provider is not yet implemented".to_string());
+        }
+    };
+
+    let owner: crate::core::state::InteractionOwner = state
+        .owner
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .into();
+    let interaction_mode = match owner {
+        crate::core::state::InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+        crate::core::state::InteractionOwner::MainWindow
+        | crate::core::state::InteractionOwner::Ptt => settings.interaction.main_app_mode.clone(),
+        crate::core::state::InteractionOwner::Wizard => {
+            crate::core::settings::InteractionMode::Passive
+        }
+    };
+
+    // 4. Create and start RealtimeEngine
+    let tokio_handle = tokio::runtime::Handle::current();
+    let mut rt_engine =
+        crate::services::realtime::engine::RealtimeEngine::new(provider, tokio_handle);
+
+    let playback_engine = engine.playback_engine.clone();
+    let event_tx = engine.pipeline_tx.clone();
+
+    rt_engine
+        .start(interaction_mode, playback_engine, event_tx)
+        .map_err(|e| format!("Failed to start realtime session: {}", e))?;
+
+    // Get the audio sender and wire it into the VAD actor
+    let audio_tx = rt_engine
+        .get_audio_sender()
+        .ok_or_else(|| "Failed to get realtime audio sender".to_string())?;
+
+    // 5. Update pipeline mode to Realtime in settings
+    let current_settings = {
+        let mut settings_write = state.settings.write().unwrap();
+        settings_write.interaction.pipeline_mode = crate::core::settings::PipelineMode::Realtime;
+        settings_write.clone()
+    };
+
+    // 6. Propagate settings update to the pipeline event loop
+    let _ = engine
+        .pipeline_tx
+        .send(crate::core::events::VoxEvent::SettingsUpdated(
+            current_settings,
+        ));
+
+    // 7. Tell VAD to start routing chunks
+    let _ = engine
+        .vad_tx
+        .send(crate::core::state::VadCommand::StartRealtime(audio_tx));
+
+    *rt_guard = Some(rt_engine);
+
+    log::info!("[IPC] Realtime S2S session started successfully.");
+    Ok(())
+}
+
+/// Stop the active real-time speech-to-speech session and restore modular mode.
+#[tauri::command]
+pub async fn stop_realtime_session(
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), String> {
+    log::info!("[IPC] stop_realtime_session requested");
+
+    // 1. Tell VAD to stop routing chunks
+    if let Some(engine) = state.engine.lock().await.as_ref() {
+        let _ = engine
+            .vad_tx
+            .send(crate::core::state::VadCommand::StopRealtime);
+    }
+
+    // 2. Stop and drop the realtime engine
+    let mut rt_guard = state.realtime_engine.lock().await;
+    if let Some(mut rt_engine) = rt_guard.take() {
+        rt_engine.stop();
+    }
+
+    // 3. Update pipeline mode back to Modular in settings
+    let current_settings = {
+        let mut settings_write = state.settings.write().unwrap();
+        settings_write.interaction.pipeline_mode = crate::core::settings::PipelineMode::Modular;
+        settings_write.clone()
+    };
+
+    // 4. Propagate settings update to the pipeline event loop
+    if let Some(engine) = state.engine.lock().await.as_ref() {
+        let _ = engine
+            .pipeline_tx
+            .send(crate::core::events::VoxEvent::SettingsUpdated(
+                current_settings,
+            ));
+    }
+
+    log::info!("[IPC] Realtime S2S session stopped successfully.");
     Ok(())
 }

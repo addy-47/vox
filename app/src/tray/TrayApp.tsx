@@ -318,7 +318,7 @@ export const TrayApp: React.FC = () => {
             exit="HIDDEN"
             transition={{ duration: 0.15, ease: "easeOut" }}
             className={cn(
-              "w-[380px] h-[250px] flex flex-col glass-elevated glass-base overflow-hidden rounded-2xl transition-all duration-1000",
+              "w-[380px] h-[250px] flex flex-col glass-card overflow-hidden rounded-2xl transition-all duration-1000",
               isSleeping && "grayscale-[0.8] opacity-50"
             )}
             onMouseEnter={() => setIsHovered(true)}
