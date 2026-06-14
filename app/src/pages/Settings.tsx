@@ -1,5 +1,5 @@
-import { useState, useCallback, memo, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { Brain, Palette, Eye, Database, UserCircle, Sliders } from "lucide-react";
+import { useState, useCallback, memo, useEffect, useMemo, useRef, Suspense } from "react";
+import { Brain, Palette, Eye, Database, UserCircle, Sliders, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -7,14 +7,13 @@ import { GlassSkeleton } from "@/shared/components/GlassSkeleton";
 import { AnimatePresence, motion } from "framer-motion";
 import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
 
-// Lazy-load settings cards for optimized bundle size and performance
-const PersonaCard = lazy(() => import("@/shared/components/settings/cards/PersonaCard").then(m => ({ default: m.PersonaCard })));
-const ModelsCard = lazy(() => import("@/shared/components/settings/cards/ModelsCard").then(m => ({ default: m.ModelsCard })));
-const RealtimeCard = lazy(() => import("@/shared/components/settings/cards/RealtimeCard").then(m => ({ default: m.RealtimeCard })));
-const TrayCard = lazy(() => import("@/shared/components/settings/cards/TrayCard").then(m => ({ default: m.TrayCard })));
-const MemoryCard = lazy(() => import("@/shared/components/settings/cards/MemoryCard").then(m => ({ default: m.MemoryCard })));
-const AppearanceCard = lazy(() => import("@/shared/components/settings/cards/AppearanceCard").then(m => ({ default: m.AppearanceCard })));
-const InteractionCard = lazy(() => import("@/shared/components/settings/cards/InteractionCard").then(m => ({ default: m.InteractionCard })));
+import { PersonaCard } from "@/shared/components/settings/cards/PersonaCard";
+import { ModelsCard } from "@/shared/components/settings/cards/ModelsCard";
+import { RealtimeCard } from "@/shared/components/settings/cards/RealtimeCard";
+import { TrayCard } from "@/shared/components/settings/cards/TrayCard";
+import { MemoryCard } from "@/shared/components/settings/cards/MemoryCard";
+import { AppearanceCard } from "@/shared/components/settings/cards/AppearanceCard";
+import { InteractionCard } from "@/shared/components/settings/cards/InteractionCard";
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -312,7 +311,19 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
     case "models": {
       const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
       if (isRealtime) {
-        return JSON.stringify(settings.realtime) !== JSON.stringify(draftSettings.realtime);
+        const provId = draftSettings.realtime?.provider || "gemini_live";
+        const subkey = provId === "gemini_live" ? "gemini" :
+                       provId === "openai_realtime" ? "openai" :
+                       provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
+                       
+        const savedProvConfig = settings.realtime?.[subkey] || {};
+        const draftProvConfig = draftSettings.realtime?.[subkey] || {};
+        
+        // Exclude api_key when checking model-specific card changes
+        const { api_key: _, ...savedClean } = savedProvConfig;
+        const { api_key: __, ...draftClean } = draftProvConfig;
+        
+        return JSON.stringify(savedClean) !== JSON.stringify(draftClean);
       }
       return (
         JSON.stringify(settings.vad) !== JSON.stringify(draftSettings.vad) ||
@@ -341,11 +352,29 @@ const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) =
     case "interaction": {
       const { model: _, ...provSettings } = settings.llm.provider || {};
       const { model: __, ...provDraft } = draftSettings.llm.provider || {};
+      
+      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+      let realtimeChanges = false;
+      if (isRealtime) {
+        if (settings.realtime?.provider !== draftSettings.realtime?.provider) {
+          realtimeChanges = true;
+        } else {
+          const provId = draftSettings.realtime?.provider || "gemini_live";
+          const subkey = provId === "gemini_live" ? "gemini" :
+                         provId === "openai_realtime" ? "openai" :
+                         provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
+          if (settings.realtime?.[subkey]?.api_key !== draftSettings.realtime?.[subkey]?.api_key) {
+            realtimeChanges = true;
+          }
+        }
+      }
+      
       return (
         settings.interaction.main_app_mode !== draftSettings.interaction.main_app_mode ||
         settings.interaction.auto_sleep_timeout !== draftSettings.interaction.auto_sleep_timeout ||
         settings.interaction.pipeline_mode !== draftSettings.interaction.pipeline_mode ||
-        JSON.stringify(provSettings) !== JSON.stringify(provDraft)
+        JSON.stringify(provSettings) !== JSON.stringify(provDraft) ||
+        realtimeChanges
       );
     }
     default:
@@ -359,7 +388,19 @@ const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any,
     case "models": {
       const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
       if (isRealtime) {
-        Object.keys(settings.realtime).forEach(k => updateDraft("realtime", k, (settings.realtime as any)[k]));
+        const provId = draftSettings.realtime?.provider || "gemini_live";
+        const subkey = provId === "gemini_live" ? "gemini" :
+                       provId === "openai_realtime" ? "openai" :
+                       provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
+                       
+        const savedProvConfig = settings.realtime?.[subkey] || {};
+        const currentDraftProvConfig = draftSettings.realtime?.[subkey] || {};
+        
+        const { api_key: _, ...savedClean } = savedProvConfig;
+        updateDraft("realtime", subkey, {
+          ...currentDraftProvConfig,
+          ...savedClean
+        });
       } else {
         Object.keys(settings.vad).forEach(k => updateDraft("vad", k, (settings.vad as any)[k]));
         Object.keys(settings.asr).forEach(k => updateDraft("asr", k, (settings.asr as any)[k]));
@@ -402,6 +443,20 @@ const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any,
         ...settings.llm.provider,
         model: currentDraftModel
       });
+      
+      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+      if (isRealtime) {
+        updateDraft("realtime", "provider", settings.realtime.provider);
+        const subkeys = ["gemini", "openai", "deepgram", "elevenlabs"] as const;
+        subkeys.forEach(subkey => {
+          if (settings.realtime?.[subkey] && draftSettings?.realtime?.[subkey]) {
+            updateDraft("realtime", subkey, {
+              ...draftSettings.realtime[subkey],
+              api_key: settings.realtime[subkey].api_key
+            });
+          }
+        });
+      }
       break;
     }
   }
@@ -552,16 +607,7 @@ export const Settings: React.FC = () => {
   const updateDraft = useSettingsStore(s => s.updateDraft);
   const [activeDomains, setActiveDomains] = useState<DomainId[]>([]);
 
-  // Preload all settings card modules in the background as soon as Settings mounts to ensure instant transitions
-  useEffect(() => {
-    import("@/shared/components/settings/cards/PersonaCard").catch(() => {});
-    import("@/shared/components/settings/cards/ModelsCard").catch(() => {});
-    import("@/shared/components/settings/cards/RealtimeCard").catch(() => {});
-    import("@/shared/components/settings/cards/TrayCard").catch(() => {});
-    import("@/shared/components/settings/cards/MemoryCard").catch(() => {});
-    import("@/shared/components/settings/cards/AppearanceCard").catch(() => {});
-    import("@/shared/components/settings/cards/InteractionCard").catch(() => {});
-  }, []);
+
   const [isCompact, setIsCompact] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1440);
   const [windowHeight, setWindowHeight] = useState(typeof window !== "undefined" ? window.innerHeight : 800);
@@ -912,13 +958,7 @@ export const Settings: React.FC = () => {
             <span className="text-[10px] font-black uppercase tracking-[0.15em] text-[rgb(var(--foreground))]/75">
               System Settings
             </span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => restoreDefaults()}
-                className="px-3 py-1.5 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--accent),0.15)] text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))] transition-all duration-300 cursor-pointer"
-              >
-                Restore
-              </button>
+            <div className="flex gap-2 items-center">
               <button
                 onClick={() => commitChanges()}
                 disabled={!hasChanges}
@@ -951,10 +991,18 @@ export const Settings: React.FC = () => {
               >
                 Discard
               </button>
+              <button
+                onClick={() => restoreDefaults()}
+                className="p-1.5 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))] transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0"
+                title="Restore Defaults"
+                aria-label="Restore Defaults"
+              >
+                <RotateCcw size={14} />
+              </button>
             </div>
           </div>
 
-           <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-1 py-1 pb-[80px] space-y-6 animate-fade-in">
+           <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-3 py-4 pb-[85px] space-y-7 animate-fade-in">
              {[...DOMAINS].sort((a, b) => {
                const order = ["interaction", "tray", "models", "appearance", "memory", "persona"];
                return order.indexOf(a.id) - order.indexOf(b.id);
@@ -963,15 +1011,15 @@ export const Settings: React.FC = () => {
                return (
                  <div key={domain.id} className="w-full glass rounded-2xl p-4 md:p-5 space-y-4">
                   {/* Category Header */}
-                  <div className="flex items-center gap-2 px-1">
-                    <div className="p-1.5 rounded-lg bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] flex items-center justify-center">
-                      <Icon size={16} />
+                  <div className="flex items-center gap-2.5 px-1">
+                    <div className="p-2 rounded-lg bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] flex items-center justify-center">
+                      <Icon size={18} />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/90">
+                      <span className="text-[15px] font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
                         {domain.label}
                       </span>
-                      <span className="text-[10px] text-[rgb(var(--foreground-muted))]/60">
+                      <span className="text-[10px] font-semibold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
                         {domain.sublabel}
                       </span>
                     </div>

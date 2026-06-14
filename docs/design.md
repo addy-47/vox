@@ -86,3 +86,32 @@ To achieve high rendering performance on baseline systems (8GB RAM, CPU-first):
     *   *Idle*: 15fps (slow idle glow)
     *   *Sleep*: 0fps (fully paused loop when tab is hidden or asleep)
 *   **React Memoization**: All visually intensive components (`AmbientBackground`, `PipelineField`, `VoxOrb`, `LiveWaveform`) are wrapped in `React.memo` to eliminate unnecessary rendering overhead during text streaming or database reads.
+
+---
+
+## 7. Settings & Configuration Hub UX/UI Preferences
+
+To maintain a clean, premium visual aesthetic and ensure settings remain readable and uncluttered across all layout viewports:
+
+### Flat Underline Tab Strips
+For list selections (e.g., LLM providers, Realtime Gateway options), avoid heavy card grids or boxed designs. Instead, use a flat, left-aligned tab strip:
+*   **Joint Underline Track**: An anchored horizontal bottom border (`border-b border-[rgba(var(--border),0.12)]`) serves as a shared baseline.
+*   **Active Indicator**: The active tab uses the text color and a thicker bottom border (`border-b-2 border-[rgb(var(--accent))]`) in the active theme's accent color.
+*   **Pipe Separators**: Separate tab buttons with inline vertical pipe separators (`|`) styled in a soft accent color (`text-[rgb(var(--accent))]/30 font-light`).
+*   **Responsive Details**: Render provider/system icons inline right next to the text on desktop/full viewports. Hide icons on mobile/small layouts to optimize horizontal space.
+
+### Consolidated Card Headers on Mobile
+To eliminate duplicate title headers on small screens:
+*   Hide all internal settings card title blocks (e.g., "Appearance", "Model Hub", "Interaction Console") on mobile (`layoutMode === "small"`).
+*   Rely entirely on the outer Category Page Headers (e.g., "Interaction", "Models") inside the scrollable view settings page.
+*   Make the Category Page Headers larger and high-contrast (`text-[15px] font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]`) so they act as the dominant typographic elements.
+
+### Hover-Only Slide-Out Action Sidebars
+To hide repetitive descriptive guidelines (like `"CLICK TO TOGGLE"` or `"TAP TO SAVE"`) inside buttons:
+*   Wrap toggle buttons inside a group flex row containing a hidden sidebar panel (`w-0 opacity-0`).
+*   On hover, transition the sidebar width and opacity smoothly (`group-hover:w-[38px] group-hover:opacity-100`) while scaling the main button container to fit (`flex-1`) and flattening its shared borders.
+
+### Alignment & Padding Discipline
+To ensure visual consistency and neat alignment:
+*   Respect parent container padding: if a parent panel already applies default padding (e.g., `p-3` inside the settings config desks), do not duplicate horizontal padding (`px-3`) or margins (`mx-3`) on child components.
+*   Strictly align all text labels, active tab items, inputs, and gateway cards along the exact same vertical axis (e.g., aligning the `"L"` in `"Local"` or `"G"` in `"Gemini"` with the `"T"` in `"Trigger"`).

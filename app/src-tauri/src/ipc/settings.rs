@@ -376,6 +376,10 @@ fn apply_setting_mutation(
             settings.audio.output_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid output_mode: {}", e))?;
         }
+        ("audio", "input_device") => {
+            settings.audio.input_device = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid input_device: {}", e))?;
+        }
         ("llm", "model") => {
             settings.llm.model = value.as_str().ok_or("model must be a string")?.to_string();
         }

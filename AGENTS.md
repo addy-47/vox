@@ -8,10 +8,11 @@ you are likely to get wrong without help.
 ## Project Identity
 
 - **Vox**: A real-time, local-first voice assistant for desktop (Tauri v2 + Rust + React).
-- **Phase**: `v0.8.5` (released) — LLM cloud integration done and CI/CD green. Now working on
-  inference expansion: Gemini Live full integration, S2S frontend, PTT for S2S, testing and
-  hardening before `v0.9.0`. OpenAI, Gemini, and Anthropic cloud providers are already
-  supported through the unified `OpenAiCompatProvider` (no new structs needed).
+- **Phase**: `v0.9.0` (in progress) — Realtime S2S engine complete: Gemini Live integration,
+  PTT for S2S, web realtime bench, full frontend session lifecycle (engage/pause/resume,
+  session cache, idle timeout, client-side VAD gating). Next: OpenAI Realtime, Deepgram
+  Voice Agent, ElevenLabs ConvAI provider implementations. OpenAI, Gemini, and Anthropic
+  cloud providers are already supported through the unified `OpenAiCompatProvider`.
 - **Core mandate**: Local-first, CPU-only (~8GB RAM), sub-500ms pipeline, streaming-first.
 
 ---
@@ -30,13 +31,16 @@ you are likely to get wrong without help.
 │   └── src-tauri/            # Rust backend
 │       ├── src/
 │       │   ├── core/         # events.rs, settings.rs, state.rs, constants.rs, metrics.rs
-│       │   ├── services/     # audio, vad/, stt/, llm/, tts/, pipeline, playback, ptt, translit
+│       │   ├── services/     # audio/, vad/, stt/, llm/, tts/, pipeline, realtime/, ptt, translit
+│       │   │   ├── audio/    # device.rs, playback.rs, router.rs (unified audio module)
+│       │   │   ├── realtime/ # engine.rs, audio_bridge.rs, playback_bridge.rs, resampler.rs
+│       │   │   │   └── providers/  # gemini_live.rs (full Gemini Live WebSocket integration)
 │       │   │   └── llm/providers/  # embedded.rs, openai_compat.rs (unified cloud hub)
 │       │   ├── ipc/          # Tauri command handlers (pipeline, settings, tray, history…)
 │       │   ├── persistence/  # SQLite (rusqlite), event store
 │       │   ├── monitoring/   # Telemetry aggregator, system monitor
 │       │   └── setup/        # First-run model download, wizard state machine
-│       └── tests/            # llm_provider_tests.rs (mock HTTP servers)
+│       └── tests/            # llm_provider_tests.rs, gemini_live_test.rs (mock WS servers)
 ├── docs/                     # Extensive architecture docs — READ BEFORE MAKING DECISIONS
 │   ├── backend.md            # ~1500 lines — threading, events, services, memory
 │   ├── frontend.md           # ~900 lines — component tree, state, IPC, design system
@@ -60,6 +64,8 @@ All paths are relative to repo root unless noted.
 | Frontend only | `cd app && pnpm build` (tsc + vite) |
 | Rust tests | `cd app/src-tauri && cargo test` |
 | Specific test | `cd app/src-tauri && cargo test --test llm_provider_tests` |
+| Realtime test | `cd app/src-tauri && cargo test --test gemini_live_test` |
+| Realtime bench | `cd app/src-tauri && cargo run --bin vox_realtime_bench` |
 | Lint Rust | `cd app/src-tauri && cargo clippy` |
 | Format Rust | `cd app/src-tauri && cargo fmt` |
 | Install deps | `cd app && pnpm install` |
@@ -74,6 +80,8 @@ Key: `pnpm` commands run from `app/`, `cargo` commands from `app/src-tauri/`. Ne
 - Backend tests use `vox_lib::` imports (the lib crate is named `vox_lib`, not `Vox`).
 - `llm_provider_tests.rs` spawns **real mock HTTP servers** (`TcpListener`) to test the
   `OpenAiCompatProvider`. Tests are fast and self-contained.
+- `gemini_live_test.rs` spawns a **mock WebSocket server** to test the Gemini Live provider
+  handshake, audio streaming, server message handling, and turn lifecycle. Fast and self-contained.
 - The `EmbeddedProvider` test expects a **valid GGUF file path** (or checks for init failure
   on missing files). Not suitable for CI without models downloaded.
 - No frontend tests exist yet.
@@ -103,13 +111,15 @@ as new `impl LlmProvider` structs in `services/llm/providers/`. The trait requir
 The pipeline (`services/pipeline.rs`) is **provider-agnostic** — it calls `LlmProvider`
 methods only. Do not modify the pipeline when adding a new provider.
 
-### Realtime S2S Engine (in progress, post-v0.8.5)
+### Realtime S2S Engine (v0.9.0, completed)
 
-The next major architectural addition is the `RealtimeVoiceProvider` trait for cloud
-speech-to-speech APIs (Gemini Live, OpenAI Realtime, Deepgram Voice Agent, ElevenLabs
-ConvAI). This lives in `services/realtime/` and introduces a hybrid sync/async
-threading model (tokio tasks for WebSocket, sync threads for audio capture/playback).
-See `docs/plans/phase9/` for detailed provider integration plans.
+The `RealtimeVoiceProvider` trait-based engine for cloud speech-to-speech APIs (Gemini Live,
+OpenAI Realtime, Deepgram Voice Agent, ElevenLabs ConvAI) is implemented in
+`services/realtime/`. It uses a **hybrid sync/async threading model** (tokio tasks for
+WebSocket, sync threads for audio capture/playback). **Gemini Live is fully integrated**
+with the complete frontend session lifecycle. The remaining three providers have config
+structs defined but return "not yet implemented" — see `docs/plans/phase9/` for their
+integration plans.
 
 ### Backend Threading Model
 
@@ -117,6 +127,8 @@ See `docs/plans/phase9/` for detailed provider integration plans.
 - Lock-free communication: ring buffers (audio), atomics (cancellation), mpsc channels (events).
 - `global_llama_backend()` singleton in `services/llm/mod.rs` — shared by LlmWorker and
   the TTS engine. `LlamaBackend::init()` is called exactly once per process.
+- **Hybrid sync/async for realtime S2S**: tokio tasks for WebSocket I/O, OS threads for
+  audio capture and playback, atomic flags for pause/resume coordination.
 - `VoxEvent` enum with 15+ variants drives all pipeline coordination.
 
 ### Frontend
@@ -166,6 +178,13 @@ summarizes. Read them for depth:
   values, pnpm only, security rules, gitignore requirements.
 - **`idea-validator.md`** — Pre-build filter for new features (DROP / VALIDATE / REFRAME / EXPLORE).
 - **`finetune.md`** — ASR fine-tuning specifics (Hindi/Hinglish, RTX 5070 Ti constraints).
+
+### Critical Bug Reports (Resolved)
+
+| File | Status | Issue |
+|------|--------|-------|
+| `docs/plans/phase9/realtime-ptt-mode-bug-report.md` | **Fixed** | Order-of-operations bug in `start_realtime_session_internal` causes PTT/Passive mode misassignment |
+| `docs/plans/phase9/state-fragmentation-report.md` | **Fixed** | 11 fragmentation points: `state.owner` desync, IPC param mismatches, dual settings write paths, missing VAD sync |
 
 ---
 

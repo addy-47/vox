@@ -30,9 +30,9 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
     >
       {/* Header */}
       {!isSmall && (
-        <div className="flex items-center gap-2 mb-4 shrink-0">
-          <Database className="text-[rgb(var(--accent))]" size={20} />
-          <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+        <div className="flex items-center gap-2 mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+          <Database className="text-[rgb(var(--accent))]" size={18} />
+          <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
             Memory & Privacy
           </span>
         </div>

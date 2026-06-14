@@ -30,40 +30,65 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 shrink-0">
-        {!isSmall ? (
+      {!isSmall && (
+        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
-            <Palette className="text-[rgb(var(--accent))]" size={20} />
-            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+            <Palette className="text-[rgb(var(--accent))]" size={18} />
+            <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
               Appearance
             </span>
           </div>
-        ) : (
-          <div /> // spacing helper
-        )}
-        
-        {/* Dark/Light Theme toggle */}
-        <div className="flex bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-xl">
-          {[
-            { id: "dark", icon: Moon },
-            { id: "light", icon: Sun },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => updateDraft("ui", "theme", t.id)}
-              className={cn(
-                "p-1.5 rounded-lg transition-all duration-300",
-                ui.theme === t.id
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                  : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-              )}
-              aria-label={`Switch to ${t.id} theme`}
-            >
-              <t.icon size={16} />
-            </button>
-          ))}
+          
+          {/* Dark/Light Theme toggle for desktop */}
+          <div className="flex bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-xl">
+            {[
+              { id: "dark", icon: Moon },
+              { id: "light", icon: Sun },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => updateDraft("ui", "theme", t.id)}
+                className={cn(
+                  "p-1.5 rounded-lg transition-all duration-300",
+                  ui.theme === t.id
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                    : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                )}
+                aria-label={`Switch to ${t.id} theme`}
+              >
+                <t.icon size={16} />
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Mobile inline Theme toggle row */}
+      {isSmall && (
+        <div className="flex items-center justify-between mb-4 p-2 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] font-semibold text-[11px] shrink-0">
+          <span className="text-[rgb(var(--foreground-muted))]/70 tracking-wider">COLOR THEME</span>
+          <div className="flex bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-xl">
+            {[
+              { id: "dark", icon: Moon },
+              { id: "light", icon: Sun },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => updateDraft("ui", "theme", t.id)}
+                className={cn(
+                  "p-1.5 rounded-lg transition-all duration-300",
+                  ui.theme === t.id
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                    : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                )}
+                aria-label={`Switch to ${t.id} theme`}
+              >
+                <t.icon size={14} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* HexColorPicker filling card width */}
       <div className="flex-1 flex items-center justify-center py-1 min-h-[180px]">

@@ -519,11 +519,12 @@ function VoiceCarousel({ selected, onChange, disabled }: {
 
 // ─── Unified config — 2-column layout ────────────────────────────────────────
 
-function UnifiedConfig({ subkey, draftSettings, updateDraft, disabled }: {
+function UnifiedConfig({ subkey, draftSettings, updateDraft, disabled, layoutMode = "full-max" }: {
   subkey: string;
   draftSettings: any;
   updateDraft: any;
   disabled: boolean;
+  layoutMode?: "full-max" | "full-min" | "small";
 }) {
   const config = draftSettings.realtime[subkey];
   if (!config) return null;
@@ -550,7 +551,11 @@ function UnifiedConfig({ subkey, draftSettings, updateDraft, disabled }: {
   const toggleSub = subkey === "gemini" ? "Live web grounding" : subkey === "openai" ? "Activity detection" : subkey === "deepgram" ? "AI agent routing" : "Context variables";
 
   return (
-    <div className={cn("flex flex-row gap-3.5 items-stretch w-full", disabled && "opacity-60 pointer-events-none select-none")}>
+    <div className={cn(
+      "w-full items-stretch",
+      layoutMode === "small" ? "flex flex-col gap-3" : "flex flex-row gap-3.5",
+      disabled && "opacity-60 pointer-events-none select-none"
+    )}>
       {/* Left column: Model, Temperature, Toggle (vertical) */}
       <div className="flex-[3] flex flex-col gap-3 min-w-0">
         {/* Model ID — default shows the model name */}
@@ -587,13 +592,17 @@ function UnifiedConfig({ subkey, draftSettings, updateDraft, disabled }: {
         />
       </div>
 
-      {/* Right column: Voice carousel (40%) */}
-      <div className="w-2/5 min-w-[100px] shrink-0">
+      {/* Right column: Voice carousel */}
+      <div className={cn(
+        "shrink-0",
+        layoutMode === "small" ? "w-full" : "w-2/5 min-w-[100px]"
+      )}>
         <VoiceCarousel
           selected={currentVoice}
           onChange={(v) => {
             if (disabled) return;
-            updateDraft("realtime", subkey, { ...config, [voiceField]: v });
+            const field = subkey === "gemini" ? "voice_name" : "voice";
+            updateDraft("realtime", subkey, { ...config, [field]: v });
           }}
           disabled={disabled}
         />
@@ -635,17 +644,19 @@ export const RealtimeCard = memo(({ layoutMode = "full-max" }: RealtimeCardProps
           )
     )}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <Cpu className="text-[rgb(var(--accent))]" size={16} />
-          <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
-            Realtime Hub
+      {layoutMode !== "small" && (
+        <div className="flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <Cpu className="text-[rgb(var(--accent))]" size={16} />
+            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+              Realtime Hub
+            </span>
+          </div>
+          <span className="text-[10px] font-bold uppercase text-[rgb(var(--foreground-muted))]/60">
+            v0.8.5
           </span>
         </div>
-        <span className="text-[10px] font-bold uppercase text-[rgb(var(--foreground-muted))]/60">
-          v0.8.5
-        </span>
-      </div>
+      )}
 
       {/* ── Pipeline Flow (transparent container) ──────────────────────── */}
       <PipelineFlow active={true} providerName={providerShortName(providerId)} />
@@ -670,6 +681,7 @@ export const RealtimeCard = memo(({ layoutMode = "full-max" }: RealtimeCardProps
           draftSettings={draftSettings}
           updateDraft={updateDraft}
           disabled={disabled}
+          layoutMode={layoutMode}
         />
       </div>
     </div>

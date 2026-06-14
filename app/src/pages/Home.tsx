@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef , useCallback} from "react";
 import { VoxOrb } from "@/shared/components/AdvancedOrb";
 import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
-import { LiveWaveform } from "@/shared/components/LiveWaveform";
 import { PipelineField } from "@/shared/components/PipelineField";
 import { AmbientBackground } from "@/shared/components/AmbientBackground";
 import { StatusCapsule } from "@/shared/components/StatusCapsule";
 import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
-import { Power, Mic, FlaskConical, Play, Pause, X } from "lucide-react";
+import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/shared/lib/utils";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { invoke } from "@tauri-apps/api/core";
@@ -117,6 +117,10 @@ export const Home: React.FC = () => {
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("PASSIVE");
   const [isEngaged, setIsEngaged] = useState(false);
   const [pipelineMode, setPipelineMode] = useState<"modular" | "realtime">("modular");
+  const pipelineModeRef = useRef(pipelineMode);
+  useEffect(() => {
+    pipelineModeRef.current = pipelineMode;
+  }, [pipelineMode]);
   const [isPaused, setIsPaused] = useState(false);
   const [sessionResumed, setSessionResumed] = useState(false);
   const [idleTimeout, setIdleTimeout] = useState<number | null>(null);
@@ -131,6 +135,8 @@ export const Home: React.FC = () => {
   const [testingClip, setTestingClip] = useState<string | null>(null);
   const testingClipRef = useRef<string | null>(null);
   const telemetryRef = useTelemetry();
+  const [errorAlert, setErrorAlert] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   // Dialogue history system
   const [dialogueHistory, setDialogueHistory] = useState<{ user: string; assistant: string; id: number }[]>([]);
@@ -159,9 +165,7 @@ export const Home: React.FC = () => {
   }, []);
 
   // Derived state
-  const isUserSpeaking = interactionState === "UserSpeaking" || pttStatus === "RECORDING";
   const isThinking = interactionState === "Thinking" || pttStatus === "PROCESSING";
-  const activeSpeaking = isUserSpeaking;
   const ambientMood = toMood(interactionState, isSleeping);
   const statusLabel = toStatusLabel(interactionState, isEngaged, isSleeping, pttStatus, isPaused, idleTimeout) + (sessionResumed && pipelineMode === "realtime" ? " (Resumed)" : "");
   const dotActive = isDotActive(interactionState, isEngaged, pttStatus, isPaused);
@@ -180,14 +184,14 @@ export const Home: React.FC = () => {
       setDialogueHistory((prev) => {
         const next = [...prev, { user: userText, assistant: aiText, id: turnIdCounter.current }];
         // Only cap in modular mode — realtime sessions show full session history
-        return pipelineMode === "modular" ? next.slice(-4) : next;
+        return pipelineModeRef.current === "modular" ? next.slice(-4) : next;
       });
       activeUserTextRef.current = "";
       activeAiTextRef.current = "";
       setTranscript("");
       setAssistantText("");
     }
-  }, [pipelineMode]);
+  }, []);
 
   // Clear dialogue history and transcript refs when session ends (isEngaged becomes false)
   useEffect(() => {
@@ -268,6 +272,7 @@ export const Home: React.FC = () => {
     }
     archiveCurrentTurn();
     setIsLaunching(true);
+    setErrorAlert(null);
     try {
       // Fetch latest settings to check pipeline mode
       const settings = await invoke<{ interaction?: { pipeline_mode?: string } }>("get_settings");
@@ -288,6 +293,8 @@ export const Home: React.FC = () => {
       setAssistantText("");
     } catch (err) {
       console.error("[Home] Engagement failed:", err);
+      const errMsg = typeof err === "string" ? err : (err instanceof Error ? err.message : String(err));
+      setErrorAlert(errMsg);
     } finally {
       setIsLaunching(false);
       engageTimeoutRef.current = setTimeout(() => {
@@ -300,6 +307,7 @@ export const Home: React.FC = () => {
     if (!isEngaged || engageLockRef.current) return;
     engageLockRef.current = true;
     setIsLaunching(true);
+    setErrorAlert(null);
 
     try {
       if (pipelineMode === "realtime") {
@@ -400,9 +408,9 @@ export const Home: React.FC = () => {
       try {
         const appWindow = getCurrentWindow();
 
-        const settings = await invoke<{ main_app_mode?: string }>("get_settings");
-        if (settings?.main_app_mode) {
-          setInteractionMode(settings.main_app_mode.toUpperCase() as InteractionMode);
+        const settings = await invoke<{ interaction?: { main_app_mode?: string } }>("get_settings");
+        if (settings?.interaction?.main_app_mode) {
+          setInteractionMode(settings.interaction.main_app_mode.toUpperCase() as InteractionMode);
         }
 
         try {
@@ -512,7 +520,7 @@ export const Home: React.FC = () => {
               setIsEngaged(false);
               hasActiveTurnStarted.current = false;
             }
-            if (pipelineMode === "realtime") {
+            if (pipelineModeRef.current === "realtime") {
               setIsEngaged(false);
               setIsPaused(false);
               setPipelineMode("modular");
@@ -522,6 +530,7 @@ export const Home: React.FC = () => {
               activeUserTextRef.current = "";
               activeAiTextRef.current = "";
               console.error("[Home] Realtime S2S connection error:", event.payload);
+              setErrorAlert(event.payload || "Realtime connection to Gemini Live lost.");
             }
           })
         );
@@ -596,7 +605,7 @@ export const Home: React.FC = () => {
       }
       unlisteners.forEach((u) => u());
     };
-  }, [archiveCurrentTurn]);
+  }, []);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -607,6 +616,45 @@ export const Home: React.FC = () => {
 
       {/* Sentient Field Background Energy */}
       <PipelineField state={interactionState} />
+
+      {/* Floating Error Toast */}
+      <AnimatePresence>
+        {errorAlert && (
+          <motion.div
+            initial={{ opacity: 0, x: 50, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 50, scale: 0.95 }}
+            className="absolute top-4 left-4 right-4 md:left-auto md:right-4 z-[100] md:max-w-sm pointer-events-auto"
+          >
+            <div className="glass-card p-4 rounded-xl flex items-start gap-3 border border-red-500/30 shadow-2xl bg-black/40 backdrop-blur-md">
+              <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={18} />
+              <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                <span className="text-xs font-bold tracking-wider uppercase text-red-400 text-left">Connection Error</span>
+                <p className="text-[11px] text-[rgb(var(--foreground))]/90 leading-relaxed font-light break-words select-text text-left">
+                  {errorAlert}
+                </p>
+                <div className="flex gap-3 mt-1 justify-start">
+                  <button
+                    onClick={() => {
+                      setErrorAlert(null);
+                      navigate("/settings");
+                    }}
+                    className="text-[10px] font-black uppercase tracking-wider text-[rgb(var(--accent))] hover:underline cursor-pointer"
+                  >
+                    Configure Settings
+                  </button>
+                  <button
+                    onClick={() => setErrorAlert(null)}
+                    className="text-[10px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Top-right: Status Capsule (single, clean, centered on mobile) ── */}
       <div className="absolute top-[10%] md:top-4 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-5 z-30 flex items-center gap-2 pointer-events-none">
@@ -726,26 +774,6 @@ export const Home: React.FC = () => {
 
       {/* ── Bottom Controls ─────────────────────────────────────────────── */}
       <div className="absolute bottom-[10%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4 w-full max-w-md">
-        {/* Waveform */}
-        <div
-          className={cn(
-            "w-full h-10 transition-all duration-500 pointer-events-none opacity-0 scale-95",
-            activeSpeaking && !testingClip && "opacity-75 scale-100"
-          )}
-        >
-          <LiveWaveform
-            active={activeSpeaking && !testingClip}
-            processing={false}
-            telemetryRef={telemetryRef}
-            height={36}
-            className="w-full"
-            mode="static"
-            barWidth={2.5}
-            barGap={1.5}
-            fadeWidth={80}
-          />
-        </div>
-
         {/* Buttons */}
         <div className="flex items-center gap-4 relative">
           {/* Universal Pause / Resume Button */}

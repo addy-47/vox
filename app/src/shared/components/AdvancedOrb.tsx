@@ -219,7 +219,7 @@ const DISC_VERT = `
     float dispScale = 0.22 + u_amplitude * 0.95;
     float taper     = sin(vRadius * 3.14159) * smoothstep(1.0, 0.6, vRadius);
 
-    float currentWaveScale = u_waveScale * (1.0 + u_highs * 2.0);
+    float currentWaveScale = u_waveScale * (1.0 + u_highs * 0.4);
     vec3 nc1 = hemi * currentWaveScale
                + vec3(u_time * 0.11, u_time * 0.08,  u_phase);
     vec3 nc2 = hemi * currentWaveScale * 2.5
@@ -470,13 +470,20 @@ export const VoxOrb = React.memo(({
       const e = telemetryRef.current.energy;
       const m = telemetryRef.current.mid;
       const h = telemetryRef.current.high;
+      const v = telemetryRef.current.vad_prob || 0;
+      
       if (state === 'UserSpeaking' || state === 'AssistantSpeaking') {
-        telemEnergy = e * 2.2;
-        telemMid = m * 2.2;
-        telemHigh = h * 2.2;
+        telemEnergy = e * 1.0;
+        telemMid = m * 1.0;
+        telemHigh = h * 1.0;
+      } else if (state === 'Listening') {
+        // Very subtle breathing reaction to listening energy/VAD to bridge transitions smoothly
+        telemEnergy = e * 0.15 + v * 0.03;
+        telemMid = m * 0.15 + v * 0.03;
+        telemHigh = h * 0.1;
       }
     } else if (amplitudeRef.current > 0) {
-      telemEnergy = amplitudeRef.current * 0.4;
+      telemEnergy = amplitudeRef.current * 0.3;
       telemMid = telemEnergy;
       telemHigh = telemEnergy;
     }
@@ -498,10 +505,10 @@ export const VoxOrb = React.memo(({
     // Fixed scale to keep outer boundaries stable; deformation is handled internally via u_amplitude
     ctx.group.scale.set(1.0, 1.0, 1.0);
 
-    // 2. Mids drive the main noise deformation amplitude (u_amplitude) with Fast Attack, Slow Release
+    // 2. Mids drive the main noise deformation amplitude (u_amplitude) with Smooth Attack, Fluid Release
     const targetAmp = Math.min(ctx.curBaseVal + telemMid, 2.5);
     const curAmp = ctx.sharedUni.u_amplitude.value;
-    const rate = targetAmp > curAmp ? 0.45 : 0.04;
+    const rate = targetAmp > curAmp ? 0.18 : 0.06;
     ctx.sharedUni.u_amplitude.value += (targetAmp - curAmp) * rate;
 
     ctx.sharedUni.u_highs.value = telemHigh;
@@ -532,8 +539,8 @@ export const VoxOrb = React.memo(({
     ctx.outerMat.uniforms['u_colorGlow'].value.copy(ctx.curGlow);
     ctx.outerMat.uniforms['u_colorAccent'].value.copy(ctx.curAccent);
 
-    // 3. Treble/Highs drive rotation speed multiplier
-    const speedMult = 1.0 + Math.min(telemHigh * 3.5, 8.0);
+    // 3. Treble/Highs drive rotation speed multiplier (dampened to prevent frantic rotation)
+    const speedMult = 1.0 + Math.min(telemHigh * 1.2, 2.5);
     for (let i = 0; i < NUM_SHEETS; i++) {
       const mesh = ctx.discGroup.children[i] as THREE.Mesh;
       const anim = ctx.discAnims[i];

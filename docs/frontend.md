@@ -211,21 +211,31 @@ const OrbVariants = {
 };
 ```
 
-#### State Synchronization
+#### Realtime Session Lifecycle (v0.9.0)
 
-```typescript
-useEffect(() => {
-  const unlisteners = [
-    window.listen("state_changed", ({ payload }) => {
-      setInteractionState(payload);
-    }),
-    window.listen("audio_energy", ({ payload }) => {
-      setVolumeLevel(payload.energy);
-    }),
-  ];
-  return () => unlisteners.forEach(u => u());
-}, []);
+Home.tsx manages the full realtime S2S session lifecycle with local state
+(`useState` + `useRef`, no Zustand for hot paths):
+
+- **Pipeline mode**: `"modular"` or `"realtime"` — set by backend on `engage`
+- **Engage handler**: Calls `start_realtime_session` (realtime) or `engage` (modular)
+  based on settings. Uses `engageLockRef` to prevent double-engage during WS handshake.
+- **End handler**: Calls `stop_realtime_session` — disconnects WS, clears session cache,
+  reverts to modular mode, archives conversation.
+- **Pause/Resume**: Calls `pause_pipeline`/`resume_pipeline` IPC — halts audio routing,
+  tells Gemini to stop processing, archives current turn; resume reopens audio gate.
+- **PTT toggle**: Calls `ptt_start`/`ptt_stop` — only rendered when `interactionMode === "PTT"`.
+  In realtime PTT, triggers `activity_start/end` over WebSocket.
+- **Session cache**: On mount, calls `get_realtime_session_cache` IPC. If a valid cached
+  session exists, the engage button shows "Resume Session" instead of "Engage".
+
+Three-button control group layout:
 ```
+NOT Engaged:        [Power icon] (enables engagement)
+Engaged + Passive:  [Pause/Resume icon] [X icon (disengage)]
+Engaged + PTT:      [Pause/Resume icon] [Mic icon] [X icon (disengage)]
+```
+
+#### State Synchronization
 
 ### History Page
 
@@ -308,7 +318,33 @@ interface VoxSettings {
   interaction: {
     main_app_mode: "Passive" | "PTT";
     tray_mode: "Passive" | "PTT";
+    pipeline_mode: "Modular" | "Realtime";  // v0.9.0
     auto_sleep_timeout: number;
+  };
+
+  // Realtime S2S settings (v0.9.0)
+  realtime: {
+    provider: "gemini_live" | "openai_realtime" | "deepgram_voice_agent" | "elevenlabs_convai";
+    gemini: {
+      api_key: string;
+      model: string;
+      voice_name: string;
+      language_code: string;
+      temperature: number;
+      enable_web_search: boolean;
+    };
+    openai: {
+      api_key: string;
+      model: string;
+    };
+    deepgram: {
+      api_key: string;
+      model: string;
+    };
+    elevenlabs: {
+      api_key: string;
+      agent_id: string;
+    };
   };
   telemetry: {
     enabled: boolean;
@@ -676,6 +712,44 @@ window.listen("audio_energy", ({ payload }) => {
 window.listen("ptt_status", ({ payload }) => {
   setPttStatus(payload.state);
 });
+
+// Realtime session lifecycle (v0.9.0)
+window.listen("realtime_session_started", () => {
+  setPipelineMode("realtime");
+  setSessionResumed(false);
+});
+
+window.listen("realtime_session_resumed", () => {
+  setPipelineMode("realtime");
+  setSessionResumed(true);
+  // Show "Resumed previous session" toast
+});
+
+window.listen("realtime_session_ended", (event) => {
+  const reason = event.payload; // "user" | "idle_timeout" | "error"
+  setIsEngaged(false);
+  setPipelineMode("modular");
+  flushAndClearTranscripts();
+});
+
+window.listen("realtime_idle_warning", (event) => {
+  // event.payload.seconds_remaining for countdown display
+});
+
+window.listen("realtime_interrupted", () => {
+  // Flash UI — barge-in confirmed by server
+  setInteractionState("Interrupted");
+});
+
+// Pause/Resume events
+window.listen("pipeline_paused", () => {
+  setIsPaused(true);
+  archiveCurrentTurn();
+});
+
+window.listen("pipeline_resumed", () => {
+  setIsPaused(false);
+});
 ```
 
 #### Tray Window Events
@@ -715,6 +789,18 @@ await invoke("engage");
 await invoke("check_engine_status");
 await invoke("stop_engine");   // Offload/unload models (Skull button)
 await invoke("launch_engine"); // Reload models (RefreshCw button)
+
+// Realtime session control (v0.9.0)
+await invoke("start_realtime_session");       // Start Gemini Live session
+await invoke("stop_realtime_session");         // Stop and clean up
+await invoke("pause_pipeline");               // Soft pause (WS alive, audio halted)
+await invoke("resume_pipeline");              // Resume audio routing
+await invoke("get_realtime_session_cache");    // Check for cached resume token
+
+// PTT control
+await invoke("ptt_start", { owner: "MainWindow" });
+await invoke("ptt_stop", { owner: "MainWindow" });
+await invoke("ptt_cancel");
 
 // History management
 const history = await invoke<string[]>("get_transcript_history");
