@@ -1,9 +1,9 @@
-use std::path::Path;
-use serde::{Serialize, Deserialize};
+use crate::setup::manifest::{VerifiedMarker, VoxManifest};
 use crate::utils::paths;
-use sysinfo::{System, Disks};
 use cpal::traits::HostTrait;
-use crate::setup::manifest::{VoxManifest, VerifiedMarker};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use sysinfo::{Disks, System};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeReport {
@@ -24,32 +24,33 @@ pub struct RuntimeReport {
 }
 
 /// Performs system validation.
-/// 
+///
 /// If a manifest is provided, it calculates required disk space dynamically.
 /// Otherwise, it uses a conservative 6GB fallback as per Part 1/2 directives.
 pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
     let p = paths::get();
-    
+
     // 1. Write Access
     let write_access = check_write_access(&p.root);
-    
+
     // 2. Disk Space Calculation
-    let required_bytes = manifest.map(|m| m.calculate_required_space())
+    let required_bytes = manifest
+        .map(|m| m.calculate_required_space())
         .unwrap_or(6 * 1024 * 1024 * 1024); // Fallback to 6GB if no manifest
-    
+
     let required_gb = required_bytes as f32 / 1024.0 / 1024.0 / 1024.0;
     let (available_gb, total_gb, space_ok) = check_disk_space(&p.root, required_bytes);
-    
+
     // 3. Mic Access
     let mic_access = check_mic_access();
-    
+
     // 3.5 System Resources
     let (ram_gb, cpu_cores) = get_system_info();
-    
+
     // 4. File Existence
     let settings_exists = p.settings.exists();
     let models_dir_exists = p.models.exists();
-    
+
     // 5. Model Verification
     let (missing, models_verified) = check_model_integrity(&p.models, manifest);
 
@@ -84,7 +85,7 @@ fn check_write_access(path: &Path) -> bool {
         }
         return false;
     }
-    
+
     let test_file = path.join(".write_test");
     match std::fs::write(&test_file, "vox") {
         Ok(_) => {
@@ -97,9 +98,9 @@ fn check_write_access(path: &Path) -> bool {
 
 fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, f32, bool) {
     let disks = Disks::new_with_refreshed_list();
-    
+
     let mut best_match: Option<(&Path, u64, u64)> = None;
-    
+
     for disk in &disks {
         let mount = disk.mount_point();
         if path.starts_with(mount) {
@@ -109,7 +110,7 @@ fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, f32, bool) {
             }
         }
     }
-    
+
     if let Some((_, available, total)) = best_match {
         let available_gb = available as f32 / 1024.0 / 1024.0 / 1024.0;
         let total_gb = total as f32 / 1024.0 / 1024.0 / 1024.0;
@@ -127,17 +128,17 @@ fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, f32, bool) {
         }
         // If still nothing, we assume it's OK but log a warning (risky, but better than a hard block on valid systems)
         log::warn!("[verify_runtime] Could not determine disk space for path {:?}. Proceeding with fallback.", path);
-        (100.0, 100.0, true) 
+        (100.0, 100.0, true)
     }
 }
 
 fn get_system_info() -> (f32, u32) {
     let mut sys = System::new_all();
     sys.refresh_all();
-    
+
     let total_ram_gb = sys.total_memory() as f32 / 1024.0 / 1024.0 / 1024.0;
     let cpu_cores = sys.cpus().len() as u32;
-    
+
     (total_ram_gb, cpu_cores)
 }
 
@@ -171,7 +172,7 @@ fn check_model_integrity(models_dir: &Path, manifest: Option<&VoxManifest>) -> (
             } else {
                 models_dir.join(&entry.path)
             };
-            
+
             let verified_path = models_dir.join(&entry.path).with_extension("verified");
 
             // 1. Existence check

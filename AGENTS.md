@@ -8,9 +8,10 @@ you are likely to get wrong without help.
 ## Project Identity
 
 - **Vox**: A real-time, local-first voice assistant for desktop (Tauri v2 + Rust + React).
-- **Phase**: `v0.8.5-dev` → `v0.9.0` — Cloud provider integration via the LLM Provider
-  Architecture (Phase 9 on roadmap). OpenAI, Gemini, and Anthropic cloud providers are
-  already supported through the unified `OpenAiCompatProvider` (no new structs needed).
+- **Phase**: `v0.8.5` (released) — LLM cloud integration done and CI/CD green. Now working on
+  inference expansion: Gemini Live full integration, S2S frontend, PTT for S2S, testing and
+  hardening before `v0.9.0`. OpenAI, Gemini, and Anthropic cloud providers are already
+  supported through the unified `OpenAiCompatProvider` (no new structs needed).
 - **Core mandate**: Local-first, CPU-only (~8GB RAM), sub-500ms pipeline, streaming-first.
 
 ---
@@ -39,8 +40,8 @@ you are likely to get wrong without help.
 ├── docs/                     # Extensive architecture docs — READ BEFORE MAKING DECISIONS
 │   ├── backend.md            # ~1500 lines — threading, events, services, memory
 │   ├── frontend.md           # ~900 lines — component tree, state, IPC, design system
-│   ├── plans/                # Phase implementation plans (phase9-inference-expansion.md etc.)
-│   └── roadmap.md            # Version roadmap v0.1 → v1.0
+│   ├── plans/                # Phase implementation plans (phase9/ dir for inference expansion)
+│   └── roadmap.md            # Brief overview of what's been shipped (not a forward plan)
 ├── .agents/rules/            # Agent instruction files (system-architect, code-style, finetune)
 ├── manifests/                # App manifest + model manifest (SHA256 checksums)
 └── scripts/                  # Python benchmarks, release scripts
@@ -81,7 +82,7 @@ Key: `pnpm` commands run from `app/`, `cargo` commands from `app/src-tauri/`. Ne
 
 ## Current Architecture — Critical Context
 
-### LLM Provider Architecture (v0.8.5, active)
+### LLM Provider Architecture (v0.8.5, released)
 
 The LLM was refactored from a single embedded backend into a **trait-based provider system**:
 
@@ -101,6 +102,14 @@ as new `impl LlmProvider` structs in `services/llm/providers/`. The trait requir
 
 The pipeline (`services/pipeline.rs`) is **provider-agnostic** — it calls `LlmProvider`
 methods only. Do not modify the pipeline when adding a new provider.
+
+### Realtime S2S Engine (in progress, post-v0.8.5)
+
+The next major architectural addition is the `RealtimeVoiceProvider` trait for cloud
+speech-to-speech APIs (Gemini Live, OpenAI Realtime, Deepgram Voice Agent, ElevenLabs
+ConvAI). This lives in `services/realtime/` and introduces a hybrid sync/async
+threading model (tokio tasks for WebSocket, sync threads for audio capture/playback).
+See `docs/plans/phase9/` for detailed provider integration plans.
 
 ### Backend Threading Model
 
@@ -164,7 +173,8 @@ summarizes. Read them for depth:
 
 Update this file after any major task or phase. `docs/` should also be kept in sync with
 architecture changes. The `docs/plans/` directory contains authoritative phase implementation
-plans — consult them before making architectural decisions.
+plans — consult them before making architectural decisions. Phase plans are modular: each
+provider or subsystem gets its own file within a phase directory (e.g. `docs/plans/phase9/`).
 
 ---
 

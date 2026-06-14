@@ -92,7 +92,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
       <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-hidden justify-center">
         {/* Reactive Flat Waveform Visualization Strip */}
-        <div className="glass-whisper glass-base p-6 flex flex-col items-center justify-center relative overflow-hidden h-28 shrink-0">
+        <div className="glass p-6 flex flex-col items-center justify-center relative overflow-hidden h-28 shrink-0">
           <div className="absolute inset-0 bg-gradient-to-b from-[rgb(var(--accent))]/5 to-transparent opacity-20 pointer-events-none" />
           
           {error ? (
@@ -143,7 +143,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
         {/* Live Transcript Display Box */}
         <div className={cn(
-            "relative z-10 glass-whisper glass-base p-5 flex flex-col justify-center flex-1 min-h-[90px] max-h-[140px] transition-all duration-500",
+            "relative z-10 glass p-5 flex flex-col justify-center flex-1 min-h-[90px] max-h-[140px] transition-all duration-500",
             testComplete ? "border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.04)]" : ""
         )}>
             <div className="flex items-center justify-between mb-2">
@@ -189,7 +189,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
         {/* Diagnostics & Verification Cards */}
         <div className="grid grid-cols-2 gap-3 shrink-0">
-            <div className="p-3 glass-whisper glass-base flex items-center gap-3">
+            <div className="p-3 glass flex items-center gap-3">
                 <div className={cn(
                     "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0",
                     energy > 2 ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] scale-105" : "bg-white/5 text-white/40"
@@ -203,7 +203,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                     </span>
                 </div>
             </div>
-            <div className="p-3 glass-whisper glass-base flex items-center gap-3">
+            <div className="p-3 glass flex items-center gap-3">
                 <div className={cn(
                     "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0",
                     testComplete ? "bg-emerald-500/10 text-emerald-400 scale-105" : "bg-white/5 text-white/40"

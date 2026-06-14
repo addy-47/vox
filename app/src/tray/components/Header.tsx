@@ -24,23 +24,23 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           <motion.div 
             animate={{ 
               scale: isListening ? [1, 1.3, 1] : 1, 
-              opacity: isListening ? [0.4, 0.1, 0.4] : 0.05 
+              opacity: isListening ? [0.5, 0.2, 0.5] : 0.1 
             }}
             transition={{ repeat: Infinity, duration: 2 }}
             className="absolute w-5 h-5 rounded-full bg-[rgb(var(--accent))] blur-md"
           />
-          <div className={`w-2.5 h-2.5 rounded-full z-10 transition-all duration-700 ${isListening ? 'bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)]' : 'bg-[rgb(var(--foreground))]/10'}`} />
+          <div className={`w-2.5 h-2.5 rounded-full z-10 transition-all duration-700 ${isListening ? 'bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)]' : 'bg-[rgb(var(--foreground))]/30'}`} />
         </div>
-        <span className="text-[11px] font-black tracking-[0.4em] text-[rgb(var(--foreground))]/60 uppercase">
+        <span className="text-[11px] font-black tracking-[0.4em] text-[rgb(var(--foreground))]/90 uppercase">
           Vox <span className="text-[rgb(var(--accent))]">Live</span>
         </span>
       </div>
       
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         {interactionMode?.toUpperCase() === 'PTT' && (
           <button 
             onClick={(e) => { e.stopPropagation(); onTogglePtt(); }}
-            className={`p-2 rounded-lg transition-all active:scale-90 border border-transparent ${isPttActive ? 'text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/20' : 'text-[rgb(var(--foreground))]/40 hover:text-[rgb(var(--foreground))]/80 hover:bg-[rgb(var(--foreground))]/5 hover:border-[rgb(var(--foreground))]/10'}`}
+            className={`p-2 rounded-lg transition-all active:scale-90 ${isPttActive ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))]/90'}`}
           >
             <Mic size={16} />
           </button>
@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         {hasContent && (
           <button 
             onClick={(e) => { e.stopPropagation(); onCopy(); }}
-            className="p-2 rounded-lg border border-transparent transition-all text-[rgb(var(--foreground))]/40 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/5 hover:border-[rgb(var(--foreground))]/10 active:scale-90"
+            className="p-2 rounded-lg transition-all text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--accent))] active:scale-90"
             aria-label="Copy to Clipboard"
           >
             {copied ? <Check size={16} /> : <Copy size={16} />}
@@ -58,7 +58,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
 
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="p-2 rounded-lg border border-transparent transition-all text-[rgb(var(--foreground))]/30 hover:text-[rgb(var(--foreground))]/80 hover:bg-[rgb(var(--foreground))]/5 hover:border-[rgb(var(--foreground))]/10 active:scale-90"
+          className="p-2 rounded-lg transition-all text-[rgb(var(--foreground))]/50 hover:text-[rgb(var(--foreground))]/90 active:scale-90"
           aria-label="Close & Commit Session"
         >
           <X size={16} />

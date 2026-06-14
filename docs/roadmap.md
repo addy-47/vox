@@ -1,6 +1,7 @@
-# Vox Roadmap
+# Vox Roadmap — What's Been Built
 
-> Detailed phase plans are maintained in `docs/plans/`. Each phase has a dedicated plan file with full implementation details, architectural decisions, and success criteria.
+> A brief overview of delivered milestones. Detailed plans live in `docs/plans/`.
+> This is a log of what shipped, not a forward-looking spec.
 
 ## Core Mandate
 
@@ -14,11 +15,10 @@
 
 **Goal:** Establish the desktop application foundation.
 
-* Tauri application setup
-* Multi-window architecture
-* Main UI shell
-* Overlay/tray groundwork
-* Design system and interaction concepts
+- Tauri application setup
+- Multi-window architecture (main + tray + wizard)
+- Main UI shell and overlay/tray groundwork
+- Design system and interaction concepts
 
 ---
 
@@ -26,11 +26,11 @@
 
 **Goal:** Build the real-time audio ingestion layer.
 
-* Native audio capture
-* VAD integration
-* Event-driven pipeline
-* Speech lifecycle detection
-* Frontend ↔ backend communication
+- Native audio capture (CPAL)
+- VAD integration (Earshot)
+- Event-driven pipeline
+- Speech lifecycle detection
+- Frontend ↔ backend IPC
 
 ---
 
@@ -38,11 +38,10 @@
 
 **Goal:** Introduce real-time transcription.
 
-* Qwen3-ASR integration
-* Streaming transcripts
-* Partial and final transcript flow
-* Tray transcription experience
-* Hinglish-focused speech support
+- Qwen3-ASR integration
+- Streaming transcripts (partial + final)
+- Tray transcription experience
+- Hinglish-focused speech support
 
 ---
 
@@ -50,11 +49,11 @@
 
 **Goal:** Complete the first end-to-end voice interaction loop.
 
-* Local LLM runtime
-* Local TTS runtime
-* Voice-to-voice pipeline
-* Streaming responses
-* Runtime model architecture definition
+- Local LLM runtime (llama.cpp)
+- Local TTS runtime
+- Voice-to-voice pipeline
+- Streaming responses
+- Runtime model architecture
 
 ---
 
@@ -62,11 +61,11 @@
 
 **Goal:** Make Vox feel like a usable voice assistant.
 
-* Barge-in support
-* Interaction state management
-* Session orchestration
-* Overlay UX improvements
-* Full Push-To-Talk mode
+- Barge-in support
+- Interaction state management
+- Session orchestration
+- Overlay UX improvements
+- Full Push-To-Talk mode
 
 ---
 
@@ -74,11 +73,11 @@
 
 **Goal:** Optimize Vox for Hindi and Hinglish users.
 
-* Custom Qwen3-ASR fine-tuning
-* Benchmarking and evaluation pipeline
-* Hindi → Hinglish transliteration engine
-* Noise robustness improvements
-* False-trigger reduction
+- Custom Qwen3-ASR fine-tuning
+- Benchmarking and evaluation pipeline
+- Hindi → Hinglish transliteration engine
+- Noise robustness improvements
+- False-trigger reduction
 
 ---
 
@@ -86,11 +85,11 @@
 
 **Goal:** Add configuration, monitoring and system visibility.
 
-* Settings architecture
-* Runtime telemetry
-* Monitoring dashboard
-* Session/history foundation
-* Model and runtime controls
+- Settings architecture
+- Runtime telemetry
+- Monitoring dashboard
+- Session/history foundation
+- Model and runtime controls
 
 ---
 
@@ -98,98 +97,65 @@
 
 **Goal:** Prepare Vox for real-world deployment.
 
-* Onboarding experience
-* Model download management
-* Runtime model lifecycle management
-* Packaging and release workflows
-* Cross-platform deployment preparation
+- Onboarding experience
+- Model download management
+- Runtime model lifecycle management
+- Packaging and release workflows
+- Cross-platform deployment preparation
 
 ---
 
-## v0.8.3 - Ui revamp from ground up 
+## v0.8.3 — UI Revamp
 
-**Goal** Turn vox ui from a AI SaaS app to a voice OS with new design.md as guideline
+**Goal:** Turn Vox UI from an AI SaaS app into a voice OS aesthetic.
 
----
-
-## v0.8.4 — LLM Provider Architecture (Released — Phase 9)
-
-**Goal:** Refactor the LLM from a single embedded backend into a provider-based architecture and integrate cloud provider support.
-
-* Embedded local inference preserved
-* OpenAI-compatible remote endpoint support (Ollama, LM Studio, vLLM, etc.)
-* Streaming, cancellation, health checks, and model discovery as provider capabilities
-* Pipeline remains unchanged — only the implementation behind the provider changes
-
-### Cloud Provider Integration (shipped in v0.8.4)
-
-Cloud LLM providers ship via the `OpenAiCompatProvider`, extended with a `provider_name` parameter that dynamically maps URLs and injects required headers:
-
-| Provider | Endpoint URL | Mechanism |
-|----------|-------------|-----------|
-| **OpenAI** | `api.openai.com` | Standard OpenAI-compatible REST |
-| **Gemini** | `generativelanguage.googleapis.com/v1beta/openai` | OpenAI-compatible wrapper |
-| **Anthropic** | `api.anthropic.com` | URL routing + `anthropic-version` header injection |
-
-All three share a single `LlmProvider` trait implementation — no new structs required per provider. This pattern will extend to Groq, OpenRouter, and others in future releases.
-
-**Non-goals (future phases):**
-* STT/TTS provider refactor (v0.8.4/v0.8.5)
+- Complete UI redesign per `docs/design.md`
+- Responsive layout, EdgeNav, GlassCard components
+- AmbientBackground, StatusCapsule, PipelineField
+- Zustand v5 settings store
+- Performance hooks (useDynamicFPS, usePerformanceMonitor)
 
 ---
 
-## v0.8.5 — UI Polish & System Monitoring (In Progress)
+## v0.8.4 — LLM Provider Architecture (Released)
+
+**Goal:** Refactor the LLM from a single embedded backend into a trait-based provider architecture.
+
+- `LlmProvider` trait (generate, stream, cancel, health_check, list_models)
+- `EmbeddedProvider` (local GGUF via llama.cpp)
+- `OpenAiCompatProvider` with `provider_name` URL remapping
+- Cloud providers: OpenAI, Gemini, Anthropic via unified provider
+- Pipeline remains unchanged — provider-agnostic
+
+---
+
+## v0.8.5 — UI Polish & System Monitoring (Released)
 
 **Goal:** Complete UI responsiveness, monitoring UX, and system-level fixes.
 
-* Settings page made responsive across window sizes
-* Monitoring page offload/reload UX (Skull/RefreshCw buttons for model lifecycle management)
-* Linux system monitor fixed (sub-task filtering)
-* General UI polish and interaction card refactors
-* Settings and interaction component stability improvements
+- Settings page made responsive across window sizes
+- Monitoring page offload/reload UX (model lifecycle management)
+- Linux system monitor fixed (sub-task filtering)
+- General UI polish and interaction card refactors
+- CI/CD hardened (Linux, macOS, Windows pipelines green)
 
 ---
 
-## v0.8.6 - 0.9.0 — Cloud Realtime Integration
+## v0.8.5 - Present
 
-**Goal:** Introduce full duplex cloud voice-to-voice APIs as an alternative to the local pipeline.
-
-* OpenAI Realtime API (WebSocket-based audio streaming)
-* Gemini Multimodal Live API integration
-* Dynamic switching between local pipeline (Local STT -> LLM -> TTS) and cloud voice-to-voice
-* Adaptive audio buffer synchronization and lower latency packet streaming
-
-### Outcome
-
-* Unified local-first design with cloud acceleration
-* Choice of full-local privacy vs. high-capability cloud duplex streams
-* User-controlled model configuration and API provisioning
+Active development. Direction is inference expansion: Gemini Live full integration,
+S2S frontend integration, PTT for S2S, testing and hardening across all cloud
+providers and local modes.
 
 ---
 
-## v1.0.0 — Stabilization & Release
-
-**Goal:** Production-ready release.
-
-* End-to-end testing
-* Fresh install validation
-* Windows testing
-* Linux testing
-* macOS testing
-* Performance validation
-* Bug fixing and hardening
-* Release readiness review
-
----
-
-## Final State
+## Final State Vision
 
 Vox v1.0 is:
 
-* Local-first
-* Model-agnostic
-* Event-driven
-* Real-time voice native
-* Hindi/Hinglish optimized
-* Cross-platform
-* Built for 8GB-class hardware
+- Local-first -agentic voice OS 
+- Model-agnostic
+- Event-driven
+- Real-time voice native
+- Hindi/Hinglish optimized
+- Cross-platform

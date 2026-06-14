@@ -15,6 +15,11 @@ const isTray = window.location.pathname.includes("tray") ||
 if (isTray) {
   document.documentElement.classList.add("is-tray");
   document.body.classList.add("is-tray");
+  // Preload TrayApp immediately to minimize blank render delay
+  import("./tray/TrayApp").catch(() => {});
+} else {
+  // Preload main App immediately
+  import("./App").catch(() => {});
 }
 
 // Global Loading State for Window Initialization

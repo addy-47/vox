@@ -591,14 +591,14 @@ export const Home: React.FC = () => {
             <button
               onClick={togglePtt}
               className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/30 bg-black/35 hover:scale-105 active:scale-95",
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
                 pttStatus === "RECORDING"
-                  ? "bg-[rgb(var(--accent))] border-transparent text-[rgb(var(--accent-foreground))] shadow-[0_0_20px_rgba(var(--accent),0.4)]"
-                  : "text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+                  ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
+                  : "text-[rgb(var(--accent))]"
               )}
               aria-label="Toggle PTT Microphone"
             >
-              <Mic size={22} className={cn(pttStatus === "RECORDING" && "animate-pulse-slow")} />
+              <Mic size={28} className={cn(pttStatus === "RECORDING" && "animate-pulse-slow")} />
             </button>
           )}
 
@@ -607,21 +607,21 @@ export const Home: React.FC = () => {
             <button
               onClick={handleEngage}
               className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/30 bg-transparent dark:bg-black/35 hover:scale-105 active:scale-95 shadow-[0_4px_20px_rgba(var(--accent),0.1)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.4)]",
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
                 isEngaged && isThinking && "engage-btn-loading border-transparent",
                 isLaunching && "animate-spin",
                 isEngaged
-                  ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.2)] bg-[rgb(var(--accent))]/20 dark:bg-black/45"
-                  : "bg-[rgb(var(--accent))]/10 hover:bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]"
+                  ? "border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15"
+                  : "bg-transparent text-[rgb(var(--accent))]"
               )}
               disabled={isLaunching}
               aria-label={isEngaged ? "Stop Vox" : "Engage Vox"}
             >
               {isLaunching ? (
-                <Power size={20} className="animate-pulse-slow" />
+                <Power size={28} className="animate-pulse-slow" />
               ) : (
                 <Power
-                  size={20}
+                  size={28}
                   className={cn("transition-transform duration-700", isEngaged && "rotate-180")}
                 />
               )}
@@ -645,14 +645,14 @@ export const Home: React.FC = () => {
               ref={testButtonRef}
               onClick={() => setTestMode(!testMode)}
               className={cn(
-                "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 cursor-pointer shadow-lg shadow-[rgba(var(--accent),0.06)] dark:shadow-[rgba(0,0,0,0.3)]",
+                "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 cursor-pointer glass-card",
                 testMode
-                  ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))] shadow-[0_0_18px_rgba(var(--accent),0.2)]"
-                  : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-black/35 dark:border-[rgba(var(--accent),0.15)] hover:bg-[rgb(var(--accent))]/20"
+                  ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
+                  : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
               )}
               aria-label="Test Mode"
             >
-              <FlaskConical size={16} />
+              <FlaskConical size={22} />
             </button>
           </motion.div>
         )}
@@ -664,11 +664,11 @@ export const Home: React.FC = () => {
           <motion.div
             key="test-mode-panel"
             ref={testPanelRef}
-            initial={{ y: 8, scale: 0.98 }}
-            animate={{ y: 0, scale: 1 }}
-            exit={{ y: 8, scale: 0.98 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed bottom-16 right-4 w-56 p-2 rounded-2xl glass-elevated glass-base border border-[rgba(var(--accent),0.15)] shadow-[0_10px_30px_rgba(0,0,0,0.15)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex flex-col gap-1 z-50"
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1], opacity: { duration: 0.1 } }}
+            className="fixed bottom-16 right-4 w-56 p-2 flex flex-col gap-1 z-50 glass-card no-blur"
           >
             <div className="px-2 py-1 border-b border-[rgba(var(--accent),0.1)] mb-1">
               <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase block">

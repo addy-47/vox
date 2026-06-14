@@ -4,7 +4,7 @@ pub mod providers;
 
 pub use actor::{spawn_llm_worker, LlmCommand};
 pub use llama_cpp::LlmWorker;
-pub use providers::{LlmProvider, ProviderKind, EmbeddedProvider, OpenAiCompatProvider};
+pub use providers::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, ProviderKind};
 
 use llama_cpp_4::llama_backend::LlamaBackend;
 use std::sync::OnceLock;

@@ -71,12 +71,12 @@ pub struct VoiceProfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RemoteModelInfo {
-    pub id: String,            // e.g. "gemma4:31b"
-    pub name: String,          // display name derived from id
+    pub id: String,   // e.g. "gemma4:31b"
+    pub name: String, // display name derived from id
     pub size_bytes: Option<u64>,
-    pub quantization: Option<String>,  // e.g. "Q4_K_M"
-    pub family: Option<String>,        // e.g. "Gemma"
-    pub provider_kind: String, // e.g. "open_ai_compat", "embedded"
+    pub quantization: Option<String>, // e.g. "Q4_K_M"
+    pub family: Option<String>,       // e.g. "Gemma"
+    pub provider_kind: String,        // e.g. "open_ai_compat", "embedded"
 }
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
@@ -201,7 +201,8 @@ pub fn get_tts_metadata() -> Vec<ModelMetadata> {
         description: "Multilingual TTS with 31 languages, flow-matching architecture.".to_string(),
         ram_usage: " ~400MB".to_string(),
         parameters: "99M".to_string(),
-        tradeoffs: "31 languages, 10 voices. INT8 quantized — fast inference. ~400MB RAM.".to_string(),
+        tradeoffs: "31 languages, 10 voices. INT8 quantized — fast inference. ~400MB RAM."
+            .to_string(),
     }]
 }
 
@@ -281,8 +282,11 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
         // Assistant — hot update
-        ("assistant", "hindi_prompt") => SettingReloadPolicy::Hot,
-        ("assistant", "english_prompt") => SettingReloadPolicy::Hot,
+        ("assistant", "modular_prompt") => SettingReloadPolicy::Hot,
+        ("assistant", "realtime_prompt") => SettingReloadPolicy::Hot,
+
+        // Realtime — hot (applied on next session launch)
+        ("realtime", _) => SettingReloadPolicy::Hot,
 
         // Unknown — conservative default
         _ => SettingReloadPolicy::Restart,
@@ -494,16 +498,98 @@ impl Default for SetupSettings {
 #[serde(default)]
 pub struct AssistantSettings {
     /// Prompt used when Devanagari (Hindi) input is detected.
-    pub hindi_prompt: String,
+    #[serde(alias = "hindi_prompt")]
+    pub modular_prompt: String,
     /// Prompt used when English/other input is detected.
-    pub english_prompt: String,
+    #[serde(alias = "english_prompt")]
+    pub realtime_prompt: String,
 }
 
 impl Default for AssistantSettings {
     fn default() -> Self {
         Self {
-            hindi_prompt: crate::core::constants::SYSTEM_PROMPT_HI.into(),
-            english_prompt: crate::core::constants::SYSTEM_PROMPT_EN.into(),
+            modular_prompt: crate::core::constants::SYSTEM_PROMPT_MODULAR.into(),
+            realtime_prompt: crate::core::constants::SYSTEM_PROMPT_REALTIME.into(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RealtimeProviderKind {
+    #[default]
+    GeminiLive,
+    OpenAiRealtime,
+    DeepgramVoiceAgent,
+    ElevenLabsConvai,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct GeminiRealtimeConfig {
+    pub api_key: String,
+    pub model: String,
+    pub voice_name: String,    // default "Aoede"
+    pub language_code: String, // BCP-47, default "en-US"
+    pub temperature: f32, // default 0.2
+    pub enable_web_search: bool,
+    pub resume_handle: Option<String>,
+}
+
+impl Default for GeminiRealtimeConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            model: "gemini-3.1-flash-live-preview".to_string(),
+            voice_name: "Aoede".to_string(),
+            language_code: "en-US".to_string(),
+            temperature: 0.2,
+            enable_web_search: false,
+            resume_handle: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct OpenAiRealtimeConfig {
+    pub api_key: String,
+    pub model: String,
+    pub voice: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct DeepgramVoiceAgentConfig {
+    pub api_key: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct ElevenLabsConvaiConfig {
+    pub api_key: String,
+    pub agent_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct RealtimeSettings {
+    pub provider: RealtimeProviderKind,
+    pub gemini: GeminiRealtimeConfig,
+    pub openai: OpenAiRealtimeConfig,
+    pub deepgram: DeepgramVoiceAgentConfig,
+    pub elevenlabs: ElevenLabsConvaiConfig,
+}
+
+impl Default for RealtimeSettings {
+    fn default() -> Self {
+        Self {
+            provider: RealtimeProviderKind::GeminiLive,
+            gemini: GeminiRealtimeConfig::default(),
+            openai: OpenAiRealtimeConfig::default(),
+            deepgram: DeepgramVoiceAgentConfig::default(),
+            elevenlabs: ElevenLabsConvaiConfig::default(),
         }
     }
 }
@@ -524,6 +610,7 @@ pub struct VoxSettings {
     pub persistence: PersistenceSettings,
     pub assistant: AssistantSettings,
     pub setup: SetupSettings,
+    pub realtime: RealtimeSettings,
 }
 
 impl VoxSettings {

@@ -1,7 +1,7 @@
-use std::time::Instant;
-use std::collections::HashMap;
-use ort::session::Session;
 use ndarray::{Array1, Array2, Array3};
+use ort::session::Session;
+use std::collections::HashMap;
+use std::time::Instant;
 
 fn run_debug_translit(
     encoder_sess: &mut Session,
@@ -37,21 +37,27 @@ fn run_debug_translit(
 
     let input_ids_tensor = ort::value::Tensor::from_array(input_ids)
         .map_err(|e| anyhow::anyhow!("Failed to create input_ids tensor: {}", e))?;
-    
-    let enc_outputs = encoder_sess.run(ort::inputs![
-        "input_ids" => input_ids_tensor
-    ])
-    .map_err(|e| anyhow::anyhow!("Encoder run failed: {}", e))?;
 
-    let enc_outputs_view = enc_outputs["encoder_outputs"].try_extract_array::<f32>()
+    let enc_outputs = encoder_sess
+        .run(ort::inputs![
+            "input_ids" => input_ids_tensor
+        ])
+        .map_err(|e| anyhow::anyhow!("Encoder run failed: {}", e))?;
+
+    let enc_outputs_view = enc_outputs["encoder_outputs"]
+        .try_extract_array::<f32>()
         .map_err(|e| anyhow::anyhow!("Failed to extract encoder_outputs: {}", e))?;
 
-    let enc_outputs_owned = enc_outputs_view.to_owned().into_dimensionality::<ndarray::Dim<[usize; 3]>>()
+    let enc_outputs_owned = enc_outputs_view
+        .to_owned()
+        .into_dimensionality::<ndarray::Dim<[usize; 3]>>()
         .map_err(|e| anyhow::anyhow!("Failed to reshape encoder_outputs: {}", e))?;
 
-    let enc_h_view = enc_outputs["h_states"].try_extract_array::<f32>()
+    let enc_h_view = enc_outputs["h_states"]
+        .try_extract_array::<f32>()
         .map_err(|e| anyhow::anyhow!("Failed to extract h_states: {}", e))?;
-    let enc_c_view = enc_outputs["c_states"].try_extract_array::<f32>()
+    let enc_c_view = enc_outputs["c_states"]
+        .try_extract_array::<f32>()
         .map_err(|e| anyhow::anyhow!("Failed to extract c_states: {}", e))?;
 
     let mut dec_h = Array3::<f32>::zeros((2, 1, 256));
@@ -83,15 +89,17 @@ fn run_debug_translit(
         let enc_outputs_tensor = ort::value::Tensor::from_array(enc_outputs_owned.clone())
             .map_err(|e| anyhow::anyhow!("Failed to convert enc_outputs: {}", e))?;
 
-        let decoder_outputs = decoder_sess.run(ort::inputs![
-            "input_char" => dec_input_tensor,
-            "prev_h" => dec_h_tensor,
-            "prev_c" => dec_c_tensor,
-            "encoder_outputs" => enc_outputs_tensor
-        ])
-        .map_err(|e| anyhow::anyhow!("Decoder run failed: {}", e))?;
+        let decoder_outputs = decoder_sess
+            .run(ort::inputs![
+                "input_char" => dec_input_tensor,
+                "prev_h" => dec_h_tensor,
+                "prev_c" => dec_c_tensor,
+                "encoder_outputs" => enc_outputs_tensor
+            ])
+            .map_err(|e| anyhow::anyhow!("Decoder run failed: {}", e))?;
 
-        let logits_view = decoder_outputs["logits"].try_extract_array::<f32>()
+        let logits_view = decoder_outputs["logits"]
+            .try_extract_array::<f32>()
             .map_err(|e| anyhow::anyhow!("Failed to extract logits: {}", e))?;
 
         let logits_shape = logits_view.shape();
@@ -118,11 +126,19 @@ fn run_debug_translit(
             }
         }
 
-        let is_eos_or_pad = next_char_idx as i64 == tgt_eos_idx || next_char_idx as i64 == tgt_pad_idx;
+        let is_eos_or_pad =
+            next_char_idx as i64 == tgt_eos_idx || next_char_idx as i64 == tgt_pad_idx;
         let next_char_str = if is_eos_or_pad {
-            if next_char_idx as i64 == tgt_eos_idx { "</s>".to_string() } else { "<pad>".to_string() }
+            if next_char_idx as i64 == tgt_eos_idx {
+                "</s>".to_string()
+            } else {
+                "<pad>".to_string()
+            }
         } else {
-            tgt_idx2char.get(&(next_char_idx as i64)).cloned().unwrap_or_else(|| format!("<unk:{}>", next_char_idx))
+            tgt_idx2char
+                .get(&(next_char_idx as i64))
+                .cloned()
+                .unwrap_or_else(|| format!("<unk:{}>", next_char_idx))
         };
 
         if is_eos_or_pad {
@@ -132,9 +148,11 @@ fn run_debug_translit(
         output_chars.push(next_char_str);
         dec_input[[0]] = next_char_idx as i64;
 
-        let next_h_view = decoder_outputs["h"].try_extract_array::<f32>()
+        let next_h_view = decoder_outputs["h"]
+            .try_extract_array::<f32>()
             .map_err(|e| anyhow::anyhow!("Failed to extract decoder h: {}", e))?;
-        let next_c_view = decoder_outputs["c"].try_extract_array::<f32>()
+        let next_c_view = decoder_outputs["c"]
+            .try_extract_array::<f32>()
             .map_err(|e| anyhow::anyhow!("Failed to extract decoder c: {}", e))?;
 
         for i in 0..2 {
@@ -204,7 +222,6 @@ fn main() -> anyhow::Result<()> {
         "हाँ",
         "बिल्कुल",
         "थोड़ा",
-
         // === PRONOUNS (common in casual speech) ===
         "मैं",
         "तुम",
@@ -213,7 +230,6 @@ fn main() -> anyhow::Result<()> {
         "ये",
         "हम",
         "अपना",
-
         // === EVERYDAY NOUNS (conversational context) ===
         "बात",
         "काम",
@@ -224,7 +240,6 @@ fn main() -> anyhow::Result<()> {
         "दिन",
         "रात",
         "फोन",
-
         // === STRESS-TEST: COMPLEX CLUSTERS / NASALS / RARE MATRAS ===
         "श्री",
         "ज्ञान",
@@ -237,7 +252,6 @@ fn main() -> anyhow::Result<()> {
         "संगीत",
         "विशेष",
         "राष्ट्र",
-
         // === LONGER / MULTI-SYLLABLE COMMON WORDS ===
         "धन्यवाद",
         "माफ़",
@@ -255,13 +269,30 @@ fn main() -> anyhow::Result<()> {
         "हमेशा",
     ];
 
-    println!("Testing {} words (production path: prepend <s> only)\n", test_words.len());
+    println!(
+        "Testing {} words (production path: prepend <s> only)\n",
+        test_words.len()
+    );
 
     for word in test_words {
         let start = Instant::now();
-        let result = run_debug_translit(&mut encoder_sess, &mut decoder_sess, &src_vocab, &tgt_vocab, &tgt_idx2char, word, true, false)?;
+        let result = run_debug_translit(
+            &mut encoder_sess,
+            &mut decoder_sess,
+            &src_vocab,
+            &tgt_vocab,
+            &tgt_idx2char,
+            word,
+            true,
+            false,
+        )?;
         let elapsed = start.elapsed();
-        println!("{} → {}   ({:.2} ms)", word, result, elapsed.as_secs_f64() * 1000.0);
+        println!(
+            "{} → {}   ({:.2} ms)",
+            word,
+            result,
+            elapsed.as_secs_f64() * 1000.0
+        );
     }
 
     Ok(())

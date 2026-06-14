@@ -159,8 +159,8 @@ impl PipelineOrchestrator {
         let handle = std::thread::Builder::new()
             .name("vox-llm-persistent".to_string())
             .spawn(move || {
-                use crate::services::llm::{LlmProvider, EmbeddedProvider, OpenAiCompatProvider};
                 use crate::core::settings::LlmProviderConfig;
+                use crate::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
                 use tauri::Emitter;
 
                 let _ = app_clone.emit(crate::core::constants::EVENT_MODEL_LOADING, "LLM");
@@ -171,8 +171,18 @@ impl PipelineOrchestrator {
                             .map(|p| Box::new(p) as Box<dyn LlmProvider>)
                             .map_err(|e| e.to_string())
                     }
-                    LlmProviderConfig::OpenAiCompat { base_url, model, api_key, provider_name } => {
-                        let provider = OpenAiCompatProvider::new(base_url, model, api_key.as_deref(), provider_name.as_deref());
+                    LlmProviderConfig::OpenAiCompat {
+                        base_url,
+                        model,
+                        api_key,
+                        provider_name,
+                    } => {
+                        let provider = OpenAiCompatProvider::new(
+                            base_url,
+                            model,
+                            api_key.as_deref(),
+                            provider_name.as_deref(),
+                        );
                         Ok(Box::new(provider) as Box<dyn LlmProvider>)
                     }
                 };
@@ -386,16 +396,19 @@ impl PipelineOrchestrator {
             self.cancel_flag.store(false, Ordering::Relaxed);
 
             let assistant_settings = self.settings.read().unwrap().assistant.clone();
-            let system_prompt = if is_devanagari(&text) {
-                assistant_settings.hindi_prompt
+            let (lang, script) = if is_devanagari(&text) {
+                ("Hindi", "Devanagari")
             } else {
-                assistant_settings.english_prompt
+                ("English", "Latin")
             };
+            let resolved_prompt = assistant_settings.modular_prompt
+                .replace("<lang>", lang)
+                .replace("<script>", script);
 
             // Inject expression tag instructions (Supertonic supports <laugh>, <breath>, <sigh>)
             let system_prompt = format!(
                 "{} You may use <laugh>, <breath>, <sigh> tags for expressive speech.",
-                system_prompt
+                resolved_prompt
             );
 
             let cmd = crate::services::llm::LlmCommand::Generate {
@@ -423,6 +436,10 @@ impl PipelineOrchestrator {
         let mut last_interaction = std::time::Instant::now();
 
         // Local settings cache to avoid RwLock contention in the hot path (Directive: Real-Time Safety)
+        let mut local_pipeline_mode = {
+            let s = self.settings.read().unwrap();
+            s.interaction.pipeline_mode.clone()
+        };
         let mut local_voice = {
             let s = self.settings.read().unwrap();
             s.tts.voice
@@ -710,6 +727,22 @@ impl PipelineOrchestrator {
                 // ── Speech start: barge-in cancellation ───────────
                 VoxEvent::SpeechStart { turn_id, owner } => {
                     metrics.mark(MetricField::SpeechStart);
+                    if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+                        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                            app_handle.state();
+                        if let Ok(mut engine_guard) = state.realtime_engine.try_lock() {
+                            if let Some(ref mut engine) = *engine_guard {
+                                engine.barge_in(&playback_engine);
+                            }
+                        }
+                        awaiting_playback_finish = false;
+                        self.update_interaction_state(
+                            crate::core::state::InteractionState::UserSpeaking,
+                            owner,
+                            &app_handle,
+                        );
+                        continue;
+                    }
                     let buffer_len = playback_engine.buffer_len();
                     // Only log as "Barge-in" if there is significant audio left (>50ms at 48kHz)
                     if buffer_len > 2400 {
@@ -778,7 +811,26 @@ impl PipelineOrchestrator {
                     owner,
                     text,
                 } => {
-                    if turn_id < current_tid {
+                    if turn_id < current_tid
+                        && local_pipeline_mode != crate::core::settings::PipelineMode::Realtime
+                    {
+                        continue;
+                    }
+                    if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+                        turn_user_text = text.clone();
+                        let target = match owner {
+                            crate::core::state::InteractionOwner::MainWindow
+                            | crate::core::state::InteractionOwner::Ptt => "main",
+                            crate::core::state::InteractionOwner::Tray => "tray",
+                            crate::core::state::InteractionOwner::Wizard => "wizard",
+                        };
+                        let _ = translit_tx.send(TranslitTask::Final {
+                            turn_id,
+                            target: target.to_string(),
+                            text: text.clone(),
+                            owner,
+                            local_transliterate_enabled,
+                        });
                         continue;
                     }
                     if turn_id <= last_committed_session_id {
@@ -831,7 +883,26 @@ impl PipelineOrchestrator {
 
                 // ── LLM token: accumulate + sub-sentence chunking ─────────
                 VoxEvent::LlmToken { turn_id, token } => {
-                    if turn_id != current_tid {
+                    if turn_id != current_tid
+                        && local_pipeline_mode != crate::core::settings::PipelineMode::Realtime
+                    {
+                        continue;
+                    }
+                    if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+                        turn_assistant_text.push_str(&token);
+                        let target = self.get_current_owner(&app_handle);
+                        let target_str = match target {
+                            crate::core::state::InteractionOwner::MainWindow
+                            | crate::core::state::InteractionOwner::Ptt => "main",
+                            crate::core::state::InteractionOwner::Tray => "tray",
+                            crate::core::state::InteractionOwner::Wizard => "wizard",
+                        };
+                        let _ = translit_tx.send(TranslitTask::Token {
+                            turn_id,
+                            target: target_str.to_string(),
+                            token: token.clone(),
+                            local_transliterate_enabled,
+                        });
                         continue;
                     }
 
@@ -922,7 +993,21 @@ impl PipelineOrchestrator {
                 }
 
                 VoxEvent::LlmFinished { turn_id } => {
-                    if turn_id != current_tid {
+                    if turn_id != current_tid
+                        && local_pipeline_mode != crate::core::settings::PipelineMode::Realtime
+                    {
+                        continue;
+                    }
+                    if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+                        thinking = false;
+                        metrics.mark(MetricField::LlmEnd);
+                        metrics.output_len_chars = turn_assistant_text.len();
+                        log::info!(
+                            "[Pipeline] LLM finished response in Realtime mode: {:?}",
+                            turn_assistant_text
+                        );
+                        token_buf.clear();
+                        awaiting_playback_finish = true;
                         continue;
                     }
                     thinking = false;
@@ -1000,6 +1085,16 @@ impl PipelineOrchestrator {
                     if tts_finished_chunks >= tts_queued_chunks && awaiting_playback_finish {
                         self.tts_generating.store(false, Ordering::Relaxed);
                         trigger_playback!("all chunks finished (TTS end)");
+                    }
+                }
+
+                VoxEvent::SpeechEnd { turn_id: _, owner } => {
+                    if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+                        self.update_interaction_state(
+                            crate::core::state::InteractionState::Thinking,
+                            owner,
+                            &app_handle,
+                        );
                     }
                 }
 
@@ -1183,6 +1278,7 @@ impl PipelineOrchestrator {
 
                 VoxEvent::SettingsUpdated(new_settings) => {
                     log::info!("[Pipeline] Local settings cache updated (Asynchronous).");
+                    local_pipeline_mode = new_settings.interaction.pipeline_mode.clone();
                     local_voice = new_settings.tts.voice;
                     local_sleep_timeout = std::time::Duration::from_secs(
                         new_settings.interaction.auto_sleep_timeout as u64,
