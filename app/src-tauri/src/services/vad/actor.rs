@@ -71,6 +71,9 @@ where
     let mut owner = owner_init;
     let mut audio_mode = audio_mode_init;
     let mut realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>> = None;
+    // Tracks whether the active realtime session is PTT-gated (true) or
+    // fully passive (false). Only meaningful when realtime_tx is Some.
+    let mut realtime_is_ptt: bool = false;
 
     let (dropped_counter, engine_shutdown) = {
         let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
@@ -153,13 +156,18 @@ where
                     should_exit = true;
                     break;
                 }
-                VadCommand::StartRealtime(tx) => {
-                    log::info!("[VAD] Starting realtime S2S audio routing.");
+                VadCommand::StartRealtime { tx, is_ptt } => {
+                    log::info!(
+                        "[VAD] Starting realtime S2S audio routing (is_ptt={}).",
+                        is_ptt
+                    );
                     realtime_tx = Some(tx);
+                    realtime_is_ptt = is_ptt;
                 }
                 VadCommand::StopRealtime => {
                     log::info!("[VAD] Stopping realtime S2S audio routing.");
                     realtime_tx = None;
+                    realtime_is_ptt = false;
                 }
             }
         }
@@ -228,32 +236,85 @@ where
                 ui_emit_counter = 0;
             }
 
-            if mode == InteractionMode::PTT {
-                // Run VAD prediction even in PTT mode to classify speech
-                let mut detected = vad.predict(&chunk);
-
-                // Override prediction on sub-threshold noise
-                let effective_noise_gate = if is_earshot {
-                    noise_gate * 1.5
-                } else {
-                    noise_gate
-                };
-                if raw_energy < effective_noise_gate {
-                    detected = false;
+            // ── Highest-priority: Passive Realtime routing ────────────────────
+            // In Realtime Passive mode bypass ALL local VAD/PTT logic — Gemini's
+            // server-side VAD handles speech detection. Stream every audio chunk
+            // directly. This MUST run before the PTT branch so that users whose
+            // VAD mode is historically PTT still get audio flowing in passive
+            // realtime sessions.
+            if let Some(ref tx) = realtime_tx {
+                if !realtime_is_ptt {
+                    let i16_samples: Vec<i16> = chunk
+                        .iter()
+                        .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
+                        .collect();
+                    if let Err(e) = tx.try_send(i16_samples) {
+                        static PASSIVE_DROP: std::sync::atomic::AtomicU64 =
+                            std::sync::atomic::AtomicU64::new(0);
+                        let cnt = PASSIVE_DROP.fetch_add(1, Ordering::Relaxed);
+                        if cnt % 50 == 0 {
+                            log::warn!(
+                                "[VAD] [Realtime/Passive] Audio bridge backpressure — dropped {} chunks so far: {:?}",
+                                cnt + 1,
+                                e
+                            );
+                        }
+                    } else {
+                        static PASSIVE_ROUTE: std::sync::atomic::AtomicU64 =
+                            std::sync::atomic::AtomicU64::new(0);
+                        let count = PASSIVE_ROUTE.fetch_add(1, Ordering::Relaxed);
+                        if count % 200 == 0 {
+                            log::info!(
+                                "[VAD] [Realtime/Passive] Streamed audio chunk #{} to Gemini Live",
+                                count + 1
+                            );
+                        }
+                    }
+                    // Keep VAD state clean while streaming to Gemini
+                    if in_speech {
+                        in_speech = false;
+                        utterance_buffer.clear();
+                        samples_since_partial = 0;
+                    }
+                    continue;
                 }
+                // is_ptt == true: fall through to the PTT block which handles
+                // gated forwarding via speech_detected.
+            }
 
-                if detected {
-                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
-                    let was_speech = state.ptt.speech_detected.swap(true, Ordering::Relaxed);
-                    if !was_speech {
-                        // SPEECH ONSET TRANSITION: Flush pre-roll buffer to avoid clipping the first word
-                        if let Some(ref tx) = realtime_tx {
-                            let pre_roll_i16: Vec<i16> = pre_roll_buffer
-                                .iter()
-                                .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
-                                .collect();
-                            let _ = tx.try_send(pre_roll_i16);
-                            pre_roll_buffer.clear();
+            if mode == InteractionMode::PTT {
+                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                let is_rec = state.ptt.is_recording.load(Ordering::SeqCst);
+
+                if is_rec {
+                    let mut detected = vad.predict(&chunk);
+
+                    // Override prediction on sub-threshold noise
+                    let effective_noise_gate = if is_earshot {
+                        noise_gate * 1.5
+                    } else {
+                        noise_gate
+                    };
+                    if raw_energy < effective_noise_gate {
+                        detected = false;
+                    }
+
+                    if detected {
+                        let was_speech = state.ptt.speech_detected.swap(true, Ordering::Relaxed);
+                        if !was_speech {
+                            // SPEECH ONSET TRANSITION: Flush pre-roll buffer to avoid clipping the first word
+                            if let Some(ref tx) = realtime_tx {
+                                let pre_roll_i16: Vec<i16> = pre_roll_buffer
+                                    .iter()
+                                    .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
+                                    .collect();
+                                if let Err(e) = tx.try_send(pre_roll_i16) {
+                                    log::error!("[VAD] Failed to flush PTT pre-roll audio to S2S: {:?}", e);
+                                } else {
+                                    log::info!("[VAD] Flushed PTT pre-roll audio on speech onset.");
+                                }
+                                pre_roll_buffer.clear();
+                            }
                         }
                     }
                 }
@@ -269,7 +330,15 @@ where
                             .iter()
                             .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
                             .collect();
-                        let _ = tx.try_send(i16_samples);
+                        if let Err(e) = tx.try_send(i16_samples) {
+                            log::error!("[VAD] Failed to send gated PTT audio samples to realtime S2S bridge: {:?}", e);
+                        } else {
+                            static PTT_ROUTE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                            let count = PTT_ROUTE_COUNT.fetch_add(1, Ordering::Relaxed);
+                            if count % 200 == 0 {
+                                log::info!("[VAD] Routing realtime PTT audio chunk (count: {})", count + 1);
+                            }
+                        }
                     }
                 }
 
@@ -309,25 +378,6 @@ where
                     // Drop this frame — do NOT advance utterance buffer or VAD state
                     continue;
                 }
-            }
-
-            // Route audio directly to S2S if realtime session is active, bypassing local VAD
-            if let Some(ref tx) = realtime_tx {
-                let i16_samples: Vec<i16> = chunk
-                    .iter()
-                    .map(|&x| {
-                        let clamped = x.clamp(-1.0, 1.0);
-                        (clamped * 32767.0) as i16
-                    })
-                    .collect();
-                let _ = tx.try_send(i16_samples);
-
-                if in_speech {
-                    in_speech = false;
-                    utterance_buffer.clear();
-                    samples_since_partial = 0;
-                }
-                continue;
             }
 
             // Classify chunk as speech or silence

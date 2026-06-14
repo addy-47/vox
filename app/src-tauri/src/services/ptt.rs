@@ -8,8 +8,41 @@ use tauri::{AppHandle, Emitter, Manager, State};
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
+pub async fn ptt_start(
+    app: AppHandle,
+    owner: Option<crate::core::state::InteractionOwner>,
+) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
+
+    // 1. Resolve and synchronize active owner
+    let actual_owner = if let Some(o) = owner {
+        state.owner.store(o as u32, Ordering::Relaxed);
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let _ = engine
+                .vad_tx
+                .send(crate::core::state::VadCommand::UpdateOwner(o));
+        }
+        o
+    } else {
+        state.owner.load(Ordering::Relaxed).into()
+    };
+
+    // 2. Enforce mode guard: reject PTT if the target is in Passive mode
+    let interaction_mode = {
+        let settings = state.settings.read().unwrap();
+        match actual_owner {
+            crate::core::state::InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+            crate::core::state::InteractionOwner::MainWindow
+            | crate::core::state::InteractionOwner::Ptt => settings.interaction.main_app_mode.clone(),
+            crate::core::state::InteractionOwner::Wizard => {
+                crate::core::settings::InteractionMode::Passive
+            }
+        }
+    };
+    if interaction_mode != crate::core::settings::InteractionMode::PTT {
+        log::warn!("[PTT] Cannot start PTT recording in {:?} mode", interaction_mode);
+        return Err("Cannot start PTT in Passive mode".to_string());
+    }
 
     if state
         .ptt
@@ -36,7 +69,7 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
         turn
     };
 
-    let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+    let owner = actual_owner;
 
     if is_realtime {
         let rt_guard = state.realtime_engine.lock().await;
@@ -87,15 +120,30 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
+pub async fn ptt_stop(
+    app: AppHandle,
+    owner: Option<crate::core::state::InteractionOwner>,
+) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
     if !state.ptt.is_recording.load(Ordering::SeqCst) {
         return Ok(());
     }
 
+    let actual_owner = if let Some(o) = owner {
+        state.owner.store(o as u32, Ordering::Relaxed);
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let _ = engine
+                .vad_tx
+                .send(crate::core::state::VadCommand::UpdateOwner(o));
+        }
+        o
+    } else {
+        state.owner.load(Ordering::Relaxed).into()
+    };
+
     let speech_detected = state.ptt.speech_detected.load(Ordering::Relaxed);
-    let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+    let owner = actual_owner;
     let target = match owner {
         crate::core::state::InteractionOwner::Tray => "tray",
         crate::core::state::InteractionOwner::MainWindow
@@ -186,8 +234,23 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
+pub async fn ptt_cancel(
+    app: AppHandle,
+    owner: Option<crate::core::state::InteractionOwner>,
+) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
+
+    let actual_owner = if let Some(o) = owner {
+        state.owner.store(o as u32, Ordering::Relaxed);
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let _ = engine
+                .vad_tx
+                .send(crate::core::state::VadCommand::UpdateOwner(o));
+        }
+        o
+    } else {
+        state.owner.load(Ordering::Relaxed).into()
+    };
 
     state.ptt.is_recording.store(false, Ordering::SeqCst);
     {
@@ -195,7 +258,7 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
         buffer.clear();
     }
 
-    let owner: crate::core::state::InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+    let owner = actual_owner;
 
     let is_realtime = {
         let settings = state.settings.read().unwrap();
@@ -264,7 +327,7 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
             log::warn!("[PTT] Realtime PTT hold exceeded 30s. Auto-stopping.");
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = ptt_stop(app_clone).await;
+                let _ = ptt_stop(app_clone, None).await;
             });
             return;
         }
@@ -320,7 +383,7 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
         drop(buffer);
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            let _ = ptt_stop(app_clone).await;
+            let _ = ptt_stop(app_clone, None).await;
         });
         return;
     }
@@ -419,7 +482,6 @@ mod tests {
     use super::*;
     use crate::core::state::PttState;
     use std::sync::atomic::AtomicU32;
-    use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
 
     #[test]

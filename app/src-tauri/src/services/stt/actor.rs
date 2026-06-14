@@ -405,6 +405,9 @@ pub fn spawn_stt_worker(
 
                             if stitched_transcript.trim().is_empty() {
                                 log::info!("[STT] Discarding empty final transcript.");
+                                if let Some(ref pipeline_tx) = pipeline_event_tx {
+                                    let _ = pipeline_tx.send(VoxEvent::Cancelled { turn_id: tid });
+                                }
                             } else if let Some(ref pipeline_tx) = pipeline_event_tx {
                                 let _ = pipeline_tx.send(VoxEvent::TranscriptFinal {
                                     turn_id: tid,

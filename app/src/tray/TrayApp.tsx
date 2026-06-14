@@ -252,7 +252,12 @@ export const TrayApp: React.FC = () => {
 
         const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
           if (!active) return;
-          setPttStatus(event.payload.state as any);
+          const newState = event.payload.state as any;
+          setPttStatus(newState);
+          if (newState === "RECORDING") {
+            stateRef.current.callbacks.reset();
+            setViewingHistory(false);
+          }
         });
         if (!active) { u8(); return; }
         localUnlisteners.push(u8);
@@ -326,6 +331,7 @@ export const TrayApp: React.FC = () => {
             style={{ 
                backdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
                WebkitBackdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
+               backgroundColor: `rgba(var(--card), 0.88)`,
             }}
           >
             <Header 

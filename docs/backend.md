@@ -109,6 +109,8 @@ Every component must minimize:
 ### Core Principle
 
 Avoid CPU thrashing. All inference runs on **dedicated OS threads**, never async tokio tasks.
+The exception is the **Realtime S2S engine**, which uses tokio tasks for WebSocket I/O
+(non-blocking by nature) while keeping audio capture/playback on dedicated OS threads.
 
 Threads are NOT Send because llama.cpp and onnxruntime are not thread-safe across cores.
 
@@ -162,9 +164,24 @@ Audio flows via SPSC lock-free ring buffer:
 
 ```text
 Producer: AudioStream (CPAL callback)
-Consumer: VAD worker (Tier 2)
+Consumer: AudioRouter thread → VAD worker (Tier 2) or Realtime WebSocket
 Capacity: 16000 * 4 = 64000 samples (4s)
 ```
+
+---
+
+### Audio Router (Realtime S2S)
+
+In realtime S2S mode, the `AudioRouter` thread (`services/audio/router.rs`) replaces VAD
+as the direct consumer of the CPAL ring buffer. It reads 256-sample chunks and routes
+them based on `RouteMode`:
+
+- `RouteMode::LocalVad` — forward to VAD actor (modular mode + realtime PTT)
+- `RouteMode::DirectRealtime` — convert f32→i16 and send to the realtime session via
+  `tokio::sync::mpsc::UnboundedSender<Vec<i16>>` (realtime passive mode)
+
+The router also checks `is_paused: Arc<AtomicBool>` — if paused, chunks are discarded
+instead of forwarded.
 
 ---
 
@@ -197,14 +214,26 @@ src/
 │   ├── traits.rs     # Engine interfaces (VadEngine, SttEngine, LlmEngine, TtsEngine)
 │   ├── pipeline.rs   # Pipeline orchestrator (LLM→TTS→Playback)
 │   ├── utils.rs      # should_flush, count_words, is_devanagari, transliterate, stitch
-│   ├── audio.rs      # Audio capture (cpal ring buffer)
-│   ├── playback.rs   # Playback engine (cubic Hermite upsample, jitter buffer, fade)
-│   ├── ptt.rs        # Push-to-talk mode
+│   ├── audio/
+│   │   ├── mod.rs    # Module exports (AudioStream, PlaybackEngine, AudioRouter, RouteMode)
+│   │   ├── device.rs # Audio capture (cpal ring buffer)
+│   │   ├── playback.rs # Playback engine (cubic Hermite upsample, jitter buffer, fade)
+│   │   └── router.rs # Audio router — VAD or realtime routing, pause gating
+│   ├── realtime/
+│   │   ├── mod.rs    # RealtimeVoiceProvider + RealtimeSession traits
+│   │   ├── engine.rs # RealtimeEngine orchestrator (start/stop/barge_in)
+│   │   ├── audio_bridge.rs # PCM → WebSocket sender (resampling, base64)
+│   │   ├── playback_bridge.rs # WebSocket receiver → PlaybackEngine
+│   │   ├── resampler.rs # rubato-based sample rate conversion
+│   │   └── providers/
+│   │       ├── mod.rs
+│   │       └── gemini_live.rs # Full Gemini Live WebSocket integration (855 lines)
+│   ├── ptt.rs        # Push-to-talk mode (VAD gate, realtime support, speech_detected)
 │   ├── translit.rs   # Transliteration (Devanagari→Roman, ONNX model)
 │   ├── llm/
 │   │   ├── mod.rs    # Module entry + global_llama_backend() singleton
 │   │   ├── actor.rs  # Command/Event handler (spawn_llm_worker)
-│   │   └── llama_cpp.rs # Llama.cpp engine (tag stripping, streaming)
+│   │   └── providers/ # embedded.rs, openai_compat.rs
 │   ├── stt/
 │   │   ├── mod.rs
 │   │   ├── actor.rs
@@ -221,7 +250,8 @@ src/
 │       └── ten_onnx.rs       # Ten VAD (legacy, ONNX via sherpa-onnx)
 ├── ipc/
 │   ├── mod.rs
-│   ├── pipeline.rs  # launch_engine, stop_engine, engage, check_engine_status
+│   ├── pipeline.rs  # launch_engine, stop_engine, engage, start_realtime_session,
+│   │                # pause_pipeline, resume_pipeline, get_realtime_session_cache
 │   ├── settings.rs  # get_settings, update_setting, request_model_catalog
 │   ├── tray.rs      # hide_tray_window, position_tray_window
 │   ├── history.rs   # get_sessions, get_turns, delete_session
@@ -919,9 +949,27 @@ pub enum VoxEvent {
 }
 ```
 
+### Tauri IPC Events (Frontend-bound)
+
+These Tauri events bridge backend state to the React frontend:
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `state_changed` | `InteractionState` | Pipeline interaction state |
+| `audio_energy` | `{ energy: f32 }` | Mic audio level for visualization |
+| `ptt_status` | `"IDLE" \| "RECORDING" \| "PROCESSING"` | PTT button state |
+| `pipeline_paused` | — | Pause acknowledged, audio halted |
+| `pipeline_resumed` | — | Resume acknowledged, audio re-opened |
+| `realtime_session_started` | — | Realtime S2S session established |
+| `realtime_session_resumed` | — | Session reconnected with resume token |
+| `realtime_session_ended` | `"user" \| "idle_timeout" \| "error"` | Session terminated |
+| `realtime_interrupted` | — | Barge-in confirmed by server |
+| `realtime_idle_warning` | `{ seconds_remaining: u64 }` | Idle timeout countdown |
+| `pipeline_error` | `String` | Error with error message |
+
 ---
 
-### Event Flow
+### Event Flow (Modular Pipeline)
 
 ```text
 VAD:        SpeechStart, SpeechEnd
@@ -930,6 +978,20 @@ Pipeline:   WarmUp, Cancelled, Error, Shutdown
 LLM:        LlmToken, LlmFinished, Error
 TTS:        TtsChunk, TtsFinished
 Playback:   PlaybackFinished
+```
+
+### Event Flow (Realtime S2S)
+
+```text
+Gemini Ws Receive:
+    ├── inputTranscription → TranscriptPartial (frontend)
+    ├── modelTurn audio    → PlaybackBridge → ring buffer → audio out
+    ├── modelTurn text     → LlmToken (frontend captioning)
+    ├── outputTranscription → forwarded to frontend
+    ├── turnComplete       → turn lifecycle sync
+    ├── interrupted        → realtime_interrupted (frontend)
+    ├── sessionResumptionUpdate → cache to disk
+    └── goAway             → reconnect with exponential backoff
 ```
 
 ---
@@ -1112,7 +1174,7 @@ IPC commands `check_llm_provider_health` and `list_remote_llm_models` (in `ipc/s
 
 ---
 
-## 18. PTT Mode (Phase 5)
+## 18. PTT Mode (Modular + Realtime)
 
 ---
 
@@ -1124,11 +1186,48 @@ IDLE → RECORDING → PROCESSING → DISPLAY
 
 ---
 
-### Buffer Strategy
+### Mode Differentiation
+
+PTT behavior differs based on the active pipeline mode:
+
+| Concern | Modular PTT | Realtime PTT |
+|---------|------------|-------------|
+| Audio routing | PTT buffer → STT → LLM → TTS | PTT buffer → WebSocket via `activity_start/end` |
+| Server-side VAD | N/A | Disabled (`disabled: true` in setup) |
+| Client-side VAD | Silero classifies speech → discard silent holds | **Required** — gates PCM before sending, prevents hallucination |
+| PTT duration cap | 10 min hard limit (`MAX_PTT_SAMPLES`) | 30s long-hold cutoff, auto-sends `ActivityEnd` |
+| Speech discard | No speech → clear buffer, skip `SttCommand::Final` | No speech → no `ActivityEnd` sent, server stays silent |
+
+---
+
+### VAD Gating (`speech_detected`)
+
+A `speech_detected: AtomicBool` on `PttState` tracks whether speech was detected during a
+PTT hold. The Silero VAD classifies every 256-sample chunk:
+
+- On **speech onset**: flips `speech_detected = true`, flushes a 240ms pre-roll buffer
+  to the realtime WebSocket (prevents clipped first word)
+- On **ptt_stop**: if `speech_detected == false`, the entire hold is discarded — no
+  finalization signal sent to STT or Gemini
+- On **ptt_start**: `speech_detected` is reset to `false`, `ptt_start_ms` is set to `now`
+
+---
+
+### Buffer Strategy (Modular)
 
 * Continuous capture (no VAD gating)
-* 15s window per partial send
+* 800ms window per partial send
 * 10min hard limit
+
+---
+
+### PTT Commands (IPC)
+
+| Command | Effect |
+|---------|--------|
+| `ptt_start` | Begin capture — reset speech_detected, open audio gate, emit `ActivityStart` (realtime) or `SpeechStart` (modular) |
+| `ptt_stop` | End capture — check speech_detected. If no speech: discard hold. Otherwise: emit `ActivityEnd` (realtime) or `SttCommand::Final` (modular) |
+| `ptt_cancel` | Abort hold — clear buffer, set `is_recording = false`, reset state to `Idle` |
 
 ---
 
@@ -1279,9 +1378,9 @@ std::thread::Builder::new()
 - No async runtime compatibility
 - Precise CPU affinity control
 
-### Tokio Workers (IPC & UI)
+### Tokio Workers (IPC, UI & Realtime)
 
-**Async tasks for Tauri IPC and UI coordination**
+**Async tasks for Tauri IPC, UI coordination, and realtime WebSocket I/O**
 
 ```rust
 // Tauri command handlers - tokio tasks
@@ -1297,7 +1396,7 @@ pub async fn engage(state: State<'_, Arc<AppState>>) -> Result<(), String> {
 - Tauri requires async commands
 - UI event handling
 - File I/O operations
-- Network requests (future)
+- **WebSocket I/O** for realtime S2S providers (Gemini Live, etc.)
 
 ### Hybrid Architecture
 
@@ -1306,13 +1405,21 @@ OS Threads (Inference):
 ├── VAD worker (Tier 2)
 ├── STT worker (Tier 2)
 ├── LLM worker (Tier 3)
-└── TTS worker (Tier 3)
+├── TTS worker (Tier 3)
+├── Audio capture (cpal, Tier 1, Max priority)
+├── AudioRouter (Tier 1, Max priority)
+└── Playback (cpal)
 
-Tokio Tasks (Coordination):
+Tokio Tasks (Coordination & Realtime):
 ├── IPC handlers
 ├── UI state updates
 ├── Persistence workers
-└── Monitoring collectors
+├── Monitoring collectors
+├── Realtime AudioBridge (PCM → WS)
+├── Realtime PlaybackBridge (WS → audio)
+├── Realtime WS Receiver
+├── Realtime WS Sender (audio + control queues)
+└── Realtime Idle Timeout monitor
 ```
 
 ---
@@ -1393,60 +1500,115 @@ if pushed < upsampled.len() {
 
 ---
 
-## 23. Phase 9 — LLM Provider Architecture (v0.8.3)
+## 23. Phase 9 — Realtime S2S Engine (v0.9.0)
 
 ---
 
 ### Motivation
 
-The current LLM implementation treats inference as a single concrete backend:
-`llama_cpp.rs` embedded in the voice pipeline. This creates scaling problems:
+The modular pipeline (VAD → STT → LLM → TTS) is low-latency but cannot match the
+fluidity of cloud speech-to-speech APIs. Realtime S2S providers (Gemini Live, OpenAI
+Realtime, Deepgram Voice Agent, ElevenLabs ConvAI) operate over WebSocket, accepting
+PCM audio input and returning PCM audio output with server-side LLM inference.
 
-* Every new backend requires pipeline modifications
-* Cloud provider integration becomes difficult
-* Future STT/TTS provider support becomes inconsistent
-
-### Target Architecture (v0.8.3)
-
-Move from a single embedded LLM to a **provider-based architecture**:
+### Architecture — RealtimeVoiceProvider Trait
 
 ```text
 Vox
- └─ LLM Provider Layer
-        ├─ Embedded (local GGUF via llama.cpp)
-        └─ OpenAI-Compatible (Ollama, LM Studio, vLLM, etc.)
+ └─ RealtimeVoiceProvider Layer
+        ├─ RealtimeVoiceProvider trait (kind, audio_config, connect, health_check)
+        └─ RealtimeSession trait (send_audio, cancel, disconnect, activity_start/end)
+               └─ GeminiLiveProvider (implemented, 855 lines)
+               └─ OpenAiRealtimeProvider (config defined, not yet implemented)
+               └─ DeepgramVoiceAgentProvider (config defined, not yet implemented)
+               └─ ElevenLabsConvaiProvider (config defined, not yet implemented)
 ```
 
-### Provider Interface
+### Hybrid Thread Model
 
-Every provider must support:
+The realtime engine uses a **hybrid sync/async architecture**:
 
-| Capability | Description |
-|-----------|-------------|
-| Generate | Submit prompt and receive completion |
-| Streaming | Receive tokens incrementally (first-class for real-time) |
-| Cancellation | Barge-in must work identically across all providers |
-| Health Check | Determine provider availability before use |
-| Model Discovery | Fetch available models dynamically |
+```text
+SYNC OS THREADS:
+  Audio Capture (cpal, Max priority)
+      │  → AudioRouter → VAD actor or direct realtime tx
+      │
+  Playback (cpal, ringbuf Consumer)
+      ↑ f32 samples from PlaybackBridge
+
+TOKIO ASYNC TASKS:
+  AudioBridge Task — recv PCM from router, resample, base64-encode, send over WS
+  PlaybackBridge Task — recv WS audio, decode, resample, push to playback ringbuf
+  Idle Timeout Task — 10-min inactivity monitor with warnings
+  Gemini WS Receiver — handle server message types (audio, text, events)
+  Gemini WS Sender — two-queue (audio + control) to prevent HOL blocking
+```
+
+### Engine Lifecycle
+
+```
+engage → start_realtime_session:
+  1. Load settings, check API key
+  2. Read session cache (realtime_session.json) for resume handle
+  3. Create GeminiLiveProvider + RealtimeEngine
+  4. WebSocket handshake + setup negotiation
+  5. Start AudioRouter → connect to realtime tx channel
+  6. Spawn idle timeout task (10 min)
+  7. Emit realtime_session_started/resumed (frontend)
+
+pause_pipeline:
+  1. Set is_paused = true (atomic) — router drops chunks
+  2. Call activity_end() on session (tell server to stop turn)
+  3. Stop playback
+  4. Emit pipeline_paused (frontend)
+
+resume_pipeline:
+  1. Set is_paused = false — router resumes
+  2. If WS disconnected → lazy reconnect with resume token
+  3. Emit pipeline_resumed (frontend)
+
+stop_realtime_session:
+  1. Disconnect WebSocket
+  2. Delete session cache file
+  3. Reset to modular pipeline mode
+  4. Emit realtime_session_ended (frontend)
+```
+
+### Session Resumption
+
+Gemini Live provides session resumption handles valid for 2 hours. Vox persists them
+to `~/.vox/cache/realtime_session.json`:
+
+```json
+{
+  "provider": "gemini_live",
+  "handle": "<opaque_token>",
+  "expires_at": 1718000000000,
+  "model": "gemini-2.0-flash-live-001",
+  "conversation_id": 42
+}
+```
+
+On `start_realtime_session` with a valid cached handle, the session reconnects
+seamlessly — the frontend shows "Resumed previous session" instead of a fresh start.
 
 ### Pipeline Impact
 
-The voice pipeline remains unchanged:
+The modular pipeline is unchanged. The realtime path is an alternative mode set via
+`InteractionSettings.pipeline_mode` (`"Modular"` or `"Realtime"`). The `launch_engine`
+function conditionally spawns VAD/STT threads based on the active mode, and the
+`AudioRouter` is configured with the appropriate `RouteMode`.
 
-```text
-Audio → STT → LLM Provider → TTS
-```
+### Provider Implementation Status
 
-Only the implementation behind the provider changes. This prevents ripple
-effects across VAD, STT, TTS, UI, telemetry, and state management.
+| Provider | Config | Provider Struct | Status |
+|----------|--------|----------------|--------|
+| Gemini Live | `GeminiRealtimeConfig` | `GeminiLiveProvider` | ✅ Fully integrated |
+| OpenAI Realtime | `OpenAiRealtimeConfig` | — | ⏳ Config defined, returns "not implemented" |
+| Deepgram Voice Agent | `DeepgramVoiceAgentConfig` | — | ⏳ Config defined, returns "not implemented" |
+| ElevenLabs ConvAI | `ElevenLabsConvaiConfig` | — | ⏳ Config defined, returns "not implemented" |
 
-### Future Roadmap
-
-| Phase | Scope |
-|-------|-------|
-| **v0.8.4** | LLM provider architecture & remote OpenAI compatibility |
-| **v0.8.5** | Cloud LLM integration — OpenAI, Gemini, and Anthropic cloud APIs via `OpenAiCompatProvider` with `provider_name` routing (current) |
-| **v0.9.0** | Cloud Realtime voice-to-voice (full-duplex streaming via OpenAI/Gemini Realtime) |
+See `docs/plans/phase9/` for detailed provider integration plans.
 
 ### Design Principle
 
@@ -1454,14 +1616,12 @@ The backend should care about **protocol**, not **location**:
 
 ```text
 localhost
-192.168.1.20
-gpu-server.local
+generativelanguage.googleapis.com
 api.openai.com
 ```
 
-All of these are simply endpoints. The protocol remains the same.
-
-See `docs/plans/phase9/` for modular implementation plans.
+All of these are simply WebSocket endpoints. The protocol is abstracted behind the
+`RealtimeVoiceProvider` trait.
 
 ---
 

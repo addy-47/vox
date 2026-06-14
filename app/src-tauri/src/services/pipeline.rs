@@ -434,6 +434,7 @@ impl PipelineOrchestrator {
         app_handle: tauri::AppHandle,
     ) {
         let mut last_interaction = std::time::Instant::now();
+        let mut current_turn_owner = self.get_current_owner(&app_handle);
 
         // Local settings cache to avoid RwLock contention in the hot path (Directive: Real-Time Safety)
         let mut local_pipeline_mode = {
@@ -597,7 +598,7 @@ impl PipelineOrchestrator {
                         self.latest_playback_start_ms.store(ms, Ordering::Relaxed);
                         self.latest_voice_latency_ms.store(ms, Ordering::Relaxed);
                     }
-                    let owner = self.get_current_owner(&app_handle);
+                    let owner = current_turn_owner;
                     self.update_interaction_state(
                         crate::core::state::InteractionState::AssistantSpeaking,
                         owner,
@@ -680,7 +681,7 @@ impl PipelineOrchestrator {
                         let output_duration = turn_output_samples as f64 / 24000.0;
                         let report = metrics.latency_report(input_duration, output_duration);
                         log::info!("[Pipeline] Turn complete (polled). Latencies: {}", report);
-                        let owner = self.get_current_owner(&app_handle);
+                        let owner = current_turn_owner;
                         self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
 
                         // Persist Turn
@@ -726,6 +727,7 @@ impl PipelineOrchestrator {
                 }
                 // ── Speech start: barge-in cancellation ───────────
                 VoxEvent::SpeechStart { turn_id, owner } => {
+                    current_turn_owner = owner;
                     metrics.mark(MetricField::SpeechStart);
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
@@ -787,6 +789,7 @@ impl PipelineOrchestrator {
                     if turn_id < current_tid {
                         continue;
                     }
+                    current_turn_owner = owner;
                     if metrics.first_partial.is_none() {
                         metrics.mark(MetricField::FirstPartial);
                     }
@@ -816,6 +819,7 @@ impl PipelineOrchestrator {
                     {
                         continue;
                     }
+                    current_turn_owner = owner;
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         turn_user_text = text.clone();
                         let target = match owner {
@@ -890,7 +894,7 @@ impl PipelineOrchestrator {
                     }
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         turn_assistant_text.push_str(&token);
-                        let target = self.get_current_owner(&app_handle);
+                        let target = current_turn_owner;
                         let target_str = match target {
                             crate::core::state::InteractionOwner::MainWindow
                             | crate::core::state::InteractionOwner::Ptt => "main",
@@ -972,17 +976,11 @@ impl PipelineOrchestrator {
                         }
                     }
 
-                    let target = {
-                        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                            app_handle.state();
-                        let owner: crate::core::state::InteractionOwner =
-                            state.owner.load(Ordering::Relaxed).into();
-                        match owner {
-                            crate::core::state::InteractionOwner::MainWindow
-                            | crate::core::state::InteractionOwner::Ptt => "main",
-                            crate::core::state::InteractionOwner::Tray => "tray",
-                            crate::core::state::InteractionOwner::Wizard => "wizard",
-                        }
+                    let target = match current_turn_owner {
+                        crate::core::state::InteractionOwner::MainWindow
+                        | crate::core::state::InteractionOwner::Ptt => "main",
+                        crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = translit_tx.send(TranslitTask::Token {
                         turn_id,
@@ -1089,6 +1087,7 @@ impl PipelineOrchestrator {
                 }
 
                 VoxEvent::SpeechEnd { turn_id: _, owner } => {
+                    current_turn_owner = owner;
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         self.update_interaction_state(
                             crate::core::state::InteractionState::Thinking,
@@ -1136,18 +1135,14 @@ impl PipelineOrchestrator {
                     turn_stt_ms = stt_ms;
                     turn_ttft_ms = ttft_ms;
 
-                    let owner = self.get_current_owner(&app_handle);
+                    let owner = current_turn_owner;
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
 
-                    let target = {
-                        let owner: crate::core::state::InteractionOwner =
-                            state.owner.load(Ordering::Relaxed).into();
-                        match owner {
-                            crate::core::state::InteractionOwner::MainWindow
-                            | crate::core::state::InteractionOwner::Ptt => "main",
-                            crate::core::state::InteractionOwner::Tray => "tray",
-                            crate::core::state::InteractionOwner::Wizard => "wizard",
-                        }
+                    let target = match owner {
+                        crate::core::state::InteractionOwner::MainWindow
+                        | crate::core::state::InteractionOwner::Ptt => "main",
+                        crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = app_handle.emit_to(target, "playback_finished", &report);
 
@@ -1201,28 +1196,22 @@ impl PipelineOrchestrator {
                         }
                     }
 
-                    let owner = self.get_current_owner(&app_handle);
+                    let owner = current_turn_owner;
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                 }
 
                 VoxEvent::Error { turn_id, message } => {
                     log::error!("[Pipeline] Error (turn {}): {}", turn_id, message);
-                    let target = {
-                        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                            app_handle.state();
-                        let owner: crate::core::state::InteractionOwner =
-                            state.owner.load(Ordering::Relaxed).into();
-                        match owner {
-                            crate::core::state::InteractionOwner::MainWindow
-                            | crate::core::state::InteractionOwner::Ptt => "main",
-                            crate::core::state::InteractionOwner::Tray => "tray",
-                            crate::core::state::InteractionOwner::Wizard => "wizard",
-                        }
+                    let target = match current_turn_owner {
+                        crate::core::state::InteractionOwner::MainWindow
+                        | crate::core::state::InteractionOwner::Ptt => "main",
+                        crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = app_handle.emit_to(target, "pipeline_error", &message);
                     awaiting_playback_finish = false;
                     self.tts_generating.store(false, Ordering::Relaxed);
-                    let owner = self.get_current_owner(&app_handle);
+                    let owner = current_turn_owner;
                     self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                 }
                 VoxEvent::Shutdown => {

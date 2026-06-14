@@ -28,44 +28,70 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       )}
     >
       {/* Header & Tabs */}
-      <div className="flex items-center justify-between mb-4 shrink-0">
-        {!isSmall ? (
+      {isSmall ? (
+        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+          <span className="text-[10px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/70 uppercase">INSTRUCTION MODE</span>
+          <div className="flex items-center bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-lg">
+            <button
+              onClick={() => setActiveTab("modular")}
+              className={cn(
+                "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                activeTab === "modular"
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                  : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+              )}
+            >
+              Modular
+            </button>
+            <button
+              onClick={() => setActiveTab("realtime")}
+              className={cn(
+                "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                activeTab === "realtime"
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                  : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+              )}
+            >
+              Realtime
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
-            <UserCircle className="text-[rgb(var(--accent))]" size={20} />
-            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+            <UserCircle className="text-[rgb(var(--accent))]" size={18} />
+            <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
               Persona Settings
             </span>
           </div>
-        ) : (
-          <div /> // spacing helper
-        )}
-        
-        {/* Simple modular/realtime tabs */}
-        <div className="flex items-center bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-lg">
-          <button
-            onClick={() => setActiveTab("modular")}
-            className={cn(
-              "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-              activeTab === "modular"
-                ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-            )}
-          >
-            Modular
-          </button>
-          <button
-            onClick={() => setActiveTab("realtime")}
-            className={cn(
-              "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-              activeTab === "realtime"
-                ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-            )}
-          >
-            Realtime
-          </button>
+          
+          {/* Simple modular/realtime tabs */}
+          <div className="flex items-center bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-lg">
+            <button
+              onClick={() => setActiveTab("modular")}
+              className={cn(
+                "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                activeTab === "modular"
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                  : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+              )}
+            >
+              Modular
+            </button>
+            <button
+              onClick={() => setActiveTab("realtime")}
+              className={cn(
+                "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                activeTab === "realtime"
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                  : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+              )}
+            >
+              Realtime
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Text Area Content */}
       <div className={cn("pt-2 flex flex-col justify-between", isSmall ? "min-h-[200px]" : "min-h-[140px]")}>
