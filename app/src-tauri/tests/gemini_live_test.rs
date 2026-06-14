@@ -152,10 +152,14 @@ async fn test_gemini_live_handshake_and_bidirectional_flow() {
         resume_handle: None,
     };
 
-    let provider = GeminiLiveProvider::new(config, "you are helpful".to_string());
+    let provider = GeminiLiveProvider::new(
+        config,
+        "you are helpful".to_string(),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    );
 
     // Channels to receive output from the provider session
-    let (playback_tx, mut playback_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<i16>>();
+    let (playback_tx, mut playback_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(100);
     let (event_tx, event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
     // 3. Connect (This executes the WebSocket handshake and setup configuration)

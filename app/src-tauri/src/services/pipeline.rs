@@ -430,7 +430,7 @@ impl PipelineOrchestrator {
         &self,
         rx: std::sync::mpsc::Receiver<VoxEvent>,
         super_tts_path: PathBuf,
-        playback_engine: Arc<crate::services::playback::PlaybackEngine>,
+        playback_engine: Arc<crate::services::audio::PlaybackEngine>,
         app_handle: tauri::AppHandle,
     ) {
         let mut last_interaction = std::time::Instant::now();

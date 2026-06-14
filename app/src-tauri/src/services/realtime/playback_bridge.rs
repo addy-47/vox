@@ -1,10 +1,10 @@
-use crate::services::playback::PlaybackEngine;
+use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::{resampler::AudioResampler, RealtimeAudioConfig};
 use std::sync::Arc;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{channel, Sender};
 
 pub struct PlaybackBridge {
-    tx: Option<UnboundedSender<Vec<i16>>>,
+    tx: Option<Sender<Vec<i16>>>,
 }
 
 impl PlaybackBridge {
@@ -18,7 +18,7 @@ impl PlaybackBridge {
         config: RealtimeAudioConfig,
         handle: &tokio::runtime::Handle,
     ) {
-        let (tx, mut rx) = unbounded_channel::<Vec<i16>>();
+        let (tx, mut rx) = channel::<Vec<i16>>(100);
         self.tx = Some(tx);
 
         handle.spawn(async move {
@@ -63,7 +63,7 @@ impl PlaybackBridge {
         self.tx = None;
     }
 
-    pub fn get_sender(&self) -> Option<UnboundedSender<Vec<i16>>> {
+    pub fn get_sender(&self) -> Option<Sender<Vec<i16>>> {
         self.tx.clone()
     }
 }

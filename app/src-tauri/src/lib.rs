@@ -13,8 +13,8 @@ use crate::ipc::history::{
     commit_session_to_history, delete_session, get_sessions, get_transcript_history, get_turns,
 };
 use crate::ipc::pipeline::{
-    check_engine_status, engage, launch_engine, start_realtime_session, stop_engine,
-    stop_realtime_session, test_clip, test_clip_cancel,
+    check_engine_status, engage, get_realtime_session_cache, launch_engine, start_realtime_session, stop_engine,
+    stop_realtime_session, test_clip, test_clip_cancel, pause_pipeline, resume_pipeline,
 };
 use crate::ipc::settings::{
     check_llm_provider_health, get_settings, list_remote_llm_models, request_boot_state,
@@ -408,6 +408,9 @@ pub fn run() {
             test_clip_cancel,
             start_realtime_session,
             stop_realtime_session,
+            get_realtime_session_cache,
+            pause_pipeline,
+            resume_pipeline,
             hide_tray_window,
             sync_hud_visibility,
             set_hud_ignore_cursor,

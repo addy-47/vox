@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::Ordering;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -23,11 +24,20 @@ type WsReader = futures_util::stream::SplitStream<
 pub struct GeminiLiveProvider {
     config: GeminiRealtimeConfig,
     system_prompt: String,
+    is_paused: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl GeminiLiveProvider {
-    pub fn new(config: GeminiRealtimeConfig, system_prompt: String) -> Self {
-        Self { config, system_prompt }
+    pub fn new(
+        config: GeminiRealtimeConfig,
+        system_prompt: String,
+        is_paused: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
+        Self {
+            config,
+            system_prompt,
+            is_paused,
+        }
     }
 }
 
@@ -48,7 +58,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
     fn connect(
         &self,
         interaction_mode: crate::core::settings::InteractionMode,
-        playback_tx: UnboundedSender<Vec<i16>>,
+        playback_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
         event_tx: Sender<VoxEvent>,
     ) -> Result<Box<dyn RealtimeSession>> {
         let handle = tokio::runtime::Handle::current();
@@ -97,10 +107,21 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel::<ControlEvent>();
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
+        // Session metrics & resilience states
+        let is_paused_clone = self.is_paused.clone();
+        let ws_connected = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let ws_connected_clone = ws_connected.clone();
+        let last_activity_time = Arc::new(std::sync::atomic::AtomicU64::new(
+            chrono::Utc::now().timestamp_millis() as u64,
+        ));
+        let last_activity_time_sender = last_activity_time.clone();
+
         // SessionState tracking
         let state = Arc::new(Mutex::new(SessionState {
             interrupt_active: false,
             resume_handle: config_clone.resume_handle.clone(),
+            model: model.clone(),
+            last_activity_time: last_activity_time.clone(),
         }));
 
         let state_clone = state.clone();
@@ -228,8 +249,12 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         let playback_tx_recv = playback_tx.clone();
         let event_tx_recv = event_tx.clone();
         let state_recv = state_clone.clone();
+        let is_paused_clone_for_rec = is_paused_clone.clone();
+        let ws_connected_clone_for_rec = ws_connected_clone.clone();
 
         let receiver_task = handle.spawn(async move {
+            let is_paused_clone = is_paused_clone_for_rec;
+            let ws_connected_clone = ws_connected_clone_for_rec;
             let mut reconnect_tx_opt = Some(reconnect_tx);
             while let Some(res) = ws_read.next().await {
                 match res {
@@ -241,6 +266,10 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                         let val: serde_json::Value = serde_json::from_str(text_str).unwrap_or_default();
                         if val.get("goAway").is_some() {
                             log::warn!("[GeminiLive] Server requested session termination (goAway). Reconnecting...");
+                            ws_connected_clone.store(false, Ordering::SeqCst);
+                            if is_paused_clone.load(Ordering::SeqCst) {
+                                break;
+                            }
                             if let Some(tx) = reconnect_tx_opt.take() {
                                 let _ = tx.send(());
                             }
@@ -256,6 +285,10 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                         let val: serde_json::Value = serde_json::from_str(text_str).unwrap_or_default();
                         if val.get("goAway").is_some() {
                             log::warn!("[GeminiLive] Server requested session termination (goAway). Reconnecting...");
+                            ws_connected_clone.store(false, Ordering::SeqCst);
+                            if is_paused_clone.load(Ordering::SeqCst) {
+                                break;
+                            }
                             if let Some(tx) = reconnect_tx_opt.take() {
                                 let _ = tx.send(());
                             }
@@ -273,8 +306,13 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     _ => {}
                 }
             }
-            if let Some(tx) = reconnect_tx_opt.take() {
-                let _ = tx.send(());
+            ws_connected_clone.store(false, Ordering::SeqCst);
+            if is_paused_clone.load(Ordering::SeqCst) {
+                log::info!("[GeminiLive] WebSocket disconnected silently during pause.");
+            } else {
+                if let Some(tx) = reconnect_tx_opt.take() {
+                    let _ = tx.send(());
+                }
             }
         });
 
@@ -329,6 +367,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                         Ok((mut new_ws_write, mut new_ws_read)) => {
                             log::info!("[GeminiLive] Reconnection handshake completed successfully!");
                             reconnected = true;
+                            ws_connected_clone.store(true, Ordering::SeqCst);
 
                             let (new_ws_write_tx, mut new_ws_write_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
                             *ws_sender.lock().unwrap() = Some(new_ws_write_tx);
@@ -348,6 +387,8 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                             let new_playback_tx = playback_tx_clone.clone();
                             let new_event_tx = event_tx_clone.clone();
                             let new_state_recv = state_clone.clone();
+                            let is_paused_rec = is_paused_clone.clone();
+                            let ws_conn_rec = ws_connected_clone.clone();
 
                             let new_receiver_task = tokio::spawn(async move {
                                 let mut reconnect_tx_opt = Some(new_reconnect_tx);
@@ -361,6 +402,10 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                             let val: serde_json::Value = serde_json::from_str(text_str).unwrap_or_default();
                                             if val.get("goAway").is_some() {
                                                 log::warn!("[GeminiLive] Reconnected Server requested session termination (goAway).");
+                                                ws_conn_rec.store(false, Ordering::SeqCst);
+                                                if is_paused_rec.load(Ordering::SeqCst) {
+                                                    break;
+                                                }
                                                 if let Some(tx) = reconnect_tx_opt.take() {
                                                     let _ = tx.send(());
                                                 }
@@ -376,6 +421,10 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                             let val: serde_json::Value = serde_json::from_str(text_str).unwrap_or_default();
                                             if val.get("goAway").is_some() {
                                                 log::warn!("[GeminiLive] Reconnected Server requested session termination (goAway).");
+                                                ws_conn_rec.store(false, Ordering::SeqCst);
+                                                if is_paused_rec.load(Ordering::SeqCst) {
+                                                    break;
+                                                }
                                                 if let Some(tx) = reconnect_tx_opt.take() {
                                                     let _ = tx.send(());
                                                 }
@@ -393,8 +442,13 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                         _ => {}
                                     }
                                 }
-                                if let Some(tx) = reconnect_tx_opt.take() {
-                                    let _ = tx.send(());
+                                ws_conn_rec.store(false, Ordering::SeqCst);
+                                if is_paused_rec.load(Ordering::SeqCst) {
+                                    log::info!("[GeminiLive] Reconnected WebSocket disconnected silently during pause.");
+                                } else {
+                                    if let Some(tx) = reconnect_tx_opt.take() {
+                                        let _ = tx.send(());
+                                    }
                                 }
                             });
 
@@ -411,6 +465,13 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
 
                 if !reconnected {
                     log::error!("[GeminiLive] Max reconnection attempts reached. Terminating session orchestrator.");
+                    
+                    // Clear the cache file since token is now invalid
+                    let cache_path = crate::utils::paths::cache_dir().join("realtime_session.json");
+                    if cache_path.exists() {
+                        let _ = std::fs::remove_file(cache_path);
+                    }
+
                     let _ = event_tx_clone.send(VoxEvent::Error {
                         turn_id: 0,
                         message: "Gemini connection lost permanently after multiple retries.".to_string(),
@@ -427,6 +488,8 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
             audio_tx,
             control_tx,
             shutdown_tx: std::sync::Mutex::new(Some(shutdown_tx)),
+            ws_connected,
+            last_activity_time: last_activity_time_sender,
         }))
     }
 
@@ -584,22 +647,28 @@ enum ControlEvent {
 struct SessionState {
     interrupt_active: bool,
     resume_handle: Option<String>,
+    model: String,
+    last_activity_time: Arc<std::sync::atomic::AtomicU64>,
 }
 
 pub struct GeminiLiveSession {
     audio_tx: tokio::sync::mpsc::UnboundedSender<Vec<i16>>,
     control_tx: tokio::sync::mpsc::UnboundedSender<ControlEvent>,
     shutdown_tx: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    ws_connected: Arc<std::sync::atomic::AtomicBool>,
+    last_activity_time: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl RealtimeSession for GeminiLiveSession {
     fn send_audio(&self, pcm: &[i16]) -> Result<()> {
+        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
         self.audio_tx
             .send(pcm.to_vec())
             .map_err(|e| anyhow!("Failed to write to S2S audio pipeline queue: {:?}", e))
     }
 
     fn cancel(&self) -> Result<()> {
+        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
         self.control_tx
             .send(ControlEvent::Interrupt)
             .map_err(|e| anyhow!("Failed to send interrupt control event: {:?}", e))
@@ -613,31 +682,50 @@ impl RealtimeSession for GeminiLiveSession {
     }
 
     fn activity_start(&self) -> Result<()> {
+        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
         self.control_tx
             .send(ControlEvent::ActivityStart)
             .map_err(|e| anyhow!("Failed to send activity_start control event: {:?}", e))
     }
 
     fn activity_end(&self) -> Result<()> {
+        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
         self.control_tx
             .send(ControlEvent::ActivityEnd)
             .map_err(|e| anyhow!("Failed to send activity_end control event: {:?}", e))
+    }
+
+    fn is_connected(&self) -> bool {
+        self.ws_connected.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn last_activity_time(&self) -> u64 {
+        self.last_activity_time.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
 fn handle_gemini_server_message(
     text: &str,
-    playback_tx: &UnboundedSender<Vec<i16>>,
+    playback_tx: &tokio::sync::mpsc::Sender<Vec<i16>>,
     event_tx: &Sender<VoxEvent>,
     state: &Arc<Mutex<SessionState>>,
 ) -> Result<()> {
     let val: serde_json::Value = serde_json::from_str(text)?;
 
+    // Update last activity timestamp
+    {
+        let s_lock = state.lock().unwrap();
+        s_lock.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
+    }
+
     // Handle sessionResumptionUpdate token storage
     if let Some(resumption) = val.get("sessionResumptionUpdate") {
         if let Some(new_handle) = resumption.get("newHandle").and_then(|v| v.as_str()) {
-            let mut s_lock = state.lock().unwrap();
-            s_lock.resume_handle = Some(new_handle.to_string());
+            let model = {
+                let mut s_lock = state.lock().unwrap();
+                s_lock.resume_handle = Some(new_handle.to_string());
+                s_lock.model.clone()
+            };
             log::info!(
                 "[GeminiLive] Saved resumption token: {}",
                 if new_handle.len() > 12 {
@@ -646,6 +734,27 @@ fn handle_gemini_server_message(
                     new_handle
                 }
             );
+
+            // Write session cache file
+            let cache_path = crate::utils::paths::cache_dir().join("realtime_session.json");
+            let now_ms = chrono::Utc::now().timestamp_millis() as u64;
+            let expires_at = now_ms + (2 * 60 * 60 * 1000); // 2 hours TTL
+            let payload = serde_json::json!({
+                "provider": "gemini_live",
+                "handle": new_handle,
+                "expires_at": expires_at,
+                "model": model,
+            });
+
+            // Write atomically: write to .tmp then rename
+            let tmp_path = cache_path.with_extension("tmp");
+            if let Ok(payload_str) = serde_json::to_string_pretty(&payload) {
+                if let Err(e) = std::fs::write(&tmp_path, payload_str) {
+                    log::error!("[GeminiLive] Failed to write temporary session cache: {:?}", e);
+                } else if let Err(e) = std::fs::rename(&tmp_path, &cache_path) {
+                    log::error!("[GeminiLive] Failed to rename session cache file: {:?}", e);
+                }
+            }
         }
     }
 
@@ -688,7 +797,9 @@ fn handle_gemini_server_message(
                                         .chunks_exact(2)
                                         .map(|c| i16::from_ne_bytes([c[0], c[1]]))
                                         .collect();
-                                    let _ = playback_tx.send(pcm);
+                                    if let Err(e) = playback_tx.try_send(pcm) {
+                                        log::warn!("[GeminiLive] Playback bridge buffer full: {:?}", e);
+                                    }
                                 }
                             }
                         }

@@ -6,7 +6,7 @@ import { PipelineField } from "@/shared/components/PipelineField";
 import { AmbientBackground } from "@/shared/components/AmbientBackground";
 import { StatusCapsule } from "@/shared/components/StatusCapsule";
 import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
-import { Power, Mic, FlaskConical } from "lucide-react";
+import { Power, Mic, FlaskConical, Play, Pause, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { invoke } from "@tauri-apps/api/core";
@@ -55,9 +55,13 @@ function toStatusLabel(
   state: InteractionState,
   engaged: boolean,
   sleeping: boolean,
-  ptt: "IDLE" | "RECORDING" | "PROCESSING"
+  ptt: "IDLE" | "RECORDING" | "PROCESSING",
+  isPaused: boolean,
+  idleTimeout: number | null
 ): string {
   if (!engaged) return "Dormant";
+  if (isPaused) return "Paused";
+  if (idleTimeout !== null) return `Idle · ${idleTimeout}s`;
   if (sleeping) return "Sleeping";
   if (ptt === "RECORDING") return "Recording";
   if (ptt === "PROCESSING") return "Processing";
@@ -81,9 +85,10 @@ function toStatusLabel(
 function isDotActive(
   state: InteractionState,
   engaged: boolean,
-  ptt: "IDLE" | "RECORDING" | "PROCESSING"
+  ptt: "IDLE" | "RECORDING" | "PROCESSING",
+  isPaused: boolean
 ): boolean {
-  if (!engaged) return false;
+  if (!engaged || isPaused) return false;
   return (
     state === "UserSpeaking" ||
     state === "Thinking" ||
@@ -111,6 +116,11 @@ export const Home: React.FC = () => {
   const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("PASSIVE");
   const [isEngaged, setIsEngaged] = useState(false);
+  const [pipelineMode, setPipelineMode] = useState<"modular" | "realtime">("modular");
+  const [isPaused, setIsPaused] = useState(false);
+  const [sessionResumed, setSessionResumed] = useState(false);
+  const [idleTimeout, setIdleTimeout] = useState<number | null>(null);
+  const [hasCachedSession, setHasCachedSession] = useState(false);
   const [pttStatus, setPttStatus] = useState<"IDLE" | "RECORDING" | "PROCESSING">("IDLE");
   const [transcript, setTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
@@ -133,6 +143,7 @@ export const Home: React.FC = () => {
   const testPanelRef = useRef<HTMLDivElement>(null);
   const dialogueScrollRef = useRef<HTMLDivElement>(null);
   const engageLockRef = useRef(false);
+  const engageTimeoutRef = useRef<NodeJS.Timeout | number | null>(null);
 
   // Streaming text hooks
   const streamedTranscript = useStreamingRenderer(transcript);
@@ -152,8 +163,8 @@ export const Home: React.FC = () => {
   const isThinking = interactionState === "Thinking" || pttStatus === "PROCESSING";
   const activeSpeaking = isUserSpeaking;
   const ambientMood = toMood(interactionState, isSleeping);
-  const statusLabel = toStatusLabel(interactionState, isEngaged, isSleeping, pttStatus);
-  const dotActive = isDotActive(interactionState, isEngaged, pttStatus);
+  const statusLabel = toStatusLabel(interactionState, isEngaged, isSleeping, pttStatus, isPaused, idleTimeout) + (sessionResumed && pipelineMode === "realtime" ? " (Resumed)" : "");
+  const dotActive = isDotActive(interactionState, isEngaged, pttStatus, isPaused);
 
   // Keep testingClipRef in sync
   useEffect(() => {
@@ -168,14 +179,15 @@ export const Home: React.FC = () => {
       turnIdCounter.current += 1;
       setDialogueHistory((prev) => {
         const next = [...prev, { user: userText, assistant: aiText, id: turnIdCounter.current }];
-        return next.slice(-4); // Keep last 4 turns for contextual flow
+        // Only cap in modular mode — realtime sessions show full session history
+        return pipelineMode === "modular" ? next.slice(-4) : next;
       });
       activeUserTextRef.current = "";
       activeAiTextRef.current = "";
       setTranscript("");
       setAssistantText("");
     }
-  }, []);
+  }, [pipelineMode]);
 
   // Clear dialogue history and transcript refs when session ends (isEngaged becomes false)
   useEffect(() => {
@@ -257,23 +269,87 @@ export const Home: React.FC = () => {
     archiveCurrentTurn();
     setIsLaunching(true);
     try {
-      await invoke("engage");
-      const newEngaged = !isEngaged;
-      setIsEngaged(newEngaged);
+      // Fetch latest settings to check pipeline mode
+      const settings = await invoke<{ interaction?: { pipeline_mode?: string } }>("get_settings");
+      const mode = settings?.interaction?.pipeline_mode || "modular";
+
+      if (mode === "realtime") {
+        await invoke("start_realtime_session");
+        setIsEngaged(true);
+        setIsPaused(false);
+        setPipelineMode("realtime");
+      } else {
+        await invoke("engage");
+        setIsEngaged(true);
+        setIsPaused(false);
+        setPipelineMode("modular");
+      }
       setTranscript("");
       setAssistantText("");
     } catch (err) {
       console.error("[Home] Engagement failed:", err);
     } finally {
       setIsLaunching(false);
-      setTimeout(() => {
+      engageTimeoutRef.current = setTimeout(() => {
         engageLockRef.current = false;
-      }, 800);
+      }, 800) as any;
+    }
+  };
+
+  const handleEnd = async () => {
+    if (!isEngaged || engageLockRef.current) return;
+    engageLockRef.current = true;
+    setIsLaunching(true);
+
+    try {
+      if (pipelineMode === "realtime") {
+        await invoke("stop_realtime_session");
+      } else {
+        await invoke("engage"); // Toggle off
+      }
+      setIsEngaged(false);
+      setIsPaused(false);
+      setPipelineMode("modular");
+      setTranscript("");
+      setAssistantText("");
+      setDialogueHistory([]);
+      activeUserTextRef.current = "";
+      activeAiTextRef.current = "";
+    } catch (err) {
+      console.error("[Home] End session failed:", err);
+    } finally {
+      setIsLaunching(false);
+      engageTimeoutRef.current = setTimeout(() => {
+        engageLockRef.current = false;
+      }, 800) as any;
+    }
+  };
+
+  const handlePause = async () => {
+    if (!isEngaged || isPaused) return;
+    try {
+      await invoke("pause_pipeline");
+      setIsPaused(true);
+      archiveCurrentTurn();
+    } catch (err) {
+      console.error("[Home] Pause failed:", err);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!isEngaged || !isPaused) return;
+    try {
+      await invoke("resume_pipeline");
+      setIsPaused(false);
+      setTranscript("");
+      setAssistantText("");
+    } catch (err) {
+      console.error("[Home] Resume failed:", err);
     }
   };
 
   const togglePtt = async () => {
-    if (!isEngaged) return;
+    if (!isEngaged || isPaused) return;
     try {
       if (pttStatus === "IDLE") {
         archiveCurrentTurn();
@@ -303,6 +379,17 @@ export const Home: React.FC = () => {
       setIsEngaged(false);
     }
   };
+
+  // ── Session Cache Check ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isEngaged) {
+      invoke<{ has_session: boolean }>("get_realtime_session_cache")
+        .then((cache) => setHasCachedSession(cache.has_session))
+        .catch((err) => console.warn("[Home] Failed to check session cache:", err));
+    } else {
+      setHasCachedSession(false);
+    }
+  }, [isEngaged]);
 
   // ── Tauri event listeners ────────────────────────────────────────────────────
 
@@ -342,6 +429,7 @@ export const Home: React.FC = () => {
             setInteractionState(newState);
             if (newState !== "Idle") {
               hasActiveTurnStarted.current = true;
+              setIdleTimeout(null);
             }
             // Archive old turns when starting speech or resetting to Listening/Idle
             if (newState === "UserSpeaking" || newState === "Listening") {
@@ -354,6 +442,7 @@ export const Home: React.FC = () => {
           await appWindow.listen<{ text: string }>("transcript_partial", (event) => {
             setTranscript(event.payload.text);
             activeUserTextRef.current = event.payload.text;
+            setIdleTimeout(null);
           })
         );
 
@@ -361,6 +450,7 @@ export const Home: React.FC = () => {
           await appWindow.listen<{ text: string }>("transcript_final", (event) => {
             setTranscript(event.payload.text);
             activeUserTextRef.current = event.payload.text;
+            setIdleTimeout(null);
           })
         );
 
@@ -368,6 +458,7 @@ export const Home: React.FC = () => {
           await appWindow.listen<string>("llm_token", (event) => {
             setAssistantText(event.payload);
             activeAiTextRef.current = event.payload;
+            setIdleTimeout(null);
           })
         );
 
@@ -414,13 +505,79 @@ export const Home: React.FC = () => {
         );
 
         unlisteners.push(
-          await appWindow.listen("pipeline_error", () => {
+          await appWindow.listen<string | undefined>("pipeline_error", (event) => {
             if (testingClipRef.current) {
               archiveCurrentTurn();
               setTestingClip(null);
               setIsEngaged(false);
               hasActiveTurnStarted.current = false;
             }
+            if (pipelineMode === "realtime") {
+              setIsEngaged(false);
+              setIsPaused(false);
+              setPipelineMode("modular");
+              setDialogueHistory([]);
+              setTranscript("");
+              setAssistantText("");
+              activeUserTextRef.current = "";
+              activeAiTextRef.current = "";
+              console.error("[Home] Realtime S2S connection error:", event.payload);
+            }
+          })
+        );
+
+        unlisteners.push(
+          await appWindow.listen("pipeline_paused", () => {
+            setIsPaused(true);
+            archiveCurrentTurn();
+          })
+        );
+
+        unlisteners.push(
+          await appWindow.listen("pipeline_resumed", () => {
+            setIsPaused(false);
+          })
+        );
+
+        unlisteners.push(
+          await appWindow.listen("realtime_session_started", () => {
+            setPipelineMode("realtime");
+            setSessionResumed(false);
+          })
+        );
+
+        unlisteners.push(
+          await appWindow.listen("realtime_session_resumed", () => {
+            setPipelineMode("realtime");
+            setSessionResumed(true);
+          })
+        );
+
+        unlisteners.push(
+          await appWindow.listen<string>("realtime_session_ended", (event) => {
+            const reason = event.payload; // "user", "idle_timeout", "error"
+            setIsEngaged(false);
+            setIsPaused(false);
+            setPipelineMode("modular");
+            setDialogueHistory([]);
+            setTranscript("");
+            setAssistantText("");
+            activeUserTextRef.current = "";
+            activeAiTextRef.current = "";
+            console.log("[Home] Realtime S2S session ended. Reason:", reason);
+          })
+        );
+
+        unlisteners.push(
+          await appWindow.listen("realtime_interrupted", () => {
+            setInteractionState("Interrupted");
+            setTimeout(() => setInteractionState("UserSpeaking"), 150);
+          })
+        );
+
+        unlisteners.push(
+          await appWindow.listen<{ seconds_remaining: number }>("realtime_idle_warning", (event) => {
+            setIdleTimeout(event.payload.seconds_remaining);
           })
         );
 
@@ -433,7 +590,12 @@ export const Home: React.FC = () => {
     };
 
     setup();
-    return () => unlisteners.forEach((u) => u());
+    return () => {
+      if (engageTimeoutRef.current) {
+        clearTimeout(engageTimeoutRef.current as any);
+      }
+      unlisteners.forEach((u) => u());
+    };
   }, [archiveCurrentTurn]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -478,7 +640,7 @@ export const Home: React.FC = () => {
           {dialogueHistory.map((turn) => (
             <React.Fragment key={turn.id}>
               {turn.user && (
-                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed">
+                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed opacity-60">
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/40 uppercase block mb-0.5">
                     [USER]
                   </span>
@@ -486,7 +648,7 @@ export const Home: React.FC = () => {
                 </div>
               )}
               {turn.assistant && (
-                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))]/80 font-medium text-[13px] leading-relaxed" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
+                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))]/80 font-medium text-[13px] leading-relaxed opacity-60" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/50 uppercase block mb-0.5">
                     [VOX]
                   </span>
@@ -586,15 +748,33 @@ export const Home: React.FC = () => {
 
         {/* Buttons */}
         <div className="flex items-center gap-4 relative">
+          {/* Universal Pause / Resume Button */}
+          {isEngaged && !testingClip && (
+            <button
+              onClick={isPaused ? handleResume : handlePause}
+              className={cn(
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
+                isPaused
+                  ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
+                  : "text-[rgb(var(--accent))]"
+              )}
+              aria-label={isPaused ? "Resume Vox" : "Pause Vox"}
+            >
+              {isPaused ? <Play size={28} /> : <Pause size={28} />}
+            </button>
+          )}
+
           {/* PTT Mic Button */}
           {isEngaged && !testingClip && interactionMode === "PTT" && (
             <button
               onClick={togglePtt}
+              disabled={isPaused}
               className={cn(
                 "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
                 pttStatus === "RECORDING"
                   ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
-                  : "text-[rgb(var(--accent))]"
+                  : "text-[rgb(var(--accent))]",
+                isPaused && "opacity-40 cursor-not-allowed hover:bg-transparent hover:scale-100"
               )}
               aria-label="Toggle PTT Microphone"
             >
@@ -602,10 +782,15 @@ export const Home: React.FC = () => {
             </button>
           )}
 
-          {/* Primary Engage Button */}
-          <div className="relative">
+          {/* Primary Engage / Disengage Button */}
+          <div className="relative flex flex-col items-center">
+            {!isEngaged && hasCachedSession && (
+              <span className="absolute -top-7 text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/85 uppercase animate-pulse whitespace-nowrap bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded-full border border-[rgb(var(--accent))]/15">
+                Resume Session
+              </span>
+            )}
             <button
-              onClick={handleEngage}
+              onClick={isEngaged ? handleEnd : handleEngage}
               className={cn(
                 "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
                 isEngaged && isThinking && "engage-btn-loading border-transparent",
@@ -615,14 +800,16 @@ export const Home: React.FC = () => {
                   : "bg-transparent text-[rgb(var(--accent))]"
               )}
               disabled={isLaunching}
-              aria-label={isEngaged ? "Stop Vox" : "Engage Vox"}
+              aria-label={isEngaged ? "Stop Vox" : (hasCachedSession ? "Resume Vox Session" : "Engage Vox")}
             >
               {isLaunching ? (
                 <Power size={28} className="animate-pulse-slow" />
+              ) : isEngaged ? (
+                <X size={28} />
               ) : (
                 <Power
                   size={28}
-                  className={cn("transition-transform duration-700", isEngaged && "rotate-180")}
+                  className="transition-transform duration-700"
                 />
               )}
             </button>
