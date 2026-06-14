@@ -80,6 +80,35 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
         }
     }
 
+    // Sync owner state and VAD actor
+    if visible {
+        state.owner.store(
+            crate::core::state::InteractionOwner::Tray as u32,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let _ = engine
+                .vad_tx
+                .send(crate::core::state::VadCommand::UpdateOwner(
+                    crate::core::state::InteractionOwner::Tray,
+                ));
+        }
+    } else {
+        if state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed) {
+            state.owner.store(
+                crate::core::state::InteractionOwner::MainWindow as u32,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            if let Some(engine) = state.engine.lock().await.as_ref() {
+                let _ = engine
+                    .vad_tx
+                    .send(crate::core::state::VadCommand::UpdateOwner(
+                        crate::core::state::InteractionOwner::MainWindow,
+                    ));
+            }
+        }
+    }
+
     if let Some(window) = app.get_webview_window("tray") {
         if visible {
             let _ = window.show();
@@ -120,14 +149,14 @@ pub async fn update_interaction_mode(
     mode: String,
 ) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let new_mode = match mode.to_uppercase().as_str() {
+        "PASSIVE" => InteractionMode::Passive,
+        "PTT" => InteractionMode::PTT,
+        _ => return Err(format!("Invalid interaction mode: {}", mode)),
+    };
+
     {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
-
-        let new_mode = match mode.to_uppercase().as_str() {
-            "PASSIVE" => InteractionMode::Passive,
-            "PTT" => InteractionMode::PTT,
-            _ => return Err(format!("Invalid interaction mode: {}", mode)),
-        };
 
         match target.to_lowercase().as_str() {
             "main" => {
@@ -140,6 +169,52 @@ pub async fn update_interaction_mode(
         }
 
         let _ = settings.save();
+    }
+
+    // 1. VAD Actor synchronization on owner match
+    let owner: crate::core::state::InteractionOwner = state
+        .owner
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .into();
+    let current_target = match target.to_lowercase().as_str() {
+        "main" => crate::core::state::InteractionOwner::MainWindow,
+        _ => crate::core::state::InteractionOwner::Tray,
+    };
+
+    if owner == current_target {
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let _ = engine
+                .vad_tx
+                .send(crate::core::state::VadCommand::UpdateMode(new_mode));
+        }
+    }
+
+    // 2. Engine lifecycle check for main window mode changes
+    if target.to_lowercase() == "main" {
+        let (tray_enabled, is_engaged, is_passive) = {
+            let s = state.settings.read().unwrap();
+            (
+                s.ui.tray_enabled,
+                state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed),
+                s.interaction.main_app_mode == InteractionMode::Passive,
+            )
+        };
+
+        if !tray_enabled && !is_engaged && !is_passive {
+            log::info!("[Settings] Main App mode changed to non-passive and Tray is disabled. Stopping engine...");
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::ipc::pipeline::stop_engine(app_clone).await;
+            });
+        } else if is_passive {
+            log::info!(
+                "[Settings] Main App mode changed to Passive. Ensuring engine is launched..."
+            );
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::ipc::pipeline::launch_engine(app_clone).await;
+            });
+        }
     }
 
     let event_name = format!("mode_changed_{}", target.to_lowercase());
@@ -157,8 +232,22 @@ pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
         let _ = window.show();
         let _ = window.set_focus();
 
-        // Lazy Launch: If we are in Passive mode, we need the engine running.
         let state: State<'_, std::sync::Arc<AppState>> = app.state();
+
+        // Update owner to MainWindow and synchronize VAD actor
+        state.owner.store(
+            crate::core::state::InteractionOwner::MainWindow as u32,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let _ = engine
+                .vad_tx
+                .send(crate::core::state::VadCommand::UpdateOwner(
+                    crate::core::state::InteractionOwner::MainWindow,
+                ));
+        }
+
+        // Lazy Launch: If we are in Passive mode, we need the engine running.
         let is_passive = {
             let s = state.settings.read().unwrap();
             s.interaction.main_app_mode == InteractionMode::Passive

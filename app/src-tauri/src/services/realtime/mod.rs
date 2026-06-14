@@ -8,7 +8,6 @@ use crate::core::events::VoxEvent;
 pub use crate::core::settings::RealtimeProviderKind;
 use anyhow::Result;
 use std::sync::mpsc::Sender;
-use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RealtimeAudioConfig {

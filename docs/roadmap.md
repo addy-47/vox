@@ -141,11 +141,53 @@
 
 ---
 
-## v0.8.5 - Present
+## v0.9.0 — Realtime S2S Engine (In Progress)
 
-Active development. Direction is inference expansion: Gemini Live full integration,
-S2S frontend integration, PTT for S2S, testing and hardening across all cloud
-providers and local modes.
+**Goal:** Build a trait-based cloud speech-to-speech engine alongside the existing modular pipeline.
+
+### ✅ Completed (Core Engine)
+
+- `RealtimeVoiceProvider` + `RealtimeSession` trait architecture in `services/realtime/`
+- Hybrid sync/async threading model (tokio for WS, OS threads for audio)
+- `AudioRouter` — dynamic gating between VAD and direct realtime routing
+- `AudioBridge` / `PlaybackBridge` — resilient bounded channels with backpressure handling
+- `rubato`-based resampler for sample rate conversion (16kHz↔24kHz)
+- **Gemini Live provider** (`providers/gemini_live.rs`, 855 lines):
+  - Full WebSocket handshake with setup negotiation (model, voice, VAD config)
+  - Two-queue sender architecture (audio + control) to prevent HOL blocking
+  - Audio streaming (16kHz PCM input, 24kHz PCM output via base64 JSON frames)
+  - Server message routing: modelTurn audio/text, inputTranscription, outputTranscription,
+    turnComplete, interrupted, sessionResumptionUpdate, goAway
+  - Session resumption with disk cache (`~/.vox/cache/realtime_session.json`, 2h TTL)
+  - Reconnection with exponential backoff (up to 3 attempts)
+  - PTT support: server-side VAD disabled, client-side VAD gate with pre-roll flush
+  - Idle timeout: 10-minute inactivity monitor with 15s/5s warnings
+  - Interruption handling: local stop → activityStart → server confirmation
+
+### ✅ Completed (PTT Integration)
+
+- PTT VAD gating (`speech_detected` atomic — silent holds discarded, no hallucination)
+- 30-second long-hold safety cutoff for realtime PTT
+- VAD pre-roll buffer flush on speech onset (prevents clipped first word)
+- Audio router pause/resume (`is_paused` atomic)
+- Lazy reconnection on resume if WS disconnected during pause
+- Transcript archiving on pause (turn displayed dimmed in history)
+
+### ✅ Completed (Frontend Session Lifecycle)
+
+- Full engage/disengage cycle with realtime session management
+- Pause/Resume universal controls (both Passive and PTT modes)
+- PTT mic button (rendered only in PTT mode, hidden in Passive)
+- Session cache detection on mount ("Resume Session" label)
+- Idle timeout countdown in StatusCapsule
+- Reconnect event handling and error toasts
+
+### ⏳ In Progress / Planned
+
+- **OpenAI Realtime provider** — config defined, struct not yet implemented
+- **Deepgram Voice Agent provider** — config defined, struct not yet implemented
+- **ElevenLabs ConvAI provider** — config defined, struct not yet implemented
+- Full e2e tests for realtime session lifecycle (beyond mock WS unit tests)
 
 ---
 

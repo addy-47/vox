@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use tokio::sync::Mutex;
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InteractionOwner {
     Tray = 0,
     MainWindow = 1,
@@ -73,7 +73,16 @@ pub enum VadCommand {
     /// Gracefully shutdown the VAD worker.
     Shutdown,
     /// Enable realtime S2S audio routing.
-    StartRealtime(tokio::sync::mpsc::Sender<Vec<i16>>),
+    ///
+    /// `is_ptt` controls how the VAD actor routes audio:
+    /// - `false` (Passive): every chunk is forwarded to Gemini immediately;
+    ///   Gemini's own cloud VAD handles speech detection.
+    /// - `true` (PTT): forwarding is gated on `ptt.speech_detected`;
+    ///   the client gates silence to prevent hallucinations.
+    StartRealtime {
+        tx: tokio::sync::mpsc::Sender<Vec<i16>>,
+        is_ptt: bool,
+    },
     /// Disable realtime S2S audio routing.
     StopRealtime,
 }
