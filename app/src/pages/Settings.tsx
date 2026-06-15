@@ -991,14 +991,18 @@ export const Settings: React.FC = () => {
               >
                 Discard
               </button>
-              <button
-                onClick={() => restoreDefaults()}
-                className="p-1.5 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))] transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0"
-                title="Restore Defaults"
-                aria-label="Restore Defaults"
-              >
-                <RotateCcw size={14} />
-              </button>
+              <div className="relative group">
+                <button
+                  onClick={() => restoreDefaults()}
+                  className="p-1.5 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))] transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0"
+                  aria-label="Restore Defaults"
+                >
+                  <RotateCcw size={14} />
+                </button>
+                <div className="absolute bottom-full mb-2 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--background))]/95 dark:bg-zinc-950/95 backdrop-blur-md text-[rgb(var(--accent))] shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] text-[10px] font-bold tracking-wide uppercase z-50">
+                  Restore Defaults
+                </div>
+              </div>
             </div>
           </div>
 

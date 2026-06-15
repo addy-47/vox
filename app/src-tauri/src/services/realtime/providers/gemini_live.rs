@@ -160,7 +160,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                 }
                 packet_count += 1;
                 if packet_count % 100 == 0 {
-                    log::info!(
+                    log::debug!(
                         "[GeminiLive] Sent {} raw audio blocks to WebSocket.",
                         packet_count
                     );
@@ -849,7 +849,7 @@ fn handle_gemini_server_message(
                                         static RECV_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                                         let count = RECV_COUNT.fetch_add(1, Ordering::Relaxed);
                                         if count % 100 == 0 {
-                                            log::info!("[GeminiLive] Received {} model audio response chunks.", count + 1);
+                                            log::debug!("[GeminiLive] Received {} model audio response chunks.", count + 1);
                                         }
                                     }
                                 }
@@ -857,7 +857,7 @@ fn handle_gemini_server_message(
                         }
                     }
                     if let Some(text_token) = part.get("text").and_then(|t| t.as_str()) {
-                        log::info!("[GeminiLive] Received text token: {:?}", text_token);
+                        log::debug!("[GeminiLive] Received text token: {:?}", text_token);
                         let _ = event_tx.send(VoxEvent::LlmToken {
                             turn_id: 0,
                             token: text_token.to_string(),
@@ -871,7 +871,7 @@ fn handle_gemini_server_message(
         if let Some(input_transcription) = server_content.get("inputTranscription") {
             if !s_lock.interrupt_active {
                 if let Some(text) = input_transcription.get("text").and_then(|t| t.as_str()) {
-                    log::info!("[GeminiLive] Received input transcription (ASR): {:?}", text);
+                    log::debug!("[GeminiLive] Received input transcription (ASR): {:?}", text);
                     let _ = event_tx.send(VoxEvent::TranscriptFinal {
                         turn_id: 0,
                         owner: crate::core::state::InteractionOwner::MainWindow,
@@ -885,7 +885,7 @@ fn handle_gemini_server_message(
         if let Some(output_transcription) = server_content.get("outputTranscription") {
             if !s_lock.interrupt_active {
                 if let Some(text) = output_transcription.get("text").and_then(|t| t.as_str()) {
-                    log::info!("[GeminiLive] Received output transcription (TTS): {:?}", text);
+                    log::debug!("[GeminiLive] Received output transcription (TTS): {:?}", text);
                     let _ = event_tx.send(VoxEvent::LlmToken {
                         turn_id: 0,
                         token: text.to_string(),
@@ -900,7 +900,7 @@ fn handle_gemini_server_message(
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
         {
-            log::info!("[GeminiLive] Turn completed.");
+            log::debug!("[GeminiLive] Turn completed.");
             s_lock.interrupt_active = false;
             let _ = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 });
         }
