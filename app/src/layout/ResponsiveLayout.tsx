@@ -47,6 +47,48 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     return () => window.removeEventListener("resize", handleResize);
   }, [location.pathname, monitorOpen, navigate]);
 
+  // ── Arrow Keys Page Navigation ─────────────────────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if focus is in an input/textarea/select/editable
+      const activeEl = document.activeElement;
+      if (activeEl) {
+        const tagName = activeEl.tagName.toLowerCase();
+        if (
+          tagName === "input" ||
+          tagName === "textarea" ||
+          tagName === "select" ||
+          activeEl.getAttribute("contenteditable") === "true"
+        ) {
+          return;
+        }
+      }
+
+      const isCompact = window.innerWidth < 1024;
+      const routes = isCompact
+        ? ["/", "/history", "/settings", "/monitoring"]
+        : ["/", "/history", "/settings"];
+
+      const currentIndex = routes.indexOf(location.pathname);
+      if (currentIndex === -1) return;
+
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setMonitorOpen(false);
+        const nextIndex = (currentIndex + 1) % routes.length;
+        navigate(routes[nextIndex]);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setMonitorOpen(false);
+        const nextIndex = (currentIndex - 1 + routes.length) % routes.length;
+        navigate(routes[nextIndex]);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [location.pathname, navigate]);
+
   // Ambient origin — on the home page the orb is at 47% vertically, settings radial hub is offset by bottom nav
   const isHome = location.pathname === "/";
   const isSettings = location.pathname === "/settings";

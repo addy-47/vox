@@ -20,7 +20,15 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
             }
 
             // Read output energy if assistant is speaking; otherwise read microphone energy
-            let is_assistant = state.pipeline.is_assistant_speaking.load(Ordering::Relaxed);
+            let local_pipeline_mode = {
+                let s = state.settings.read().unwrap();
+                s.interaction.pipeline_mode.clone()
+            };
+            let is_assistant = if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+                state.pipeline.playback_active.load(Ordering::Relaxed)
+            } else {
+                state.pipeline.is_assistant_speaking.load(Ordering::Relaxed)
+            };
             let (energy, low, mid, high) = if is_assistant {
                 (
                     f32::from_bits(state.latest_playback_energy.load(Ordering::Relaxed)),

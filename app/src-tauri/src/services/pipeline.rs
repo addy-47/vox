@@ -54,6 +54,7 @@ pub enum PipelineState {
 
 pub struct PipelineOrchestrator {
     cancel_flag: Arc<AtomicBool>,
+    is_paused: Arc<AtomicBool>,
     _playback_active: Arc<AtomicBool>,
     tts_generating: Arc<AtomicBool>,
     turn_id: Arc<AtomicU32>,
@@ -89,6 +90,7 @@ pub struct PipelineOrchestrator {
 impl PipelineOrchestrator {
     pub fn new(
         cancel_flag: Arc<AtomicBool>,
+        is_paused: Arc<AtomicBool>,
         playback_active: Arc<AtomicBool>,
         tts_generating: Arc<AtomicBool>,
         turn_id: Arc<AtomicU32>,
@@ -110,6 +112,7 @@ impl PipelineOrchestrator {
     ) -> Self {
         Self {
             cancel_flag,
+            is_paused,
             _playback_active: playback_active,
             tts_generating,
             turn_id,
@@ -475,6 +478,7 @@ impl PipelineOrchestrator {
 
         // True after LlmFinished: we're waiting for TTS+Playback to drain
         let mut awaiting_playback_finish = false;
+        let mut local_silence_time: Option<std::time::Instant> = None;
         let mut tts_queued_chunks = 0usize;
         let mut tts_finished_chunks = 0usize;
         let mut tts_chunks_finished_in_turn = 0usize;
@@ -614,6 +618,65 @@ impl PipelineOrchestrator {
                 break;
             }
 
+            // Sync Realtime state changes based on playback activity
+            if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+                let playback_active = self._playback_active.load(Ordering::Relaxed);
+                let current_state = self.state.lock().unwrap().clone();
+                let owner = self.get_current_owner(&app_handle);
+
+                if playback_active {
+                    if current_state != crate::core::state::InteractionState::AssistantSpeaking {
+                        self.update_interaction_state(
+                            crate::core::state::InteractionState::AssistantSpeaking,
+                            owner,
+                            &app_handle,
+                        );
+                    }
+                } else {
+                    if current_state == crate::core::state::InteractionState::AssistantSpeaking {
+                        self.update_interaction_state(
+                            crate::core::state::InteractionState::Listening,
+                            owner,
+                            &app_handle,
+                        );
+                    }
+                }
+
+                // Check for UserSpeaking timeout recovery (Passive mode only)
+                if current_state == crate::core::state::InteractionState::UserSpeaking && owner != InteractionOwner::Ptt {
+                    if let Some(silence_start) = local_silence_time {
+                        if silence_start.elapsed() > std::time::Duration::from_secs(10) {
+                            log::info!("[Pipeline] UserSpeaking state timeout (10s since local silence). Triggering Automatic Pause Recovery.");
+                            
+                            self.is_paused.store(true, Ordering::SeqCst);
+                            self.cancel_flag.store(true, Ordering::SeqCst);
+                            playback_engine.cancel();
+
+                            let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                                app_handle.state();
+                            if let Ok(rt_guard) = state.realtime_engine.try_lock() {
+                                if let Some(rt_engine) = &*rt_guard {
+                                    let _ = rt_engine.activity_end();
+                                }
+                            }
+
+                            let target = match owner {
+                                crate::core::state::InteractionOwner::MainWindow
+                                | crate::core::state::InteractionOwner::Ptt => "main",
+                                crate::core::state::InteractionOwner::Tray => "tray",
+                                crate::core::state::InteractionOwner::Wizard => "wizard",
+                            };
+                            let _ = app_handle.emit_to(target, "pipeline_paused", ());
+                            let _ = app_handle.emit_to(target, "pipeline_error", "Speech detection timeout: No response from server. Paused.".to_string());
+                            self.update_interaction_state(crate::core::state::InteractionState::Idle, owner, &app_handle);
+                            local_silence_time = None;
+                        }
+                    }
+                } else {
+                    local_silence_time = None;
+                }
+            }
+
             // Get timeout from local cache
             let sleep_timeout = local_sleep_timeout;
 
@@ -731,6 +794,16 @@ impl PipelineOrchestrator {
                     current_turn_owner = owner;
                     metrics.mark(MetricField::SpeechStart);
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+                        if owner != InteractionOwner::Ptt {
+                            let current_state = self.state.lock().unwrap().clone();
+                            if current_state != crate::core::state::InteractionState::Listening
+                                && current_state != crate::core::state::InteractionState::Idle
+                            {
+                                log::debug!("[Pipeline] SpeechStart ignored (Realtime Passive mode in state {:?})", current_state);
+                                continue;
+                            }
+                        }
+
                         let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
                             app_handle.state();
                         if let Ok(mut engine_guard) = state.realtime_engine.try_lock() {
@@ -744,6 +817,7 @@ impl PipelineOrchestrator {
                             owner,
                             &app_handle,
                         );
+                        local_silence_time = None;
                         continue;
                     }
                     let buffer_len = playback_engine.buffer_len();
@@ -842,6 +916,22 @@ impl PipelineOrchestrator {
                             owner,
                             local_transliterate_enabled,
                         });
+
+                        // Populate metrics for Realtime turn
+                        metrics.mark(MetricField::FinalTranscript);
+                        metrics.mark(MetricField::LlmStart);
+                        metrics.input_len_chars = text.len();
+
+                        if owner != InteractionOwner::Ptt {
+                            self.update_interaction_state(
+                                crate::core::state::InteractionState::Thinking,
+                                owner,
+                                &app_handle,
+                            );
+                            self.cancel_flag.store(false, Ordering::Relaxed);
+                        }
+                        local_silence_time = None;
+
                         continue;
                     }
                     if turn_id <= last_committed_session_id {
@@ -914,6 +1004,13 @@ impl PipelineOrchestrator {
                             token: token.clone(),
                             local_transliterate_enabled,
                         });
+
+                        // Populate metrics for Realtime turn
+                        if metrics.first_token.is_none() {
+                            metrics.mark(MetricField::FirstToken);
+                        }
+                        metrics.tokens_generated += 1;
+
                         continue;
                     }
 
@@ -1100,11 +1197,24 @@ impl PipelineOrchestrator {
                     }
                     current_turn_owner = owner;
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
-                        self.update_interaction_state(
-                            crate::core::state::InteractionState::Thinking,
-                            owner,
-                            &app_handle,
-                        );
+                        if owner != InteractionOwner::Ptt {
+                            // Realtime Passive mode: SpeechEnd is a noop for state transition.
+                            // Start local_silence_time tracking when silence is detected.
+                            let current_state = self.state.lock().unwrap().clone();
+                            if current_state == crate::core::state::InteractionState::UserSpeaking {
+                                if local_silence_time.is_none() {
+                                    log::info!("[Pipeline] Local VAD detected silence in UserSpeaking state. Starting 10s timeout guard.");
+                                    local_silence_time = Some(std::time::Instant::now());
+                                }
+                            }
+                        } else {
+                            self.update_interaction_state(
+                                crate::core::state::InteractionState::Thinking,
+                                owner,
+                                &app_handle,
+                            );
+                            self.cancel_flag.store(false, Ordering::Relaxed);
+                        }
                     }
                 }
 
@@ -1208,7 +1318,18 @@ impl PipelineOrchestrator {
                     }
 
                     let owner = current_turn_owner;
-                    self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
+                    if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime && owner != InteractionOwner::Ptt {
+                        // In Realtime Passive mode, an interruption means the user has started speaking.
+                        // Transition state directly to UserSpeaking.
+                        self.update_interaction_state(
+                            crate::core::state::InteractionState::UserSpeaking,
+                            owner,
+                            &app_handle,
+                        );
+                        local_silence_time = None;
+                    } else {
+                        self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
+                    }
                 }
 
                 VoxEvent::Error { turn_id, message } => {
@@ -1223,7 +1344,27 @@ impl PipelineOrchestrator {
                     awaiting_playback_finish = false;
                     self.tts_generating.store(false, Ordering::Relaxed);
                     let owner = current_turn_owner;
-                    self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
+
+                    if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
+                        // Point 2: Trigger automatic pause recovery on backend and frontend
+                        log::info!("[Pipeline] Connection/Engine error received in Realtime mode. Triggering Automatic Pause Recovery.");
+                        self.is_paused.store(true, Ordering::SeqCst);
+                        self.cancel_flag.store(true, Ordering::SeqCst);
+                        playback_engine.cancel();
+
+                        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                            app_handle.state();
+                        if let Ok(rt_guard) = state.realtime_engine.try_lock() {
+                            if let Some(rt_engine) = &*rt_guard {
+                                let _ = rt_engine.activity_end();
+                            }
+                        }
+
+                        let _ = app_handle.emit_to(target, "pipeline_paused", ());
+                        self.update_interaction_state(crate::core::state::InteractionState::Idle, owner, &app_handle);
+                    } else {
+                        self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
+                    }
                 }
                 VoxEvent::Shutdown => {
                     log::info!(

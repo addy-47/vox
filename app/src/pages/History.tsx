@@ -7,6 +7,7 @@ import React, {
   memo,
 } from "react";
 import { Ghost, ChevronLeft, ChevronRight, X, Trash2, Check } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import {
   forceSimulation,
   forceX,
@@ -236,10 +237,8 @@ const DetailPanel = memo(
                     <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]/40 uppercase tracking-widest mb-1 mr-2">
                       you
                     </span>
-                    <div className="glass rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%]">
-                      <p className="text-[14px] text-[rgb(var(--foreground))]/85 leading-relaxed break-words">
-                        {turn.user_text}
-                      </p>
+                    <div className="glass rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))]/85 leading-relaxed break-words prose prose-invert select-text">
+                      <ReactMarkdown>{turn.user_text}</ReactMarkdown>
                     </div>
                   </div>
 
@@ -247,10 +246,8 @@ const DetailPanel = memo(
                     <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))]/70 uppercase tracking-widest mb-1 ml-2">
                       vox
                     </span>
-                    <div className="glass rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%]">
-                      <p className="text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words">
-                        {turn.assistant_text}
-                      </p>
+                    <div className="glass rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words prose prose-invert select-text">
+                      <ReactMarkdown>{turn.assistant_text}</ReactMarkdown>
                       <div className="flex gap-3 mt-2 border-t border-[rgba(var(--accent),0.06)] pt-1.5 shrink-0">
                         {turn.stt_latency_ms !== null && (
                           <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30">
