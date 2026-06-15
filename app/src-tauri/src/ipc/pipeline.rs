@@ -138,6 +138,10 @@ pub async fn engage(
         log::info!("[Pipeline] Disengaging pipeline. Ending User Session.");
         state.pipeline.is_engaged.store(false, Ordering::Relaxed);
         state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+        state.owner.store(
+            crate::core::state::InteractionOwner::Tray as u32,
+            Ordering::Relaxed,
+        );
 
         if let Some(engine) = state.engine.lock().await.as_ref() {
             let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);

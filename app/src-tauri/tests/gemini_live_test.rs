@@ -52,11 +52,10 @@ async fn test_gemini_live_handshake_and_bidirectional_flow() {
                 if let Message::Text(text) = msg {
                     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
                     if let Some(realtime_input) = val.get("realtimeInput") {
-                        if let Some(media_chunks) = realtime_input.get("mediaChunks").and_then(|m| m.as_array()) {
-                            if let Some(chunk) = media_chunks.first() {
-                                if let Some(data) = chunk.get("data").and_then(|d| d.as_str()) {
-                                    if !data.is_empty() {
-                                        *server_received_audio_clone.lock().unwrap() = true;
+                        if let Some(audio) = realtime_input.get("audio") {
+                            if let Some(data) = audio.get("data").and_then(|d| d.as_str()) {
+                                if !data.is_empty() {
+                                    *server_received_audio_clone.lock().unwrap() = true;
 
                                         // Send user input transcription (ASR)
                                         let input_tx_msg = serde_json::json!({
@@ -135,11 +134,10 @@ async fn test_gemini_live_handshake_and_bidirectional_flow() {
                                 }
                             }
                         }
+                    }
                 }
             }
-        }
-    }
-});
+        });
 
     // 2. Configure GeminiLiveProvider with Endpoint Override
     std::env::set_var("GEMINI_LIVE_ENDPOINT_OVERRIDE", &server_url);

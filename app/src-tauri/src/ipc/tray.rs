@@ -234,19 +234,6 @@ pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
 
         let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-        // Update owner to MainWindow and synchronize VAD actor
-        state.owner.store(
-            crate::core::state::InteractionOwner::MainWindow as u32,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        if let Some(engine) = state.engine.lock().await.as_ref() {
-            let _ = engine
-                .vad_tx
-                .send(crate::core::state::VadCommand::UpdateOwner(
-                    crate::core::state::InteractionOwner::MainWindow,
-                ));
-        }
-
         // Lazy Launch: If we are in Passive mode, we need the engine running.
         let is_passive = {
             let s = state.settings.read().unwrap();

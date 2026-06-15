@@ -129,6 +129,6 @@ impl traits::VadEngine for EarshotVadEngine {
             }
         }
 
-        self.is_speech
+        is_active
     }
 }
