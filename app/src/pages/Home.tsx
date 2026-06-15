@@ -782,7 +782,7 @@ export const Home: React.FC = () => {
           {dialogueHistory.map((turn) => (
             <React.Fragment key={turn.id}>
               {turn.user && (
-                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed opacity-60 prose prose-invert select-text">
+                <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[11px] leading-relaxed opacity-60 prose prose-invert select-text">
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/40 uppercase block mb-0.5">
                     [USER]
                   </span>
@@ -790,7 +790,7 @@ export const Home: React.FC = () => {
                 </div>
               )}
               {turn.assistant && (
-                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))]/80 font-medium text-[13px] leading-relaxed opacity-60 prose prose-invert select-text" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
+                <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))]/80 font-medium text-[11px] leading-relaxed opacity-60 prose prose-invert select-text" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/50 uppercase block mb-0.5">
                     [VOX]
                   </span>
@@ -807,7 +807,7 @@ export const Home: React.FC = () => {
                 <motion.div
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/85 font-light text-[13px] leading-relaxed prose prose-invert select-text"
+                  className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/85 font-light text-[11px] leading-relaxed prose prose-invert select-text"
                 >
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/60 uppercase block mb-0.5">
                     [USER]
@@ -819,7 +819,7 @@ export const Home: React.FC = () => {
                 <motion.div
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed prose prose-invert select-text" style={{ textShadow: "0 0 25px rgba(var(--accent), 0.25)" }}
+                  className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[11px] leading-relaxed prose prose-invert select-text" style={{ textShadow: "0 0 25px rgba(var(--accent), 0.25)" }}
                 >
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/70 uppercase block mb-0.5">
                     [VOX]

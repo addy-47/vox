@@ -551,7 +551,12 @@ fn main() -> anyhow::Result<()> {
     m.mark(MetricField::PlaybackFinish);
 
     let output_duration = tts_samples.len() as f64 / 24000.0;
-    let mut report = m.latency_report(input_duration, output_duration);
+    let mut report = m.latency_report(
+        input_duration,
+        output_duration,
+        vox_lib::core::settings::PipelineMode::Modular,
+        false,
+    );
 
     if let Some(obj) = report.as_object_mut() {
         if let Some(perf) = obj.get_mut("memory_mb").and_then(|v| v.as_object_mut()) {
