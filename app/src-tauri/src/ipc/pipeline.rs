@@ -91,6 +91,7 @@ pub async fn engage(
     if new_state {
         log::info!("[Pipeline] Engaging main application pipeline. Starting User Session.");
         state.pipeline.is_engaged.store(true, Ordering::Relaxed);
+        state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
         state
             .owner
             .store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
@@ -508,6 +509,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     // Pipeline Orchestrator now takes Arc<RwLock<VoxSettings>> and the pre-resolved llm_path
     let orchestrator = PipelineOrchestrator::new(
         std::sync::Arc::clone(&state.pipeline.cancel_flag),
+        std::sync::Arc::clone(&state.pipeline.is_paused),
         std::sync::Arc::clone(&state.pipeline.playback_active),
         std::sync::Arc::clone(&state.pipeline.tts_generating),
         std::sync::Arc::clone(&state.pipeline.turn_id),
@@ -907,6 +909,7 @@ pub async fn start_realtime_session_internal(
 
     // Update backend engagement state
     state.pipeline.is_engaged.store(true, std::sync::atomic::Ordering::Relaxed);
+    state.pipeline.cancel_flag.store(false, std::sync::atomic::Ordering::Relaxed);
 
     *rt_guard = Some(rt_engine);
 
@@ -970,21 +973,7 @@ pub async fn start_realtime_session_internal(
                         let _ = std::fs::remove_file(cache_path);
                     }
 
-                    // Reset settings pipeline mode to Modular
-                    let current_settings = {
-                        let mut settings_write = state_clone.settings.write().unwrap();
-                        settings_write.interaction.pipeline_mode = crate::core::settings::PipelineMode::Modular;
-                        settings_write.clone()
-                    };
 
-                    // Propagate settings update to the pipeline event loop
-                    if let Some(engine) = state_clone.engine.lock().await.as_ref() {
-                        let _ = engine
-                            .pipeline_tx
-                            .send(crate::core::events::VoxEvent::SettingsUpdated(
-                                current_settings,
-                            ));
-                    }
 
                     // Emit event to frontend
                     let _ = app_clone.emit_to("main", "realtime_session_ended", "idle_timeout".to_string());
@@ -1109,22 +1098,7 @@ pub async fn stop_realtime_session(
     // Emit event to frontend
     let _ = app.emit_to("main", "realtime_session_ended", "user".to_string());
 
-    // 3. Update pipeline mode back to Modular in settings
-    let current_settings = {
-        let mut settings_write = state.settings.write().unwrap();
-        settings_write.interaction.pipeline_mode = crate::core::settings::PipelineMode::Modular;
-        let _ = settings_write.save();
-        settings_write.clone()
-    };
 
-    // 4. Propagate settings update to the pipeline event loop
-    if let Some(engine) = state.engine.lock().await.as_ref() {
-        let _ = engine
-            .pipeline_tx
-            .send(crate::core::events::VoxEvent::SettingsUpdated(
-                current_settings,
-            ));
-    }
 
     log::info!("[IPC] Realtime S2S session stopped successfully.");
     Ok(())

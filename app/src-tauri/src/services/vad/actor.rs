@@ -270,19 +270,18 @@ where
                             );
                         }
                     }
-                    // Keep VAD state clean while streaming to Gemini
-                    if in_speech {
-                        in_speech = false;
-                        utterance_buffer.clear();
-                        samples_since_partial = 0;
-                    }
-                    continue;
                 }
                 // is_ptt == true: fall through to the PTT block which handles
                 // gated forwarding via speech_detected.
             }
 
-            if mode == InteractionMode::PTT {
+            let effective_mode = if realtime_tx.is_some() && !realtime_is_ptt {
+                InteractionMode::Passive
+            } else {
+                mode.clone()
+            };
+
+            if effective_mode == InteractionMode::PTT {
                 let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
                 let is_rec = state.ptt.is_recording.load(Ordering::SeqCst);
 
@@ -336,7 +335,7 @@ where
                             static PTT_ROUTE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                             let count = PTT_ROUTE_COUNT.fetch_add(1, Ordering::Relaxed);
                             if count % 200 == 0 {
-                                log::info!("[VAD] Routing realtime PTT audio chunk (count: {})", count + 1);
+                                log::debug!("[VAD] Routing realtime PTT audio chunk (count: {})", count + 1);
                             }
                         }
                     }

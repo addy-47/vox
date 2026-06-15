@@ -544,7 +544,7 @@ impl Default for GeminiRealtimeConfig {
             voice_name: "Aoede".to_string(),
             language_code: "en-US".to_string(),
             temperature: 0.2,
-            enable_web_search: false,
+            enable_web_search: true,
             resume_handle: None,
         }
     }

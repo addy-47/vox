@@ -445,6 +445,9 @@ export const VoxOrb = React.memo(({
     container: HTMLDivElement;
     curScale: number;
     curBaseVal: number;
+    heartbeatPhase: number;
+    noiseTime: number;
+    smoothedEnergy: number;
   }
 
   const sceneRef = useRef<SceneContext | null>(null);
@@ -454,47 +457,48 @@ export const VoxOrb = React.memo(({
     glow: new THREE.Color('#0891b2'),
   });
 
-  const tickFn = useCallback((_dt: number) => {
+  const tickFn = useCallback((dt: number) => {
     const ctx = sceneRef.current;
     if (!ctx) return;
 
+    const dtSec = dt / 1000;
     const t = (performance.now() - ctx.t0) / 1000;
     const state = stateRef.current;
     const sleeping = sleepingRef.current;
 
-    let telemEnergy = 0;
-    let telemMid = 0;
-    let telemHigh = 0;
+    // 1. Calculate raw voice/VAD energy input based on current state
+    let rawEnergy = 0;
+    let rawHigh = 0;
 
     if (telemetryRef?.current) {
       const e = telemetryRef.current.energy;
-      const m = telemetryRef.current.mid;
       const h = telemetryRef.current.high;
       const v = telemetryRef.current.vad_prob || 0;
       
       if (state === 'UserSpeaking' || state === 'AssistantSpeaking') {
-        telemEnergy = e * 1.0;
-        telemMid = m * 1.0;
-        telemHigh = h * 1.0;
+        rawEnergy = e;
+        rawHigh = h;
       } else if (state === 'Listening') {
-        // Very subtle breathing reaction to listening energy/VAD to bridge transitions smoothly
-        telemEnergy = e * 0.15 + v * 0.03;
-        telemMid = m * 0.15 + v * 0.03;
-        telemHigh = h * 0.1;
+        // Subtle energy feedback when listening based on mic energy & VAD
+        rawEnergy = e * 0.4 + v * 0.2;
+        rawHigh = h * 0.3;
       }
     } else if (amplitudeRef.current > 0) {
-      telemEnergy = amplitudeRef.current * 0.3;
-      telemMid = telemEnergy;
-      telemHigh = telemEnergy;
-    }
-    if (state === 'Thinking') {
-      const pulse = Math.sin(t * 2.6) * 0.13;
-      telemEnergy = pulse;
-      telemMid = pulse;
-      telemHigh = pulse;
+      rawEnergy = amplitudeRef.current;
+      rawHigh = rawEnergy;
     }
 
-    // Smoothly transition base offset value on state changes (eliminates instant state-jump visual pops)
+    // 2. Smoothed audio energy (fast attack, slow graceful release envelope follower)
+    const targetEnergy = Math.min(rawEnergy, 1.0);
+    const prevEnergy = ctx.smoothedEnergy ?? 0;
+    const energyRate = targetEnergy > prevEnergy ? 0.35 : 0.04;
+    ctx.smoothedEnergy = prevEnergy + (targetEnergy - prevEnergy) * energyRate;
+    const audioEnergy = ctx.smoothedEnergy;
+
+    // 3. Stable Holographic Boundary (No physical bouncing or heartbeat scaling)
+    ctx.group.scale.set(1.0, 1.0, 1.0);
+
+    // 4. Smoothly transition base offset value on state changes (eliminates instant state-jump visual pops)
     const targetBase = BASE_AMP[state] ?? 0.02;
     const baseVal = (sleeping ? targetBase * 0.08 : targetBase);
     if (ctx.curBaseVal === undefined) {
@@ -502,17 +506,19 @@ export const VoxOrb = React.memo(({
     }
     ctx.curBaseVal += (baseVal - ctx.curBaseVal) * 0.06;
 
-    // Fixed scale to keep outer boundaries stable; deformation is handled internally via u_amplitude
-    ctx.group.scale.set(1.0, 1.0, 1.0);
-
-    // 2. Mids drive the main noise deformation amplitude (u_amplitude) with Smooth Attack, Fluid Release
-    const targetAmp = Math.min(ctx.curBaseVal + telemMid, 2.5);
+    // 5. Calculate internal vertex deformation amplitude (u_amplitude) directly from smoothed audio energy
+    // This allows the internal "silk" to deepen fluidly and hold its shape during speech, without rhythmic bouncing.
+    const targetAmp = ctx.curBaseVal + audioEnergy * 0.4;
     const curAmp = ctx.sharedUni.u_amplitude.value;
-    const rate = targetAmp > curAmp ? 0.18 : 0.06;
-    ctx.sharedUni.u_amplitude.value += (targetAmp - curAmp) * rate;
+    const ampRate = targetAmp > curAmp ? 0.25 : 0.08;
+    ctx.sharedUni.u_amplitude.value += (targetAmp - curAmp) * ampRate;
 
-    ctx.sharedUni.u_highs.value = telemHigh;
-    ctx.sharedUni.u_time.value = t;
+    // 7. Internal noise/texture boiling (accelerate time drift based on voice activity)
+    const speedBoost = 1.0 + audioEnergy * 3.5;
+    ctx.noiseTime += dtSec * speedBoost;
+    ctx.sharedUni.u_time.value = ctx.noiseTime;
+
+    ctx.sharedUni.u_highs.value = rawHigh * (1.0 + audioEnergy * 0.5);
     ctx.sharedUni.u_sleeping.value += (Number(sleeping) - ctx.sharedUni.u_sleeping.value) * 0.08;
 
     const themeAccent = themeRef.current.accent;
@@ -529,7 +535,7 @@ export const VoxOrb = React.memo(({
       ctx.tgtAccent.copy(themeAccent);
     }
 
-    // Response morph rate increased from 0.03 to 0.08 to match the physical scale transition
+    // Response morph rate
     ctx.curGlow.lerp(ctx.tgtGlow, 0.08);
     ctx.curAccent.lerp(ctx.tgtAccent, 0.08);
 
@@ -539,8 +545,8 @@ export const VoxOrb = React.memo(({
     ctx.outerMat.uniforms['u_colorGlow'].value.copy(ctx.curGlow);
     ctx.outerMat.uniforms['u_colorAccent'].value.copy(ctx.curAccent);
 
-    // 3. Treble/Highs drive rotation speed multiplier (dampened to prevent frantic rotation)
-    const speedMult = 1.0 + Math.min(telemHigh * 1.2, 2.5);
+    // 8. Treble/Highs drive rotation speed multiplier (tied to smoothed energy to prevent frantic jumps)
+    const speedMult = 1.0 + audioEnergy * 0.8;
     for (let i = 0; i < NUM_SHEETS; i++) {
       const mesh = ctx.discGroup.children[i] as THREE.Mesh;
       const anim = ctx.discAnims[i];
@@ -713,6 +719,9 @@ export const VoxOrb = React.memo(({
       container,
       curScale: 1.0,
       curBaseVal: 0.02,
+      heartbeatPhase: 0,
+      noiseTime: 0,
+      smoothedEnergy: 0,
     };
 
     return () => {
