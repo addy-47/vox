@@ -191,22 +191,22 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     })
                     .to_string(),
                     ControlEvent::Interrupt => {
-                        let start_msg = serde_json::json!({
-                            "realtimeInput": {
-                                "activityStart": {}
-                            }
-                        })
-                        .to_string();
-
-                        let opt_tx = {
-                            let guard = ws_sender_control.lock().unwrap();
-                            guard.clone()
-                        };
-                        if let Some(ref tx) = opt_tx {
-                            let _ = tx.send(Message::Text(start_msg.into()));
-                        }
-
                         if is_ptt {
+                            let start_msg = serde_json::json!({
+                                "realtimeInput": {
+                                    "activityStart": {}
+                                }
+                            })
+                            .to_string();
+
+                            let opt_tx = {
+                                let guard = ws_sender_control.lock().unwrap();
+                                guard.clone()
+                            };
+                            if let Some(ref tx) = opt_tx {
+                                let _ = tx.send(Message::Text(start_msg.into()));
+                            }
+
                             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                             let end_msg = serde_json::json!({
                                 "realtimeInput": {
@@ -595,12 +595,13 @@ async fn perform_handshake(
             "disabled": false,
             "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
             "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
-            "prefixPaddingMs": 20,
-            "silenceDurationMs": 100
+            "prefixPaddingMs": 50,
+            "silenceDurationMs": 200
         })
     };
     setup_json["setup"]["realtimeInputConfig"] = serde_json::json!({
-        "automaticActivityDetection": activity_detection
+        "automaticActivityDetection": activity_detection,
+        "turnCoverage": "TURN_INCLUDES_ONLY_ACTIVITY"
     });
 
     if let Some(ref handle) = resume_handle {
@@ -771,7 +772,7 @@ fn handle_gemini_server_message(
                 s_lock.resume_handle = Some(new_handle.to_string());
                 s_lock.model.clone()
             };
-            log::info!(
+            log::debug!(
                 "[GeminiLive] Saved resumption token: {}",
                 if new_handle.len() > 12 {
                     &new_handle[..12]

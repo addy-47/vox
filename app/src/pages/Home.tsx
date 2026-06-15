@@ -13,6 +13,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "framer-motion";
+import ReactMarkdown from "react-markdown";
+
+const MarkdownComponents = {
+  h1: ({node, ...props}: any) => <h1 className="text-[12px] font-bold mt-1 mb-0.5" {...props} />,
+  h2: ({node, ...props}: any) => <h2 className="text-[12px] font-bold mt-1 mb-0.5" {...props} />,
+  h3: ({node, ...props}: any) => <h3 className="text-[11px] font-bold mt-1 mb-0.5" {...props} />,
+  p: ({node, ...props}: any) => <p className="mb-1 last:mb-0 inline-block w-full" {...props} />,
+  ul: ({node, ...props}: any) => <ul className="list-disc list-inside mb-1 pl-1" {...props} />,
+  ol: ({node, ...props}: any) => <ol className="list-decimal list-inside mb-1 pl-1" {...props} />,
+  li: ({node, ...props}: any) => <li className="ml-0" {...props} />,
+  code: ({node, ...props}: any) => <code className="bg-[rgba(var(--foreground),0.06)] px-1 rounded font-mono text-[11px]" {...props} />,
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -261,7 +273,7 @@ export const Home: React.FC = () => {
     }
   };
 
-  const handleEngage = async () => {
+  const handleEngage = useCallback(async () => {
     if (engageLockRef.current) return;
     engageLockRef.current = true;
 
@@ -301,9 +313,9 @@ export const Home: React.FC = () => {
         engageLockRef.current = false;
       }, 800) as any;
     }
-  };
+  }, [testingClip, archiveCurrentTurn]);
 
-  const handleEnd = async () => {
+  const handleEnd = useCallback(async () => {
     if (!isEngaged || engageLockRef.current) return;
     engageLockRef.current = true;
     setIsLaunching(true);
@@ -317,7 +329,6 @@ export const Home: React.FC = () => {
       }
       setIsEngaged(false);
       setIsPaused(false);
-      setPipelineMode("modular");
       setTranscript("");
       setAssistantText("");
       setDialogueHistory([]);
@@ -331,9 +342,9 @@ export const Home: React.FC = () => {
         engageLockRef.current = false;
       }, 800) as any;
     }
-  };
+  }, [isEngaged, pipelineMode]);
 
-  const handlePause = async () => {
+  const handlePause = useCallback(async () => {
     if (!isEngaged || isPaused) return;
     try {
       await invoke("pause_pipeline");
@@ -342,9 +353,9 @@ export const Home: React.FC = () => {
     } catch (err) {
       console.error("[Home] Pause failed:", err);
     }
-  };
+  }, [isEngaged, isPaused, archiveCurrentTurn]);
 
-  const handleResume = async () => {
+  const handleResume = useCallback(async () => {
     if (!isEngaged || !isPaused) return;
     try {
       await invoke("resume_pipeline");
@@ -354,7 +365,95 @@ export const Home: React.FC = () => {
     } catch (err) {
       console.error("[Home] Resume failed:", err);
     }
-  };
+  }, [isEngaged, isPaused]);
+
+  // ── Keyboard Keybindings ───────────────────────────────────────────────────
+  useEffect(() => {
+    const isInputActive = () => {
+      const activeEl = document.activeElement;
+      if (!activeEl) return false;
+      const tagName = activeEl.tagName.toLowerCase();
+      return (
+        tagName === "input" ||
+        tagName === "textarea" ||
+        tagName === "select" ||
+        activeEl.getAttribute("contenteditable") === "true"
+      );
+    };
+
+    const isSpacePressedRef = { current: false };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isInputActive()) return;
+
+      const key = e.key.toLowerCase();
+
+      if (e.code === "Space") {
+        if (interactionMode === "PTT" && isEngaged && !isPaused) {
+          e.preventDefault();
+          if (!isSpacePressedRef.current) {
+            isSpacePressedRef.current = true;
+            archiveCurrentTurn();
+            invoke("ptt_start", { owner: "MainWindow" }).catch((err) => {
+              console.error("[Home] PTT start failed:", err);
+              isSpacePressedRef.current = false;
+            });
+          }
+        }
+      } else if (key === "s") {
+        e.preventDefault();
+        if (isEngaged) {
+          handleEnd();
+        } else {
+          handleEngage();
+        }
+      } else if (key === "p") {
+        e.preventDefault();
+        handlePause();
+      } else if (key === "r") {
+        e.preventDefault();
+        handleResume();
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        if (isSpacePressedRef.current) {
+          isSpacePressedRef.current = false;
+          if (interactionMode === "PTT" && isEngaged && !isPaused) {
+            e.preventDefault();
+            invoke("ptt_stop", { owner: "MainWindow" }).catch((err) => {
+              console.error("[Home] PTT stop failed:", err);
+            });
+          }
+        }
+      }
+    };
+
+    const handleBlur = () => {
+      if (isSpacePressedRef.current) {
+        isSpacePressedRef.current = false;
+        if (interactionMode === "PTT" && isEngaged && !isPaused) {
+          invoke("ptt_stop", { owner: "MainWindow" }).catch((err) => {
+            console.error("[Home] PTT stop on blur failed:", err);
+          });
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+      if (isSpacePressedRef.current && interactionMode === "PTT" && isEngaged && !isPaused) {
+        invoke("ptt_stop", { owner: "MainWindow" }).catch(() => {});
+      }
+    };
+  }, [isEngaged, isPaused, interactionMode, handleEngage, handleEnd, handlePause, handleResume, archiveCurrentTurn]);
 
   const togglePtt = async () => {
     if (!isEngaged || isPaused) return;
@@ -408,9 +507,12 @@ export const Home: React.FC = () => {
       try {
         const appWindow = getCurrentWindow();
 
-        const settings = await invoke<{ interaction?: { main_app_mode?: string } }>("get_settings");
+        const settings = await invoke<{ interaction?: { main_app_mode?: string; pipeline_mode?: string } }>("get_settings");
         if (settings?.interaction?.main_app_mode) {
           setInteractionMode(settings.interaction.main_app_mode.toUpperCase() as InteractionMode);
+        }
+        if (settings?.interaction?.pipeline_mode) {
+          setPipelineMode(settings.interaction.pipeline_mode.toLowerCase() as "modular" | "realtime");
         }
 
         try {
@@ -521,14 +623,7 @@ export const Home: React.FC = () => {
               hasActiveTurnStarted.current = false;
             }
             if (pipelineModeRef.current === "realtime") {
-              setIsEngaged(false);
-              setIsPaused(false);
-              setPipelineMode("modular");
-              setDialogueHistory([]);
-              setTranscript("");
-              setAssistantText("");
-              activeUserTextRef.current = "";
-              activeAiTextRef.current = "";
+              setIsPaused(true);
               console.error("[Home] Realtime S2S connection error:", event.payload);
               setErrorAlert(event.payload || "Realtime connection to Gemini Live lost.");
             }
@@ -567,7 +662,6 @@ export const Home: React.FC = () => {
             const reason = event.payload; // "user", "idle_timeout", "error"
             setIsEngaged(false);
             setIsPaused(false);
-            setPipelineMode("modular");
             setDialogueHistory([]);
             setTranscript("");
             setAssistantText("");
@@ -688,19 +782,19 @@ export const Home: React.FC = () => {
           {dialogueHistory.map((turn) => (
             <React.Fragment key={turn.id}>
               {turn.user && (
-                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed opacity-60">
+                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed opacity-60 prose prose-invert select-text">
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/40 uppercase block mb-0.5">
                     [USER]
                   </span>
-                  {turn.user}
+                  <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
                 </div>
               )}
               {turn.assistant && (
-                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))]/80 font-medium text-[13px] leading-relaxed opacity-60" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
+                <div className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))]/80 font-medium text-[13px] leading-relaxed opacity-60 prose prose-invert select-text" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/50 uppercase block mb-0.5">
                     [VOX]
                   </span>
-                  {turn.assistant}
+                  <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
                 </div>
               )}
             </React.Fragment>
@@ -713,24 +807,24 @@ export const Home: React.FC = () => {
                 <motion.div
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/85 font-light text-[13px] leading-relaxed"
+                  className="w-full max-w-[150px] break-words text-left text-[rgb(var(--foreground))]/85 font-light text-[13px] leading-relaxed prose prose-invert select-text"
                 >
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/60 uppercase block mb-0.5">
                     [USER]
                   </span>
-                  {streamedTranscript}
+                  <ReactMarkdown components={MarkdownComponents}>{streamedTranscript}</ReactMarkdown>
                 </motion.div>
               )}
               {streamedAssistantText && (
                 <motion.div
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed" style={{ textShadow: "0 0 25px rgba(var(--accent), 0.25)" }}
+                  className="w-full max-w-[150px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed prose prose-invert select-text" style={{ textShadow: "0 0 25px rgba(var(--accent), 0.25)" }}
                 >
                   <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/70 uppercase block mb-0.5">
                     [VOX]
                   </span>
-                  {streamedAssistantText}
+                  <ReactMarkdown components={MarkdownComponents}>{streamedAssistantText}</ReactMarkdown>
                 </motion.div>
               )}
             </div>
