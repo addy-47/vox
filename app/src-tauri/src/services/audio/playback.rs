@@ -69,6 +69,8 @@ pub struct PlaybackEngine {
     _is_assistant_speaking: Arc<AtomicBool>,
     /// Track current buffer level for pre-buffering logic.
     buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
+    /// Total samples ingested during the current turn.
+    total_samples_ingested: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 // Safety: cpal::Stream is not Send/Sync on some platforms (macOS), but is
@@ -121,6 +123,7 @@ impl PlaybackEngine {
             _playback_underruns: playback_underruns,
             _is_assistant_speaking: is_assistant_speaking,
             buffer_samples,
+            total_samples_ingested: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         })
     }
 
@@ -146,6 +149,7 @@ impl PlaybackEngine {
         }
 
         self.buffer_samples.fetch_add(pushed, Ordering::SeqCst);
+        self.total_samples_ingested.fetch_add(pushed, Ordering::SeqCst);
     }
 
     /// Explicitly trigger CPAL playback.
@@ -186,6 +190,14 @@ impl PlaybackEngine {
     /// Returns the number of samples remaining in the playback buffer.
     pub fn buffer_len(&self) -> usize {
         self.buffer_samples.load(Ordering::Relaxed)
+    }
+
+    pub fn total_samples_ingested(&self) -> usize {
+        self.total_samples_ingested.load(Ordering::Relaxed)
+    }
+
+    pub fn reset_samples_ingested(&self) {
+        self.total_samples_ingested.store(0, Ordering::Relaxed);
     }
 
     // ── Private ───────────────────────────────────────────────────────────────

@@ -492,7 +492,6 @@ impl PipelineOrchestrator {
         let mut last_committed_session_id = 0u32;
         let mut turn_first_token_time: Option<std::time::Instant> = None;
         let mut turn_tokens_generated = 0usize;
-        let mut turn_output_samples = 0usize;
 
         log::info!("[Pipeline] Event loop starting...");
         let engine_shutdown = {
@@ -631,6 +630,15 @@ impl PipelineOrchestrator {
                             owner,
                             &app_handle,
                         );
+                        if metrics.first_audio.is_none() {
+                            metrics.mark(MetricField::FirstAudio);
+                            metrics.mark(MetricField::PlaybackStart);
+                            if let (Some(s), Some(p)) = (metrics.speech_start, metrics.playback_start) {
+                                let ms = p.duration_since(s).as_millis() as u32;
+                                self.latest_playback_start_ms.store(ms, Ordering::Relaxed);
+                                self.latest_voice_latency_ms.store(ms, Ordering::Relaxed);
+                            }
+                        }
                     }
                 } else {
                     if current_state == crate::core::state::InteractionState::AssistantSpeaking {
@@ -738,11 +746,16 @@ impl PipelineOrchestrator {
                     {
                         awaiting_playback_finish = false;
                         metrics.mark(MetricField::PlaybackFinish);
-                        let input_duration = (count_words(&turn_user_text) as f64 / 2.5).max(0.5);
-                        let output_duration = turn_output_samples as f64 / 24000.0;
-                        let report = metrics.latency_report(input_duration, output_duration);
-                        log::info!("[Pipeline] Turn complete (polled). Latencies: {}", report);
                         let owner = current_turn_owner;
+                        let input_duration = (count_words(&turn_user_text) as f64 / 2.5).max(0.5);
+                        let output_duration = playback_engine.total_samples_ingested() as f64 / 48000.0;
+                        let report = metrics.latency_report(
+                            input_duration,
+                            output_duration,
+                            local_pipeline_mode.clone(),
+                            owner == InteractionOwner::Ptt,
+                        );
+                        log::info!("[Pipeline] Turn complete (polled). Latencies: {}", report);
                         self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
 
                         // Persist Turn
@@ -793,6 +806,7 @@ impl PipelineOrchestrator {
                     }
                     current_turn_owner = owner;
                     metrics.mark(MetricField::SpeechStart);
+                    playback_engine.reset_samples_ingested();
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         if owner != InteractionOwner::Ptt {
                             let current_state = self.state.lock().unwrap().clone();
@@ -952,7 +966,6 @@ impl PipelineOrchestrator {
                     turn_assistant_text.clear();
                     turn_first_token_time = None;
                     turn_tokens_generated = 0;
-                    turn_output_samples = 0;
                     tts_queued_chunks = 0;
                     tts_finished_chunks = 0;
                     tts_chunks_finished_in_turn = 0;
@@ -1105,7 +1118,7 @@ impl PipelineOrchestrator {
                         metrics.mark(MetricField::LlmEnd);
                         metrics.output_len_chars = turn_assistant_text.len();
                         log::info!(
-                            "[Pipeline] LLM finished response in Realtime mode: {:?}",
+                            "[Pipeline] Realtime server response complete: {:?}",
                             turn_assistant_text
                         );
                         token_buf.clear();
@@ -1157,7 +1170,6 @@ impl PipelineOrchestrator {
                     if turn_id != current_tid {
                         continue;
                     }
-                    turn_output_samples += samples.len();
                     if metrics.first_audio.is_none() {
                         metrics.mark(MetricField::FirstAudio);
                     }
@@ -1196,6 +1208,7 @@ impl PipelineOrchestrator {
                         continue;
                     }
                     current_turn_owner = owner;
+                    metrics.mark(MetricField::SpeechEnd);
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         if owner != InteractionOwner::Ptt {
                             // Realtime Passive mode: SpeechEnd is a noop for state transition.
@@ -1225,8 +1238,13 @@ impl PipelineOrchestrator {
                     metrics.mark(MetricField::PlaybackFinish);
 
                     let input_duration = (count_words(&turn_user_text) as f64 / 2.5).max(0.5);
-                    let output_duration = turn_output_samples as f64 / 24000.0;
-                    let report = metrics.latency_report(input_duration, output_duration);
+                    let output_duration = playback_engine.total_samples_ingested() as f64 / 48000.0;
+                    let report = metrics.latency_report(
+                        input_duration,
+                        output_duration,
+                        local_pipeline_mode.clone(),
+                        current_turn_owner == InteractionOwner::Ptt,
+                    );
                     tracing::info!("[Pipeline] Turn complete. Latencies: {}", report);
 
                     // Emit structured telemetry
