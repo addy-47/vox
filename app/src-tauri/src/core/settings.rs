@@ -17,10 +17,10 @@ pub enum AudioOutputMode {
 pub enum VadBackendOption {
     /// Earshot — pure Rust, no ONNX dependency, embedded NN weights.
     /// ~20x faster than TenVAD. Default starting from Phase 8.
-    #[default]
     Earshot,
     /// TenVAD — ONNX-based, requires ten_vad.onnx model file.
     /// Legacy option, kept for user preference.
+    #[default]
     TenVad,
 }
 
@@ -350,7 +350,7 @@ impl Default for VadSettings {
         Self {
             threshold: 0.5, // Earshot recommends 0.5 as general default, TenVAD also optimized to 0.5
             ptt_noise_gate: 0.005,
-            vad_backend: VadBackendOption::Earshot,
+            vad_backend: VadBackendOption::TenVad,
         }
     }
 }

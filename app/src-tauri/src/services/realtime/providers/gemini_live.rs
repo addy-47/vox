@@ -143,12 +143,10 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     });
                 let msg = serde_json::json!({
                     "realtimeInput": {
-                        "mediaChunks": [
-                            {
-                                "mimeType": "audio/pcm;rate=16000",
-                                "data": base64_audio
-                            }
-                        ]
+                        "audio": {
+                            "mimeType": "audio/pcm;rate=16000",
+                            "data": base64_audio
+                        }
                     }
                 })
                 .to_string();
