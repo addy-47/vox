@@ -353,11 +353,9 @@ impl PipelineOrchestrator {
 
         // ── Phase 5 Dormancy Check ──────────────────────────────────────────
         // LLM/TTS only triggers if:
-        // 1. The user explicitly engaged the main app via the Home screen.
-        // 2. OR the interaction owner is already MainWindow/Ptt.
+        // 1. The user explicitly engaged the main app (is_engaged is true).
         let is_engaged = self.is_engaged.load(Ordering::Relaxed);
-        let should_trigger_pipeline =
-            is_engaged || (owner != InteractionOwner::Tray && owner != InteractionOwner::Wizard);
+        let should_trigger_pipeline = is_engaged;
 
         if !should_trigger_pipeline {
             log::info!("[Pipeline] System is dormant. Skipping LLM/TTS for Tray interaction.");
@@ -725,8 +723,11 @@ impl PipelineOrchestrator {
                     }
                     log::info!("[Pipeline] WarmUp: workers started in background.");
                 }
-                // ── Speech start: barge-in cancellation ───────────
                 VoxEvent::SpeechStart { turn_id, owner } => {
+                    let is_engaged = self.is_engaged.load(Ordering::Relaxed);
+                    if !is_engaged && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt) {
+                        continue;
+                    }
                     current_turn_owner = owner;
                     metrics.mark(MetricField::SpeechStart);
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
@@ -780,12 +781,15 @@ impl PipelineOrchestrator {
                     }
                 }
 
-                // ── Transcript partial: update HUD UI ─────────────────────
                 VoxEvent::TranscriptPartial {
                     turn_id,
                     owner,
                     text,
                 } => {
+                    let is_engaged = self.is_engaged.load(Ordering::Relaxed);
+                    if !is_engaged && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt) {
+                        continue;
+                    }
                     if turn_id < current_tid {
                         continue;
                     }
@@ -808,12 +812,15 @@ impl PipelineOrchestrator {
                     });
                 }
 
-                // ── Transcript final: hand off to LLM ────────────────────
                 VoxEvent::TranscriptFinal {
                     turn_id,
                     owner,
                     text,
                 } => {
+                    let is_engaged = self.is_engaged.load(Ordering::Relaxed);
+                    if !is_engaged && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt) {
+                        continue;
+                    }
                     if turn_id < current_tid
                         && local_pipeline_mode != crate::core::settings::PipelineMode::Realtime
                     {
@@ -1087,6 +1094,10 @@ impl PipelineOrchestrator {
                 }
 
                 VoxEvent::SpeechEnd { turn_id: _, owner } => {
+                    let is_engaged = self.is_engaged.load(Ordering::Relaxed);
+                    if !is_engaged && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt) {
+                        continue;
+                    }
                     current_turn_owner = owner;
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         self.update_interaction_state(
