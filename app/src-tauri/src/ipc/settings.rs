@@ -424,6 +424,10 @@ fn apply_setting_mutation(
                 .ok_or("log_level must be a string")?
                 .to_string();
         }
+        ("tts", "provider") => {
+            settings.tts.provider = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid TTS provider: {}", e))?;
+        }
         ("tts", "voice") => {
             settings.tts.voice = value.as_i64().ok_or("voice must be an integer")? as i32;
         }
@@ -626,6 +630,30 @@ pub async fn check_llm_provider_health(
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(healthy)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn check_tts_provider_health(
+    state: State<'_, std::sync::Arc<AppState>>,
+    provider: Option<crate::core::settings::TtsProviderConfig>,
+) -> Result<bool, String> {
+    use crate::core::settings::TtsProviderConfig;
+    use crate::utils::paths;
+
+    let config = if let Some(prov) = provider {
+        prov
+    } else {
+        let settings = state.settings.read().map_err(|e| e.to_string())?;
+        settings.tts.provider.clone()
+    };
+
+    match config {
+        TtsProviderConfig::Supertonic => {
+            let models_dir = paths::get().models.clone();
+            let model_path = models_dir.join(crate::core::constants::MODEL_DIR_TTS_SUPER);
+            Ok(model_path.exists())
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::core::events::VoxEvent;
-use crate::services::traits;
+use crate::services::llm::LlmEngine;
 use anyhow::{anyhow, Result};
 use llama_cpp_4::{
     context::params::LlamaContextParams,
@@ -334,7 +334,6 @@ impl LlmWorker {
                     turn_id,
                     cancel_flag,
                 } => {
-                    use crate::services::traits::LlmEngine as _;
                     if let Err(e) = self.generate(&text, &system_prompt, turn_id, &cancel_flag, &tx)
                     {
                         log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
@@ -355,7 +354,7 @@ impl LlmWorker {
     }
 }
 
-impl traits::LlmEngine for LlmWorker {
+impl LlmEngine for LlmWorker {
     fn generate(
         &self,
         user_text: &str,

@@ -1,4 +1,4 @@
-use crate::services::traits;
+use super::VadEngine;
 use anyhow::Result;
 use earshot::Detector;
 
@@ -78,7 +78,7 @@ impl EarshotVadEngine {
     }
 }
 
-impl traits::VadEngine for EarshotVadEngine {
+impl VadEngine for EarshotVadEngine {
     /// Predict voice activity for a single 256-sample frame at 16 kHz.
     ///
     /// # Panics

@@ -2,7 +2,7 @@ use crate::core::constants::{
     MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER, MODEL_FILE_ASR_FRONTEND,
     MODEL_FILE_ASR_TOKENIZER,
 };
-use crate::services::traits;
+use super::SttEngine as SttEngineTrait;
 use anyhow::{anyhow, Result};
 use sherpa_onnx::{OfflineQwen3ASRModelConfig, OfflineRecognizer, OfflineRecognizerConfig};
 use std::path::Path;
@@ -81,7 +81,7 @@ fn strip_cjk(text: &str) -> String {
         .join(" ")
 }
 
-impl traits::SttEngine for SttEngine {
+impl SttEngineTrait for SttEngine {
     fn transcribe(&self, audio: &[f32]) -> Result<String> {
         if audio.is_empty() {
             return Ok(String::new());

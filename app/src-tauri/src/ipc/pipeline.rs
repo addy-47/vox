@@ -506,7 +506,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         }
     };
 
-    // Pipeline Orchestrator now takes Arc<RwLock<VoxSettings>> and the pre-resolved llm_path
+    // Pipeline Orchestrator now takes Arc<RwLock<VoxSettings>> and the pre-resolved llm_path + super_tts_path
     let orchestrator = PipelineOrchestrator::new(
         std::sync::Arc::clone(&state.pipeline.cancel_flag),
         std::sync::Arc::clone(&state.pipeline.is_paused),
@@ -517,6 +517,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         vox_event_tx.clone(),
         Arc::clone(&state.settings),
         llm_path,
+        super_tts_path,
         std::sync::Arc::clone(&state.pipeline.is_engaged),
         std::sync::Arc::clone(&state.pipeline.transcript_history),
         std::sync::Arc::clone(&state.conversation_id),
@@ -537,7 +538,6 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         .spawn(move || {
             orchestrator.run_event_loop(
                 vox_event_rx,
-                super_tts_path,
                 playback_for_orch,
                 app_for_orch,
             );
