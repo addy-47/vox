@@ -35,7 +35,8 @@ you are likely to get wrong without help.
 │       │   │   ├── audio/    # device.rs, playback.rs, router.rs (unified audio module)
 │       │   │   ├── realtime/ # engine.rs, audio_bridge.rs, playback_bridge.rs, resampler.rs
 │       │   │   │   └── providers/  # gemini_live.rs (full Gemini Live WebSocket integration)
-│       │   │   └── llm/providers/  # embedded.rs, openai_compat.rs (unified cloud hub)
+│       │   │   ├── tts/providers/ # TtsProvider trait, (future) Pocket, OmniVoice
+│       │   │   └── llm/providers/ # embedded.rs, openai_compat.rs (unified cloud hub)
 │       │   ├── ipc/          # Tauri command handlers (pipeline, settings, tray, history…)
 │       │   ├── persistence/  # SQLite (rusqlite), event store
 │       │   ├── monitoring/   # Telemetry aggregator, system monitor
@@ -75,6 +76,50 @@ as new `impl LlmProvider` structs in `services/llm/providers/`. The trait requir
 
 The pipeline (`services/pipeline.rs`) is **provider-agnostic** — it calls `LlmProvider`
 methods only. Do not modify the pipeline when adding a new provider.
+
+### TTS Provider Architecture (v0.8.5+, refactored)
+
+The TTS was refactored from a single Supertonic-only engine into a **trait-based
+provider system** mirroring the LLM pattern:
+
+```
+TtsProvider trait:                          (services/tts/providers/mod.rs)
+  └─ TtsEngine (providers/supertonic.rs)    (local Supertonic 3 via sherpa-onnx)
+  └─ (future) Pocket, OmniVoice, etc.
+```
+
+The trait uses `&self` (interior mutability via `Mutex`/atomics) instead of `&mut self`
+for thread safety. `voice_sid` was removed from the command protocol — voice is now
+provider-config level (restart to change). Methods: `kind()`, `health_check()`,
+`set_quality_steps()`, `set_speed()`. All providers must output **24 kHz f32 mono**.
+
+**Settings**: `TtsProviderConfig` is a tagged enum (like `LlmProviderConfig`) in
+`core/settings.rs`. Currently only `Supertonic` variant exists. Switch requires
+TTS worker restart (`SettingReloadPolicy::Restart`).
+
+The pipeline (`services/pipeline.rs`) `warm_up_tts()` matches on
+`TtsProviderConfig` to construct the correct provider — do NOT hardcode any
+provider in the pipeline. Add new providers as new `impl TtsProvider` structs
+in `services/tts/providers/`.
+
+**Worker model**: `spawn_tts_worker()` in `services/tts/actor.rs` now accepts
+`Box<dyn TtsProvider>` instead of hard-coding Supertonic. The worker owns the
+provider exclusively on its dedicated OS thread.
+
+### Trait Organization (v0.8.5+, cleanup)
+
+All engine traits live in their owning module's `mod.rs`, **not** a centralized `traits.rs`:
+
+```
+VadEngine  → services/vad/mod.rs     (also: VadBackend enum dispatch for zero-cost audio path)
+SttEngine  → services/stt/mod.rs
+LlmEngine  → services/llm/mod.rs     (coexists with LlmProvider trait — lower-level GGUF trait)
+TtsProvider → services/tts/providers/mod.rs  (provider trait, not an "engine")
+```
+
+The former `services/traits.rs` was dissolved. There is no `pub mod traits` in
+`services/mod.rs`. Use local super-path imports (`super::VadEngine`, `super::super::LlmEngine`)
+in implementation files to avoid name collisions with identically-named structs.
 
 ### Realtime S2S Engine (v0.8.5+, completed)
 

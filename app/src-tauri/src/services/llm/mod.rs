@@ -6,6 +6,21 @@ pub use actor::{spawn_llm_worker, LlmCommand};
 pub use llama_cpp::LlmWorker;
 pub use providers::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, ProviderKind};
 
+/// Large Language Model engine contract.
+///
+/// This is the lower-level interface for local GGUF inference via llama.cpp.
+/// For the provider abstraction (which wraps local or remote), see `LlmProvider`.
+pub trait LlmEngine {
+    fn generate(
+        &self,
+        user_text: &str,
+        system_prompt: &str,
+        turn_id: u32,
+        cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+        tx: &std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
+    ) -> anyhow::Result<()>;
+}
+
 use llama_cpp_4::llama_backend::LlamaBackend;
 use std::sync::OnceLock;
 

@@ -58,8 +58,8 @@ fn run_supertonic_bench(
     prompts: &[Prompt],
     audio_out_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
-    use vox_lib::services::traits::TtsEngine as _;
-    use vox_lib::services::tts::supertonic;
+    use vox_lib::services::tts::providers::TtsProvider as _;
+    use vox_lib::services::tts::TtsEngine as SupertonicEngine;
     use vox_lib::utils::bench_reporter::BenchReporter;
 
     println!("\x1b[32m[TTS-Bench]\x1b[0m Loading Supertonic 3...");
@@ -68,7 +68,7 @@ fn run_supertonic_bench(
     let snap_init = BenchReporter::get_memory_snapshot();
     let load_start = Instant::now();
 
-    let mut engine = match supertonic::TtsEngine::new(&super_model_path, 8, 1.05) {
+    let engine = match SupertonicEngine::new(&super_model_path, 0, 8, 1.05) {
         Ok(e) => e,
         Err(e) => {
             println!(
@@ -100,7 +100,6 @@ fn run_supertonic_bench(
         let cancel_clone = cancel.clone();
 
         let turn_id = i as u32;
-        let voice_sid = 0;
 
         let start = Instant::now();
         let mut ttfa_ms: Option<u128> = None;
@@ -110,7 +109,7 @@ fn run_supertonic_bench(
 
         std::thread::scope(|s| {
             s.spawn(|| {
-                let _ = engine.synthesize_chunk(prompt.text, voice_sid, turn_id, cancel_clone, tx);
+                let _ = engine.synthesize_chunk(prompt.text, turn_id, cancel_clone, tx);
             });
         });
 
@@ -187,9 +186,9 @@ fn run_bench() -> anyhow::Result<()> {
 }
 
 fn run_compare() -> anyhow::Result<()> {
-    use vox_lib::services::traits::TtsEngine;
+    use vox_lib::services::tts::providers::TtsProvider;
 
-    fn run_tts(name: &str, text: &str, engine: &mut dyn TtsEngine) -> anyhow::Result<()> {
+    fn run_tts(name: &str, text: &str, engine: &mut dyn TtsProvider) -> anyhow::Result<()> {
         let (tx, rx) = channel::<VoxEvent>();
         let cancel = Arc::new(AtomicBool::new(false));
 
@@ -198,7 +197,7 @@ fn run_compare() -> anyhow::Result<()> {
         let mut total_samples = 0;
         let mut accumulated = Vec::new();
 
-        engine.synthesize_chunk(text, 0, 0, cancel, tx)?;
+        engine.synthesize_chunk(text, 0, cancel, tx)?;
 
         while let Ok(event) = rx.recv() {
             match event {
@@ -254,7 +253,7 @@ fn run_compare() -> anyhow::Result<()> {
     println!("\x1b[32m[TTS-Compare]\x1b[0m Loading Supertonic 3...");
     let super_model_path = models_dir.join("tts/supertonic-3");
     let mut supertonic =
-        vox_lib::services::tts::supertonic::TtsEngine::new(&super_model_path, 8, 1.05)?;
+        vox_lib::services::tts::TtsEngine::new(&super_model_path, 0, 8, 1.05)?;
     run_tts("Supertonic 3", text, &mut supertonic)?;
 
     println!("\n\x1b[32m[TTS-Compare]\x1b[0m Done!");

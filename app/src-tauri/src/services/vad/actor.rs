@@ -1,7 +1,7 @@
 use super::VadBackend;
 use crate::core::settings::InteractionMode;
 use crate::core::state::{InteractionOwner, VadCommand};
-use crate::services::traits::VadEngine as _;
+use super::VadEngine as _;
 use anyhow::Result;
 use serde_json::json;
 use std::sync::atomic::Ordering;

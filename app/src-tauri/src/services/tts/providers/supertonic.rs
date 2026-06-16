@@ -1,5 +1,5 @@
 use crate::core::events::VoxEvent;
-use crate::services::traits;
+use super::{TtsProvider, TtsProviderKind};
 use anyhow::{anyhow, Result};
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
@@ -7,9 +7,18 @@ use sherpa_onnx::{
 };
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+/// Minimum quality steps (fast but slurred).
+const MIN_QUALITY_STEPS: u32 = 2;
+/// Maximum quality steps (highest quality).
+const MAX_QUALITY_STEPS: u32 = 12;
+/// Minimum speed factor.
+const MIN_SPEED: f32 = 0.7;
+/// Maximum speed factor.
+const MAX_SPEED: f32 = 2.0;
 
 const SUPER_SAMPLE_RATE: u32 = 44100;
 
@@ -74,13 +83,46 @@ fn resample_44100_to_24000(input: &[f32], lpf: &mut BiquadFilter) -> Vec<f32> {
 }
 
 pub struct TtsEngine {
-    tts: OfflineTts,
-    quality_steps: u32,
-    speed: f32,
+    /// The sherpa-onnx OfflineTts handle, wrapped in a Mutex for interior mutability.
+    tts: Mutex<OfflineTts>,
+    /// Current quality / diffusion steps (2-12).
+    quality_steps: AtomicU32,
+    /// Current speed factor (0.7-2.0).
+    speed: AtomicF32,
+    /// Voice SID (0-9) — set at construction time, requires restart to change.
+    voice: i32,
+}
+
+/// Wrapper around `std::sync::atomic::AtomicU32` for f32 values.
+/// Provides atomic load/store with f32 bit-pattern casting.
+struct AtomicF32 {
+    inner: AtomicU32,
+}
+
+impl AtomicF32 {
+    const fn new(val: f32) -> Self {
+        Self {
+            inner: AtomicU32::new(val.to_bits()),
+        }
+    }
+
+    fn load(&self, order: Ordering) -> f32 {
+        f32::from_bits(self.inner.load(order))
+    }
+
+    fn store(&self, val: f32, order: Ordering) {
+        self.inner.store(val.to_bits(), order);
+    }
 }
 
 impl TtsEngine {
-    pub fn new(model_path: &Path, quality_steps: u32, speed: f32) -> Result<Self> {
+    /// Create a new Supertonic TTS engine.
+    ///
+    /// `model_path` — directory containing the Supertonic model files.
+    /// `voice` — speaker ID (0-9).
+    /// `quality_steps` — diffusion / quality steps (clamped to 2-12).
+    /// `speed` — speed factor (clamped to 0.7-2.0).
+    pub fn new(model_path: &Path, voice: i32, quality_steps: u32, speed: f32) -> Result<Self> {
         let mp = |f: &str| -> String { model_path.join(f).to_string_lossy().into() };
 
         let config = OfflineTtsConfig {
@@ -117,26 +159,36 @@ impl TtsEngine {
         );
 
         Ok(Self {
-            tts,
-            quality_steps: quality_steps.clamp(2, 12),
-            speed: speed.clamp(0.7, 2.0),
+            tts: Mutex::new(tts),
+            quality_steps: AtomicU32::new(quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS)),
+            speed: AtomicF32::new(speed.clamp(MIN_SPEED, MAX_SPEED)),
+            voice: voice.clamp(0, 9),
         })
-    }
-
-    pub fn set_quality_steps(&mut self, steps: u32) {
-        self.quality_steps = steps.clamp(2, 12);
-    }
-
-    pub fn set_speed(&mut self, speed: f32) {
-        self.speed = speed.clamp(0.7, 2.0);
     }
 }
 
-impl traits::TtsEngine for TtsEngine {
+impl TtsProvider for TtsEngine {
+    fn set_quality_steps(&self, steps: u32) {
+        self.quality_steps
+            .store(steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS), Ordering::Relaxed);
+    }
+
+    fn set_speed(&self, speed: f32) {
+        self.speed.store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
+    }
+
+    fn kind(&self) -> TtsProviderKind {
+        TtsProviderKind::Supertonic
+    }
+
+    fn health_check(&self) -> bool {
+        // Local engine is always healthy if constructed successfully.
+        true
+    }
+
     fn synthesize_chunk(
-        &mut self,
+        &self,
         text: &str,
-        voice_sid: i32,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
         event_tx: Sender<VoxEvent>,
@@ -151,11 +203,7 @@ impl traits::TtsEngine for TtsEngine {
             "en"
         };
 
-        let sid = if voice_sid >= 100 {
-            0
-        } else {
-            (voice_sid as i32).min(9).max(0)
-        };
+        let sid = self.voice;
 
         log::info!(
             "[Supertonic] Synthesizing turn {} ({}): '{}' sid={}",
@@ -165,6 +213,9 @@ impl traits::TtsEngine for TtsEngine {
             sid
         );
 
+        let steps = self.quality_steps.load(Ordering::Relaxed) as i32;
+        let spd = self.speed.load(Ordering::Relaxed);
+
         let start = std::time::Instant::now();
 
         let mut extra = HashMap::new();
@@ -172,8 +223,8 @@ impl traits::TtsEngine for TtsEngine {
 
         let gen_config = GenerationConfig {
             sid,
-            num_steps: self.quality_steps as i32,
-            speed: self.speed,
+            num_steps: steps,
+            speed: spd,
             silence_scale: 0.1,
             extra: Some(extra),
             ..Default::default()
@@ -183,7 +234,8 @@ impl traits::TtsEngine for TtsEngine {
         let event_tx_cb = event_tx.clone();
         let mut lpf = BiquadFilter::new_lpf_11k();
 
-        let audio = self.tts.generate_with_config(
+        let tts_guard = self.tts.lock().unwrap();
+        let audio = tts_guard.generate_with_config(
             text,
             &gen_config,
             Some(move |raw_samples: &[f32], _progress: f32| -> bool {
@@ -201,6 +253,7 @@ impl traits::TtsEngine for TtsEngine {
                 true
             }),
         );
+        drop(tts_guard); // release the Mutex lock
 
         let elapsed = start.elapsed().as_secs_f32();
 

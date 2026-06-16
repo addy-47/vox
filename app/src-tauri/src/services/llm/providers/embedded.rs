@@ -2,7 +2,7 @@ use super::super::llama_cpp::LlmWorker;
 use super::{LlmProvider, ProviderKind};
 use crate::core::events::VoxEvent;
 use crate::core::settings::RemoteModelInfo;
-use crate::services::traits::LlmEngine as _;
+use super::super::LlmEngine as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;

@@ -1,12 +1,11 @@
-use super::supertonic::TtsEngine as SupertonicEngine;
 use crate::core::events::VoxEvent;
+use crate::services::tts::providers::TtsProvider;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 pub enum TtsCommand {
     Generate {
         turn_id: u32,
-        voice_sid: i32,
         text: String,
     },
     /// Hot-update the number of diffusion steps (2-12).
@@ -16,47 +15,43 @@ pub enum TtsCommand {
     Shutdown,
 }
 
+/// Spawn a persistent TTS worker thread.
+///
+/// The worker takes ownership of the provider and processes `TtsCommand`s
+/// from the pipeline in a blocking loop. The provider must be fully initialized
+/// before calling this function.
+///
+/// # Parameters
+/// - `app` — Tauri app handle for emitting model lifecycle events.
+/// - `rx` — Receiver for `TtsCommand` from the pipeline.
+/// - `provider` — The TTS provider to use (e.g. Supertonic, Pocket, etc.).
+/// - `event_tx` — Channel to emit `VoxEvent`s (TtsChunk, TtsFinished) back to the pipeline.
+/// - `cancel_flag` — Shared atomic flag for barge-in cancellation.
+/// - `is_loaded` — Set to true after successful init, false on shutdown.
 pub fn spawn_tts_worker(
     app: tauri::AppHandle,
     rx: std::sync::mpsc::Receiver<TtsCommand>,
-    super_model_path: std::path::PathBuf,
+    provider: Box<dyn TtsProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
     cancel_flag: Arc<AtomicBool>,
     is_loaded: Arc<AtomicBool>,
-    quality_steps: u32,
-    speed: f32,
 ) {
     use tauri::Emitter;
-    let _ = app.emit(crate::core::constants::EVENT_MODEL_LOADING, "TTS");
 
-    let mut engine: Box<dyn crate::services::traits::TtsEngine + Send> =
-        match SupertonicEngine::new(&super_model_path, quality_steps, speed) {
-            Ok(e) => {
-                is_loaded.store(true, Ordering::Relaxed);
-                let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "TTS");
-                Box::new(e)
-            }
-            Err(e) => {
-                log::error!("[TTS] CRITICAL: Failed to load Supertonic engine: {}", e);
-                let _ = app.emit(
-                    crate::core::constants::EVENT_MODEL_FAILED,
-                    format!("TTS: {}", e),
-                );
-                return;
-            }
-        };
+    // Provider is pre-initialized — signal ready immediately.
+    is_loaded.store(true, Ordering::Relaxed);
+    let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "TTS");
 
-    log::info!("[TTS Worker] Persistent loop started.");
+    log::info!(
+        "[TTS Worker] Persistent loop started with provider: {:?}",
+        provider.kind()
+    );
+
     while let Ok(cmd) = rx.recv() {
         match cmd {
-            TtsCommand::Generate {
-                turn_id,
-                voice_sid,
-                text,
-            } => {
-                if let Err(e) = engine.synthesize_chunk(
+            TtsCommand::Generate { turn_id, text } => {
+                if let Err(e) = provider.synthesize_chunk(
                     &text,
-                    voice_sid,
                     turn_id,
                     cancel_flag.clone(),
                     event_tx.clone(),
@@ -65,11 +60,11 @@ pub fn spawn_tts_worker(
                 }
             }
             TtsCommand::UpdateQualitySteps(steps) => {
-                engine.set_quality_steps(steps);
+                provider.set_quality_steps(steps);
                 log::info!("[TTS Worker] Quality steps updated to {}", steps);
             }
             TtsCommand::UpdateSpeed(speed) => {
-                engine.set_speed(speed);
+                provider.set_speed(speed);
                 log::info!("[TTS Worker] Speed updated to {:.2}", speed);
             }
             TtsCommand::Shutdown => {
@@ -80,5 +75,5 @@ pub fn spawn_tts_worker(
     }
 
     is_loaded.store(false, Ordering::Relaxed);
-    log::info!("[TTS Worker] Loop exited. Engine will be dropped.");
+    log::info!("[TTS Worker] Loop exited. Provider will be dropped.");
 }

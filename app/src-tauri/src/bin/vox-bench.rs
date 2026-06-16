@@ -8,7 +8,7 @@ use vox_lib::core::events::VoxEvent;
 use vox_lib::core::metrics::{MetricField, PipelineMetrics};
 use vox_lib::core::state::InteractionOwner;
 use vox_lib::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
-use vox_lib::services::traits::VadEngine as _;
+use vox_lib::services::vad::VadEngine as _;
 use vox_lib::services::utils::{count_words, is_devanagari, should_flush, transliterate_if_hi};
 use vox_lib::services::vad::ten_onnx::VadEngine;
 use vox_lib::utils::bench_reporter::BenchReporter;
@@ -116,7 +116,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let snap_1 = BenchReporter::get_memory_snapshot();
-    let stt_engine: Box<dyn vox_lib::services::traits::SttEngine> = if args.asr == "nemotron" {
+    let stt_engine: Box<dyn vox_lib::services::stt::SttEngine> = if args.asr == "nemotron" {
         Box::new(
             vox_lib::services::stt::nemotron_onnx::SttEngine::new(&stt_path)
                 .expect("Failed to load Nemotron STT"),
@@ -182,8 +182,8 @@ fn main() -> anyhow::Result<()> {
     let snap_5 = BenchReporter::get_memory_snapshot();
     println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Supertonic 3)...");
     let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
-    let tts_engine: Box<dyn vox_lib::services::traits::TtsEngine + Send> = Box::new(
-        vox_lib::services::tts::supertonic::TtsEngine::new(&super_tts_path, 12, 1.05)
+    let tts_engine: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
+        vox_lib::services::tts::TtsEngine::new(&super_tts_path, 0, 12, 1.05)
             .expect("Failed to load TTS"),
     );
     let snap_6 = BenchReporter::get_memory_snapshot();
@@ -334,14 +334,13 @@ fn main() -> anyhow::Result<()> {
     let tts_event_tx = event_tx.clone();
     let tts_cancel = Arc::clone(&cancel_flag);
     let tts_handle = std::thread::spawn(move || {
-        let mut engine = tts_engine; // Move initialized engine
+        let engine = tts_engine; // Move initialized engine
         while let Ok(cmd) = tts_rx.recv() {
             match cmd {
                 BenchCommand::Tts(text, turn_id) => {
                     println!("\x1b[35m[TTS]\x1b[0m Synthesizing chunk: \"{}\"", text);
                     let _ = engine.synthesize_chunk(
                         &text,
-                        0,
                         turn_id,
                         Arc::clone(&tts_cancel),
                         tts_event_tx.clone(),

@@ -16,7 +16,7 @@ pub enum SttCommand {
 fn init_engine(
     engine_type: &str,
     model_path: &std::path::Path,
-) -> Result<Box<dyn crate::services::traits::SttEngine>> {
+) -> Result<Box<dyn super::SttEngine>> {
     if engine_type == "nvidia_nemotron" {
         let eng = super::nemotron_onnx::SttEngine::new(model_path)?;
         Ok(Box::new(eng))
@@ -52,7 +52,7 @@ pub fn spawn_stt_worker(
                 engine_type
             );
 
-            let mut engine: Option<Box<dyn crate::services::traits::SttEngine>> = if pre_load {
+            let mut engine: Option<Box<dyn super::SttEngine>> = if pre_load {
                 app.emit(crate::core::constants::EVENT_MODEL_LOADING, "STT")
                     .ok();
                 match init_engine(&engine_type, &model_path) {
