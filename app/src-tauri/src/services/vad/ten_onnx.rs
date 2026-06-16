@@ -1,4 +1,4 @@
-use crate::services::traits;
+use super::VadEngine as VadEngineTrait;
 use anyhow::{anyhow, Result};
 use sherpa_onnx::{TenVadModelConfig, VadModelConfig, VoiceActivityDetector};
 use std::path::{Path, PathBuf};
@@ -62,7 +62,7 @@ impl VadEngine {
     }
 }
 
-impl traits::VadEngine for VadEngine {
+impl VadEngineTrait for VadEngine {
     fn predict(&mut self, chunk: &[f32]) -> bool {
         self.detector.accept_waveform(chunk);
         self.detector.detected()

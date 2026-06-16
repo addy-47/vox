@@ -4,7 +4,10 @@ pub mod ten_onnx;
 
 pub use actor::spawn_vad_actor;
 
-use crate::services::traits::VadEngine as VadEngineTrait;
+/// Voice Activity Detection engine contract.
+pub trait VadEngine {
+    fn predict(&mut self, chunk: &[f32]) -> bool;
+}
 
 /// Unified dispatch enum for all supported VAD backends.
 ///
@@ -15,7 +18,7 @@ pub enum VadBackend {
     Earshot(earshot_vad::EarshotVadEngine),
 }
 
-impl VadEngineTrait for VadBackend {
+impl VadEngine for VadBackend {
     fn predict(&mut self, chunk: &[f32]) -> bool {
         match self {
             VadBackend::Ten(e) => e.predict(chunk),

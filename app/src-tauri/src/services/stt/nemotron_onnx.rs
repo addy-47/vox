@@ -1,4 +1,4 @@
-use crate::services::traits;
+use super::SttEngine as SttEngineTrait;
 use anyhow::{anyhow, Result};
 use parakeet_rs::Nemotron;
 use std::path::Path;
@@ -27,7 +27,7 @@ impl SttEngine {
     }
 }
 
-impl traits::SttEngine for SttEngine {
+impl SttEngineTrait for SttEngine {
     fn transcribe(&self, audio: &[f32]) -> Result<String> {
         if audio.is_empty() {
             return Ok(String::new());

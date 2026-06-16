@@ -1,4 +1,5 @@
 pub mod actor;
-pub mod supertonic;
+pub mod providers;
 pub use actor::{spawn_tts_worker, TtsCommand};
-pub use supertonic::TtsEngine;
+pub use providers::supertonic::TtsEngine;
+pub use providers::{TtsProvider, TtsProviderKind};

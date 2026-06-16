@@ -21,16 +21,16 @@ fn model_dir() -> PathBuf {
 }
 
 fn synthesize_text(
-    engine: &mut vox_lib::services::tts::supertonic::TtsEngine,
+    engine: &mut vox_lib::services::tts::TtsEngine,
     text: &str,
     turn_id: u32,
 ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     let cancel = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
 
-    use vox_lib::services::traits::TtsEngine as _;
+    use vox_lib::services::tts::providers::TtsProvider as _;
 
-    engine.synthesize_chunk(text, 0, turn_id, cancel, tx)?;
+    engine.synthesize_chunk(text, turn_id, cancel, tx)?;
 
     let mut all_samples = Vec::new();
     while let Ok(event) = rx.recv() {
@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("[Test Emotion Tags] Loading Supertonic TTS engine...");
-    let mut engine = vox_lib::services::tts::supertonic::TtsEngine::new(&dir, 8, 1.05)
+    let mut engine = vox_lib::services::tts::TtsEngine::new(&dir, 0, 8, 1.05)
         .expect("Failed to load Supertonic engine");
 
     // Test pair: with and without <laugh>

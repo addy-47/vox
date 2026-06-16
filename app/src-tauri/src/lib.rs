@@ -17,8 +17,8 @@ use crate::ipc::pipeline::{
     stop_realtime_session, test_clip, test_clip_cancel, pause_pipeline, resume_pipeline,
 };
 use crate::ipc::settings::{
-    check_llm_provider_health, get_settings, list_remote_llm_models, request_boot_state,
-    request_model_catalog, reset_settings, update_setting, update_theme,
+    check_llm_provider_health, check_tts_provider_health, get_settings, list_remote_llm_models,
+    request_boot_state, request_model_catalog, reset_settings, update_setting, update_theme,
 };
 use crate::ipc::tray::{
     hide_tray_window, set_hud_ignore_cursor, show_main_window, sync_hud_visibility,
@@ -419,6 +419,7 @@ pub fn run() {
             request_boot_state,
             request_model_catalog,
             check_llm_provider_health,
+            check_tts_provider_health,
             list_remote_llm_models,
             get_settings,
             update_theme,
