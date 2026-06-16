@@ -261,7 +261,8 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("llm", "threads") => SettingReloadPolicy::Restart,
         ("llm", "provider") => SettingReloadPolicy::Restart,
 
-        // TTS — voice change requires engine restart; quality/speed are hot-updated
+        // TTS — provider and voice change require engine restart; quality/speed are hot-updated
+        ("tts", "provider") => SettingReloadPolicy::Restart,
         ("tts", "voice") => SettingReloadPolicy::Restart,
         ("tts", "quality_steps") => SettingReloadPolicy::WorkerCommand,
         ("tts", "speed") => SettingReloadPolicy::WorkerCommand,
@@ -409,9 +410,26 @@ impl Default for LlmSettings {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TtsProviderConfig {
+    Supertonic,
+    // Future providers:
+    // Pocket { reference_audio: Option<String> },
+    // OpenAiCompat { base_url: String, model: String, api_key: Option<String>, voice: Option<String> },
+    // OmniVoice { voice: Option<String> },
+}
+
+impl Default for TtsProviderConfig {
+    fn default() -> Self {
+        TtsProviderConfig::Supertonic
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TtsSettings {
+    pub provider: TtsProviderConfig,
     pub voice: i32,         // Supertonic voice index (0-9)
     pub quality_steps: u32, // Supertonic total_steps (2-12, default 8)
     pub speed: f32,         // Supertonic speed factor (0.7-2.0, default 1.05)
@@ -420,6 +438,7 @@ pub struct TtsSettings {
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
+            provider: TtsProviderConfig::default(),
             voice: 0,
             quality_steps: 12,
             speed: 1.05,

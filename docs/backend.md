@@ -83,10 +83,10 @@ Every component must minimize:
     │
     ↓
 [Services Layer (Actor-Engine Pattern)]
-    ├── VAD (Actor -> Engine: Earshot / TenVAD)
-    ├── STT (Actor -> Engine: Nvidia Nemotron-3.5 / Qwen3-ASR)
-    ├── LLM (Actor -> Engine: llama.cpp)
-    ├── TTS (Actor -> Engine: Supertonic 3)
+    ├── VAD (Actor -> Engine: Earshot / TenVAD via VadEngine trait)
+    ├── STT (Actor -> Engine: Nvidia Nemotron-3.5 / Qwen3-ASR via SttEngine trait)
+    ├── LLM (Actor -> Provider: Embedded / OpenAiCompat via LlmProvider trait)
+    ├── TTS (Actor -> Provider: Supertonic 3 via TtsProvider trait)
     ├── Pipeline (Orchestrator: LLM→TTS→Playback coordination)
     ├── Playback (CPAL output, jitter buffer, upsampling)
     ├── PTT (Push-to-talk mode)
@@ -211,7 +211,6 @@ src/
 │   └── metrics.rs    # MetricField, PipelineMetrics
 ├── services/
 │   ├── mod.rs        # Service registration
-│   ├── traits.rs     # Engine interfaces (VadEngine, SttEngine, LlmEngine, TtsEngine)
 │   ├── pipeline.rs   # Pipeline orchestrator (LLM→TTS→Playback)
 │   ├── utils.rs      # should_flush, count_words, is_devanagari, transliterate, stitch
 │   ├── audio/
@@ -231,23 +230,26 @@ src/
 │   ├── ptt.rs        # Push-to-talk mode (VAD gate, realtime support, speech_detected)
 │   ├── translit.rs   # Transliteration (Devanagari→Roman, ONNX model)
 │   ├── llm/
-│   │   ├── mod.rs    # Module entry + global_llama_backend() singleton
-│   │   ├── actor.rs  # Command/Event handler (spawn_llm_worker)
-│   │   └── providers/ # embedded.rs, openai_compat.rs
+│   │   ├── mod.rs     # Module entry + LlmEngine trait + global_llama_backend() singleton
+│   │   ├── actor.rs   # Command/Event handler (spawn_llm_worker)
+│   │   ├── llama_cpp.rs  # LlamaEngine (LLM inference via llama.cpp)
+│   │   └── providers/    # embedded.rs, openai_compat.rs
 │   ├── stt/
-│   │   ├── mod.rs
+│   │   ├── mod.rs           # SttEngine trait
 │   │   ├── actor.rs
-│   │   ├── nemotron_onnx.rs  # Nemotron-3.5 ASR (primary, parakeet-rs)
-│   │   └── qwen_onnx.rs      # Qwen3-ASR (legacy, sherpa-onnx)
+│   │   ├── nemotron_onnx.rs # Nemotron-3.5 ASR (primary, parakeet-rs)
+│   │   └── qwen_onnx.rs     # Qwen3-ASR (legacy, sherpa-onnx)
 │   ├── tts/
 │   │   ├── mod.rs
 │   │   ├── actor.rs
-│   │   └── supertonic.rs     # Sole TTS engine (sherpa-onnx, anti-aliasing LPF)
-│   └── vad/
-│       ├── mod.rs
-│       ├── actor.rs
-│       ├── earshot_vad.rs    # Earshot (default, pure Rust energy-based)
-│       └── ten_onnx.rs       # Ten VAD (legacy, ONNX via sherpa-onnx)
+│   │   └── providers/
+│   │       ├── mod.rs        # TtsProvider trait + TtsProviderKind enum
+│   │       └── supertonic.rs # Supertonic 3 implementation (sherpa-onnx, anti-aliasing LPF)
+│   ├── vad/
+│   │   ├── mod.rs           # VadEngine trait + VadBackend enum dispatch
+│   │   ├── actor.rs
+│   │   ├── earshot_vad.rs   # Earshot (default, pure Rust energy-based)
+│   │   └── ten_onnx.rs      # Ten VAD (legacy, ONNX via sherpa-onnx)
 ├── ipc/
 │   ├── mod.rs
 │   ├── pipeline.rs  # launch_engine, stop_engine, engage, start_realtime_session,
@@ -676,9 +678,66 @@ if !delta.is_empty() {
 
 ---
 
-### Model
+### Decoupled TTS Provider Architecture
 
-* Supertonic 3 — 99M param flow-matching, INT8 quantized (~144MB), 31 languages, 10 voices (sherpa-onnx native)
+The TTS subsystem was refactored from a single Supertonic-only engine into a **trait-based
+provider system** mirroring the LLM `LlmProvider` pattern. This allows Vox to switch between
+local and (future) remote TTS providers without changing the core pipeline loop:
+
+```text
+Vox Pipeline
+    └─ TTS Worker Thread (spawn_tts_worker)
+           └─ TtsProvider Trait (services/tts/providers/mod.rs)
+                  └─ TtsEngine (Supertonic 3, local sherpa-onnx)
+                  └─ (future) Pocket, OmniVoice, etc.
+```
+
+The trait uses `&self` (interior mutability via `Mutex`/`Atomic*`) instead of `&mut self`
+for thread safety:
+
+```rust
+pub trait TtsProvider: Send + 'static {
+    fn kind(&self) -> TtsProviderKind;
+    fn health_check(&self) -> bool;
+    fn set_quality_steps(&self, steps: u32);
+    fn set_speed(&self, speed: f32);
+    fn generate(
+        &self,
+        text: &str,
+        turn_id: u32,
+        cancel_flag: &Arc<AtomicBool>,
+        tx: &mpsc::Sender<VoxEvent>,
+    ) -> anyhow::Result<()>;
+    fn cancel(&self);
+}
+```
+
+**Voice selection** is provider-config level (requires restart to change), not per-utterance.
+`voice_sid` was removed from `TtsCommand::Generate` — voice is set in `TtsProviderConfig`.
+
+**Settings**: `TtsProviderConfig` is a tagged enum (like `LlmProviderConfig`) in
+`core/settings.rs`:
+
+```rust
+pub enum TtsProviderConfig {
+    Supertonic,
+    // Future: Pocket, OmniVoice, ...
+}
+```
+
+Switch requires TTS worker restart (`SettingReloadPolicy::Restart`).
+
+**Pipeline integration**: `warm_up_tts()` in `pipeline.rs` matches on `TtsProviderConfig`
+to construct the correct provider. The pipeline is provider-agnostic — do not hardcode
+any provider when adding new ones.
+
+---
+
+### Provider Implementation: Supertonic 3
+
+* 99M param flow-matching, INT8 quantized (~144MB), 31 languages, 10 voices (sherpa-onnx native)
+* Located at `services/tts/providers/supertonic.rs`
+* Output: 24 kHz f32 mono
 
 ---
 
@@ -695,7 +754,7 @@ Nyquist (22.05kHz), a 2nd-order Butterworth LPF is applied before downsampling:
 - **Execution**: Applied sample-by-sample in the resampling loop, not as a separate pass
 
 ```rust
-// supertonic.rs: anti-aliasing LPF
+// providers/supertonic.rs: anti-aliasing LPF
 let mut lpf = BiquadFilter::new(BiquadType::Lpf, 11000.0, 44100.0);
 for i in 0..output_samples {
     let filtered = lpf.process(supertonic_output[i]);
@@ -713,16 +772,26 @@ No external DSP library required.
 ```rust
 spawn_tts_worker(
     rx: mpsc::Receiver<TtsCommand>,
-    tts_dir: PathBuf,
+    provider: Box<dyn TtsProvider>,
     event_tx: mpsc::Sender<VoxEvent>,
-    cancel_flag: Arc<AtomicBool>,
     is_loaded: Arc<AtomicBool>,
 )
 ```
 
+The worker owns the provider exclusively on its dedicated OS thread. `TtsCommand::Generate`
+no longer carries `voice_sid` — voice is set at provider construction time via config.
+
+### TtsCommand Types
+
+```rust
+pub enum TtsCommand {
+    Generate { text: String, turn_id: u32, cancel_flag: Arc<AtomicBool> },
+    SetQualitySteps(u32),
+    SetSpeed(f32),
+    Shutdown,
+}
+```
 ---
-
-
 
 ### Chunked Synthesis (Quality Mandate)
 

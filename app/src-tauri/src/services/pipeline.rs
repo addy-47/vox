@@ -62,6 +62,7 @@ pub struct PipelineOrchestrator {
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
     settings: Arc<RwLock<VoxSettings>>,
     llm_path: PathBuf,
+    super_tts_path: PathBuf,
     is_engaged: Arc<AtomicBool>,
     pub transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
     pub conversation_id: Arc<std::sync::atomic::AtomicU64>,
@@ -98,6 +99,7 @@ impl PipelineOrchestrator {
         event_tx: std::sync::mpsc::Sender<VoxEvent>,
         settings: Arc<RwLock<VoxSettings>>,
         llm_path: PathBuf,
+        super_tts_path: PathBuf,
         is_engaged: Arc<AtomicBool>,
         transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
         conversation_id: Arc<std::sync::atomic::AtomicU64>,
@@ -120,6 +122,7 @@ impl PipelineOrchestrator {
             event_tx,
             settings,
             llm_path,
+            super_tts_path,
             is_engaged,
             transcript_history,
             conversation_id,
@@ -227,22 +230,47 @@ impl PipelineOrchestrator {
     }
 
     /// Initialize the TTS worker if it's not already running.
+    ///
+    /// Reads `TtsProviderConfig` from settings to determine which provider to
+    /// construct (mirrors `warm_up_llm()`).
     pub fn warm_up_tts(
         &self,
         app: &tauri::AppHandle,
-        super_tts_path: PathBuf,
     ) -> Result<(), String> {
         let mut lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
         if lock.is_some() {
             return Ok(());
         }
 
-        let (quality_steps, speed) = {
+        let (provider_config, voice, quality_steps, speed) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
-            (s.tts.quality_steps, s.tts.speed)
+            (
+                s.tts.provider.clone(),
+                s.tts.voice,
+                s.tts.quality_steps,
+                s.tts.speed,
+            )
         };
 
-        log::info!("[Pipeline] Warming up TTS worker (Supertonic)...");
+        use crate::core::settings::TtsProviderConfig;
+        use crate::services::tts::TtsEngine as SupertonicEngine;
+        use crate::services::tts::TtsProvider;
+
+        let provider: Box<dyn TtsProvider> = match &provider_config {
+            TtsProviderConfig::Supertonic => {
+                log::info!("[Pipeline] Warming up TTS worker (Supertonic)...");
+                Box::new(
+                    SupertonicEngine::new(&self.super_tts_path, voice, quality_steps, speed)
+                        .map_err(|e| format!("Failed to create Supertonic engine: {}", e))?,
+                )
+            }
+        };
+
+        log::info!(
+            "[Pipeline] TTS provider: {:?}",
+            provider.kind()
+        );
+
         let (tx, rx) = std::sync::mpsc::channel::<crate::services::tts::TtsCommand>();
 
         let cancel_tts = Arc::clone(&self.cancel_flag);
@@ -257,12 +285,10 @@ impl PipelineOrchestrator {
                 crate::services::tts::spawn_tts_worker(
                     app_clone,
                     rx,
-                    super_tts_path,
+                    provider,
                     event_tx,
                     cancel_tts,
                     is_loaded,
-                    quality_steps,
-                    speed,
                 );
             })
             .map_err(|e| e.to_string())?;
@@ -430,7 +456,6 @@ impl PipelineOrchestrator {
     pub fn run_event_loop(
         &self,
         rx: std::sync::mpsc::Receiver<VoxEvent>,
-        super_tts_path: PathBuf,
         playback_engine: Arc<crate::services::audio::PlaybackEngine>,
         app_handle: tauri::AppHandle,
     ) {
@@ -794,7 +819,7 @@ impl PipelineOrchestrator {
                     if let Err(e) = self.warm_up_llm(&app_handle) {
                         log::error!("[Pipeline] WarmUp (LLM): failed: {}", e);
                     }
-                    if let Err(e) = self.warm_up_tts(&app_handle, super_tts_path.clone()) {
+                    if let Err(e) = self.warm_up_tts(&app_handle) {
                         log::error!("[Pipeline] WarmUp (TTS): failed: {}", e);
                     }
                     log::info!("[Pipeline] WarmUp: workers started in background.");
@@ -1076,12 +1101,10 @@ impl PipelineOrchestrator {
                                 );
                             }
 
-                            let voice_sid = turn_voice_id.unwrap_or(local_voice as u32);
                             if let Ok(lock) = self.tts_tx.lock() {
                                 if let Some(tx) = lock.as_ref() {
                                     let _ = tx.send(crate::services::tts::TtsCommand::Generate {
                                         turn_id,
-                                        voice_sid: voice_sid as i32,
                                         text: chunk,
                                     });
                                     tts_queued_chunks += 1;
@@ -1144,10 +1167,8 @@ impl PipelineOrchestrator {
                         }
                         if let Ok(lock) = self.tts_tx.lock() {
                             if let Some(tx) = lock.as_ref() {
-                                let voice_sid = turn_voice_id.unwrap_or(local_voice as u32);
                                 let _ = tx.send(crate::services::tts::TtsCommand::Generate {
                                     turn_id,
-                                    voice_sid: voice_sid as i32,
                                     text: remainder,
                                 });
                                 tts_queued_chunks += 1;
