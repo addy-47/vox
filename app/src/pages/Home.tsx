@@ -162,6 +162,7 @@ export const Home: React.FC = () => {
   const dialogueScrollRef = useRef<HTMLDivElement>(null);
   const engageLockRef = useRef(false);
   const engageTimeoutRef = useRef<NodeJS.Timeout | number | null>(null);
+  const prevEngagedRef = useRef(false);
 
   // Streaming text hooks
   const streamedTranscript = useStreamingRenderer(transcript);
@@ -207,13 +208,14 @@ export const Home: React.FC = () => {
 
   // Clear dialogue history and transcript refs when session ends (isEngaged becomes false)
   useEffect(() => {
-    if (!isEngaged) {
+    if (prevEngagedRef.current && !isEngaged) {
       setDialogueHistory([]);
       setTranscript("");
       setAssistantText("");
       activeUserTextRef.current = "";
       activeAiTextRef.current = "";
     }
+    prevEngagedRef.current = isEngaged;
   }, [isEngaged]);
 
   // Auto-scroll to bottom of dialogue zone when transcript or history updates
@@ -521,12 +523,31 @@ export const Home: React.FC = () => {
             is_sleeping?: boolean;
             cpu_governor?: string;
             cpu_governor_optimal?: boolean;
+            conversation_id?: number;
           }>("get_runtime_snapshot");
           if (snapshot) {
-            setIsEngaged(snapshot.is_engaged ?? false);
+            const engaged = snapshot.is_engaged ?? false;
+            setIsEngaged(engaged);
+            prevEngagedRef.current = engaged;
             setIsSleeping(snapshot.is_sleeping ?? false);
             if (snapshot.cpu_governor && !snapshot.cpu_governor_optimal) {
               setCpuWarning({ governor: snapshot.cpu_governor });
+            }
+
+            // Hydrate dialogue history if session is active
+            if (engaged && snapshot.conversation_id && snapshot.conversation_id !== 0) {
+              const turns = await invoke<{ user_text: string; assistant_text: string; turn_id: number }[]>("get_turns", {
+                sessionId: snapshot.conversation_id,
+              });
+              const history = turns.map((t) => ({
+                user: t.user_text,
+                assistant: t.assistant_text,
+                id: t.turn_id,
+              }));
+              setDialogueHistory(history);
+              if (history.length > 0) {
+                turnIdCounter.current = Math.max(...history.map((h) => h.id));
+              }
             }
           }
         } catch (e) {
@@ -782,16 +803,16 @@ export const Home: React.FC = () => {
           {dialogueHistory.map((turn) => (
             <React.Fragment key={turn.id}>
               {turn.user && (
-                <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[11px] leading-relaxed opacity-60 prose prose-invert select-text">
-                  <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/40 uppercase block mb-0.5">
+                <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed opacity-90 prose prose-invert select-text">
+                  <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-0.5">
                     [USER]
                   </span>
                   <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
                 </div>
               )}
               {turn.assistant && (
-                <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))]/80 font-medium text-[11px] leading-relaxed opacity-60 prose prose-invert select-text" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
-                  <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/50 uppercase block mb-0.5">
+                <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed opacity-90 prose prose-invert select-text" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
+                  <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--accent))]/90 uppercase block mb-0.5">
                     [VOX]
                   </span>
                   <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
