@@ -176,4 +176,4 @@ sudo apt update && sudo apt upgrade vox
   <img src="app/public/logo-square.png" width="64" alt="Vox Square Logo">
   <br>
   <sub>Designed for privacy and immediate ambient intelligence.</sub>
-</div>
+</div>\

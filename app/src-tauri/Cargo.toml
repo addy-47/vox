@@ -32,6 +32,7 @@ earshot = "1.1"
 hound = "3.5"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
+nnnoiseless = "0.4"
 log = "0.4"
 env_logger = "0.11"
 tracing = "0.1"

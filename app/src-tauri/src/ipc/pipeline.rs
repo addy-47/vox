@@ -148,6 +148,7 @@ pub async fn engage(
             let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
             let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id });
             let _ = engine.stt_tx.send(SttCommand::ResetStream);
+            engine.playback_engine.cancel();
             let _ = engine
                 .vad_tx
                 .send(crate::core::state::VadCommand::UpdateOwner(
@@ -1065,11 +1066,12 @@ pub async fn stop_realtime_session(
 ) -> Result<(), String> {
     log::info!("[IPC] stop_realtime_session requested");
 
-    // 1. Tell VAD to stop routing chunks
+    // 1. Tell VAD to stop routing chunks and cancel active playback
     if let Some(engine) = state.engine.lock().await.as_ref() {
         let _ = engine
             .vad_tx
             .send(crate::core::state::VadCommand::StopRealtime);
+        engine.playback_engine.cancel();
     }
 
     // 2. Stop and drop the realtime engine

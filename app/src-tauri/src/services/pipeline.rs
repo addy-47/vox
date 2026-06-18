@@ -942,6 +942,7 @@ impl PipelineOrchestrator {
                     current_turn_owner = owner;
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         turn_user_text = text.clone();
+                        turn_assistant_text.clear();
                         let target = match owner {
                             crate::core::state::InteractionOwner::MainWindow
                             | crate::core::state::InteractionOwner::Ptt => "main",
@@ -1337,6 +1338,8 @@ impl PipelineOrchestrator {
                         log::info!("[Pipeline] Playback stopped (was active).");
                     }
                     token_buf.clear();
+                    turn_user_text.clear();
+                    turn_assistant_text.clear();
                     awaiting_playback_finish = false;
                     self.tts_generating.store(false, Ordering::Relaxed);
                     // Reset cancel flag so new sessions can proceed

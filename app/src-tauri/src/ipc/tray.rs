@@ -51,6 +51,21 @@ pub async fn hide_tray_window(app: AppHandle) {
         *hud_lock = false;
         log::info!("[Tray] Ending Tray user session (Tray window hidden).");
     }
+
+    let owner: crate::core::state::InteractionOwner = state
+        .owner
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .into();
+    if owner == crate::core::state::InteractionOwner::Tray {
+        state.pipeline.cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let turn_id = state.pipeline.turn_id.load(std::sync::atomic::Ordering::Relaxed);
+            let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::Cancelled { turn_id });
+            let _ = engine.stt_tx.send(crate::services::stt::SttCommand::ResetStream);
+            engine.playback_engine.cancel();
+        }
+    }
+
     if let Some(window) = app.get_webview_window("tray") {
         let _ = window.hide();
     }
@@ -94,6 +109,20 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
                 ));
         }
     } else {
+        let owner: crate::core::state::InteractionOwner = state
+            .owner
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .into();
+        if owner == crate::core::state::InteractionOwner::Tray {
+            state.pipeline.cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            if let Some(engine) = state.engine.lock().await.as_ref() {
+                let turn_id = state.pipeline.turn_id.load(std::sync::atomic::Ordering::Relaxed);
+                let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::Cancelled { turn_id });
+                let _ = engine.stt_tx.send(crate::services::stt::SttCommand::ResetStream);
+                engine.playback_engine.cancel();
+            }
+        }
+
         if state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed) {
             state.owner.store(
                 crate::core::state::InteractionOwner::MainWindow as u32,
