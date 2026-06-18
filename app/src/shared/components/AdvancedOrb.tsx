@@ -529,7 +529,12 @@ export const VoxOrb = React.memo(({
       ctx.tgtAccent.copy(themeGlow);
     } else if (state === 'AssistantSpeaking') {
       ctx.tgtGlow.copy(themeAccent);
-      ctx.tgtAccent.copy(ctx.whiteColor);
+      const isDark = themeRef.current.theme !== 'light';
+      if (isDark) {
+        ctx.tgtAccent.copy(themeAccent).lerp(ctx.whiteColor, 0.75);
+      } else {
+        ctx.tgtAccent.copy(ctx.whiteColor);
+      }
     } else {
       ctx.tgtGlow.copy(themeGlow);
       ctx.tgtAccent.copy(themeAccent);

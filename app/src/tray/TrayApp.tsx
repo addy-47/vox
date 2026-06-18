@@ -70,6 +70,12 @@ export const TrayApp: React.FC = () => {
           invoke("hide_tray_window");
           invoke("sync_hud_visibility", { visible: false });
           invoke("set_hud_ignore_cursor", { ignore: true });
+          reset();
+          setInteractionState("Idle");
+          setPttStatus("IDLE");
+          setCopied(false);
+          setHistoryIndex(-1);
+          setViewingHistory(false);
         } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
           invoke("sync_hud_visibility", { visible: true });
           invoke("set_hud_ignore_cursor", { ignore: false });
@@ -81,7 +87,7 @@ export const TrayApp: React.FC = () => {
       }
     };
     syncVisibility();
-  }, [visibilityState]);
+  }, [visibilityState, reset]);
 
   // ─── Stable Refs for Listeners ───────────────────────────────────────────
   const stateRef = useRef({
