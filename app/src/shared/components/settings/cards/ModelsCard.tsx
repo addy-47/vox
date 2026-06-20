@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { 
   Brain, Volume2, Database, Trash2,
   Languages, Activity, Sparkles, Check, ArrowLeft,
-  Download, RefreshCw, Info, AlertCircle, Network
+  Download, RefreshCw, Info, AlertCircle, Network,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RemoteModelInfo } from "@/store/settingsStore";
@@ -888,9 +888,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             </div>
           )}
 
-          {/* TAB 2: VOICE RECOGNITION (ASR) */}
+          {/* TAB 2: VOICE RECOGNITION (ASR) — Local Embedded Only */}
           {activePipelineTab === "asr" && (
             <div className="space-y-3">
+              {/* Embedded model cards */}
               <div className={cn("grid gap-2.5", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
                 {modelCatalog.asr.map((model) => {
                   const isSelected = draftSettings.asr.model === model.id;
@@ -911,7 +912,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                       isActive={isSelected}
                       isRequired={isGroupRequired(model.id)}
                       layoutMode={layoutMode}
-                      onSelect={() => updateDraft("asr", "model", model.id)}
+                      onSelect={() => {
+                        updateDraft("asr", "model", model.id);
+                        updateDraft("asr", "provider", { kind: "embedded", model_type: model.id });
+                      }}
                       confirmDeleteId={confirmDeleteId}
                       setConfirmDeleteId={setConfirmDeleteId}
                       downloadStatus={status}

@@ -21,7 +21,8 @@
         "alwaysOnTop": true,
         "resizable": true,
         "visible": false,
-        "zoomHotkeysEnabled": false
+        "zoomHotkeysEnabled": false,
+        "fullscreen": true
       },
       {
         "label": "wizard",

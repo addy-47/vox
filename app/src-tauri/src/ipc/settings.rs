@@ -367,6 +367,10 @@ fn apply_setting_mutation(
         ("asr", "model") => {
             settings.asr.model = value.as_str().ok_or("model must be a string")?.to_string();
         }
+        ("asr", "provider") => {
+            settings.asr.provider = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid STT provider: {}", e))?;
+        }
         ("asr", "transliterate_enabled") => {
             settings.asr.transliterate_enabled = value
                 .as_bool()
@@ -630,6 +634,49 @@ pub async fn check_llm_provider_health(
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(healthy)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn check_stt_provider_health(
+    state: State<'_, std::sync::Arc<AppState>>,
+    provider: Option<crate::core::settings::SttProviderConfig>,
+) -> Result<bool, String> {
+    use crate::core::settings::SttProviderConfig;
+    use crate::utils::paths;
+
+    let config = if let Some(prov) = provider {
+        prov
+    } else {
+        let settings = state.settings.read().map_err(|e| e.to_string())?;
+        settings.asr.provider.clone()
+    };
+
+    match config {
+        SttProviderConfig::Embedded { model_type } => {
+            let models_dir = paths::get().models.clone();
+            let model_path = match model_type.as_str() {
+                "nvidia_nemotron" => models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON),
+                _ => models_dir.join(crate::core::constants::MODEL_DIR_STT),
+            };
+            Ok(model_path.exists())
+        }
+        SttProviderConfig::Cloud { .. } => {
+            // Create the cloud provider and check its health (validates credentials)
+            match crate::services::stt::providers::create_stt_provider(
+                &config,
+                &std::path::PathBuf::new(),
+            ) {
+                Ok(provider) => {
+                    let healthy = provider.health_check();
+                    Ok(healthy)
+                }
+                Err(e) => {
+                    log::warn!("[Settings] Cloud STT provider health check failed: {}", e);
+                    Ok(false)
+                }
+            }
         }
     }
 }

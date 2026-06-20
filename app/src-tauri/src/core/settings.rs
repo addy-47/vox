@@ -253,6 +253,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
 
         // ASR — model change requires full pipeline restart
         ("asr", "model") => SettingReloadPolicy::Restart,
+        ("asr", "provider") => SettingReloadPolicy::Restart,
         ("asr", "transliterate_enabled") => SettingReloadPolicy::Hot,
 
         // LLM — most require restart (model is loaded once)
@@ -356,11 +357,65 @@ impl Default for VadSettings {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SttProviderConfig {
+    #[serde(rename_all = "snake_case")]
+    Embedded {
+        #[serde(default = "default_stt_model")]
+        model_type: String,
+    },
+    Cloud {
+        /// Which cloud provider: "google", "deepgram", "whisperflow", etc.
+        provider: String,
+        #[serde(default)]
+        credentials_path: Option<String>,
+        #[serde(default)]
+        credentials_json: Option<String>,
+        #[serde(default)]
+        project_id: Option<String>,
+        #[serde(default = "default_cloud_region")]
+        region: String,
+        #[serde(default = "default_cloud_model")]
+        model: String,
+        #[serde(default = "default_cloud_language")]
+        language: String,
+        #[serde(default)]
+        endpoint: Option<String>,
+    },
+}
+
+impl Default for SttProviderConfig {
+    fn default() -> Self {
+        SttProviderConfig::Embedded {
+            model_type: default_stt_model(),
+        }
+    }
+}
+
+fn default_stt_model() -> String {
+    "nvidia_nemotron".into()
+}
+
+fn default_cloud_model() -> String {
+    "chirp_3".into()
+}
+
+fn default_cloud_language() -> String {
+    "en-US".into()
+}
+
+fn default_cloud_region() -> String {
+    "global".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AsrSettings {
     pub model: String, // e.g., "nvidia_nemotron"
     pub transliterate_enabled: bool,
+    #[serde(default)]
+    pub provider: SttProviderConfig,
 }
 
 impl Default for AsrSettings {
@@ -368,6 +423,7 @@ impl Default for AsrSettings {
         Self {
             model: "nvidia_nemotron".to_string(),
             transliterate_enabled: true,
+            provider: SttProviderConfig::default(),
         }
     }
 }
@@ -583,11 +639,26 @@ pub struct OpenAiRealtimeConfig {
     pub voice: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct DeepgramVoiceAgentConfig {
     pub api_key: String,
     pub model: String,
+    pub voice: String,
+    pub temperature: f32,
+    pub agent_mode: bool,
+}
+
+impl Default for DeepgramVoiceAgentConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            model: "gpt-4o-mini".to_string(),
+            voice: "Aoede".to_string(),
+            temperature: 0.7,
+            agent_mode: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

@@ -13,6 +13,13 @@ export interface LlmProviderConfig {
   provider_name?: string;
 }
 
+export type SttProviderKind = "embedded";
+
+export interface SttProviderConfig {
+  kind: SttProviderKind;
+  model_type?: string;
+}
+
 export interface RemoteModelInfo {
   id: string;
   name: string;
@@ -65,6 +72,7 @@ export interface VoxSettings {
   asr: {
     model: string;
     transliterate_enabled: boolean;
+    provider: SttProviderConfig;
   };
   llm: {
     model: string;
@@ -118,6 +126,9 @@ export interface VoxSettings {
     deepgram: {
       api_key: string;
       model: string;
+      voice: string;
+      temperature: number;
+      agent_mode: boolean;
     };
     elevenlabs: {
       api_key: string;
