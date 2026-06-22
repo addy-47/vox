@@ -4,6 +4,7 @@
 //! Each provider type implements this trait, and the TTS worker dispatches
 //! to the active provider via `Box<dyn TtsProvider>`.
 
+pub mod chatterbox;
 pub mod supertonic;
 
 use crate::core::events::VoxEvent;
@@ -17,6 +18,8 @@ use std::sync::Arc;
 pub enum TtsProviderKind {
     /// Local Supertonic 3 engine via sherpa-onnx (ONNX Runtime).
     Supertonic,
+    /// Chatterbox Multilingual TTS via chatterbox-rs (GGML).
+    Chatterbox,
     // Future providers will be added here:
     // Pocket,         // Kyutai Pocket TTS — zero-shot voice cloning (English)
     // OpenAiCompat,  // OpenAI-compatible remote TTS API
