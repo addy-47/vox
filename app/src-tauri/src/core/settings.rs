@@ -414,6 +414,12 @@ impl Default for LlmSettings {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TtsProviderConfig {
     Supertonic,
+    /// Chatterbox Multilingual TTS via chatterbox-rs (GGML).
+    Chatterbox {
+        language: String,
+        quality_steps: u32,
+        speed: f32,
+    },
     // Future providers:
     // Pocket { reference_audio: Option<String> },
     // OpenAiCompat { base_url: String, model: String, api_key: Option<String>, voice: Option<String> },
@@ -431,8 +437,8 @@ impl Default for TtsProviderConfig {
 pub struct TtsSettings {
     pub provider: TtsProviderConfig,
     pub voice: i32,         // Supertonic voice index (0-9)
-    pub quality_steps: u32, // Supertonic total_steps (2-12, default 8)
-    pub speed: f32,         // Supertonic speed factor (0.7-2.0, default 1.05)
+    pub quality_steps: u32, // Supertonic total_steps / Chatterbox cfm_steps (2-12, default 8)
+    pub speed: f32,         // Speed factor (0.7-2.0, default 1.05)
 }
 
 impl Default for TtsSettings {
