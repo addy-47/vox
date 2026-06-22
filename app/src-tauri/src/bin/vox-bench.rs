@@ -8,6 +8,8 @@ use vox_lib::core::events::VoxEvent;
 use vox_lib::core::metrics::{MetricField, PipelineMetrics};
 use vox_lib::core::state::InteractionOwner;
 use vox_lib::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
+use vox_lib::core::settings::SttProviderConfig;
+use vox_lib::services::stt::providers::{create_stt_provider, SttProvider};
 use vox_lib::services::vad::VadEngine as _;
 use vox_lib::services::utils::{count_words, is_devanagari, should_flush, transliterate_if_hi};
 use vox_lib::services::vad::ten_onnx::VadEngine;
@@ -120,17 +122,11 @@ fn main() -> anyhow::Result<()> {
     };
 
     let snap_1 = BenchReporter::get_memory_snapshot();
-    let stt_engine: Box<dyn vox_lib::services::stt::SttEngine> = if args.asr == "nemotron" {
-        Box::new(
-            vox_lib::services::stt::nemotron_onnx::SttEngine::new(&stt_path)
-                .expect("Failed to load Nemotron STT"),
-        )
-    } else {
-        Box::new(
-            vox_lib::services::stt::qwen_onnx::SttEngine::new(&stt_path)
-                .expect("Failed to load Qwen STT"),
-        )
+    let stt_provider_config = SttProviderConfig::Embedded {
+        model_type: args.asr.clone(),
     };
+    let stt_provider: Box<dyn SttProvider> = create_stt_provider(&stt_provider_config, &stt_path)
+        .expect("Failed to load STT provider");
     let snap_2 = BenchReporter::get_memory_snapshot();
     let stt_mem_mb = snap_2.rss_mb.saturating_sub(snap_1.rss_mb);
     metrics.lock().unwrap().stt_mem_mb = stt_mem_mb;
@@ -211,114 +207,46 @@ fn main() -> anyhow::Result<()> {
 
     // STT Worker
     let stt_event_tx = event_tx.clone();
-    let asr_engine_type = args.asr.clone();
     let stt_handle = std::thread::spawn(move || {
-        let engine = stt_engine; // Move initialized engine
-        let mut stitched_transcript = String::new();
+        let provider = stt_provider; // Move initialized provider
         let mut last_transcript = String::new();
-
-        // Stateful streaming parameters for Nemotron
-        let mut processed_samples = 0usize;
-        let mut stt_audio_buffer = Vec::<f32>::new();
 
         while let Ok(cmd) = stt_rx.recv() {
             match cmd {
                 BenchCommand::SttPartial(tid, samples) => {
-                    if asr_engine_type == "nemotron" {
-                        if processed_samples < samples.len() {
-                            let new_samples = &samples[processed_samples..];
-                            stt_audio_buffer.extend_from_slice(new_samples);
-                            processed_samples = samples.len();
-                        }
-
-                        // Stride is 560ms (8960 samples)
-                        const STRIDE_SAMPLES: usize = 8960;
-                        let mut partial_text = String::new();
-                        while stt_audio_buffer.len() >= STRIDE_SAMPLES {
-                            let chunk: Vec<f32> =
-                                stt_audio_buffer.drain(..STRIDE_SAMPLES).collect();
-                            if let Ok(text) = engine.transcribe_chunk(&chunk, false) {
-                                if !text.trim().is_empty() {
-                                    partial_text.push_str(&text);
-                                }
+                    match provider.transcribe_chunk(&samples, false) {
+                        Ok(text) => {
+                            if !text.is_empty() && text != last_transcript {
+                                let _ = stt_event_tx.send(VoxEvent::TranscriptPartial {
+                                    turn_id: tid,
+                                    owner: InteractionOwner::MainWindow,
+                                    text: text.clone(),
+                                });
+                                last_transcript = text;
                             }
                         }
-                        if !partial_text.is_empty() {
-                            stitched_transcript.push_str(&partial_text);
-                        }
-                    } else {
-                        // Rolling window: last 2.5s (40000 samples)
-                        let start_idx = samples.len().saturating_sub(40000);
-                        let rolling_samples = &samples[start_idx..];
-
-                        if let Ok(text) = engine.transcribe(rolling_samples) {
-                            if start_idx == 0 {
-                                stitched_transcript = text;
-                            } else {
-                                stitched_transcript = vox_lib::services::utils::stitch_transcripts(
-                                    &stitched_transcript,
-                                    &text,
-                                );
-                            }
-                        }
-                    }
-
-                    if !stitched_transcript.is_empty() && stitched_transcript != last_transcript {
-                        let _ = stt_event_tx.send(VoxEvent::TranscriptPartial {
-                            turn_id: tid,
-                            owner: InteractionOwner::MainWindow,
-                            text: stitched_transcript.clone(),
-                        });
-                        last_transcript = stitched_transcript.clone();
+                        Err(e) => eprintln!("[BenchSTT] Partial error: {}", e),
                     }
                 }
                 BenchCommand::SttFinal(tid, samples) => {
-                    if asr_engine_type == "nemotron" {
-                        if processed_samples < samples.len() {
-                            let new_samples = &samples[processed_samples..];
-                            stt_audio_buffer.extend_from_slice(new_samples);
+                    let text = match provider.transcribe_chunk(&samples, true) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            eprintln!("[BenchSTT] Final error: {}", e);
+                            String::new()
                         }
-                        let mut remaining = std::mem::take(&mut stt_audio_buffer);
-                        if !remaining.is_empty() {
-                            if remaining.len() < 8960 {
-                                remaining.resize(8960, 0.0);
-                            }
-                            if let Ok(text) = engine.transcribe_chunk(&remaining, true) {
-                                if !text.trim().is_empty() {
-                                    stitched_transcript.push_str(&text);
-                                }
-                            }
-                        } else {
-                            let _ = engine.transcribe_chunk(&vec![0.0; 8960], true);
-                        }
-                        let _ = engine.reset_state();
-                    } else {
-                        // Slicing final utterance to the trailing 2.5s chunk to avoid O(N^2) load
-                        let start_idx = samples.len().saturating_sub(40000);
-                        let rolling_samples = &samples[start_idx..];
+                    };
+                    let _ = provider.reset_state();
 
-                        if let Ok(text) = engine.transcribe(rolling_samples) {
-                            if start_idx == 0 {
-                                stitched_transcript = text;
-                            } else {
-                                stitched_transcript = vox_lib::services::utils::stitch_transcripts(
-                                    &stitched_transcript,
-                                    &text,
-                                );
-                            }
-                        }
+                    if !text.is_empty() {
+                        let _ = stt_event_tx.send(VoxEvent::TranscriptFinal {
+                            turn_id: tid,
+                            owner: InteractionOwner::MainWindow,
+                            text,
+                        });
                     }
 
-                    let _ = stt_event_tx.send(VoxEvent::TranscriptFinal {
-                        turn_id: tid,
-                        owner: InteractionOwner::MainWindow,
-                        text: stitched_transcript.clone(),
-                    });
-
-                    stitched_transcript.clear();
                     last_transcript.clear();
-                    stt_audio_buffer.clear();
-                    processed_samples = 0;
                 }
                 BenchCommand::Shutdown => break,
                 _ => {}

@@ -3,6 +3,7 @@ use crate::core::state::{AppState, InteractionOwner, InteractionState, VoxEngine
 use crate::services::audio::AudioStream;
 use crate::services::pipeline::PipelineOrchestrator;
 use crate::services::audio::PlaybackEngine;
+use crate::services::stt::providers::create_stt_provider;
 use crate::services::stt::{spawn_stt_worker, SttCommand};
 use crate::services::vad::{
     earshot_vad::EarshotVadEngine, ten_onnx::VadEngine as TenVadEngine, VadBackend,
@@ -266,18 +267,17 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         .ok();
 
     let (
-        stt_model_path,
-        stt_engine_type,
+        _stt_model_path,
+        stt_provider,
         vad_model_path_opt,
         vad_backend_opt,
-        pre_load,
         input_device,
     ) = {
-        let (vad_backend, asr_model, tray_enabled, input_device) = {
+        let (vad_backend, asr_provider, _tray_enabled, input_device) = {
             let settings = state.settings.read().unwrap();
             (
                 settings.vad.vad_backend.clone(),
-                settings.asr.model.clone(),
+                settings.asr.provider.clone(),
                 settings.ui.tray_enabled,
                 settings.audio.input_device.clone(),
             )
@@ -285,15 +285,51 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let models_dir = paths::get().models.clone();
         let manifest_lock = state.manifest.read().await;
 
-        let stt = match asr_model.as_str() {
-            "nvidia_nemotron" => models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON),
-            "qwen3_asr" => models_dir.join(crate::core::constants::MODEL_DIR_STT),
-            _ => {
-                log::error!(
-                    "[Pipeline] Unknown ASR model '{}', defaulting to nvidia_nemotron",
-                    asr_model
-                );
-                models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON)
+        // Resolve STT model path and create the provider (always pre-loaded)
+        app.emit(crate::core::constants::EVENT_MODEL_LOADING, "STT")
+            .ok();
+        let (stt_path, p) = match asr_provider {
+            crate::core::settings::SttProviderConfig::Embedded { ref model_type } => {
+                let path = match model_type.as_str() {
+                    "nvidia_nemotron" => {
+                        models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON)
+                    }
+                    _ => models_dir.join(crate::core::constants::MODEL_DIR_STT),
+                };
+                match create_stt_provider(&asr_provider, &path) {
+                    Ok(provider) => {
+                        app.emit(crate::core::constants::EVENT_MODEL_READY, "STT")
+                            .ok();
+                        (path, provider)
+                    }
+                    Err(e) => {
+                        app.emit(
+                            crate::core::constants::EVENT_MODEL_FAILED,
+                            format!("STT: {}", e),
+                        )
+                        .ok();
+                        return Err(format!("[Pipeline] Failed to create STT provider: {}", e));
+                    }
+                }
+            }
+            crate::core::settings::SttProviderConfig::Cloud { .. } => {
+                // For cloud providers, model_path is not used (auth is configured separately)
+                let path = models_dir.join("stt");
+                match create_stt_provider(&asr_provider, &path) {
+                    Ok(provider) => {
+                        app.emit(crate::core::constants::EVENT_MODEL_READY, "STT")
+                            .ok();
+                        (path, provider)
+                    }
+                    Err(e) => {
+                        app.emit(
+                            crate::core::constants::EVENT_MODEL_FAILED,
+                            format!("STT: {}", e),
+                        )
+                        .ok();
+                        return Err(format!("[Pipeline] Failed to create STT provider: {}", e));
+                    }
+                }
             }
         };
 
@@ -329,11 +365,10 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         };
 
         (
-            stt,
-            asr_model,
+            stt_path,
+            p,
             vad_path,
             vad_backend,
-            tray_enabled,
             input_device,
         )
     };
@@ -347,13 +382,11 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let stt_handle = spawn_stt_worker(
         app.clone(),
         stt_rx_internal,
-        stt_model_path,
-        stt_engine_type,
+        stt_provider,
         Some(vox_event_tx.clone()),
         state.pipeline.cancel_flag.clone(),
         state.is_stt_loaded.clone(),
         state.pipeline.engine_shutdown.clone(),
-        pre_load,
     )?;
 
     let threshold = state.settings.read().unwrap().vad.threshold;
@@ -839,9 +872,13 @@ pub async fn start_realtime_session_internal(
         crate::core::settings::RealtimeProviderKind::OpenAiRealtime => {
             return Err("OpenAI Realtime provider is not yet implemented".to_string());
         }
-        crate::core::settings::RealtimeProviderKind::DeepgramVoiceAgent => {
-            return Err("Deepgram Voice Agent provider is not yet implemented".to_string());
-        }
+        crate::core::settings::RealtimeProviderKind::DeepgramVoiceAgent => Box::new(
+            crate::services::realtime::providers::deepgram_live::DeepgramVoiceAgentProvider::new(
+                settings.realtime.deepgram.clone(),
+                settings.assistant.realtime_prompt.clone(),
+                state.pipeline.is_paused.clone(),
+            ),
+        ),
         crate::core::settings::RealtimeProviderKind::ElevenLabsConvai => {
             return Err("ElevenLabs Conversational AI provider is not yet implemented".to_string());
         }
