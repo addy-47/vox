@@ -5,6 +5,7 @@
 //! to the active provider via `Box<dyn TtsProvider>`.
 
 pub mod chatterbox;
+pub mod chatterbox_remote;
 pub mod supertonic;
 
 use crate::core::events::VoxEvent;
@@ -20,6 +21,8 @@ pub enum TtsProviderKind {
     Supertonic,
     /// Chatterbox Multilingual TTS via chatterbox-rs (GGML).
     Chatterbox,
+    /// Chatterbox Remote TTS offloaded to a GPU server.
+    ChatterboxRemote,
     // Future providers will be added here:
     // Pocket,         // Kyutai Pocket TTS — zero-shot voice cloning (English)
     // OpenAiCompat,  // OpenAI-compatible remote TTS API

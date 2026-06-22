@@ -54,8 +54,16 @@ impl ChatterboxEngine {
         quality_steps: u32,
         speed: f32,
     ) -> Result<Self> {
-        let t3_path = model_path.join("t3-q4_0.gguf");
-        let s3_path = model_path.join("s3gen-f16.gguf");
+        let t3_path = if model_path.join("t3-q4_0.gguf").exists() {
+            model_path.join("t3-q4_0.gguf")
+        } else {
+            model_path.join("chatterbox-t3-mtl-q4_0.gguf")
+        };
+        let s3_path = if model_path.join("s3gen-f16.gguf").exists() {
+            model_path.join("s3gen-f16.gguf")
+        } else {
+            model_path.join("chatterbox-s3gen-mtl-f16.gguf")
+        };
 
         if !t3_path.exists() {
             return Err(anyhow!(

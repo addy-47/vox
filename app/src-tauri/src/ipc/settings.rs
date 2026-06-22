@@ -707,6 +707,9 @@ pub async fn check_tts_provider_health(
             let model_path = models_dir.join("tts").join("chatterbox");
             Ok(model_path.exists())
         }
+        TtsProviderConfig::ChatterboxRemote { .. } => {
+            Ok(true)
+        }
     }
 }
 
