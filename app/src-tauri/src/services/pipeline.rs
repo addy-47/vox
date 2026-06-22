@@ -253,8 +253,7 @@ impl PipelineOrchestrator {
         };
 
         use crate::core::settings::TtsProviderConfig;
-        use crate::services::tts::TtsEngine as SupertonicEngine;
-        use crate::services::tts::TtsProvider;
+        use crate::services::tts::{ChatterboxEngine, TtsEngine as SupertonicEngine, TtsProvider};
 
         let provider: Box<dyn TtsProvider> = match &provider_config {
             TtsProviderConfig::Supertonic => {
@@ -262,6 +261,18 @@ impl PipelineOrchestrator {
                 Box::new(
                     SupertonicEngine::new(&self.super_tts_path, voice, quality_steps, speed)
                         .map_err(|e| format!("Failed to create Supertonic engine: {}", e))?,
+                )
+            }
+            TtsProviderConfig::Chatterbox {
+                language,
+                quality_steps: cb_quality,
+                speed: cb_speed,
+            } => {
+                log::info!("[Pipeline] Warming up TTS worker (Chatterbox)...");
+                let chatterbox_path = crate::utils::paths::model_dir("tts").join("chatterbox");
+                Box::new(
+                    ChatterboxEngine::new(&chatterbox_path, language, *cb_quality, *cb_speed)
+                        .map_err(|e| format!("Failed to create Chatterbox engine: {}", e))?,
                 )
             }
         };
