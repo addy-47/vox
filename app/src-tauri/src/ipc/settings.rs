@@ -655,6 +655,11 @@ pub async fn check_tts_provider_health(
             let model_path = models_dir.join(crate::core::constants::MODEL_DIR_TTS_SUPER);
             Ok(model_path.exists())
         }
+        TtsProviderConfig::Chatterbox { .. } => {
+            let models_dir = paths::get().models.clone();
+            let model_path = models_dir.join("tts").join("chatterbox");
+            Ok(model_path.exists())
+        }
     }
 }
 

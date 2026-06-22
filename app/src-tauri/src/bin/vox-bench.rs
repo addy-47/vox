@@ -54,6 +54,10 @@ struct Args {
     /// Remote LLM model name for openai_compat provider
     #[arg(long, default_value = "llama3.1:8b-instruct-q4_K_M")]
     llm_model: String,
+
+    /// TTS engine: supertonic (default) or chatterbox
+    #[arg(long, default_value = "supertonic")]
+    tts: String,
 }
 
 enum BenchCommand {
@@ -180,12 +184,21 @@ fn main() -> anyhow::Result<()> {
     );
 
     let snap_5 = BenchReporter::get_memory_snapshot();
-    println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Supertonic 3)...");
-    let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
-    let tts_engine: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
-        vox_lib::services::tts::TtsEngine::new(&super_tts_path, 0, 12, 1.05)
-            .expect("Failed to load TTS"),
-    );
+    let tts_engine: Box<dyn vox_lib::services::tts::providers::TtsProvider> = if args.tts == "chatterbox" {
+        println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Chatterbox)...");
+        let cb_path = vox_lib::utils::paths::model_dir("tts").join("chatterbox");
+        Box::new(
+            vox_lib::services::tts::ChatterboxEngine::new(&cb_path, "en", 10, 1.0)
+                .expect("Failed to load Chatterbox TTS"),
+        )
+    } else {
+        println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Supertonic 3)...");
+        let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
+        Box::new(
+            vox_lib::services::tts::TtsEngine::new(&super_tts_path, 0, 12, 1.05)
+                .expect("Failed to load TTS"),
+        )
+    };
     let snap_6 = BenchReporter::get_memory_snapshot();
     let tts_mem_mb = snap_6.rss_mb.saturating_sub(snap_5.rss_mb);
     metrics.lock().unwrap().tts_mem_mb = tts_mem_mb;
