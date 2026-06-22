@@ -532,7 +532,7 @@ function UnifiedConfig({ subkey, draftSettings, updateDraft, disabled, layoutMod
   const defaultModelId: string = (() => {
     if (subkey === "gemini") return "gemini-2.5-flash";
     if (subkey === "openai") return "gpt-4o-realtime-preview";
-    if (subkey === "deepgram") return "aura-asteria-en";
+    if (subkey === "deepgram") return "gpt-4o-mini";
     return "";
   })();
 
@@ -631,7 +631,7 @@ export const RealtimeCard = memo(({ layoutMode = "full-max" }: RealtimeCardProps
     elevenlabs_convai: "elevenlabs",
   };
   const subkey = subkeyMap[providerId] || "gemini";
-  const disabled = providerId !== "gemini_live";
+  const disabled = providerId !== "gemini_live" && providerId !== "deepgram_voice_agent";
 
   return (
     <div className={cn(

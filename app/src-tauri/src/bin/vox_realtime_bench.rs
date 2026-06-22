@@ -7,15 +7,17 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{GeminiRealtimeConfig, InteractionMode};
+use vox_lib::core::settings::{GeminiRealtimeConfig, DeepgramVoiceAgentConfig, InteractionMode, VoxSettings};
 use vox_lib::services::realtime::{
-    providers::gemini_live::GeminiLiveProvider, RealtimeVoiceProvider,
+    providers::gemini_live::GeminiLiveProvider,
+    providers::deepgram_live::DeepgramVoiceAgentProvider,
+    RealtimeVoiceProvider,
 };
 
 #[derive(Parser)]
 #[command(
     name = "vox_realtime_bench",
-    about = "Gemini Live Realtime Speech-to-Speech benchmark"
+    about = "Vox Realtime S2S Cloud Speech-to-Speech benchmark"
 )]
 struct Cli {
     #[arg(
@@ -40,10 +42,19 @@ struct Cli {
 
     #[arg(short, long, help = "Trigger barge-in interruption test")]
     barge_in: bool,
+
+    #[arg(
+        short,
+        long,
+        default_value = "gemini",
+        help = "S2S Provider to benchmark: 'gemini' or 'deepgram'"
+    )]
+    provider: String,
 }
 
-fn load_api_key() -> Option<String> {
-    if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+fn load_api_key(provider: &str) -> Option<String> {
+    let env_var = if provider == "deepgram" { "DEEPGRAM_API_KEY" } else { "GEMINI_API_KEY" };
+    if let Ok(key) = std::env::var(env_var) {
         return Some(key);
     }
     let paths = [
@@ -55,7 +66,7 @@ fn load_api_key() -> Option<String> {
     for path in &paths {
         if let Ok(content) = fs::read_to_string(path) {
             for line in content.lines() {
-                if line.starts_with("GEMINI_API_KEY=") {
+                if line.starts_with(&format!("{}=", env_var)) {
                     let parts: Vec<&str> = line.splitn(2, '=').collect();
                     if parts.len() == 2 {
                         let val = parts[1].trim().trim_matches('"').trim_matches('\'');
@@ -122,10 +133,12 @@ struct BenchmarkMetrics {
 }
 
 async fn run_benchmark_for_clip(
+    provider_name: &str,
     api_key: &str,
     wav_path: &Path,
     interaction_mode: InteractionMode,
     barge_in: bool,
+    system_prompt: String,
     output_wav_path: &Path,
 ) -> anyhow::Result<BenchmarkMetrics> {
     // Read WAV file samples
@@ -133,21 +146,35 @@ async fn run_benchmark_for_clip(
     let _spec = reader.spec();
     let samples: Vec<i16> = reader.samples::<i16>().flatten().collect();
 
-    let config = GeminiRealtimeConfig {
-        api_key: api_key.to_string(),
-        model: "gemini-3.1-flash-live-preview".to_string(),
-        voice_name: "Aoede".to_string(),
-        language_code: "en-US".to_string(),
-        temperature: 0.2,
-        enable_web_search: false,
-        resume_handle: None,
+    let provider: Box<dyn RealtimeVoiceProvider> = if provider_name == "deepgram" {
+        let config = DeepgramVoiceAgentConfig {
+            api_key: api_key.to_string(),
+            model: "gpt-4o-mini".to_string(),
+            voice: "Aoede".to_string(),
+            temperature: 0.7,
+            agent_mode: false,
+        };
+        Box::new(DeepgramVoiceAgentProvider::new(
+            config,
+            system_prompt,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        ))
+    } else {
+        let config = GeminiRealtimeConfig {
+            api_key: api_key.to_string(),
+            model: "gemini-3.1-flash-live-preview".to_string(),
+            voice_name: "Aoede".to_string(),
+            language_code: "en-US".to_string(),
+            temperature: 0.2,
+            enable_web_search: false,
+            resume_handle: None,
+        };
+        Box::new(GeminiLiveProvider::new(
+            config,
+            system_prompt,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        ))
     };
-
-    let provider = GeminiLiveProvider::new(
-        config,
-        "You are a helpful and extremely concise voice assistant. Respond in the same language the user speaks. Respond with brief, conversational statements under 2 sentences.".to_string(),
-        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-    );
     let (playback_tx, mut playback_rx) = mpsc::channel::<Vec<i16>>(100);
     let (event_tx, event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
@@ -379,13 +406,21 @@ async fn main() -> anyhow::Result<()> {
 
     let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."));
     let root = home.join(".vox");
-    vox_lib::utils::paths::init_with_root(root);
+    vox_lib::utils::paths::init_with_root(root.clone());
+    let settings = VoxSettings::load();
+    let system_prompt = settings.assistant.realtime_prompt.clone();
     let cli = Cli::parse();
 
-    let api_key = match load_api_key() {
+    let provider_name = cli.provider.to_lowercase();
+    if provider_name != "gemini" && provider_name != "deepgram" {
+        eprintln!("\x1b[31mError: Unsupported provider '{}'. Use 'gemini' or 'deepgram'.\x1b[0m", provider_name);
+        std::process::exit(1);
+    }
+
+    let api_key = match load_api_key(&provider_name) {
         Some(key) => key,
         None => {
-            eprintln!("\x1b[31mError: GEMINI_API_KEY not found in env or temp/.env\x1b[0m");
+            eprintln!("\x1b[31mError: API key for provider '{}' not found in env or temp/.env\x1b[0m", provider_name);
             std::process::exit(1);
         }
     };
@@ -404,16 +439,18 @@ async fn main() -> anyhow::Result<()> {
     let english_wav_path = resolve_english_wav(cli.english_wav.as_deref());
 
     println!("\x1b[34m[Realtime-Bench]\x1b[0m Starting S2S cloud provider benchmark...");
+    println!("  Provider:         {}", provider_name);
     println!("  Mode:             {:?}", interaction_mode);
     println!("  Barge-In Test:    {}", cli.barge_in);
+    println!("  Realtime Prompt:  {}", system_prompt);
     println!("  Hindi WAV Path:   {:?}", hindi_wav_path);
     println!("  English WAV Path: {:?}", english_wav_path);
     println!();
 
     // 1. Run Hindi prompt evaluation
     println!("\x1b[34m[Realtime-Bench]\x1b[0m === RUNNING HINDI CLIP EVALUATION ===");
-    let out_hindi_path = PathBuf::from("outputs/realtime_response_hindi.wav");
-    let hindi_res = match run_benchmark_for_clip(&api_key, &hindi_wav_path, interaction_mode.clone(), cli.barge_in, &out_hindi_path).await {
+    let out_hindi_path = PathBuf::from(format!("outputs/{}_response_hindi.wav", provider_name));
+    let hindi_res = match run_benchmark_for_clip(&provider_name, &api_key, &hindi_wav_path, interaction_mode.clone(), cli.barge_in, system_prompt.clone(), &out_hindi_path).await {
         Ok(res) => {
             println!("\x1b[32m[Realtime-Bench] Hindi prompt evaluation run completed successfully.\x1b[0m");
             Some(res)
@@ -427,8 +464,8 @@ async fn main() -> anyhow::Result<()> {
 
     // 2. Run English prompt evaluation
     println!("\x1b[34m[Realtime-Bench]\x1b[0m === RUNNING ENGLISH CLIP EVALUATION ===");
-    let out_english_path = PathBuf::from("outputs/realtime_response_english.wav");
-    let english_res = match run_benchmark_for_clip(&api_key, &english_wav_path, interaction_mode.clone(), cli.barge_in, &out_english_path).await {
+    let out_english_path = PathBuf::from(format!("outputs/{}_response_english.wav", provider_name));
+    let english_res = match run_benchmark_for_clip(&provider_name, &api_key, &english_wav_path, interaction_mode.clone(), cli.barge_in, system_prompt.clone(), &out_english_path).await {
         Ok(res) => {
             println!("\x1b[32m[Realtime-Bench] English prompt evaluation run completed successfully.\x1b[0m");
             Some(res)
