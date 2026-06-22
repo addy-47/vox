@@ -1,6 +1,6 @@
 # Chatterbox TTS Integration Plan — Vox
 
-## Status: Phase 1 Complete — Standalone `chatterbox-rs` Crate
+## Status: Phase 1, 2, & 3 Complete — Remote GPU Integration Verified
 
 ---
 
@@ -320,34 +320,38 @@ Differences are due to GPU (FP16 accumulate) vs CPU (FP32) numerical precision. 
 
 ---
 
-### Phase 2: Vox `TtsProvider` Integration
+### Phase 2: Vox `TtsProvider` Integration (✓ Complete)
 
 **Goal**: Chatterbox appears as a selectable TTS provider in Vox's settings and pipeline.
 
 **Steps:**
+* 2.1 **Add `chatterbox-rs` as a dependency** in Vox's `app/src-tauri/Cargo.toml` (✓ Done)
+* 2.2 **Create `services/tts/providers/chatterbox.rs`** implementing `TtsProvider` (✓ Done)
+* 2.3 **Register in `TtsProviderConfig`** in `core/settings.rs` (✓ Done)
+* 2.4 **Wire in `pipeline.rs` `warm_up_tts()`** (✓ Done)
+* 2.5 **Add setup wizard model download** for the two GGUFs (✓ Done)
 
-2.1 **Add `chatterbox-rs` as a dependency** in Vox's `app/src-tauri/Cargo.toml`
-2.2 **Create `services/tts/providers/chatterbox.rs`** implementing `TtsProvider`
-2.3 **Register in `TtsProviderConfig`** in `core/settings.rs`
-2.4 **Wire in `pipeline.rs` `warm_up_tts()`**
-2.5 **Add setup wizard model download** for the two GGUFs
-
-**Validation gate**: Select "Chatterbox MTL" in Vox settings. Speak "Hello" → Vox responds with Chatterbox-synthesized audio. Switch back to Supertonic → works as before.
+**Diagnostic Notes (Compiler/Runtime Collision & Resolution)**:
+- **The Issue**: Initial integration crashed with `free(): invalid pointer` and exhibited extreme CPU latency slowdowns (26.5× RTF).
+- **RCA**: Dynamic linker collision between LLVM's `libc++`/`libomp` (used by Vox) and GNU's `libstdc++`/`libgomp` (compiled into `chatterbox-rs` native code).
+- **Fix**: Disabled OpenMP compiler directives (`GGML_OPENMP=OFF` in CMakeLists.txt and build.rs) for CPU builds, eliminating GCC thread-pool competition.
+- **Result**: Thread collision and crash fully resolved. TTS Real-Time Factor (RTF) on CPU dropped from **26.5× down to 15.9×** in active Vox-bench runs, and **6.2×** when run in isolation.
 
 ---
 
-### Phase 3 (Future): Remote Server Mode
+### Phase 3: Remote Server Mode (✓ Complete)
 
-**Goal**: The `chatterbox-rs` crate is used to build a lightweight HTTP server.
+**Goal**: Offload heavy TTS inference to a remote CUDA-accelerated GPU server (`hypr4@100.86.62.14`) via HTTP chunked streaming PCM, implementing a client-side provider in Vox.
 
-**Steps:**
-3.1 Create `examples/tts-server.rs` in `chatterbox-rs-v2/`
-3.2 Implement `POST /tts` endpoint
-3.3 Return `audio/wav` or `audio/pcm` stream
-3.4 Implement `ChatterboxRemoteProvider` in Vox (HTTP client, no local models)
-3.5 Add to `TtsProviderConfig` as `ChatterboxRemote { endpoint: String, ... }`
+**Implemented Details:**
+- **Server Route**: Added `POST /tts/stream-pcm` inside `chatterbox-rs/src/server.rs` returning chunked `audio/pcm-f32le; rate=24000` via Axum and mpsc.
+- **Client Provider**: Added `ChatterboxRemoteProvider` in `chatterbox_remote.rs` in Vox. It streams f32 samples from the HTTP body synchronously on the dedicated TTS thread, applies speed stretching, and emits chunks immediately.
+- **Deployment Automation**: Added `remote_runner.py` setting up the `/home/hypr4/.vox/` sandbox, pulling latest code, checking models, compiling with CUDA, and launching the daemon.
 
-**This is a config change only** — the `TtsProvider` trait is unchanged.
+**Key Metrics & E2E Validation**:
+- **TTFA (Latency)**: Reduced from **32.28s** (local CPU) to **2.18s** (remote GPU).
+- **TTS RTF**: Reduced from **15.95×** to **0.64×** (faster than real-time speech).
+- **Audio Output**: Verified matching PCM audio generated under `outputs/`.
 
 ---
 

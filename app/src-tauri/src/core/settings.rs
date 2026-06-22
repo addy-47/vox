@@ -476,6 +476,13 @@ pub enum TtsProviderConfig {
         quality_steps: u32,
         speed: f32,
     },
+    /// Chatterbox Remote TTS offloaded to a GPU server.
+    ChatterboxRemote {
+        endpoint: String,
+        language: String,
+        quality_steps: u32,
+        speed: f32,
+    },
     // Future providers:
     // Pocket { reference_audio: Option<String> },
     // OpenAiCompat { base_url: String, model: String, api_key: Option<String>, voice: Option<String> },
