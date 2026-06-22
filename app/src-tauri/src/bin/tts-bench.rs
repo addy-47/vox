@@ -256,6 +256,12 @@ fn run_compare() -> anyhow::Result<()> {
         vox_lib::services::tts::TtsEngine::new(&super_model_path, 0, 8, 1.05)?;
     run_tts("Supertonic 3", text, &mut supertonic)?;
 
+    println!("\x1b[32m[TTS-Compare]\x1b[0m Loading Chatterbox...");
+    let cb_model_path = models_dir.join("tts/chatterbox");
+    let mut chatterbox =
+        vox_lib::services::tts::ChatterboxEngine::new(&cb_model_path, "en", 10, 1.0)?;
+    run_tts("Chatterbox", text, &mut chatterbox)?;
+
     println!("\n\x1b[32m[TTS-Compare]\x1b[0m Done!");
     Ok(())
 }
