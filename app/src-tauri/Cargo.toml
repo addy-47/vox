@@ -49,7 +49,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openmp", "mtmd"] }
 llama-cpp-sys-4 = { version = "0.2.61", default-features = false }
 
-chatterbox-rs = { path = "../../../chatterbox-rs", default-features = false }
+chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", default-features = false }
 
 encoding_rs = "0.8.35"
 regex = "1.12.3"

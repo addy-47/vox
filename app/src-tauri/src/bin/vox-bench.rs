@@ -180,7 +180,13 @@ fn main() -> anyhow::Result<()> {
     );
 
     let snap_5 = BenchReporter::get_memory_snapshot();
-    let tts_engine: Box<dyn vox_lib::services::tts::providers::TtsProvider> = if args.tts == "chatterbox" {
+    let tts_engine: Box<dyn vox_lib::services::tts::providers::TtsProvider> = if args.tts == "chatterbox_remote" {
+        println!("\x1b[32m[Bench]\x1b[0m Loading TTS (ChatterboxRemote)...");
+        Box::new(
+            vox_lib::services::tts::ChatterboxRemoteProvider::new("http://100.86.62.14:7860", "en", 10, 1.0)
+                .expect("Failed to load ChatterboxRemote TTS"),
+        )
+    } else if args.tts == "chatterbox" {
         println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Chatterbox)...");
         let cb_path = vox_lib::utils::paths::model_dir("tts").join("chatterbox");
         Box::new(
@@ -367,7 +373,7 @@ fn main() -> anyhow::Result<()> {
     let mut first_token_time: Option<std::time::Instant> = None;
 
     while !llm_done || tts_finished_count < tts_started_count {
-        if let Ok(event) = event_rx.recv_timeout(Duration::from_secs(30)) {
+        if let Ok(event) = event_rx.recv_timeout(Duration::from_secs(120)) {
             match event {
                 VoxEvent::TranscriptPartial { text, .. } => {
                     println!("\x1b[30m[STT]\x1b[0m Partial: \"{}\"", text);
