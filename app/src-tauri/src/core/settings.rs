@@ -195,15 +195,32 @@ pub fn get_asr_metadata() -> Vec<ModelMetadata> {
 }
 
 pub fn get_tts_metadata() -> Vec<ModelMetadata> {
-    vec![ModelMetadata {
-        id: "supertonic_tts".to_string(),
-        name: "Supertonic 3".to_string(),
-        description: "Multilingual TTS with 31 languages, flow-matching architecture.".to_string(),
-        ram_usage: " ~400MB".to_string(),
-        parameters: "99M".to_string(),
-        tradeoffs: "31 languages, 10 voices. INT8 quantized — fast inference. ~400MB RAM."
-            .to_string(),
-    }]
+    vec![
+        ModelMetadata {
+            id: "supertonic_tts".to_string(),
+            name: "Supertonic 3 Multilingual".to_string(),
+            description: "Lightweight flow-matching local voice synthesis.".to_string(),
+            ram_usage: " ~144MB".to_string(),
+            parameters: "99M (INT8)".to_string(),
+            tradeoffs: "Fast start (~400ms), 10 preset voices. No custom voice cloning.".to_string(),
+        },
+        ModelMetadata {
+            id: "chatterbox_tts".to_string(),
+            name: "Chatterbox Local TTS".to_string(),
+            description: "Local speech synthesis with zero-shot voice cloning.".to_string(),
+            ram_usage: " ~1.1GB".to_string(),
+            parameters: "340M (Q4)".to_string(),
+            tradeoffs: "Authentic voice mimicry from 5s clip. Heavy on CPU; GPU recommended.".to_string(),
+        },
+        ModelMetadata {
+            id: "chatterbox_remote".to_string(),
+            name: "Chatterbox Remote TTS".to_string(),
+            description: "Offload voice synthesis to a remote CUDA GPU host.".to_string(),
+            ram_usage: " 0 MB (Local)".to_string(),
+            parameters: "340M (Remote)".to_string(),
+            tradeoffs: "Real-time latency with zero local memory footprint. Requires GPU server.".to_string(),
+        },
+    ]
 }
 
 // ─── Reload Policy ────────────────────────────────────────────────────────────
@@ -482,6 +499,7 @@ pub enum TtsProviderConfig {
         language: String,
         quality_steps: u32,
         speed: f32,
+        remote_path: String,
     },
     // Future providers:
     // Pocket { reference_audio: Option<String> },

@@ -19,7 +19,7 @@ use crate::ipc::pipeline::{
 use crate::ipc::settings::{
     check_llm_provider_health, check_stt_provider_health, check_tts_provider_health, get_settings,
     list_remote_llm_models, request_boot_state, request_model_catalog, reset_settings,
-    update_setting, update_theme,
+    setup_remote_server, update_setting, update_theme,
 };
 use crate::ipc::tray::{
     hide_tray_window, set_hud_ignore_cursor, show_main_window, sync_hud_visibility,
@@ -423,6 +423,7 @@ pub fn run() {
             check_stt_provider_health,
             check_tts_provider_health,
             list_remote_llm_models,
+            setup_remote_server,
             get_settings,
             update_theme,
             update_setting,

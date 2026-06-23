@@ -259,6 +259,28 @@
           "required": false
         }
       ]
+    },
+    {
+      "id": "chatterbox_tts",
+      "name": "Chatterbox Multilingual TTS Engine",
+      "category": "tts",
+      "version": "1.0.0",
+      "files": [
+        {
+          "id": "tts_chatterbox_t3",
+          "path": "tts/chatterbox/chatterbox-t3-mtl-q4_0.gguf",
+          "size": 344985408,
+          "sha256": "a7c8cbb267a836697a39757ada25a8ab095712b74961af2b86012dbd296a3a7b",
+          "required": false
+        },
+        {
+          "id": "tts_chatterbox_s3gen",
+          "path": "tts/chatterbox/chatterbox-s3gen-mtl-f16.gguf",
+          "size": 1056431360,
+          "sha256": "b25fe64c5b5287952c82684f6cadb12698257dfe8ed3d9e578801ca970b59664",
+          "required": false
+        }
+      ]
     }
   ]
 }

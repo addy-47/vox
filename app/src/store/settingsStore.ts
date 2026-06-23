@@ -20,6 +20,11 @@ export interface SttProviderConfig {
   model_type?: string;
 }
 
+export type TtsProviderConfig =
+  | { kind: "supertonic" }
+  | { kind: "chatterbox"; language: string; quality_steps: number; speed: number }
+  | { kind: "chatterbox_remote"; endpoint: string; language: string; quality_steps: number; speed: number; remote_path: string };
+
 export interface RemoteModelInfo {
   id: string;
   name: string;
@@ -81,6 +86,7 @@ export interface VoxSettings {
     provider: LlmProviderConfig;
   };
   tts: {
+    provider: TtsProviderConfig;
     voice: number;
     quality_steps: number;
     speed: number;
