@@ -280,10 +280,11 @@ impl PipelineOrchestrator {
                 language,
                 quality_steps: remote_quality,
                 speed: remote_speed,
+                remote_path,
             } => {
                 log::info!("[Pipeline] Warming up TTS worker (ChatterboxRemote)...");
                 Box::new(
-                    ChatterboxRemoteProvider::new(endpoint, language, *remote_quality, *remote_speed)
+                    ChatterboxRemoteProvider::new(endpoint, language, *remote_quality, *remote_speed, remote_path)
                         .map_err(|e| format!("Failed to create ChatterboxRemote provider: {}", e))?,
                 )
             }

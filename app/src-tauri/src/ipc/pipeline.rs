@@ -145,6 +145,28 @@ pub async fn engage(
             Ordering::Relaxed,
         );
 
+        let remote_tts_info = {
+            let s = state.settings.read().ok();
+            s.and_then(|settings| {
+                if let crate::core::settings::TtsProviderConfig::ChatterboxRemote { endpoint, .. } = &settings.tts.provider {
+                    Some(endpoint.clone())
+                } else {
+                    None
+                }
+            })
+        };
+
+        if let Some(endpoint) = remote_tts_info {
+            tauri::async_runtime::spawn(async move {
+                log::info!("[Pipeline] Disengaged: Unloading remote Chatterbox models from {}", endpoint);
+                let client = reqwest::Client::new();
+                let url = format!("{}/models/unload", endpoint.trim_end_matches('/'));
+                if let Err(e) = client.post(&url).send().await {
+                    log::warn!("[Pipeline] Failed to send unload command to remote server: {}", e);
+                }
+            });
+        }
+
         if let Some(engine) = state.engine.lock().await.as_ref() {
             let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
             let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id });

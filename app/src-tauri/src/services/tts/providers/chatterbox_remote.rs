@@ -34,6 +34,7 @@ impl ChatterboxRemoteProvider {
         language: &str,
         quality_steps: u32,
         speed: f32,
+        remote_path: &str,
     ) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
             .timeout(None) // Disable timeout for streaming response
@@ -54,6 +55,34 @@ impl ChatterboxRemoteProvider {
             log::warn!("[ChatterboxRemote] Initial health check failed for {}", endpoint);
         } else {
             log::info!("[ChatterboxRemote] Connected to remote TTS server at {}", endpoint);
+            
+            // Decoupled loading: Load models now that connection is established
+            let load_url = format!("{}/models/load", endpoint.trim_end_matches('/'));
+            let t3_path = format!("{}/models/tts/chatterbox/chatterbox-t3-mtl-q4_0.gguf", remote_path.trim_end_matches('/'));
+            let s3gen_path = format!("{}/models/tts/chatterbox/chatterbox-s3gen-mtl-f16.gguf", remote_path.trim_end_matches('/'));
+            
+            let payload = serde_json::json!({
+                "t3_gguf_path": t3_path,
+                "s3gen_gguf_path": s3gen_path,
+                "language": language,
+                "gpu_layers": 99,
+                "cfm_steps": 10,
+                "stream_chunk_tokens": 16,
+            });
+
+            log::info!("[ChatterboxRemote] Requesting remote model load from: {}", load_url);
+            match prov.client.post(&load_url).json(&payload).send() {
+                Ok(res) => {
+                    if res.status().is_success() {
+                        log::info!("[ChatterboxRemote] Models loaded successfully on remote GPU server.");
+                    } else {
+                        log::warn!("[ChatterboxRemote] Remote load models returned status: {}", res.status());
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[ChatterboxRemote] Failed to send load models command: {}", e);
+                }
+            }
         }
 
         Ok(prov)

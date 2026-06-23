@@ -707,8 +707,25 @@ pub async fn check_tts_provider_health(
             let model_path = models_dir.join("tts").join("chatterbox");
             Ok(model_path.exists())
         }
-        TtsProviderConfig::ChatterboxRemote { .. } => {
-            Ok(true)
+        TtsProviderConfig::ChatterboxRemote { ref endpoint, .. } => {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(2))
+                .build()
+                .map_err(|e| e.to_string())?;
+            let health_url = format!("{}/health", endpoint.trim_end_matches('/'));
+            match client.get(&health_url).send().await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        if let Ok(body) = resp.json::<serde_json::Value>().await {
+                            if body.get("status").and_then(|s| s.as_str()) == Some("ok") {
+                                return Ok(true);
+                            }
+                        }
+                    }
+                    Ok(false)
+                }
+                Err(_) => Ok(false),
+            }
         }
     }
 }
@@ -759,4 +776,218 @@ pub async fn list_remote_llm_models(
             Ok(models)
         }
     }
+}
+
+#[tauri::command]
+pub async fn setup_remote_server(
+    app: tauri::AppHandle,
+    connection_string: String,
+    ssh_port: Option<u16>,
+    identity_key_path: Option<String>,
+    remote_path: String,
+    server_port: u16,
+) -> Result<(), String> {
+    log::info!(
+        "[SetupRemote] Triggering remote server setup. connection_string={}, ssh_port={:?}, identity_key_path={:?}, remote_path={}, server_port={}",
+        connection_string,
+        ssh_port,
+        identity_key_path,
+        remote_path,
+        server_port
+    );
+
+    // 1. Resolve bundled script path from Tauri resource directory
+    let resource_path = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Failed to get resource directory: {}", e))?
+        .join("resources")
+        .join("setup_server.sh");
+
+    // Fallback: relative to CARGO_MANIFEST_DIR for dev mode
+    let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join("setup_server.sh");
+
+    let script_path = if resource_path.exists() {
+        resource_path
+    } else if dev_path.exists() {
+        log::info!("[SetupRemote] Using dev path: {:?}", dev_path);
+        dev_path
+    } else {
+        return Err(format!(
+            "Remote setup script not found at {:?} or {:?}",
+            resource_path, dev_path
+        ));
+    };
+
+    let app_handle = app.clone();
+    
+    tauri::async_runtime::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        use tokio::process::Command;
+        use std::process::Stdio;
+
+        let mut cmd = Command::new("ssh");
+        
+        // Pass identity key path if provided
+        if let Some(ref key_path) = identity_key_path {
+            if !key_path.trim().is_empty() {
+                cmd.arg("-i").arg(key_path);
+            }
+        }
+        
+        // Pass custom SSH port if provided
+        if let Some(port_val) = ssh_port {
+            cmd.arg("-p").arg(port_val.to_string());
+        }
+        
+        // Non-interactive option for StrictHostKeyChecking to prevent blocking on TTY
+        cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
+        
+        cmd.arg(&connection_string)
+           .arg("bash")
+           .arg("-s")
+           .arg("--")
+           .arg(&remote_path)
+           .arg(&server_port.to_string());
+
+        cmd.stdin(Stdio::piped())
+           .stdout(Stdio::piped())
+           .stderr(Stdio::piped());
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let err_msg = format!("Failed to spawn ssh command: {}", e);
+                log::error!("{}", err_msg);
+                let _ = app_handle.emit("remote_setup_status", serde_json::json!({
+                    "step": "failed",
+                    "progress": 0,
+                    "log_line": err_msg.clone(),
+                    "error": err_msg
+                }));
+                return;
+            }
+        };
+
+        // Write setup_server.sh script content to child stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            let script_content = match tokio::fs::read_to_string(&script_path).await {
+                Ok(content) => content,
+                Err(e) => {
+                    let err_msg = format!("Failed to read setup script file: {}", e);
+                    let _ = app_handle.emit("remote_setup_status", serde_json::json!({
+                        "step": "failed",
+                        "progress": 0,
+                        "log_line": err_msg.clone(),
+                        "error": err_msg
+                    }));
+                    return;
+                }
+            };
+            if let Err(e) = stdin.write_all(script_content.as_bytes()).await {
+                log::warn!("Failed to write script to ssh stdin: {}", e);
+            }
+            let _ = stdin.flush().await;
+            drop(stdin);
+        }
+
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        
+        let mut stdout_reader = BufReader::new(stdout).lines();
+        let mut stderr_reader = BufReader::new(stderr).lines();
+
+        let app_handle_clone = app_handle.clone();
+        let stdout_loop = async move {
+            while let Ok(Some(line)) = stdout_reader.next_line().await {
+                log::info!("[RemoteSetup stdout] {}", line);
+                
+                let mut progress = 0;
+                let mut step = "setup";
+                
+                if line.contains("Phase 1") {
+                    step = "setup";
+                    progress = 10;
+                } else if line.contains("Phase 2") {
+                    step = "sync";
+                    progress = 25;
+                } else if line.contains("Phase 3") {
+                    step = "models";
+                    progress = 40;
+                } else if line.contains("Phase 4") {
+                    step = "build";
+                    progress = 75;
+                } else if line.contains("Phase 5") {
+                    step = "launch";
+                    progress = 85;
+                } else if line.contains("Phase 6") {
+                    step = "health";
+                    progress = 90;
+                } else if line.contains("Phase 7") {
+                    step = "smoke";
+                    progress = 95;
+                } else if line.contains("Smoke test passed") {
+                    step = "complete";
+                    progress = 100;
+                }
+
+                let _ = app_handle_clone.emit("remote_setup_status", serde_json::json!({
+                    "step": step,
+                    "progress": progress,
+                    "log_line": line
+                }));
+            }
+        };
+
+        let app_handle_clone_err = app_handle.clone();
+        let stderr_loop = async move {
+            while let Ok(Some(line)) = stderr_reader.next_line().await {
+                log::warn!("[RemoteSetup stderr] {}", line);
+                let _ = app_handle_clone_err.emit("remote_setup_status", serde_json::json!({
+                    "step": "log",
+                    "progress": 0,
+                    "log_line": line
+                }));
+            }
+        };
+
+        tokio::join!(stdout_loop, stderr_loop);
+
+        match child.wait().await {
+            Ok(status) => {
+                if status.success() {
+                    log::info!("[SetupRemote] Setup completed successfully.");
+                    let _ = app_handle.emit("remote_setup_status", serde_json::json!({
+                        "step": "complete",
+                        "progress": 100,
+                        "log_line": "Remote setup completed successfully!"
+                    }));
+                } else {
+                    let err_msg = format!("SSH command exited with code: {:?}", status.code());
+                    log::error!("[SetupRemote] {}", err_msg);
+                    let _ = app_handle.emit("remote_setup_status", serde_json::json!({
+                        "step": "failed",
+                        "progress": 0,
+                        "log_line": err_msg.clone(),
+                        "error": err_msg
+                    }));
+                }
+            }
+            Err(e) => {
+                let err_msg = format!("Failed to wait for SSH child: {}", e);
+                log::error!("[SetupRemote] {}", err_msg);
+                let _ = app_handle.emit("remote_setup_status", serde_json::json!({
+                    "step": "failed",
+                    "progress": 0,
+                    "log_line": err_msg.clone(),
+                    "error": err_msg
+                }));
+            }
+        }
+    });
+
+    Ok(())
 }
