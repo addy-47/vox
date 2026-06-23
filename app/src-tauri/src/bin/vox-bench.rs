@@ -183,7 +183,7 @@ fn main() -> anyhow::Result<()> {
     let tts_engine: Box<dyn vox_lib::services::tts::providers::TtsProvider> = if args.tts == "chatterbox_remote" {
         println!("\x1b[32m[Bench]\x1b[0m Loading TTS (ChatterboxRemote)...");
         Box::new(
-            vox_lib::services::tts::ChatterboxRemoteProvider::new("http://100.86.62.14:7860", "en", 10, 1.0)
+            vox_lib::services::tts::ChatterboxRemoteProvider::new("http://100.86.62.14:7860", "en", 10, 1.0, "/home/hypr4/.vox")
                 .expect("Failed to load ChatterboxRemote TTS"),
         )
     } else if args.tts == "chatterbox" {
