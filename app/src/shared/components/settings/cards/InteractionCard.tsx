@@ -3,10 +3,11 @@ import { useSettings } from "@/shared/context/SettingsContext";
 import { 
   Sliders, AlertCircle, Brain, 
   Cloud, Server, Network, Eye, EyeOff, Layers, Zap, Activity, Radio,
-  ChevronLeft, ChevronRight, RefreshCw
+  ChevronLeft, ChevronRight, RefreshCw, Volume2, Database
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
+
 
 
 const CLOUD_PROVIDERS = [
@@ -119,6 +120,14 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
   const [apiKey, setApiKey] = useState("");
   const [prevLlmProvider, setPrevLlmProvider] = useState<any>(null);
 
+  const [activeCategory, setActiveCategory] = useState<"STT" | "LLM" | "TTS">("LLM");
+  const [remoteTtsEndpoint, setRemoteTtsEndpoint] = useState("");
+  const [remoteTtsPath, setRemoteTtsPath] = useState("");
+  const [prevTtsProvider, setPrevTtsProvider] = useState<any>(null);
+  
+  const [sttPillOverride, setSttPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
+  const [ttsPillOverride, setTtsPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
+  
   // Live query states
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
@@ -138,6 +147,23 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
 
   const isModular = interaction.pipeline_mode === "modular";
 
+  // Selector state lifted to component-level scope
+  const sttPill = sttPillOverride || "local";
+  const llmPill = providerPill;
+  const ttsKind = draftSettings.tts?.provider?.kind || "supertonic";
+  const ttsPill = ttsPillOverride || (
+    ttsKind === "chatterbox_remote" 
+      ? "remote" 
+      : (ttsKind === "supertonic" || ttsKind === "chatterbox") 
+        ? "local" 
+        : "cloud"
+  );
+  const activePill = activeCategory === "STT" 
+    ? sttPill 
+    : activeCategory === "LLM" 
+      ? llmPill 
+      : ttsPill;
+
   // Compute active cloud provider index based on base_url
   const getCloudProviderIndex = (url: string) => {
     const idx = CLOUD_PROVIDERS.findIndex(p => url.includes(p.id) || (url.includes("google") && p.id === "gemini"));
@@ -149,7 +175,7 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
   if (currentProvider !== prevLlmProvider) {
     setPrevLlmProvider(currentProvider);
     if (currentProvider.kind === "open_ai_compat") {
-      const baseUrl = currentProvider.base_url || "";
+      const baseUrl = currentProvider.base_url || "http://127.0.0.1:11434";
       if (isCloudUrl) {
         setApiKey(currentProvider.api_key || "");
       } else {
@@ -158,6 +184,51 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
       }
     }
   }
+
+  // Synchronize local input state for TTS settings
+  const currentTtsProvider = draftSettings.tts?.provider || { kind: "supertonic" };
+  if (currentTtsProvider !== prevTtsProvider) {
+    setPrevTtsProvider(currentTtsProvider);
+    if (currentTtsProvider.kind === "chatterbox_remote") {
+      setRemoteTtsEndpoint(currentTtsProvider.endpoint || "http://127.0.0.1:7860");
+      setRemoteTtsPath(currentTtsProvider.remote_path || "~/.vox");
+    }
+  }
+
+  const handleRemoteTtsEndpointChange = (val: string) => {
+    setRemoteTtsEndpoint(val);
+    updateDraft("tts", "provider", {
+      ...currentTtsProvider,
+      endpoint: val || "http://127.0.0.1:7860"
+    });
+  };
+
+  const handleRemoteTtsPathChange = (val: string) => {
+    setRemoteTtsPath(val);
+    updateDraft("tts", "provider", {
+      ...currentTtsProvider,
+      remote_path: val || "~/.vox"
+    });
+  };
+
+  const cycleCategory = () => {
+    setActiveCategory((prev) => {
+      const next = prev === "STT" ? "LLM" : prev === "LLM" ? "TTS" : "STT";
+      const event = new CustomEvent("sync_pipeline_tab", { detail: next.toLowerCase() });
+      window.dispatchEvent(event);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const handleSync = (e: Event) => {
+      const cat = (e as CustomEvent).detail;
+      setActiveCategory(cat);
+    };
+    window.addEventListener("sync_interaction_category", handleSync);
+    return () => window.removeEventListener("sync_interaction_category", handleSync);
+  }, []);
+
 
   const savedProvider = settings?.llm?.provider || { kind: "embedded" };
 
@@ -255,7 +326,7 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
     setUrl(val);
     updateDraft("llm", "provider", {
       ...currentProvider,
-      base_url: val,
+      base_url: val || "http://127.0.0.1:11434",
     });
   };
 
@@ -464,58 +535,110 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
  
         </div>
 
-        {/* Intelligence Mode — LLM Provider Selector */}
-        {isModular && (
-          <div className="shrink-0 flex flex-col gap-2 w-full mt-3">
-            {/* Joint bottom border tab strip for LLM providers */}
-            <div className="flex items-center justify-start gap-3.5 w-full border-b border-[rgba(var(--border),0.12)] pb-2 pt-1 shrink-0 mt-2 px-3">
-              {[
-                { id: "local", label: "Local", icon: Brain },
-                { id: "remote", label: "Remote", icon: Server },
-                { id: "cloud", label: "Cloud", icon: Cloud }
-              ].map((mode, idx, arr) => {
-                const isActive = providerPill === mode.id;
-                const IconComponent = mode.icon;
-                return (
-                  <div key={mode.id} className="flex items-center gap-3.5">
-                    <button
-                      type="button"
-                      onClick={() => handleLlmPillChange(mode.id)}
-                      className={cn(
-                        "flex items-center justify-center gap-1.5 pb-2 -mb-[10px] border-b-2 transition-all duration-200 bg-transparent text-[10px] font-black uppercase tracking-[0.15em] outline-none",
-                        isActive
-                          ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
-                          : "text-[rgb(var(--foreground-muted))]/50 border-transparent hover:text-[rgb(var(--foreground-muted))]/80"
-                      )}
-                    >
-                      <span>{mode.label}</span>
-                      {layoutMode !== "small" && (
-                        <IconComponent
-                          size={11}
-                          className="shrink-0"
-                        />
-                      )}
-                    </button>
-                    {idx < arr.length - 1 && (
-                      <span className="text-[10px] text-[rgb(var(--accent))]/30 font-light select-none pb-2 -mb-[10px]">|</span>
-                    )}
-                  </div>
-                );
-              })}
+        {/* Category & Provider Selector */}
+        {isModular && (() => {
+
+          const handlePillChange = (value: "local" | "remote" | "cloud") => {
+            if (activeCategory === "STT") {
+              if (value === "local") {
+                setSttPillOverride(null);
+              } else {
+                setSttPillOverride(value);
+              }
+            } else if (activeCategory === "LLM") {
+              handleLlmPillChange(value);
+            } else if (activeCategory === "TTS") {
+              if (value === "local") {
+                setTtsPillOverride(null);
+                updateDraft("tts", "provider", { kind: "supertonic" });
+              } else if (value === "remote") {
+                setTtsPillOverride(null);
+                updateDraft("tts", "provider", {
+                  kind: "chatterbox_remote",
+                  endpoint: remoteTtsEndpoint,
+                  language: "en",
+                  quality_steps: 8,
+                  speed: 1.0,
+                  remote_path: remoteTtsPath
+                });
+              } else {
+                setTtsPillOverride("cloud");
+              }
+            }
+          };
+
+          return (
+            <div className="shrink-0 flex flex-col gap-2 w-full mt-3">
+              <div className="flex items-center gap-3 w-full pb-2 pt-1 shrink-0 mt-2 px-3">
+                {/* Single Cycling Category Button */}
+                <button
+                  type="button"
+                  onClick={cycleCategory}
+                  className="flex items-center gap-1 pb-2 -mb-[13px] bg-transparent transition-all duration-200 text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] border-b-2 border-transparent outline-none active:scale-95 select-none"
+                >
+                  <span>{activeCategory}</span>
+                </button>
+
+                {/* Accent coloured arrow separator */}
+                <span className="text-[13px] text-[rgb(var(--accent))]/70 font-black select-none tracking-tighter pb-2 -mb-[10px]">───&gt;</span>
+
+                {/* Local | Remote | Cloud Pills (left-aligned) */}
+                <div className="flex items-center gap-3">
+                  {[
+                    { id: "local", label: "Local", icon: Brain },
+                    { id: "remote", label: "Remote", icon: Server },
+                    { id: "cloud", label: "Cloud", icon: Cloud }
+                  ].map((mode, idx, arr) => {
+                    const isActive = activePill === mode.id;
+                    const IconComponent = mode.icon;
+                    return (
+                      <div key={mode.id} className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handlePillChange(mode.id as any)}
+                          className={cn(
+                            "flex items-center justify-center gap-1.5 pb-2 -mb-[10px] border-b-2 transition-all duration-200 bg-transparent text-[10px] font-black uppercase tracking-[0.15em] outline-none",
+                            isActive
+                              ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
+                              : "text-[rgb(var(--foreground-muted))]/50 border-transparent hover:text-[rgb(var(--foreground-muted))]/80"
+                          )}
+                        >
+                          <span>{mode.label}</span>
+                          {layoutMode !== "small" && (
+                            <IconComponent
+                              size={11}
+                              className="shrink-0"
+                            />
+                          )}
+                        </button>
+                        {idx < arr.length - 1 && (
+                          <span className="text-[10px] text-[rgb(var(--foreground-muted))]/20 font-light select-none pb-2 -mb-[10px]">|</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Persistent Height Config Desk (Reduced Height) */}
         <div className={cn(
           "w-full flex flex-col rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)]",
           layoutMode === "small"
             ? "h-auto min-h-0 max-h-none py-4 space-y-4"
-            : (isModular ? "h-[120px] min-h-[120px] max-h-[120px]" : "flex-1 min-h-[140px]")
+            : (isModular 
+                ? (activeCategory === "TTS" && activePill === "remote" 
+                    ? "h-auto min-h-[120px]" 
+                    : "h-[120px] min-h-[120px] max-h-[120px]"
+                  ) 
+                : "flex-1 min-h-[140px]"
+              )
         )}>
           
-          {/* STATE 1: Modular + Local Core */}
-          {isModular && providerPill === "local" && (
+          {/* STATE 1: Modular + LLM Local Core */}
+          {isModular && activeCategory === "LLM" && activePill === "local" && (
             layoutMode === "small" ? (
               <div className="flex flex-col gap-3 py-1 animate-fade-in w-full">
                 {/* Status Indicator */}
@@ -582,8 +705,8 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
             )
           )}
 
-          {/* STATE 2: Modular + Remote Ollama */}
-          {isModular && providerPill === "remote" && (
+          {/* STATE 2: Modular + LLM Remote Ollama */}
+          {isModular && activeCategory === "LLM" && activePill === "remote" && (
             <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
               <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
                 <span className="font-bold text-[11px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
@@ -639,8 +762,8 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
             </div>
           )}
 
-          {/* STATE 3: Modular + Cloud API */}
-          {isModular && providerPill === "cloud" && (
+          {/* STATE 3: Modular + LLM Cloud API */}
+          {isModular && activeCategory === "LLM" && activePill === "cloud" && (
             <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
               <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
                 <span className="font-bold text-[11px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
@@ -704,6 +827,119 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
                   <AlertCircle size={14} /> {modelsError}
                 </span>
               )}
+            </div>
+          )}
+
+          {/* STATE: Modular + TTS Local */}
+          {isModular && activeCategory === "TTS" && activePill === "local" && (
+            <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
+              <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
+                <div className="absolute w-20 h-20 rounded-full border border-[rgb(var(--accent))]/5 animate-ring-pulse-slow" />
+                <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/40 flex items-center justify-center relative z-10">
+                  <Volume2 className="text-[rgb(var(--accent))]" size={18} />
+                </div>
+              </div>
+              
+              <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
+                <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">Local TTS Config</span>
+                  <span className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase">
+                    {currentTtsProvider.kind === "chatterbox" ? "Chatterbox Local" : "Supertonic 3"}
+                  </span>
+                </div>
+                <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+                  Synthesis voice, speed and quality can be configured in the Models panel. Select Chatterbox Local in the Models tab to switch.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* STATE: Modular + TTS Remote (Endpoint URL & Sandbox Path Only) */}
+          {isModular && activeCategory === "TTS" && activePill === "remote" && (
+            <div className="flex flex-col gap-2.5 h-full justify-center animate-fade-in py-1">
+              <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
+                <span className="font-bold text-[11px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                  <Network size={16} className="text-[rgb(var(--accent))]" />
+                  Chatterbox GPU Server Endpoint
+                </span>
+              </div>
+
+              {/* Grid 1: Server Config */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">Server HTTP URL</label>
+                  <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
+                    <input
+                      type="text"
+                      value={remoteTtsEndpoint}
+                      onChange={(e) => handleRemoteTtsEndpointChange(e.target.value)}
+                      placeholder="http://127.0.0.1:7860"
+                      className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">Remote Sandbox Path</label>
+                  <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
+                    <input
+                      type="text"
+                      value={remoteTtsPath}
+                      onChange={(e) => handleRemoteTtsPathChange(e.target.value)}
+                      placeholder="~/.vox"
+                      className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STATE: Modular + TTS Cloud */}
+          {isModular && activeCategory === "TTS" && activePill === "cloud" && (
+            <div className="flex flex-col justify-center items-center h-full text-center p-4 animate-fade-in">
+              <span className="text-[11px] font-black uppercase tracking-widest text-[rgb(var(--accent))]/75 mb-1">TTS Cloud API</span>
+              <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold max-w-xs">
+                Remote cloud voice API integration (e.g. ElevenLabs ConvAI cloud) is under development and will be available soon.
+              </p>
+            </div>
+          )}
+
+          {/* STATE: Modular + STT Local */}
+          {isModular && activeCategory === "STT" && activePill === "local" && (
+            <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
+              <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
+                <div className="absolute w-20 h-20 rounded-full border border-[rgb(var(--accent))]/5 animate-ring-pulse-slow" />
+                <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/40 flex items-center justify-center relative z-10">
+                  <Database className="text-[rgb(var(--accent))]" size={18} />
+                </div>
+              </div>
+              
+              <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
+                <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">Local STT Ready</span>
+                  <span className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase">Nemotron-3.5</span>
+                </div>
+                <div className="space-y-0.5 text-[10px] text-[rgb(var(--foreground-muted))]/70 font-semibold uppercase leading-normal">
+                  <div className="flex justify-between">
+                    <span>Engine</span>
+                    <span className="font-mono text-[rgb(var(--accent))]">Sherpa ONNX</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Model</span>
+                    <span className="font-mono text-[rgb(var(--accent))]">Nemotron-3.5 Whisper</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STATE: Modular + STT Remote/Cloud */}
+          {isModular && activeCategory === "STT" && activePill !== "local" && (
+            <div className="flex flex-col justify-center items-center h-full text-center p-4 animate-fade-in">
+              <span className="text-[11px] font-black uppercase tracking-widest text-[rgb(var(--accent))]/75 mb-1">STT {activePill} API</span>
+              <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold max-w-xs">
+                Speech-to-Text {activePill === "remote" ? "remote" : "cloud"} processing is currently under development. Vox will support remote Whisper / Deepgram streaming in an upcoming release.
+              </p>
             </div>
           )}
 

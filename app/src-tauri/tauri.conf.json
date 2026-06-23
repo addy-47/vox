@@ -67,7 +67,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "test-clips/*"
+      "test-clips/*",
+      "resources/setup_server.sh"
     ]
   },
   "plugins": {

@@ -6,6 +6,7 @@ import {
   Brain, Volume2, Database, Trash2,
   Languages, Activity, Sparkles, Check, ArrowLeft,
   Download, RefreshCw, Info, AlertCircle, Network,
+  ChevronLeft, ChevronRight, Loader2
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RemoteModelInfo } from "@/store/settingsStore";
@@ -65,6 +66,10 @@ const pulseStyles = `
   0%, 100% { border-color: rgba(168, 85, 247, 0.25); box-shadow: 0 0 4px rgba(168, 85, 247, 0.15); }
   50% { border-color: rgba(168, 85, 247, 0.75); box-shadow: 0 0 12px rgba(168, 85, 247, 0.4); }
 }
+@keyframes dynamic-eq {
+  0% { transform: scaleY(0.15); }
+  100% { transform: scaleY(1.0); }
+}
 .pulse-missing {
   animation: premium-pulse-red 2s infinite ease-in-out;
   border-width: 1px !important;
@@ -77,6 +82,120 @@ const pulseStyles = `
   display: block !important;
 }
 `;
+
+function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean }) {
+  const hash = Array.from(seed).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const bars = Array.from({ length: 12 }, (_, i) => {
+    const val = ((hash * (i + 1)) % 18) + 6;
+    return val;
+  });
+
+  const animations = [
+    { dur: "0.45s", delay: "0s" },
+    { dur: "0.60s", delay: "-0.4s" },
+    { dur: "0.55s", delay: "-0.2s" },
+    { dur: "0.40s", delay: "-0.7s" },
+    { dur: "0.50s", delay: "-0.8s" },
+    { dur: "0.70s", delay: "-0.1s" },
+    { dur: "0.90s", delay: "-0.5s" },
+    { dur: "0.65s", delay: "-0.3s" },
+    { dur: "0.75s", delay: "-0.6s" },
+    { dur: "0.50s", delay: "-0.2s" },
+    { dur: "0.60s", delay: "-0.5s" },
+    { dur: "0.45s", delay: "-0.1s" },
+  ];
+
+  return (
+    <div className="flex items-end justify-center gap-[3px] h-6 px-3 py-0.5">
+      {bars.map((h, i) => {
+        const anim = animations[i % animations.length];
+        return (
+          <div
+            key={i}
+            className={cn(
+              "w-[3px] rounded-full transition-all duration-300",
+              disabled
+                ? "bg-[rgba(var(--foreground-muted),0.1)]"
+                : "bg-gradient-to-t from-[rgba(var(--accent-dark),0.4)] to-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.2)]"
+            )}
+            style={{
+              height: `${h}px`,
+              animation: disabled ? "none" : `dynamic-eq ${anim.dur} ease-in-out infinite alternate ${anim.delay}`,
+              transformOrigin: "bottom",
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function VoiceCarousel({ voices, selected, onChange, disabled }: {
+  voices: { id: number; name: string }[];
+  selected: number;
+  onChange: (id: number) => void;
+  disabled?: boolean;
+}) {
+  const index = voices.findIndex(v => v.id === selected);
+  const activeIndex = index === -1 ? 0 : index;
+  const currentVoice = voices[activeIndex];
+
+  const cycle = (dir: number) => {
+    if (disabled || voices.length === 0) return;
+    const next = (activeIndex + dir + voices.length) % voices.length;
+    onChange(voices[next].id);
+  };
+
+  return (
+    <div className={cn(
+      "bg-transparent border border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.12)] transition-all duration-300 rounded-xl p-3 flex flex-col justify-between h-full w-full",
+      disabled && "opacity-50"
+    )}>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 block leading-none">
+        Voice Profile
+      </span>
+
+      <div className="flex items-center justify-between gap-1 my-2">
+        <button
+          type="button"
+          onClick={() => cycle(-1)}
+          disabled={disabled || voices.length <= 1}
+          className="p-1 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
+          aria-label="Previous Voice"
+        >
+          <ChevronLeft size={16} />
+        </button>
+
+        <div className="flex-1 text-center min-w-0">
+          <span className={cn(
+            "text-[12px] font-black tracking-wide block truncate text-[rgb(var(--foreground))]"
+          )}>
+            {currentVoice?.name || "No Voice"}
+          </span>
+          <span className={cn(
+            "text-[9px] block leading-normal mt-0.5 truncate text-[rgb(var(--foreground-muted))]/70"
+          )}>
+            Voice #{currentVoice?.id ?? 0}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => cycle(1)}
+          disabled={disabled || voices.length <= 1}
+          className="p-1 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
+          aria-label="Next Voice"
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      <div className="flex items-center justify-center py-1 shrink-0">
+        <VoiceBars seed={currentVoice?.name || "default"} disabled={disabled} />
+      </div>
+    </div>
+  );
+}
 
 interface SubModelCardProps {
   id: string;
@@ -278,6 +397,124 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [outdatedModels, setOutdatedModels] = useState<string[]>([]);
   const [manifest, setManifest] = useState<VoxManifest | null>(null);
 
+  // Chatterbox Remote setup & health states
+  const [isRemoteTtsHealthy, setIsRemoteTtsHealthy] = useState<boolean | null>(null);
+  const [checkingTtsHealth, setCheckingTtsHealth] = useState(false);
+  const [sshConnectionString, setSshConnectionString] = useState(() => localStorage.getItem("vox_ssh_conn") || "root@localhost");
+  const [sshPort, setSshPort] = useState(() => localStorage.getItem("vox_ssh_port") || "22");
+  const [sshIdentityKey, setSshIdentityKey] = useState(() => localStorage.getItem("vox_ssh_key") || "~/.ssh/id_rsa");
+  const [setupStatus, setSetupStatus] = useState<any>(null);
+
+  useEffect(() => {
+    if (draftSettings?.tts?.provider?.kind !== "chatterbox_remote") {
+      setIsRemoteTtsHealthy(null);
+      return;
+    }
+
+    const checkHealth = async () => {
+      if (!draftSettings?.tts?.provider) return;
+      setCheckingTtsHealth(true);
+      try {
+        const healthy = await invoke<boolean>("check_tts_provider_health", {
+          provider: draftSettings.tts.provider
+        });
+        setIsRemoteTtsHealthy(healthy);
+      } catch (_) {
+        setIsRemoteTtsHealthy(false);
+      } finally {
+        setCheckingTtsHealth(false);
+      }
+    };
+
+    checkHealth();
+    const interval = setInterval(checkHealth, 5000);
+    return () => clearInterval(interval);
+  }, [draftSettings?.tts?.provider]);
+
+  useEffect(() => {
+    const unlistenPromise = listen<any>("remote_setup_status", (event) => {
+      setSetupStatus(event.payload);
+      if (event.payload?.step === "complete" && draftSettings?.tts?.provider) {
+        invoke<boolean>("check_tts_provider_health", {
+          provider: draftSettings.tts.provider
+        }).then(healthy => setIsRemoteTtsHealthy(healthy));
+      }
+    });
+    return () => {
+      unlistenPromise.then(fn => fn());
+    };
+  }, [draftSettings?.tts?.provider]);
+
+  useEffect(() => {
+    localStorage.setItem("vox_ssh_conn", sshConnectionString);
+  }, [sshConnectionString]);
+
+  useEffect(() => {
+    localStorage.setItem("vox_ssh_port", sshPort);
+  }, [sshPort]);
+
+  useEffect(() => {
+    localStorage.setItem("vox_ssh_key", sshIdentityKey);
+  }, [sshIdentityKey]);
+
+  useEffect(() => {
+    const handleSync = (e: Event) => {
+      const tab = (e as CustomEvent).detail;
+      if (tab === "stt") {
+        setActivePipelineTab("asr");
+      } else if (tab === "llm" || tab === "tts") {
+        setActivePipelineTab(tab);
+      }
+    };
+    window.addEventListener("sync_pipeline_tab", handleSync);
+    return () => window.removeEventListener("sync_pipeline_tab", handleSync);
+  }, []);
+
+  useEffect(() => {
+    let cat = "";
+    if (activePipelineTab === "asr") cat = "STT";
+    else if (activePipelineTab === "llm") cat = "LLM";
+    else if (activePipelineTab === "tts") cat = "TTS";
+    if (cat) {
+      const event = new CustomEvent("sync_interaction_category", { detail: cat });
+      window.dispatchEvent(event);
+    }
+  }, [activePipelineTab]);
+
+  const triggerRemoteSetup = async () => {
+    if (!draftSettings?.tts?.provider) return;
+    setSetupStatus({ progress: 10, step: "initiating", log_line: "Starting connection..." });
+    try {
+      const endpoint = draftSettings.tts.provider.kind === "chatterbox_remote" 
+        ? draftSettings.tts.provider.endpoint 
+        : "http://127.0.0.1:7860";
+      const remotePath = draftSettings.tts.provider.kind === "chatterbox_remote"
+        ? draftSettings.tts.provider.remote_path
+        : "~/.vox";
+
+      let srvPort = 7860;
+      try {
+        const urlObj = new URL(endpoint);
+        srvPort = urlObj.port ? parseInt(urlObj.port) : 7860;
+      } catch (_) {
+        const parts = (endpoint || "").replace("http://", "").replace("https://", "").split(":");
+        if (parts.length > 1) {
+          srvPort = parseInt(parts[parts.length - 1]) || 7860;
+        }
+      }
+      
+      await invoke("setup_remote_server", {
+        connectionString: sshConnectionString,
+        sshPort: sshPort ? parseInt(sshPort) : null,
+        identityKeyPath: sshIdentityKey || null,
+        remotePath: remotePath || "~/.vox",
+        serverPort: srvPort
+      });
+    } catch (err) {
+      setSetupStatus({ progress: 0, step: "failed", log_line: `Error: ${err}`, error: String(err) });
+    }
+  };
+
   // Remote LLM models catalog live state
   const [remoteModels, setRemoteModels] = useState<RemoteModelInfo[]>([]);
   const [loadingRemoteModels, setLoadingRemoteModels] = useState(false);
@@ -437,6 +674,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       if (fileId.startsWith("stt_nemotron")) return "nvidia_nemotron";
       if (fileId.startsWith("stt_")) return "qwen3_asr";
       if (fileId.startsWith("tts_supertonic")) return "supertonic_tts";
+      if (fileId.startsWith("tts_chatterbox")) return "chatterbox_tts";
       return fileId;
     }
     for (const group of manifest.model_groups) {
@@ -485,7 +723,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           "gemma_4_reasoning",
           "llama_3_2_reasoning",
           "gemma_4_uncensored",
-          "supertonic_tts"
+          "supertonic_tts",
+          "chatterbox_tts"
         ];
 
     for (const id of checkIds) {
@@ -587,19 +826,19 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const selectedLlmId = draftSettings.llm.model;
   const isLlmDownloaded = modelPresence[selectedLlmId];
 
-  const isTtsVerified = modelPresence["supertonic_tts"];
+  const isTtsVerified = modelPresence["supertonic_tts"] || modelPresence["chatterbox_tts"];
 
   const isVadCategoryMissing = activeVadBackend === "ten_vad" && !modelPresence["ten_vad"];
   const isAsrCategoryMissing = !modelPresence[selectedAsrId];
   const isTranslitCategoryMissing = !modelPresence["vox_translit_rnn"];
   const isLlmCategoryMissing = !modelPresence[selectedLlmId];
-  const isTtsCategoryMissing = !modelPresence["supertonic_tts"];
+  const isTtsCategoryMissing = !modelPresence["supertonic_tts"] && !modelPresence["chatterbox_tts"];
 
   const hasVadUpdate = outdatedModels.includes("ten_vad");
   const hasAsrUpdate = outdatedModels.includes(selectedAsrId);
   const hasTranslitUpdate = outdatedModels.includes("vox_translit_rnn");
   const hasLlmUpdate = outdatedModels.includes(selectedLlmId);
-  const hasTtsUpdate = outdatedModels.includes("supertonic_tts");
+  const hasTtsUpdate = outdatedModels.includes("supertonic_tts") || outdatedModels.includes("chatterbox_tts");
 
   const getPulseClass = (isMissing: boolean, hasUpdate: boolean) => {
     if (isMissing) return "pulse-missing border-red-500/35";
@@ -634,35 +873,47 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         
         {/* Header */}
         {layoutMode === "small" ? (
-          (activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
-            <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
-              <span className="text-[10px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/70 uppercase">CATALOG VIEW</span>
-              <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
-                <button
-                  onClick={() => setActiveCategoryTab("model")}
-                  className={cn(
-                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                    activeCategoryTab === "model"
-                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+          (activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (() => {
+            const isRemoteTtsSetupNotDone = activePipelineTab === "tts" &&
+              draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
+              isRemoteTtsHealthy !== true;
+
+            if (isRemoteTtsSetupNotDone && activeCategoryTab === "settings") {
+              setTimeout(() => setActiveCategoryTab("model"), 0);
+            }
+
+            return (
+              <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+                <span className="text-[10px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/70 uppercase">CATALOG VIEW</span>
+                <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
+                  <button
+                    onClick={() => setActiveCategoryTab("model")}
+                    className={cn(
+                      "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                      activeCategoryTab === "model"
+                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                        : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                    )}
+                  >
+                    Model
+                  </button>
+                  {!isRemoteTtsSetupNotDone && (
+                    <button
+                      onClick={() => setActiveCategoryTab("settings")}
+                      className={cn(
+                        "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                        activeCategoryTab === "settings"
+                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                          : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                      )}
+                    >
+                      Settings
+                    </button>
                   )}
-                >
-                  Model
-                </button>
-                <button
-                  onClick={() => setActiveCategoryTab("settings")}
-                  className={cn(
-                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                    activeCategoryTab === "settings"
-                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  Settings
-                </button>
+                </div>
               </div>
-            </div>
-          )
+            );
+          })()
         ) : (
           <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
             <div className="flex items-center gap-2">
@@ -672,32 +923,44 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               </span>
             </div>
             {/* Small Category Tabs */}
-            {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
-              <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
-                <button
-                  onClick={() => setActiveCategoryTab("model")}
-                  className={cn(
-                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                    activeCategoryTab === "model"
-                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+            {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (() => {
+              const isRemoteTtsSetupNotDone = activePipelineTab === "tts" &&
+                draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
+                isRemoteTtsHealthy !== true;
+
+              if (isRemoteTtsSetupNotDone && activeCategoryTab === "settings") {
+                setTimeout(() => setActiveCategoryTab("model"), 0);
+              }
+
+              return (
+                <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
+                  <button
+                    onClick={() => setActiveCategoryTab("model")}
+                    className={cn(
+                      "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                      activeCategoryTab === "model"
+                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                        : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                    )}
+                  >
+                    Model
+                  </button>
+                  {!isRemoteTtsSetupNotDone && (
+                    <button
+                      onClick={() => setActiveCategoryTab("settings")}
+                      className={cn(
+                        "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                        activeCategoryTab === "settings"
+                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                          : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                      )}
+                    >
+                      Settings
+                    </button>
                   )}
-                >
-                  Model
-                </button>
-                <button
-                  onClick={() => setActiveCategoryTab("settings")}
-                  className={cn(
-                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                    activeCategoryTab === "settings"
-                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  Settings
-                </button>
-              </div>
-            )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1209,100 +1472,329 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           {activePipelineTab === "tts" && (
             <div className="space-y-4">
               {activeCategoryTab === "model" ? (
-                <div className="grid grid-cols-1 gap-3">
-                  <SubModelCard
-                    id="supertonic_tts"
-                    name="Supertonic 3 Multilingual"
-                    description="31-language neural speech synthesis with 10 voices (~144MB INT8 quantized)."
-                    parameters="144 MB"
-                    ramUsage="~144 MB"
-                    isDownloaded={isTtsVerified}
-                    isActive={true}
-                    isRequired={false}
-                    layoutMode={layoutMode}
-                    onSelect={() => {}}
-                    confirmDeleteId={confirmDeleteId}
-                    setConfirmDeleteId={setConfirmDeleteId}
-                    downloadStatus={downloadStatuses["supertonic_tts"]}
-                    startDownload={() => startDownload("supertonic_tts")}
-                    deleteModel={() => deleteModel("supertonic_tts")}
-                  />
-                </div>
-              ) : (
-                /* TTS Settings */
-                <div className="flex flex-col gap-3.5 p-1">
-                  {/* Quality Steps */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
-                      <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
-                        {draftSettings.tts.quality_steps <= 4 ? "Speed" : draftSettings.tts.quality_steps <= 8 ? "Quality" : "Best"}
-                      </span>
-                    </div>
-                    <div className="flex gap-1">
-                      {[2, 4, 6, 8, 10, 12].map(step => (
-                        <button key={step} onClick={() => updateDraft("tts", "quality_steps", step)}
-                          className={cn(
-                            "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-                            draftSettings.tts.quality_steps === step
-                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                              : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
-                          )}
-                        >{step}</button>
-                      ))}
-                    </div>
-                  </div>
+                <div className="space-y-4">
+                  {draftSettings.tts.provider?.kind === "chatterbox_remote" && isRemoteTtsHealthy !== true ? (
+                    /* Show only setup panel + description banner */
+                    <div className="space-y-4">
+                      {/* Concise info box describing setup and model */}
+                      <div className="border border-[rgba(var(--accent),0.15)] bg-[rgba(var(--accent),0.02)] rounded-xl p-4 space-y-2">
+                        <div className="flex items-center gap-2 text-[rgb(var(--accent))]">
+                          <Info size={16} />
+                          <span className="font-bold text-[11px] uppercase tracking-[0.1em]">Chatterbox Remote Deployment</span>
+                        </div>
+                        <p className="text-[11px] text-[rgb(var(--foreground-muted))]/80 leading-relaxed font-medium">
+                          Deploy Chatterbox on a remote CUDA-accelerated GPU host (e.g. RunPod, Vast.ai, or homelab) to offload memory-intensive flow-matching voice synthesis. Enter your SSH connection info below to automatically sync the codebase, download GGUF models, and run the server.
+                        </p>
+                      </div>
 
-                  {/* Speed */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
-                      <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.tts.speed.toFixed(2)}x</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="0.7" max="2.0" step="0.05"
-                      value={draftSettings.tts.speed}
-                      onChange={(e) => updateDraft("tts", "speed", Number(e.target.value))}
-                      className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
-                    />
-                  </div>
+                      {/* Setup Panel */}
+                      <div className="border border-[rgba(var(--accent),0.15)] bg-[rgba(var(--accent),0.02)] rounded-xl p-3 animate-fade-in space-y-3">
+                        <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1.5">
+                          <span className="font-bold text-[11px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                            <Network size={14} className="text-[rgb(var(--accent))]" />
+                            Setup Remote GPU Server (SSH Setup Required)
+                          </span>
+                          <span className="text-[9px] font-black uppercase bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/20">
+                            Offline / Unconfigured
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-[2.5fr_1fr_2.5fr] gap-2.5">
+                          <div className="space-y-1">
+                            <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">SSH Host / Profile</label>
+                            <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
+                              <input
+                                type="text"
+                                value={sshConnectionString}
+                                onChange={(e) => setSshConnectionString(e.target.value)}
+                                placeholder="user@hostname"
+                                className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">SSH Port</label>
+                            <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
+                              <input
+                                type="text"
+                                value={sshPort}
+                                onChange={(e) => setSshPort(e.target.value)}
+                                placeholder="22"
+                                className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">Identity Key Path</label>
+                            <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
+                              <input
+                                type="text"
+                                value={sshIdentityKey}
+                                onChange={(e) => setSshIdentityKey(e.target.value)}
+                                placeholder="~/.ssh/id_rsa"
+                                className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
+                              />
+                            </div>
+                          </div>
+                        </div>
 
-                  {/* Voice Profile */}
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]/75 block">Voice Profile</span>
-                    {modelPresence["supertonic_tts"] ? (
-                      <div className={cn(
-                        "grid gap-1 pr-0.5",
-                        layoutMode === "small" ? "grid-cols-1 max-h-none overflow-y-visible" : "grid-cols-2 max-h-[110px] overflow-y-auto custom-scrollbar"
-                      )}>
-                        {modelCatalog.voices.map((v) => {
-                          const isSelected = draftSettings.tts.voice === v.id;
+                        <div className="flex items-center justify-between gap-3 pt-1 border-t border-[rgba(var(--border),0.04)]">
+                          <div className="flex-1 min-w-0">
+                            {setupStatus ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className={cn(
+                                    "font-bold uppercase tracking-wider",
+                                    setupStatus.step === "complete" ? "text-emerald-400" : setupStatus.step === "failed" ? "text-rose-400 animate-pulse" : "text-[rgb(var(--accent))]"
+                                  )}>
+                                    {setupStatus.step === "complete" ? "Ready" : setupStatus.step === "failed" ? "Setup Failed" : `Phase: ${setupStatus.step}`}
+                                  </span>
+                                  <span className="font-mono font-bold text-[rgb(var(--foreground-muted))]/70">{setupStatus.progress}%</span>
+                                </div>
+                                <div className="h-1 bg-[rgba(var(--foreground),0.04)] rounded-full overflow-hidden relative">
+                                  <div 
+                                    className="h-full bg-[rgb(var(--accent))] transition-all duration-300 rounded-full"
+                                    style={{ width: `${setupStatus.progress}%` }}
+                                  />
+                                </div>
+                                <p className="text-[9px] text-[rgb(var(--foreground-muted))]/60 font-semibold truncate leading-none mt-1">
+                                  {setupStatus.log_line}
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="text-[9px] text-[rgb(var(--foreground-muted))]/55 font-semibold leading-normal">
+                                Pipes setup_server.sh to the host over native SSH. Key auth / SSH configs supported.
+                              </p>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={triggerRemoteSetup}
+                            disabled={!sshConnectionString || (setupStatus && setupStatus.progress > 0 && setupStatus.progress < 100 && setupStatus.step !== "failed")}
+                            className={cn(
+                              "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 shrink-0 select-none outline-none",
+                              !sshConnectionString
+                                ? "bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/30 border border-transparent cursor-not-allowed"
+                                : (setupStatus && setupStatus.progress > 0 && setupStatus.progress < 100 && setupStatus.step !== "failed")
+                                  ? "bg-[rgba(var(--accent),0.05)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] cursor-wait"
+                                  : "bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))]/40 active:scale-95"
+                            )}
+                          >
+                            {setupStatus && setupStatus.progress > 0 && setupStatus.progress < 100 && setupStatus.step !== "failed" ? (
+                              <>
+                                <Loader2 size={11} className="animate-spin text-[rgb(var(--accent))]" />
+                                Deploying
+                              </>
+                            ) : setupStatus?.step === "failed" ? (
+                              "Retry Deploy"
+                            ) : setupStatus?.step === "complete" ? (
+                              <>
+                                <Check size={11} className="text-emerald-400" />
+                                Deployed
+                              </>
+                            ) : (
+                              "Deploy Server"
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Show only selected filter models list */
+                    <div className={cn("grid gap-3", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
+                      {(modelCatalog?.tts || [])
+                        .filter((model) => {
+                          const isRemoteConfig = draftSettings.tts.provider?.kind === "chatterbox_remote";
+                          if (isRemoteConfig) {
+                            return model.id === "chatterbox_remote";
+                          } else {
+                            return model.id === "supertonic_tts" || model.id === "chatterbox_tts";
+                          }
+                        })
+                        .map((model) => {
+                          const isSelected = (model.id === "supertonic_tts" && draftSettings.tts.provider?.kind === "supertonic") ||
+                                            (model.id === "chatterbox_tts" && draftSettings.tts.provider?.kind === "chatterbox") ||
+                                            (model.id === "chatterbox_remote" && draftSettings.tts.provider?.kind === "chatterbox_remote");
+                          const isDownloaded = model.id === "chatterbox_remote" ? true : modelPresence[model.id];
+                          const status = downloadStatuses[model.id];
+
                           return (
-                            <button
-                              key={v.id}
-                              onClick={() => updateDraft("tts", "voice", v.id)}
-                              className={cn(
-                                "py-1 px-2 rounded-lg text-left text-[11px] font-bold uppercase tracking-wider transition-all duration-300 border flex items-center justify-between",
-                                isSelected
-                                  ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] text-[rgb(var(--accent))]"
-                                  : "glass border-transparent text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--border),0.1)]"
+                            <div key={model.id} className="relative">
+                              <SubModelCard
+                                id={model.id}
+                                name={model.name}
+                                description={model.description}
+                                parameters={model.parameters}
+                                ramUsage={model.ram_usage}
+                                tradeoffs={model.tradeoffs}
+                                isDownloaded={isDownloaded}
+                                isActive={isSelected}
+                                isRequired={false}
+                                layoutMode={layoutMode}
+                                onSelect={() => {
+                                  if (model.id === "supertonic_tts") {
+                                    updateDraft("tts", "provider", { kind: "supertonic" });
+                                  } else if (model.id === "chatterbox_tts") {
+                                    updateDraft("tts", "provider", { kind: "chatterbox", language: "en", quality_steps: 8, speed: 1.0 });
+                                  } else if (model.id === "chatterbox_remote") {
+                                    updateDraft("tts", "provider", {
+                                      kind: "chatterbox_remote",
+                                      endpoint: draftSettings.tts.provider?.kind === "chatterbox_remote" ? (draftSettings.tts.provider.endpoint || "http://127.0.0.1:7860") : "http://127.0.0.1:7860",
+                                      language: "en",
+                                      quality_steps: 8,
+                                      speed: 1.0,
+                                      remote_path: draftSettings.tts.provider?.kind === "chatterbox_remote" ? (draftSettings.tts.provider.remote_path || "~/.vox") : "~/.vox"
+                                    });
+                                  }
+                                }}
+                                confirmDeleteId={confirmDeleteId}
+                                setConfirmDeleteId={setConfirmDeleteId}
+                                downloadStatus={status}
+                                startDownload={() => startDownload(model.id)}
+                                deleteModel={() => deleteModel(model.id)}
+                              />
+                              {model.id === "chatterbox_remote" && isSelected && (
+                                <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 select-none pointer-events-none">
+                                  {checkingTtsHealth ? (
+                                    <Loader2 size={10} className="animate-spin text-[rgb(var(--accent))]" />
+                                  ) : isRemoteTtsHealthy === true ? (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
+                                  ) : isRemoteTtsHealthy === false ? (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.7)] animate-pulse" />
+                                  ) : null}
+                                </div>
                               )}
-                            >
-                              <span className="truncate mr-1">{v.name}</span>
-                              {isSelected && <Check size={11} className="shrink-0" />}
-                            </button>
+                            </div>
                           );
                         })}
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center h-20 border border-dashed border-[rgba(var(--accent),0.15)] rounded-lg text-[rgb(var(--foreground-muted))]/60 text-[11px] font-bold uppercase tracking-wider text-center p-2 leading-tight">
-                        Deploy TTS weights first
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              )}
+              ) : (() => {
+                const isChatterbox = draftSettings.tts.provider?.kind?.startsWith("chatterbox");
+                const voices = isChatterbox 
+                  ? [{ id: 0, name: "Default (Chatterbox)" }]
+                  : (modelCatalog?.voices || []);
+                const canShowVoiceProfile = isTtsVerified || draftSettings.tts.provider?.kind === "chatterbox_remote";
+
+                return (
+                  /* TTS Settings */
+                  <div className={cn(
+                    "w-full items-stretch",
+                    layoutMode === "small" ? "flex flex-col gap-3" : "flex flex-row gap-4"
+                  )}>
+                    {/* Left column: Custom tailored Quality, Speed or Language selectors */}
+                    <div className="flex-[3] flex flex-col gap-3.5 min-w-0">
+                      {isChatterbox ? (
+                        <>
+                          {/* Chatterbox Quality Slider (cfm_steps) */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality Steps (CFM)</span>
+                              <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+                                {((draftSettings.tts.provider as any).quality_steps || 8)} steps
+                              </span>
+                            </div>
+                            <input 
+                              type="range" 
+                              min="2" max="12" step="1"
+                              value={((draftSettings.tts.provider as any).quality_steps || 8)}
+                              onChange={(e) => {
+                                updateDraft("tts", "provider", {
+                                  ...draftSettings.tts.provider,
+                                  quality_steps: Number(e.target.value)
+                                });
+                              }}
+                              className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
+                            />
+                          </div>
+
+                          {/* Chatterbox Speed Slider */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
+                              <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+                                {((draftSettings.tts.provider as any).speed || 1.0).toFixed(2)}x
+                              </span>
+                            </div>
+                            <input 
+                              type="range" 
+                              min="0.7" max="2.0" step="0.05"
+                              value={((draftSettings.tts.provider as any).speed || 1.0)}
+                              onChange={(e) => {
+                                updateDraft("tts", "provider", {
+                                  ...draftSettings.tts.provider,
+                                  speed: Number(e.target.value)
+                                });
+                              }}
+                              className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Supertonic Quality Steps */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
+                              <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+                                {draftSettings.tts.quality_steps <= 4 ? "Speed" : draftSettings.tts.quality_steps <= 8 ? "Quality" : "Best"}
+                              </span>
+                            </div>
+                            <div className="flex gap-1">
+                              {[2, 4, 6, 8, 10, 12].map(step => (
+                                <button key={step} onClick={() => updateDraft("tts", "quality_steps", step)}
+                                  className={cn(
+                                    "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                                    draftSettings.tts.quality_steps === step
+                                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                                      : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
+                                  )}
+                                >{step}</button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Supertonic Speed */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
+                              <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.tts.speed.toFixed(2)}x</span>
+                            </div>
+                            <input 
+                              type="range" 
+                              min="0.7" max="2.0" step="0.05"
+                              value={draftSettings.tts.speed}
+                              onChange={(e) => updateDraft("tts", "speed", Number(e.target.value))}
+                              className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Right column: Voice Carousel */}
+                    <div className={cn(
+                      "shrink-0",
+                      layoutMode === "small" ? "w-full" : "w-2/5 min-w-[150px]"
+                    )}>
+                      {canShowVoiceProfile ? (
+                        <VoiceCarousel
+                          voices={voices}
+                          selected={draftSettings.tts.voice}
+                          onChange={(id) => updateDraft("tts", "voice", id)}
+                          disabled={false}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-full min-h-[100px] border border-dashed border-[rgba(var(--accent),0.15)] rounded-lg text-[rgb(var(--foreground-muted))]/60 text-[11px] font-bold uppercase tracking-wider text-center p-2 leading-tight">
+                          Deploy Remote Server first
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
