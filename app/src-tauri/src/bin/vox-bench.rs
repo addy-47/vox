@@ -60,6 +60,10 @@ struct Args {
     /// TTS engine: supertonic (default) or chatterbox
     #[arg(long, default_value = "supertonic")]
     tts: String,
+
+    /// Reference audio file path, voice ID, or voice name for Chatterbox voice cloning
+    #[arg(long, alias = "voice")]
+    tts_voice: Option<String>,
 }
 
 enum BenchCommand {
@@ -189,9 +193,16 @@ fn main() -> anyhow::Result<()> {
     } else if args.tts == "chatterbox" {
         println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Chatterbox)...");
         let cb_path = vox_lib::utils::paths::model_dir("tts").join("chatterbox");
+        let resolved_voice = args.tts_voice.as_ref().map(|v| resolve_voice_path(v));
         Box::new(
-            vox_lib::services::tts::ChatterboxEngine::new(&cb_path, "en", 10, 1.0)
-                .expect("Failed to load Chatterbox TTS"),
+            vox_lib::services::tts::ChatterboxEngine::new(
+                &cb_path,
+                "en",
+                10,
+                1.0,
+                resolved_voice.as_deref(),
+            )
+            .expect("Failed to load Chatterbox TTS"),
         )
     } else {
         println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Supertonic 3)...");
@@ -558,3 +569,39 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+fn resolve_voice_path(voice_arg: &str) -> String {
+    if std::path::Path::new(voice_arg).exists() {
+        return voice_arg.to_string();
+    }
+    // Try to open SQLite DB and find matching voice by ID or name
+    let db_path = vox_lib::utils::paths::db_path();
+    if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+        let mut stmt = conn.prepare("SELECT voice_dir, wav_path FROM voices WHERE id = ?1 OR name = ?1").ok();
+        if let Some(mut stmt) = stmt {
+            let res = stmt.query_row([voice_arg], |row| {
+                let voice_dir: Option<String> = row.get(0).ok();
+                let wav_path: Option<String> = row.get(1).ok();
+                Ok(voice_dir.or(wav_path))
+            });
+            if let Ok(Some(path)) = res {
+                if std::path::Path::new(&path).exists() {
+                    println!("\x1b[32m[Bench]\x1b[0m Resolved voice '{}' to {:?}", voice_arg, path);
+                    return path;
+                }
+            }
+        }
+    }
+    // Fallback: search in ~/.vox/voices/
+    let home = dirs::home_dir().unwrap_or_default();
+    let voices_dir = home.join(".vox").join("voices").join(voice_arg);
+    if voices_dir.join("baked").exists() {
+        return voices_dir.join("baked").to_string_lossy().into_owned();
+    }
+    if voices_dir.join("source.wav").exists() {
+        return voices_dir.join("source.wav").to_string_lossy().into_owned();
+    }
+
+    voice_arg.to_string()
+}
+
