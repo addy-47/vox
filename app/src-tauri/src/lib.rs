@@ -1,3 +1,5 @@
+extern crate symphonia_core;
+
 pub mod core;
 pub mod ipc;
 pub mod monitoring;
@@ -436,6 +438,15 @@ pub fn run() {
             get_sessions,
             get_turns,
             delete_session,
+            // Voices
+            crate::ipc::voices::list_voices,
+            crate::ipc::voices::add_voice_from_file,
+            crate::ipc::voices::add_voice_from_recording,
+            crate::ipc::voices::start_backend_recording,
+            crate::ipc::voices::stop_backend_recording,
+            crate::ipc::voices::delete_voice,
+            crate::ipc::voices::rename_voice,
+            crate::ipc::voices::preview_voice,
             // Monitoring
             crate::ipc::monitoring::get_runtime_snapshot,
             crate::ipc::monitoring::get_runtime_history,
