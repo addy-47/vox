@@ -5,3 +5,4 @@ pub mod pipeline;
 pub mod settings;
 pub mod setup;
 pub mod tray;
+pub mod voices;

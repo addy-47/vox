@@ -492,6 +492,10 @@ pub enum TtsProviderConfig {
         language: String,
         quality_steps: u32,
         speed: f32,
+        /// UUID of a cloned voice from the voices table.
+        /// `None` = use Chatterbox's built-in reference voice.
+        #[serde(default)]
+        voice_id: Option<String>,
     },
     /// Chatterbox Remote TTS offloaded to a GPU server.
     ChatterboxRemote {
@@ -500,12 +504,16 @@ pub enum TtsProviderConfig {
         quality_steps: u32,
         speed: f32,
         remote_path: String,
+        /// UUID of a cloned voice. Reserved for Phase D (remote forwarding).
+        #[serde(default)]
+        voice_id: Option<String>,
     },
     // Future providers:
     // Pocket { reference_audio: Option<String> },
     // OpenAiCompat { base_url: String, model: String, api_key: Option<String>, voice: Option<String> },
     // OmniVoice { voice: Option<String> },
 }
+
 
 impl Default for TtsProviderConfig {
     fn default() -> Self {

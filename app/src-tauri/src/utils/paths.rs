@@ -23,6 +23,8 @@ pub struct VoxPaths {
     pub cache: PathBuf,
     /// temp/
     pub temp: PathBuf,
+    /// voices/ — cloned voice WAVs and pre-baked tensors
+    pub voices: PathBuf,
 }
 
 static PATHS: OnceLock<VoxPaths> = OnceLock::new();
@@ -74,6 +76,7 @@ pub fn init_with_root(root: PathBuf) {
         settings: root.join(SETTINGS_FILENAME),
         cache: root.join("cache"),
         temp: root.join("temp"),
+        voices: root.join("voices"),
         root,
     };
 
@@ -99,6 +102,7 @@ pub fn ensure_dirs() -> std::io::Result<()> {
     std::fs::create_dir_all(&p.logs)?;
     std::fs::create_dir_all(&p.cache)?;
     std::fs::create_dir_all(&p.temp)?;
+    std::fs::create_dir_all(&p.voices)?;
     Ok(())
 }
 
@@ -136,4 +140,14 @@ pub fn temp_dir() -> PathBuf {
 /// e.g. `model_dir("kokoro")` → `~/.vox/models/kokoro/`
 pub fn model_dir(name: &str) -> PathBuf {
     get().models.join(name)
+}
+
+/// Returns the voices root directory: `~/.vox/voices/`
+pub fn voices_dir() -> PathBuf {
+    get().voices.clone()
+}
+
+/// Returns the directory for a specific voice entry: `~/.vox/voices/{id}/`
+pub fn voice_dir(id: &str) -> PathBuf {
+    get().voices.join(id)
 }

@@ -48,11 +48,14 @@ impl ChatterboxEngine {
     /// `language` — language code ("en", "es", "fr", etc.).
     /// `quality_steps` — CFM steps (clamped 2-10).
     /// `speed` — playback speed factor (clamped 0.7-2.0, applied as time-stretch).
+    /// `reference_audio` — optional absolute path to a source WAV for voice cloning.
+    ///   `None` = use Chatterbox's built-in reference voice.
     pub fn new(
         model_path: &Path,
         language: &str,
         quality_steps: u32,
         speed: f32,
+        reference_audio: Option<&str>,
     ) -> Result<Self> {
         let t3_path = if model_path.join("t3-q4_0.gguf").exists() {
             model_path.join("t3-q4_0.gguf")
@@ -80,14 +83,28 @@ impl ChatterboxEngine {
 
         let cfm = quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS) as i32;
 
-        log::info!(
-            "[Chatterbox] Loading engine. lang={}, cfm_steps={}, speed={:.2}",
-            language,
-            cfm,
-            speed
-        );
+        // Validate reference audio path if provided, and warn if missing.
+        let ref_audio = reference_audio.unwrap_or("").to_string();
+        if !ref_audio.is_empty() {
+            if std::path::Path::new(&ref_audio).exists() {
+                log::info!(
+                    "[Chatterbox] Loading engine with voice clone. lang={}, cfm_steps={}, speed={:.2}, ref={}",
+                    language, cfm, speed, ref_audio
+                );
+            } else {
+                log::warn!(
+                    "[Chatterbox] reference_audio path not found: {}. Falling back to built-in voice.",
+                    ref_audio
+                );
+            }
+        } else {
+            log::info!(
+                "[Chatterbox] Loading engine. lang={}, cfm_steps={}, speed={:.2}",
+                language, cfm, speed
+            );
+        }
 
-        let engine = Engine::new(EngineOptions {
+        let mut opts = EngineOptions {
             t3_gguf_path: t3_path.to_string_lossy().into_owned(),
             s3gen_gguf_path: s3_path.to_string_lossy().into_owned(),
             language: language.to_string(),
@@ -100,8 +117,19 @@ impl ChatterboxEngine {
             repeat_penalty: 1.2,
             verbose: false,
             ..Default::default()
-        })
-        .map_err(|e| anyhow!("Failed to create Chatterbox engine: {}", e))?;
+        };
+
+        if !ref_audio.is_empty() {
+            if std::path::Path::new(&ref_audio).is_dir() {
+                opts.voice_dir = ref_audio;
+            } else {
+                opts.reference_audio = ref_audio;
+            }
+        }
+
+        let engine = Engine::new(opts)
+            .map_err(|e| anyhow!("Failed to create Chatterbox engine: {}", e))?;
+
 
         log::info!("[Chatterbox] Engine ready.");
 
@@ -114,6 +142,7 @@ impl ChatterboxEngine {
     }
 
     /// Apply time-stretch via linear interpolation.
+
     fn apply_speed(samples: &[f32], speed: f32) -> Vec<f32> {
         if (speed - 1.0).abs() < 0.01 || samples.is_empty() {
             return samples.to_vec();
