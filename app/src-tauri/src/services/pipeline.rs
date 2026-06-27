@@ -45,6 +45,42 @@ pub enum TranslitTask {
     Shutdown,
 }
 
+// ─── Voice resolution ────────────────────────────────────────────────────────
+
+/// Resolves a voice UUID to a WAV file path for Chatterbox voice conditioning.
+///
+/// Opens a short-lived read connection to the DB and looks up the wav_path for
+/// the given voice UUID. Returns `None` if the voice is not found, the DB is
+/// unavailable, or the file has been deleted from disk — callers should treat
+/// `None` as "use built-in voice" and log a warning.
+fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> {
+    let id = voice_id?;
+    let db_path = crate::utils::paths::db_path();
+    let conn = rusqlite::Connection::open(&db_path).ok()?;
+    let entry = crate::persistence::voices::get_voice(&conn, id)
+        .map_err(|e| log::warn!("[Pipeline] Failed to query voice {}: {}", id, e))
+        .ok()??;
+
+    // Prefer pre-baked voice_dir if it exists and contains speaker_emb.npy
+    if let Some(ref dir) = entry.voice_dir {
+        let path = std::path::Path::new(dir);
+        if path.exists() && path.join("speaker_emb.npy").exists() {
+            return Some(dir.clone());
+        }
+    }
+
+    let wav = entry.wav_path?;
+    if !std::path::Path::new(&wav).exists() {
+        log::warn!(
+            "[Pipeline] Voice {} wav_path not found on disk: {}. Using built-in voice.",
+            id, wav
+        );
+        return None;
+    }
+    Some(wav)
+}
+
+
 // ─── Pipeline Orchestrator ────────────────────────────────────────────────────
 
 pub enum PipelineState {
@@ -267,11 +303,13 @@ impl PipelineOrchestrator {
                 language,
                 quality_steps: cb_quality,
                 speed: cb_speed,
+                voice_id,
             } => {
                 log::info!("[Pipeline] Warming up TTS worker (Chatterbox)...");
                 let chatterbox_path = crate::utils::paths::model_dir("tts").join("chatterbox");
+                let ref_audio = resolve_reference_audio(voice_id.as_deref());
                 Box::new(
-                    ChatterboxEngine::new(&chatterbox_path, language, *cb_quality, *cb_speed)
+                    ChatterboxEngine::new(&chatterbox_path, language, *cb_quality, *cb_speed, ref_audio.as_deref())
                         .map_err(|e| format!("Failed to create Chatterbox engine: {}", e))?,
                 )
             }
@@ -281,6 +319,7 @@ impl PipelineOrchestrator {
                 quality_steps: remote_quality,
                 speed: remote_speed,
                 remote_path,
+                voice_id: _,    // Phase D: remote voice forwarding not yet implemented
             } => {
                 log::info!("[Pipeline] Warming up TTS worker (ChatterboxRemote)...");
                 Box::new(

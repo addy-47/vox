@@ -35,6 +35,10 @@ fn write_wav(
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
+
+    /// Reference audio file path for Chatterbox voice cloning
+    #[arg(long, global = true)]
+    tts_voice: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -49,7 +53,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Command::Bench) {
         Command::Bench => run_bench(),
-        Command::Compare => run_compare(),
+        Command::Compare => run_compare(cli.tts_voice.as_deref()),
     }
 }
 
@@ -185,7 +189,7 @@ fn run_bench() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_compare() -> anyhow::Result<()> {
+fn run_compare(tts_voice: Option<&str>) -> anyhow::Result<()> {
     use vox_lib::services::tts::providers::TtsProvider;
 
     fn run_tts(name: &str, text: &str, engine: &mut dyn TtsProvider) -> anyhow::Result<()> {
@@ -259,7 +263,7 @@ fn run_compare() -> anyhow::Result<()> {
     println!("\x1b[32m[TTS-Compare]\x1b[0m Loading Chatterbox...");
     let cb_model_path = models_dir.join("tts/chatterbox");
     let mut chatterbox =
-        vox_lib::services::tts::ChatterboxEngine::new(&cb_model_path, "en", 10, 1.0)?;
+        vox_lib::services::tts::ChatterboxEngine::new(&cb_model_path, "en", 10, 1.0, tts_voice)?;
     run_tts("Chatterbox", text, &mut chatterbox)?;
 
     println!("\n\x1b[32m[TTS-Compare]\x1b[0m Done!");

@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback, memo } from "react";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import { 
   Brain, Volume2, Database, Trash2,
   Languages, Activity, Sparkles, Check, ArrowLeft,
   Download, RefreshCw, Info, AlertCircle, Network,
-  ChevronLeft, ChevronRight, Loader2
+  ChevronLeft, ChevronRight, Loader2, Folder, Mic
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RemoteModelInfo } from "@/store/settingsStore";
@@ -83,30 +84,32 @@ const pulseStyles = `
 }
 `;
 
+
+
 function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean }) {
   const hash = Array.from(seed).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const bars = Array.from({ length: 12 }, (_, i) => {
-    const val = ((hash * (i + 1)) % 18) + 6;
+  const bars = Array.from({ length: 16 }, (_, i) => {
+    const val = ((hash * (i + 1)) % 25) + 10;
     return val;
   });
 
   const animations = [
-    { dur: "0.45s", delay: "0s" },
-    { dur: "0.60s", delay: "-0.4s" },
+    { dur: "0.40s", delay: "0s" },
+    { dur: "0.55s", delay: "-0.3s" },
+    { dur: "0.50s", delay: "-0.1s" },
+    { dur: "0.35s", delay: "-0.6s" },
+    { dur: "0.45s", delay: "-0.7s" },
+    { dur: "0.60s", delay: "-0.1s" },
+    { dur: "0.80s", delay: "-0.4s" },
     { dur: "0.55s", delay: "-0.2s" },
-    { dur: "0.40s", delay: "-0.7s" },
-    { dur: "0.50s", delay: "-0.8s" },
-    { dur: "0.70s", delay: "-0.1s" },
-    { dur: "0.90s", delay: "-0.5s" },
-    { dur: "0.65s", delay: "-0.3s" },
-    { dur: "0.75s", delay: "-0.6s" },
-    { dur: "0.50s", delay: "-0.2s" },
-    { dur: "0.60s", delay: "-0.5s" },
-    { dur: "0.45s", delay: "-0.1s" },
+    { dur: "0.65s", delay: "-0.5s" },
+    { dur: "0.45s", delay: "-0.2s" },
+    { dur: "0.55s", delay: "-0.4s" },
+    { dur: "0.40s", delay: "-0.1s" },
   ];
 
   return (
-    <div className="flex items-end justify-center gap-[3px] h-6 px-3 py-0.5">
+    <div className="flex items-end justify-center gap-[3px] h-10 px-3 py-0.5">
       {bars.map((h, i) => {
         const anim = animations[i % animations.length];
         return (
@@ -130,15 +133,38 @@ function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean }) {
   );
 }
 
-function VoiceCarousel({ voices, selected, onChange, disabled }: {
-  voices: { id: number; name: string }[];
-  selected: number;
-  onChange: (id: number) => void;
+function VoiceCarousel({
+  voices,
+  selected,
+  onChange,
+  disabled,
+  onVoicesChanged,
+  isAdding,
+  setIsAdding,
+}: {
+  voices: { id: string; name: string; isCustom?: boolean }[];
+  selected: string;
+  onChange: (id: string) => void;
   disabled?: boolean;
+  onVoicesChanged?: () => void;
+  isAdding: boolean;
+  setIsAdding: (val: boolean) => void;
 }) {
   const index = voices.findIndex(v => v.id === selected);
   const activeIndex = index === -1 ? 0 : index;
   const currentVoice = voices[activeIndex];
+
+  const [activeTab, setActiveTab] = useState<'upload' | 'record'>('upload');
+  const [newVoiceName, setNewVoiceName] = useState("");
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [cloningStatus, setCloningStatus] = useState<string | null>(null);
+
+  // Recording states
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [recordedPcm, setRecordedPcm] = useState<number[] | null>(null);
+  const [recordedSampleRate, setRecordedSampleRate] = useState<number>(0);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
 
   const cycle = (dir: number) => {
     if (disabled || voices.length === 0) return;
@@ -146,52 +172,290 @@ function VoiceCarousel({ voices, selected, onChange, disabled }: {
     onChange(voices[next].id);
   };
 
+  const handleSelectFile = async () => {
+    try {
+      const file = await open({
+        filters: [{ name: "Audio Files", extensions: ["wav", "mp3", "flac", "m4a", "aac"] }],
+        multiple: false,
+      });
+      if (file) {
+        setSelectedFile(typeof file === "string" ? file : (file as any).path || "");
+        setActiveTab("upload");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Recording counter/auto-stop
+  useEffect(() => {
+    let interval: any = null;
+    if (isRecording) {
+      interval = setInterval(() => {
+        setRecordingDuration(d => {
+          if (d >= 30) {
+            handleStopRecording();
+            return 30;
+          }
+          return d + 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRecording]);
+
+  const handleStartRecording = async () => {
+    setRecordingError(null);
+    setRecordedPcm(null);
+    setRecordedSampleRate(0);
+    setRecordingDuration(0);
+    setActiveTab("record");
+    try {
+      await invoke("start_backend_recording");
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Failed to start backend recording:", err);
+      setRecordingError(String(err));
+    }
+  };
+
+  const handleStopRecording = async () => {
+    try {
+      const [samples, sampleRate] = await invoke<[number[], number]>("stop_backend_recording");
+      setRecordedPcm(samples);
+      setRecordedSampleRate(sampleRate);
+    } catch (err) {
+      console.error("Failed to stop backend recording:", err);
+      setRecordingError(String(err));
+    } finally {
+      setIsRecording(false);
+    }
+  };
+
+  const resetAddingState = () => {
+    setIsAdding(false);
+    setSelectedFile(null);
+    setNewVoiceName("");
+    setCloningStatus(null);
+    invoke("stop_backend_recording").catch(() => {});
+    setIsRecording(false);
+    setRecordedPcm(null);
+    setRecordedSampleRate(0);
+    setRecordingDuration(0);
+    setRecordingError(null);
+  };
+
+  const handleCloneVoice = async () => {
+    if (!newVoiceName.trim()) return;
+    setCloningStatus("Cloning...");
+    try {
+      let entry;
+      if (activeTab === "upload") {
+        if (!selectedFile) return;
+        entry = await invoke<any>("add_voice_from_file", {
+          name: newVoiceName.trim(),
+          filePath: selectedFile,
+        });
+      } else {
+        if (!recordedPcm || recordedSampleRate === 0) return;
+        entry = await invoke<any>("add_voice_from_recording", {
+          name: newVoiceName.trim(),
+          pcmF32: recordedPcm,
+          sampleRate: recordedSampleRate,
+        });
+      }
+      setCloningStatus(null);
+      resetAddingState();
+      if (onVoicesChanged) onVoicesChanged();
+      onChange(entry.id);
+    } catch (err) {
+      setCloningStatus(String(err));
+    }
+  };
+
+  const handleDeleteVoice = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this custom voice?")) return;
+    try {
+      await invoke("delete_voice", { id });
+      if (onVoicesChanged) onVoicesChanged();
+      onChange("default");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (isAdding) {
+    return (
+      <div className={cn(
+        "flex flex-col justify-between w-full h-full min-h-[160px] py-1 select-none",
+        disabled && "opacity-50 pointer-events-none"
+      )}>
+        {/* Underlined Name Input & Inline Triggers */}
+        <div className="flex items-center gap-3 border-b border-[rgba(var(--border),0.12)] focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-1 mb-2 mt-2">
+          <input
+            type="text"
+            value={newVoiceName}
+            onChange={(e) => setNewVoiceName(e.target.value)}
+            placeholder="Voice Name"
+            className="flex-1 bg-transparent border-none outline-none text-[12px] py-1 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30 font-bold"
+          />
+          
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Folder Icon (Upload File) */}
+            <button
+              type="button"
+              onClick={handleSelectFile}
+              disabled={isRecording}
+              className={cn(
+                "p-2 rounded-lg transition-all duration-300 hover:bg-[rgb(var(--foreground))]/5",
+                selectedFile
+                  ? "text-emerald-400 bg-emerald-500/8"
+                  : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))]"
+              )}
+              title={selectedFile ? `File Selected: ${selectedFile.split(/[/\\]/).pop()}` : "Choose WAV File"}
+            >
+              <Folder size={16} />
+            </button>
+
+            {/* Mic Icon (Record Mic) */}
+            <button
+              type="button"
+              onClick={isRecording ? handleStopRecording : handleStartRecording}
+              className={cn(
+                "p-2 rounded-lg transition-all duration-300 relative",
+                isRecording
+                  ? "text-rose-400 bg-rose-500/12 hover:bg-rose-500/20"
+                  : recordedPcm
+                    ? "text-emerald-400 bg-emerald-500/8 hover:bg-emerald-500/15"
+                    : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/5"
+              )}
+              title={isRecording ? "Stop Recording" : "Record Voice"}
+            >
+              {isRecording && (
+                <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75 top-1 right-1"></span>
+              )}
+              <Mic size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Dynamic Status Display */}
+        <div className="flex-1 flex flex-col justify-center min-h-[40px] my-1">
+          {isRecording && (
+            <div className="text-[10px] text-rose-400 font-bold flex items-center justify-center gap-1.5 animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+              Recording... {recordingDuration}s / 30s
+            </div>
+          )}
+          {!isRecording && recordedPcm && (
+            <div className="text-[10px] text-emerald-400 font-bold text-center">
+              ✓ Audio recorded ({recordingDuration}s)
+            </div>
+          )}
+          {!isRecording && selectedFile && (
+            <div className="text-[10px] text-emerald-400 font-bold text-center max-w-full truncate px-2" title={selectedFile}>
+              ✓ Selected: {selectedFile.split(/[/\\]/).pop()}
+            </div>
+          )}
+          {!isRecording && recordedPcm && recordingDuration < 10 && (
+            <div className="text-[9px] text-amber-400 font-medium text-center leading-tight">
+              ⚠️ Too short ({recordingDuration}s). Minimum is 10s.
+            </div>
+          )}
+          {recordingError && (
+            <div className="text-[9px] text-rose-400 font-medium text-center leading-tight">
+              {recordingError}
+            </div>
+          )}
+          {cloningStatus && (
+            <div className="text-[10px] text-amber-400 font-bold text-center leading-tight">
+              {cloningStatus}
+            </div>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-2 mt-2 shrink-0">
+          <button
+            type="button"
+            onClick={resetAddingState}
+            className="flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgba(var(--foreground),0.05)] transition-all duration-300"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleCloneVoice}
+            disabled={
+              !newVoiceName.trim() ||
+              (activeTab === 'upload' && !selectedFile) ||
+              (activeTab === 'record' && (!recordedPcm || recordingDuration < 10)) ||
+              cloningStatus === "Cloning..." ||
+              isRecording
+            }
+            className="flex-[2] py-2 rounded-xl text-[10px] font-black uppercase tracking-wider bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-[1.01] active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all duration-300"
+          >
+            {cloningStatus === "Cloning..." ? "Processing..." : "Clone"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cn(
-      "bg-transparent border border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.12)] transition-all duration-300 rounded-xl p-3 flex flex-col justify-between h-full w-full",
-      disabled && "opacity-50"
+      "relative flex flex-col justify-between w-full h-full min-h-[160px] py-1 select-none",
+      disabled && "opacity-50 pointer-events-none"
     )}>
-      <span className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 block leading-none">
-        Voice Profile
-      </span>
+      {/* Delete / Dustbin icon on top right for custom voices */}
+      {currentVoice?.isCustom && (
+        <button
+          onClick={() => handleDeleteVoice(currentVoice.id)}
+          className="absolute top-0 right-0 p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-all duration-300 z-10"
+          title="Delete Custom Voice"
+        >
+          <Trash2 size={15} />
+        </button>
+      )}
 
-      <div className="flex items-center justify-between gap-1 my-2">
+      {/* Voice Name on Top */}
+      <div className="text-center w-full mt-1.5 mb-3 shrink-0">
+        <span className="text-[14px] font-black tracking-wide block text-[rgb(var(--foreground))]">
+          {currentVoice?.name || "No Voice"}
+        </span>
+        <span className="text-[9px] block leading-normal mt-0.5 font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/40">
+          {currentVoice?.isCustom ? "Custom Clone" : "System Preset"}
+        </span>
+      </div>
+
+      {/* Chevrons with Waveform in the center */}
+      <div className="flex-1 flex items-center justify-between gap-4 w-full px-2">
         <button
           type="button"
           onClick={() => cycle(-1)}
           disabled={disabled || voices.length <= 1}
-          className="p-1 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
+          className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-10"
           aria-label="Previous Voice"
         >
-          <ChevronLeft size={16} />
+          <ChevronLeft size={20} />
         </button>
 
-        <div className="flex-1 text-center min-w-0">
-          <span className={cn(
-            "text-[12px] font-black tracking-wide block truncate text-[rgb(var(--foreground))]"
-          )}>
-            {currentVoice?.name || "No Voice"}
-          </span>
-          <span className={cn(
-            "text-[9px] block leading-normal mt-0.5 truncate text-[rgb(var(--foreground-muted))]/70"
-          )}>
-            Voice #{currentVoice?.id ?? 0}
-          </span>
+        {/* Bigger Center Waveform */}
+        <div className="flex-1 flex items-center justify-center min-w-0 h-12">
+          <VoiceBars seed={currentVoice?.name || "default"} disabled={disabled} />
         </div>
 
         <button
           type="button"
           onClick={() => cycle(1)}
           disabled={disabled || voices.length <= 1}
-          className="p-1 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
+          className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-10"
           aria-label="Next Voice"
         >
-          <ChevronRight size={16} />
+          <ChevronRight size={20} />
         </button>
-      </div>
-
-      <div className="flex items-center justify-center py-1 shrink-0">
-        <VoiceBars seed={currentVoice?.name || "default"} disabled={disabled} />
       </div>
     </div>
   );
@@ -396,6 +660,32 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [outdatedModels, setOutdatedModels] = useState<string[]>([]);
   const [manifest, setManifest] = useState<VoxManifest | null>(null);
+
+  interface CustomVoice {
+    id: string;
+    name: string;
+    source_kind: string;
+    has_preview: boolean;
+    created_at: number;
+  }
+
+  const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
+  const [chatterboxIsAdding, setChatterboxIsAdding] = useState(false);
+
+  const loadCustomVoices = useCallback(async () => {
+    try {
+      const list = await invoke<CustomVoice[]>("list_voices");
+      setCustomVoices(list);
+    } catch (e) {
+      console.error("Failed to list voices", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activePipelineTab === "tts") {
+      loadCustomVoices();
+    }
+  }, [activePipelineTab, loadCustomVoices]);
 
   // Chatterbox Remote setup & health states
   const [isRemoteTtsHealthy, setIsRemoteTtsHealthy] = useState<boolean | null>(null);
@@ -1673,9 +1963,41 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                 </div>
               ) : (() => {
                 const isChatterbox = draftSettings.tts.provider?.kind?.startsWith("chatterbox");
+                const simplifyVoiceName = (n: string) => {
+                  if (n.includes("Pain")) return "Pain";
+                  if (n.includes("Madara")) return "Madara";
+                  if (n.includes("Shreya")) return "Shreya";
+                  if (n.includes("Hayami")) return "Hayami";
+                  if (n.includes("Ellen")) return "Ellen";
+                  if (n.includes("Juniper")) return "Juniper";
+                  if (n.includes("Mark")) return "Mark";
+                  if (n.includes("Spuds")) return "Spuds";
+                  return n;
+                };
+
                 const voices = isChatterbox 
-                  ? [{ id: 0, name: "Default (Chatterbox)" }]
-                  : (modelCatalog?.voices || []);
+                  ? [
+                      { id: "default", name: "Default" },
+                      ...customVoices.map(v => ({ id: v.id, name: simplifyVoiceName(v.name), isCustom: true }))
+                    ]
+                  : (modelCatalog?.voices || []).map(v => ({ id: String(v.id), name: simplifyVoiceName(v.name) }));
+
+                const selectedVoiceId = isChatterbox 
+                  ? (draftSettings.tts.provider?.kind === "chatterbox" ? (draftSettings.tts.provider as any).voice_id || "default" : "default")
+                  : String(draftSettings.tts.voice);
+
+                const handleVoiceChange = (id: string) => {
+                  if (isChatterbox) {
+                    const voiceIdVal = id === "default" ? null : id;
+                    updateDraft("tts", "provider", {
+                      ...draftSettings.tts.provider,
+                      voice_id: voiceIdVal
+                    });
+                  } else {
+                    updateDraft("tts", "voice", Number(id));
+                  }
+                };
+
                 const canShowVoiceProfile = isTtsVerified || draftSettings.tts.provider?.kind === "chatterbox_remote";
 
                 return (
@@ -1684,112 +2006,143 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                     "w-full items-stretch",
                     layoutMode === "small" ? "flex flex-col gap-3" : "flex flex-row gap-4"
                   )}>
-                    {/* Left column: Custom tailored Quality, Speed or Language selectors */}
-                    <div className="flex-[3] flex flex-col gap-3.5 min-w-0">
-                      {isChatterbox ? (
-                        <>
-                          {/* Chatterbox Quality Slider (cfm_steps) */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality Steps (CFM)</span>
-                              <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
-                                {((draftSettings.tts.provider as any).quality_steps || 8)} steps
-                              </span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="2" max="12" step="1"
-                              value={((draftSettings.tts.provider as any).quality_steps || 8)}
-                              onChange={(e) => {
-                                updateDraft("tts", "provider", {
-                                  ...draftSettings.tts.provider,
-                                  quality_steps: Number(e.target.value)
-                                });
-                              }}
-                              className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
-                            />
-                          </div>
-
-                          {/* Chatterbox Speed Slider */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
-                              <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
-                                {((draftSettings.tts.provider as any).speed || 1.0).toFixed(2)}x
-                              </span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="0.7" max="2.0" step="0.05"
-                              value={((draftSettings.tts.provider as any).speed || 1.0)}
-                              onChange={(e) => {
-                                updateDraft("tts", "provider", {
-                                  ...draftSettings.tts.provider,
-                                  speed: Number(e.target.value)
-                                });
-                              }}
-                              className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
-                            />
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          {/* Supertonic Quality Steps */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
-                              <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
-                                {draftSettings.tts.quality_steps <= 4 ? "Speed" : draftSettings.tts.quality_steps <= 8 ? "Quality" : "Best"}
-                              </span>
-                            </div>
-                            <div className="flex gap-1">
-                              {[2, 4, 6, 8, 10, 12].map(step => (
-                                <button key={step} onClick={() => updateDraft("tts", "quality_steps", step)}
-                                  className={cn(
-                                    "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-                                    draftSettings.tts.quality_steps === step
-                                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                                      : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
-                                  )}
-                                >{step}</button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Supertonic Speed */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
-                              <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.tts.speed.toFixed(2)}x</span>
-                            </div>
-                            <input 
-                              type="range" 
-                              min="0.7" max="2.0" step="0.05"
-                              value={draftSettings.tts.speed}
-                              onChange={(e) => updateDraft("tts", "speed", Number(e.target.value))}
-                              className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Right column: Voice Carousel */}
+                    {/* Left column: Voice Carousel (60% width) */}
                     <div className={cn(
-                      "shrink-0",
-                      layoutMode === "small" ? "w-full" : "w-2/5 min-w-[150px]"
+                      "shrink-0 flex flex-col justify-center",
+                      layoutMode === "small" ? "w-full" : "w-[60%] min-w-[200px]"
                     )}>
                       {canShowVoiceProfile ? (
                         <VoiceCarousel
-                          voices={voices}
-                          selected={draftSettings.tts.voice}
-                          onChange={(id) => updateDraft("tts", "voice", id)}
+                          voices={voices as any}
+                          selected={selectedVoiceId as any}
+                          onChange={handleVoiceChange as any}
                           disabled={false}
+                          onVoicesChanged={loadCustomVoices}
+                          isAdding={chatterboxIsAdding}
+                          setIsAdding={setChatterboxIsAdding}
                         />
                       ) : (
                         <div className="flex items-center justify-center h-full min-h-[100px] border border-dashed border-[rgba(var(--accent),0.15)] rounded-lg text-[rgb(var(--foreground-muted))]/60 text-[11px] font-bold uppercase tracking-wider text-center p-2 leading-tight">
                           Deploy Remote Server first
                         </div>
+                      )}
+                    </div>
+
+                    {/* Right column: Quality & Speed Sliders + Clone Button (40% width) */}
+                    <div className="flex-1 flex flex-col justify-between gap-3.5 min-w-0">
+                      <div className="flex flex-col gap-3.5">
+                        {isChatterbox ? (
+                          <>
+                            {/* Chatterbox Quality Slider (cfm_steps) */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
+                                <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+                                  {((draftSettings.tts.provider as any).quality_steps || 8)} steps
+                                </span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="2" max="12" step="1"
+                                value={((draftSettings.tts.provider as any).quality_steps || 8)}
+                                onChange={(e) => {
+                                  updateDraft("tts", "provider", {
+                                    ...draftSettings.tts.provider,
+                                    quality_steps: Number(e.target.value)
+                                  });
+                                }}
+                                className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
+                              />
+                            </div>
+
+                            {/* Chatterbox Speed Slider */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
+                                <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+                                  {((draftSettings.tts.provider as any).speed || 1.0).toFixed(2)}x
+                                </span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="0.7" max="2.0" step="0.05"
+                                value={((draftSettings.tts.provider as any).speed || 1.0)}
+                                onChange={(e) => {
+                                  updateDraft("tts", "provider", {
+                                    ...draftSettings.tts.provider,
+                                    speed: Number(e.target.value)
+                                  });
+                                }}
+                                className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            {/* Supertonic Quality Steps */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
+                                <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+                                  {draftSettings.tts.quality_steps <= 4 ? "Speed" : draftSettings.tts.quality_steps <= 8 ? "Quality" : "Best"}
+                                </span>
+                              </div>
+                              <div className="flex gap-1">
+                                {[2, 4, 6, 8, 10, 12].map(step => (
+                                  <button key={step} onClick={() => updateDraft("tts", "quality_steps", step)}
+                                    className={cn(
+                                      "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                                      draftSettings.tts.quality_steps === step
+                                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                                        : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
+                                    )}
+                                  >{step}</button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Supertonic Speed */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
+                                <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.tts.speed.toFixed(2)}x</span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="0.7" max="2.0" step="0.05"
+                                value={draftSettings.tts.speed}
+                                onChange={(e) => updateDraft("tts", "speed", Number(e.target.value))}
+                                className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Clone Voice button (toggles isAdding on the left) */}
+                      {isChatterbox && (
+                        <button
+                          type="button"
+                          onClick={() => setChatterboxIsAdding(prev => !prev)}
+                          className={cn(
+                            "w-full py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(var(--accent),0.1)]",
+                            chatterboxIsAdding
+                              ? "bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20"
+                              : "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-[1.01] active:scale-95 hover:shadow-[0_0_16px_rgba(var(--accent),0.25)]"
+                          )}
+                        >
+                          {chatterboxIsAdding ? (
+                            <>
+                              <ArrowLeft size={11} />
+                              Back to Presets
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={11} />
+                              Clone Voice Profile
+                            </>
+                          )}
+                        </button>
                       )}
                     </div>
                   </div>
