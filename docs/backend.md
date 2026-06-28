@@ -86,7 +86,7 @@ Every component must minimize:
     ├── VAD (Actor -> Engine: Earshot / TenVAD via VadEngine trait)
     ├── STT (Actor -> Engine: Nvidia Nemotron-3.5 / Qwen3-ASR via SttEngine trait)
     ├── LLM (Actor -> Provider: Embedded / OpenAiCompat via LlmProvider trait)
-    ├── TTS (Actor -> Provider: Supertonic 3 via TtsProvider trait)
+    ├── TTS (Actor -> Provider: Supertonic 3 / Chatterbox / ChatterboxRemote via TtsProvider trait)
     ├── Pipeline (Orchestrator: LLM→TTS→Playback coordination)
     ├── Playback (CPAL output, jitter buffer, upsampling)
     ├── PTT (Push-to-talk mode)
@@ -195,94 +195,122 @@ if pushed < resampled_buffer.len() {
 }
 ```
 
-## 5. Directory Structure (src/)
+## 6. Directory Structure (src/)
 
 The backend is organized into domain-specific modules. Services use the **Actor-Engine pattern**:
 
 ```
 src/
 ├── lib.rs            # Tauri app entry, plugin init, engine lifecycle
-├── main.rs           # Binary entry point
+├── main.rs           # Binary entry point (just calls vox_lib::run())
+├── tray.rs           # Tray icon, overlay window management
+├── wizard.rs         # Setup wizard window config + model health checks
 ├── core/
-│   ├── events.rs     # VoxEvent enum (pipeline signals)
-│   ├── settings.rs   # VoxSettings struct + reload policies
-│   ├── state.rs      # InteractionState, InteractionOwner, PipelineAtomics
-│   ├── constants.rs  # Model paths, timing, system prompts
+│   ├── mod.rs        # Module declarations
+│   ├── events.rs     # VoxEvent enum (16 pipeline signal variants)
+│   ├── settings.rs   # VoxSettings struct + 12 sub-settings + reload policies
+│   ├── state.rs      # AppState, VoxEngine, PipelineAtomics, PttState, InteractionState
+│   ├── constants.rs  # Model paths, timing, system prompts (modular + realtime)
 │   └── metrics.rs    # MetricField, PipelineMetrics
 ├── services/
-│   ├── mod.rs        # Service registration
-│   ├── pipeline.rs   # Pipeline orchestrator (LLM→TTS→Playback)
+│   ├── mod.rs        # Service module declarations
+│   ├── pipeline.rs   # Pipeline orchestrator (~1572 lines, LLM→TTS→Playback)
 │   ├── utils.rs      # should_flush, count_words, is_devanagari, transliterate, stitch
+│   ├── ptt.rs        # Push-to-talk mode (VAD gate, realtime support, speech_detected)
+│   ├── translit.rs   # Transliteration (Devanagari→Roman, ONNX encoder-decoder)
 │   ├── audio/
 │   │   ├── mod.rs    # Module exports (AudioStream, PlaybackEngine, AudioRouter, RouteMode)
-│   │   ├── device.rs # Audio capture (cpal ring buffer)
-│   │   ├── playback.rs # Playback engine (cubic Hermite upsample, jitter buffer, fade)
-│   │   └── router.rs # Audio router — VAD or realtime routing, pause gating
-│   ├── realtime/
-│   │   ├── mod.rs    # RealtimeVoiceProvider + RealtimeSession traits
-│   │   ├── engine.rs # RealtimeEngine orchestrator (start/stop/barge_in)
-│   │   ├── audio_bridge.rs # PCM → WebSocket sender (resampling, base64)
-│   │   ├── playback_bridge.rs # WebSocket receiver → PlaybackEngine
-│   │   ├── resampler.rs # rubato-based sample rate conversion
-│   │   └── providers/
-│   │       ├── mod.rs
-│   │       └── gemini_live.rs # Full Gemini Live WebSocket integration (855 lines)
-│   ├── ptt.rs        # Push-to-talk mode (VAD gate, realtime support, speech_detected)
-│   ├── translit.rs   # Transliteration (Devanagari→Roman, ONNX model)
-│   ├── llm/
-│   │   ├── mod.rs     # Module entry + LlmEngine trait + global_llama_backend() singleton
-│   │   ├── actor.rs   # Command/Event handler (spawn_llm_worker)
-│   │   ├── llama_cpp.rs  # LlamaEngine (LLM inference via llama.cpp)
-│   │   └── providers/    # embedded.rs, openai_compat.rs
+│   │   ├── device.rs # Audio capture (cpal ring buffer, zero-alloc callback)
+│   │   ├── playback.rs # Playback engine (Cubic Hermite upsample, jitter buffer, fade)
+│   │   ├── router.rs # Audio router — VAD or realtime routing, pause gating
+│   │   └── decode.rs # decode_to_24khz_mono(), DecodedAudio, write_wav_f32()
+│   ├── vad/
+│   │   ├── mod.rs    # VadEngine trait + VadBackend enum dispatch (Ten/Earshot)
+│   │   ├── actor.rs  # spawn_vad_actor() — dedicated OS thread, Max priority, VadCommand handler
+│   │   ├── earshot_vad.rs # Earshot VAD (default, pure Rust energy-based, embedded NN weights)
+│   │   └── ten_onnx.rs    # Ten VAD (legacy, ONNX via sherpa-onnx)
 │   ├── stt/
-│   │   ├── mod.rs           # SttEngine trait
-│   │   ├── actor.rs
-│   │   ├── nemotron_onnx.rs # Nemotron-3.5 ASR (primary, parakeet-rs)
-│   │   └── qwen_onnx.rs     # Qwen3-ASR (legacy, sherpa-onnx)
+│   │   ├── mod.rs           # SttEngine + SttProvider traits
+│   │   ├── actor.rs         # spawn_stt_worker() — dedicated OS thread
+│   │   ├── nemotron_onnx.rs # Nemotron-3.5 ASR (primary, parakeet-rs, FastConformer-RNNT)
+│   │   ├── qwen_onnx.rs     # Qwen3-ASR (legacy, sherpa-onnx)
+│   │   └── providers/
+│   │       ├── mod.rs       # SttProvider trait + SttProviderKind enum
+│   │       └── embedded.rs  # EmbeddedSttProvider — wraps qwen/nemotron engines
+│   ├── llm/
+│   │   ├── mod.rs            # Module + LlmEngine trait + global_llama_backend() singleton
+│   │   ├── actor.rs          # spawn_llm_worker() — persistent OS thread
+│   │   ├── llama_cpp.rs      # LlamaEngine (llama.cpp bindings via llama-cpp-4)
+│   │   └── providers/
+│   │       ├── mod.rs        # LlmProvider trait + ProviderKind enum
+│   │       ├── embedded.rs   # EmbeddedProvider (local GGUF)
+│   │       └── openai_compat.rs # OpenAiCompatProvider (unified cloud hub)
 │   ├── tts/
 │   │   ├── mod.rs
-│   │   ├── actor.rs
+│   │   ├── actor.rs     # spawn_tts_worker() — accepts Box<dyn TtsProvider>
 │   │   └── providers/
-│   │       ├── mod.rs        # TtsProvider trait + TtsProviderKind enum
-│   │       └── supertonic.rs # Supertonic 3 implementation (sherpa-onnx, anti-aliasing LPF)
-│   ├── vad/
-│   │   ├── mod.rs           # VadEngine trait + VadBackend enum dispatch
-│   │   ├── actor.rs
-│   │   ├── earshot_vad.rs   # Earshot (default, pure Rust energy-based)
-│   │   └── ten_onnx.rs      # Ten VAD (legacy, ONNX via sherpa-onnx)
+│   │       ├── mod.rs            # TtsProvider trait + TtsProviderKind enum
+│   │       ├── supertonic.rs     # Supertonic 3 (sherpa-onnx, anti-aliasing LPF, 44kHz→24kHz)
+│   │       ├── chatterbox.rs     # ChatterboxEngine (local GGML, voice cloning, native 24kHz)
+│   │       └── chatterbox_remote.rs # ChatterboxRemoteProvider (remote GPU server, reqwest blocking)
+│   └── realtime/
+│       ├── mod.rs           # RealtimeVoiceProvider + RealtimeSession traits
+│       ├── engine.rs        # RealtimeEngine orchestrator (start/stop/barge_in)
+│       ├── audio_bridge.rs  # PCM → WebSocket sender (resampling, i16 conversion)
+│       ├── playback_bridge.rs # WebSocket receiver → PlaybackEngine
+│       ├── resampler.rs     # rubato-based sample rate conversion
+│       └── providers/
+│           ├── mod.rs
+│           ├── gemini_live.rs  # Full Gemini Live WebSocket (910 lines)
+│           └── deepgram_live.rs # Deepgram Voice Agent WebSocket (657 lines)
 ├── ipc/
 │   ├── mod.rs
-│   ├── pipeline.rs  # launch_engine, stop_engine, engage, start_realtime_session,
-│   │                # pause_pipeline, resume_pipeline, get_realtime_session_cache
-│   ├── settings.rs  # get_settings, update_setting, request_model_catalog
-│   ├── tray.rs      # hide_tray_window, position_tray_window
+│   ├── pipeline.rs  # launch_engine, stop_engine, engage, start/stop_realtime_session, pause/resume
+│   ├── settings.rs  # get_settings, update_setting, request_model_catalog, health checks
+│   ├── tray.rs      # hide_tray_window, sync_hud_visibility, toggle_hud_visibility
 │   ├── history.rs   # get_sessions, get_turns, delete_session
-│   ├── audio.rs     # Audio device listing
+│   ├── audio.rs     # list_input_devices
+│   ├── voices.rs    # Voice library CRUD (~725 lines — add_voice, list_voices, preview, clone)
 │   ├── monitoring.rs # Runtime snapshot retrieval
-│   └── setup.rs     # Boot state, model catalog
+│   └── setup.rs     # Boot state, manifest, model management
 ├── persistence/
 │   ├── mod.rs
-│   ├── db.rs         # SQLite schema + connection
-│   └── events.rs     # PersistenceEvent enum
+│   ├── db.rs        # VoxDb — SQLite wrapper (rusqlite)
+│   ├── events.rs    # PersistenceEvent enum
+│   ├── schema.rs    # run_migrations()
+│   ├── voices.rs    # VoiceEntry struct, CRUD for voice library
+│   └── worker.rs    # spawn_persistence_worker() — dedicated OS thread
 ├── monitoring/
 │   ├── mod.rs
-│   ├── aggregator.rs # TelemetryAggregator
-│   ├── collector.rs  # Metric collection from atomics
-│   ├── snapshot.rs   # RuntimeSnapshot struct
-│   └── system_monitor.rs # /proc/stat/meminfo polling
+│   ├── aggregator.rs    # TelemetryAggregator — crossbeam-based background worker
+│   ├── collector.rs     # Metric collection from atomics
+│   ├── snapshot.rs      # RuntimeSnapshot struct
+│   ├── runtime_state.rs # MonitoringState struct
+│   ├── system_monitor.rs # /proc/stat/meminfo polling
+│   └── telemetry_emitter.rs # Tauri event emission
 ├── setup/
-│   └── mod.rs        # First-run setup/orientation
-├── tray.rs            # Tray icon, overlay window management
-├── wizard.rs          # Setup wizard window config + model health checks
+│   ├── mod.rs
+│   ├── manifest.rs      # AppManifest, VoxManifest (fetch/cache at boot)
+│   ├── model_manager.rs # ModelManager — download, verify SHA256, setup orchestration
+│   ├── runtime_check.rs # System validation
+│   └── update_check.rs  # Update checking
 ├── utils/
-│   └── paths.rs       # Path resolution (dirs crate, cross-platform)
+│   ├── mod.rs
+│   ├── paths.rs         # Path singleton (dirs crate, cross-platform)
+│   ├── logging.rs       # Tracing init, file rotation
+│   ├── audio_filters.rs # Audio processing filters
+│   └── bench_reporter.rs # BenchReporter — memory snapshots (procfs/Linux)
 └── bin/
-    ├── tts-bench.rs   # TTS-only benchmark
-    ├── vox-bench.rs   # Full pipeline benchmark
-    └── test-translit.rs # Transliteration test
+    ├── vox-bench.rs          # Full pipeline benchmark
+    ├── vox-clone-bench.rs    # Voice clone benchmark
+    ├── vox_realtime_bench.rs # WebSocket realtime benchmark
+    ├── tts-bench.rs          # TTS-only benchmark
+    ├── voice_clone.rs        # Voice clone test binary
+    ├── test-emotion-tags.rs  # Emotion tag test
+    └── test-translit.rs      # Transliteration test
 ```
 
-## 6. Voice Activity Detection (VAD) - Tier 2
+## 7. Voice Activity Detection (VAD) - Tier 2
 
 ---
 
@@ -296,6 +324,10 @@ Each AI domain (VAD, STT, LLM, TTS) follows a strict separation of concerns:
 ---
 
 ### Models (Two Backends)
+
+The `VadBackend` enum in `services/vad/mod.rs` dispatches between the two backends.
+`TenVad` is the default variant but Earshot is preferred for its superior speed and
+zero-dependency footprint.
 
 **Default: Earshot VAD (Rust-native, energy-based)**
 - No model file required — embedded neural weights
@@ -361,16 +393,31 @@ VAD settings (threshold, noise gate, mode, owner) update via `VadCommand` channe
 
 ---
 
-## 7. Speech-to-Text (STT) - Tier 2
+## 8. Speech-to-Text (STT) - Tier 2
 
 
 
 ---
 
 
+### Provider Architecture
+
+STT supports a two-level engine/provider dispatch:
+
+```
+SttEngine trait (low-level ASR engine):
+   ├── NemotronEngine  (primary, parakeet-rs, FastConformer-RNNT)
+   └── QwenEngine      (legacy, sherpa-onnx)
+
+SttProvider trait (wraps engines for pipeline):
+   ├── EmbeddedSttProvider  (wraps Nemotron/Qwen engines in services/stt/providers/embedded.rs)
+   └── Cloud               (returns "not yet implemented")
+```
+
+`SttProviderKind`: `Embedded` or `Cloud`. The pipeline constructs an `EmbeddedSttProvider`
+from the configured ASR engine. The `Cloud` variant is reserved for future remote STT APIs.
+
 ### Models
-
-
 
 **Default: Nemotron-3.5** (ONNX INT8, ~657 MB encoder, ~99 MB decoder_joint)
 
@@ -378,7 +425,7 @@ VAD settings (threshold, noise gate, mode, owner) update via `VadCommand` channe
 
 - Files: `encoder.onnx`, `decoder_joint.onnx`, `config.json`, `tokenizer.model`
 
-- Memory: ~1,265 MB RSS
+- Memory: ~2,500 MB RSS
 
 - RTF: 0.02–0.35× (average 0.18×)
 
@@ -505,7 +552,7 @@ Partials are UI feedback only. The `Final` transcript is authoritative.
 ---
 
 
-## 8. Language Model (LLM) - Tier 3
+## 9. Language Model (LLM) - Tier 3
 
 ---
 
@@ -674,22 +721,22 @@ if !delta.is_empty() {
 }
 ```
 
-## 9. Text-to-Speech
+## 10. Text-to-Speech
 
 ---
 
 ### Decoupled TTS Provider Architecture
 
-The TTS subsystem was refactored from a single Supertonic-only engine into a **trait-based
-provider system** mirroring the LLM `LlmProvider` pattern. This allows Vox to switch between
-local and (future) remote TTS providers without changing the core pipeline loop:
+The TTS subsystem is built on a **trait-based provider system** mirroring the LLM
+`LlmProvider` pattern, with three provider implementations:
 
 ```text
 Vox Pipeline
     └─ TTS Worker Thread (spawn_tts_worker)
            └─ TtsProvider Trait (services/tts/providers/mod.rs)
-                  └─ TtsEngine (Supertonic 3, local sherpa-onnx)
-                  └─ (future) Pocket, OmniVoice, etc.
+                  ├─ Supertonic 3 (sherpa-onnx, 99M param, INT8, 44kHz→24kHz)
+                  ├─ ChatterboxEngine (local GGML, 340M param, voice cloning, native 24kHz)
+                  └─ ChatterboxRemoteProvider (remote GPU server, reqwest blocking PCM stream)
 ```
 
 The trait uses `&self` (interior mutability via `Mutex`/`Atomic*`) instead of `&mut self`
@@ -721,7 +768,8 @@ pub trait TtsProvider: Send + 'static {
 ```rust
 pub enum TtsProviderConfig {
     Supertonic,
-    // Future: Pocket, OmniVoice, ...
+    Chatterbox,
+    ChatterboxRemote,
 }
 ```
 
@@ -737,7 +785,7 @@ any provider when adding new ones.
 
 * 99M param flow-matching, INT8 quantized (~144MB), 31 languages, 10 voices (sherpa-onnx native)
 * Located at `services/tts/providers/supertonic.rs`
-* Output: 24 kHz f32 mono
+* Output: 24 kHz f32 mono (vocoder at 44.1kHz, downsampled with anti-aliasing LPF)
 
 ---
 
@@ -764,6 +812,27 @@ for i in 0..output_samples {
 
 The filter coefficients (`BiquadCoefficients`) use the standard RBJ biquad formulae.
 No external DSP library required.
+
+---
+
+### Provider Implementation: ChatterboxEngine
+
+* 340M param, GGML format (native via `ggml` crate)
+* **Voice cloning from 5s reference audio** — no fine-tuning required
+* Native 24kHz output (no resampling step needed)
+* Memory: ~1.1 GB RSS
+* Located at `services/tts/providers/chatterbox.rs`
+* Supports `cancel()` for barge-in via atomic flag
+
+---
+
+### Provider Implementation: ChatterboxRemoteProvider
+
+* Remote GPU server integration via `reqwest` blocking HTTP client
+* Streams PCM audio chunks from server, pushes directly to playback ring buffer
+* 0 MB local model memory (all inference on remote GPU)
+* Located at `services/tts/providers/chatterbox_remote.rs`
+* Supports `cancel()` by dropping the HTTP response body
 
 ---
 
@@ -796,14 +865,14 @@ pub enum TtsCommand {
 ### Chunked Synthesis (Quality Mandate)
 
 Tokens flushed to TTS using the fully dynamic `should_flush` algorithm in `utils.rs`.
-See [Section 11: Sub-Sentence Chunking](#sub-sentence-chunking) for the complete algorithm
+See [Section 12: Sub-Sentence Chunking](#sub-sentence-chunking) for the complete algorithm
 description. The TTS engine receives text chunks that are prosodically coherent (end at
 sentence or clause boundaries where possible) without mid-word splits.
 
 
 ---
 
-## 10. Playback Engine (Tier 3)
+## 11. Playback Engine (Tier 3)
 
 ---
 
@@ -883,7 +952,7 @@ if playback_active.load(Ordering::Relaxed) && mode == Speaker {
 
 ---
 
-## 11. Pipeline Orchestrator
+## 12. Pipeline Orchestrator
 
 ---
 
@@ -992,7 +1061,7 @@ impl PipelineAtomics {
 
 ---
 
-## 12. Event Bus
+## 13. Event Bus
 
 ---
 
@@ -1065,7 +1134,7 @@ Gemini Ws Receive:
 
 ---
 
-## 13. Memory Management
+## 14. Memory Management
 
 ---
 
@@ -1079,11 +1148,13 @@ Gemini Ws Receive:
 
 VAD:   ~0.05GB  (~50 MB)
 
-STT:   ~1.27GB  (Nemotron-3.5 ONNX, ~1265 MB actual)
+STT:   ~2.50GB  (Nemotron-3.5 ONNX, from settings metadata)
 
 LLM:   ~0.97GB  (Llama-3.2-1B Q6_K, ~970 MB actual)
 
 TTS:   ~0.02GB  (Supertonic 3 INT8, ~21 MB actual)
+TTS:   ~1.10GB  (ChatterboxEngine GGML, local voice cloning)
+TTS:   ~0.00GB  (ChatterboxRemote, inference on remote GPU)
 
 KV:    ~0.60GB  (llama.cpp KV cache)
 
@@ -1106,7 +1177,7 @@ Total measured peak: ~2.46 GB (well within 8 GB target)
 
 ---
 
-## 14. Lifecycle Management
+## 15. Lifecycle Management
 
 ---
 
@@ -1139,7 +1210,7 @@ if last_interaction.elapsed() > auto_sleep_timeout {
 
 ---
 
-## 15. Persistence Layer (Phase 6)
+## 16. Persistence Layer (Phase 6)
 
 ---
 
@@ -1175,7 +1246,7 @@ pub enum PersistenceEvent {
 
 ---
 
-## 16. Telemetry & Monitoring (Phase 6)
+## 17. Telemetry & Monitoring (Phase 6)
 
 ---
 
@@ -1206,7 +1277,7 @@ pub struct MonitoringState {
 
 ---
 
-## 17. Settings & Hot-Reloading
+## 18. Settings & Hot-Reloading
 
 ---
 
@@ -1220,21 +1291,42 @@ pub struct VoxSettings {
     pub asr: AsrSettings,
     pub llm: LlmSettings,
     pub tts: TtsSettings,
+    pub realtime: RealtimeSettings,
     pub interaction: InteractionSettings,
     pub telemetry: TelemetrySettings,
     pub persistence: PersistenceSettings,
+    pub setup: SetupSettings,
     pub assistant: AssistantSettings,
 }
 ```
+
+### Key Sub-Settings
+
+**`RealtimeSettings`** — Controls the realtime S2S engine:
+```rust
+pub struct RealtimeSettings {
+    pub provider: String,                       // "gemini_live", "openai_realtime", "deepgram_voice_agent", "elevenlabs_convai"
+    pub gemini: GeminiRealtimeConfig,
+    pub openai: OpenAiRealtimeConfig,
+    pub deepgram: DeepgramVoiceAgentConfig,
+    pub elevenlabs: ElevenLabsConvaiConfig,
+    pub idle_timeout_secs: u64,                 // Default: 600
+}
+```
+
+**`AssistantSettings`** — System prompt configuration:
+- `modular_prompt`: Used for the local VAD→STT→LLM→TTS pipeline
+- `realtime_prompt`: Used for the WebSocket-based S2S session
+- Replaces the previous `hindi_prompt`/`english_prompt` split with a single unified prompt per pipeline mode
 
 ---
 
 ### Reload Policies
 
 ```
-Hot:             Apply immediately (UI)
-WorkerCommand:   Send via channel (VAD threshold, system_prompt)
-Restart:        Full pipeline restart (model changes)
+Hot:             Apply immediately (UI, setup, telemetry, persistence, interaction)
+WorkerCommand:   Send via channel (VAD threshold, system_prompt, asr.provider, llm.provider, tts.provider)
+Restart:         Full pipeline restart (model changes, realtime provider, engine-level settings)
 ```
 
 ### Provider Health & Model Discovery
@@ -1243,7 +1335,7 @@ IPC commands `check_llm_provider_health` and `list_remote_llm_models` (in `ipc/s
 
 ---
 
-## 18. PTT Mode (Modular + Realtime)
+## 19. PTT Mode (Modular + Realtime)
 
 ---
 
@@ -1263,7 +1355,7 @@ PTT behavior differs based on the active pipeline mode:
 |---------|------------|-------------|
 | Audio routing | PTT buffer → STT → LLM → TTS | PTT buffer → WebSocket via `activity_start/end` |
 | Server-side VAD | N/A | Disabled (`disabled: true` in setup) |
-| Client-side VAD | Silero classifies speech → discard silent holds | **Required** — gates PCM before sending, prevents hallucination |
+| Client-side VAD | Earshot classifies speech → discard silent holds | **Required** — gates PCM before sending, prevents hallucination |
 | PTT duration cap | 10 min hard limit (`MAX_PTT_SAMPLES`) | 30s long-hold cutoff, auto-sends `ActivityEnd` |
 | Speech discard | No speech → clear buffer, skip `SttCommand::Final` | No speech → no `ActivityEnd` sent, server stays silent |
 
@@ -1272,7 +1364,7 @@ PTT behavior differs based on the active pipeline mode:
 ### VAD Gating (`speech_detected`)
 
 A `speech_detected: AtomicBool` on `PttState` tracks whether speech was detected during a
-PTT hold. The Silero VAD classifies every 256-sample chunk:
+PTT hold. The Earshot VAD classifies every 256-sample chunk:
 
 - On **speech onset**: flips `speech_detected = true`, flushes a 240ms pre-roll buffer
   to the realtime WebSocket (prevents clipped first word)
@@ -1313,7 +1405,7 @@ pub fn ptt_cancel() {
 
 ---
 
-## 19. Concurrency Patterns Summary
+## 20. Concurrency Patterns Summary
 
 ---
 
@@ -1341,7 +1433,7 @@ pub fn ptt_cancel() {
 
 ---
 
-## 20. Lock Contention & Atomic Operations
+## 21. Lock Contention & Atomic Operations
 
 ---
 
@@ -1423,7 +1515,7 @@ let (telemetry_tx, telemetry_rx) = bounded::<TelemetryEvent>(4096);
 
 ---
 
-## 21. Tokio Workers vs OS Threads
+## 22. Tokio Workers vs OS Threads
 
 ---
 
@@ -1477,6 +1569,7 @@ OS Threads (Inference):
 ├── TTS worker (Tier 3)
 ├── Audio capture (cpal, Tier 1, Max priority)
 ├── AudioRouter (Tier 1, Max priority)
+├── Persistence worker
 └── Playback (cpal)
 
 Tokio Tasks (Coordination & Realtime):
@@ -1487,13 +1580,15 @@ Tokio Tasks (Coordination & Realtime):
 ├── Realtime AudioBridge (PCM → WS)
 ├── Realtime PlaybackBridge (WS → audio)
 ├── Realtime WS Receiver
-├── Realtime WS Sender (audio + control queues)
-└── Realtime Idle Timeout monitor
+├── Realtime WS Sender (two-queue: audio + control)
+├── Realtime Idle Timeout monitor (10-min inactivity)
+├── Boot-time manifest caching
+└── Monitoring collectors
 ```
 
 ---
 
-## 22. Memory Lifecycle Management
+## 23. Memory Lifecycle Management
 
 ---
 
@@ -1569,7 +1664,7 @@ if pushed < upsampled.len() {
 
 ---
 
-## 23. Phase 9 — Realtime S2S Engine (v0.9.0)
+## 24. Phase 9 — Realtime S2S Engine (v0.9.0)
 
 ---
 
@@ -1587,9 +1682,9 @@ Vox
  └─ RealtimeVoiceProvider Layer
         ├─ RealtimeVoiceProvider trait (kind, audio_config, connect, health_check)
         └─ RealtimeSession trait (send_audio, cancel, disconnect, activity_start/end)
-               └─ GeminiLiveProvider (implemented, 855 lines)
-               └─ OpenAiRealtimeProvider (config defined, not yet implemented)
-               └─ DeepgramVoiceAgentProvider (config defined, not yet implemented)
+               ├─ GeminiLiveProvider (implemented, 910 lines)
+               ├─ DeepgramVoiceAgentProvider (implemented, 657 lines)
+               ├─ OpenAiRealtimeProvider (config defined, not yet implemented)
                └─ ElevenLabsConvaiProvider (config defined, not yet implemented)
 ```
 
@@ -1673,9 +1768,26 @@ function conditionally spawns VAD/STT threads based on the active mode, and the
 | Provider | Config | Provider Struct | Status |
 |----------|--------|----------------|--------|
 | Gemini Live | `GeminiRealtimeConfig` | `GeminiLiveProvider` | ✅ Fully integrated |
+| Deepgram Voice Agent | `DeepgramVoiceAgentConfig` | `DeepgramVoiceAgentProvider` | ✅ Implemented |
 | OpenAI Realtime | `OpenAiRealtimeConfig` | — | ⏳ Config defined, returns "not implemented" |
-| Deepgram Voice Agent | `DeepgramVoiceAgentConfig` | — | ⏳ Config defined, returns "not implemented" |
 | ElevenLabs ConvAI | `ElevenLabsConvaiConfig` | — | ⏳ Config defined, returns "not implemented" |
+
+### Deepgram Voice Agent Implementation
+
+Located at `services/realtime/providers/deepgram_live.rs` (657 lines), Deepgram Voice Agent
+uses a WebSocket-based streaming architecture with the following characteristics:
+
+- **Auto-reconnect with exponential backoff**: On WebSocket disconnect (detected via `CloseFrame`
+  or I/O error), the provider retries with delays of 1s, 2s, 4s, 8s, 16s (max). Resets on
+  successful connect.
+- **Keepalive mechanism**: Sends a `Keepalive` message every 5 seconds of socket inactivity
+  to prevent idle timeouts from Deepgram's infrastructure.
+- **Audio format**: Raw PCM i16 at 16kHz mono (received from AudioRouter), sent as binary
+  WebSocket frames.
+- **Two-queue sender**: Audio and control messages use separate `tokio::sync::mpsc` channels
+  (`audio_tx`/`control_tx`) to prevent head-of-line blocking.
+- **Server message handling**: Processes `AudioResponse` (PCM chunks), `UserStartedSpeaking`
+  (barge-in signal), `Metadata` (transcript), `Close` (session end), and `Error` messages.
 
 See `docs/plans/phase9/` for detailed provider integration plans.
 
@@ -1694,7 +1806,7 @@ All of these are simply WebSocket endpoints. The protocol is abstracted behind t
 
 ---
 
-## 24. Shutdown Sequence
+## 25. Shutdown Sequence
 
 ---
 

@@ -10,22 +10,18 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[tauri::command]
 pub async fn ptt_start(
     app: AppHandle,
-    owner: Option<crate::core::state::InteractionOwner>,
+    _owner: Option<crate::core::state::InteractionOwner>,
 ) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    // 1. Resolve and synchronize active owner
-    let actual_owner = if let Some(o) = owner {
-        state.owner.store(o as u32, Ordering::Relaxed);
-        if let Some(engine) = state.engine.lock().await.as_ref() {
-            let _ = engine
-                .vad_tx
-                .send(crate::core::state::VadCommand::UpdateOwner(o));
-        }
-        o
-    } else {
-        state.owner.load(Ordering::Relaxed).into()
-    };
+    // 1. Force the active owner to Ptt during recording
+    let actual_owner = crate::core::state::InteractionOwner::Ptt;
+    state.owner.store(actual_owner as u32, Ordering::Relaxed);
+    if let Some(engine) = state.engine.lock().await.as_ref() {
+        let _ = engine
+            .vad_tx
+            .send(crate::core::state::VadCommand::UpdateOwner(actual_owner));
+    }
 
     // 2. Enforce mode guard: reject PTT if the target is in Passive mode
     let interaction_mode = {
@@ -60,13 +56,14 @@ pub async fn ptt_start(
     };
 
     let turn = {
-        // Sync PTT turn with global pipeline turn
-        let current_global = state.pipeline.turn_id.load(Ordering::Relaxed);
-        state.ptt.turn_id.store(current_global, Ordering::Relaxed);
-        let turn = current_global;
+        // Sync PTT turn with global pipeline turn by pre-incrementing it.
+        // This ensures the PTT turn uses a unique, active turn ID that passes
+        // the pipeline's double-final guard.
+        let new_turn = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
+        state.ptt.turn_id.store(new_turn, Ordering::Relaxed);
 
         reset_ptt_state_inner(&state.ptt);
-        turn
+        new_turn
     };
 
     let owner = actual_owner;

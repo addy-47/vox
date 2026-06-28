@@ -495,11 +495,7 @@ impl PipelineOrchestrator {
                 .replace("<lang>", lang)
                 .replace("<script>", script);
 
-            // Inject expression tag instructions (Supertonic supports <laugh>, <breath>, <sigh>)
-            let system_prompt = format!(
-                "{} You may use <laugh>, <breath>, <sigh> tags for expressive speech.",
-                resolved_prompt
-            );
+            let system_prompt = resolved_prompt;
 
             let cmd = crate::services::llm::LlmCommand::Generate {
                 text,
@@ -529,6 +525,13 @@ impl PipelineOrchestrator {
         let mut local_pipeline_mode = {
             let s = self.settings.read().unwrap();
             s.interaction.pipeline_mode.clone()
+        };
+        let local_is_remote_llm = {
+            let s = self.settings.read().unwrap();
+            matches!(
+                s.llm.provider,
+                crate::core::settings::LlmProviderConfig::OpenAiCompat { .. }
+            )
         };
         let mut local_voice = {
             let s = self.settings.read().unwrap();
@@ -569,7 +572,6 @@ impl PipelineOrchestrator {
         let mut local_silence_time: Option<std::time::Instant> = None;
         let mut tts_queued_chunks = 0usize;
         let mut tts_finished_chunks = 0usize;
-        let mut tts_chunks_finished_in_turn = 0usize;
 
         // Turn persistence buffers
         let mut turn_user_text = String::new();
@@ -1037,7 +1039,7 @@ impl PipelineOrchestrator {
 
                         continue;
                     }
-                    if turn_id <= last_committed_session_id {
+                    if turn_id < last_committed_session_id {
                         log::info!("[Pipeline] Guard triggered: Skipping adjacent double-final from turn_id {} (last committed: {})", turn_id, last_committed_session_id);
                         continue;
                     }
@@ -1057,7 +1059,6 @@ impl PipelineOrchestrator {
                     turn_tokens_generated = 0;
                     tts_queued_chunks = 0;
                     tts_finished_chunks = 0;
-                    tts_chunks_finished_in_turn = 0;
                     last_tts_flush = std::time::Instant::now();
                     awaiting_playback_finish = false;
 
@@ -1142,6 +1143,8 @@ impl PipelineOrchestrator {
                     let elapsed_secs = first_time.elapsed().as_secs_f32();
                     let tps = if elapsed_secs > 0.5 {
                         turn_tokens_generated as f32 / elapsed_secs
+                    } else if local_is_remote_llm {
+                        30.0
                     } else {
                         3.5
                     };
@@ -1260,9 +1263,9 @@ impl PipelineOrchestrator {
                     }
                     playback_engine.ingest_chunk(&samples);
 
-                    // Adaptive buffering: trigger playback if buffer size exceeds 1.2 seconds (57,600 samples at 48kHz)
-                    if playback_engine.buffer_len() >= 57_600 {
-                        trigger_playback!("buffer >= 1.2s");
+                    // Adaptive buffering: trigger playback if buffer size exceeds 300ms (14,400 samples at 48kHz)
+                    if playback_engine.buffer_len() >= 14_400 {
+                        trigger_playback!("buffer >= 300ms");
                     } else if !playback_engine.is_idle() {
                         trigger_playback!("playback already active");
                     }
@@ -1275,11 +1278,9 @@ impl PipelineOrchestrator {
                     self.latest_tts_rtf.store(rtf.to_bits(), Ordering::Relaxed);
                     metrics.mark(MetricField::TtsEnd);
                     tts_finished_chunks += 1;
-                    tts_chunks_finished_in_turn += 1;
 
-                    if tts_chunks_finished_in_turn == 1 {
-                        trigger_playback!("first chunk finished");
-                    }
+                    // Always trigger playback when a chunk finishes synthesis to keep audio flowing
+                    trigger_playback!("chunk finished");
 
                     if tts_finished_chunks >= tts_queued_chunks && awaiting_playback_finish {
                         self.tts_generating.store(false, Ordering::Relaxed);

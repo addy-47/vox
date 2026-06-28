@@ -48,29 +48,30 @@ Vox frontend is a **multi-surface UI system**, not a single application UI. It c
 ```
 app/src/
 ├── main.tsx                     # App entry point
-├── App.tsx                      # Router setup
-├── store/
-│   └── settingsStore.ts         # Zustand store for settings (v5)
+├── App.tsx                      # Router setup, lazy loading, setup-completed gate
+├── index.css                    # Global styles
 ├── layout/
 │   ├── ResponsiveLayout.tsx     # Main app layout (uses AmbientBackground)
 │   ├── EdgeNav.tsx              # Unified bottom navigation strip (uses hover tooltips)
 │   └── TitleBar.tsx             # Window controls
 ├── pages/
-│   ├── Home.tsx                 # Orb interface page
+│   ├── Home.tsx                 # Orb interface page (~1028 lines, pipeline/realtime control)
 │   ├── History.tsx              # Conversation history
-│   ├── Settings.tsx             # Configuration page
-│   └── Monitoring.tsx           # System monitoring
+│   ├── Settings.tsx             # Full settings page with card-based layout
+│   └── Monitoring.tsx           # System monitoring dashboard
 ├── tray/
-│   ├── TrayApp.tsx              # Overlay UI component
+│   ├── TrayApp.tsx              # Overlay UI root component (~376 lines)
 │   └── components/
 │       ├── Header.tsx           # Tray header (status + controls)
 │       ├── TranscriptRenderer.tsx # Live transcript display
 │       └── Footer.tsx           # History navigation
 ├── wizard/
-│   ├── WizardRoot.tsx           # First-run wizard root component
+│   ├── WizardRoot.tsx           # XState-driven first-run setup wizard
+│   ├── state/
+│   │   └── setupMachine.ts      # XState machine definition
 │   ├── steps/
 │   │   ├── WelcomeStep.tsx      # Welcome screen
-│   │   ├── SystemCheckStep.tsx   # Hardware/OS compatibility check
+│   │   ├── SystemCheckStep.tsx  # Hardware/OS compatibility check
 │   │   ├── ModelSetupStep.tsx   # Model download and selection
 │   │   ├── AudioSetupStep.tsx   # Microphone/speaker test
 │   │   ├── LiveTestStep.tsx     # End-to-end voice test
@@ -80,30 +81,34 @@ app/src/
 │       ├── WizardFooter.tsx     # Wizard action buttons
 │       ├── ModelCategory.tsx    # Model category selector
 │       └── StatusCard.tsx       # Status indicator card
-├── shared/
-│   ├── components/
-│   │   ├── AdvancedOrb.tsx           # Central AI state orb (useDynamicFPS optimized)
-│   │   ├── AmbientBackground.tsx     # Animated deep-space ambient background
-│   │   ├── GlassCard.tsx             # Glassmorphism container
-│   │   ├── LiveWaveform.tsx          # Audio visualization (useDynamicFPS optimized)
-│   │   ├── PillButton.tsx            # Custom button component
-│   │   ├── RestartModal.tsx          # Settings restart prompt
-│   │   ├── Typography.tsx            # Text components
-│   │   ├── VoxLogo.tsx               # Brand logo component
-│   │   ├── CoreSettings.tsx          # Core settings panel
-│   │   ├── ModelSettings.tsx         # LLM/STT/TTS model selection
-│   │   └── TraySettings.tsx          # Tray/overlay settings panel
-│   ├── hooks/
-│   │   ├── useDynamicFPS.ts          # RAF loop with frame-skipping (60/15/0 FPS)
-│   │   ├── usePerformanceMonitor.ts  # Debug FPS tracker (dev-only)
-│   │   ├── useInteraction.ts         # Interaction session management
-│   │   ├── useStreamingRenderer.ts   # Text streaming animation
-│   │   ├── useTelemetry.ts           # Telemetry data hooks
-│   │   └── useVisibility.ts          # Tray visibility logic
-│   ├── context/
-│   │   └── SettingsContext.tsx        # Settings provider (zustand adapter)
-│   └── lib/
-│       └── utils.ts                   # Utility functions
+├── store/
+│   └── settingsStore.ts         # Zustand v5 store (295 lines, draft/committed pattern)
+└── shared/
+    ├── components/
+    │   ├── AdvancedOrb.tsx           # Central AI state orb (useDynamicFPS optimized)
+    │   ├── AmbientBackground.tsx     # Animated deep-space ambient background
+    │   ├── ErrorBoundary.tsx         # React error boundary
+    │   ├── GlassCard.tsx             # Glassmorphism container
+    │   ├── GlassSkeleton.tsx         # Loading skeleton with glass styling
+    │   ├── LiveWaveform.tsx          # Audio visualization (useDynamicFPS optimized)
+    │   ├── MonitoringPopover.tsx     # Telemetry popover overlay
+    │   ├── PipelineField.tsx         # Pipeline mode display field
+    │   ├── StatusCapsule.tsx         # Status indicator capsule
+    │   └── settings/                # Settings sub-components
+    │       ├── cards/                # Individual settings cards
+    │       └── overlays/             # Settings overlay modals
+    ├── hooks/
+    │   ├── useDynamicFPS.ts          # RAF loop with frame-skipping (60/15/0 FPS)
+    │   ├── usePerformanceMonitor.ts  # Debug FPS tracker (dev-only)
+    │   ├── useInteraction.ts         # Interaction session management
+    │   ├── useStreamingRenderer.ts   # Text streaming animation
+    │   ├── useTelemetry.ts           # Telemetry data hooks
+    │   ├── useVisibility.ts          # Tray visibility logic
+    │   └── useVoxFootprint.ts        # Runtime memory/footprint tracking
+    ├── context/
+    │   └── SettingsContext.tsx        # Settings provider (zustand adapter)
+    └── lib/
+        └── utils.ts                   # cn() helper, hexToRgb, etc.
 ```
 
 ---
@@ -125,8 +130,8 @@ interface WindowLabels {
 {
   "label": "main",
   "title": "Vox",
-  "width": 800,
-  "height": 600,
+  "width": 400,
+  "height": 800,
   "minWidth": 400,
   "minHeight": 300,
   "decorations": true,
@@ -146,7 +151,7 @@ interface WindowLabels {
   "skipTaskbar": true,
   "resizable": false,
   "visible": false,
-  "width": 380,
+  "width": 420,
   "height": 250
 }
 ```
@@ -216,17 +221,20 @@ const OrbVariants = {
 Home.tsx manages the full realtime S2S session lifecycle with local state
 (`useState` + `useRef`, no Zustand for hot paths):
 
-- **Pipeline mode**: `"modular"` or `"realtime"` — set by backend on `engage`
+- **Pipeline mode**: `"modular"` or `"realtime"` — set by backend on `engage`.
+  The `launch_engine` command conditionally spawns VAD/STT based on active mode.
 - **Engage handler**: Calls `start_realtime_session` (realtime) or `engage` (modular)
   based on settings. Uses `engageLockRef` to prevent double-engage during WS handshake.
 - **End handler**: Calls `stop_realtime_session` — disconnects WS, clears session cache,
   reverts to modular mode, archives conversation.
-- **Pause/Resume**: Calls `pause_pipeline`/`resume_pipeline` IPC — halts audio routing,
-  tells Gemini to stop processing, archives current turn; resume reopens audio gate.
+- **Pause/Resume**: Calls `pause_pipeline`/`resume_pipeline` IPC — sets `is_paused` atomic
+  (router drops chunks), calls `activity_end()` on session, stops playback; resume
+  reopens audio gate, lazy-reconnects WS if disconnected.
 - **PTT toggle**: Calls `ptt_start`/`ptt_stop` — only rendered when `interactionMode === "PTT"`.
-  In realtime PTT, triggers `activity_start/end` over WebSocket.
+  In realtime PTT, triggers `activity_start`/`activity_end` over WebSocket.
 - **Session cache**: On mount, calls `get_realtime_session_cache` IPC. If a valid cached
-  session exists, the engage button shows "Resume Session" instead of "Engage".
+  session exists (Gemini provides 2-hour resumption handles), the engage button shows
+  "Resume Session" instead of "Engage". Session is persisted to `~/.vox/cache/realtime_session.json`.
 
 Three-button control group layout:
 ```
@@ -288,8 +296,6 @@ interface VoxSettings {
     tray_enabled: boolean;
     tray_blur_density: number;
     tray_glass_tint: boolean;
-    tray_hide_delay: number;
-    tray_fade_transition: string;
     tray_history_limit: number;
   };
   audio: {
@@ -297,29 +303,50 @@ interface VoxSettings {
     input_device: string | null;
   };
   vad: {
-    threshold: number;
-    ptt_noise_gate: number;
-    vad_backend: "Earshot" | "TenVad";
+    threshold: number;           // 0.0-1.0 (default 0.5)
+    ptt_noise_gate: number;      // 0.0-1.0 (default 0.005)
+    vad_backend: "Earshot" | "TenVad";  // TenVad=default, Earshot=preferred
   };
   asr: {
-    model: string;  // "nvidia_nemotron" | "qwen3_asr"
+    model: string;               // "nvidia_nemotron" | "qwen3_asr"
     transliterate_enabled: boolean;
+    provider: {                  // SttProviderConfig tagged enum
+      kind: "embedded" | "cloud";
+      model_type?: string;       // embedded only
+      provider?: string;         // cloud only: "google" | "deepgram" | "whisperflow"
+    };
   };
   llm: {
     model: string;
-    ctx_size: number;
-    threads: number;
+    ctx_size: number;            // 1024-4096 (default 2048)
+    threads: number;             // 1-N (default 4)
+    provider: {                  // LlmProviderConfig tagged enum
+      kind: "embedded" | "open_ai_compat";
+      base_url?: string;
+      model?: string;
+      api_key?: string;
+      provider_name?: string;    // "openai" | "gemini" | "anthropic"
+    };
   };
   tts: {
-    voice: number;         // Supertonic voice index (0-9)
-    quality_steps: number; // Supertonic diffusion steps (2-12)
-    speed: number;         // Speed factor (0.7-2.0)
+    provider: {                  // TtsProviderConfig tagged enum
+      kind: "supertonic" | "chatterbox" | "chatterbox_remote";
+      language?: string;
+      quality_steps?: number;
+      speed?: number;
+      voice_id?: string;
+      endpoint?: string;         // remote only
+      remote_path?: string;      // remote only
+    };
+    voice: number;               // Supertonic voice index (0-9)
+    quality_steps: number;       // Diffusion steps (2-12, default 12)
+    speed: number;               // Speed factor (0.7-2.0, default 1.05)
   };
   interaction: {
     main_app_mode: "Passive" | "PTT";
     tray_mode: "Passive" | "PTT";
     pipeline_mode: "Modular" | "Realtime";  // v0.9.0
-    auto_sleep_timeout: number;
+    auto_sleep_timeout: number;  // seconds (default 400)
   };
 
   // Realtime S2S settings (v0.9.0)
@@ -327,10 +354,10 @@ interface VoxSettings {
     provider: "gemini_live" | "openai_realtime" | "deepgram_voice_agent" | "elevenlabs_convai";
     gemini: {
       api_key: string;
-      model: string;
-      voice_name: string;
-      language_code: string;
-      temperature: number;
+      model: string;             // default "gemini-2.0-flash-live-001"
+      voice_name: string;        // default "Aoede"
+      language_code: string;     // BCP-47, default "en-US"
+      temperature: number;       // default 0.2
       enable_web_search: boolean;
     };
     openai: {
@@ -347,19 +374,17 @@ interface VoxSettings {
     };
   };
   telemetry: {
-    enabled: boolean;
-    log_level: string;
+    enabled: boolean;            // default true
+    log_level: string;           // default "info"
   };
   persistence: {
-    enabled: boolean;
-    private_mode: boolean;
-    max_sessions: number;
-    retention_days: number;
+    private_mode: boolean;       // default false
+    max_sessions: number;        // default 500
+    retention_days: number;      // default 30
   };
   assistant: {
-    system_prompt: string;
-    hindi_prompt: string;
-    english_prompt: string;
+    modular_prompt: string;      // Hindi prompt (alias: hindi_prompt)
+    realtime_prompt: string;     // English prompt (alias: english_prompt)
   };
   setup: {
     completed: boolean;
@@ -398,18 +423,21 @@ Only one button is visible at any time based on the current engine state.
 ```typescript
 interface RuntimeSnapshot {
   timestamp: number;
-  system_cpu: number;
-  system_ram_pct: number;
-  vox_cpu: number;
-  vox_ram_mb: number;
-  threads: number;
-  stt_ms: number;
-  ttft_ms: number;
-  voice_latency_ms: number;
-  tts_rtf: number;
-  playback_start_ms: number;
-  persistence_rate: number;
-  playback_underruns: number;
+  system_cpu: number;       // CPU usage percentage
+  system_ram_pct: number;   // System RAM usage percentage
+  system_ram_gb: number;    // System RAM in GB
+  vox_cpu: number;          // Vox process CPU usage
+  vox_ram_mb: number;       // Vox process RAM in MB
+  threads: number;          // Active thread count
+  stt_rtf: number;          // STT real-time factor
+  ttft_ms: number;          // Time to first token
+  ttfa_ms: number;          // Time to first audio (voice pipeline latency)
+  tts_rtf: number;          // TTS real-time factor
+  playback_start_ms: number; // Time from TTS chunk to playback start
+  persistence_rate: number;  // Persistence write rate (events/sec)
+  playback_underruns: number; // Playback buffer underrun count
+  audio_energy: number;      // Current mic RMS energy
+  models_loaded: boolean;    // Whether models are warm
 }
 ```
 
@@ -483,9 +511,13 @@ window.move_window(Position::TopRight);
 
 ```typescript
 const TrayApp: React.FC = () => {
-  const { settings } = useSettings();
+  const settings = useSettingsStore(s => s.settings);
   const [interactionState, setInteractionState] = useState<string>("Idle");
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
+  const [processingMessage, setProcessingMessage] = useState(false);
+
+  // Audio visualization
+  const [audioEnergy, setAudioEnergy] = useState(0);
 
   // History system (ephemeral, in-memory only)
   const [history, setHistory] = useState<string[]>([]);
@@ -513,8 +545,22 @@ const TrayApp: React.FC = () => {
     hideImmediately
   } = useVisibility({
     holdDuration: (settings?.ui.tray_hide_delay || 3) * 1000,
-    fadeDuration: settings?.ui.tray_fade_transition === 'Snappy' ? 500 : 1500
+    fadeDuration: 500, // Always snappy for tray
   });
+
+  // Telemetry ref for live data
+  const telemetryRef = useRef({ energy: 0, vadProb: 0 });
+
+  // Listen for IPC events
+  useEffect(() => {
+    const unlisteners = [
+      listen("state_changed", (e) => setInteractionState(e.payload as string)),
+      listen("audio_energy", (e) => { setAudioEnergy(e.payload.energy); }),
+      listen("ptt_status", (e) => setPttStatus(e.payload.state)),
+      // ... more listeners
+    ];
+    return () => unlisteners.forEach(u => u());
+  }, [settings]);
 };
 ```
 
@@ -551,22 +597,21 @@ interface TranscriptRendererProps {
 ```typescript
 const useStreamingRenderer = (targetText: string) => {
   const [displayText, setDisplayText] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
+  const prevTargetRef = useRef("");
 
   useEffect(() => {
-    if (targetText === displayText) return;
+    if (targetText === prevTargetRef.current) return;
+    prevTargetRef.current = targetText;
 
-    setIsStreaming(true);
-    const streamText = async () => {
-      // Character-by-character streaming animation
-      for (let i = 0; i <= targetText.length; i++) {
-        setDisplayText(targetText.slice(0, i));
-        await new Promise(resolve => setTimeout(resolve, 20)); // 50 CPS
-      }
-      setIsStreaming(false);
-    };
+    // Character-by-character streaming animation
+    let i = 0;
+    const interval = setInterval(() => {
+      i++;
+      setDisplayText(targetText.slice(0, i));
+      if (i >= targetText.length) clearInterval(interval);
+    }, 20); // 50 CPS
 
-    streamText();
+    return () => clearInterval(interval);
   }, [targetText]);
 
   return displayText;
@@ -756,6 +801,11 @@ window.listen("pipeline_resumed", () => {
 
 ```typescript
 // Speech lifecycle
+window.listen("state_changed", ({ payload }) => {
+  // payload is InteractionState: "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Interrupted"
+  setInteractionState(payload);
+});
+
 window.listen("speech_start", () => {
   startNewInteraction();
   show();
@@ -775,6 +825,40 @@ window.listen("speech_end", () => {
   endSpeechSegment();
   startHold();
 });
+
+window.listen("ptt_status", ({ payload }) => {
+  // payload.state: "IDLE" | "RECORDING" | "PROCESSING"
+  setPttStatus(payload.state);
+});
+
+window.listen("realtime_session_started", () => {
+  setPipelineMode("realtime");
+});
+
+window.listen("realtime_session_ended", (event) => {
+  const reason = event.payload; // "user" | "idle_timeout" | "error"
+  flushAndClearTranscripts();
+});
+
+window.listen("realtime_interrupted", () => {
+  setInteractionState("Interrupted");
+});
+
+window.listen("realtime_idle_warning", (event) => {
+  // event.payload.seconds_remaining for countdown display
+});
+
+window.listen("pipeline_paused", () => {
+  setIsPaused(true);
+});
+
+window.listen("pipeline_resumed", () => {
+  setIsPaused(false);
+});
+
+window.listen("pipeline_error", ({ payload }) => {
+  setError(payload);
+});
 ```
 
 ### Command Invocations
@@ -783,28 +867,74 @@ window.listen("speech_end", () => {
 // Settings management
 await invoke("get_settings");
 await invoke("update_setting", { domain, key, value });
+await invoke("request_boot_state");
+await invoke("request_model_catalog");
+await invoke("reset_settings");
+await invoke("update_theme", { theme: "dark" });
+await invoke("check_llm_provider_health", { provider });
+await invoke("check_stt_provider_health");
+await invoke("check_tts_provider_health");
+await invoke("list_remote_llm_models", { endpoint, apiKey, providerName });
+await invoke("setup_remote_server", { providerKind, endpoint, apiKey });
 
 // Engine control
 await invoke("engage");
 await invoke("check_engine_status");
-await invoke("stop_engine");   // Offload/unload models (Skull button)
-await invoke("launch_engine"); // Reload models (RefreshCw button)
+await invoke("stop_engine");       // Offload/unload models (Skull button)
+await invoke("launch_engine");     // Reload models (RefreshCw button)
+await invoke("test_clip");         // Play test clip
+await invoke("test_clip_cancel");  // Stop test clip
 
 // Realtime session control (v0.9.0)
-await invoke("start_realtime_session");       // Start Gemini Live session
+await invoke("start_realtime_session");       // Start WebSocket session
 await invoke("stop_realtime_session");         // Stop and clean up
 await invoke("pause_pipeline");               // Soft pause (WS alive, audio halted)
 await invoke("resume_pipeline");              // Resume audio routing
 await invoke("get_realtime_session_cache");    // Check for cached resume token
 
 // PTT control
-await invoke("ptt_start", { owner: "MainWindow" });
-await invoke("ptt_stop", { owner: "MainWindow" });
+await invoke("ptt_start", { owner: "MainWindow" | "Tray" });
+await invoke("ptt_stop", { owner: "MainWindow" | "Tray" });
 await invoke("ptt_cancel");
 
 // History management
-const history = await invoke<string[]>("get_transcript_history");
+await invoke<string[]>("get_transcript_history");
 const sessions = await invoke<Session[]>("get_sessions");
+const turns = await invoke<Turn[]>("get_turns", { sessionId });
+await invoke("commit_session_to_history", { turns, ... });
+await invoke("delete_session", { sessionId });
+
+// Voice library
+await invoke<ListVoicesResponse>("list_voices");
+await invoke("add_voice_from_file", { path, name });
+await invoke("add_voice_from_recording", { name });
+await invoke("start_backend_recording");
+await invoke("stop_backend_recording");
+await invoke("delete_voice", { voiceId });
+await invoke("rename_voice", { voiceId, name });
+await invoke("preview_voice", { voiceId });
+
+// Audio device management
+const devices = await invoke<AudioDevice[]>("list_input_devices");
+
+// Setup/Wizard
+await invoke("fetch_manifest");
+await invoke("check_for_updates");
+await invoke("check_for_model_updates");
+await invoke("get_onboarding_status");
+await invoke("get_runtime_report");
+await invoke("start_model_setup", { modelIds });
+await invoke("cancel_model_setup");
+await invoke("complete_setup_wizard");
+await invoke("reveal_wizard");
+await invoke("check_model_exists", { modelId });
+await invoke("download_optional_model", { modelId });
+await invoke("delete_model", { modelId });
+
+// Monitoring
+await invoke<RuntimeSnapshot>("get_runtime_snapshot");
+await invoke<RuntimeSnapshot[]>("get_runtime_history", { limit });
+await invoke("clear_runtime_history");
 ```
 
 ---

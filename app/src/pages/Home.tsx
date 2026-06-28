@@ -223,7 +223,7 @@ export const Home: React.FC = () => {
     if (dialogueScrollRef.current) {
       dialogueScrollRef.current.scrollTo({
         top: dialogueScrollRef.current.scrollHeight,
-        behavior: "smooth",
+        behavior: "auto",
       });
     }
   }, [dialogueHistory, streamedTranscript, streamedAssistantText]);
@@ -387,6 +387,7 @@ export const Home: React.FC = () => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isInputActive()) return;
+      if (e.repeat) return;
 
       const key = e.key.toLowerCase();
 
