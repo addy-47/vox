@@ -15,13 +15,16 @@ Vox is a **model-agnostic, role-based system** with a selection strategy that is
 | Pipeline Stage | Model / Engine | ID | Footprint | Key Config / Parameter |
 | :--- | :--- | :--- | :---: | :--- |
 | **VAD** | Earshot VAD | `earshot` | < 1 MB | Threshold: `0.5`, sample rate `16000` |
-| **STT** (Primary) | **Nvidia Nemotron-3.5** | `nvidia_nemotron` | ~1.2 GB | INT8 Quantized, FastConformer-RNNT (`parakeet-rs`) |
+| **STT** (Primary) | **Nvidia Nemotron-3.5** | `nvidia_nemotron` | ~2.5 GB | INT8 Quantized, FastConformer-RNNT (`parakeet-rs`) |
 | **STT** (Fallback) | Qwen3-ASR-0.6B | `qwen3_asr` | ~800 MB | INT8 Quantized (`sherpa-onnx`) |
 | **LLM** (Default) | Llama 3.2 1B Instruct (Q4) | `llama_3_2_reasoning_q4` | ~750 MB | GGUF Q4_K_M, context size `2048`, threads `4` |
 | **LLM** (Higher quality) | Llama 3.2 1B Instruct (Q6) | `llama_3_2_reasoning` | ~1.0 GB | GGUF Q6_K, context size `2048` |
 | **LLM** (Alternative) | Gemma 4 E2B-it | `gemma_4_reasoning` | ~1.4 GB | GGUF Q4_K_M, context size `4096` |
+| **LLM** (Uncensored) | Gemma 4 Uncensored | `gemma_4_uncensored` | ~2.9 GB | GGUF Q2_K_P, unrestricted output |
 | **LLM** (Cloud)* | OpenAI / Gemini / Anthropic | provider-configurable | 0 MB (local) | Uses `OpenAiCompatProvider` with API key |
-| **TTS** (Sole) | **Supertonic 3** | `supertonic_tts` | ~144 MB | INT8 Quantized, sherpa-onnx native, 31 languages, 10 voices |
+| **TTS** (Primary) | **Supertonic 3** | `supertonic_tts` | ~144 MB | INT8, sherpa-onnx, 31 languages, 10 voices |
+| **TTS** (Local clone) | **Chatterbox Local** | `chatterbox_tts` | ~1.1 GB | 340M Q4 GGML, voice cloning from 5s reference |
+| **TTS** (Remote) | **Chatterbox Remote** | `chatterbox_remote` | 0 MB (local) | Offload to remote CUDA GPU server |
 
 > \* Cloud LLM options are available via `OpenAiCompatProvider` — see §6.2.
 
@@ -152,7 +155,7 @@ let config = OfflineRecognizerConfig {
 | :--- | :---: | :---: | :--- |
 | **Real-Time Factor (RTF)** | **0.50** 🚀 | **6.25** 🐌 | Nemotron is **12.5x faster** on CPU. |
 | **Accuracy** | **State-of-the-art** | High (but loops easily) | Zero hallucination loop issues. |
-| **RAM footprint** | **~1.2 GB** | **~800 MB** | Comparable RAM for vastly better quality. |
+| **RAM footprint** | **~2.5 GB** | **~800 MB** | Larger RAM but vastly better quality and 12.5x faster. |
 
 ### Streaming Strategy
 
@@ -255,10 +258,10 @@ Vox supports **cloud-hosted LLM inference** as an alternative to local models, p
 
 ```rust
 let provider = OpenAiCompatProvider::new(
-    settings.llm.endpoint_url,      // Auto-mapped from provider_name
-    settings.llm.api_key,           // Provider-specific API key
-    settings.llm.model,             // e.g. "gpt-4o", "gemini-2.5-pro", "claude-sonnet-4"
-    Arc::clone(&cancel_flag),
+    &base_url,          // Auto-mapped from provider_name if empty
+    &model,             // e.g. "gpt-4o", "gemini-2.5-pro", "claude-sonnet-4"
+    api_key.as_deref(), // Optional; excluded for Ollama/LM Studio
+    provider_name.as_deref(), // "openai", "gemini", "anthropic", or None
 );
 ```
 
@@ -273,9 +276,11 @@ The pipeline (`services/pipeline.rs`) is **provider-agnostic** — it calls `Llm
 
 ## 7. Text-to-Speech (TTS)
 
-### Selected Model: **Supertonic 3 (Sole Engine)**
+Vox supports three TTS backends via the `TtsProviderConfig` tagged enum: **Supertonic 3** (default), **Chatterbox Local TTS**, and **Chatterbox Remote TTS**.
 
-Supertonic 3 is the sole TTS engine — a single unified 99M-parameter flow-matching model supporting **31 languages** with **10 voices** (5 male, 5 female). It uses sherpa-onnx native `OfflineTtsSupertonicModelConfig` and is INT8 quantized (~144MB).
+### Primary: **Supertonic 3 (`supertonic_tts`, `TtsProviderConfig::Supertonic`)**
+
+Supertonic 3 is the default TTS engine — a unified 99M-parameter flow-matching model supporting **31 languages** with **10 voices** (5 male, 5 female). Uses sherpa-onnx native `OfflineTtsSupertonicModelConfig`, INT8 quantized (~144MB). Internally produces 44.1 kHz, resampled to 24 kHz f32 mono output.
 
 | Feature | Detail |
 |---------|--------|
@@ -287,14 +292,42 @@ Supertonic 3 is the sole TTS engine — a single unified 99M-parameter flow-matc
 | Voices | 10 (James, David, Alex, Ryan, Ethan, Sophia, Olivia, Emma, Ava, Mia) |
 | Quality Steps | 2–12 (Speed→Quality→Best) |
 | Speed | 0.7x–2.0x |
-| Sampling Rate | 44.1 kHz |
+| Sampling Rate (internal) | 44.1 kHz → 24 kHz output |
 | Inference | sherpa-onnx native |
+| Load Time | ~400ms cold start |
 
-### Chunked Synthesis (Accuracy-Quality Mandate)
+### Alternative: **Chatterbox Local TTS (`chatterbox_tts`, `TtsProviderConfig::Chatterbox`)**
+
+Chatterbox is a 340M-parameter zero-shot voice cloning model in GGML Q4 format. It can clone any voice from a 5-second reference audio clip.
+
+| Feature | Detail |
+|---------|--------|
+| Architecture | Transformer (GGML) |
+| Parameters | 340M (Q4) |
+| Footprint | ~1.1 GB RAM |
+| Voice Cloning | 5s reference audio → UUID stored in voices table |
+| Languages | Multilingual |
+| Sampling Rate | Native 24 kHz |
+| Inference | chatterbox-rs |
+| CPU Load | Heavy — GPU recommended |
+
+### Alternative: **Chatterbox Remote TTS (`chatterbox_remote`, `TtsProviderConfig::ChatterboxRemote`)**
+
+Offloads TTS inference to a remote CUDA GPU server. Zero local RAM cost — the worker streams audio via `reqwest` blocking HTTP calls.
+
+| Feature | Detail |
+|---------|--------|
+| Local RAM | 0 MB |
+| Remote Endpoint | Configurable URL + remote path |
+| Model | 340M (server-side) |
+| Audio Transport | `reqwest` blocking streaming |
+| Latency | Real-time with GPU server |
+
+### Chunked Synthesis (Accuracy-Quality Mandate — All TTS Providers)
 
 **Goal**: Natural, complete utterances — not choppy word fragments.
 
-Flush to TTS on sentence/clause boundaries, with word-boundary safety to prevent mid-word splits.
+Flush to TTS on sentence/clause boundaries, with word-boundary safety to prevent mid-word splits. The same algorithm applies regardless of which TTS provider is active.
 
 **Current algorithm (`utils.rs` — fully dynamic, TPS-continuous):**
 1. **Hard boundaries** — `. ! ? ।` → flush immediately (always correct sentence unit)
@@ -320,16 +353,23 @@ Defined in `services/realtime/mod.rs`, separate from the `LlmProvider` (which re
 pub trait RealtimeVoiceProvider: Send + Sync {
     fn kind(&self) -> RealtimeProviderKind;
     fn audio_config(&self) -> RealtimeAudioConfig;
-    fn connect(&self) -> anyhow::Result<Box<dyn RealtimeSession>>;
+    fn connect(
+        &self,
+        interaction_mode: InteractionMode,
+        playback_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
+        event_tx: Sender<VoxEvent>,
+    ) -> Result<Box<dyn RealtimeSession>>;
     fn health_check(&self) -> bool;
 }
 
-pub trait RealtimeSession: Send {
-    fn send_audio(&self, pcm: &[i16]) -> anyhow::Result<()>;
-    fn on_audio(&self, cb: Box<dyn Fn(&[i16]) + Send>);
-    fn on_interruption(&self, cb: Box<dyn Fn() + Send>);
-    fn cancel(&self) -> anyhow::Result<()>;
-    fn disconnect(&self) -> anyhow::Result<()>;
+pub trait RealtimeSession: Send + Sync {
+    fn send_audio(&self, pcm: &[i16]) -> Result<()>;
+    fn cancel(&self) -> Result<()>;
+    fn disconnect(&self) -> Result<()>;
+    fn activity_start(&self) -> Result<()>;
+    fn activity_end(&self) -> Result<()>;
+    fn is_connected(&self) -> bool { true }
+    fn last_activity_time(&self) -> u64 { 0 }
 }
 ```
 
@@ -357,12 +397,12 @@ The realtime engine uses a **hybrid sync/async architecture** — tokio tasks fo
 |----------|:-:|:-:|:---:|:---|
 | **Gemini Live** | 16 kHz | 24 kHz | 10-15 RPM | Native 16 kHz input, cheapest |
 | **OpenAI Realtime** | 24 kHz | 24 kHz | None | ~232ms P50 latency |
-| **Deepgram Voice Agent** | 16 kHz (flex) | Configurable | $200 credits | Flat $0.075/min pricing |
+| **Deepgram Voice Agent** (✅) | 16 kHz (flex) | Configurable | $200 credits | Flat $0.075/min pricing |
 | **ElevenLabs ConvAI** | 16 kHz | 44.1 kHz | 15 min/mo | Best voice quality, 74 languages |
 
 ### Status
 
-In progress. Detailed integration plans for each provider live in `docs/plans/phase9/`.
+**Gemini Live** and **Deepgram Voice Agent** are fully implemented (657-line Deepgram module with full WebSocket reconnect and keepalive). **OpenAI Realtime** and **ElevenLabs ConvAI** remain unimplemented. Detailed integration plans for each provider live in `docs/plans/phase9/`.
 
 ---
 
@@ -371,13 +411,13 @@ In progress. Detailed integration plans for each provider live in `docs/plans/ph
 ### Per-Component Running Memory (Active Footprint — Design Targets)
 
 ```text
-Total Active Budget: ~3.0GB (on 8GB Baseline — design target, not enforced)
+Total Active Budget: ~3.5GB (on 8GB Baseline — design target, not enforced)
 ├── VAD:        < 0.01GB (Earshot VAD)
-├── STT:        ~1.20GB (Nvidia Nemotron-3.5)
+├── STT:        ~2.50GB (Nvidia Nemotron-3.5)
 ├── LLM:        ~0.75GB (Llama 3.2 1B Q4)
-├── TTS:        ~0.14GB (Supertonic 3)
+├── TTS:        ~0.14GB (Supertonic 3)  or  ~1.1GB (Chatterbox Local)  or  0MB (Chatterbox Remote)
 ├── Audio Buffers: ~0.10GB (Pre-allocated ring buffers)
-└── Safety Margin: ~1.90GB (Headroom to prevent OS swap)
+└── Safety Margin: ~1.10GB (Headroom to prevent OS swap)
 ```
 
 > **Note**: These are design targets, not runtime-enforced limits. No memory cap or safety margin enforcement exists in the codebase. Model `ram_usage` values in settings metadata are display-only human-readable strings.
@@ -394,15 +434,18 @@ Thread counts are **configured via settings**, not auto-computed. Defaults:
 |-----------|:---:|---------|
 | **VAD** (Earshot) | N/A (sub-ms, no threading) | `services/vad/earshot_vad.rs` |
 | **VAD** (TenVAD) | 1 | `services/vad/ten_onnx.rs:40` |
+| **AudioRouter** | 1 (dedicated OS thread) | `services/audio/router.rs` |
 | **STT** (Nemotron) | Handled by parakeet-rs | `services/stt/nemotron_onnx.rs` |
 | **STT** (Qwen) | 4 | `services/stt/qwen_onnx.rs:54` |
 | **LLM** | 4 (configurable, default) | `settings.rs:403` |
-| **TTS** (Supertonic) | 2 | `services/tts/supertonic.rs:103` |
+| **TTS** (Supertonic/Chatterbox) | 2 | `services/tts/actor.rs` |
+| **Realtime** (S2S) | 2 tokio tasks + 2 OS threads | `services/realtime/engine.rs` |
 
 ### Thread Priorities
 
 ```rust
 set_current_thread_priority(ThreadPriority::Max);          // VAD worker
+set_current_thread_priority(ThreadPriority::Max);          // AudioRouter (Max priority for audio I/O)
 set_current_thread_priority(ThreadPriorityValue::try_from(80u8).unwrap()); // STT worker
 ```
 
@@ -473,34 +516,48 @@ Settings use a **nested domain-object structure**. Relevant model fields:
 ```typescript
 interface VoxSettings {
   vad: {
-    threshold: number;          // 0.0-1.0
-    ptt_noise_gate: number;     // 0.0-1.0
-    vad_backend: "earshot" | "ten_vad";
+    threshold: number;              // 0.0-1.0
+    ptt_noise_gate: number;         // 0.0-1.0
+    vad_backend: "Earshot" | "TenVad";
   };
   asr: {
-    model: string;              // "nvidia_nemotron" | "qwen3_asr"
+    model: string;                  // "nvidia_nemotron" | "qwen3_asr"
     transliterate_enabled: boolean;
+    provider: SttProviderConfig;    // { kind: "embedded", model_type } | { kind: "cloud", ... }
   };
   llm: {
-    model: string;              // "llama_3_2_reasoning_q4" | "llama_3_2_reasoning" | "gemma_4_reasoning" | ...
-    ctx_size: number;           // 1024-4096 (local only)
-    threads: number;            // 1-N (local only)
-    provider: {
-      kind: string;             // "local" | "openai" | "gemini" | "anthropic"
-      base_url: string;
-      model: string;
-      api_key: string;
-      provider_name: string;
-    };
+    model: string;                  // "llama_3_2_reasoning_q4" | "llama_3_2_reasoning" | "gemma_4_reasoning" | ...
+    ctx_size: number;               // 1024-4096 (local only)
+    threads: number;                // 1-N (local only)
+    provider: LlmProviderConfig;    // { kind: "embedded" } | { kind: "open_ai_compat", base_url, model, api_key, provider_name }
   };
   tts: {
-    voice: number;              // Supertonic voice index (0-9)
-    quality_steps: number;      // Diffusion steps (2-12)
-    speed: number;              // Speed factor (0.7-2.0)
+    provider: TtsProviderConfig;    // { kind: "supertonic" } | { kind: "chatterbox", ... } | { kind: "chatterbox_remote", ... }
+    voice: number;                  // Supertonic voice index (0-9)
+    quality_steps: number;          // Diffusion steps (2-12)
+    speed: number;                  // Speed factor (0.7-2.0)
   };
   interaction: {
-    pipeline_mode: "Modular" | { Realtime: string };  // Modular vs S2S
+    main_app_mode: "Passive" | "PTT";
+    tray_mode: "Passive" | "PTT";
+    pipeline_mode: "Modular" | "Realtime";
+    auto_sleep_timeout: number;
   };
+  realtime: {
+    provider: "gemini_live" | "openai_realtime" | "deepgram_voice_agent" | "elevenlabs_convai";
+    gemini: { api_key, model, voice_name, language_code, temperature, enable_web_search };
+    openai: { api_key, model };
+    deepgram: { api_key, model };
+    elevenlabs: { api_key, agent_id };
+  };
+  assistant: {
+    modular_prompt: string;         // replaces hindi_prompt
+    realtime_prompt: string;        // replaces english_prompt
+  };
+  setup: {
+    completed: boolean;
+  };
+  // ... ui, audio, telemetry, persistence unchanged
 }
 ```
 
@@ -509,10 +566,35 @@ interface VoxSettings {
 ```rust
 pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
     match (domain, key) {
-        ("vad", "threshold") => WorkerCommand,     // Hot-update VAD
-        ("llm", "model") => Restart,               // Full restart required
-        ("tts", "en_voice") => Hot,                // Instant voice change
-        // ... etc
+        ("ui", _) => Hot,
+        ("vad", "threshold") => WorkerCommand,
+        ("vad", "ptt_noise_gate") => WorkerCommand,
+        ("vad", "vad_backend") => Restart,
+        ("audio", "output_mode") => WorkerCommand,
+        ("audio", "input_device") => Restart,
+        ("asr", "model") => Restart,
+        ("asr", "provider") => Restart,
+        ("asr", "transliterate_enabled") => Hot,
+        ("llm", "model") => Restart,
+        ("llm", "ctx_size") => Restart,
+        ("llm", "threads") => Restart,
+        ("llm", "provider") => Restart,
+        ("tts", "provider") => Restart,
+        ("tts", "voice") => Restart,
+        ("tts", "quality_steps") => WorkerCommand,
+        ("tts", "speed") => WorkerCommand,
+        ("interaction", "auto_sleep_timeout") => Hot,
+        ("interaction", "pipeline_mode") => Restart,
+        ("interaction", _) => Hot,
+        ("telemetry", "enabled") => Hot,
+        ("telemetry", "log_level") => Restart,
+        ("persistence", "private_mode") => Hot,
+        ("persistence", "max_sessions") => Hot,
+        ("persistence", "retention_days") => Hot,
+        ("assistant", "modular_prompt") => Hot,
+        ("assistant", "realtime_prompt") => Hot,
+        ("realtime", _) => Hot,
+        _ => Restart,
     }
 }
 ```

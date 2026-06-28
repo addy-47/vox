@@ -52,6 +52,7 @@ pub struct RuntimeSnapshot {
 
     // Tier Status (Model Residency)
     pub is_llm_loaded: bool,
+    pub llm_provider_kind: String,
     pub is_tts_loaded: bool,
     pub is_stt_loaded: bool,
     pub is_vad_loaded: bool,
