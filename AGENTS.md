@@ -8,11 +8,12 @@ you are likely to get wrong without help.
 ## Project Identity
 
 - **Vox**: A real-time, local-first voice assistant for desktop (Tauri v2 + Rust + React).
-- **Phase**: `v0.9.0` (in progress) — Realtime S2S engine complete: Gemini Live integration,
-  PTT for S2S, web realtime bench, full frontend session lifecycle (engage/pause/resume,
-  session cache, idle timeout, client-side VAD gating). Next: OpenAI Realtime, Deepgram
-  Voice Agent, ElevenLabs ConvAI provider implementations. OpenAI, Gemini, and Anthropic
-  cloud providers are already supported through the unified `OpenAiCompatProvider`.
+- **Phase**: `v0.9.0` (in progress) — Realtime S2S engine: Gemini Live ✅ and Deepgram
+  Voice Agent ✅ are fully implemented (WebSocket, auto-reconnect, full frontend session
+  lifecycle). PTT for S2S, web realtime bench, engage/pause/resume, session cache, idle
+  timeout, client-side VAD gating all complete. Remaining: OpenAI Realtime, ElevenLabs
+  ConvAI provider implementations. OpenAI, Gemini, and Anthropic cloud providers are
+  already supported through the unified `OpenAiCompatProvider`.
 - **Core mandate**: Local-first, CPU-only (~8GB RAM), sub-500ms pipeline, streaming-first.
 
 ---
@@ -26,25 +27,34 @@ you are likely to get wrong without help.
 │   │   ├── pages/            # Home, History, Settings, Monitoring
 │   │   ├── tray/             # Ephemeral overlay UI (Tray HUD)
 │   │   ├── wizard/           # First-run setup wizard (XState-driven)
+│   │   ├── layout/           # ResponsiveLayout, EdgeNav, TitleBar
 │   │   ├── store/            # Zustand v5 (settings only)
 │   │   └── shared/           # Components, hooks, context, lib
 │   └── src-tauri/            # Rust backend
 │       ├── src/
 │       │   ├── core/         # events.rs, settings.rs, state.rs, constants.rs, metrics.rs
 │       │   ├── services/     # audio/, vad/, stt/, llm/, tts/, pipeline, realtime/, ptt, translit
-│       │   │   ├── audio/    # device.rs, playback.rs, router.rs (unified audio module)
+│       │   │   ├── audio/    # device.rs, playback.rs, router.rs, decode.rs (unified audio module)
+│       │   │   ├── vad/      # earshot_vad.rs (default), ten_onnx.rs (legacy), actor.rs
+│       │   │   ├── stt/      # nemotron_onnx.rs, qwen_onnx.rs, actor.rs, providers/ (SttProvider trait)
 │       │   │   ├── realtime/ # engine.rs, audio_bridge.rs, playback_bridge.rs, resampler.rs
-│       │   │   │   └── providers/  # gemini_live.rs (full Gemini Live WebSocket integration)
-│       │   │   ├── tts/providers/ # TtsProvider trait, (future) Pocket, OmniVoice
+│       │   │   │   └── providers/  # gemini_live.rs, deepgram_live.rs (full WS integration)
+│       │   │   ├── tts/providers/ # TtsProvider trait + supertonic.rs, chatterbox.rs, chatterbox_remote.rs
 │       │   │   └── llm/providers/ # embedded.rs, openai_compat.rs (unified cloud hub)
-│       │   ├── ipc/          # Tauri command handlers (pipeline, settings, tray, history…)
-│       │   ├── persistence/  # SQLite (rusqlite), event store
-│       │   ├── monitoring/   # Telemetry aggregator, system monitor
-│       │   └── setup/        # First-run model download, wizard state machine
-│       └── tests/            # llm_provider_tests.rs, gemini_live_test.rs (mock WS servers)
+│       │   ├── ipc/          # Tauri command handlers (pipeline, settings, tray, history, voices, audio, setup…)
+│       │   ├── persistence/  # SQLite (rusqlite), db.rs, schema.rs, events.rs, voices.rs, worker.rs
+│       │   ├── monitoring/   # aggregator, collector, snapshot, runtime_state, system_monitor, telemetry_emitter
+│       │   ├── setup/        # manifest.rs, model_manager.rs, runtime_check.rs, update_check.rs
+│       │   ├── utils/        # paths.rs, logging.rs, audio_filters.rs, bench_reporter.rs
+│       │   └── bin/          # vox-bench, tts-bench, vox_realtime_bench, voice_clone, etc.
+│       └── tests/            # llm_provider_tests.rs, gemini_live_test.rs, realtime_echo_test.rs
+├── chatterbox-rs/            # External TTS engine (submodule)
+├── vox-models/               # Model storage directory
 ├── docs/                     # Extensive architecture docs — READ BEFORE MAKING DECISIONS
-│   ├── backend.md            # ~1500 lines — threading, events, services, memory
-│   ├── frontend.md           # ~900 lines — component tree, state, IPC, design system
+│   ├── backend.md            # ~1800 lines — threading, events, services, memory
+│   ├── frontend.md           # ~1000 lines — component tree, state, IPC, design system
+│   ├── models.md             # Model architecture, selection, footprints
+│   ├── features/             # Feature-specific docs (ptt, voice-flow, transcription-tray…)
 │   ├── plans/                # Phase implementation plans (phase9/ dir for inference expansion)
 │   └── roadmap.md            # Brief overview of what's been shipped (not a forward plan)
 ├── .agents/rules/            # Agent instruction files (system-architect, code-style, finetune)
@@ -70,9 +80,11 @@ LlmProvider trait:
        └─ Anthropic cloud       (provider_name: "anthropic")
 ```
 
-New cloud providers (OpenAI, Gemini, Anthropic, Groq, OpenRouter, Sarvam) should be added
-as new `impl LlmProvider` structs in `services/llm/providers/`. The trait requires:
-`generate()`, `stream_tokens()`, `cancel()`, `health_check()`, `list_models()`.
+New cloud providers (OpenAI, Gemini, Anthropic, Groq, OpenRouter, Sarvam) should normally
+be handled through the `OpenAiCompatProvider` (which supports any OpenAI-compatible
+endpoint). Only add a new `impl LlmProvider` struct if the provider uses a fundamentally
+different protocol (non-OpenAI-compatible). The trait requires: `generate()`,
+`health_check()`, `list_models()`, `kind()`.
 
 The pipeline (`services/pipeline.rs`) is **provider-agnostic** — it calls `LlmProvider`
 methods only. Do not modify the pipeline when adding a new provider.
@@ -85,7 +97,8 @@ provider system** mirroring the LLM pattern:
 ```
 TtsProvider trait:                          (services/tts/providers/mod.rs)
   └─ TtsEngine (providers/supertonic.rs)    (local Supertonic 3 via sherpa-onnx)
-  └─ (future) Pocket, OmniVoice, etc.
+  └─ ChatterboxEngine (providers/chatterbox.rs)  (local GGML, zero-shot voice cloning)
+  └─ ChatterboxRemoteProvider (providers/chatterbox_remote.rs) (offload to GPU server)
 ```
 
 The trait uses `&self` (interior mutability via `Mutex`/atomics) instead of `&mut self`
@@ -94,8 +107,8 @@ provider-config level (restart to change). Methods: `kind()`, `health_check()`,
 `set_quality_steps()`, `set_speed()`. All providers must output **24 kHz f32 mono**.
 
 **Settings**: `TtsProviderConfig` is a tagged enum (like `LlmProviderConfig`) in
-`core/settings.rs`. Currently only `Supertonic` variant exists. Switch requires
-TTS worker restart (`SettingReloadPolicy::Restart`).
+`core/settings.rs`. Variants: `Supertonic`, `Chatterbox`, `ChatterboxRemote`.
+Switch requires TTS worker restart (`SettingReloadPolicy::Restart`).
 
 The pipeline (`services/pipeline.rs`) `warm_up_tts()` matches on
 `TtsProviderConfig` to construct the correct provider — do NOT hardcode any
@@ -127,9 +140,10 @@ The `RealtimeVoiceProvider` trait-based engine for cloud speech-to-speech APIs (
 OpenAI Realtime, Deepgram Voice Agent, ElevenLabs ConvAI) is implemented in
 `services/realtime/`. It uses a **hybrid sync/async threading model** (tokio tasks for
 WebSocket, sync threads for audio capture/playback). **Gemini Live is fully integrated**
-with the complete frontend session lifecycle. The remaining three providers have config
-structs defined but return "not yet implemented" — see `docs/plans/phase9/` for their
-integration plans.
+with the complete frontend session lifecycle. **Deepgram Voice Agent** is also fully
+implemented (WebSocket, auto-reconnect, keepalive, ~657 lines). The remaining two
+providers (OpenAI Realtime, ElevenLabs ConvAI) have config structs defined but are
+not yet implemented — see `docs/plans/phase9/` for their integration plans.
 
 ### Backend Threading Model
 
@@ -139,7 +153,7 @@ integration plans.
   the TTS engine. `LlamaBackend::init()` is called exactly once per process.
 - **Hybrid sync/async for realtime S2S**: tokio tasks for WebSocket I/O, OS threads for
   audio capture and playback, atomic flags for pause/resume coordination.
-- `VoxEvent` enum with 15+ variants drives all pipeline coordination.
+- `VoxEvent` enum with 16 variants drives all pipeline coordination.
 
 ### Frontend
 
@@ -149,6 +163,7 @@ integration plans.
 - **Performance**: `useDynamicFPS` hook (60/15/0 FPS tiers), `React.memo` on visual components,
   refs over state for audio/transcript data.
 - **Three windows** in `tauri.conf.json`: `main` (400×800), `wizard` (900×650), `tray` (420×250).
+- **Responsive layout**: `ResponsiveLayout`, `EdgeNav`, `TitleBar` in `layout/` directory.
 - **Rust is source of truth** — frontend never derives state from local computations.
 
 ---

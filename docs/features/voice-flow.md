@@ -7,6 +7,7 @@
 ## Pipeline Overview
 
 ```
+MODULAR PATH:
 ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
 │  Audio   │ →  │   VAD    │ →  │   STT    │ →  │   LLM    │ →  │   TTS    │ →  Playback
 │ Capture  │    │ Detection │    │(Nemotron)│    │ (Llama)  │    │(Supertonic)│
@@ -14,6 +15,15 @@
       │               │               │               │               │
   16kHz PCM       Speech VAD      Transcript       LLM Tokens     24kHz PCM
   mono @10-20ms   events          (text)           (streaming)     → 48kHz
+
+  REALTIME S2S PATH (alternative):
+  ┌──────────┐    ┌──────────┐    ┌─────────────────────────┐    ┌──────────┐
+  │  Audio   │ →  │  Audio   │ →  │   WebSocket Provider    │ →  │Playback  │
+  │ Capture  │    │ Router   │    │ (Gemini/Deepgram Live)  │    │ Engine   │
+  └──────────┘    └──────────┘    └─────────────────────────┘    └──────────┘
+       │               │                     │                        │
+  16kHz PCM       256-sample          Server-side                24kHz→48kHz
+                   chunks             STT+LLM+TTS                  upsampled
 ```
 
 ---
@@ -39,6 +49,11 @@ Audio flows from the CPAL callback into a **lock-free SPSC ring buffer**:
 
 ### Resampling
 If the input device is not 16 kHz, linear interpolation resamples to 16 kHz in the callback.
+
+### Audio Router (v0.9.0+)
+In Realtime S2S mode, the AudioRouter thread (`services/audio/router.rs`) replaces VAD as the direct consumer. It reads 256-sample chunks and routes based on RouteMode:
+- `RouteMode::LocalVad` — forward to VAD actor (modular mode + realtime PTT)
+- `RouteMode::DirectRealtime` — convert f32→i16 and send to WebSocket session
 
 ---
 
@@ -106,8 +121,13 @@ loop {
 - **Model:** Nvidia Nemotron-3.5-ASR (INT8 quantized)
 - **Runtime:** ONNX Runtime (native, via `ort` crate)
 - **Files:** `config.json`, `encoder.onnx` (657MB), `decoder_joint.onnx` (98MB), `tokenizer.model`
-- **Memory:** ~1,265 MB RSS
+- **Memory:** ~2.5 GB RSS
 - **RTF:** 0.02–0.35× (average 0.18×) — **22× faster than Qwen3-ASR**
+
+### Backend Selection
+Vox supports two STT backends via the SttEngine trait:
+- **Embedded** (primary): local ONNX Nemotron-3.5-ASR as documented below
+- **Cloud** (future): planned API-based STT via provider trait
 
 ### Chunked Transcription Algorithm
 
@@ -163,11 +183,11 @@ After the STT produces a `TranscriptFinal`, the pipeline decides which language 
 ```rust
 fn route_prompt(text: &str) -> String {
     if is_devanagari(&text) {
-        // Text contains Devanagari chars (U+0900–U+097F) → Hindi prompt
-        assistant_settings.hindi_prompt
+        // Text contains Devanagari chars (U+0900–U+097F) → modular prompt
+        assistant_settings.modular_prompt
     } else {
-        // No Devanagari → English prompt
-        assistant_settings.english_prompt
+        // No Devanagari → realtime prompt
+        assistant_settings.realtime_prompt
     }
 }
 ```
@@ -185,7 +205,12 @@ These tags are processed by the TTS engine (Supertonic 3) to produce emotional/p
 
 ## Stage 5: LLM Generation (Llama-3.2-1B-Instruct)
 
-### Model Details
+### Provider Options
+The LLM stage supports multiple backends via the LlmProvider trait:
+- **Embedded** (default): local GGUF model via llama.cpp (documented below)
+- **Cloud** (optional): OpenAiCompatProvider supports OpenAI, Gemini, Anthropic, and any OpenAI-compatible server (Ollama, vLLM, etc.)
+
+### Embedded Model Details
 - **Model:** Llama-3.2-1B-Instruct (Q6_K GGUF)
 - **Runtime:** llama.cpp via `llama-cpp-4` crate
 - **File:** `Llama-3.2-1B-Instruct-Q6_K.gguf` (~1.02 GB)
@@ -216,16 +241,20 @@ loop {
 tx.send(VoxEvent::LlmFinished { turn_id });
 ```
 
-### Prompt Format (Llama 3.2 instruct)
-
-```
-<|begin_of_text|>
-<|start_header_id|>system<|end_header_id|>
-{system_prompt}<|eot_id|>
-<|start_header_id|>user<|end_header_id|>
-{transcript_text}<|eot_id|>
-<|start_header_id|>assistant<|end_header_id|>
-```
+### Prompt Format
+The prompt format is **model-dependent** — `ModelFamily` detection selects the correct template:
+- **Llama3** (default example):
+  ```
+  <|begin_of_text|>
+  <|start_header_id|>system<|end_header_id|>
+  {system_prompt}<|eot_id|>
+  <|start_header_id|>user<|end_header_id|>
+  {transcript_text}<|eot_id|>
+  <|start_header_id|>assistant<|end_header_id|>
+  ```
+- **Gemma**: `<bos><start_of_turn>user\n{text}<end_of_turn>\n<start_of_turn>model\n`
+- **Qwen**: `<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n`
+- **Nemotron**: `<s><|begin_of_text|>system\n{prompt}<|end_of_text|>\nuser\n{text}<|end_of_text|>\nassistant\n`
 
 ### Cancellation
 - `cancel_flag` (AtomicBool) checked every token iteration
@@ -314,6 +343,12 @@ The check ensures the buffer ends at whitespace or punctuation. Together with De
 
 ## Stage 7: TTS Synthesis (Supertonic 3)
 
+Vox supports multiple TTS providers via the TtsProvider trait:
+- **Supertonic 3** (default): 99M param flow-matching, INT8 quantized, 31 languages, 10 voices
+- **Chatterbox Local**: 340M param, voice cloning from 5s reference audio, ~1.1GB RAM
+- **Chatterbox Remote**: Offload to GPU server, 0MB local RAM
+This section covers Supertonic 3. See `docs/backend.md` for Chatterbox details.
+
 ### Model Details
 - **Model:** Supertonic 3 — 99M param flow-matching TTS
 - **Runtime:** sherpa-onnx native (C++)
@@ -327,7 +362,7 @@ The check ensures the buffer ends at whitespace or punctuation. Together with De
 
 ```text
 TTS Worker (OS Thread):
-  TtsCommand::Generate { text, voice_sid }
+  TtsCommand::Generate { text }
     → supertonic::synthesize(text, config)
     → progress_callback (each chunk of audio: resample 44.1k→24kHz)
     → send TtsChunk { samples } to pipeline
@@ -516,14 +551,20 @@ Each interaction records:
 |-----------|-------------|-----------------|-------|
 | VAD (Earshot) | ~50 MB | ~1ms per frame | Always loaded, no model file |
 | VAD (Ten) | ~50 MB | ~15ms per frame | Legacy, requires model file |
-| STT (Nemotron) | ~1,265 MB | 0.04–0.31× RTF | INT8 quantized ONNX |
+| STT (Nemotron) | ~2,500 MB | 0.04–0.31× RTF | INT8 quantized ONNX |
 | LLM (Llama-3.2-1B) | ~970 MB | 2.5–4.4 TPS | Q6_K quantization |
 | TTS (Supertonic) | ~21 MB | 0.79–1.50× RTF | INT8 quantized |
-| **Total Peak** | **~2,461 MB** | — | Well within 8 GB target |
+| TTS (Chatterbox Local) | ~1,100 MB | TBD | Optional, 340M param voice cloning |
+| **Total Peak** | **~3,541 MB** | — | ~4,641 MB with Chatterbox |
 
 ---
 
 ## Event Flow Sequence
+
+The event flow below shows the **modular** (VAD→STT→LLM→TTS) path. In **Realtime S2S mode**, the flow is different:
+- Audio capture → AudioRouter → WebSocket session (direct server-side STT+LLM+TTS)
+- Server sends audio frames directly to the playback bridge
+- No intermediate VAD/STT/LLM/TTS events — only session lifecycle events (SessionStarted, RealtimeAudioReceived, SessionEnded)
 
 ```
  VAD                          Pipeline                  STT                      LLM                      TTS              Playback
