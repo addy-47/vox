@@ -22,20 +22,21 @@ Define a **Push-To-Talk (PTT) interaction mode** for Vox that provides **explici
 
 ### Interaction Modes
 
-```typescript
-enum InteractionMode {
-  Passive = "Passive",  // VAD-triggered, always listening
-  PTT = "PTT"          // Button-controlled, explicit recording
+```rust
+pub enum InteractionMode {
+    Passive,  // VAD-triggered, always listening
+    PTT,      // Button-controlled, explicit recording
 }
 ```
 
 ### Mode Configuration
 
-```typescript
-interface InteractionSettings {
-  main_app_mode: InteractionMode;  // Main window behavior
-  tray_mode: InteractionMode;      // Tray overlay behavior
-  auto_sleep_timeout: number;      // Dormancy timeout
+```rust
+pub struct InteractionSettings {
+    pub main_app_mode: InteractionMode,  // Main window behavior
+    pub tray_mode: InteractionMode,      // Tray overlay behavior
+    pub auto_sleep_timeout: u32,         // Dormancy timeout in seconds
+    pub pipeline_mode: PipelineMode,     // Modular or Realtime
 }
 ```
 
@@ -65,12 +66,13 @@ enum PttState {
 
 ### Transitions
 
-```typescript
-// Start recording
-IDLE → RECORDING (user presses PTT button)
+```
+// Start recording (owner parameter determines which window)
+IDLE → RECORDING (user presses PTT button, owner = MainWindow | Tray)
 
-// Stop recording
-RECORDING → PROCESSING (user releases PTT button)
+// Stop recording (checks speech_detected atomic)
+RECORDING → PROCESSING (user releases, speech detected)
+RECORDING → IDLE       (user releases, NO speech detected — discard hold)
 
 // Processing complete
 PROCESSING → IDLE (transcript ready, state reset)
@@ -78,13 +80,23 @@ PROCESSING → IDLE (transcript ready, state reset)
 
 ### Error Transitions
 
-```typescript
-// Cancel during recording
-RECORDING → IDLE (discard buffer, no transcript)
-
-// Processing timeout
-PROCESSING → IDLE (fallback message, state reset)
 ```
+// Cancel during recording
+RECORDING → IDLE (discard buffer, no transcript, cancel_flag set)
+
+// Mode guard rejection
+IDLE → IDLE (attempted PTT start in Passive mode — error returned)
+```
+
+### Realtime PTT Mode Differentiation
+
+| Concern | Modular PTT | Realtime PTT |
+|---------|------------|-------------|
+| Audio routing | PTT buffer → STT → LLM → TTS | PTT buffer → WebSocket via `activity_start`/`activity_end` |
+| Server-side VAD | N/A | Disabled (`disabled: true` in setup) |
+| Client-side VAD | Earshot/Ten classifies speech → discard silent holds | **Required** — gates PCM before sending, prevents hallucination |
+| PTT duration cap | 10 min hard limit (`MAX_PTT_SAMPLES`) | 30s long-hold cutoff, auto-sends `ActivityEnd` |
+| Speech discard | No speech → clear buffer, skip `SttCommand::Final` | No speech → no `ActivityEnd` sent, server stays silent |
 
 ---
 
@@ -140,57 +152,52 @@ Ready for next interaction
 
 ```rust
 #[tauri::command]
-pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
+pub async fn ptt_start(
+    app: AppHandle,
+    owner: Option<InteractionOwner>,
+) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    // Prevent double-start
-    let mut recording = state.ptt.is_recording.lock().await;
-    if *recording {
-        log::warn!("[PTT] ptt_start called while already recording");
-        return Ok(());
-    }
-    *recording = true;
-
-    // Initialize buffers
-    let mut buffer = state.ptt.audio_buffer.lock().await;
-    let mut samples_since = state.ptt.samples_since_partial.lock().await;
-    let mut samples_waveform = state.ptt.samples_since_waveform.lock().await;
-
-    // Sync with global turn ID
-    let current_global = state.pipeline.turn_id.load(Ordering::Relaxed);
-    state.ptt.turn_id.store(current_global, Ordering::Relaxed);
-    let turn = current_global;
-
-    buffer.clear();
-    *samples_since = 0;
-    *samples_waveform = 0;
-
-    // Determine target window
-    let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
-    let target = match owner {
-        InteractionOwner::Tray => "tray",
-        _ => "main"
+    // 1. Resolve and synchronize active owner
+    let actual_owner = if let Some(o) = owner {
+        state.owner.store(o as u32, Ordering::Relaxed);
+        // Update VAD actor with new owner for mode-aware routing
+        if let Some(engine) = state.engine.lock().await.as_ref() {
+            let _ = engine.vad_tx.send(VadCommand::UpdateOwner(o));
+        }
+        o
+    } else {
+        state.owner.load(Ordering::Relaxed).into()
     };
 
-    log::info!("[PTT] Recording started (turn: {}, target: {})", turn, target);
-
-    // Notify UI
-    let _ = app.emit_to(target, "ptt_status", json!({
-        "state": "RECORDING",
-        "session_id": turn
-    }));
-
-    // Update pipeline state
-    state.pipeline.update_interaction_state(
-        InteractionState::UserSpeaking,
-        owner,
-        &app
-    );
-
-    // Send SpeechStart to trigger barge-in cancellation
-    if let Some(engine) = state.engine.lock().await.as_ref() {
-        let _ = engine.pipeline_tx.send(VoxEvent::SpeechStart { turn_id: turn, owner });
+    // 2. Mode guard: reject if target is in Passive mode
+    let interaction_mode = match actual_owner { /* check settings */ };
+    if interaction_mode != InteractionMode::PTT {
+        return Err("Cannot start PTT in Passive mode".to_string());
     }
+
+    // 3. Atomic compare-exchange to prevent double-start
+    if state.ptt.is_recording.compare_exchange(false, true, ...).is_err() {
+        return Ok(());
+    }
+
+    // 4. Reset state and sync turn ID
+    state.ptt.speech_detected.store(false, Ordering::Relaxed);
+    state.ptt.audio_buffer.lock().unwrap().clear();
+    let turn = state.pipeline.turn_id.load(Ordering::Relaxed);
+    state.ptt.turn_id.store(turn, Ordering::Relaxed);
+
+    // 5. In realtime mode: signal activity_start to WebSocket
+    if is_realtime {
+        rt_engine.activity_start()?;
+    } else {
+        // Send SpeechStart for barge-in
+        engine.pipeline_tx.send(VoxEvent::SpeechStart { turn_id: turn, owner });
+    }
+
+    // 6. Notify UI and update interaction state
+    let _ = app.emit_to(target, "ptt_status", json!({ "state": "RECORDING" }));
+    state.pipeline.update_interaction_state(InteractionState::UserSpeaking, owner, &app);
 
     Ok(())
 }
@@ -200,51 +207,48 @@ pub async fn ptt_start(app: AppHandle) -> Result<(), String> {
 
 ```rust
 #[tauri::command]
-pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
+pub async fn ptt_stop(
+    app: AppHandle,
+    owner: Option<InteractionOwner>,
+) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    // Extract state without holding locks during STT send
-    let (turn, owner, buffer_clone) = {
-        let mut recording = state.ptt.is_recording.lock().await;
-        if !*recording {
-            return Ok(());
-        }
-        *recording = false;
-
-        let buffer = state.ptt.audio_buffer.lock().await;
-        let turn = state.ptt.turn_id.load(Ordering::Relaxed);
-        let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
-
-        log::info!("[PTT] Recording stopped. Finalizing {} samples", buffer.len());
-
-        (turn, owner, buffer.clone())
-    };
-
-    let target = match owner {
-        InteractionOwner::Tray => "tray",
-        _ => "main"
-    };
-
-    // Update UI state
-    let _ = app.emit_to(target, "ptt_status", json!({
-        "state": "PROCESSING",
-        "session_id": turn
-    }));
-
-    state.pipeline.update_interaction_state(
-        InteractionState::Thinking,
-        owner,
-        &app
-    );
-
-    // Send final audio buffer to STT
-    let engine_lock = state.engine.lock().await;
-    if let Some(engine) = engine_lock.as_ref() {
-        let _ = engine.stt_tx.send(SttCommand::Final(turn, owner, buffer_clone));
-        log::info!("[PTT] Sent final buffer to STT worker");
-    } else {
-        log::error!("[PTT] Engine not running, cannot finalize");
+    // 1. Quick return if not recording
+    if !state.ptt.is_recording.load(Ordering::SeqCst) {
+        return Ok(());
     }
+
+    // 2. Resolve owner
+    let actual_owner = /* resolve from param or global state */;
+
+    // 3. VAD gate: check speech_detected
+    if !state.ptt.speech_detected.load(Ordering::Relaxed) {
+        // Silence-only hold — discard, no finalization
+        discard_ptt_hold_inner(&state.ptt);
+        app.emit_to(target, "ptt_status", json!({ "state": "IDLE" }));
+        state.pipeline.update_interaction_state(InteractionState::Idle, owner, &app);
+        return Ok(());
+    }
+
+    // 4. Extract buffer and determine pipeline mode
+    let (turn, buffer_clone, is_realtime) = {
+        let buffer = state.ptt.audio_buffer.lock().unwrap();
+        let turn = state.ptt.turn_id.load(Ordering::Relaxed);
+        state.ptt.is_recording.store(false, Ordering::SeqCst);
+        let is_realtime = settings.interaction.pipeline_mode == PipelineMode::Realtime;
+        (turn, buffer.clone(), is_realtime)
+    };
+
+    // 5. Route based on pipeline mode
+    if is_realtime {
+        rt_engine.activity_end()?;  // Signal end of voice activity
+    } else {
+        engine.stt_tx.send(SttCommand::Final(turn, owner, buffer_clone));
+    }
+
+    // 6. Update UI
+    app.emit_to(target, "ptt_status", json!({ "state": "PROCESSING" }));
+    state.pipeline.update_interaction_state(InteractionState::Thinking, owner, &app);
 
     Ok(())
 }
@@ -254,30 +258,25 @@ pub async fn ptt_stop(app: AppHandle) -> Result<(), String> {
 
 ```rust
 #[tauri::command]
-pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
+pub async fn ptt_cancel(
+    app: AppHandle,
+    owner: Option<InteractionOwner>,
+) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    let mut recording = state.ptt.is_recording.lock().await;
-    let mut buffer = state.ptt.audio_buffer.lock().await;
+    let actual_owner = /* resolve from param or global state */;
 
-    *recording = false;
-    buffer.clear();
+    // Set cancel flag, clear buffer, mark not recording
+    state.ptt.is_recording.store(false, Ordering::SeqCst);
+    state.ptt.audio_buffer.lock().unwrap().clear();
+    state.ptt.speech_detected.store(false, Ordering::Relaxed);
 
-    let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
-    let target = match owner {
-        InteractionOwner::Tray => "tray",
-        _ => "main"
-    };
+    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
 
-    log::info!("[PTT] Recording cancelled (target: {})", target);
-
+    let target = match actual_owner { /* Tray → "tray", _ → "main" */ };
     let _ = app.emit_to(target, "ptt_status", json!({ "state": "IDLE" }));
 
-    state.pipeline.update_interaction_state(
-        InteractionState::Idle,
-        owner,
-        &app
-    );
+    state.pipeline.update_interaction_state(InteractionState::Idle, actual_owner, &app);
 
     Ok(())
 }
@@ -293,40 +292,46 @@ pub async fn ptt_cancel(app: AppHandle) -> Result<(), String> {
 
 ```rust
 pub struct PttState {
-    pub is_recording: Mutex<bool>,
+    pub is_recording: AtomicBool,
     pub turn_id: Arc<AtomicU32>,
     pub audio_buffer: Mutex<Vec<f32>>,              // Raw 16kHz mono samples
-    pub samples_since_partial: Mutex<usize>,        // Counter for partial sends
-    pub samples_since_waveform: Mutex<usize>,       // Counter for waveform updates
+    pub speech_detected: AtomicBool,                 // VAD gate — set if speech classified during hold
 }
 ```
 
-#### Continuous Capture
+#### VAD-Gated Continuous Capture
 
 ```rust
 pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    let recording = state.ptt.is_recording.blocking_lock();
-    if !*recording { return; }
+    // Check recording state (atomic, no lock)
+    if !state.ptt.is_recording.load(Ordering::Relaxed) { return; }
 
     let mut buffer = state.ptt.audio_buffer.blocking_lock();
 
-    // Append ALL audio (no VAD filtering)
+    // Append ALL audio (no VAD filtering for capture itself)
     if buffer.len() < MAX_PTT_SAMPLES {
         buffer.extend_from_slice(samples);
     } else {
-        // Safety cap: Auto-stop if >10 minutes
+        // Safety cap: Auto-stop if >10 minutes (modular) or 30s (realtime)
         log::warn!("[PTT] Hard limit reached. Auto-stopping.");
         drop(buffer);
-        drop(recording);
         tauri::async_runtime::spawn(async move {
-            let _ = ptt_stop(app.clone()).await;
+            let _ = ptt_stop(app.clone(), None).await;
         });
         return;
     }
 }
 ```
+
+#### VAD Gating (`speech_detected`)
+
+A `speech_detected: AtomicBool` on `PttState` tracks whether speech was classified during a PTT hold:
+
+- On **speech onset**: flips `speech_detected = true`, flushes a 240ms pre-roll buffer to the realtime WebSocket (prevents clipped first word)
+- On **ptt_stop**: if `speech_detected == false`, the entire hold is discarded — no `SttCommand::Final` sent to STT or `ActivityEnd` to Gemini
+- On **ptt_start**: `speech_detected` is reset to `false`
 
 ### Background STT Processing
 
@@ -652,11 +657,13 @@ PTT mode **coexists** with passive mode:
 ### Backend Dependencies
 
 - **STT worker**: Reused for both partial and final transcription
-- **Audio ingestion**: Same CPAL stream, different processing logic
+- **Audio ingestion**: Same CPAL stream, different processing logic (gated by `speech_detected` atomic)
 - **Pipeline events**: Integrated with main event bus
+- **Realtime mode**: PTT triggers `activity_start`/`activity_end` over WebSocket instead of `SttCommand::Final`
 
 ### UI Coordination
 
 - **Mode indicators**: Clear visual distinction between modes
 - **Seamless switching**: No restart required when changing modes
 - **State synchronization**: Consistent state across main/tray windows
+- **PTT button**: Only rendered when `interactionMode === "PTT"`; in realtime mode, toggles WebSocket activity

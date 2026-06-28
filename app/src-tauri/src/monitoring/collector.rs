@@ -83,6 +83,20 @@ fn collect_snapshot(
 
     let sys_ram_pct = f32::from_bits(state.latest_sys_ram.load(Ordering::Relaxed));
 
+    let llm_provider_kind = {
+        let settings = state.settings.read().unwrap();
+        match &settings.llm.provider {
+            crate::core::settings::LlmProviderConfig::Embedded => "embedded".to_string(),
+            crate::core::settings::LlmProviderConfig::OpenAiCompat { provider_name, .. } => {
+                if let Some(ref name) = provider_name {
+                    format!("openai_compat:{}", name.to_lowercase())
+                } else {
+                    "openai_compat".to_string()
+                }
+            }
+        }
+    };
+
     RuntimeSnapshot {
         pipeline_state,
         current_turn_id: pa.turn_id.load(Ordering::Relaxed),
@@ -138,6 +152,7 @@ fn collect_snapshot(
         is_db_healthy: state.is_db_healthy.load(Ordering::Relaxed),
 
         is_llm_loaded: state.is_llm_loaded.load(Ordering::Relaxed),
+        llm_provider_kind,
         is_tts_loaded: state.is_tts_loaded.load(Ordering::Relaxed),
         is_stt_loaded: state.is_stt_loaded.load(Ordering::Relaxed),
         is_vad_loaded: state.is_vad_loaded.load(Ordering::Relaxed),

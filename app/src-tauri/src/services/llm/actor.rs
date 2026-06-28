@@ -22,7 +22,8 @@ pub fn spawn_llm_worker(
 ) {
     use tauri::Emitter;
 
-    is_loaded.store(true, Ordering::Relaxed);
+    let is_local = provider.kind() == super::ProviderKind::Embedded;
+    is_loaded.store(is_local, Ordering::Relaxed);
     let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "LLM");
 
     log::info!("[LLM Worker] Persistent loop started.");

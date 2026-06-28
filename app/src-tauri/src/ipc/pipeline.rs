@@ -178,6 +178,18 @@ pub async fn engage(
                     InteractionOwner::Tray,
                 ));
 
+            let tray_enabled = {
+                let s = state.settings.read().unwrap();
+                s.ui.tray_enabled
+            };
+            if !tray_enabled {
+                let _ = engine
+                    .vad_tx
+                    .send(crate::core::state::VadCommand::UpdateMode(
+                        crate::core::settings::InteractionMode::PTT,
+                    ));
+            }
+
             // Persist Session End
             let conv_id = state.conversation_id.swap(0, Ordering::Relaxed);
             if conv_id != 0 {
