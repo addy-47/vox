@@ -60,6 +60,13 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            // Capture the Tokio runtime handle early
+            tauri::async_runtime::spawn(async {
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    let _ = crate::persistence::db::TOKIO_HANDLE.set(handle);
+                }
+            });
+
             // ── 0. Runtime Booting ──────────────────────────────────────────────────
             app.emit(crate::core::constants::EVENT_RUNTIME_BOOTING, ()).ok();
 
@@ -440,6 +447,7 @@ pub fn run() {
             delete_session,
             // Voices
             crate::ipc::voices::list_voices,
+            crate::ipc::voices::validate_wav,
             crate::ipc::voices::add_voice_from_file,
             crate::ipc::voices::add_voice_from_recording,
             crate::ipc::voices::start_backend_recording,
