@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, Loader2, Folder, Mic
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { RemoteModelInfo } from "@/store/settingsStore";
+import { RemoteModelInfo, ModelCapabilities } from "@/store/settingsStore";
 
 const PRICING_MAP: Record<string, string> = {
   "gpt-4o-mini": "$0.15 / $0.60",
@@ -809,6 +809,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [remoteModels, setRemoteModels] = useState<RemoteModelInfo[]>([]);
   const [loadingRemoteModels, setLoadingRemoteModels] = useState(false);
   const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
+  const [probingMap, setProbingMap] = useState<Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>>({});
 
   // Fix: Base layout decisions on committed settings to prevent uncommitted leaks
   const savedProvider = settings?.llm?.provider;
@@ -816,6 +817,37 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const provider = (draftSettings?.llm?.provider?.kind === savedProvider?.kind)
     ? draftSettings?.llm?.provider
     : savedProvider;
+
+  const handleProbeCapabilities = useCallback(async (modelId?: string) => {
+    if (!provider) return;
+    const targetId = modelId || (provider.kind === "open_ai_compat" ? provider.model : "embedded");
+    if (!targetId) return;
+
+    setProbingMap(prev => ({
+      ...prev,
+      [targetId]: { status: 'testing' }
+    }));
+
+    try {
+      const caps = await invoke<ModelCapabilities>("probe_model_capabilities", {
+        provider,
+        modelId: targetId
+      });
+
+      setProbingMap(prev => ({
+        ...prev,
+        [targetId]: { status: 'success', capabilities: caps }
+      }));
+
+      setRemoteModels(prev => prev.map(m => m.id === targetId ? { ...m, capabilities: caps } : m));
+    } catch (err) {
+      console.error("[CapabilityProbe] Failed to probe model:", err);
+      setProbingMap(prev => ({
+        ...prev,
+        [targetId]: { status: 'error', error: String(err) }
+      }));
+    }
+  }, [provider]);
 
 
 
@@ -1551,6 +1583,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                       ) : (
                         getFilteredModels().map((model) => {
                           const isSelected = provider?.model === model.id;
+                          const probed = probingMap[model.id]?.capabilities || model.capabilities;
+                          const isTesting = probingMap[model.id]?.status === 'testing';
+                          const isGpu = probed?.is_gpu_accelerated;
+
                           return (
                             <button
                               key={model.id}
@@ -1559,16 +1595,20 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                                   ...provider,
                                   model: model.id,
                                 });
+                                if (!probed && !isTesting) {
+                                  handleProbeCapabilities(model.id);
+                                }
                               }}
                               className={cn(
-                                "w-full text-left p-3 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3",
+                                "w-full text-left p-3 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3 relative overflow-hidden",
+                                isGpu ? "border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.2)]" : "",
                                 isSelected
                                   ? "bg-[rgba(var(--accent),0.05)] border-[rgb(var(--accent))]"
                                   : "bg-[rgba(var(--foreground),0.01)] border-[rgba(var(--foreground),0.04)] hover:border-[rgba(var(--accent),0.2)]"
                               )}
                             >
-                              <div className="flex-1 space-y-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
+                              <div className="flex-1 space-y-1.5 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-bold text-[rgb(var(--foreground))]/90 text-[11px] truncate">
                                     {model.name}
                                   </span>
@@ -1582,7 +1622,17 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                                       {model.family}
                                     </span>
                                   )}
+                                  {isGpu ? (
+                                    <span title={probed?.gpu_status || "GPU Offloaded"} className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 leading-none flex items-center gap-1">
+                                      🚀 GPU {probed?.vram_bytes ? `(${(probed.vram_bytes / (1024 * 1024)).toFixed(0)}MB)` : ""}
+                                    </span>
+                                  ) : probed?.server_has_gpu ? (
+                                    <span title="Server has GPU hardware, but model is running in CPU mode" className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 leading-none flex items-center gap-1">
+                                      ⚠️ GPU Server (CPU)
+                                    </span>
+                                  ) : null}
                                 </div>
+
                                 <div className="flex items-center gap-2 text-[10px] text-[rgb(var(--foreground-muted))]/70">
                                   <span className="font-mono truncate">{model.id}</span>
                                   {model.size_bytes !== null && model.size_bytes !== undefined && (
@@ -1590,6 +1640,55 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                                       <span>•</span>
                                       <span>{(model.size_bytes / (1024 * 1024 * 1024)).toFixed(2)} GB</span>
                                     </>
+                                  )}
+                                </div>
+
+                                {/* Capability Badges & Readouts */}
+                                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                  {isTesting ? (
+                                    <span className="text-[9px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
+                                      <Loader2 size={10} className="animate-spin" />
+                                      Testing capabilities...
+                                    </span>
+                                  ) : probed ? (
+                                    <>
+                                      {probed.supports_tools && (
+                                        <span title="Supports Tool Calling" className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1">
+                                          🛠️ Tools
+                                        </span>
+                                      )}
+                                      {probed.supports_latin && (
+                                        <span title="Latin Script (EN)" className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                          EN
+                                        </span>
+                                      )}
+                                      {probed.supports_devanagari && (
+                                        <span title="Devanagari Script (Hindi/Hinglish)" className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                          DEV
+                                        </span>
+                                      )}
+                                      {probed.context_window && (
+                                        <span title="Context Window" className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-300 border border-zinc-700/50">
+                                          🧠 {probed.context_window >= 1000000 ? `${(probed.context_window / 1000000).toFixed(1)}M ctx` : `${Math.round(probed.context_window / 1024)}k ctx`}
+                                        </span>
+                                      )}
+                                      {probed.tps && (
+                                        <span title="Generation Speed" className="text-[9px] font-mono text-emerald-400 font-bold">
+                                          ⚡ {probed.tps.toFixed(1)} tps
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleProbeCapabilities(model.id);
+                                      }}
+                                      className="text-[9px] font-bold text-[rgb(var(--accent))] hover:underline flex items-center gap-1"
+                                    >
+                                      <Sparkles size={10} /> Test Capabilities
+                                    </button>
                                   )}
                                 </div>
                               </div>

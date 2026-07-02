@@ -66,11 +66,35 @@ We executed 30 semantic queries against the seeded 1,500 question database (cont
 
 ---
 
-## Future Gates & Phases
+## Phase 0.75: Runtime Model Capability Detection Gate
 
-### Gate: Runtime Capability Detection
-- Implement static model capabilities structure.
-- Integrate capability check at engine startup.
+### Objective
+Provide a unified, protocol-agnostic mechanism to inspect and verify LLM capabilities (local embedded, remote OpenAI-compatible endpoints like Ollama/vLLM/LM Studio, and Cloud endpoints like Gemini/OpenAI/Anthropic) at runtime, displaying them dynamically in the settings UI with structured logging.
+
+### Probing Architecture & Protocol
+1. **Standardized Protocol (OpenAI-Compatible First)**:
+   - Primary probing is executed using standard `/v1/chat/completions` and `/v1/models` endpoints, supporting **vLLM**, **LM Studio**, **LocalAI**, **Ollama**, **OpenAI**, **Gemini**, and **Anthropic**.
+2. **Inference-First Probe Execution**:
+   - The test chat completion request is executed *first*. This wakes up lazy-loading servers (like Ollama or LM Studio) and loads the model into memory/VRAM before inspecting VRAM metrics or server hardware.
+3. **Two-Tier GPU & Hardware Detection**:
+   - **`server_has_gpu`**: Detects if host server possesses GPU hardware (CUDA, ROCm, Metal, TPU).
+   - **`is_gpu_accelerated`**: Detects if model is offloaded to VRAM (`vram_bytes > 0` or GPU header/tps metrics).
+   - **`gpu_status`**: Handles edge cases (e.g., `"Server GPU Present (Model CPU-Bound)"` when a user forces CPU offload on a GPU server).
+4. **Structured Backend Logging**:
+   - Emits explicit `log::info!` entries for every probe phase (initiation, HTTP latency, script analysis, TPS evaluation, GPU offload analysis).
+
+### Verified Capabilities Probe Benchmarks
+
+| Model | Provider / Base URL | Context | TPS / TTFT | GPU Status (`gpu_status`) | Script Badges | Tools |
+|---|---|---|---|---|---|---|
+| **`gemini-1.5-flash`** | Cloud (Gemini API) | `1,048,576` (1.0M) | Managed Cloud | `Cloud GPU/TPU Cluster` | `EN`, `DEV` | `true` |
+| **`llama3.1:8b-instruct-q4_K_M`**| Remote Ollama (`100.86.62.14`) | `131,072` (128k) | `62.96 tps` (397ms ttft) | `GPU Accelerated (VRAM: 5211 MB)` | `EN`, `DEV` | `true` |
+| **`gemma4:e4b`** | Remote Ollama (`100.86.62.14`) | `131,072` (128k) | `13.82 tps` (3.61s ttft) | `GPU Accelerated (VRAM: 10256 MB)` | `EN` | `true` |
+| **`embedded_llama`** | Local (Embedded llama.cpp) | `4,096` | Native GGUF | `CPU Only (Local Embedded)` | `EN`, `DEV` | `true` |
+
+---
+
+## Future Gates & Phases
 
 ### Phase 1: Session Memory
 - Context window compression.
