@@ -177,3 +177,6 @@ sudo apt update && sudo apt upgrade vox
   <br>
   <sub>Designed for privacy and immediate ambient intelligence.</sub>
 </div>\
+
+
+

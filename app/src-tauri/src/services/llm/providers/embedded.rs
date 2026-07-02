@@ -101,6 +101,7 @@ impl EmbeddedProvider {
                                     quantization,
                                     family,
                                     provider_kind: "embedded".to_string(),
+                                    capabilities: None,
                                 });
                             }
                         }

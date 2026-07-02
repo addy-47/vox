@@ -1,8 +1,10 @@
 pub mod actor;
+pub mod capability_probe;
 pub mod llama_cpp;
 pub mod providers;
 
 pub use actor::{spawn_llm_worker, LlmCommand};
+pub use capability_probe::CapabilityProbeEngine;
 pub use llama_cpp::LlmWorker;
 pub use providers::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, ProviderKind};
 

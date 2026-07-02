@@ -70,6 +70,26 @@ pub struct VoiceProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModelCapabilities {
+    pub model_id: String,
+    pub provider_kind: String,
+    pub supports_tools: bool,
+    pub supports_latin: bool,
+    pub supports_devanagari: bool,
+    pub context_window: Option<u32>,
+    pub tps: Option<f32>,
+    pub ttft_ms: Option<u32>,
+    pub server_has_gpu: bool,
+    pub is_gpu_accelerated: bool,
+    pub gpu_status: String,
+    pub vram_bytes: Option<u64>,
+    pub parameter_size: Option<String>,
+    pub quantization: Option<String>,
+    pub family: Option<String>,
+    pub tested_at_epoch: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RemoteModelInfo {
     pub id: String,   // e.g. "gemma4:31b"
     pub name: String, // display name derived from id
@@ -77,6 +97,7 @@ pub struct RemoteModelInfo {
     pub quantization: Option<String>, // e.g. "Q4_K_M"
     pub family: Option<String>,       // e.g. "Gemma"
     pub provider_kind: String,        // e.g. "open_ai_compat", "embedded"
+    pub capabilities: Option<ModelCapabilities>,
 }
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {

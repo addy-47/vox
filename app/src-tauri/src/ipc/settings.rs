@@ -779,6 +779,27 @@ pub async fn list_remote_llm_models(
 }
 
 #[tauri::command]
+pub async fn probe_model_capabilities(
+    state: State<'_, std::sync::Arc<AppState>>,
+    provider: Option<crate::core::settings::LlmProviderConfig>,
+    model_id: Option<String>,
+) -> Result<crate::core::settings::ModelCapabilities, String> {
+    use crate::services::llm::CapabilityProbeEngine;
+
+    let config = match provider {
+        Some(prov) => prov,
+        None => {
+            let settings = state.settings.read().map_err(|e| e.to_string())?;
+            settings.llm.provider.clone()
+        }
+    };
+
+    CapabilityProbeEngine::probe_capabilities(&config, model_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn setup_remote_server(
     app: tauri::AppHandle,
     connection_string: String,
