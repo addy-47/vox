@@ -39,9 +39,9 @@ impl From<VoiceEntry> for VoiceEntryDto {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-fn open_db() -> Result<rusqlite::Connection, String> {
+async fn open_db() -> Result<turso::Connection, String> {
     let db_path = crate::utils::paths::db_path();
-    rusqlite::Connection::open(&db_path).map_err(|e| format!("DB open failed: {}", e))
+    crate::persistence::db::VoxDb::open(&db_path).await.map_err(|e| format!("DB open failed: {}", e))
 }
 
 fn now_epoch() -> i64 {
@@ -55,22 +55,27 @@ fn now_epoch() -> i64 {
 /// - Readable as WAV
 /// - Duration ≥ min_duration_secs
 /// Returns (sample_rate, duration_secs) on success.
-fn validate_wav(path: &str, min_duration_secs: f32) -> Result<(u32, f32), String> {
-    let reader =
-        hound::WavReader::open(path).map_err(|e| format!("Cannot read WAV file: {}", e))?;
-    let spec = reader.spec();
-    let num_samples = reader.len();
-    if spec.sample_rate == 0 {
-        return Err("WAV file has invalid sample rate (0)".to_string());
-    }
-    let duration = num_samples as f32 / spec.sample_rate as f32;
-    if duration < min_duration_secs {
-        return Err(format!(
-            "Audio too short ({:.1}s). Minimum is {}s for voice cloning.",
-            duration, min_duration_secs
-        ));
-    }
-    Ok((spec.sample_rate, duration))
+#[tauri::command]
+pub async fn validate_wav(path: String, min_duration_secs: f32) -> Result<(u32, f32), String> {
+    tokio::task::spawn_blocking(move || {
+        let reader =
+            hound::WavReader::open(&path).map_err(|e| format!("Cannot read WAV file: {}", e))?;
+        let spec = reader.spec();
+        let num_samples = reader.len();
+        if spec.sample_rate == 0 {
+            return Err("WAV file has invalid sample rate (0)".to_string());
+        }
+        let duration = num_samples as f32 / spec.sample_rate as f32;
+        if duration < min_duration_secs {
+            return Err(format!(
+                "Audio too short ({:.1}s). Minimum is {}s for voice cloning.",
+                duration, min_duration_secs
+            ));
+        }
+        Ok((spec.sample_rate, duration))
+    })
+    .await
+    .map_err(|e| format!("Task panicked: {}", e))?
 }
 
 // ─── Commands ────────────────────────────────────────────────────────────────
@@ -78,14 +83,11 @@ fn validate_wav(path: &str, min_duration_secs: f32) -> Result<(u32, f32), String
 /// Returns all saved voices ordered by creation date (newest first).
 #[tauri::command]
 pub async fn list_voices() -> Result<Vec<VoiceEntryDto>, String> {
-    tokio::task::spawn_blocking(|| {
-        let conn = open_db()?;
-        voices::list_voices(&conn)
-            .map(|entries| entries.into_iter().map(VoiceEntryDto::from).collect())
-            .map_err(|e| format!("Failed to list voices: {}", e))
-    })
-    .await
-    .map_err(|e| format!("Task panicked: {}", e))?
+    let conn = open_db().await?;
+    voices::list_voices(&conn)
+        .await
+        .map(|entries| entries.into_iter().map(VoiceEntryDto::from).collect())
+        .map_err(|e| format!("Failed to list voices: {}", e))
 }
 
 /// Adds a new cloned voice from an existing audio file.
@@ -347,41 +349,50 @@ pub async fn add_voice_from_file(name: String, file_path: String) -> Result<Voic
         return Err("Voice name cannot be empty".to_string());
     }
 
+    // Create voice directory
+    let id = uuid::Uuid::new_v4().to_string();
+    let voice_dir = crate::utils::paths::voice_dir(&id);
+    std::fs::create_dir_all(&voice_dir)
+        .map_err(|e| format!("Failed to create voice directory: {}", e))?;
+
+    // 1. Decode to WAV and validate duration limits
+    let dest = voice_dir.join("source.wav");
+    let file_path_clone = file_path.clone();
+    let dest_clone = dest.clone();
     tokio::task::spawn_blocking(move || {
-        // Create voice directory
-        let id = uuid::Uuid::new_v4().to_string();
-        let voice_dir = crate::utils::paths::voice_dir(&id);
-        std::fs::create_dir_all(&voice_dir)
-            .map_err(|e| format!("Failed to create voice directory: {}", e))?;
-
-        // 1. Decode to WAV and validate duration limits
-        let dest = voice_dir.join("source.wav");
-        convert_and_validate_audio(&file_path, &dest)?;
-
-        // 2. Pre-bake speaker tensors (Option B)
-        let baked_dir = voice_dir.join("baked");
-        pre_bake_voice(&dest, &baked_dir)?;
-
-        // 3. Insert into DB
-        let entry = VoiceEntry {
-            id: id.clone(),
-            name: name.clone(),
-            source_kind: "pre_baked".to_string(),
-            wav_path: Some(dest.to_string_lossy().into_owned()),
-            voice_dir: Some(baked_dir.to_string_lossy().into_owned()),
-            created_at: now_epoch(),
-            preview_wav: None,
-        };
-
-        let conn = open_db()?;
-        voices::insert_voice(&conn, &entry)
-            .map_err(|e| format!("Failed to save voice: {}", e))?;
-
-        log::info!("[Voices] Added voice '{}' (id={}) with pre-baked tensors", name, id);
-        Ok(VoiceEntryDto::from(entry))
+        convert_and_validate_audio(&file_path_clone, &dest_clone)
     })
     .await
-    .map_err(|e| format!("Task panicked: {}", e))?
+    .map_err(|e| format!("Task panicked: {}", e))??;
+
+    // 2. Pre-bake speaker tensors (Option B)
+    let baked_dir = voice_dir.join("baked");
+    let dest_clone2 = dest.clone();
+    let baked_dir_clone = baked_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        pre_bake_voice(&dest_clone2, &baked_dir_clone)
+    })
+    .await
+    .map_err(|e| format!("Task panicked: {}", e))??;
+
+    // 3. Insert into DB
+    let entry = VoiceEntry {
+        id: id.clone(),
+        name: name.clone(),
+        source_kind: "pre_baked".to_string(),
+        wav_path: Some(dest.to_string_lossy().into_owned()),
+        voice_dir: Some(baked_dir.to_string_lossy().into_owned()),
+        created_at: now_epoch(),
+        preview_wav: None,
+    };
+
+    let conn = open_db().await?;
+    voices::insert_voice(&conn, &entry)
+        .await
+        .map_err(|e| format!("Failed to save voice: {}", e))?;
+
+    log::info!("[Voices] Added voice '{}' (id={}) with pre-baked tensors", name, id);
+    Ok(VoiceEntryDto::from(entry))
 }
 
 /// Adds a new cloned voice from raw PCM audio captured in-app.
@@ -410,20 +421,22 @@ pub async fn add_voice_from_recording(
         ));
     }
 
-    tokio::task::spawn_blocking(move || {
-        // Create voice directory
-        let id = uuid::Uuid::new_v4().to_string();
-        let voice_dir = crate::utils::paths::voice_dir(&id);
-        std::fs::create_dir_all(&voice_dir)
-            .map_err(|e| format!("Failed to create voice directory: {}", e))?;
+    // Create voice directory
+    let id = uuid::Uuid::new_v4().to_string();
+    let voice_dir = crate::utils::paths::voice_dir(&id);
+    std::fs::create_dir_all(&voice_dir)
+        .map_err(|e| format!("Failed to create voice directory: {}", e))?;
 
-        let dest = voice_dir.join("source.wav");
+    let dest = voice_dir.join("source.wav");
+    let dest_clone = dest.clone();
+    let pcm_f32_clone = pcm_f32.clone();
 
-        // Loop short audio or truncate long audio to exactly 30 seconds
+    // 1. Write PCM as WAV
+    let final_samples_len = tokio::task::spawn_blocking(move || {
         let final_samples = if duration < 30.0 {
             log::info!("[Voices] Recording is only {:.1}s — auto-stitching to 30.0s for better cloning", duration);
             let limit = (30.0 * sample_rate as f32) as usize;
-            pcm_f32
+            pcm_f32_clone
                 .iter()
                 .copied()
                 .cycle()
@@ -432,11 +445,10 @@ pub async fn add_voice_from_recording(
         } else if duration > 30.0 {
             log::info!("[Voices] Truncating recording from {:.1}s to 30.0s", duration);
             let limit = (30.0 * sample_rate as f32) as usize;
-            pcm_f32[0..limit].to_vec()
+            pcm_f32_clone[0..limit].to_vec()
         } else {
-            pcm_f32
+            pcm_f32_clone
         };
-
 
         // Write PCM as WAV (f32 mono)
         let spec = hound::WavSpec {
@@ -445,7 +457,7 @@ pub async fn add_voice_from_recording(
             bits_per_sample: 32,
             sample_format: hound::SampleFormat::Float,
         };
-        let mut writer = hound::WavWriter::create(&dest, spec)
+        let mut writer = hound::WavWriter::create(&dest_clone, spec)
             .map_err(|e| format!("Failed to create WAV writer: {}", e))?;
         for sample in &final_samples {
             writer
@@ -456,36 +468,45 @@ pub async fn add_voice_from_recording(
             .finalize()
             .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
 
-        // Pre-bake speaker tensors
-        let baked_dir = voice_dir.join("baked");
-        pre_bake_voice(&dest, &baked_dir)?;
-
-        // Insert into DB
-        let entry = VoiceEntry {
-            id: id.clone(),
-            name: name.clone(),
-            source_kind: "pre_baked".to_string(),
-            wav_path: Some(dest.to_string_lossy().into_owned()),
-            voice_dir: Some(baked_dir.to_string_lossy().into_owned()),
-            created_at: now_epoch(),
-            preview_wav: None,
-        };
-
-        let conn = open_db()?;
-        voices::insert_voice(&conn, &entry)
-            .map_err(|e| format!("Failed to save voice: {}", e))?;
-
-        log::info!(
-            "[Voices] Added voice from recording '{}' (id={}, {:.1}s @ {}Hz) with pre-baked tensors",
-            name,
-            id,
-            final_samples.len() as f32 / sample_rate as f32,
-            sample_rate
-        );
-        Ok(VoiceEntryDto::from(entry))
+        Ok::<usize, String>(final_samples.len())
     })
     .await
-    .map_err(|e| format!("Task panicked: {}", e))?
+    .map_err(|e| format!("Task panicked: {}", e))??;
+
+    // 2. Pre-bake speaker tensors
+    let baked_dir = voice_dir.join("baked");
+    let dest_clone2 = dest.clone();
+    let baked_dir_clone = baked_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        pre_bake_voice(&dest_clone2, &baked_dir_clone)
+    })
+    .await
+    .map_err(|e| format!("Task panicked: {}", e))??;
+
+    // 3. Insert into DB
+    let entry = VoiceEntry {
+        id: id.clone(),
+        name: name.clone(),
+        source_kind: "pre_baked".to_string(),
+        wav_path: Some(dest.to_string_lossy().into_owned()),
+        voice_dir: Some(baked_dir.to_string_lossy().into_owned()),
+        created_at: now_epoch(),
+        preview_wav: None,
+    };
+
+    let conn = open_db().await?;
+    voices::insert_voice(&conn, &entry)
+        .await
+        .map_err(|e| format!("Failed to save voice: {}", e))?;
+
+    log::info!(
+        "[Voices] Added voice from recording '{}' (id={}, {:.1}s @ {}Hz) with pre-baked tensors",
+        name,
+        id,
+        final_samples_len as f32 / sample_rate as f32,
+        sample_rate
+    );
+    Ok(VoiceEntryDto::from(entry))
 }
 
 /// Deletes a voice entry and removes all associated files from disk.
@@ -494,45 +515,44 @@ pub async fn add_voice_from_recording(
 /// (frontend) must prompt for a settings restart to fall back to built-in.
 #[tauri::command]
 pub async fn delete_voice(id: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        let conn = open_db()?;
+    let conn = open_db().await?;
 
-        // Fetch first so we know the directory path
-        let entry = voices::get_voice(&conn, &id)
-            .map_err(|e| format!("DB error: {}", e))?
-            .ok_or_else(|| format!("Voice not found: {}", id))?;
+    // Fetch first so we know the directory path
+    let entry = voices::get_voice(&conn, &id)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("Voice not found: {}", id))?;
 
-        // Delete DB row
-        voices::delete_voice(&conn, &id)
-            .map_err(|e| format!("Failed to delete voice from DB: {}", e))?;
+    // Delete DB row
+    voices::delete_voice(&conn, &id)
+        .await
+        .map_err(|e| format!("Failed to delete voice from DB: {}", e))?;
 
-        // Remove voice directory (source.wav + any future baked tensors)
-        let voice_dir = crate::utils::paths::voice_dir(&entry.id);
-        if voice_dir.exists() {
+    // Remove voice directory (blocking thread pool is fine for filesystem IO)
+    let voice_dir = crate::utils::paths::voice_dir(&entry.id);
+    if voice_dir.exists() {
+        tokio::task::spawn_blocking(move || {
             std::fs::remove_dir_all(&voice_dir)
-                .map_err(|e| format!("Failed to remove voice files: {}", e))?;
-        }
+                .map_err(|e| format!("Failed to remove voice files: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task panicked: {}", e))??;
+    }
 
-        log::info!("[Voices] Deleted voice '{}' (id={})", entry.name, id);
-        Ok(())
-    })
-    .await
-    .map_err(|e| format!("Task panicked: {}", e))?
+    log::info!("[Voices] Deleted voice '{}' (id={})", entry.name, id);
+    Ok(())
 }
 
 /// Renames a voice entry. Display-only change, no file system impact.
 #[tauri::command]
 pub async fn rename_voice(id: String, name: String) -> Result<(), String> {
     let name = name.trim().to_string();
-    tokio::task::spawn_blocking(move || {
-        let conn = open_db()?;
-        voices::rename_voice(&conn, &id, &name)
-            .map_err(|e| format!("Failed to rename voice: {}", e))?;
-        log::info!("[Voices] Renamed voice {} to '{}'", id, name);
-        Ok(())
-    })
-    .await
-    .map_err(|e| format!("Task panicked: {}", e))?
+    let conn = open_db().await?;
+    voices::rename_voice(&conn, &id, &name)
+        .await
+        .map_err(|e| format!("Failed to rename voice: {}", e))?;
+    log::info!("[Voices] Renamed voice {} to '{}'", id, name);
+    Ok(())
 }
 
 /// Synthesizes a short preview clip using the specified cloned voice.
@@ -546,29 +566,32 @@ pub async fn rename_voice(id: String, name: String) -> Result<(), String> {
 /// active TTS worker.
 #[tauri::command]
 pub async fn preview_voice(id: String) -> Result<String, String> {
+    let conn = open_db().await?;
+    let entry = voices::get_voice(&conn, &id)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("Voice not found: {}", id))?;
+
+    let wav_path = entry
+        .wav_path
+        .as_deref()
+        .ok_or("Voice has no source WAV")?
+        .to_string();
+
+    if !std::path::Path::new(&wav_path).exists() {
+        return Err(format!("Source WAV not found: {}", wav_path));
+    }
+
+    let chatterbox_path = crate::utils::paths::model_dir("tts").join("chatterbox");
+    if !chatterbox_path.exists() {
+        return Err("Chatterbox model not installed".to_string());
+    }
+
+    log::info!("[Voices] Generating preview for voice {} ...", id);
+
+    let preview_path = crate::utils::paths::voice_dir(&id).join("preview.wav");
+    let preview_path_clone = preview_path.clone();
     tokio::task::spawn_blocking(move || {
-        let conn = open_db()?;
-        let entry = voices::get_voice(&conn, &id)
-            .map_err(|e| format!("DB error: {}", e))?
-            .ok_or_else(|| format!("Voice not found: {}", id))?;
-
-        let wav_path = entry
-            .wav_path
-            .as_deref()
-            .ok_or("Voice has no source WAV")?
-            .to_string();
-
-        if !std::path::Path::new(&wav_path).exists() {
-            return Err(format!("Source WAV not found: {}", wav_path));
-        }
-
-        let chatterbox_path = crate::utils::paths::model_dir("tts").join("chatterbox");
-        if !chatterbox_path.exists() {
-            return Err("Chatterbox model not installed".to_string());
-        }
-
-        log::info!("[Voices] Generating preview for voice {} ...", id);
-
         use crate::services::tts::ChatterboxEngine;
         let engine = ChatterboxEngine::new(
             &chatterbox_path,
@@ -601,14 +624,13 @@ pub async fn preview_voice(id: String) -> Result<String, String> {
         }
 
         // Write preview WAV (f32 mono 24kHz — Chatterbox native output rate)
-        let preview_path = crate::utils::paths::voice_dir(&id).join("preview.wav");
         let spec = hound::WavSpec {
             channels: 1,
             sample_rate: 24000,
             bits_per_sample: 32,
             sample_format: hound::SampleFormat::Float,
         };
-        let mut writer = hound::WavWriter::create(&preview_path, spec)
+        let mut writer = hound::WavWriter::create(&preview_path_clone, spec)
             .map_err(|e| format!("Failed to create preview WAV: {}", e))?;
         for sample in &pcm {
             writer
@@ -619,16 +641,19 @@ pub async fn preview_voice(id: String) -> Result<String, String> {
             .finalize()
             .map_err(|e| format!("Failed to finalize preview WAV: {}", e))?;
 
-        // Update DB with preview path
-        let path_str = preview_path.to_string_lossy().into_owned();
-        voices::update_preview_wav(&conn, &id, &path_str)
-            .map_err(|e| format!("Failed to record preview path: {}", e))?;
-
-        log::info!("[Voices] Preview generated for voice {}: {}", id, path_str);
-        Ok(path_str)
+        Ok(())
     })
     .await
-    .map_err(|e| format!("Task panicked: {}", e))?
+    .map_err(|e| format!("Task panicked: {}", e))??;
+
+    // Update DB with preview path
+    let path_str = preview_path.to_string_lossy().into_owned();
+    voices::update_preview_wav(&conn, &id, &path_str)
+        .await
+        .map_err(|e| format!("Failed to record preview path: {}", e))?;
+
+    log::info!("[Voices] Preview generated for voice {}: {}", id, path_str);
+    Ok(path_str)
 }
 
 struct ActiveRecorder {

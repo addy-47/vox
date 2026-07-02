@@ -1,32 +1,42 @@
 use anyhow::Result;
-use rusqlite::Connection;
+use turso::{Builder, Connection};
 
-/// Thin wrapper around a rusqlite Connection with mandatory WAL configuration.
-///
-/// WAL mode allows concurrent reads without blocking writes, which is critical
-/// because IPC history queries use a separate read-only connection while the
-/// persistence worker is writing session/turn data.
-pub struct VoxDb(pub Connection);
+/// Global static cell to hold the main Tokio runtime handle.
+pub static TOKIO_HANDLE: once_cell::sync::OnceCell<tokio::runtime::Handle> = once_cell::sync::OnceCell::new();
+
+/// Returns the active Tokio runtime handle, falling back to a lightweight local runtime if not initialized.
+pub fn get_tokio_handle() -> tokio::runtime::Handle {
+    TOKIO_HANDLE.get().cloned().unwrap_or_else(|| {
+        tokio::runtime::Handle::try_current().unwrap_or_else(|_| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create fallback tokio runtime");
+            let handle = rt.handle().clone();
+            // Leaking the runtime keeps it alive for the duration of the process
+            Box::leak(Box::new(rt));
+            handle
+        })
+    })
+}
+
+/// Async database connection wrapper for the Turso (Limbo) engine.
+pub struct VoxDb;
 
 impl VoxDb {
-    pub fn open(path: &std::path::Path) -> Result<Self> {
-        let conn = Connection::open(path)?;
-        conn.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA synchronous = NORMAL;
-             PRAGMA temp_store = MEMORY;
-             PRAGMA foreign_keys = ON;",
-        )?;
-        Ok(Self(conn))
+    /// Opens a connection to the local database file.
+    pub async fn open(path: &std::path::Path) -> Result<Connection> {
+        let path_str = path.to_string_lossy();
+        let db = Builder::new_local(&path_str).build().await?;
+        let conn = db.connect()?;
+        // Enable foreign keys
+        let _ = conn.execute("PRAGMA foreign_keys = ON;", ()).await;
+        Ok(conn)
     }
 
-    /// Open a read-only connection for IPC history queries.
-    /// WAL mode allows concurrent readers alongside the writer thread.
-    pub fn open_readonly(path: &std::path::Path) -> Result<Connection> {
-        let conn = Connection::open_with_flags(
-            path,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-        )?;
-        Ok(conn)
+    /// Open a connection for IPC history queries.
+    /// In Turso, since connections are cheap and safe, this behaves exactly like `open`.
+    pub async fn open_readonly(path: &std::path::Path) -> Result<Connection> {
+        Self::open(path).await
     }
 }

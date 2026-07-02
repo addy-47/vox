@@ -1,5 +1,7 @@
 use crossbeam_channel::{bounded, Sender};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::persistence::db::VoxDb;
 use crate::persistence::events::PersistenceEvent;
@@ -11,41 +13,46 @@ use crate::persistence::schema;
 /// it never blocks. If the channel is full (128 events), the event is dropped
 /// with a warning rather than stalling the real-time pipeline.
 ///
-/// The worker thread is the ONLY thread that writes to SQLite.
+/// The worker thread is the ONLY thread that writes to the database.
 /// All reads happen on separate connections in IPC handlers.
 pub fn spawn_persistence_worker(
     db_path: PathBuf,
-    is_db_healthy: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    persistence_rate: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    is_private_mode: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    is_db_healthy: Arc<AtomicBool>,
+    persistence_rate: Arc<AtomicU32>,
+    is_private_mode: Arc<AtomicBool>,
 ) -> Sender<PersistenceEvent> {
-    // Bounded channel — 128 slots provides plenty of headroom before backpressure
     let (tx, rx) = bounded::<PersistenceEvent>(128);
 
     std::thread::Builder::new()
         .name("vox-persistence".to_string())
         .spawn(move || {
-            // Open DB and run migrations
-            let db = match VoxDb::open(&db_path) {
+            // Get the global/fallback Tokio runtime handle
+            let rt_handle = crate::persistence::db::get_tokio_handle();
+
+            // Open DB and run migrations inside the tokio runtime
+            let db = match rt_handle.block_on(VoxDb::open(&db_path)) {
                 Ok(d) => {
-                    is_db_healthy.store(true, std::sync::atomic::Ordering::Relaxed);
+                    is_db_healthy.store(true, Ordering::Relaxed);
                     d
-                },
+                }
                 Err(e) => {
-                    is_db_healthy.store(false, std::sync::atomic::Ordering::Relaxed);
+                    is_db_healthy.store(false, Ordering::Relaxed);
                     tracing::error!("[Persistence] Failed to open DB at {:?}: {}", db_path, e);
                     return;
                 }
             };
 
-            if let Err(e) = schema::run_migrations(&db.0) {
+            if let Err(e) = rt_handle.block_on(schema::run_migrations(&db)) {
                 tracing::error!("[Persistence] Migration failed: {}", e);
                 return;
             }
 
             // Startup sweep: clean up zero-activity sessions from previous runs
-            if let Err(e) = cleanup_zero_turn_sessions(&db.0) {
-                tracing::warn!("[Persistence] Zero-turn startup cleanup failed (non-fatal): {}", e);
+            if let Err(e) = rt_handle.block_on(cleanup_zero_turn_sessions(&db)) {
+                tracing::warn!(
+                    "[Persistence] Zero-turn startup cleanup failed (non-fatal): {}",
+                    e
+                );
             }
 
             tracing::info!("[Persistence] Worker started. DB at {:?}", db_path);
@@ -60,12 +67,15 @@ pub fn spawn_persistence_worker(
                     Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                         // Update rate at 1Hz
                         if last_tick.elapsed() >= std::time::Duration::from_secs(1) {
-                            persistence_rate.store((writes_last_second as f32).to_bits(), std::sync::atomic::Ordering::Relaxed);
+                            persistence_rate.store(
+                                (writes_last_second as f32).to_bits(),
+                                Ordering::Relaxed,
+                            );
                             writes_last_second = 0;
                             last_tick = std::time::Instant::now();
                         }
                         continue;
-                    },
+                    }
                     Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                         tracing::info!("[Persistence] Channel disconnected. Worker exiting.");
                         break;
@@ -73,34 +83,46 @@ pub fn spawn_persistence_worker(
                 };
 
                 // Respect Private Mode — skip all writes
-                if is_private_mode.load(std::sync::atomic::Ordering::Relaxed) {
+                if is_private_mode.load(Ordering::Relaxed) {
                     match &event {
                         PersistenceEvent::SessionStarted { id, .. } => {
-                            tracing::info!("[Persistence] Private Mode active: skipping session start (id={})", id);
+                            tracing::info!(
+                                "[Persistence] Private Mode active: skipping session start (id={})",
+                                id
+                            );
                         }
-                        PersistenceEvent::TurnCompleted { conversation_id, turn_id, .. } => {
-                            tracing::info!("[Persistence] Private Mode active: skipping turn record (session={}, turn={})", conversation_id, turn_id);
+                        PersistenceEvent::TurnCompleted {
+                            conversation_id,
+                            turn_id,
+                            ..
+                        } => {
+                            tracing::info!(
+                                "[Persistence] Private Mode active: skipping turn record (session={}, turn={})",
+                                conversation_id,
+                                turn_id
+                            );
                         }
                         _ => {}
                     }
                     continue;
                 }
 
-                if let Err(e) = process_event(&db.0, event) {
+                if let Err(e) = rt_handle.block_on(process_event(&db, event)) {
                     if e.to_string() == "SHUTDOWN" {
                         break;
                     }
-                    is_db_healthy.store(false, std::sync::atomic::Ordering::Relaxed);
+                    is_db_healthy.store(false, Ordering::Relaxed);
                     // Log and continue — persistence errors must never crash the app
                     tracing::error!("[Persistence] Event processing error: {}", e);
                 } else {
-                    is_db_healthy.store(true, std::sync::atomic::Ordering::Relaxed);
+                    is_db_healthy.store(true, Ordering::Relaxed);
                     writes_last_second += 1;
                 }
 
                 // Periodic rate update if we're busy
                 if last_tick.elapsed() >= std::time::Duration::from_secs(1) {
-                    persistence_rate.store((writes_last_second as f32).to_bits(), std::sync::atomic::Ordering::Relaxed);
+                    persistence_rate
+                        .store((writes_last_second as f32).to_bits(), Ordering::Relaxed);
                     writes_last_second = 0;
                     last_tick = std::time::Instant::now();
                 }
@@ -111,26 +133,30 @@ pub fn spawn_persistence_worker(
     tx
 }
 
-fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow::Result<()> {
+async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> anyhow::Result<()> {
     match event {
         PersistenceEvent::SessionStarted { id, timestamp_ms } => {
             conn.execute(
-                "INSERT OR IGNORE INTO sessions (id, started_at) VALUES (?1, ?2)",
-                rusqlite::params![id as i64, timestamp_ms as i64],
-            )?;
+                "INSERT OR IGNORE INTO sessions (id, started_at) VALUES (?, ?)",
+                (id as i64, timestamp_ms as i64),
+            )
+            .await?;
             tracing::debug!("[Persistence] SessionStarted: id={}", id);
         }
 
         PersistenceEvent::SessionEnded { id, timestamp_ms } => {
             conn.execute(
-                "UPDATE sessions SET ended_at = ?1 WHERE id = ?2",
-                rusqlite::params![timestamp_ms as i64, id as i64],
-            )?;
+                "UPDATE sessions SET ended_at = ? WHERE id = ?",
+                (timestamp_ms as i64, id as i64),
+            )
+            .await?;
             // Immediately delete zero-activity sessions (user engaged but never spoke)
-            let deleted = conn.execute(
-                "DELETE FROM sessions WHERE id = ?1 AND turn_count = 0",
-                rusqlite::params![id as i64],
-            )?;
+            let deleted = conn
+                .execute(
+                    "DELETE FROM sessions WHERE id = ? AND turn_count = 0",
+                    (id as i64,),
+                )
+                .await?;
             if deleted > 0 {
                 tracing::info!("[Persistence] Cleaned up zero-activity session id={}", id);
             } else {
@@ -156,34 +182,36 @@ fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow
                 .as_millis() as i64;
 
             // RCA Fix: Ensure session exists before inserting turn.
-            // If Privacy Mode was toggled mid-session, the SessionStarted event might have been skipped.
             conn.execute(
-                "INSERT OR IGNORE INTO sessions (id, started_at) VALUES (?1, ?2)",
-                rusqlite::params![conversation_id as i64, conversation_id as i64],
-            )?;
+                "INSERT OR IGNORE INTO sessions (id, started_at) VALUES (?, ?)",
+                (conversation_id as i64, conversation_id as i64),
+            )
+            .await?;
 
             conn.execute(
                 "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, stt_latency_ms, ttft_ms, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
                     conversation_id as i64,
                     turn_id,
                     user_text,
                     assistant_text,
-                    stt_latency_ms,
-                    ttft_ms,
+                    stt_latency_ms as i64,
+                    ttft_ms as i64,
                     now,
-                ],
-            )?;
+                ),
+            )
+            .await?;
 
             // Increment turn_count on parent session
             conn.execute(
-                "UPDATE sessions SET turn_count = turn_count + 1 WHERE id = ?1",
-                rusqlite::params![conversation_id as i64],
-            )?;
+                "UPDATE sessions SET turn_count = turn_count + 1 WHERE id = ?",
+                (conversation_id as i64,),
+            )
+            .await?;
 
             tracing::info!(
-                "[Persistence] TurnCompleted: session={}, turn={}, stt={}ms, ttft={}ms",
+                "[Persistence] TurnCompleted: session={}, turn={}, stt={:?}ms, ttft={:?}ms",
                 conversation_id,
                 turn_id,
                 stt_latency_ms,
@@ -203,13 +231,10 @@ fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow
                 conversation_id,
                 turn_id
             );
-            // Cancelled turns are not stored — they simply don't increment turn_count.
-            // This is acceptable: the session record itself persists.
         }
 
         PersistenceEvent::Shutdown => {
-            tracing::info!("[Persistence] Shutdown event received. Flushing WAL and exiting.");
-            let _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)", []);
+            tracing::info!("[Persistence] Shutdown event received. Exiting.");
             return Err(anyhow::anyhow!("SHUTDOWN"));
         }
     }
@@ -217,10 +242,8 @@ fn process_event(conn: &rusqlite::Connection, event: PersistenceEvent) -> anyhow
 }
 
 /// Deletes sessions where the user engaged but never completed a turn.
-/// These are clutter sessions (accidental engage, empty background noise, etc.).
-/// Safe to call at startup or any time — idempotent.
-fn cleanup_zero_turn_sessions(conn: &rusqlite::Connection) -> anyhow::Result<()> {
-    let deleted = conn.execute("DELETE FROM sessions WHERE turn_count = 0", [])?;
+async fn cleanup_zero_turn_sessions(conn: &turso::Connection) -> anyhow::Result<()> {
+    let deleted = conn.execute("DELETE FROM sessions WHERE turn_count = 0", ()).await?;
     if deleted > 0 {
         tracing::info!(
             "[Persistence] Startup cleanup: removed {} zero-activity session(s)",

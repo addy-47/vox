@@ -41,7 +41,7 @@ tracing-appender = "0.2"
 crossbeam-channel = "0.5"
 thread-priority = "1.1"
 
-rusqlite = { version = "0.31", features = ["bundled"] }
+turso = { version = "0.7.0-pre.14" }
 
 # Phase 4 — LLM runtime (llama.cpp Rust bindings, compiles llama.cpp from source, CPU-only)
 # Dynamic linking disabled (default includes dynamic-link) — we want static linking

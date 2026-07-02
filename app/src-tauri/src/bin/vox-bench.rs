@@ -576,19 +576,25 @@ fn resolve_voice_path(voice_arg: &str) -> String {
     }
     // Try to open SQLite DB and find matching voice by ID or name
     let db_path = vox_lib::utils::paths::db_path();
-    if let Ok(conn) = rusqlite::Connection::open(&db_path) {
-        let mut stmt = conn.prepare("SELECT voice_dir, wav_path FROM voices WHERE id = ?1 OR name = ?1").ok();
-        if let Some(mut stmt) = stmt {
-            let res = stmt.query_row([voice_arg], |row| {
+    if let Ok(rt) = tokio::runtime::Runtime::new() {
+        let res = rt.block_on(async {
+            let conn = vox_lib::persistence::db::VoxDb::open_readonly(&db_path).await.ok()?;
+            let mut rows = conn.query(
+                "SELECT voice_dir, wav_path FROM voices WHERE id = ? OR name = ?",
+                (voice_arg.to_string(), voice_arg.to_string()),
+            ).await.ok()?;
+            if let Some(row) = rows.next().await.ok()? {
                 let voice_dir: Option<String> = row.get(0).ok();
                 let wav_path: Option<String> = row.get(1).ok();
-                Ok(voice_dir.or(wav_path))
-            });
-            if let Ok(Some(path)) = res {
-                if std::path::Path::new(&path).exists() {
-                    println!("\x1b[32m[Bench]\x1b[0m Resolved voice '{}' to {:?}", voice_arg, path);
-                    return path;
-                }
+                voice_dir.or(wav_path)
+            } else {
+                None
+            }
+        });
+        if let Some(path) = res {
+            if std::path::Path::new(&path).exists() {
+                println!("\x1b[32m[Bench]\x1b[0m Resolved voice '{}' to {:?}", voice_arg, path);
+                return path;
             }
         }
     }
