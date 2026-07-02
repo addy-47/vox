@@ -432,6 +432,7 @@ pub fn run() {
             check_stt_provider_health,
             check_tts_provider_health,
             list_remote_llm_models,
+            crate::ipc::settings::probe_model_capabilities,
             setup_remote_server,
             get_settings,
             update_theme,

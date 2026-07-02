@@ -25,6 +25,25 @@ export type TtsProviderConfig =
   | { kind: "chatterbox"; language: string; quality_steps: number; speed: number }
   | { kind: "chatterbox_remote"; endpoint: string; language: string; quality_steps: number; speed: number; remote_path: string };
 
+export interface ModelCapabilities {
+  model_id: string;
+  provider_kind: string;
+  supports_tools: boolean;
+  supports_latin: boolean;
+  supports_devanagari: boolean;
+  context_window?: number | null;
+  tps?: number | null;
+  ttft_ms?: number | null;
+  server_has_gpu: boolean;
+  is_gpu_accelerated: boolean;
+  gpu_status: string;
+  vram_bytes?: number | null;
+  parameter_size?: string | null;
+  quantization?: string | null;
+  family?: string | null;
+  tested_at_epoch: number;
+}
+
 export interface RemoteModelInfo {
   id: string;
   name: string;
@@ -32,6 +51,7 @@ export interface RemoteModelInfo {
   quantization: string | null;
   family: string | null;
   provider_kind: string;
+  capabilities?: ModelCapabilities | null;
 }
 
 export interface ModelMetadata {
