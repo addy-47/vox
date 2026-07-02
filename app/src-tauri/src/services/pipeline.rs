@@ -56,10 +56,15 @@ pub enum TranslitTask {
 fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> {
     let id = voice_id?;
     let db_path = crate::utils::paths::db_path();
-    let conn = rusqlite::Connection::open(&db_path).ok()?;
-    let entry = crate::persistence::voices::get_voice(&conn, id)
-        .map_err(|e| log::warn!("[Pipeline] Failed to query voice {}: {}", id, e))
-        .ok()??;
+    let rt = crate::persistence::db::get_tokio_handle();
+
+    let conn = rt.block_on(async {
+        crate::persistence::db::VoxDb::open_readonly(&db_path).await.ok()
+    })?;
+
+    let entry = rt.block_on(async {
+        crate::persistence::voices::get_voice(&conn, id).await.ok()
+    })??;
 
     // Prefer pre-baked voice_dir if it exists and contains speaker_emb.npy
     if let Some(ref dir) = entry.voice_dir {

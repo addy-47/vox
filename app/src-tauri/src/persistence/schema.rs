@@ -1,20 +1,19 @@
 use anyhow::Result;
-use rusqlite::Connection;
+use turso::Connection;
 
 /// Runs the CREATE TABLE IF NOT EXISTS migrations against the given connection.
 ///
 /// Idempotent — safe to call on every startup to ensure schema is current.
 /// Using INTEGER PRIMARY KEY for sessions.id (epoch ms) gives natural ordering.
-pub fn run_migrations(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
+pub async fn run_migrations(conn: &Connection) -> Result<()> {
+    let statements = [
         "CREATE TABLE IF NOT EXISTS sessions (
             id         INTEGER PRIMARY KEY,   -- epoch milliseconds
             started_at INTEGER NOT NULL,
             ended_at   INTEGER,
             turn_count INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS turns (
+        );",
+        "CREATE TABLE IF NOT EXISTS turns (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id      INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             turn_id         INTEGER NOT NULL,
@@ -23,11 +22,9 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             stt_latency_ms  INTEGER,
             ttft_ms         INTEGER,
             created_at      INTEGER NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
-
-        CREATE TABLE IF NOT EXISTS voices (
+        );",
+        "CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);",
+        "CREATE TABLE IF NOT EXISTS voices (
             id          TEXT    PRIMARY KEY,    -- UUID v4
             name        TEXT    NOT NULL,
             source_kind TEXT    NOT NULL,       -- 'reference_audio' | 'pre_baked'
@@ -35,20 +32,28 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             voice_dir   TEXT,                   -- Phase B: ~/.vox/voices/{uuid}/baked/
             created_at  INTEGER NOT NULL,       -- Unix epoch seconds
             preview_wav TEXT                    -- ~/.vox/voices/{uuid}/preview.wav
-        );
+        );",
+        "CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at DESC);",
+        "CREATE TABLE IF NOT EXISTS memory_entries (
+            id         TEXT PRIMARY KEY,            -- UUID v4
+            content    TEXT NOT NULL,               -- The text snippet
+            embedding  F32_BLOB(384) NOT NULL,      -- MiniLM embedding (384 floats)
+            created_at INTEGER NOT NULL             -- Unix epoch seconds
+        );",
+    ];
 
-        CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at DESC);
-        ",
-    )?;
+    for stmt in statements {
+        conn.execute(stmt, ()).await?;
+    }
 
-    if let Err(e) = seed_packaged_voices(conn) {
+    if let Err(e) = seed_packaged_voices(conn).await {
         log::warn!("[Persistence] Failed to seed packaged voices (non-fatal): {}", e);
     }
 
     Ok(())
 }
 
-fn seed_packaged_voices(conn: &Connection) -> Result<()> {
+async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
     let home = match dirs::home_dir() {
         Some(h) => h,
         None => return Ok(()),
@@ -68,8 +73,11 @@ fn seed_packaged_voices(conn: &Connection) -> Result<()> {
             if let Some(name_str) = path.file_name().and_then(|n| n.to_str()) {
                 let id = format!("chatterbox_voice_{}", name_str);
                 
-                let mut stmt = conn.prepare("SELECT 1 FROM voices WHERE id = ?1")?;
-                let exists = stmt.exists([&id])?;
+                let mut rows = conn
+                    .query("SELECT 1 FROM voices WHERE id = ?", (id.clone(),))
+                    .await?;
+                
+                let exists = rows.next().await?.is_some();
                 if !exists {
                     let name = match name_str {
                         "pain" => "Pain (Naruto)".to_string(),
@@ -92,16 +100,16 @@ fn seed_packaged_voices(conn: &Connection) -> Result<()> {
 
                     conn.execute(
                         "INSERT INTO voices (id, name, source_kind, wav_path, voice_dir, created_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                        rusqlite::params![
-                            id,
-                            name,
-                            "pre_baked",
-                            wav_path,
-                            voice_dir,
-                            now
-                        ],
-                    )?;
+                         VALUES (?, ?, ?, ?, ?, ?)",
+                        (
+                            id.clone(),
+                            name.clone(),
+                            "pre_baked".to_string(),
+                            Some(wav_path),
+                            Some(voice_dir),
+                            now,
+                        ),
+                    ).await?;
                     log::info!("[Persistence] Seeded packaged voice '{}' (id={})", name, id);
                 }
             }
@@ -110,4 +118,3 @@ fn seed_packaged_voices(conn: &Connection) -> Result<()> {
 
     Ok(())
 }
-
