@@ -311,6 +311,7 @@ impl LlmProvider for OpenAiCompatProvider {
                                         }
                                     }),
                                     provider_kind: "open_ai_compat".to_string(),
+                                    capabilities: None,
                                 }
                             })
                             .collect();
@@ -345,6 +346,7 @@ impl LlmProvider for OpenAiCompatProvider {
                         quantization,
                         family,
                         provider_kind: "open_ai_compat".to_string(),
+                        capabilities: None,
                     }
                 })
                 .collect();
