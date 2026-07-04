@@ -46,6 +46,7 @@ impl OpenAiCompatProvider {
 
         let async_client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(15))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
@@ -174,7 +175,13 @@ impl LlmProvider for OpenAiCompatProvider {
 
 
         block_on(async {
-            let url = format!("{}/v1/chat/completions", self.base_url);
+            let url = if self.base_url.ends_with("/chat/completions") {
+                self.base_url.clone()
+            } else if self.base_url.ends_with("/v1") || self.base_url.ends_with("/openai") {
+                format!("{}/chat/completions", self.base_url)
+            } else {
+                format!("{}/v1/chat/completions", self.base_url)
+            };
             let mut builder = self.async_client.post(&url).json(&req_body);
             builder = self.inject_headers(builder);
 
