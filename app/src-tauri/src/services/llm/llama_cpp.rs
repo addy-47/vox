@@ -418,8 +418,8 @@ impl LlmEngine for LlmWorker {
                 .with_n_ctx(Some(NonZeroU32::new(self.ctx_size).unwrap()))
                 .with_n_threads(self._n_threads as i32)
                 .with_n_threads_batch(self._n_threads as i32)
-                .with_n_batch(512)
-                .with_n_ubatch(512);
+                .with_n_batch(self.ctx_size)
+                .with_n_ubatch(self.ctx_size);
 
             let ctx = self
                 .model
@@ -445,6 +445,7 @@ impl LlmEngine for LlmWorker {
         let mut system_tokens_len = 0;
         let mut initial_seq_len = 0;
         let mut cache_hit = false;
+        let mut last_sample_ith: i32 = 0;
 
         if let Some(state) = &*cache_lock {
             if state.system_prompt == system_prompt {
@@ -453,8 +454,6 @@ impl LlmEngine for LlmWorker {
                 cache_hit = true;
             }
         }
-
-        let mut last_sample_ith: i32 = 0;
 
         if cache_hit && initial_seq_len > 0 {
             log::info!(
@@ -472,7 +471,7 @@ impl LlmEngine for LlmWorker {
 
                 if !user_tokens.is_empty() {
                     let total_input_tokens = initial_seq_len + user_tokens.len();
-                    let mut batch = LlamaBatch::new(total_input_tokens + 512, 1);
+                    let mut batch = LlamaBatch::new(user_tokens.len(), 1);
 
                     for (i, &tok) in user_tokens.iter().enumerate() {
                         let pos = initial_seq_len as i32 + i as i32;
@@ -485,7 +484,7 @@ impl LlmEngine for LlmWorker {
                     ctx.decode(&mut batch)
                         .map_err(|e| anyhow!("[LLM] User prompt decode failed: {}", e))?;
 
-                    initial_seq_len += user_tokens.len();
+                    initial_seq_len = total_input_tokens;
                     last_sample_ith = user_tokens.len() as i32 - 1;
                 }
             }
@@ -507,17 +506,26 @@ impl LlmEngine for LlmWorker {
                 .unwrap_or(0);
 
             if !prompt_tokens.is_empty() {
-                let mut batch = LlamaBatch::new(prompt_tokens.len(), 1);
-                for (i, &tok) in prompt_tokens.iter().enumerate() {
-                    let is_last = i == prompt_tokens.len() - 1;
-                    batch
-                        .add(tok, i as i32, &[0], is_last)
-                        .map_err(|e| anyhow!("[LLM] Batch add full prompt failed: {}", e))?;
+                let n_batch_chunk = 512;
+                let total = prompt_tokens.len();
+                let mut offset = 0;
+                while offset < total {
+                    let end = (offset + n_batch_chunk).min(total);
+                    let chunk = &prompt_tokens[offset..end];
+                    let mut batch = LlamaBatch::new(chunk.len(), 1);
+                    for (i, &tok) in chunk.iter().enumerate() {
+                        let global_idx = offset + i;
+                        let is_last = global_idx == total - 1;
+                        batch
+                            .add(tok, global_idx as i32, &[0], is_last)
+                            .map_err(|e| anyhow!("[LLM] Batch add prompt chunk failed: {}", e))?;
+                    }
+                    ctx.decode(&mut batch)
+                        .map_err(|e| anyhow!("[LLM] Full prompt decode failed: {}", e))?;
+                    last_sample_ith = chunk.len() as i32 - 1;
+                    offset = end;
                 }
-                ctx.decode(&mut batch)
-                    .map_err(|e| anyhow!("[LLM] Full prompt decode failed: {}", e))?;
-                initial_seq_len = prompt_tokens.len();
-                last_sample_ith = prompt_tokens.len() as i32 - 1;
+                initial_seq_len = total;
             }
 
             *cache_lock = Some(CacheState {

@@ -84,6 +84,7 @@ uuid = { version = "1.23.3", features = ["v4"] }
 symphonia = { version = "0.6.0", features = ["mp3", "flac", "wav", "aac"] }
 symphonia-core = "0.6.0"
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }
+tiktoken-rs = "0.6.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }
