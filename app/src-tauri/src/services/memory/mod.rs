@@ -1,5 +1,7 @@
+pub mod tokenizer;
 pub mod working_memory;
 
+pub use tokenizer::estimate_tokens;
 pub use working_memory::{
-    estimate_tokens, ChatMessage, ConversationContext, ConversationManager, Role,
+    ChatMessage, ConversationContext, ConversationManager, Role,
 };

@@ -36,13 +36,7 @@ pub struct ConversationContext {
     pub kv_cache_index: usize,
 }
 
-pub fn estimate_tokens(text: &str) -> usize {
-    if text.is_empty() {
-        return 0;
-    }
-    // Pessimistic estimate: ~3.5 chars per token
-    (text.len() as f64 / 3.5).ceil() as usize
-}
+use super::estimate_tokens;
 
 fn current_timestamp_ms() -> u64 {
     SystemTime::now()
