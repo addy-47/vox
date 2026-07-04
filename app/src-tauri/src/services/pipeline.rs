@@ -127,7 +127,11 @@ pub struct PipelineOrchestrator {
     pub is_llm_loaded: Arc<AtomicBool>,
     pub is_tts_loaded: Arc<AtomicBool>,
     pub is_sleeping: Arc<AtomicBool>,
+
+    // Working Memory
+    pub conversation_manager: Arc<std::sync::Mutex<crate::services::memory::ConversationManager>>,
 }
+
 
 impl PipelineOrchestrator {
     pub fn new(
@@ -179,8 +183,12 @@ impl PipelineOrchestrator {
             is_llm_loaded,
             is_tts_loaded,
             is_sleeping,
+            conversation_manager: Arc::new(std::sync::Mutex::new(
+                crate::services::memory::ConversationManager::new(2048),
+            )),
         }
     }
+
 
     /// Initialize the LLM worker if it's not already running.
     pub fn warm_up_llm(&self, app: &tauri::AppHandle) -> Result<(), String> {
@@ -491,7 +499,8 @@ impl PipelineOrchestrator {
             self.cancel_flag.store(false, Ordering::Relaxed);
 
             let assistant_settings = self.settings.read().unwrap().assistant.clone();
-            let (lang, script) = if is_devanagari(&text) {
+            let is_hi = is_devanagari(&text);
+            let (lang, script) = if is_hi {
                 ("Hindi", "Devanagari")
             } else {
                 ("English", "Latin")
@@ -500,11 +509,43 @@ impl PipelineOrchestrator {
                 .replace("<lang>", lang)
                 .replace("<script>", script);
 
-            let system_prompt = resolved_prompt;
+            let provider_kind = {
+                let s = self.settings.read().unwrap();
+                match &s.llm.provider {
+                    crate::core::settings::LlmProviderConfig::Embedded => crate::services::llm::ProviderKind::Embedded,
+                    crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } => crate::services::llm::ProviderKind::OpenAiCompat,
+                }
+            };
+
+            let (ctx, transition_speech) = {
+                let mut mgr = self.conversation_manager.lock().unwrap();
+                if mgr.context_utilization() == 0.0 {
+                    mgr.new_session(&resolved_prompt);
+                }
+                mgr.push_user_turn(text.clone());
+                mgr.build_context(provider_kind, is_hi, None)
+            };
+
+            if let Some(speech_text) = transition_speech {
+                log::info!("[Pipeline] MaintainingContext transition speech triggered: {:?}", speech_text);
+                self.update_interaction_state(
+                    crate::core::state::InteractionState::MaintainingContext,
+                    owner,
+                    &_app_handle,
+                );
+                if let Ok(lock) = self.tts_tx.lock() {
+                    if let Some(tts_sender) = lock.as_ref() {
+                        let _ = tts_sender.send(crate::services::tts::TtsCommand::Generate {
+                            text: speech_text,
+                            turn_id: new_turn,
+                        });
+                    }
+                }
+            }
+
 
             let cmd = crate::services::llm::LlmCommand::Generate {
-                text,
-                system_prompt,
+                ctx,
                 turn_id: new_turn,
                 cancel_flag: Arc::clone(&self.cancel_flag),
             };
@@ -515,6 +556,7 @@ impl PipelineOrchestrator {
         }
         new_turn
     }
+
 
     /// Process the internal event bus in a blocking loop.
     pub fn run_event_loop(
@@ -895,7 +937,12 @@ impl PipelineOrchestrator {
                     log::info!("[Pipeline] WarmUp: workers started in background.");
                 }
                 VoxEvent::SpeechStart { turn_id, owner } => {
+                    self.conversation_manager
+                        .lock()
+                        .unwrap()
+                        .on_speech_start();
                     let is_engaged = self.is_engaged.load(Ordering::Relaxed);
+
                     if !is_engaged && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt) {
                         continue;
                     }
@@ -1227,6 +1274,11 @@ impl PipelineOrchestrator {
                         "[Pipeline] LLM finished response: {:?}",
                         turn_assistant_text
                     );
+                    self.conversation_manager
+                        .lock()
+                        .unwrap()
+                        .push_assistant_turn(turn_assistant_text.clone());
+
 
                     let remainder = token_buf.trim().to_string();
                     if !remainder.is_empty() {
@@ -1400,6 +1452,11 @@ impl PipelineOrchestrator {
 
                 VoxEvent::Cancelled { turn_id } => {
                     log::info!("[Pipeline] Cancelled (turn {})", turn_id);
+                    self.conversation_manager
+                        .lock()
+                        .unwrap()
+                        .pop_last_user_turn();
+
                     // Only cancel playback if it's actually active — avoid phantom
                     // "Playback Cancelled" logs when there's nothing playing.
                     if !playback_engine.is_idle() {

@@ -12,12 +12,13 @@ pub mod openai_compat;
 pub use embedded::EmbeddedProvider;
 pub use openai_compat::OpenAiCompatProvider;
 
+use crate::services::memory::ConversationContext;
+
 pub trait LlmProvider: Send + Sync {
-    /// Submit a generation request; stream tokens via `tx`.
+    /// Submit a generation request with conversation context; stream tokens via `tx`.
     fn generate(
         &self,
-        text: &str,
-        system_prompt: &str,
+        ctx: &ConversationContext,
         turn_id: u32,
         cancel_flag: &Arc<AtomicBool>,
         tx: &mpsc::Sender<VoxEvent>,
@@ -31,7 +32,13 @@ pub trait LlmProvider: Send + Sync {
 
     /// Human-readable provider kind.
     fn kind(&self) -> ProviderKind;
+
+    /// Maximum supported context size in tokens.
+    fn max_context_tokens(&self) -> usize {
+        2048
+    }
 }
+
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

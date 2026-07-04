@@ -102,6 +102,29 @@ impl ModelFamily {
         )
     }
 
+    pub fn format_conversation(&self, messages: &[crate::services::memory::ChatMessage]) -> String {
+        let mut prompt = String::new();
+        for msg in messages {
+            match msg.role {
+                crate::services::memory::Role::System => {
+                    prompt.push_str(&self.format_system_prompt(&msg.content));
+                }
+                crate::services::memory::Role::User => {
+                    prompt.push_str(&self.format_user_prompt(&msg.content));
+                }
+                crate::services::memory::Role::Assistant => match self {
+                    ModelFamily::Gemma => prompt.push_str(&format!("{}<turn|>\n", msg.content)),
+                    ModelFamily::Qwen => prompt.push_str(&format!("{}<|im_end|>\n", msg.content)),
+                    ModelFamily::Llama3 => prompt.push_str(&format!("{}<|eot_id|>", msg.content)),
+                    ModelFamily::Nemotron => prompt.push_str(&format!("{}\n", msg.content)),
+                    ModelFamily::Unknown => prompt.push_str(&format!("{}\n", msg.content)),
+                },
+            }
+        }
+        prompt
+    }
+
+
     pub fn stop_sequences(&self) -> &'static [&'static str] {
         match self {
             ModelFamily::Gemma => &["<end", "<eos>", "<|turn>", "turn|>"],
@@ -244,6 +267,7 @@ impl ModelFamily {
 struct CacheState {
     system_prompt: String,
     system_tokens_len: usize,
+    current_seq_tokens_len: usize,
 }
 
 pub struct LlmWorker {
@@ -319,6 +343,10 @@ impl LlmWorker {
             .unwrap_or_default()
     }
 
+    pub fn ctx_size(&self) -> u32 {
+        self.ctx_size
+    }
+
     pub fn run_loop(
         &self,
         rx: std::sync::mpsc::Receiver<super::actor::LlmCommand>,
@@ -329,12 +357,11 @@ impl LlmWorker {
         while let Ok(cmd) = rx.recv() {
             match cmd {
                 super::actor::LlmCommand::Generate {
-                    text,
-                    system_prompt,
+                    ctx,
                     turn_id,
                     cancel_flag,
                 } => {
-                    if let Err(e) = self.generate(&text, &system_prompt, turn_id, &cancel_flag, &tx)
+                    if let Err(e) = self.generate(&ctx, turn_id, &cancel_flag, &tx)
                     {
                         log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
                         let _ = tx.send(VoxEvent::Error {
@@ -354,11 +381,13 @@ impl LlmWorker {
     }
 }
 
+
+use crate::services::memory::ConversationContext;
+
 impl LlmEngine for LlmWorker {
     fn generate(
         &self,
-        user_text: &str,
-        system_prompt: &str,
+        conv_ctx: &ConversationContext,
         turn_id: u32,
         cancel_flag: &Arc<AtomicBool>,
         tx: &std::sync::mpsc::Sender<VoxEvent>,
@@ -366,6 +395,18 @@ impl LlmEngine for LlmWorker {
         let start_time = std::time::Instant::now();
         let mut ttft: Option<std::time::Duration> = None;
         let mut tokens_generated = 0;
+
+        let last_user_text = conv_ctx
+            .messages
+            .last()
+            .map(|m| m.content.as_str())
+            .unwrap_or("");
+
+        let system_prompt = conv_ctx
+            .messages
+            .first()
+            .map(|m| m.content.as_str())
+            .unwrap_or("You are Vox.");
 
         let mut ctx_lock = self
             .ctx
@@ -396,80 +437,102 @@ impl LlmEngine for LlmWorker {
             .lock()
             .map_err(|_| anyhow!("Failed to lock cache state"))?;
 
+        if conv_ctx.kv_cache_index == 0 {
+            log::info!("[LLM] kv_cache_index is 0. Resetting KV cache state...");
+            *cache_lock = None;
+        }
+
         let mut system_tokens_len = 0;
+        let mut initial_seq_len = 0;
         let mut cache_hit = false;
 
         if let Some(state) = &*cache_lock {
             if state.system_prompt == system_prompt {
                 system_tokens_len = state.system_tokens_len;
+                initial_seq_len = state.current_seq_tokens_len;
                 cache_hit = true;
             }
         }
 
-        if cache_hit {
+        let mut last_sample_ith: i32 = 0;
+
+        if cache_hit && initial_seq_len > 0 {
             log::info!(
-                "[LLM] System prompt KV cache hit. Reusing {} tokens.",
+                "[LLM] KV cache hit. Reusing {} sequence tokens (system prompt: {}).",
+                initial_seq_len,
                 system_tokens_len
             );
+
+            if !last_user_text.is_empty() && last_user_text != "[WARMUP]" {
+                let user_part = self.family.format_user_prompt(last_user_text);
+                let user_tokens = self
+                    .model
+                    .str_to_token(&user_part, AddBos::Never)
+                    .map_err(|e| anyhow!("[LLM] Tokenize user prompt failed: {}", e))?;
+
+                if !user_tokens.is_empty() {
+                    let total_input_tokens = initial_seq_len + user_tokens.len();
+                    let mut batch = LlamaBatch::new(total_input_tokens + 512, 1);
+
+                    for (i, &tok) in user_tokens.iter().enumerate() {
+                        let pos = initial_seq_len as i32 + i as i32;
+                        let is_last = i == user_tokens.len() - 1;
+                        batch
+                            .add(tok, pos, &[0], is_last)
+                            .map_err(|e| anyhow!("[LLM] Batch add user failed: {}", e))?;
+                    }
+
+                    ctx.decode(&mut batch)
+                        .map_err(|e| anyhow!("[LLM] User prompt decode failed: {}", e))?;
+
+                    initial_seq_len += user_tokens.len();
+                    last_sample_ith = user_tokens.len() as i32 - 1;
+                }
+            }
         } else {
-            log::info!("[LLM] System prompt KV cache miss. Prefilling system prompt...");
+            log::info!("[LLM] KV cache miss or index 0. Prefilling full conversation context...");
             ctx.clear_kv_cache();
 
+            let full_prompt = self.family.format_conversation(&conv_ctx.messages);
+            let prompt_tokens = self
+                .model
+                .str_to_token(&full_prompt, AddBos::Always)
+                .map_err(|e| anyhow!("[LLM] Tokenize full conversation failed: {}", e))?;
+
             let system_part = self.family.format_system_prompt(system_prompt);
-            let sys_tokens = self
+            system_tokens_len = self
                 .model
                 .str_to_token(&system_part, AddBos::Always)
-                .map_err(|e| anyhow!("[LLM] Tokenize system prompt failed: {}", e))?;
+                .map(|t| t.len())
+                .unwrap_or(0);
 
-            if !sys_tokens.is_empty() {
-                let mut batch = LlamaBatch::new(sys_tokens.len(), 1);
-                for (i, &tok) in sys_tokens.iter().enumerate() {
-                    let is_last = i == sys_tokens.len() - 1;
+            if !prompt_tokens.is_empty() {
+                let mut batch = LlamaBatch::new(prompt_tokens.len(), 1);
+                for (i, &tok) in prompt_tokens.iter().enumerate() {
+                    let is_last = i == prompt_tokens.len() - 1;
                     batch
                         .add(tok, i as i32, &[0], is_last)
-                        .map_err(|e| anyhow!("[LLM] Batch add system failed: {}", e))?;
+                        .map_err(|e| anyhow!("[LLM] Batch add full prompt failed: {}", e))?;
                 }
                 ctx.decode(&mut batch)
-                    .map_err(|e| anyhow!("[LLM] System prompt decode failed: {}", e))?;
-                system_tokens_len = sys_tokens.len();
+                    .map_err(|e| anyhow!("[LLM] Full prompt decode failed: {}", e))?;
+                initial_seq_len = prompt_tokens.len();
+                last_sample_ith = prompt_tokens.len() as i32 - 1;
             }
 
             *cache_lock = Some(CacheState {
                 system_prompt: system_prompt.to_string(),
                 system_tokens_len,
+                current_seq_tokens_len: initial_seq_len,
             });
         }
 
-        if user_text.is_empty() || user_text == "[WARMUP]" {
-            log::info!("[LLM] Cache prefill warmup complete for system prompt.");
+        if last_user_text.is_empty() || last_user_text == "[WARMUP]" {
+            log::info!("[LLM] Cache prefill warmup complete.");
             return Ok(());
         }
 
-        let user_part = self.family.format_user_prompt(user_text);
-        let user_tokens = self
-            .model
-            .str_to_token(&user_part, AddBos::Never)
-            .map_err(|e| anyhow!("[LLM] Tokenize user prompt failed: {}", e))?;
-
-        if user_tokens.is_empty() {
-            return Err(anyhow!("[LLM] Empty token list for user prompt"));
-        }
-
-        let total_input_tokens = system_tokens_len + user_tokens.len();
-        let max_tokens = total_input_tokens + 512;
-        let mut batch = LlamaBatch::new(max_tokens, 1);
-
-        for (i, &tok) in user_tokens.iter().enumerate() {
-            let pos = system_tokens_len as i32 + i as i32;
-            let is_last = i == user_tokens.len() - 1;
-            batch
-                .add(tok, pos, &[0], is_last)
-                .map_err(|e| anyhow!("[LLM] Batch add user failed: {}", e))?;
-        }
-
-        ctx.decode(&mut batch)
-            .map_err(|e| anyhow!("[LLM] User prompt decode failed: {}", e))?;
-
+        let total_input_tokens = initial_seq_len;
         let mut n_cur = total_input_tokens as i32;
 
         log::info!("[LLM] >>> Generating (turn: {})...", turn_id);
@@ -479,21 +542,21 @@ impl LlmEngine for LlmWorker {
         let stop_seqs = self.family.stop_sequences();
         let mut byte_buf = Vec::new();
 
+        let mut batch = LlamaBatch::new(total_input_tokens + 512, 1);
+        let mut sample_ith = last_sample_ith;
+
         loop {
             if cancel_flag.load(Ordering::Relaxed) {
                 log::info!("[LLM] Cancelled at token {} (turn: {})", n_cur, turn_id);
-                if n_cur > system_tokens_len as i32 {
-                    let _ = ctx.clear_kv_cache_seq(Some(0), Some(system_tokens_len as u32), None);
-                }
+                *cache_lock = None;
                 let _ = tx.send(VoxEvent::Cancelled { turn_id });
                 return Ok(());
             }
 
-            let candidates = ctx.candidates_ith(batch.n_tokens() - 1);
+            let candidates = ctx.candidates_ith(sample_ith);
             let mut candidates_p = LlamaTokenDataArray::from_iter(candidates, false);
 
             let token = if self.family == ModelFamily::Qwen {
-                // Qwen temperature-based sampling with dist sampler to avoid infinite repeating loops
                 let mut sampler = LlamaSampler::chain_simple([
                     LlamaSampler::top_k(20),
                     LlamaSampler::top_p(0.95, 1),
@@ -513,7 +576,6 @@ impl LlmEngine for LlmWorker {
                 break;
             }
 
-            // Stateful UTF-8 multibyte character boundary decoding
             let token_bytes = self.token_to_bytes(token);
             byte_buf.extend_from_slice(&token_bytes);
 
@@ -526,15 +588,12 @@ impl LlmEngine for LlmWorker {
                     byte_buf.clear();
                     decoded = true;
                 }
-                Err(_) => {
-                    // Incomplete multibyte sequence; wait for the next token to complete it
-                }
+                Err(_) => {}
             }
 
             if decoded && !token_str.is_empty() {
                 raw_gen_buf.push_str(&token_str);
 
-                // Stop sequence detection
                 let mut stop_triggered = false;
                 for stop in stop_seqs {
                     if let Some(pos) = raw_gen_buf.find(stop) {
@@ -556,6 +615,7 @@ impl LlmEngine for LlmWorker {
                                     token: delta.to_string(),
                                 });
                             }
+                            emitted_clean_len = cleaned_trimmed.len();
                         }
                         stop_triggered = true;
                         break;
@@ -570,15 +630,12 @@ impl LlmEngine for LlmWorker {
                     ttft = Some(start_time.elapsed());
                 }
 
-                // Clean the entire raw buffer accumulated so far
                 let mut cleaned = self.family.strip_tags_raw(&raw_gen_buf);
 
-                // Suppress active/incomplete thinking blocks
                 if let Some(think_pos) = cleaned.find("<think>") {
                     cleaned.truncate(think_pos);
                 }
 
-                // Avoid leaking partial tags by holding back any suffix matching a partial tag
                 let tags = self.family.tags_to_strip();
                 let holdback = partial_tag_len(&cleaned, tags);
                 let clean_len = cleaned.len() - holdback;
@@ -615,10 +672,28 @@ impl LlmEngine for LlmWorker {
 
             ctx.decode(&mut batch)
                 .map_err(|e| anyhow!("[LLM] Decode step failed: {}", e))?;
+            sample_ith = 0;
         }
 
-        if n_cur > system_tokens_len as i32 {
-            let _ = ctx.clear_kv_cache_seq(Some(0), Some(system_tokens_len as u32), None);
+        // Flush any remaining un-emitted text in raw_gen_buf
+        let mut final_cleaned = self.family.strip_tags_raw(&raw_gen_buf);
+        if let Some(think_pos) = final_cleaned.find("<think>") {
+            final_cleaned.truncate(think_pos);
+        }
+        let final_trimmed = final_cleaned.trim_end().to_string();
+        if final_trimmed.len() > emitted_clean_len {
+            let delta = &final_trimmed[emitted_clean_len..];
+            if !delta.is_empty() {
+                let _ = tx.send(VoxEvent::LlmToken {
+                    turn_id,
+                    token: delta.to_string(),
+                });
+            }
+        }
+
+        // Update KV cache sequence length
+        if let Some(state) = &mut *cache_lock {
+            state.current_seq_tokens_len = n_cur as usize;
         }
 
         let elapsed = start_time.elapsed().as_secs_f32();

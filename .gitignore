@@ -37,3 +37,4 @@ gemini.py
 neutts/
 temp/
 chatterbox-rs
+app/src-tauri/tests/simulation_clips/
