@@ -175,8 +175,17 @@ fn main() -> anyhow::Result<()> {
     let warmup_cancel = Arc::new(AtomicBool::new(false));
     let (warmup_tx, _) = channel();
     let warmup_start = std::time::Instant::now();
+    let warmup_ctx = vox_lib::services::memory::ConversationContext {
+        messages: vec![vox_lib::services::memory::ChatMessage {
+            role: vox_lib::services::memory::Role::System,
+            content: system_prompt.clone(),
+            timestamp_ms: 0,
+        }],
+        token_count: 0,
+        kv_cache_index: 0,
+    };
     llm_engine
-        .generate("", &system_prompt, 0, &warmup_cancel, &warmup_tx)
+        .generate(&warmup_ctx, 0, &warmup_cancel, &warmup_tx)
         .expect("Failed to warm up LLM provider");
     println!(
         "\x1b[32m[Bench]\x1b[0m LLM provider warmed up in {:?}",
@@ -280,7 +289,23 @@ fn main() -> anyhow::Result<()> {
             match cmd {
                 BenchCommand::Llm(text, prompt) => {
                     println!("\x1b[34m[LLM]\x1b[0m Starting generation for: \"{}\"", text);
-                    let _ = engine.generate(&text, &prompt, 1, &llm_cancel, &llm_event_tx);
+                    let ctx = vox_lib::services::memory::ConversationContext {
+                        messages: vec![
+                            vox_lib::services::memory::ChatMessage {
+                                role: vox_lib::services::memory::Role::System,
+                                content: prompt,
+                                timestamp_ms: 0,
+                            },
+                            vox_lib::services::memory::ChatMessage {
+                                role: vox_lib::services::memory::Role::User,
+                                content: text,
+                                timestamp_ms: 0,
+                            },
+                        ],
+                        token_count: 0,
+                        kv_cache_index: 0,
+                    };
+                    let _ = engine.generate(&ctx, 1, &llm_cancel, &llm_event_tx);
                 }
                 BenchCommand::Shutdown => break,
                 _ => {}

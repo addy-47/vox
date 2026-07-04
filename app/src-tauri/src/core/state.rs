@@ -41,7 +41,9 @@ pub enum InteractionState {
     Thinking,
     AssistantSpeaking,
     Interrupted,
+    MaintainingContext,
 }
+
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TelemetryData {

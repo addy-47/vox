@@ -1,6 +1,8 @@
 pub mod audio;
 pub mod llm;
+pub mod memory;
 pub mod pipeline;
+
 pub mod ptt;
 pub mod realtime;
 pub mod stt;
