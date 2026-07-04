@@ -133,43 +133,45 @@ struct OllamaModelDetails {
     family: Option<String>,
 }
 
+use crate::services::memory::ConversationContext;
+
 impl LlmProvider for OpenAiCompatProvider {
     fn generate(
         &self,
-        text: &str,
-        system_prompt: &str,
+        ctx: &ConversationContext,
         turn_id: u32,
         cancel_flag: &Arc<AtomicBool>,
         tx: &mpsc::Sender<VoxEvent>,
     ) -> anyhow::Result<()> {
         log::info!(
-            "[OpenAiCompat] Starting generation for turn {} on model {} with url {}",
+            "[OpenAiCompat] Starting generation for turn {} on model {} with url {} ({} messages in context)",
             turn_id,
             self.model,
-            self.base_url
+            self.base_url,
+            ctx.messages.len()
         );
 
-        if user_text_is_warmup(text) {
+        let last_user_text = ctx.messages.last().map(|m| m.content.as_str()).unwrap_or("");
+        if user_text_is_warmup(last_user_text) {
             log::info!("[OpenAiCompat] Warmup request received. Skipping remote LLM call.");
             return Ok(());
         }
 
-        let messages = vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: system_prompt.to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: text.to_string(),
-            },
-        ];
+        let messages: Vec<ChatMessage> = ctx
+            .messages
+            .iter()
+            .map(|m| ChatMessage {
+                role: m.role.to_string(),
+                content: m.content.clone(),
+            })
+            .collect();
 
         let req_body = ChatCompletionRequest {
             model: self.model.clone(),
             messages,
             stream: true,
         };
+
 
         block_on(async {
             let url = format!("{}/v1/chat/completions", self.base_url);

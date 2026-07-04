@@ -23,17 +23,18 @@ impl EmbeddedProvider {
     }
 }
 
+use crate::services::memory::ConversationContext;
+
 impl LlmProvider for EmbeddedProvider {
     fn generate(
         &self,
-        text: &str,
-        system_prompt: &str,
+        ctx: &ConversationContext,
         turn_id: u32,
         cancel_flag: &Arc<AtomicBool>,
         tx: &mpsc::Sender<VoxEvent>,
     ) -> anyhow::Result<()> {
         self.worker
-            .generate(text, system_prompt, turn_id, cancel_flag, tx)
+            .generate(ctx, turn_id, cancel_flag, tx)
     }
 
     fn health_check(&self) -> bool {
@@ -51,7 +52,13 @@ impl LlmProvider for EmbeddedProvider {
     fn kind(&self) -> ProviderKind {
         ProviderKind::Embedded
     }
+
+    fn max_context_tokens(&self) -> usize {
+        self.worker.ctx_size() as usize
+    }
+
 }
+
 
 impl EmbeddedProvider {
     pub fn list_models_in_dir(dir: &Path) -> anyhow::Result<Vec<RemoteModelInfo>> {

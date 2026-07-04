@@ -3,10 +3,11 @@ use crate::core::events::VoxEvent;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use crate::services::memory::ConversationContext;
+
 pub enum LlmCommand {
     Generate {
-        text: String,
-        system_prompt: String,
+        ctx: ConversationContext,
         turn_id: u32,
         cancel_flag: Arc<AtomicBool>,
     },
@@ -31,13 +32,12 @@ pub fn spawn_llm_worker(
     while let Ok(cmd) = rx.recv() {
         match cmd {
             LlmCommand::Generate {
-                text,
-                system_prompt,
+                ctx,
                 turn_id,
                 cancel_flag,
             } => {
                 if let Err(e) =
-                    provider.generate(&text, &system_prompt, turn_id, &cancel_flag, &event_tx)
+                    provider.generate(&ctx, turn_id, &cancel_flag, &event_tx)
                 {
                     log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
                     let _ = event_tx.send(VoxEvent::Error {
@@ -52,6 +52,7 @@ pub fn spawn_llm_worker(
             }
         }
     }
+
 
     is_loaded.store(false, Ordering::Relaxed);
     log::info!("[LLM Worker] Loop exited. Provider will be dropped.");

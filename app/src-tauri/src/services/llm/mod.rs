@@ -12,16 +12,18 @@ pub use providers::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, Provide
 ///
 /// This is the lower-level interface for local GGUF inference via llama.cpp.
 /// For the provider abstraction (which wraps local or remote), see `LlmProvider`.
+use crate::services::memory::ConversationContext;
+
 pub trait LlmEngine {
     fn generate(
         &self,
-        user_text: &str,
-        system_prompt: &str,
+        ctx: &ConversationContext,
         turn_id: u32,
         cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
         tx: &std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
     ) -> anyhow::Result<()>;
 }
+
 
 use llama_cpp_4::llama_backend::LlamaBackend;
 use std::sync::OnceLock;
