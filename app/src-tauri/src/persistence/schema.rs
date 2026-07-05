@@ -8,10 +8,11 @@ use turso::Connection;
 pub async fn run_migrations(conn: &Connection) -> Result<()> {
     let statements = [
         "CREATE TABLE IF NOT EXISTS sessions (
-            id         INTEGER PRIMARY KEY,   -- epoch milliseconds
-            started_at INTEGER NOT NULL,
-            ended_at   INTEGER,
-            turn_count INTEGER NOT NULL DEFAULT 0
+            id               INTEGER PRIMARY KEY,   -- epoch milliseconds
+            started_at       INTEGER NOT NULL,
+            ended_at         INTEGER,
+            turn_count       INTEGER NOT NULL DEFAULT 0,
+            embedding_status TEXT    NOT NULL DEFAULT 'pending'
         );",
         "CREATE TABLE IF NOT EXISTS turns (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,11 +41,29 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             embedding  F32_BLOB(384) NOT NULL,      -- MiniLM embedding (384 floats)
             created_at INTEGER NOT NULL             -- Unix epoch seconds
         );",
+        "CREATE TABLE IF NOT EXISTS episodes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            summary     TEXT    NOT NULL,
+            embedding   F32_BLOB(384) NOT NULL,
+            created_at  INTEGER NOT NULL,
+            token_count INTEGER NOT NULL
+        );",
+        "CREATE INDEX IF NOT EXISTS idx_episodes_session ON episodes(session_id);",
+        "CREATE INDEX IF NOT EXISTS idx_episodes_created ON episodes(created_at DESC);",
     ];
 
     for stmt in statements {
         conn.execute(stmt, ()).await?;
     }
+
+    // Safely add embedding_status column to existing sessions table if missing (idempotent migration)
+    let _ = conn
+        .execute(
+            "ALTER TABLE sessions ADD COLUMN embedding_status TEXT NOT NULL DEFAULT 'pending'",
+            (),
+        )
+        .await;
 
     if let Err(e) = seed_packaged_voices(conn).await {
         log::warn!("[Persistence] Failed to seed packaged voices (non-fatal): {}", e);
@@ -117,4 +136,45 @@ async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_schema_migrations_and_episodes_table() -> Result<()> {
+        let db = turso::Builder::new_local(":memory:").build().await?;
+        let conn = db.connect()?;
+        run_migrations(&conn).await?;
+        // Test idempotency (run migrations twice)
+        run_migrations(&conn).await?;
+
+        // Verify episodes table exists
+        let mut rows = conn
+            .query(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='episodes'",
+                (),
+            )
+            .await?;
+        let count: i64 = rows.next().await?.unwrap().get(0)?;
+        assert_eq!(count, 1);
+
+        // Verify sessions.embedding_status column exists
+        let mut col_rows = conn.query("PRAGMA table_info(sessions)", ()).await?;
+        let mut found_embedding_status = false;
+        while let Some(row) = col_rows.next().await? {
+            let col_name: String = row.get(1)?;
+            if col_name == "embedding_status" {
+                found_embedding_status = true;
+                break;
+            }
+        }
+        assert!(
+            found_embedding_status,
+            "embedding_status column must exist in sessions table"
+        );
+
+        Ok(())
+    }
 }

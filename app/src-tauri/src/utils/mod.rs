@@ -1,5 +1,6 @@
 pub mod audio_filters;
 pub mod bench_reporter;
+pub mod hardware;
 pub mod logging;
 pub mod paths;
 
