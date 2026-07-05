@@ -36,5 +36,5 @@ venv*
 gemini.py
 neutts/
 temp/
-chatterbox-rs
+submodules/
 app/src-tauri/tests/simulation_clips/

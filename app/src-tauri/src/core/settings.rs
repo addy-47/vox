@@ -321,6 +321,13 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("persistence", "max_sessions") => SettingReloadPolicy::Hot,
         ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
+        // Memory — episodic parameters hot, worker toggle command
+        ("memory", "episodic_enabled") => SettingReloadPolicy::Hot,
+        ("memory", "bg_worker_enabled") => SettingReloadPolicy::WorkerCommand,
+        ("memory", "top_k") => SettingReloadPolicy::Hot,
+        ("memory", "similarity_threshold") => SettingReloadPolicy::Hot,
+        ("memory", "max_context_share") => SettingReloadPolicy::Hot,
+
         // Assistant — hot update
         ("assistant", "modular_prompt") => SettingReloadPolicy::Hot,
         ("assistant", "realtime_prompt") => SettingReloadPolicy::Hot,
@@ -619,6 +626,33 @@ impl Default for PersistenceSettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
+pub struct MemorySettings {
+    /// Enable Episodic Memory subsystem.
+    pub episodic_enabled: bool,
+    /// Enable background memory worker thread.
+    pub bg_worker_enabled: bool,
+    /// Number of top historical session summaries to retrieve (RAG parameter).
+    pub top_k: u32,
+    /// Cosine similarity threshold for vector search filtering (0.0 - 1.0).
+    pub similarity_threshold: f32,
+    /// Maximum share of context window allocated to retrieved episodic memory (0.0 - 1.0).
+    pub max_context_share: f32,
+}
+
+impl Default for MemorySettings {
+    fn default() -> Self {
+        Self {
+            episodic_enabled: true,
+            bg_worker_enabled: true,
+            top_k: 3,
+            similarity_threshold: 0.55,
+            max_context_share: 0.20,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SetupSettings {
     pub completed: bool,
 }
@@ -758,6 +792,7 @@ pub struct VoxSettings {
     pub interaction: InteractionSettings,
     pub telemetry: TelemetrySettings,
     pub persistence: PersistenceSettings,
+    pub memory: MemorySettings,
     pub assistant: AssistantSettings,
     pub setup: SetupSettings,
     pub realtime: RealtimeSettings,
@@ -855,5 +890,32 @@ impl VoxSettings {
         // (legacy paths were relative `assets/` paths which no longer apply)
         let _ = settings.save();
         settings
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memory_settings_defaults() {
+        let settings = VoxSettings::default();
+        assert!(settings.memory.episodic_enabled);
+        assert!(settings.memory.bg_worker_enabled);
+        assert_eq!(settings.memory.top_k, 3);
+        assert!((settings.memory.similarity_threshold - 0.55).abs() < 0.001);
+        assert!((settings.memory.max_context_share - 0.20).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_memory_settings_reload_policy() {
+        assert_eq!(
+            reload_policy_for("memory", "episodic_enabled"),
+            SettingReloadPolicy::Hot
+        );
+        assert_eq!(
+            reload_policy_for("memory", "bg_worker_enabled"),
+            SettingReloadPolicy::WorkerCommand
+        );
     }
 }

@@ -84,6 +84,11 @@ pub fn init_with_root(root: PathBuf) {
     let _ = PATHS.set(paths);
 }
 
+/// Returns the initialized `VoxPaths` singleton if initialized, or None.
+pub fn try_get() -> Option<&'static VoxPaths> {
+    PATHS.get()
+}
+
 /// Returns the initialized `VoxPaths` singleton.
 ///
 /// # Panics
