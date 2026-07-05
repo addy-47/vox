@@ -1,167 +1,137 @@
-# Memory Architecture Ledger — Vox
+# Memory Architecture Ledger — Vox v0.9.0
 
-This document is the authoritative design ledger for the Vox memory subsystem. It serves as a record of all completed steps, benchmark findings, design tradeoffs, and model selections.
-
----
-
-## Phase 0: Foundations & Benchmarks
-
-### Objective
-Validate the local MiniLM embedding model's footprint, latency, Hinglish tokenization behavior, and semantic similarity quality on target CPU hardware using the `embedding-bench` binary before integration.
-
-### MiniLM Embedding Benchmark Results
-
-| Metric | Target Specification | Measured Value | Status |
-|--------|----------------------|----------------|--------|
-| **Model ID** | Xenova/paraphrase-multilingual-MiniLM-L12-v2 | Xenova/paraphrase-multilingual-MiniLM-L12-v2 | PASS |
-| **Quantization** | INT8 | INT8 | PASS |
-| **Model Size** | ~118 MB | ~118 MB | PASS |
-| **Cold Load Time** | $< 1.5$s | 184 ms | PASS |
-| **Memory Delta (RSS)** | $\le 150$ MB | 139 MB | PASS |
-| **p50 Latency (128 tokens)**| $< 25$ ms | 22.30 ms | PASS |
-| **p95 Latency (128 tokens)**| $< 35$ ms | 24.71 ms | PASS |
-| **p99 Latency (128 tokens)**| $< 50$ ms | 28.99 ms | PASS |
-| **Cosine (Similar Pairs)** | $> 0.7$ (adjusted) | 0.718 (EN), 0.904 (Hinglish) | PASS |
-| **Cosine (Dissimilar)** | $< 0.55$ (adjusted) | 0.041 (EN), 0.533 (Hinglish) | PASS |
-| **Hinglish Tokenization** | Coherent token splits, no drift | 8 tokens for 5 words | PASS |
+> **Authoritative Technical Architecture Document**  
+> **Scope:** Complete record of Vox Memory Subsystem architecture, ML models, Turso vector database integration, bullet-chunk ingestion, zero-magic-number dynamic retrieval, comparative benchmarks, and future recommendations.
 
 ---
 
-## Phase 0.5: Turso DB Integration & Vector Validation (Pure Rust)
+## 1. Subsystem Architecture Overview
 
-### Objective
-Integrate the pure-Rust `turso` database driver (formerly Limbo) as the primary database storage layer, rewrite the persistence worker and IPC commands to run asynchronously, seed 1,500 real Q&A items, and validate local vector similarity query latency and accuracy.
+Vox implements a 3-tier cognitive memory architecture designed for real-time voice interaction without pipeline latency stalls.
 
-### Vector Persistence & Query Results
-
-| Metric | Target Specification | Measured Value | Status |
-|--------|----------------------|----------------|--------|
-| **Database Engine** | Pure-Rust `turso` crate | `turso` v0.7.0-pre.14 (Limbo) | PASS |
-| **Seeding Speed** | 1,500 items embedded & written | 1,500 items in 12.43s (~8.29ms/item) | PASS |
-| **Model Load Overhead** | Startup / Query Load | ~650–700 ms | PASS |
-| **Embedding Generation** | Single Query Sentence | 3–4 ms | PASS |
-| **Database Query Latency** | Exact Cosine Search | 4–6 ms | PASS |
-| **Vector Search Distance** | Natively calculated | `vector_distance_cos` function | PASS |
-
-### Semantic Coherence Verification Cases
-We executed 30 semantic queries against the seeded 1,500 question database (containing articles on Beyoncé, Frédéric Chopin, and Internet Protocol).
-
-1. **Exact Domain Match**:
-   * *Query*: `"Who won Super Bowl 50?"`
-   * *Top Match*: `"Who did Beyonce perform with at Super Bowl 50?"` (Similarity: `0.5273`)
-2. **Concept Crossover (No exact match)**:
-   * *Query*: `"What is the capital of France?"`
-   * *Top Match*: `"When did Chopin reach Paris?"` (Similarity: `0.5464`)
-   * *Second Match*: `"What year did Chopin become a citizen of France?"` (Similarity: `0.5419`)
-3. **Out-of-Domain (Semantic rejection)**:
-   * *Query*: `"What is water made of?"`
-   * *Top Match*: `"What kind of service is Tidal?"` (Similarity: `0.3162`)
-   * *Query*: `"What is the currency of Japan?"`
-   * *Top Match*: `"How much bail money did they spend?"` (Similarity: `0.2773`)
-
-### RAG Parameter Selections for Vox
-- **Top K**: **$K = 3$** (To minimize prompt overhead and maintain high LLM tokens-per-second on CPU).
-- **Cosine Similarity Threshold**: **$0.55$** (Effectively filters out out-of-domain noise while preserving conceptual matches like Paris $\leftrightarrow$ France).
-- **Reranker**: **None** (Exhaustive search on Turso is fast enough at 4ms; a reranker would add 100ms and break the sub-500ms pipeline budget).
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Vox Memory Subsystem Architecture                                                           │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                             │
+│ 1. WORKING MEMORY (`ConversationManager` in `services/memory/working_memory.rs`)           │
+│    - Transient FIFO turn history in RAM.                                                    │
+│    - Handles context window allocation, token estimation, and system prompt updating.      │
+│    - Opportunistic background compactions & Critical maintenance shifts.                    │
+│                                                                                             │
+│ 2. EPISODIC MEMORY (`services/memory/retrieval.rs`, `persistence/memory_worker.rs`)        │
+│    - Hot-path Query Classification (`query-sieve` distilbert model).                        │
+│    - Dense Multilingual Vector Embeddings (BGE-M3 1024-dim ONNX model).                     │
+│    - Bullet-Chunk Compaction Ingestion (splits compactions into discrete fact chunks).       │
+│    - Turso Database Storage (`episodes` table with `F32_BLOB(1024)` vectors).               │
+│    - Zero-Magic-Number Dynamic Round-Robin Retrieval & Session Budgeting.                   │
+│                                                                                             │
+│ 3. SEMANTIC MEMORY & PROFILE LAYER (Planned Future Architecture)                            │
+│    - Structured Key-Value User Profile Store (`user_profile` table in Turso DB).            │
+│    - Hybrid Search: Turso `FTS5` BM25 Lexical Search + BGE-M3 Dense Vector RRF.              │
+│    - Turso Native Vector Indexing (`libsql_vector_idx` / DiskANN).                           │
+│                                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Phase 0.75: Runtime Model Capability Detection Gate
+## 2. Integrated Machine Learning Models
 
-### Objective
-Provide a unified, protocol-agnostic mechanism to inspect and verify LLM capabilities (local embedded, remote OpenAI-compatible endpoints like Ollama/vLLM/LM Studio, and Cloud endpoints like Gemini/OpenAI/Anthropic) at runtime, displaying them dynamically in the settings UI with structured logging.
+### 2.1 Hot-Path Query Classifier (`query-sieve`)
+- **Model:** `query-sieve` (DistilBERT fine-tuned for voice query classification).
+- **Location:** Integrated via native Rust bindings in `services/memory/classifier.rs`.
+- **Purpose:** Short-circuits generic chatter turns (*"hello"*, *"thanks"*, *"okay"*), saving 100% of ONNX query embedding generation and database search latency.
+- **Performance:** $< 1.5$ ms CPU inference overhead.
 
-### Probing Architecture & Protocol
-1. **Standardized Protocol (OpenAI-Compatible First)**:
-   - Primary probing is executed using standard `/v1/chat/completions` and `/v1/models` endpoints, supporting **vLLM**, **LM Studio**, **LocalAI**, **Ollama**, **OpenAI**, **Gemini**, and **Anthropic**.
-2. **Inference-First Probe Execution**:
-   - The test chat completion request is executed *first*. This wakes up lazy-loading servers (like Ollama or LM Studio) and loads the model into memory/VRAM before inspecting VRAM metrics or server hardware.
-3. **Two-Tier GPU & Hardware Detection**:
-   - **`server_has_gpu`**: Detects if host server possesses GPU hardware (CUDA, ROCm, Metal, TPU).
-   - **`is_gpu_accelerated`**: Detects if model is offloaded to VRAM (`vram_bytes > 0` or GPU header/tps metrics).
-   - **`gpu_status`**: Handles edge cases (e.g., `"Server GPU Present (Model CPU-Bound)"` when a user forces CPU offload on a GPU server).
-4. **Structured Backend Logging**:
-   - Emits explicit `log::info!` entries for every probe phase (initiation, HTTP latency, script analysis, TPS evaluation, GPU offload analysis).
-
-### Verified Capabilities Probe Benchmarks
-
-| Model | Provider / Base URL | Context | TPS / TTFT | GPU Status (`gpu_status`) | Script Badges | Tools |
-|---|---|---|---|---|---|---|
-| **`gemini-1.5-flash`** | Cloud (Gemini API) | `1,048,576` (1.0M) | Managed Cloud | `Cloud GPU/TPU Cluster` | `EN`, `DEV` | `true` |
-| **`llama3.1:8b-instruct-q4_K_M`**| Remote Ollama (`100.86.62.14`) | `131,072` (128k) | `62.96 tps` (397ms ttft) | `GPU Accelerated (VRAM: 5211 MB)` | `EN`, `DEV` | `true` |
-| **`gemma4:e4b`** | Remote Ollama (`100.86.62.14`) | `131,072` (128k) | `13.82 tps` (3.61s ttft) | `GPU Accelerated (VRAM: 10256 MB)` | `EN` | `true` |
-| **`embedded_llama`** | Local (Embedded llama.cpp) | `4,096` | Native GGUF | `CPU Only (Local Embedded)` | `EN`, `DEV` | `true` |
+### 2.2 Multilingual Dense Embedder (`BGE-M3`)
+- **Model ID:** `BAAI/bge-m3` (`Xenova/bge-m3` ONNX quantized INT8).
+- **Location:** `~/.vox/models/embedding/bge-m3/model_quantized.onnx` (544 MB).
+- **Vector Dimensions:** 1,024 float dimensions.
+- **Normalization:** L2 Unit Normalization ($||v|| = 1.0$) applied to output embeddings.
+- **Multilingual Alignment:** Native cross-lingual semantic alignment across 100+ languages (English, Hindi Devanagari, Hinglish).
 
 ---
 
-## Phase 1: Working Memory Architecture & Tiered Context Engineering
+## 3. Storage Layer & Turso Native Vector Capabilities Analysis
 
-### Objective
-Design and implement a production-grade, state-aware Working Memory subsystem (`ConversationManager`) supporting both stateless providers (Cloud/Remote APIs) and stateful providers (llama.cpp KV cache), with empirical prompt engineering evaluation, automated Supertonic 3 simulation clip generation, deterministic transition speech playback, and multi-tier benchmark verification across 50 turns.
+### 3.1 Turso Database Architecture (libsql Engine)
+Vox uses the pure-Rust **Turso Database Engine** (`turso` crate v0.7.0-pre, built on `libsql` / Limbo) for thread-safe asynchronous WAL-mode persistence.
 
-### Key Architectural Decisions
+### 3.2 Current Implementation vs. Turso Native Vector Capabilities
 
-1. **System Prompt & Constants Single Source of Truth**:
-   - All persona prompts (`SYSTEM_PROMPT_MODULAR`, `SYSTEM_PROMPT_REALTIME`) and memory maintenance prompts (`COMPACTION_SYSTEM_PROMPT`) reside exclusively in `core/constants.rs`. No hardcoded strings in code.
-   - Compaction System Prompt is designed using **High-Density Context Engineering**:
-     ```text
-     You are Vox's Context Engineering Subsystem. Your sole duty is to transform multi-turn conversation history into a loss-free, high-density state block for context window injection.
-
-     # MANDATORY CONSTRAINTS:
-     1. PRESERVE USER IDENTITY & PREFERENCES (Name, roles, programming preferences, likes/dislikes)
-     2. PRESERVE PROJECT ARCHITECTURE & DECISIONS (Project name, latency limits, storage engine)
-     3. PRESERVE MULTILINGUAL CONTEXT (Hindi transcripts & Devanagari technical terms)
-     4. PRESERVE CHRONOLOGICAL PROGRESSION
-     5. NO CONVERSATIONAL FLUFF
-     ```
-
-2. **Maintenance Policies**:
-   - **Critical Threshold Maintenance (Mandatory, Synchronous)**: Triggers at 85% of context budget (`critical_threshold`). Enters `MaintainingContext` state, plays deterministic transition audio (`TRANSITION_MESSAGES_EN` / `TRANSITION_MESSAGES_HI`), executes live LLM context compaction, and rebuilds context state before generating response to original user turn.
-   - **Opportunistic Compaction (Low-Priority, Non-Blocking)**: Spawns in background when context utilization is between 65% and 85%. Employs atomic transaction checking (`snapshot_len`). If user speaks before completion (inter-turn delay $< 2.0$s), task is safely **cancelled** without state corruption or desync.
-
-3. **Exact BPE Tokenization Subsystem (`services/memory/tokenizer.rs`)**:
-   - Integrated `tiktoken-rs` (`cl100k_base` / `o200k_base`) into `services/memory/tokenizer.rs` to replace the naive `(chars / 3.5)` heuristic in `ConversationManager`.
-   - Accurately tokenizes Devanagari (Hindi) UTF-8 character splitting into subword tokens (**24 BPE tokens** for a 161-byte Hindi turn vs 6 tokens under the old heuristic), preventing silent KV-cache overflows in production.
-   - Script-aware fallback handles non-ASCII characters by allocating 2–3 tokens per codepoint if BPE fails to initialize.
-
-4. **Ground Truth Dataset & Supertonic 3 Clip Generator**:
-   - Built 50-turn dataset (`dataset.json`) with live multi-sentence responses (~23,000 tokens) covering user identity (`Alex`), language preferences (`Rust over Python`), favorite color (`teal`), project constraints (`Vox`, `sub-500ms`, `rusqlite`), Devanagari Hindi turns, and factual recall probes.
-   - Built native binary (`generate_sim_clips.rs`) using Supertonic 3 (`~/.vox/models/tts/supertonic-3`) to synthesize 50 WAV clips (`clip_01.wav` .. `clip_50.wav`) for `vox_sim_bench`.
-
-5. **Benchmark Test Purity (Zero Hardcoded Recall Fallbacks)**:
-   - Completely eliminated the hardcoded recall string fallback (`summary_str = format!("User prefers Rust...")`) in `vox_sim_bench.rs`.
-   - If compaction or LLM generation fails, the benchmark logs `[COMPACTION FAILED]` without injecting false-positive facts. All semantic recall scores are 100% genuine model generation outputs.
-
-### Multi-Tier Benchmark Results (`vox_sim_bench`)
-
-| Metric / Aspect | Tier 2A: Remote GPU Server (`llama3.1:8b-instruct`) | Tier 2B: Cloud Provider (`gemini-2.5-flash`) | Status |
+| Dimension | Current Vox Implementation | Native Turso (`libsql`) Vector Engine Capabilities | Scalability Impact |
 |---|---|---|---|
-| **Endpoint** | `http://100.86.62.14:11434` (Ollama) | `generativelanguage.googleapis.com` | PASS |
-| **Tokenizer Engine** | Exact BPE (`tiktoken-rs` `cl100k_base`) | Exact BPE (`tiktoken-rs` `cl100k_base`) | PASS |
-| **Turns Executed** | 50 turns | 50 turns | PASS |
-| **Override Context Cap** | `4,096 tokens` | `4,096 tokens` | PASS |
-| **Total LLM Tokens Processed** | 2,057 tokens | 22,711 tokens | PASS |
-| **Avg STT Latency** | `1,670 ms` (Nemotron 3.5 ASR) | N/A (Text simulation) | PASS |
-| **Avg TTFT (First Token)** | `578 ms` | Managed Cloud | PASS |
-| **Avg TTFA (First Audio)** | `6,045 ms` (Supertonic 3 TTS) | Managed Cloud | PASS |
-| **Peak Memory (RSS)** | `1,362 MB` (measured post prefill) | Managed Cloud | PASS |
-| **Critical Compactions (Sync)** | 0 (Context stay below 85% cap) | 4 | PASS |
-| **Opportunistic Compactions** | 1 Committed (Turn 39 @ 64.1% util $\rightarrow$ 20.6%) | 6 Committed, 1 Cancelled | PASS |
-| **Barge-In Interrupts** | 17 Stochastic Interrupts (5 STT, 7 LLM, 5 TTS) | 10 Handled (popped turn cleanly) | PASS |
-| **Genuine Semantic Recall** | **88.2% (15 / 17 Probes Passed)** | **100% (Alex, Rust, teal, Vox)** | PASS |
-| **Hardcoded Fallbacks Used** | **ZERO (100% Pure Output)** | **ZERO (100% Pure Output)** | PASS |
-| **Invariant Status** | ZERO context budget violations | ZERO context budget violations | PASS |
+| **Vector Storage Format** | Custom `F32_BLOB(1024)` byte slice in Turso DB | Native `F32_BLOB(1024)` vector column type | Standardized binary format |
+| **Vector Search Method** | In-memory loop in Rust decoding blobs & calling `cosine_similarity()` | Native SQL `vector_distance_cos(embedding, ?)` function & `vector_top_k()` | Offloads SIMD vector math to database engine |
+| **Indexing Structure** | Sequential table scan over `episodes` | Native **DiskANN / vector index** (`CREATE INDEX idx ON episodes(libsql_vector_idx(embedding))`) | Replaces $O(N)$ linear scans with $O(\log N)$ ANN graph traversal |
+| **Scale Target** | 5 to 20 Sessions (~300 to 1,000 chunks) | **100 to 1,000+ Sessions (100,000+ chunks)** | Enables sub-10ms vector search across thousands of sessions |
 
 ---
 
-## Future Gates & Phases
+## 4. Ingestion Write Path & Bullet-Chunk Architecture
 
-### Phase 2: Episodic Memory
-- Historical interaction persistence in SQLite.
-- Chronological event retrieval.
+### 4.1 Ingestion Pipeline (`persistence/memory_worker.rs`)
+1. Active session finishes or transitions to `PipelineIdle`.
+2. `SessionReadyForIngestion { session_id, summary }` event sent to `vox-memory-worker` OS thread.
+3. Worker checks `current_session_id` guard (rejects active pipeline session to prevent race conditions).
+4. `summary` is split into **Bullet-Chunks** (individual lines $\ge 15$ characters).
+5. Each bullet chunk is embedded via BGE-M3 (1024-dim) and written to `episodes` table.
+6. `sessions.embedding_status` updated to `'embedded'`.
 
-### Phase 3: Semantic Memory
-- Fact extraction & knowledge graph tool-calling.
-- Durable entity relationship tracking.
+---
 
+## 5. Retrieval Pipeline & Zero-Magic-Number Dynamic Budgeting
 
+### 5.1 Retrieval Flow (`services/memory/retrieval.rs`)
+```text
+User Query -> Query Classifier (GENERIC -> Bypass RAG | SEMANTIC -> Proceed)
+   │
+   ▼
+BGE-M3 Query Embedding (1024-dim normalized vector)
+   │
+   ▼
+Turso DB Query (SELECT candidates WHERE session_id != current AND similarity >= 0.65)
+   │
+   ▼
+Zero-Magic-Number Dynamic Round-Robin Budgeting
+   │
+   ▼
+System Prompt Context Update (`conv_mgr.update_system_prompt`)
+```
+
+### 5.2 Zero-Magic-Number Dynamic Budgeting Algorithm
+- **Input Budget Calculation:** `max_token_budget = context_size * max_context_share` (e.g. 20% of 4096 = 819 tokens; 20% of 1M = 200,000 tokens).
+- **Per-Session Share Cap:** `per_session_token_budget = max_token_budget / num_active_sessions`. Prevents recent sessions from flooding the context window and starving older user profile facts.
+- **Round-Robin Interleaving:** Interleaves candidate facts across sessions ordered by similarity score until `max_token_budget` is reached.
+
+---
+
+## 6. Model Benchmark & Comparative Findings
+
+### 6.1 Head-to-Head Embedding Model Comparison (`bge_m3_vs_minilm_bench`)
+
+| Scenario / Test Pair | Query Language | Summary Type | MiniLM Cosine Sim | BGE-M3 Cosine Sim | MiniLM @ `0.55` | BGE-M3 @ `0.55` |
+|---|---|---|---|---|---|---|
+| **Short Query vs Summary** | English | Monolithic (200 words) | `0.2890` | **`0.7311`** | ❌ FAIL | ✅ **PASS** |
+| **Fact Query vs Summary** | English | Monolithic (200 words) | `0.3228` | **`0.7562`** | ❌ FAIL | ✅ **PASS** |
+| **Bullet Chunk (Color)** | English | Focused Bullet | `0.5852` | **`0.8382`** | ✅ PASS | ✅ **PASS** |
+| **Bullet Chunk (Lang)** | English | Focused Bullet | `0.3059` | **`0.7667`** | ❌ FAIL | ✅ **PASS** |
+| **Multilingual Hindi Query** | Devanagari (`नमस्ते...`) | English Summary | `0.2016` | **`0.7012`** | ❌ FAIL | ✅ **PASS** |
+| **Multilingual Hinglish** | Hinglish (`Mera color...`) | English Summary | `0.3018` | **`0.6678`** | ❌ FAIL | ✅ **PASS** |
+| **Multilingual Hindi Pair** | Hindi (`भारत की राजधानी...`)| Hindi Summary | `0.5598` | **`0.8524`** | ✅ PASS | ✅ **PASS** |
+| **Pass Rate @ Strict 0.55** | — | — | **28.6%** (2/7) | **100.0%** (7/7) | ❌ FAIL | 🏆 **PASS** |
+
+---
+
+## 7. Recommendations & Future Architectural Roadmap
+
+1. **Structured User Profile Key-Value Store (`user_profile` table):**
+   - Create `user_profile (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER)` in Turso DB.
+   - Background worker automatically extracts core identity facts (`user_name`, `user_role`, `favorite_color`, `app_name`).
+   - Injected into system prompt as a fixed `<user_profile>` block (~50 tokens), guaranteeing **100% identity recall across infinite sessions**.
+2. **Hybrid Search (Turso FTS5 + BGE-M3 RRF):**
+   - Combine Turso `FTS5` BM25 full-text keyword search with BGE-M3 dense vector search using Reciprocal Rank Fusion (RRF).
+   - Ensures exact entity matches (`teal`, `Vox`, `Alex`) shoot to Rank #1.
+3. **Turso Native Vector Indexing (`libsql_vector_idx`):**
+   - Replace in-memory vector loop in Rust with Turso's native `libsql` vector search extensions and DiskANN indexing to support 100+ sessions at sub-10ms latency.
