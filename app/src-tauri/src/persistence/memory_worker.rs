@@ -50,41 +50,56 @@ pub async fn ingest_compaction_summary(
         return Ok(());
     }
 
-    // Lazily ensure MiniLM embedder is loaded on the background worker thread
     crate::services::memory::ensure_embedder_loaded(true)?;
 
-    if let Some(embedding) = crate::services::memory::generate_embedding(summary)? {
-        let token_count = crate::services::memory::estimate_tokens(summary) as i64;
-        let created_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        let blob_bytes = encode_f32_blob(&embedding);
+    // Extract chunks: full summary + individual bullet/section chunks for crisp vector retrieval
+    let mut chunks = Vec::new();
+    chunks.push(summary.trim().to_string());
 
-        conn.execute(
-            "INSERT INTO episodes (session_id, summary, embedding, created_at, token_count)
-             VALUES (?, ?, ?, ?, ?)",
-            (
-                session_id as i64,
-                summary.to_string(),
-                blob_bytes,
-                created_at,
-                token_count,
-            ),
-        )
-        .await?;
+    for line in summary.lines() {
+        let trimmed = line.trim().trim_start_matches('-').trim_start_matches('*').trim();
+        if trimmed.len() > 15 && !trimmed.starts_with('#') {
+            chunks.push(trimmed.to_string());
+        }
+    }
 
+    let mut ingested_count = 0;
+    let created_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    for chunk in chunks {
+        if let Some(embedding) = crate::services::memory::generate_embedding(&chunk)? {
+            let token_count = crate::services::memory::estimate_tokens(&chunk) as i64;
+            let blob_bytes = encode_f32_blob(&embedding);
+
+            conn.execute(
+                "INSERT INTO episodes (session_id, summary, embedding, created_at, token_count)
+                 VALUES (?, ?, ?, ?, ?)",
+                (
+                    session_id as i64,
+                    chunk,
+                    blob_bytes,
+                    created_at,
+                    token_count,
+                ),
+            )
+            .await?;
+            ingested_count += 1;
+        }
+    }
+
+    if ingested_count > 0 {
         conn.execute(
             "UPDATE sessions SET embedding_status = 'embedded' WHERE id = ?",
             (session_id as i64,),
         )
         .await?;
-
         tracing::info!(
-            "[MemoryWorker] Successfully ingested episodic memory for session_id={} (dims={}, tokens={})",
-            session_id,
-            embedding.len(),
-            token_count
+            "[MemoryWorker] Successfully ingested {} episodic memory chunks for session_id={}",
+            ingested_count,
+            session_id
         );
     } else {
         conn.execute(
@@ -187,7 +202,8 @@ pub fn spawn_memory_worker(
                         }
                         MemoryWorkerEvent::PipelineIdle => {
                             state.is_idle = true;
-                            tracing::debug!("[MemoryWorker] Pipeline transitioned to IDLE");
+                            state.current_session_id = 0;
+                            tracing::debug!("[MemoryWorker] Pipeline transitioned to IDLE (active session cleared)");
                         }
                         MemoryWorkerEvent::PipelineActive => {
                             state.is_idle = false;

@@ -646,7 +646,7 @@ impl Default for MemorySettings {
             episodic_enabled: true,
             bg_worker_enabled: true,
             top_k: 3,
-            similarity_threshold: 0.55,
+            similarity_threshold: 0.65,
             max_context_share: 0.20,
         }
     }
@@ -903,7 +903,7 @@ mod tests {
         assert!(settings.memory.episodic_enabled);
         assert!(settings.memory.bg_worker_enabled);
         assert_eq!(settings.memory.top_k, 3);
-        assert!((settings.memory.similarity_threshold - 0.55).abs() < 0.001);
+        assert!((settings.memory.similarity_threshold - 0.65).abs() < 0.001);
         assert!((settings.memory.max_context_share - 0.20).abs() < 0.001);
     }
 
