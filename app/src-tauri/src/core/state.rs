@@ -284,6 +284,10 @@ pub struct AppState {
     pub persist_tx: std::sync::Mutex<
         Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
     >,
+    /// Background memory worker channel. None if memory worker is disabled.
+    pub memory_tx: std::sync::Mutex<
+        Option<crossbeam_channel::Sender<crate::persistence::memory_worker::MemoryWorkerEvent>>,
+    >,
     /// Track dropped persistence events for monitoring.
     pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
     /// Track dropped telemetry events to prevent I/O blocking on hot-paths.
@@ -394,6 +398,7 @@ impl AppState {
             is_sleeping: Arc::new(AtomicBool::new(false)),
             runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
             persist_tx: std::sync::Mutex::new(None),
+            memory_tx: std::sync::Mutex::new(None),
             dropped_persistence_events: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             dropped_telemetry_events,
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),

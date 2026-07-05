@@ -97,6 +97,11 @@ pub async fn engage(
             .owner
             .store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
 
+        // Ensure Query Classifier model is loaded lazily into RAM on pipeline engage
+        if let Err(e) = crate::services::memory::ensure_classifier_loaded() {
+            log::warn!("[QueryClassifier] Lazy load on pipeline engage skipped/failed: {}", e);
+        }
+
         // Ensure engine is launched
         if state.engine.lock().await.is_none() {
             log::info!("[Pipeline] Engine not running. Launching for Engagement...");
@@ -126,6 +131,18 @@ pub async fn engage(
                             .dropped_persistence_events
                             .fetch_add(1, Ordering::Relaxed);
                     }
+                }
+            }
+
+            // Notify Memory Worker of Active Session Change
+            {
+                let memory_tx = state.memory_tx.lock().unwrap();
+                if let Some(ref tx) = *memory_tx {
+                    let _ = tx.try_send(
+                        crate::persistence::memory_worker::MemoryWorkerEvent::ActiveSessionChanged {
+                            session_id: conv_id,
+                        },
+                    );
                 }
             }
 
