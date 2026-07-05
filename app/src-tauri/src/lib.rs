@@ -186,10 +186,40 @@ pub fn run() {
                 latest_playback_start_ms,
                 latest_persistence_rate,
                 is_db_healthy,
-                is_private_mode,
+                is_private_mode.clone(),
                 dropped_telemetry_events,
             );
             app_state.persist_tx = std::sync::Mutex::new(Some(persist_tx));
+
+            // ── 0.8 Hardware GPU & Tier Resolution ─────────────────────────────────
+            let local_gpu_info = crate::utils::hardware::detect_local_gpu();
+            log::info!(
+                "[BOOTSTRAP] Hardware GPU Detection: vendor='{}', device='{}', tier='{}'",
+                local_gpu_info.vendor,
+                local_gpu_info.device_name,
+                local_gpu_info.resolved_tier
+            );
+
+            // ── 0.9 Memory Worker (Gated on Tier 1B+ and MemorySettings) ───────────
+            let memory_enabled = {
+                let s = app_state.settings.read().unwrap();
+                s.memory.bg_worker_enabled && s.memory.episodic_enabled
+            };
+
+            if memory_enabled && local_gpu_info.has_gpu {
+                let memory_tx = crate::persistence::memory_worker::spawn_memory_worker(
+                    crate::utils::paths::get().db.clone(),
+                    std::sync::Arc::clone(&is_private_mode),
+                );
+                app_state.memory_tx = std::sync::Mutex::new(Some(memory_tx));
+                log::info!("[BOOTSTRAP] Memory Worker spawned on background thread.");
+            } else {
+                log::info!(
+                    "[BOOTSTRAP] Memory Worker skipped (memory_enabled={}, has_gpu={}).",
+                    memory_enabled,
+                    local_gpu_info.has_gpu
+                );
+            }
 
             // ── 1.5 Monitoring Collector ──────────────────────────────────────────
             let state_arc = std::sync::Arc::new(app_state);

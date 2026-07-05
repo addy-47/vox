@@ -23,13 +23,15 @@
 - Architecture decisons are decided based on feasibility with recommended tiers - hence vox must suport dynamic degrade and upgrade of architecture based on tier
 where Tier 2 is recommended for users and is set as default
 
-* **Tier 1A: 8GB Pure Local (no gpu):** Working Memory + Episodic Memory only. (Fast, implicit retrieval. No tool calling, because 1B models will hallucinate the graph queries). 
+* **Tier 1A: 8GB Pure Local (no gpu):** Working Memory FIFO variation only (Simple buffer to manage context window)
 
-* **Tier 1B: [RECOMMENDED] 16GB Pure Local (with gpu):** Working Memory + Episodic Memory + Semantic Memory. (Fast, implicit retrieval. No tool calling, because 1B models will hallucinate the graph queries). 
+* **Tier 1B: [RECOMMENDED] Pure Local (with gpu):** Working Memory + Episodic Memory + Semantic Memory(requires tool_calling hence depends on runtime capability) .
 
-* **Tier 2: [RECOMMENDED/DEFAULT] Hybrid Stack (Cloud/Remote(gpu mandatory) LLM + Local Audio):** Working Memory + Episodic + Semantic. (The llm model has the reasoning power to actively use tool_calling). 
+* **Tier 2A: [RECOMMENDED/NO-COST] Hybrid Stack ( Remote LLM + Local Audio ):** Working Memory + Episodic + Semantic(requires tool_calling hence depends on runtime capability) .
 
-* **Tier 3: [BEST-PERFORMANCE] Realtime S2S (WebSocket):** Provider-managed Working Memory + Shadow Semantic. (Can't interrupt the audio stream for mid-turn tool calls).
+* **Tier 2B: [RECOMMENDED/DEFAULT] Hybrid Stack ( Cloud LLM + Local Audio ):** Working Memory + Episodic + Semantic(tool_calling is natively supported by all cloud models). 
+
+* **Tier 3: [BEST-PERFORMANCE] Realtime S2S (WebSocket):** Provider-managed Working Memory + Episodic & Semantic (managed via early tool calls like prompt must force to use tool calls at start before generating reponse to avoid interruptions) . 
 
 ---
 
@@ -41,7 +43,7 @@ These systems serve different purposes and are implemented independently.
 
 ## 1. Working Memory
 
-**Status:** 🟢 Active Design
+**Status:** 🟢 Completed
 
 Purpose:
 
@@ -102,7 +104,7 @@ No future subsystem should influence the implementation of the current one unles
 
 # Working Memory
 
-**Status:** 🟢 Active Design
+**Status:** 🟢 Completed 
 
 Working Memory is the runtime subsystem responsible for managing the active conversation presented to the LLM.
 
@@ -421,3 +423,367 @@ The following systems are intentionally excluded from Working Memory and will be
 * Knowledge graph
 * Entity extraction
 * Background memory consolidation
+
+
+# Episodic Memory Specification
+
+> **Status:** Draft
+
+This document defines the Episodic Memory subsystem of Vox.
+
+Episodic Memory extends Working Memory by allowing Vox to recall relevant past conversations after the active context has been compacted or forgotten.
+
+Unlike Working Memory, Episodic Memory is persistent across sessions.
+
+It is designed to remain completely independent from Semantic Memory.
+
+---
+
+# Purpose
+
+Episodic Memory exists to answer:
+
+> **"What have we talked about before?"**
+
+It stores historical conversation summaries and retrieves them when they are relevant to the current conversation.
+
+It is **not** responsible for storing durable facts or user profiles.
+
+---
+
+# Responsibilities
+
+Episodic Memory is responsible for:
+
+* Persisting conversation summaries.
+* Maintaining chronological conversation history.
+* Retrieving relevant historical sessions.
+* Supplying additional context to the LLM.
+
+It is **not** responsible for:
+
+* Working Memory
+* Context window management
+* Fact extraction
+* Entity extraction
+* Knowledge graphs
+* User profile construction
+
+---
+
+# Design Principles
+
+* Never store raw conversations.
+* Store compacted summaries only.
+* Retrieval must never block the realtime voice pipeline.
+* Retrieval must operate within a fixed token budget.
+* Every retrieved memory must represent a different historical session.
+* Memory architecture dynamically adapts based on runtime tier.
+
+---
+
+# Storage Unit
+
+The storage unit of Episodic Memory is a completed Working Memory compaction.
+
+Conceptually:
+
+```text
+Session
+    ↓
+Working Memory Compaction
+    ↓
+Summary
+    ↓
+Embedding
+    ↓
+Vector Database
+```
+
+Raw turns are never embedded.
+
+Only finalized compaction summaries are embedded.
+
+---
+
+# Memory Record
+
+Each Episodic Memory record contains:
+
+```text
+Episode
+├── Session ID
+├── Summary
+├── Embedding
+├── Timestamp
+├── Metadata
+```
+
+Metadata may include:
+
+* conversation duration
+* summary token count
+* creation timestamp
+
+No extracted facts are stored here.
+
+---
+
+# Ingestion Pipeline
+
+Only semantic conversations are stored.
+
+```text
+Conversation Completed
+        │
+        ▼
+Query Classifier
+        │
+ ┌──────┴──────┐
+ │             │
+Generic     Semantic
+ │             │
+Skip      Compaction Summary
+               │
+               ▼
+        Generate Embedding
+               │
+               ▼
+        Store Episode
+```
+
+Generic conversations are discarded.
+
+Only summaries classified as semantic are embedded.
+
+---
+
+# Retrieval
+
+Retrieval begins only after the user's current query is available.
+
+```text
+Current User Query
+        │
+        ▼
+Generate Query Embedding
+        │
+        ▼
+Vector Search
+        │
+        ▼
+Diversify By Session
+        │
+        ▼
+Token Budget Filter
+        │
+        ▼
+Inject Into Prompt
+```
+
+---
+
+# Session Diversification
+
+Standard Top-K retrieval is not used.
+
+Instead:
+
+1. Retrieve a larger candidate set.
+2. Group candidates by Session ID.
+3. Keep only the highest scoring summary from each session.
+4. Return the final Top-K.
+
+Example:
+
+```text
+Raw Results
+
+S1 (0.94)
+S1 (0.92)
+S1 (0.89)
+S2 (0.87)
+S3 (0.84)
+
+↓
+
+Diversified
+
+S1
+S2
+S3
+```
+
+This prevents one long conversation from dominating retrieval.
+
+---
+
+# Context Budget
+
+Retrieved memories have an independent context budget.
+
+Example allocation:
+
+```text
+Context Window
+├── System Prompt
+├── Working Memory
+├── Episodic Memory (≤20%)
+└── Generation Reserve
+```
+
+The Episodic Memory budget is a hard runtime limit.
+
+If the retrieved summaries exceed the configured budget:
+
+1. Highest relevance summaries are kept.
+2. Remaining summaries are discarded.
+
+Working Memory always has priority.
+
+---
+
+# Runtime Behavior
+
+Episodic Memory behaves differently depending on runtime tier.
+
+## Tier 1A
+
+No Episodic Memory.
+
+Working Memory only.
+
+---
+
+## Tier 1B
+
+Automatic retrieval.
+
+```text
+User Query
+    ↓
+Retrieve Episodes
+    ↓
+Inject Context
+    ↓
+LLM
+```
+
+---
+
+## Tier 2A
+
+Same architecture as Tier 1B.
+
+Remote LLM.
+
+Local embeddings.
+
+Local vector database.
+
+---
+
+## Tier 2B
+
+Same architecture as Tier 2A.
+
+Cloud LLM.
+
+Local embeddings.
+
+Local vector database.
+
+---
+
+## Tier 3
+
+Realtime speech requires a different strategy.
+
+Rather than retrieving memories every turn, retrieval becomes tool-driven.
+
+```text
+Realtime Session
+        │
+        ▼
+User Query
+        │
+        ▼
+LLM decides memory is needed
+        │
+        ▼
+Episode Retrieval Tool
+        │
+        ▼
+Return Relevant Sessions
+        │
+        ▼
+Continue Response
+```
+
+This avoids unnecessary retrieval during continuous streaming.
+
+---
+
+# Retrieval Tool (Tier 3)
+
+The retrieval tool returns only historical summaries.
+
+Input:
+
+```text
+Natural language query
+```
+
+Output:
+
+```text
+Episode 1
+Episode 2
+Episode 3
+```
+
+The tool must respect:
+
+* maximum number of returned episodes
+* maximum token budget
+* one summary per session
+
+---
+
+# Failure Behavior
+
+If retrieval fails:
+
+* continue normally
+* do not retry synchronously
+* do not block response generation
+
+The LLM simply receives Working Memory.
+
+---
+
+# Design Constraints
+
+Episodic Memory must:
+
+* never store raw conversations
+* never exceed its configured context budget
+* never return multiple summaries from the same session
+* never block realtime audio
+* never modify Working Memory
+* never duplicate Semantic Memory responsibilities
+
+---
+
+# Out of Scope
+
+The following are intentionally excluded:
+
+* user facts
+* preferences
+* entity graphs
+* relationship extraction
+* profile generation
+* long-term knowledge storage
+
+These belong to Semantic Memory and will be specified independently.

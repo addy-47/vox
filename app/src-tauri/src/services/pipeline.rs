@@ -407,6 +407,19 @@ impl PipelineOrchestrator {
                 InteractionOwner::Wizard => "wizard",
             };
             let _ = app_handle.emit_to(target, "state_changed", new_state);
+
+            // Notify Memory Worker of Pipeline Idle / Active state change
+            if let Some(app_state) = app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
+                let memory_tx = app_state.memory_tx.lock().unwrap();
+                if let Some(ref tx) = *memory_tx {
+                    let event = if new_state == crate::core::state::InteractionState::Idle {
+                        crate::persistence::memory_worker::MemoryWorkerEvent::PipelineIdle
+                    } else {
+                        crate::persistence::memory_worker::MemoryWorkerEvent::PipelineActive
+                    };
+                    let _ = tx.try_send(event);
+                }
+            }
         }
     }
 
