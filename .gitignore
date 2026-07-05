@@ -37,4 +37,5 @@ gemini.py
 neutts/
 temp/
 submodules/
-app/src-tauri/tests/simulation_clips/
+dataset*
+app/src-tauri/tests/simulation_clips*/

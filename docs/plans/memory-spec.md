@@ -12,16 +12,16 @@
 
 # Design Principles
 
-* Build one memory subsystem at a time.
-* Every subsystem must be independently testable.
-* Every subsystem must have measurable latency and memory budgets.
-* No subsystem becomes part of the default runtime until it has been benchmarked.
-* The memory pipeline must never block the real-time voice pipeline.
+- Build one memory subsystem at a time.
+- Every subsystem must be independently testable.
+- Every subsystem must have measurable latency and memory budgets.
+- No subsystem becomes part of the default runtime until it has been benchmarked.
+- The memory pipeline must never block the real-time voice pipeline.
 
 ## The Hardware Mapping
 
 - Architecture decisons are decided based on feasibility with recommended tiers - hence vox must suport dynamic degrade and upgrade of architecture based on tier
-where Tier 2 is recommended for users and is set as default
+  where Tier 2 is recommended for users and is set as default
 
 * **Tier 1A: 8GB Pure Local (no gpu):** Working Memory FIFO variation only (Simple buffer to manage context window)
 
@@ -29,9 +29,9 @@ where Tier 2 is recommended for users and is set as default
 
 * **Tier 2A: [RECOMMENDED/NO-COST] Hybrid Stack ( Remote LLM + Local Audio ):** Working Memory + Episodic + Semantic(requires tool_calling hence depends on runtime capability) .
 
-* **Tier 2B: [RECOMMENDED/DEFAULT] Hybrid Stack ( Cloud LLM + Local Audio ):** Working Memory + Episodic + Semantic(tool_calling is natively supported by all cloud models). 
+* **Tier 2B: [RECOMMENDED/DEFAULT] Hybrid Stack ( Cloud LLM + Local Audio ):** Working Memory + Episodic + Semantic(tool_calling is natively supported by all cloud models).
 
-* **Tier 3: [BEST-PERFORMANCE] Realtime S2S (WebSocket):** Provider-managed Working Memory + Episodic & Semantic (managed via early tool calls like prompt must force to use tool calls at start before generating reponse to avoid interruptions) . 
+* **Tier 3: [BEST-PERFORMANCE] Realtime S2S (WebSocket):** Provider-managed Working Memory + Episodic & Semantic (managed via early tool calls like prompt must force to use tool calls at start before generating reponse to avoid interruptions) .
 
 ---
 
@@ -47,10 +47,10 @@ These systems serve different purposes and are implemented independently.
 
 Purpose:
 
-* Maintain the current conversation.
-* Provide context to the LLM.
-* Manage context window growth.
-* Handle context compression.
+- Maintain the current conversation.
+- Provide context to the LLM.
+- Manage context window growth.
+- Handle context compression.
 
 This is the only memory subsystem currently under design.
 
@@ -64,9 +64,9 @@ No assumptions are made yet regarding implementation details.
 
 Purpose:
 
-* Record historical interactions.
-* Preserve chronological events.
-* Enable retrieval of previous conversations.
+- Record historical interactions.
+- Preserve chronological events.
+- Enable retrieval of previous conversations.
 
 Implementation intentionally deferred.
 
@@ -78,9 +78,9 @@ Implementation intentionally deferred.
 
 Purpose:
 
-* Store durable facts.
-* Maintain persistent knowledge.
-* Track entities and relationships.
+- Store durable facts.
+- Maintain persistent knowledge.
+- Track entities and relationships.
 
 Implementation intentionally deferred.
 
@@ -100,11 +100,9 @@ Each memory subsystem follows the same lifecycle:
 
 No future subsystem should influence the implementation of the current one unless a hard architectural dependency exists.
 
-
-
 # Working Memory
 
-**Status:** 🟢 Completed 
+**Status:** 🟢 Completed
 
 Working Memory is the runtime subsystem responsible for managing the active conversation presented to the LLM.
 
@@ -120,21 +118,21 @@ Working Memory is not responsible for long-term persistence, retrieval, embeddin
 
 Working Memory is responsible for:
 
-* Maintaining the active conversation.
-* Tracking token usage.
-* Managing the available context budget.
-* Constructing the prompt presented to the LLM.
-* Maintaining provider-specific context state.
-* Performing context maintenance when required.
+- Maintaining the active conversation.
+- Tracking token usage.
+- Managing the available context budget.
+- Constructing the prompt presented to the LLM.
+- Maintaining provider-specific context state.
+- Performing context maintenance when required.
 
 Working Memory is **not** responsible for:
 
-* Episodic Memory
-* Semantic Memory
-* Embedding generation
-* Entity extraction
-* Knowledge graph construction
-* Persistent storage
+- Episodic Memory
+- Semantic Memory
+- Embedding generation
+- Entity extraction
+- Knowledge graph construction
+- Persistent storage
 
 ---
 
@@ -146,12 +144,12 @@ The ConversationManager is the single source of truth for the active conversatio
 
 Responsibilities include:
 
-* Maintaining conversation history.
-* Tracking token usage.
-* Monitoring context budget.
-* Selecting the provider strategy.
-* Performing context maintenance.
-* Building the final LLM request.
+- Maintaining conversation history.
+- Tracking token usage.
+- Monitoring context budget.
+- Selecting the provider strategy.
+- Performing context maintenance.
+- Building the final LLM request.
 
 No other subsystem may directly modify the active conversation.
 
@@ -186,10 +184,10 @@ Working Memory supports two execution strategies depending on the active runtime
 
 Examples:
 
-* OpenAI
-* Gemini
-* Anthropic
-* OpenAI-compatible APIs
+- OpenAI
+- Gemini
+- Anthropic
+- OpenAI-compatible APIs
 
 The ConversationManager constructs the complete prompt for every request.
 
@@ -201,8 +199,8 @@ No conversational state exists inside the provider.
 
 Examples:
 
-* llama.cpp
-* Future embedded inference engines
+- llama.cpp
+- Future embedded inference engines
 
 The provider maintains an active KV Cache.
 
@@ -216,10 +214,10 @@ Working Memory must never assume all providers behave identically.
 
 Before every inference request the ConversationManager calculates:
 
-* Current context usage
-* Maximum supported context
-* Reserved generation budget
-* Remaining available context
+- Current context usage
+- Maximum supported context
+- Reserved generation budget
+- Remaining available context
 
 The runtime—not the LLM—is responsible for enforcing these limits.
 
@@ -237,10 +235,10 @@ Triggered when the conversation exceeds the configured critical context threshol
 
 Characteristics:
 
-* Mandatory
-* Synchronous
-* Blocks the next inference request
-* Guarantees the context budget remains valid
+- Mandatory
+- Synchronous
+- Blocks the next inference request
+- Guarantees the context budget remains valid
 
 The current user request is never processed until maintenance has successfully completed.
 
@@ -252,15 +250,15 @@ The response is always generated using the updated conversation.
 
 Triggered only when:
 
-* the pipeline is idle
-* conversation usage exceeds a configurable soft threshold
+- the pipeline is idle
+- conversation usage exceeds a configurable soft threshold
 
 Characteristics:
 
-* Optional
-* Background task
-* Cancelable
-* Never blocks the voice pipeline
+- Optional
+- Background task
+- Cancelable
+- Never blocks the voice pipeline
 
 If interrupted by new user activity the task is immediately cancelled without modifying the active conversation.
 
@@ -298,8 +296,8 @@ Messages are selected randomly from a predefined set.
 
 Examples include:
 
-* "Give me a moment while I organize our conversation."
-* "One moment while I reorganize everything we've discussed."
+- "Give me a moment while I organize our conversation."
+- "One moment while I reorganize everything we've discussed."
 
 These messages are runtime assets.
 
@@ -307,10 +305,10 @@ They are **never generated by the LLM**.
 
 This guarantees:
 
-* zero additional LLM latency
-* deterministic behavior
-* localization support
-* consistent UX
+- zero additional LLM latency
+- deterministic behavior
+- localization support
+- consistent UX
 
 ---
 
@@ -362,9 +360,9 @@ Working Memory must support user interruption while maintenance is active.
 
 If VAD detects a new `SpeechStart` event during `ContextManaging`:
 
-* the new utterance must never be discarded
-* the active conversation must never be modified concurrently
-* the maintenance task must complete atomically
+- the new utterance must never be discarded
+- the active conversation must never be modified concurrently
+- the maintenance task must complete atomically
 
 To prevent race conditions the runtime maintains a temporary hold queue.
 
@@ -392,9 +390,9 @@ Generate Response
 
 This guarantees:
 
-* no dropped speech
-* no concurrent mutation of conversation state
-* deterministic behavior under interruption
+- no dropped speech
+- no concurrent mutation of conversation state
+- deterministic behavior under interruption
 
 ---
 
@@ -402,12 +400,12 @@ This guarantees:
 
 Working Memory must satisfy the following constraints:
 
-* Never exceed the configured context budget.
-* Never reject a request due to context exhaustion.
-* Never corrupt conversation state during concurrent events.
-* Never block the voice pipeline except during mandatory Threshold Maintenance.
-* Always generate the final response from the maintained conversation rather than the pre-maintenance context.
-* Always preserve the user's original request during maintenance.
+- Never exceed the configured context budget.
+- Never reject a request due to context exhaustion.
+- Never corrupt conversation state during concurrent events.
+- Never block the voice pipeline except during mandatory Threshold Maintenance.
+- Always generate the final response from the maintained conversation rather than the pre-maintenance context.
+- Always preserve the user's original request during maintenance.
 
 ---
 
@@ -415,15 +413,14 @@ Working Memory must satisfy the following constraints:
 
 The following systems are intentionally excluded from Working Memory and will be specified independently:
 
-* Episodic Memory
-* Semantic Memory
-* Embedding generation
-* Retrieval
-* Vector search
-* Knowledge graph
-* Entity extraction
-* Background memory consolidation
-
+- Episodic Memory
+- Semantic Memory
+- Embedding generation
+- Retrieval
+- Vector search
+- Knowledge graph
+- Entity extraction
+- Background memory consolidation
 
 # Episodic Memory Specification
 
@@ -455,30 +452,30 @@ It is **not** responsible for storing durable facts or user profiles.
 
 Episodic Memory is responsible for:
 
-* Persisting conversation summaries.
-* Maintaining chronological conversation history.
-* Retrieving relevant historical sessions.
-* Supplying additional context to the LLM.
+- Persisting conversation summaries.
+- Maintaining chronological conversation history.
+- Retrieving relevant historical sessions.
+- Supplying additional context to the LLM.
 
 It is **not** responsible for:
 
-* Working Memory
-* Context window management
-* Fact extraction
-* Entity extraction
-* Knowledge graphs
-* User profile construction
+- Working Memory
+- Context window management
+- Fact extraction
+- Entity extraction
+- Knowledge graphs
+- User profile construction
 
 ---
 
 # Design Principles
 
-* Never store raw conversations.
-* Store compacted summaries only.
-* Retrieval must never block the realtime voice pipeline.
-* Retrieval must operate within a fixed token budget.
-* Every retrieved memory must represent a different historical session.
-* Memory architecture dynamically adapts based on runtime tier.
+- Never store raw conversations.
+- Store compacted summaries only.
+- Retrieval must never block the realtime voice pipeline.
+- Retrieval must operate within a fixed token budget.
+- Every retrieved memory must represent a different historical session.
+- Memory architecture dynamically adapts based on runtime tier.
 
 ---
 
@@ -521,9 +518,9 @@ Episode
 
 Metadata may include:
 
-* conversation duration
-* summary token count
-* creation timestamp
+- conversation duration
+- summary token count
+- creation timestamp
 
 No extracted facts are stored here.
 
@@ -744,9 +741,9 @@ Episode 3
 
 The tool must respect:
 
-* maximum number of returned episodes
-* maximum token budget
-* one summary per session
+- maximum number of returned episodes
+- maximum token budget
+- one summary per session
 
 ---
 
@@ -754,9 +751,9 @@ The tool must respect:
 
 If retrieval fails:
 
-* continue normally
-* do not retry synchronously
-* do not block response generation
+- continue normally
+- do not retry synchronously
+- do not block response generation
 
 The LLM simply receives Working Memory.
 
@@ -766,12 +763,12 @@ The LLM simply receives Working Memory.
 
 Episodic Memory must:
 
-* never store raw conversations
-* never exceed its configured context budget
-* never return multiple summaries from the same session
-* never block realtime audio
-* never modify Working Memory
-* never duplicate Semantic Memory responsibilities
+- never store raw conversations
+- never exceed its configured context budget
+- never return multiple summaries from the same session
+- never block realtime audio
+- never modify Working Memory
+- never duplicate Semantic Memory responsibilities
 
 ---
 
@@ -779,11 +776,11 @@ Episodic Memory must:
 
 The following are intentionally excluded:
 
-* user facts
-* preferences
-* entity graphs
-* relationship extraction
-* profile generation
-* long-term knowledge storage
+- user facts
+- preferences
+- entity graphs
+- relationship extraction
+- profile generation
+- long-term knowledge storage
 
 These belong to Semantic Memory and will be specified independently.

@@ -45,7 +45,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             summary     TEXT    NOT NULL,
-            embedding   F32_BLOB(384) NOT NULL,
+            embedding   F32_BLOB(1024) NOT NULL,
             created_at  INTEGER NOT NULL,
             token_count INTEGER NOT NULL
         );",
