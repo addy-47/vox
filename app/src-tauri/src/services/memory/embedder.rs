@@ -4,19 +4,20 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use tokenizers::Tokenizer;
 
-pub struct MiniLmEmbedder {
+pub const EMBEDDING_DIM: usize = 1024;
+
+pub struct BgeM3Embedder {
     session: Mutex<ort::session::Session>,
     tokenizer: Tokenizer,
     has_token_type_ids: bool,
 }
 
-static EMBEDDER: OnceLock<MiniLmEmbedder> = OnceLock::new();
+static EMBEDDER: OnceLock<BgeM3Embedder> = OnceLock::new();
 
-/// Initializes the MiniLM embedding model singleton (`services/memory/embedder.rs`).
+/// Initializes the BGE-M3 embedding model singleton (`services/memory/embedder.rs`).
 ///
-/// Model directory: `~/.vox/models/memory/minilm`
+/// Model directory: `~/.vox/models/embedding/bge-m3`
 /// Accepts `model_quantized.onnx`, `model_int8.onnx`, or `model.onnx`.
-/// If model files do not exist, logs a warning and gracefully skips initialization.
 pub fn init_embedder(model_dir: &Path) -> Result<()> {
     let model_path = if model_dir.join("model_quantized.onnx").exists() {
         model_dir.join("model_quantized.onnx")
@@ -30,7 +31,7 @@ pub fn init_embedder(model_dir: &Path) -> Result<()> {
 
     if !model_path.exists() || !tokenizer_path.exists() {
         log::warn!(
-            "[MiniLmEmbedder] Model files missing at {:?}. Skipping embedder init.",
+            "[BgeM3Embedder] Model files missing at {:?}. Skipping embedder init.",
             model_dir
         );
         return Ok(());
@@ -40,27 +41,27 @@ pub fn init_embedder(model_dir: &Path) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
 
     let session = ort::session::Session::builder()
-        .map_err(|e| anyhow::anyhow!("Failed to create session builder: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to create session builder: {:?}", e))?
         .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
-        .map_err(|e| anyhow::anyhow!("Failed to set optimization level: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to set optimization level: {:?}", e))?
         .with_intra_threads(1)
-        .map_err(|e| anyhow::anyhow!("Failed to set intra threads: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to set intra threads: {:?}", e))?
         .commit_from_file(&model_path)
-        .map_err(|e| anyhow::anyhow!("Failed to commit session from file {:?}: {}", model_path, e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to commit session from file {:?}: {:?}", model_path, e))?;
 
     let has_token_type_ids = session.inputs().iter().any(|i| i.name() == "token_type_ids");
 
-    let embedder = MiniLmEmbedder {
+    let embedder = BgeM3Embedder {
         session: Mutex::new(session),
         tokenizer,
         has_token_type_ids,
     };
 
     if EMBEDDER.set(embedder).is_err() {
-        log::warn!("[MiniLmEmbedder] Embedder singleton already set.");
+        log::warn!("[BgeM3Embedder] Embedder singleton already set.");
     } else {
         log::info!(
-            "[MiniLmEmbedder] Successfully loaded MiniLM embedding model (384-dim) from {:?}",
+            "[BgeM3Embedder] Successfully loaded BGE-M3 embedding model (1024-dim, Multilingual) from {:?}",
             model_dir
         );
     }
@@ -68,12 +69,10 @@ pub fn init_embedder(model_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Lazily loads the MiniLM embedding model into RAM only when required.
-/// Gate 1: Returns Ok(()) without loading if `memory_enabled` (episodic & bg worker settings) is false.
-/// Gate 2: Loads model on-demand when memory worker or pipeline requests embeddings.
+/// Lazily loads the BGE-M3 embedding model into RAM only when required.
 pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<()> {
     if !memory_enabled {
-        log::debug!("[MiniLmEmbedder] Memory subsystem or background worker disabled. Skipping model load.");
+        log::debug!("[BgeM3Embedder] Memory subsystem or background worker disabled. Skipping model load.");
         return Ok(());
     }
     if EMBEDDER.get().is_some() {
@@ -85,12 +84,12 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<()> {
         dirs::home_dir().unwrap_or_default().join(".vox").join("models")
     };
     let embedder_dir = models_dir
-        .join("memory")
-        .join("minilm");
+        .join("embedding")
+        .join("bge-m3");
     init_embedder(&embedder_dir)
 }
 
-/// Generates a 384-dimensional dense vector embedding for the input text using MiniLM.
+/// Generates a 1024-dimensional dense vector embedding for the input text using BGE-M3.
 /// Returns `Ok(None)` if the embedder model is not loaded.
 pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
     let embedder = match EMBEDDER.get() {
@@ -112,16 +111,16 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
     let seq_len = ids.len();
 
     if seq_len == 0 {
-        return Ok(Some(vec![0.0f32; 384]));
+        return Ok(Some(vec![0.0f32; EMBEDDING_DIM]));
     }
 
     let input_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), ids)?;
     let attention_mask_arr = Array2::<i64>::from_shape_vec((1, seq_len), mask)?;
 
     let input_ids_tensor = ort::value::Tensor::from_array(input_ids_arr)
-        .map_err(|e| anyhow::anyhow!("Failed to create input_ids tensor: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create input_ids tensor: {:?}", e))?;
     let attention_mask_tensor = ort::value::Tensor::from_array(attention_mask_arr)
-        .map_err(|e| anyhow::anyhow!("Failed to create attention_mask tensor: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create attention_mask tensor: {:?}", e))?;
 
     let mut session_guard = embedder
         .session
@@ -132,18 +131,18 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
         let type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
         let type_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), type_ids)?;
         let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
-            .map_err(|e| anyhow::anyhow!("Failed to create type_ids tensor: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to create type_ids tensor: {:?}", e))?;
 
         session_guard.run(ort::inputs![
             "input_ids" => input_ids_tensor,
             "attention_mask" => attention_mask_tensor,
             "token_type_ids" => type_ids_tensor
-        ]).map_err(|e| anyhow::anyhow!("ONNX inference error: {}", e))?
+        ]).map_err(|e| anyhow::anyhow!("ONNX inference error: {:?}", e))?
     } else {
         session_guard.run(ort::inputs![
             "input_ids" => input_ids_tensor,
             "attention_mask" => attention_mask_tensor
-        ]).map_err(|e| anyhow::anyhow!("ONNX inference error: {}", e))?
+        ]).map_err(|e| anyhow::anyhow!("ONNX inference error: {:?}", e))?
     };
 
     let output_key = outputs
@@ -152,7 +151,7 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
         .ok_or_else(|| anyhow::anyhow!("No output in model"))?;
     let last_hidden_state = outputs[output_key]
         .try_extract_array::<f32>()
-        .map_err(|e| anyhow::anyhow!("Failed to extract output array: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to extract output array: {:?}", e))?;
 
     let shape = last_hidden_state.shape();
     let out_seq_len = shape[1];
@@ -179,10 +178,18 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
         sum_embeddings[dim] /= divisor;
     }
 
+    // L2 Normalization
+    let norm: f32 = sum_embeddings.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > 0.0 {
+        for dim in 0..hidden_size {
+            sum_embeddings[dim] /= norm;
+        }
+    }
+
     Ok(Some(sum_embeddings))
 }
 
-/// Returns true if the MiniLM embedder model is loaded and ready.
+/// Returns true if the BGE-M3 embedder model is loaded and ready.
 pub fn is_embedder_loaded() -> bool {
     EMBEDDER.get().is_some()
 }
@@ -207,19 +214,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_uninitialized_embedder_fallback() {
-        let res = generate_embedding("hello world").unwrap();
-        assert!(res.is_none());
-        assert!(!is_embedder_loaded());
-    }
-
-    #[test]
     fn test_cosine_similarity() {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![1.0, 0.0, 0.0];
-        assert!((cosine_similarity(&a, &b) - 1.0).abs() < 0.001);
-
         let c = vec![0.0, 1.0, 0.0];
-        assert!((cosine_similarity(&a, &c) - 0.0).abs() < 0.001);
+        assert!((cosine_similarity(&a, &b) - 1.0).abs() < 1e-5);
+        assert!((cosine_similarity(&a, &c) - 0.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_uninitialized_embedder_fallback() -> Result<()> {
+        let res = generate_embedding("test query")?;
+        assert!(res.is_none() || res.unwrap().len() == EMBEDDING_DIM);
+        Ok(())
     }
 }

@@ -111,6 +111,19 @@ impl ConversationManager {
         log::info!("[WorkingMemory] New session started. System prompt set.");
     }
 
+    pub fn update_system_prompt(&mut self, new_system_prompt: &str) {
+        if self.system_prompt.content != new_system_prompt {
+            let sys_tokens = estimate_tokens(new_system_prompt);
+            let old_sys_tokens = estimate_tokens(&self.system_prompt.content);
+            self.system_prompt.content = new_system_prompt.to_string();
+            if !self.messages.is_empty() && self.messages[0].role == Role::System {
+                self.messages[0].content = new_system_prompt.to_string();
+                self.total_token_count = self.total_token_count.saturating_sub(old_sys_tokens) + sys_tokens;
+            }
+            self.kv_synced_index = 0;
+        }
+    }
+
     pub fn push_user_turn(&mut self, text: String) {
         let tokens = estimate_tokens(&text);
         let msg = ChatMessage {
