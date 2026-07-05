@@ -51,20 +51,34 @@ async fn test_remote_ollama_llama3_capability_probe() {
 
 #[tokio::test]
 async fn test_cloud_gemini_capability_probe() {
-    let env_path = std::path::Path::new("/home/addy/projects/apps/vox/temp/.env");
-    let mut gemini_key = "REMOVED_GEMINI_KEY".to_string();
+    let mut gemini_key = std::env::var("GEMINI_API_KEY")
+        .or_else(|_| std::env::var("GEMINI_TEST"))
+        .unwrap_or_default();
 
-    if env_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(env_path) {
-            for line in content.lines() {
-                if line.starts_with("GEMINI_TEST=") {
-                    let key = line.trim_start_matches("GEMINI_TEST=").trim_matches('"').trim();
-                    if !key.is_empty() {
-                        gemini_key = key.to_string();
+    if gemini_key.is_empty() {
+        let env_path = std::path::Path::new("/home/addy/projects/apps/vox/temp/.env");
+        if env_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(env_path) {
+                for line in content.lines() {
+                    if line.starts_with("GEMINI_TEST=") {
+                        let key = line.trim_start_matches("GEMINI_TEST=").trim_matches('"').trim();
+                        if !key.is_empty() {
+                            gemini_key = key.to_string();
+                        }
+                    } else if line.starts_with("GEMINI_API_KEY=") {
+                        let key = line.trim_start_matches("GEMINI_API_KEY=").trim_matches('"').trim();
+                        if !key.is_empty() {
+                            gemini_key = key.to_string();
+                        }
                     }
                 }
             }
         }
+    }
+
+    if gemini_key.is_empty() {
+        println!("[Test] Skipped test_cloud_gemini_capability_probe: No GEMINI_API_KEY or GEMINI_TEST key found.");
+        return;
     }
 
     let config = LlmProviderConfig::OpenAiCompat {

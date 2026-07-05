@@ -73,7 +73,7 @@ fn load_gemini_key() -> String {
             }
         }
     }
-    std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "REMOVED_GEMINI_KEY".to_string())
+    std::env::var("GEMINI_API_KEY").unwrap_or_default()
 }
 
 struct FallbackStt;
