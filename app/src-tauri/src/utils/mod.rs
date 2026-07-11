@@ -3,6 +3,7 @@ pub mod bench_reporter;
 pub mod hardware;
 pub mod logging;
 pub mod paths;
+pub mod json;
 
 /// Checks the Linux CPU frequency governor. Returns `true` if it's "performance",
 /// `false` if it's something else (e.g. "powersave"), `None` if unable to detect

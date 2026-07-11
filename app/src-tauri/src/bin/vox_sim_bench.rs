@@ -327,7 +327,7 @@ fn main() -> Result<()> {
 
         // Step B: Push User Turn & Context Maintenance Check
         conv_mgr.push_user_turn(turn_prompt.clone());
-        let (ctx, transition_speech) = conv_mgr.build_context(provider_kind, is_hi, Some(&*provider));
+        let (ctx, transition_speech, _profile_updates) = conv_mgr.build_context(provider_kind, is_hi, Some(&*provider));
 
         let prompt_json = serde_json::to_string_pretty(&ctx.messages)?;
         fs::write(turn_dir.join("llm_prompt.json"), prompt_json)?;

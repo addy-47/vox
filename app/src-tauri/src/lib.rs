@@ -505,6 +505,7 @@ pub fn run() {
             crate::ipc::setup::delete_model,
             // Audio
             crate::ipc::audio::list_input_devices,
+            crate::ipc::memory::get_personal_profile,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

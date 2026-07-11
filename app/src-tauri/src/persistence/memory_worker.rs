@@ -3,12 +3,15 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use crate::services::memory::ProfileUpdate;
 
 /// Events consumed exclusively by the background memory worker.
 #[derive(Debug, Clone)]
 pub enum MemoryWorkerEvent {
     /// A session has ended and its final compaction summary is ready for ingestion.
     SessionReadyForIngestion { session_id: u64, summary: String },
+    /// User profile updates are ready for ingestion.
+    ProfileUpdatesReady { updates: Vec<ProfileUpdate> },
     /// The pipeline has entered Idle state. Trigger background memory sweep.
     PipelineIdle,
     /// The pipeline is active. Pause background memory sweep.
@@ -108,6 +111,88 @@ pub async fn ingest_compaction_summary(
         )
         .await?;
     }
+
+    Ok(())
+}
+
+/// Applies user profile updates to the personal_memory and personal_memory_history tables.
+pub async fn apply_profile_updates(
+    conn: &turso::Connection,
+    updates: Vec<ProfileUpdate>,
+) -> anyhow::Result<()> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let mut applied_count = 0;
+    for update in updates {
+        let mut key = update.key.trim().to_lowercase();
+        let val = update.value.trim().to_string();
+        let mut cat = update.category.trim().to_string();
+
+        if key.is_empty() || val.is_empty() || cat.is_empty() {
+            continue;
+        }
+
+        // Normalize common keys and categories to eliminate duplicate/redundant facts
+        match key.as_str() {
+            "name" | "username" | "user_name" => {
+                key = "name".to_string();
+                cat = "Identity".to_string();
+            }
+            "favorite_language" | "preferred_language" | "programming_language" | "fav_language" | "languages_used" => {
+                key = "favorite_language".to_string();
+                cat = "Preferences".to_string();
+            }
+            "disliked_language" | "hated_language" | "disliked_programming_language" => {
+                key = "disliked_language".to_string();
+                cat = "Preferences".to_string();
+            }
+            "current_project" | "project_name" | "project" => {
+                key = "current_project".to_string();
+                cat = "Projects".to_string();
+            }
+            "target_latency" | "latency_target" | "latency" | "latency_limit" | "project_goals" => {
+                key = "target_latency".to_string();
+                cat = "Goals".to_string();
+            }
+            "favorite_color" | "favourite_color" | "color" | "colour" => {
+                key = "favorite_color".to_string();
+                cat = "Preferences".to_string();
+            }
+            "role" | "technical_role" | "occupation" | "job" => {
+                key = "role".to_string();
+                cat = "Identity".to_string();
+            }
+            _ => {}
+        }
+
+        conn.execute(
+            "INSERT OR REPLACE INTO personal_memory (key, category, value, updated_at)
+             VALUES (?, ?, ?, ?)",
+            (key.clone(), cat.clone(), val.clone(), now),
+        )
+        .await?;
+
+        conn.execute(
+            "INSERT INTO personal_memory_history (key, category, value, recorded_at)
+             VALUES (?, ?, ?, ?)",
+            (key, cat, val, now),
+        )
+        .await?;
+        
+        applied_count += 1;
+    }
+
+    tracing::info!(
+        "[MemoryWorker] Successfully applied {} personal memory profile updates to Turso DB",
+        applied_count
+    );
 
     Ok(())
 }
@@ -226,6 +311,17 @@ pub fn spawn_memory_worker(
                                     tracing::error!(
                                         "[MemoryWorker] Failed to ingest summary for session_id={}: {}",
                                         session_id, e
+                                    );
+                                }
+                            }
+                        }
+                        MemoryWorkerEvent::ProfileUpdatesReady { updates } => {
+                            if let Some(ref db_conn) = conn {
+                                if let Err(e) = handle.block_on(async {
+                                    apply_profile_updates(db_conn, updates).await
+                                }) {
+                                    tracing::error!(
+                                        "[MemoryWorker] Failed to apply profile updates: {}", e
                                     );
                                 }
                             }
@@ -390,5 +486,82 @@ mod tests {
 
         // 5. Shutdown
         assert!(tx.try_send(MemoryWorkerEvent::Shutdown).is_ok());
+    }
+
+    #[test]
+    fn test_profile_updates_ingestion() {
+        let temp_dir = std::env::temp_dir().join("vox_profile_updates_test");
+        let _ = std::fs::remove_dir_all(&temp_dir); // clean up
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let db_path = temp_dir.join("test_profile.db");
+        let is_private = Arc::new(AtomicBool::new(false));
+
+        // Run migrations first to create tables
+        let rt = crate::persistence::db::get_tokio_handle();
+        rt.block_on(async {
+            let db = turso::Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+            let conn = db.connect().unwrap();
+            crate::persistence::schema::run_migrations(&conn).await.unwrap();
+        });
+
+        let tx = spawn_memory_worker(db_path.clone(), is_private);
+
+        let updates = vec![
+            crate::services::memory::ProfileUpdate {
+                category: "Identity".to_string(),
+                key: "name".to_string(),
+                value: "Alex".to_string(),
+            },
+            crate::services::memory::ProfileUpdate {
+                category: "Preferences".to_string(),
+                key: "favorite_language".to_string(),
+                value: "Rust".to_string(),
+            },
+        ];
+
+        // Send profile updates
+        assert!(tx.try_send(MemoryWorkerEvent::ProfileUpdatesReady { updates }).is_ok());
+
+        // Shutdown to force sync
+        assert!(tx.try_send(MemoryWorkerEvent::Shutdown).is_ok());
+
+        // Wait a small moment for worker to complete writing and shut down
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Verify database content
+        let rt = crate::persistence::db::get_tokio_handle();
+        rt.block_on(async {
+            let db = turso::Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+            let conn = db.connect().unwrap();
+            
+            // Query personal_memory
+            let mut rows = conn.query("SELECT category, key, value FROM personal_memory ORDER BY key ASC", ()).await.unwrap();
+            
+            let row1 = rows.next().await.unwrap().unwrap();
+            let cat1: String = row1.get(0).unwrap();
+            let key1: String = row1.get(1).unwrap();
+            let val1: String = row1.get(2).unwrap();
+            assert_eq!(cat1, "Preferences");
+            assert_eq!(key1, "favorite_language");
+            assert_eq!(val1, "Rust");
+
+            let row2 = rows.next().await.unwrap().unwrap();
+            let cat2: String = row2.get(0).unwrap();
+            let key2: String = row2.get(1).unwrap();
+            let val2: String = row2.get(2).unwrap();
+            assert_eq!(cat2, "Identity");
+            assert_eq!(key2, "name");
+            assert_eq!(val2, "Alex");
+
+            // Query personal_memory_history
+            let mut h_rows = conn.query("SELECT key, value FROM personal_memory_history ORDER BY key ASC", ()).await.unwrap();
+            let h_row1 = h_rows.next().await.unwrap().unwrap();
+            assert_eq!(h_row1.get::<String>(0).unwrap(), "favorite_language");
+            assert_eq!(h_row1.get::<String>(1).unwrap(), "Rust");
+
+            let h_row2 = h_rows.next().await.unwrap().unwrap();
+            assert_eq!(h_row2.get::<String>(0).unwrap(), "name");
+            assert_eq!(h_row2.get::<String>(1).unwrap(), "Alex");
+        });
     }
 }

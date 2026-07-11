@@ -206,6 +206,58 @@ pub fn format_retrieved_memories_for_prompt(memories: &[RetrievedEpisode]) -> St
     out
 }
 
+/// Orchestrates retrieving both personal memory profile and semantic episodic memories,
+/// returning a formatted string to be appended to the system prompt.
+pub async fn retrieve_and_format_memory_context(
+    conn: &turso::Connection,
+    query_text: &str,
+    current_session_id: u64,
+    settings: &MemorySettings,
+    context_size: usize,
+) -> anyhow::Result<String> {
+    // 1. Load user profile block (Personal Memory - always injected if present)
+    let personal_block = match super::personal_memory::load_user_profile(conn).await {
+        Ok(block) => block,
+        Err(e) => {
+            tracing::warn!("[Retrieval] Failed to load personal profile: {}", e);
+            String::new()
+        }
+    };
+
+    // 2. Load episodic memories (Episodic Memory - search if query is semantic)
+    let mut episodic_block = String::new();
+    if settings.episodic_enabled && !query_text.trim().is_empty() {
+        let classification = classify_query(query_text);
+        if !classification.is_generic() {
+            ensure_embedder_loaded(settings.episodic_enabled)?;
+            if let Some(query_vector) = generate_embedding(query_text)? {
+                let episodes = search_and_diversify_episodes(
+                    conn,
+                    &query_vector,
+                    current_session_id,
+                    settings,
+                    context_size,
+                )
+                .await?;
+                episodic_block = format_retrieved_memories_for_prompt(&episodes);
+            }
+        }
+    }
+
+    let mut full_block = String::new();
+    if !personal_block.is_empty() {
+        full_block.push_str(&personal_block);
+    }
+    if !episodic_block.is_empty() {
+        if !full_block.is_empty() {
+            full_block.push_str("\n\n");
+        }
+        full_block.push_str(&episodic_block);
+    }
+
+    Ok(full_block)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

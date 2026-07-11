@@ -13,6 +13,14 @@ pub enum Role {
     Assistant,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProfileUpdate {
+    pub category: String,
+    pub key: String,
+    #[serde(deserialize_with = "crate::utils::json::deserialize_value_resilient")]
+    pub value: String,
+}
+
 impl std::fmt::Display for Role {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -182,22 +190,27 @@ impl ConversationManager {
         self.total_token_count as f32 / usable_budget as f32
     }
 
+    pub fn get_messages(&self) -> &[ChatMessage] {
+        &self.messages
+    }
+
     pub fn needs_threshold_maintenance(&self) -> bool {
         self.context_utilization() >= self.critical_threshold
     }
 
     /// Prepares context for LLM generation.
     /// If critical threshold is reached, executes Threshold Maintenance.
-    /// Returns (ConversationContext, Option<TransitionSpeechText>).
+    /// Returns (ConversationContext, Option<TransitionSpeechText>, Vec<ProfileUpdate>).
     pub fn build_context(
         &mut self,
         provider_kind: ProviderKind,
         is_devanagari: bool,
         llm_provider: Option<&dyn LlmProvider>,
-    ) -> (ConversationContext, Option<String>) {
+    ) -> (ConversationContext, Option<String>, Vec<ProfileUpdate>) {
         self.cancel_opportunistic();
 
         let mut transition_speech = None;
+        let mut profile_updates = Vec::new();
 
         if self.needs_threshold_maintenance() {
             log::warn!(
@@ -223,12 +236,17 @@ impl ConversationManager {
             if use_fifo || llm_provider.is_none() {
                 self.perform_fifo_maintenance();
             } else if let Some(provider) = llm_provider {
-                if let Err(e) = self.perform_compaction_maintenance(provider) {
-                    log::error!(
-                        "[WorkingMemory] LLM compaction failed: {}. Falling back to FIFO.",
-                        e
-                    );
-                    self.perform_fifo_maintenance();
+                match self.perform_compaction_maintenance(provider) {
+                    Ok(updates) => {
+                        profile_updates = updates;
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[WorkingMemory] LLM compaction failed: {}. Falling back to FIFO.",
+                            e
+                        );
+                        self.perform_fifo_maintenance();
+                    }
                 }
             }
         }
@@ -245,7 +263,7 @@ impl ConversationManager {
             kv_cache_index: kv_idx,
         };
 
-        (ctx, transition_speech)
+        (ctx, transition_speech, profile_updates)
     }
 
     /// FIFO Sliding Window Shift: Drops oldest (User, Assistant) pairs until below soft threshold.
@@ -282,14 +300,14 @@ impl ConversationManager {
         );
     }
 
-    /// LLM-driven Context Compaction: Summarizes history messages[1..N-1] into a single high-density summary block.
+    /// LLM-driven Context Compaction: Summarizes history messages[1..N-1] into a single high-density summary block and extracts user profile updates.
     fn perform_compaction_maintenance(
         &mut self,
         provider: &dyn LlmProvider,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<ProfileUpdate>> {
         if self.messages.len() <= 3 {
             self.perform_fifo_maintenance();
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         log::info!("[WorkingMemory] Executing LLM Context Compaction via {:?}...", provider.kind());
@@ -304,7 +322,7 @@ impl ConversationManager {
             messages: vec![
                 ChatMessage {
                     role: Role::System,
-                    content: crate::core::constants::COMPACTION_SYSTEM_PROMPT.to_string(),
+                    content: crate::core::constants::COMPACTION_SYSTEM_PROMPT_V2.to_string(),
                     timestamp_ms: current_timestamp_ms(),
                 },
                 ChatMessage {
@@ -337,12 +355,36 @@ impl ConversationManager {
             log::warn!("[WorkingMemory] Live LLM compaction produced empty summary. Falling back to FIFO shift.");
             self.messages.push(last_user_turn);
             self.perform_fifo_maintenance();
-            return Ok(());
+            return Ok(Vec::new());
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct CompactionResponse {
+            summary: String,
+            #[serde(alias = "memory_updates")]
+            profile_updates: Option<Vec<ProfileUpdate>>,
+        }
+
+        let (final_summary, profile_updates) = {
+            let cleaned = crate::utils::json::clean_json_content(&summary_content);
+            if let Ok(resp) = serde_json::from_str::<CompactionResponse>(&cleaned) {
+                (resp.summary, resp.profile_updates.unwrap_or_default())
+            } else {
+                log::warn!("[WorkingMemory] LLM compaction returned non-JSON/malformed content. Treating as raw summary.");
+                (summary_content, Vec::new())
+            }
+        };
+
+        if final_summary.trim().is_empty() {
+            log::warn!("[WorkingMemory] Live LLM compaction produced empty summary. Falling back to FIFO shift.");
+            self.messages.push(last_user_turn);
+            self.perform_fifo_maintenance();
+            return Ok(Vec::new());
         }
 
         let summary_msg = ChatMessage {
             role: Role::System,
-            content: format!("[Compacted History Summary: {}]", summary_content.trim()),
+            content: format!("[Compacted History Summary: {}]", final_summary.trim()),
             timestamp_ms: current_timestamp_ms(),
         };
 
@@ -360,12 +402,13 @@ impl ConversationManager {
         self.kv_synced_index = 0; // Reset KV cache index for re-encode
 
         log::info!(
-            "[WorkingMemory] Compaction complete. Rebuilt context with 3 items ({} tokens, utilization {:.1}%).",
+            "[WorkingMemory] Compaction complete. Rebuilt context with 3 items ({} tokens, utilization {:.1}%). Extracted {} profile updates.",
             self.total_token_count,
-            self.context_utilization() * 100.0
+            self.context_utilization() * 100.0,
+            profile_updates.len()
         );
 
-        Ok(())
+        Ok(profile_updates)
     }
 
     pub fn try_trigger_opportunistic(&mut self) -> Option<(usize, Vec<ChatMessage>, Arc<AtomicBool>)> {
@@ -474,10 +517,178 @@ mod tests {
 
         assert!(mgr.needs_threshold_maintenance());
 
-        let (ctx, speech) = mgr.build_context(ProviderKind::Embedded, false, None);
+        let (ctx, speech, _) = mgr.build_context(ProviderKind::Embedded, false, None);
 
         assert!(speech.is_some());
         assert!(!mgr.needs_threshold_maintenance());
         assert!(ctx.messages.len() < 31);
+    }
+
+    struct MockProvider {
+        response_text: String,
+    }
+
+    use crate::services::llm::providers::LlmProvider;
+    use crate::core::events::VoxEvent;
+    use crate::services::llm::ProviderKind;
+    use crate::core::settings::RemoteModelInfo;
+    use std::sync::mpsc;
+    use std::sync::atomic::AtomicBool;
+
+    impl LlmProvider for MockProvider {
+        fn generate(
+            &self,
+            _ctx: &ConversationContext,
+            turn_id: u32,
+            _cancel_flag: &Arc<AtomicBool>,
+            tx: &mpsc::Sender<VoxEvent>,
+        ) -> anyhow::Result<()> {
+            let _ = tx.send(VoxEvent::LlmToken {
+                turn_id,
+                token: self.response_text.clone(),
+            });
+            let _ = tx.send(VoxEvent::LlmFinished {
+                turn_id,
+            });
+            Ok(())
+        }
+
+        fn health_check(&self) -> bool { true }
+        fn list_models(&self) -> anyhow::Result<Vec<RemoteModelInfo>> { Ok(Vec::new()) }
+        fn kind(&self) -> ProviderKind { ProviderKind::Embedded }
+    }
+
+    #[test]
+    fn test_perform_compaction_maintenance_json() {
+        let mut mgr = ConversationManager::new(1024);
+        mgr.new_session("System prompt");
+        mgr.push_user_turn("Hi, my name is Alex and I love coding in Rust.".to_string());
+        mgr.push_assistant_turn("Hello Alex! Rust is a great language.".to_string());
+        mgr.push_user_turn("Yes, it is.".to_string());
+
+        let mock_response = r#"{
+            "summary": "The user introduced himself as Alex and expressed his love for Rust.",
+            "profile_updates": [
+                {
+                    "category": "Identity",
+                    "key": "name",
+                    "value": "Alex"
+                },
+                {
+                    "category": "Preferences",
+                    "key": "favorite_language",
+                    "value": "Rust"
+                }
+            ]
+        }"#.to_string();
+
+        let provider = MockProvider { response_text: mock_response };
+        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
+
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].category, "Identity");
+        assert_eq!(updates[0].key, "name");
+        assert_eq!(updates[0].value, "Alex");
+
+        assert_eq!(updates[1].category, "Preferences");
+        assert_eq!(updates[1].key, "favorite_language");
+        assert_eq!(updates[1].value, "Rust");
+    }
+
+    #[test]
+    fn test_perform_compaction_maintenance_markdown_fences() {
+        let mut mgr = ConversationManager::new(1024);
+        mgr.new_session("System prompt");
+        mgr.push_user_turn("Hi, my name is Alex.".to_string());
+        mgr.push_assistant_turn("Hello!".to_string());
+        mgr.push_user_turn("Yes.".to_string());
+
+        let mock_response = r#"```json
+        {
+            "summary": "Alex introduced himself.",
+            "profile_updates": [
+                {
+                    "category": "Identity",
+                    "key": "name",
+                    "value": "Alex"
+                }
+            ]
+        }
+        ```"#.to_string();
+
+        let provider = MockProvider { response_text: mock_response };
+        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].category, "Identity");
+        assert_eq!(updates[0].key, "name");
+        assert_eq!(updates[0].value, "Alex");
+    }
+
+    #[test]
+    fn test_perform_compaction_maintenance_fallback_prose() {
+        let mut mgr = ConversationManager::new(1024);
+        mgr.new_session("System prompt");
+        mgr.push_user_turn("Hi, my name is Alex.".to_string());
+        mgr.push_assistant_turn("Hello!".to_string());
+        mgr.push_user_turn("Yes.".to_string());
+
+        // Plain prose instead of JSON
+        let mock_response = "The user is Alex. He loves system programming.".to_string();
+
+        let provider = MockProvider { response_text: mock_response };
+        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
+
+        // Should fall back to prose, return no profile updates, but successfully compact the conversation
+        assert_eq!(updates.len(), 0);
+        // The message queue should have the summary message
+        assert_eq!(mgr.messages[1].role, Role::System);
+        assert!(mgr.messages[1].content.contains("The user is Alex. He loves system programming."));
+    }
+
+    #[test]
+    fn test_fix_missing_commas() {
+        let bad_json = r#"{
+            "summary": "This is a summary"
+            "profile_updates": [
+                {
+                    "category": "Identity"
+                    "key": "name"
+                    "value": "Alex"
+                }
+            ]
+        }"#;
+        let fixed = crate::utils::json::fix_missing_commas_in_json(bad_json);
+        let parsed: serde_json::Value = serde_json::from_str(&fixed).expect("Failed to parse fixed JSON");
+        assert_eq!(parsed["summary"], "This is a summary");
+        assert_eq!(parsed["profile_updates"][0]["category"], "Identity");
+        assert_eq!(parsed["profile_updates"][0]["key"], "name");
+        assert_eq!(parsed["profile_updates"][0]["value"], "Alex");
+    }
+
+    #[test]
+    fn test_resilient_deserialization_of_profile_update() {
+        let json_data = r#"[
+            {
+                "category": "Skills",
+                "key": "system_programming_expertise",
+                "value": true
+            },
+            {
+                "category": "Informational Knowledge",
+                "key": "atomic_number_gold",
+                "value": 74
+            },
+            {
+                "category": "Identity",
+                "key": "name",
+                "value": "Alex"
+            }
+        ]"#;
+        let updates: Vec<ProfileUpdate> = serde_json::from_str(json_data).expect("Failed to deserialize updates");
+        assert_eq!(updates.len(), 3);
+        assert_eq!(updates[0].value, "true");
+        assert_eq!(updates[1].value, "74");
+        assert_eq!(updates[2].value, "Alex");
     }
 }

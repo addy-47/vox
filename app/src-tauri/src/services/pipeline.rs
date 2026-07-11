@@ -530,14 +530,41 @@ impl PipelineOrchestrator {
                 }
             };
 
-            let (ctx, transition_speech) = {
+            let db_path = crate::utils::paths::db_path();
+            let rt = crate::persistence::db::get_tokio_handle();
+            let personal_memory_block = rt.block_on(async {
+                if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
+                    crate::services::memory::personal_memory::load_user_profile(&conn).await.unwrap_or_default()
+                } else {
+                    String::new()
+                }
+            });
+
+            let mut final_prompt = resolved_prompt.clone();
+            if !personal_memory_block.is_empty() {
+                final_prompt.push_str(&format!("\n\n{}", personal_memory_block));
+            }
+
+            let (ctx, transition_speech, profile_updates) = {
                 let mut mgr = self.conversation_manager.lock().unwrap();
+                mgr.update_system_prompt(&final_prompt);
                 if mgr.context_utilization() == 0.0 {
-                    mgr.new_session(&resolved_prompt);
+                    mgr.new_session(&final_prompt);
                 }
                 mgr.push_user_turn(text.clone());
                 mgr.build_context(provider_kind, is_hi, None)
             };
+
+            if !profile_updates.is_empty() {
+                if let Some(app_state) = _app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
+                    let memory_tx = app_state.memory_tx.lock().unwrap();
+                    if let Some(ref tx) = *memory_tx {
+                        let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::ProfileUpdatesReady {
+                            updates: profile_updates,
+                        });
+                    }
+                }
+            }
 
             if let Some(speech_text) = transition_speech {
                 log::info!("[Pipeline] MaintainingContext transition speech triggered: {:?}", speech_text);
