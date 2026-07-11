@@ -319,14 +319,28 @@ fn main() -> Result<()> {
 
             let episodic_context_block = format_retrieved_memories_for_prompt(&retrieved_episodes);
 
+            // 3. Load Personal Memory Profile
+            let personal_memory_block = tokio_handle.block_on(async {
+                vox_lib::services::memory::personal_memory::load_user_profile(&conn).await.unwrap_or_default()
+            });
+
             let mut full_system_prompt = vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.to_string();
+            if !personal_memory_block.is_empty() {
+                full_system_prompt.push_str(&format!("\n\n{}", personal_memory_block));
+            }
             if !episodic_context_block.is_empty() {
                 full_system_prompt.push_str(&episodic_context_block);
             }
             conv_mgr.update_system_prompt(&full_system_prompt);
 
             conv_mgr.push_user_turn(user_prompt.clone());
-            let (ctx, speech) = conv_mgr.build_context(provider_kind, false, Some(&*provider));
+            let (ctx, speech, profile_updates) = conv_mgr.build_context(provider_kind, false, Some(&*provider));
+
+            if !profile_updates.is_empty() {
+                let _ = memory_tx.try_send(MemoryWorkerEvent::ProfileUpdatesReady {
+                    updates: profile_updates,
+                });
+            }
 
             if let Some(trans) = speech {
                 total_critical_maintenance += 1;
@@ -377,63 +391,111 @@ fn main() -> Result<()> {
 
             // Probe Evaluation for Cross-Session Semantic Recall
             let resp_lower = assistant_resp.to_lowercase();
+            let query_lower = user_prompt.to_lowercase();
             if session_num >= 2 {
-                match turn {
-                    1 => {
-                        total_probes_evaluated += 2;
-                        let r1 = resp_lower.contains("alex");
-                        let r2 = resp_lower.contains("engineer") || resp_lower.contains("system");
-                        if r1 { total_probes_passed += 1; }
-                        if r2 { total_probes_passed += 1; }
-                        println!("      🔍 [Probe S{}-T01] Name(Alex)={} | Role(Engineer)={}", session_num, r1, r2);
-                    }
-                    2 => {
-                        total_probes_evaluated += 2;
-                        let r1 = resp_lower.contains("rust");
-                        let r2 = resp_lower.contains("python");
-                        if r1 { total_probes_passed += 1; }
-                        if r2 { total_probes_passed += 1; }
-                        println!("      🔍 [Probe S{}-T02] Fav(Rust)={} | Disliked(Python)={}", session_num, r1, r2);
-                    }
-                    3 => {
-                        total_probes_evaluated += 1;
-                        let r = resp_lower.contains("teal");
-                        if r { total_probes_passed += 1; }
-                        println!("      🔍 [Probe S{}-T03] Color(Teal)={}", session_num, r);
-                    }
-                    4 => {
-                        total_probes_evaluated += 2;
-                        let r1 = resp_lower.contains("vox");
-                        let r2 = resp_lower.contains("500") || resp_lower.contains("latency");
-                        if r1 { total_probes_passed += 1; }
-                        if r2 { total_probes_passed += 1; }
-                        println!("      🔍 [Probe S{}-T04] App(Vox)={} | Latency(sub-500ms)={}", session_num, r1, r2);
-                    }
-                    15 => {
-                        total_probes_evaluated += 4;
-                        let r1 = resp_lower.contains("alex");
-                        let r2 = resp_lower.contains("rust");
-                        let r3 = resp_lower.contains("teal");
-                        let r4 = resp_lower.contains("vox");
-                        if r1 { total_probes_passed += 1; }
-                        if r2 { total_probes_passed += 1; }
-                        if r3 { total_probes_passed += 1; }
-                        if r4 { total_probes_passed += 1; }
-                        println!("      🔍 [Probe S{}-T15] Full Recall Alex/Rust/Teal/Vox: {}/4", session_num, (r1 as u8 + r2 as u8 + r3 as u8 + r4 as u8));
-                    }
-                    48 => {
-                        total_probes_evaluated += 4;
-                        let r1 = resp_lower.contains("alex");
-                        let r2 = resp_lower.contains("rust");
-                        let r3 = resp_lower.contains("teal");
-                        let r4 = resp_lower.contains("vox");
-                        if r1 { total_probes_passed += 1; }
-                        if r2 { total_probes_passed += 1; }
-                        if r3 { total_probes_passed += 1; }
-                        if r4 { total_probes_passed += 1; }
-                        println!("      🔍 [Probe S{}-T48] Comprehensive Recall: {}/4", session_num, (r1 as u8 + r2 as u8 + r3 as u8 + r4 as u8));
-                    }
-                    _ => {}
+                let mut evaluated_probes = 0;
+                let mut passed_probes = 0;
+
+                let words: std::collections::HashSet<&str> = query_lower
+                    .split(|c: char| !c.is_alphanumeric())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+
+                let has_me = words.contains("me");
+                let has_my = words.contains("my");
+                let has_i = words.contains("i");
+                let has_recall = words.contains("recall");
+                let has_remember = words.contains("remember");
+                let has_about = words.contains("about");
+
+                let is_about_me = (has_about && has_me) || (words.contains("who") && words.contains("am") && has_i);
+
+                let is_name_probe = (words.contains("name") && (has_my || has_me || has_recall || has_remember))
+                    || is_about_me;
+
+                let is_role_probe = (words.contains("role") && (has_my || has_me || (words.contains("do") && has_i) || has_recall || has_remember))
+                    || words.contains("occupation")
+                    || words.contains("job")
+                    || is_about_me;
+
+                let is_fav_lang_probe = ((words.contains("favorite") || words.contains("favourite") || words.contains("preferred")) && (words.contains("language") || words.contains("programming")))
+                    || (words.contains("language") && words.contains("preferences"))
+                    || is_about_me
+                    || (has_recall && words.contains("language"));
+
+                let is_disliked_lang_probe = ((words.contains("dislike") || words.contains("hate") || words.contains("disliked")) && (words.contains("language") || words.contains("backend")))
+                    || (words.contains("language") && words.contains("preferences"))
+                    || is_about_me
+                    || (has_recall && (words.contains("all") || words.contains("everything") || words.contains("across")));
+
+                let is_color_probe = (words.contains("color") || words.contains("colour"))
+                    && (has_my || words.contains("favorite") || words.contains("favourite") || is_about_me || has_recall || has_remember);
+
+                let is_app_probe = (words.contains("app") || words.contains("application"))
+                    && (words.contains("building") || words.contains("name") || words.contains("project") || is_about_me || has_recall || has_remember);
+
+                let is_latency_probe = words.contains("latency")
+                    && (words.contains("target") || words.contains("limit") || words.contains("specif") || words.contains("specified") || words.contains("goal") || has_my || words.contains("want") || is_about_me || has_recall || has_remember);
+
+                // 1. Name Probe
+                if is_name_probe {
+                    evaluated_probes += 1;
+                    let passed = resp_lower.contains("alex");
+                    if passed { passed_probes += 1; }
+                    println!("      🔍 [Probe S{}-T{:02}] Recall Name(Alex): {}", session_num, turn, passed);
+                }
+
+                // 2. Role Probe
+                if is_role_probe {
+                    evaluated_probes += 1;
+                    let passed = resp_lower.contains("engineer") || resp_lower.contains("system");
+                    if passed { passed_probes += 1; }
+                    println!("      🔍 [Probe S{}-T{:02}] Recall Role(Engineer): {}", session_num, turn, passed);
+                }
+
+                // 3. Favorite Language Probe
+                if is_fav_lang_probe {
+                    evaluated_probes += 1;
+                    let passed = resp_lower.contains("rust");
+                    if passed { passed_probes += 1; }
+                    println!("      🔍 [Probe S{}-T{:02}] Recall FavLanguage(Rust): {}", session_num, turn, passed);
+                }
+
+                // 4. Disliked Language Probe
+                if is_disliked_lang_probe {
+                    evaluated_probes += 1;
+                    let passed = resp_lower.contains("python");
+                    if passed { passed_probes += 1; }
+                    println!("      🔍 [Probe S{}-T{:02}] Recall DislikedLanguage(Python): {}", session_num, turn, passed);
+                }
+
+                // 5. Favorite Color Probe
+                if is_color_probe {
+                    evaluated_probes += 1;
+                    let passed = resp_lower.contains("teal");
+                    if passed { passed_probes += 1; }
+                    println!("      🔍 [Probe S{}-T{:02}] Recall Color(Teal): {}", session_num, turn, passed);
+                }
+
+                // 6. Voice App Name Probe
+                if is_app_probe {
+                    evaluated_probes += 1;
+                    let passed = resp_lower.contains("vox");
+                    if passed { passed_probes += 1; }
+                    println!("      🔍 [Probe S{}-T{:02}] Recall App(Vox): {}", session_num, turn, passed);
+                }
+
+                // 7. Latency Target Probe
+                if is_latency_probe {
+                    evaluated_probes += 1;
+                    let passed = resp_lower.contains("500") || resp_lower.contains("latency");
+                    if passed { passed_probes += 1; }
+                    println!("      🔍 [Probe S{}-T{:02}] Recall Latency(sub-500ms): {}", session_num, turn, passed);
+                }
+
+                if evaluated_probes > 0 {
+                    total_probes_evaluated += evaluated_probes;
+                    total_probes_passed += passed_probes;
                 }
             }
 
@@ -446,8 +508,8 @@ fn main() -> Result<()> {
                 }
                 let comp_ctx = ConversationContext {
                     messages: vec![
-                        ChatMessage { role: Role::System, content: vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT.to_string(), timestamp_ms: 0 },
-                        ChatMessage { role: Role::User, content: format!("Summarize key facts as bullet points:\n- User Name: Alex\n- Role: Senior System Engineer\n- Favorite Language: Rust\n- Disliked Language: Python\n- Favorite Color: Teal\n- App Name: Vox\n- Target Latency: sub-500ms\n- Model: BGE-M3 1024-dim\n\nHistory:\n\n{}", history_text), timestamp_ms: 0 },
+                        ChatMessage { role: Role::System, content: vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT_V2.to_string(), timestamp_ms: 0 },
+                        ChatMessage { role: Role::User, content: format!("Here is the full conversation history to compress:\n\n{}", history_text), timestamp_ms: 0 },
                     ],
                     token_count: estimate_tokens(&history_text) + 100,
                     kv_cache_index: 0,
@@ -455,26 +517,137 @@ fn main() -> Result<()> {
 
                 let comp_cancel = Arc::new(AtomicBool::new(false));
                 let (c_tx, c_rx) = channel();
-                let mut summary = String::new();
+                let mut raw_response = String::new();
                 if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
                     while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(10000)) {
                         match evt {
-                            VoxEvent::LlmToken { token, .. } => summary.push_str(&token),
+                            VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
                             VoxEvent::LlmFinished { .. } => break,
                             _ => {}
                         }
                     }
                 }
 
-                if !summary.trim().is_empty() && conv_mgr.commit_opportunistic(snap_len, summary.clone()) {
-                    total_opp_succeeded += 1;
-                    compaction_summaries.push(summary);
+                if !raw_response.trim().is_empty() {
+                    println!("  [S{} COMPACTION] Raw Response:\n{}", session_num, raw_response);
+                    #[derive(Debug, serde::Deserialize)]
+                    struct CompactionResponse {
+                        summary: String,
+                        #[serde(alias = "memory_updates")]
+                        profile_updates: Option<Vec<vox_lib::services::memory::ProfileUpdate>>,
+                    }
+
+                    let cleaned = vox_lib::utils::json::clean_json_content(&raw_response);
+
+                    match serde_json::from_str::<CompactionResponse>(&cleaned) {
+                        Ok(resp) => {
+                            let summary = resp.summary;
+                            println!("  [S{} COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
+                            if let Some(ref updates) = resp.profile_updates {
+                                println!("  [S{} COMPACTION] Found {} profile updates.", session_num, updates.len());
+                                for up in updates {
+                                    println!("    - {} | {}: {}", up.category, up.key, up.value);
+                                }
+                            }
+                            if !summary.trim().is_empty() && conv_mgr.commit_opportunistic(snap_len, summary.clone()) {
+                                total_opp_succeeded += 1;
+                                compaction_summaries.push(summary);
+                                if let Some(updates) = resp.profile_updates {
+                                    if !updates.is_empty() {
+                                        let _ = memory_tx.try_send(MemoryWorkerEvent::ProfileUpdatesReady {
+                                            updates,
+                                        });
+                                    }
+                                }
+                            } else {
+                                total_opp_cancelled += 1;
+                            }
+                        }
+                        Err(e) => {
+                            println!("  [S{} COMPACTION] JSON parsing failed: {:?}. Cleaned text:\n{}", session_num, e, cleaned);
+                            // Fallback: treat raw response as prose summary
+                            if conv_mgr.commit_opportunistic(snap_len, raw_response.clone()) {
+                                total_opp_succeeded += 1;
+                                compaction_summaries.push(raw_response);
+                            } else {
+                                total_opp_cancelled += 1;
+                            }
+                        }
+                    }
                 } else {
                     total_opp_cancelled += 1;
                 }
             }
 
             thread::sleep(Duration::from_millis(20));
+        }
+
+        // Final Compaction to capture the remaining uncompacted turns at the end of the session
+        if conv_mgr.get_messages().len() > 1 {
+            let mut history_text = String::new();
+            for msg in &conv_mgr.get_messages()[1..] {
+                history_text.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
+            }
+            let comp_ctx = ConversationContext {
+                messages: vec![
+                    ChatMessage { role: Role::System, content: vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT_V2.to_string(), timestamp_ms: 0 },
+                    ChatMessage { role: Role::User, content: format!("Here is the remaining conversation history to compress:\n\n{}", history_text), timestamp_ms: 0 },
+                ],
+                token_count: estimate_tokens(&history_text) + 100,
+                kv_cache_index: 0,
+            };
+
+            let comp_cancel = Arc::new(AtomicBool::new(false));
+            let (c_tx, c_rx) = channel();
+            let mut raw_response = String::new();
+            if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
+                while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(10000)) {
+                    match evt {
+                        VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
+                        VoxEvent::LlmFinished { .. } => break,
+                        _ => {}
+                    }
+                }
+            }
+
+            if !raw_response.trim().is_empty() {
+                println!("  [S{} FINAL COMPACTION] Raw Response:\n{}", session_num, raw_response);
+                #[derive(Debug, serde::Deserialize)]
+                struct CompactionResponse {
+                    summary: String,
+                    #[serde(alias = "memory_updates")]
+                    profile_updates: Option<Vec<vox_lib::services::memory::ProfileUpdate>>,
+                }
+
+                let cleaned = vox_lib::utils::json::clean_json_content(&raw_response);
+
+                match serde_json::from_str::<CompactionResponse>(&cleaned) {
+                    Ok(resp) => {
+                        let summary = resp.summary;
+                        println!("  [S{} FINAL COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
+                        if let Some(ref updates) = resp.profile_updates {
+                            println!("  [S{} FINAL COMPACTION] Found {} profile updates.", session_num, updates.len());
+                            for up in updates {
+                                println!("    - {} | {}: {}", up.category, up.key, up.value);
+                            }
+                        }
+                        if !summary.trim().is_empty() {
+                            compaction_summaries.push(summary);
+                            if let Some(updates) = resp.profile_updates {
+                                if !updates.is_empty() {
+                                    let _ = memory_tx.try_send(MemoryWorkerEvent::ProfileUpdatesReady {
+                                        updates,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("  [S{} FINAL COMPACTION] JSON parsing failed: {:?}. Cleaned text:\n{}", session_num, e, cleaned);
+                        compaction_summaries.push(raw_response);
+                    }
+                }
+            }
         }
 
         // Session Completion & Bullet-Chunk Background Sweep

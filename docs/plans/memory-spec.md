@@ -1,165 +1,59 @@
 # Vox Memory Specification
 
-> **Status:** Draft
->
-> This document defines the architecture of Vox's memory system.
->
-> The specification is developed incrementally. Each memory subsystem is designed, implemented, benchmarked, and finalized independently before the next subsystem is introduced.
->
-> This document intentionally avoids discussing future subsystems until their design phase begins.
+> **Status:** Draft · Each subsystem is designed, implemented, benchmarked, and finalized independently before the next is introduced. Future subsystems are not discussed until their design phase.
 
----
+## Design Principles
 
-# Design Principles
-
-- Build one memory subsystem at a time.
-- Every subsystem must be independently testable.
-- Every subsystem must have measurable latency and memory budgets.
-- No subsystem becomes part of the default runtime until it has been benchmarked.
+- Build one subsystem at a time; each independently testable with measurable latency/memory budgets.
+- No subsystem enters the default runtime until benchmarked.
 - The memory pipeline must never block the real-time voice pipeline.
+- Architecture must support dynamic degrade/upgrade across hardware tiers (Tier 2 is recommended default).
 
-## The Hardware Mapping
+## Hardware Tiers
 
-- Architecture decisons are decided based on feasibility with recommended tiers - hence vox must suport dynamic degrade and upgrade of architecture based on tier
-  where Tier 2 is recommended for users and is set as default
+| Tier | Configuration | Memory Systems |
+|------|---------------|---------------|
+| **1A** | 8GB Pure Local (no GPU) | Working + small Personal · no episodic retrieval |
+| **1B** | Pure Local (GPU) · *Recommended* | Working + Personal + Episodic |
+| **2A** | Hybrid: Remote LLM + Local Audio · *Recommended/No-cost* | Working + Personal + Episodic · remote extraction permitted |
+| **2B** | Hybrid: Cloud LLM + Local Audio · *Recommended/Default* | Working + Personal + Episodic · cloud models do Memory Extraction during compaction |
+| **3** | Realtime S2S WebSocket · *Best performance* | Provider Working + Personal + Episodic · provider tool calls update Personal immediately |
 
-* **Tier 1A: 8GB Pure Local (no gpu):** Working Memory FIFO variation only (Simple buffer to manage context window)
+## Memory Taxonomy
 
-* **Tier 1B: [RECOMMENDED] Pure Local (with gpu):** Working Memory + Episodic Memory + Semantic Memory(requires tool_calling hence depends on runtime capability) .
+Vox separates memory into three independent cognitive systems, each implemented separately:
 
-* **Tier 2A: [RECOMMENDED/NO-COST] Hybrid Stack ( Remote LLM + Local Audio ):** Working Memory + Episodic + Semantic(requires tool_calling hence depends on runtime capability) .
+| System | Status | Role |
+|--------|--------|------|
+| **Working Memory** | 🟢 Completed | Active conversation |
+| **Episodic Memory** | 🟢 Completed | Historical conversations |
+| **Personal Memory** | ⚪ Not Started | Evolving user model |
 
-* **Tier 2B: [RECOMMENDED/DEFAULT] Hybrid Stack ( Cloud LLM + Local Audio ):** Working Memory + Episodic + Semantic(tool_calling is natively supported by all cloud models).
+Working Memory handles the active conversation. Episodic Memory preserves historical conversations. Personal Memory builds an evolving user model — it is **not** a knowledge graph, and its storage is intentionally abstract/unspecified.
 
-* **Tier 3: [BEST-PERFORMANCE] Realtime S2S (WebSocket):** Provider-managed Working Memory + Episodic & Semantic (managed via early tool calls like prompt must force to use tool calls at start before generating reponse to avoid interruptions) .
+## Development Process
 
----
-
-# Memory Taxonomy
-
-Vox separates memory into independent cognitive systems.
-
-These systems serve different purposes and are implemented independently.
-
-## 1. Working Memory
-
-**Status:** 🟢 Completed
-
-Purpose:
-
-- Maintain the current conversation.
-- Provide context to the LLM.
-- Manage context window growth.
-- Handle context compression.
-
-This is the only memory subsystem currently under design.
-
-No assumptions are made yet regarding implementation details.
+Each subsystem follows: Define → Design → Implement → Benchmark → Validate → Freeze → Next. No future subsystem influences the current one unless a hard architectural dependency exists.
 
 ---
-
-## 2. Episodic Memory
-
-**Status:** ⚪ Not Started
-
-Purpose:
-
-- Record historical interactions.
-- Preserve chronological events.
-- Enable retrieval of previous conversations.
-
-Implementation intentionally deferred.
-
----
-
-## 3. Semantic Memory
-
-**Status:** ⚪ Not Started
-
-Purpose:
-
-- Store durable facts.
-- Maintain persistent knowledge.
-- Track entities and relationships.
-
-Implementation intentionally deferred.
-
----
-
-# Development Process
-
-Each memory subsystem follows the same lifecycle:
-
-1. Define requirements.
-2. Design architecture.
-3. Implement.
-4. Benchmark.
-5. Validate.
-6. Freeze.
-7. Proceed to the next subsystem.
-
-No future subsystem should influence the implementation of the current one unless a hard architectural dependency exists.
 
 # Working Memory
 
-**Status:** 🟢 Completed
+**Status:** 🟢 Completed · Transient, session-scoped; maintains a valid context window without exceeding the model limit while preserving real-time voice responsiveness. Not responsible for long-term persistence, retrieval, embeddings, or knowledge graphs.
 
-Working Memory is the runtime subsystem responsible for managing the active conversation presented to the LLM.
+## Responsibilities
 
-It is transient, session-scoped, and exists only while the conversation is active.
+**Is responsible for:** maintaining the active conversation · tracking token usage · managing the context budget · constructing the LLM prompt · maintaining provider-specific context state · performing context maintenance.
 
-Its purpose is to maintain a valid, high-quality context window without exceeding the active model's context limit while preserving real-time voice responsiveness.
+**Is not responsible for:** Episodic Memory · Personal Memory · embedding generation · Memory Extraction · persistent storage.
 
-Working Memory is not responsible for long-term persistence, retrieval, embeddings, or knowledge graphs.
+## Conversation Manager
 
----
+A dedicated `ConversationManager` is the single source of truth for the active conversation. Responsibilities: maintain history · track tokens · monitor budget · select provider strategy · perform maintenance · build the final LLM request. No other subsystem may modify the active conversation directly.
 
-# Responsibilities
+## Conversation State
 
-Working Memory is responsible for:
-
-- Maintaining the active conversation.
-- Tracking token usage.
-- Managing the available context budget.
-- Constructing the prompt presented to the LLM.
-- Maintaining provider-specific context state.
-- Performing context maintenance when required.
-
-Working Memory is **not** responsible for:
-
-- Episodic Memory
-- Semantic Memory
-- Embedding generation
-- Entity extraction
-- Knowledge graph construction
-- Persistent storage
-
----
-
-# Conversation Manager
-
-Working Memory is implemented by a dedicated `ConversationManager`.
-
-The ConversationManager is the single source of truth for the active conversation.
-
-Responsibilities include:
-
-- Maintaining conversation history.
-- Tracking token usage.
-- Monitoring context budget.
-- Selecting the provider strategy.
-- Performing context maintenance.
-- Building the final LLM request.
-
-No other subsystem may directly modify the active conversation.
-
----
-
-# Conversation State
-
-The active conversation is maintained entirely in runtime memory.
-
-Conceptually:
+Maintained entirely in runtime memory:
 
 ```text
 Conversation
@@ -170,617 +64,219 @@ Conversation
 └── Provider State
 ```
 
-The storage mechanism is provider-independent.
+Storage is provider-independent; synchronization is provider-specific.
 
-The synchronization mechanism is provider-specific.
+## Provider Strategy
 
----
-
-# Provider Strategy
-
-Working Memory supports two execution strategies depending on the active runtime.
-
-## Stateless Providers
-
-Examples:
-
-- OpenAI
-- Gemini
-- Anthropic
-- OpenAI-compatible APIs
-
-The ConversationManager constructs the complete prompt for every request.
-
-No conversational state exists inside the provider.
-
----
-
-## Stateful Providers
-
-Examples:
-
-- llama.cpp
-- Future embedded inference engines
-
-The provider maintains an active KV Cache.
-
-The ConversationManager owns the logical conversation while the provider owns the synchronization of its internal context state.
+| Mode | Examples | Behavior |
+|------|----------|----------|
+| **Stateless** | OpenAI, Gemini, Anthropic, OpenAI-compatible | Manager builds the full prompt each request; no state in provider |
+| **Stateful** | llama.cpp, future embedded engines | Provider holds KV cache; manager owns logical conversation + sync of provider context state |
 
 Working Memory must never assume all providers behave identically.
 
----
+## Context Budget
 
-# Context Budget
+Before every inference the manager computes: current usage · max context · reserved generation budget · remaining context. The **runtime** (not the LLM) enforces these limits; thresholds are runtime-configurable.
 
-Before every inference request the ConversationManager calculates:
+## Context Maintenance
 
-- Current context usage
-- Maximum supported context
-- Reserved generation budget
-- Remaining available context
+| Policy | Trigger | Characteristics |
+|--------|---------|----------------|
+| **Threshold** (high) | Exceeds critical threshold | Mandatory · synchronous · blocks next inference · guarantees budget validity |
+| **Opportunistic** (low) | Pipeline idle + exceeds soft threshold | Optional · background · cancelable · never blocks voice |
 
-The runtime—not the LLM—is responsible for enforcing these limits.
+The current user request is never processed until Threshold Maintenance completes; the response is always generated from the updated conversation. Threshold always takes precedence; if interrupted by new user activity the opportunistic task is cancelled without modifying the conversation.
 
-Thresholds are runtime configurable.
+## Transition State & Speech
 
----
-
-# Context Maintenance
-
-Working Memory supports two independent maintenance policies.
-
-## 1. Threshold Maintenance (High Priority)
-
-Triggered when the conversation exceeds the configured critical context threshold.
-
-Characteristics:
-
-- Mandatory
-- Synchronous
-- Blocks the next inference request
-- Guarantees the context budget remains valid
-
-The current user request is never processed until maintenance has successfully completed.
-
-The response is always generated using the updated conversation.
-
----
-
-## 2. Opportunistic Maintenance (Low Priority)
-
-Triggered only when:
-
-- the pipeline is idle
-- conversation usage exceeds a configurable soft threshold
-
-Characteristics:
-
-- Optional
-- Background task
-- Cancelable
-- Never blocks the voice pipeline
-
-If interrupted by new user activity the task is immediately cancelled without modifying the active conversation.
-
-Threshold Maintenance always takes precedence.
-
----
-
-# Transition State
-
-During Threshold Maintenance Vox enters a dedicated runtime state.
+During Threshold Maintenance Vox enters the global `ContextManaging` state and immediately plays a deterministic transition message (e.g. *"Give me a moment while I organize our conversation."*). Messages are runtime assets, **never LLM-generated**, guaranteeing zero added latency, determinism, localization, and consistent UX.
 
 ```text
-Idle
-
-Listening
-
-Thinking
-
-Speaking
-
-ContextManaging
+Idle → Listening → Thinking → Speaking → ContextManaging
 ```
 
-`ContextManaging` is a global runtime state.
-
-Its purpose is to clearly communicate that Working Memory maintenance is occurring.
-
----
-
-# Transition Speech
-
-Upon entering the `ContextManaging` state Vox immediately plays a deterministic transition message.
-
-Messages are selected randomly from a predefined set.
-
-Examples include:
-
-- "Give me a moment while I organize our conversation."
-- "One moment while I reorganize everything we've discussed."
-
-These messages are runtime assets.
-
-They are **never generated by the LLM**.
-
-This guarantees:
-
-- zero additional LLM latency
-- deterministic behavior
-- localization support
-- consistent UX
-
----
-
-# Context Maintenance Flow
-
-Threshold Maintenance follows the sequence below.
+## Context Maintenance Flow
 
 ```text
-STT Final
-        │
-        ▼
-ConversationManager
-        │
-        ▼
-Critical Threshold Reached?
-        │
-   ┌────┴────┐
-   │         │
-  No        Yes
-   │         │
-   ▼         ▼
- Continue   Enter ContextManaging
-                │
-                ▼
-      Play Transition Speech
-                │
-                ▼
-      Perform Context Maintenance
-                │
-                ▼
-     Rebuild Active Conversation
-                │
-                ▼
- Generate Response To Original User Input
-                │
-                ▼
-              TTS
+STT Final → ConversationManager → Critical Threshold?
+                                  ├─ No → Continue
+                                  └─ Yes → Enter ContextManaging → Play Transition Speech
+                                          → Perform Maintenance → Rebuild Conversation
+                                          → Generate Response → TTS
 ```
 
-The original user request is preserved throughout the maintenance process.
+The original user request is preserved throughout; the LLM response is generated only after maintenance completes.
 
-The LLM response is generated only after maintenance completes.
+## Barge-in During Context Management
 
----
+On a new `SpeechStart` during `ContextManaging`: the utterance is never discarded, the conversation is never mutated concurrently, and maintenance completes atomically. A temporary hold queue buffers the turn until maintenance finishes, then appends it. Guarantees: no dropped speech · no concurrent mutation · deterministic under interruption.
 
-# Barge-in During Context Management
+## Design Constraints
 
-Working Memory must support user interruption while maintenance is active.
+Never exceed the context budget · never reject a request for context exhaustion · never corrupt state under concurrent events · never block voice except mandatory Threshold Maintenance · always respond from the maintained (not pre-maintenance) conversation · always preserve the original request.
 
-If VAD detects a new `SpeechStart` event during `ContextManaging`:
+## Out of Scope
 
-- the new utterance must never be discarded
-- the active conversation must never be modified concurrently
-- the maintenance task must complete atomically
-
-To prevent race conditions the runtime maintains a temporary hold queue.
-
-Flow:
-
-```text
-SpeechStart
-
-↓
-
-Temporary Hold Queue
-
-↓
-
-Context Maintenance Completes
-
-↓
-
-Append Buffered Turns
-
-↓
-
-Generate Response
-```
-
-This guarantees:
-
-- no dropped speech
-- no concurrent mutation of conversation state
-- deterministic behavior under interruption
+Episodic Memory · Personal Memory · embedding generation · retrieval · vector search · Memory Extraction · background memory consolidation.
 
 ---
-
-# Design Constraints
-
-Working Memory must satisfy the following constraints:
-
-- Never exceed the configured context budget.
-- Never reject a request due to context exhaustion.
-- Never corrupt conversation state during concurrent events.
-- Never block the voice pipeline except during mandatory Threshold Maintenance.
-- Always generate the final response from the maintained conversation rather than the pre-maintenance context.
-- Always preserve the user's original request during maintenance.
-
----
-
-# Out of Scope
-
-The following systems are intentionally excluded from Working Memory and will be specified independently:
-
-- Episodic Memory
-- Semantic Memory
-- Embedding generation
-- Retrieval
-- Vector search
-- Knowledge graph
-- Entity extraction
-- Background memory consolidation
 
 # Episodic Memory Specification
 
-> **Status:** Draft
+> **Status:** Draft · Persistent across sessions; extends Working Memory by recalling past conversations after compaction/forgetting. Completely independent from Personal Memory.
 
-This document defines the Episodic Memory subsystem of Vox.
+**Purpose:** answers *"What have we talked about before?"* — stores historical summaries, retrieves when relevant. Not responsible for durable facts or user profiles.
 
-Episodic Memory extends Working Memory by allowing Vox to recall relevant past conversations after the active context has been compacted or forgotten.
+**Responsibilities — is:** persist summaries · maintain chronological history · retrieve relevant sessions · supply LLM context.
+**Responsibilities — is not:** Working Memory · context-window management · Memory Extraction · user profile construction.
 
-Unlike Working Memory, Episodic Memory is persistent across sessions.
+**Design Principles:** never store raw conversations (summaries only) · retrieval never blocks realtime audio · retrieval within a fixed token budget · one memory per historical session · architecture adapts to runtime tier.
 
-It is designed to remain completely independent from Semantic Memory.
-
----
-
-# Purpose
-
-Episodic Memory exists to answer:
-
-> **"What have we talked about before?"**
-
-It stores historical conversation summaries and retrieves them when they are relevant to the current conversation.
-
-It is **not** responsible for storing durable facts or user profiles.
-
----
-
-# Responsibilities
-
-Episodic Memory is responsible for:
-
-- Persisting conversation summaries.
-- Maintaining chronological conversation history.
-- Retrieving relevant historical sessions.
-- Supplying additional context to the LLM.
-
-It is **not** responsible for:
-
-- Working Memory
-- Context window management
-- Fact extraction
-- Entity extraction
-- Knowledge graphs
-- User profile construction
-
----
-
-# Design Principles
-
-- Never store raw conversations.
-- Store compacted summaries only.
-- Retrieval must never block the realtime voice pipeline.
-- Retrieval must operate within a fixed token budget.
-- Every retrieved memory must represent a different historical session.
-- Memory architecture dynamically adapts based on runtime tier.
-
----
-
-# Storage Unit
-
-The storage unit of Episodic Memory is a completed Working Memory compaction.
-
-Conceptually:
+## Storage Unit & Record
 
 ```text
-Session
-    ↓
-Working Memory Compaction
-    ↓
-Summary
-    ↓
-Embedding
-    ↓
-Vector Database
+Session → Working Memory Compaction → Summary → Embedding → Vector Database
 ```
-
-Raw turns are never embedded.
-
-Only finalized compaction summaries are embedded.
-
----
-
-# Memory Record
-
-Each Episodic Memory record contains:
+Only finalized compaction summaries are embedded (never raw turns).
 
 ```text
-Episode
-├── Session ID
-├── Summary
-├── Embedding
-├── Timestamp
-├── Metadata
+Episode ── Session ID ── Summary ── Embedding ── Timestamp ── Metadata
 ```
+Metadata: duration · summary token count · creation timestamp. No extracted facts stored here.
 
-Metadata may include:
+## Ingestion Pipeline
 
-- conversation duration
-- summary token count
-- creation timestamp
-
-No extracted facts are stored here.
-
----
-
-# Ingestion Pipeline
-
-Only semantic conversations are stored.
+Only **meaningful** conversations are stored; generic ones are discarded.
 
 ```text
-Conversation Completed
-        │
-        ▼
-Query Classifier
-        │
- ┌──────┴──────┐
- │             │
-Generic     Semantic
- │             │
-Skip      Compaction Summary
-               │
-               ▼
-        Generate Embedding
-               │
-               ▼
-        Store Episode
+Conversation Completed → Query Classifier ─┬─ Generic → Skip
+                                           └─ Meaningful → Compaction Summary → Embedding → Store Episode
 ```
 
-Generic conversations are discarded.
-
-Only summaries classified as semantic are embedded.
-
----
-
-# Retrieval
-
-Retrieval begins only after the user's current query is available.
+## Retrieval
 
 ```text
-Current User Query
-        │
-        ▼
-Generate Query Embedding
-        │
-        ▼
-Vector Search
-        │
-        ▼
-Diversify By Session
-        │
-        ▼
-Token Budget Filter
-        │
-        ▼
-Inject Into Prompt
+Current User Query → Query Embedding → Vector Search → Diversify By Session → Token Budget Filter → Inject Into Prompt
 ```
+
+**Session Diversification** (not plain Top-K): retrieve a larger candidate set → group by Session ID → keep only the highest-scoring summary per session → return Top-K. Prevents one long conversation from dominating.
+
+**Context Budget:** Episodic has an independent hard budget (e.g. ≤20% of context, below Working Memory priority). If retrieved summaries exceed it, keep highest relevance and discard the rest.
+
+## Runtime Behavior
+
+| Tier | Behavior |
+|------|----------|
+| 1A | No Episodic; Working Memory only |
+| 1B | Automatic retrieval: `User Query → Retrieve Episodes → Inject → LLM` |
+| 2A / 2B | Same as 1B; remote/cloud LLM with local embeddings + local vector DB |
+| 3 | Tool-driven retrieval: `LLM decides needed → Episode Retrieval Tool → Relevant Sessions → Continue` (avoids per-turn retrieval during streaming) |
+
+**Retrieval Tool (Tier 3):** input = natural-language query; output = Episode list. Respects max episodes · max token budget · one summary per session.
+
+**Failure Behavior:** on retrieval failure, continue normally, no synchronous retry, no blocked generation — the LLM simply receives Working Memory.
+
+## Design Constraints
+
+Never store raw conversations · never exceed budget · never return multiple summaries per session · never block realtime audio · never modify Working Memory · never duplicate Personal Memory responsibilities.
+
+## Out of Scope
+
+User facts · preferences · user profiles · Memory Extraction · profile generation · long-term knowledge storage — these belong to **Personal Memory**.
 
 ---
 
-# Session Diversification
+# Memory Philosophy
 
-Standard Top-K retrieval is not used.
+- Vox does **not** try to remember everything — only what improves future conversations.
+- Memory exists to make Vox feel continuous: one relationship across sessions, not disconnected chats.
+- The **user**, not the world's knowledge, is the center of the memory system.
+- Personal Memory stores *evolving knowledge about the user*, not static facts about the world.
 
-Instead:
+This is the guiding principle for all future memory work.
 
-1. Retrieve a larger candidate set.
-2. Group candidates by Session ID.
-3. Keep only the highest scoring summary from each session.
-4. Return the final Top-K.
+---
 
-Example:
+# Personal Memory
+
+**Status:** ⚪ Not Started · Purpose: *maintain a continuously evolving model of the user.* It answers *"What do I know about this user?"* rather than *"What facts exist?"* Implementation is intentionally abstract.
+
+## Memory Categories
+
+Fixed categories — the extractor fills them; the runtime never invents memory types:
+
+`Identity` · `Preferences` · `Experiences` · `Projects` · `Goals` · `Tasks` · `Relationships` · `Skills` · `Devices` · `Locations`
+
+## Temporal Memory
+
+Every durable memory is **append-only**; previous values are never overwritten. History accumulates; the current value is resolved at retrieval time.
 
 ```text
-Raw Results
+Preference → History → Current State
 
-S1 (0.94)
-S1 (0.92)
-S1 (0.89)
-S2 (0.87)
-S3 (0.84)
-
-↓
-
-Diversified
-
-S1
-S2
-S3
+Favorite Language: Python → Go → Rust
 ```
 
-This prevents one long conversation from dominating retrieval.
+History remains available even after the current value changes.
 
----
+## Episodic vs Personal Memory
 
-# Context Budget
+| | **Episodic** | **Personal** |
+|--|--------------|--------------|
+| Answers | "What happened?" | "What do I know about the user?" |
+| Stores | conversation summaries, discussions, sessions | preferences, projects, identity, relationships, experiences, evolving profile |
+| Retrieval | semantic similarity | structured lookups |
 
-Retrieved memories have an independent context budget.
+## Ingestion Pipeline
 
-Example allocation:
+Old design (separate NLP entity pipeline):
 
 ```text
-Context Window
-├── System Prompt
-├── Working Memory
-├── Episodic Memory (≤20%)
-└── Generation Reserve
+Conversation → Summary → Entity Extraction → Knowledge Graph
 ```
 
-The Episodic Memory budget is a hard runtime limit.
-
-If the retrieved summaries exceed the configured budget:
-
-1. Highest relevance summaries are kept.
-2. Remaining summaries are discarded.
-
-Working Memory always has priority.
-
----
-
-# Runtime Behavior
-
-Episodic Memory behaves differently depending on runtime tier.
-
-## Tier 1A
-
-No Episodic Memory.
-
-Working Memory only.
-
----
-
-## Tier 1B
-
-Automatic retrieval.
+New design shares compaction and splits into two branches:
 
 ```text
-User Query
-    ↓
-Retrieve Episodes
-    ↓
-Inject Context
-    ↓
-LLM
+Conversation
+    │
+    ▼
+Working Memory
+    │
+    ▼
+Compaction
+    ├────────────► Episodic Summary ──► Vector Database
+    │
+    └────────────► Personal Memory Extraction ──► Personal Memory Store
 ```
 
----
+One branch preserves *what happened* (Episodic); the other preserves *what was learned about the user* (Personal Memory). **Personal Memory Extraction** is performed by the compaction model and produces a structured object — there is no separate NLP pipeline, and Memory Extraction is **not** NLP entity extraction:
 
-## Tier 2A
-
-Same architecture as Tier 1B.
-
-Remote LLM.
-
-Local embeddings.
-
-Local vector database.
-
----
-
-## Tier 2B
-
-Same architecture as Tier 2A.
-
-Cloud LLM.
-
-Local embeddings.
-
-Local vector database.
-
----
-
-## Tier 3
-
-Realtime speech requires a different strategy.
-
-Rather than retrieving memories every turn, retrieval becomes tool-driven.
-
-```text
-Realtime Session
-        │
-        ▼
-User Query
-        │
-        ▼
-LLM decides memory is needed
-        │
-        ▼
-Episode Retrieval Tool
-        │
-        ▼
-Return Relevant Sessions
-        │
-        ▼
-Continue Response
+```json
+{
+  "summary": "...",
+  "profile_updates": [],
+  "project_updates": [],
+  "experience_updates": [],
+  "goal_updates": [],
+  "task_updates": []
+}
 ```
 
-This avoids unnecessary retrieval during continuous streaming.
+## Design Constraints
+
+Personal Memory must **not** mandate a storage implementation — no graph database, Neo4j, RDF, or triples required. It may use any engine capable of representing temporal structured user knowledge, keeping the cognitive model stable while preserving implementation flexibility.
 
 ---
 
-# Retrieval Tool (Tier 3)
+# Desired Win Scenarios
 
-The retrieval tool returns only historical summaries.
+Success is defined by outcomes, not storage:
 
-Input:
-
-```text
-Natural language query
-```
-
-Output:
-
-```text
-Episode 1
-Episode 2
-Episode 3
-```
-
-The tool must respect:
-
-- maximum number of returned episodes
-- maximum token budget
-- one summary per session
-
----
-
-# Failure Behavior
-
-If retrieval fails:
-
-- continue normally
-- do not retry synchronously
-- do not block response generation
-
-The LLM simply receives Working Memory.
-
----
-
-# Design Constraints
-
-Episodic Memory must:
-
-- never store raw conversations
-- never exceed its configured context budget
-- never return multiple summaries from the same session
-- never block realtime audio
-- never modify Working Memory
-- never duplicate Semantic Memory responsibilities
-
----
-
-# Out of Scope
-
-The following are intentionally excluded:
-
-- user facts
-- preferences
-- entity graphs
-- relationship extraction
-- profile generation
-- long-term knowledge storage
-
-These belong to Semantic Memory and will be specified independently.
+| Scenario | What Vox Remembers | Outcome |
+|----------|-------------------|---------|
+| **Entertainment** | Watched shows, liked/disliked, reasons | Recommendation based on prior experience, not generic taste |
+| **Programming** | Previous Rust pain points (e.g. *"target dir hit 14 GB last time"*) | Proactively avoids repeating the mistake on the next Rust project |
+| **Long-running Projects** | Current milestone, blockers, open decisions, architecture discussions | *"Continue Vox"* resumes without re-explaining context |
+| **Personal Continuity** | Editor history `VSCode → Neovim → Zed` (append-only, nothing overwritten) | Full history stays available as the user evolves |
