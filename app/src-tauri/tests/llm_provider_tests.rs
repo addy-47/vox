@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
+use vox_lib::services::memory::{ChatMessage, Role, ConversationContext};
 
 // Helper to spawn a mock SSE HTTP server returning a custom body and status.
 fn spawn_mock_server(status: u16, headers: String, body: &'static str) -> String {
@@ -104,6 +105,7 @@ fn test_openai_compat_list_models() {
             quantization: None,
             family: None,
             provider_kind: "open_ai_compat".to_string(),
+            capabilities: None,
         },
         vox_lib::core::settings::RemoteModelInfo {
             id: "model-b".to_string(),
@@ -112,6 +114,7 @@ fn test_openai_compat_list_models() {
             quantization: None,
             family: None,
             provider_kind: "open_ai_compat".to_string(),
+            capabilities: None,
         },
     ];
     assert_eq!(models, expected);
@@ -132,8 +135,25 @@ fn test_openai_compat_generate() {
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
 
+    let ctx = ConversationContext {
+        messages: vec![
+            ChatMessage {
+                role: Role::System,
+                content: "system prompt".to_string(),
+                timestamp_ms: 0,
+            },
+            ChatMessage {
+                role: Role::User,
+                content: "test prompt".to_string(),
+                timestamp_ms: 0,
+            },
+        ],
+        token_count: 10,
+        kv_cache_index: 0,
+    };
+
     provider
-        .generate("test prompt", "system prompt", 1, &cancel_flag, &tx)
+        .generate(&ctx, 1, &cancel_flag, &tx)
         .unwrap();
 
     let mut tokens = Vec::new();

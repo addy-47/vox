@@ -51,6 +51,20 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         );",
         "CREATE INDEX IF NOT EXISTS idx_episodes_session ON episodes(session_id);",
         "CREATE INDEX IF NOT EXISTS idx_episodes_created ON episodes(created_at DESC);",
+        "CREATE TABLE IF NOT EXISTS personal_memory (
+            key        TEXT PRIMARY KEY,
+            category   TEXT NOT NULL,
+            value      TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        );",
+        "CREATE TABLE IF NOT EXISTS personal_memory_history (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            key         TEXT NOT NULL,
+            category    TEXT NOT NULL,
+            value       TEXT NOT NULL,
+            recorded_at INTEGER NOT NULL
+        );",
+        "CREATE INDEX IF NOT EXISTS idx_pm_history_key ON personal_memory_history(key, recorded_at DESC);",
     ];
 
     for stmt in statements {
@@ -174,6 +188,26 @@ mod tests {
             found_embedding_status,
             "embedding_status column must exist in sessions table"
         );
+        
+        // Verify personal_memory table exists
+        let mut rows = conn
+            .query(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='personal_memory'",
+                (),
+            )
+            .await?;
+        let pm_count: i64 = rows.next().await?.unwrap().get(0)?;
+        assert_eq!(pm_count, 1);
+
+        // Verify personal_memory_history table exists
+        let mut rows = conn
+            .query(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='personal_memory_history'",
+                (),
+            )
+            .await?;
+        let pmh_count: i64 = rows.next().await?.unwrap().get(0)?;
+        assert_eq!(pmh_count, 1);
 
         Ok(())
     }
