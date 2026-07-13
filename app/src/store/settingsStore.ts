@@ -44,7 +44,7 @@ export interface ModelCapabilities {
   tested_at_epoch: number;
 }
 
-export interface RemoteModelInfo {
+export interface LlmModelInfo {
   id: string;
   name: string;
   size_bytes: number | null;
@@ -126,6 +126,13 @@ export interface VoxSettings {
     max_sessions: number;
     retention_days: number;
   };
+  memory: {
+    episodic_enabled: boolean;
+    bg_worker_enabled: boolean;
+    top_k: number;
+    similarity_threshold: number;
+    max_context_share: number;
+  };
   assistant: {
     modular_prompt: string;
     realtime_prompt: string;
@@ -185,6 +192,13 @@ function applyAppearance(ui: VoxSettings["ui"]) {
   if (typeof document !== "undefined") {
     document.documentElement.setAttribute("data-theme", ui.theme);
     document.documentElement.style.setProperty("--accent", hexToRgb(ui.accent_seed));
+    if (ui.theme === "light") {
+      document.documentElement.classList.add("light");
+      document.documentElement.classList.remove("dark");
+    } else {
+      document.documentElement.classList.add("dark");
+      document.documentElement.classList.remove("light");
+    }
   }
 }
 
@@ -201,11 +215,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const bootState = await invoke<{ settings: VoxSettings }>("request_boot_state");
       const fetched = bootState.settings;
       const cloned = structuredClone(fetched);
-      set({
-        settings: fetched,
-        draftSettings: cloned,
-        isLoading: false,
-        hasChanges: false,
+      
+      set((state) => {
+        // Preserve active UI draft theme and accent seed to prevent race conditions during backend save
+        if (state.draftSettings) {
+          cloned.ui.theme = state.draftSettings.ui.theme;
+          cloned.ui.accent_seed = state.draftSettings.ui.accent_seed;
+        }
+        return {
+          settings: fetched,
+          draftSettings: state.hasChanges ? state.draftSettings : cloned,
+          isLoading: false,
+          hasChanges: state.hasChanges,
+        };
       });
       applyAppearance(fetched.ui);
     } catch (err) {

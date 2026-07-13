@@ -1,6 +1,6 @@
 use super::{LlmProvider, ProviderKind};
 use crate::core::events::VoxEvent;
-use crate::core::settings::RemoteModelInfo;
+use crate::core::settings::LlmModelInfo;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -283,8 +283,8 @@ impl LlmProvider for OpenAiCompatProvider {
         })
     }
 
-    fn list_models(&self) -> anyhow::Result<Vec<RemoteModelInfo>> {
-        use crate::core::settings::RemoteModelInfo;
+    fn list_models(&self) -> anyhow::Result<Vec<LlmModelInfo>> {
+        use crate::core::settings::LlmModelInfo;
 
         block_on(async {
             // Try Ollama-specific /api/tags first
@@ -304,7 +304,7 @@ impl LlmProvider for OpenAiCompatProvider {
                             .map(|m| {
                                 let clean_name =
                                     m.name.replace(':', " ").replace('_', " ").replace('-', " ");
-                                RemoteModelInfo {
+                                LlmModelInfo {
                                     id: m.name.clone(),
                                     name: clean_name,
                                     size_bytes: Some(m.size),
@@ -348,7 +348,7 @@ impl LlmProvider for OpenAiCompatProvider {
                 .into_iter()
                 .map(|m| {
                     let (clean_name, quantization, family) = parse_heuristic_metadata(&m.id);
-                    RemoteModelInfo {
+                    LlmModelInfo {
                         id: m.id,
                         name: clean_name,
                         size_bytes: None,

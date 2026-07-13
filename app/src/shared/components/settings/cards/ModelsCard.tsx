@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, Loader2, Folder, Mic
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { RemoteModelInfo, ModelCapabilities } from "@/store/settingsStore";
+import { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
 
 const PRICING_MAP: Record<string, string> = {
   "gpt-4o-mini": "$0.15 / $0.60",
@@ -806,7 +806,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   };
 
   // Remote LLM models catalog live state
-  const [remoteModels, setRemoteModels] = useState<RemoteModelInfo[]>([]);
+  const [remoteModels, setRemoteModels] = useState<LlmModelInfo[]>([]);
   const [loadingRemoteModels, setLoadingRemoteModels] = useState(false);
   const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
   const [probingMap, setProbingMap] = useState<Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>>({});
@@ -858,7 +858,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     if (!provider || !provider.provider_name) return remoteModels;
     const name = provider.provider_name.toLowerCase();
     
-    let filtered: RemoteModelInfo[] = [];
+    let filtered: LlmModelInfo[] = [];
     if (remoteModels && remoteModels.length > 0) {
       if (name.includes("openai")) {
         filtered = remoteModels.filter(m => 
@@ -974,7 +974,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         setLoadingRemoteModels(true);
         setRemoteModelsError(null);
         try {
-          const list = await invoke<RemoteModelInfo[]>("list_remote_llm_models", {
+          const list = await invoke<LlmModelInfo[]>("list_llm_models", {
             provider
           });
           setRemoteModels(list);
