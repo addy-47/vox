@@ -90,7 +90,7 @@ pub struct ModelCapabilities {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RemoteModelInfo {
+pub struct LlmModelInfo {
     pub id: String,   // e.g. "gemma4:31b"
     pub name: String, // display name derived from id
     pub size_bytes: Option<u64>,

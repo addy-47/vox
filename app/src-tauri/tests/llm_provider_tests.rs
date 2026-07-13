@@ -98,7 +98,7 @@ fn test_openai_compat_list_models() {
     let provider = OpenAiCompatProvider::new(&url, "test-model", None, None);
     let models = provider.list_models().unwrap();
     let expected = vec![
-        vox_lib::core::settings::RemoteModelInfo {
+        vox_lib::core::settings::LlmModelInfo {
             id: "model-a".to_string(),
             name: "model a".to_string(),
             size_bytes: None,
@@ -107,7 +107,7 @@ fn test_openai_compat_list_models() {
             provider_kind: "open_ai_compat".to_string(),
             capabilities: None,
         },
-        vox_lib::core::settings::RemoteModelInfo {
+        vox_lib::core::settings::LlmModelInfo {
             id: "model-b".to_string(),
             name: "model b".to_string(),
             size_bytes: None,
