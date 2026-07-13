@@ -34,8 +34,8 @@ const DOMAINS: Domain[] = [
   { id: "persona",     label: "Persona",     sublabel: "Prompts & identity",     icon: UserCircle,   angle: -90  },
   { id: "models",      label: "Models",      sublabel: "Intelligence engines",   icon: Brain,        angle: -30  },
   { id: "tray",        label: "Tray",        sublabel: "HUD & overlay settings", icon: Eye,          angle: 30   },
-  { id: "memory",      label: "Memory",      sublabel: "Database & retention",   icon: Database,     angle: 90   },
-  { id: "appearance",  label: "Appearance",  sublabel: "Visual theme & colors",  icon: Palette,      angle: 150  },
+  { id: "appearance",  label: "Appearance",  sublabel: "Visual theme & colors",  icon: Palette,      angle: 90   },
+  { id: "memory",      label: "Memory",      sublabel: "Database & retention",   icon: Database,     angle: 150  },
   { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: Sliders,      angle: -150 },
 ];
 
@@ -429,6 +429,7 @@ const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any,
       break;
     case "memory":
       Object.keys(settings.persistence).forEach(k => updateDraft("persistence", k, (settings.persistence as any)[k]));
+      Object.keys(settings.memory).forEach(k => updateDraft("memory", k, (settings.memory as any)[k]));
       break;
     case "appearance":
       updateDraft("ui", "theme", settings.ui.theme);
@@ -632,16 +633,23 @@ export const Settings: React.FC = () => {
     lastActiveDomains.current = activeDomains;
   }, [activeDomains, settings, updateDraft, draftSettings]);
 
-  // Resize listener to check if we are in compact mobile/tablet mode (< 1024px)
+  // Resize listener with requestAnimationFrame throttling to eliminate React rendering churn
   useEffect(() => {
+    let rafId: number;
     const checkSize = () => {
-      setWindowWidth(window.innerWidth);
-      setWindowHeight(window.innerHeight);
-      setIsCompact(window.innerWidth < 1024);
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        setWindowWidth(window.innerWidth);
+        setWindowHeight(window.innerHeight);
+        setIsCompact(window.innerWidth < 1024);
+      });
     };
     checkSize();
     window.addEventListener("resize", checkSize);
-    return () => window.removeEventListener("resize", checkSize);
+    return () => {
+      window.removeEventListener("resize", checkSize);
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const radiusX = useMemo(() => Math.max(90, Math.min(120, windowWidth * 0.09 - 10)), [windowWidth]);
@@ -703,80 +711,85 @@ export const Settings: React.FC = () => {
       return;
     }
 
+    let calcRafId: number;
     const calculate = () => {
       if (!containerRef.current) return;
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const newLines = { ...lines };
-      let changed = false;
+      cancelAnimationFrame(calcRafId);
+      calcRafId = requestAnimationFrame(() => {
+        if (!containerRef.current) return;
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const newLines = { ...lines };
+        let changed = false;
 
-      DOMAINS.forEach((domain) => {
-        if (!activeDomains.includes(domain.id)) {
-          if (newLines[domain.id] !== null) {
-            newLines[domain.id] = null;
-            changed = true;
-          }
-          return;
-        }
-
-        const nodeEl = document.getElementById(`node-${domain.id}`);
-        const cardEl = document.getElementById(`card-${domain.id}`);
-
-        if (nodeEl && cardEl) {
-          const nodeRect = nodeEl.getBoundingClientRect();
-          const cardRect = cardEl.getBoundingClientRect();
-
-          const x1 = (nodeRect.left + nodeRect.right) / 2 - containerRect.left;
-          const y1 = (nodeRect.top + nodeRect.bottom) / 2 - containerRect.top;
-
-          let x2 = 0;
-          let y2 = 0;
-
-          // Connect to the edge of the card nearest to the node
-          switch (domain.id) {
-            case "persona":
-              x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
-              y2 = cardRect.bottom - containerRect.top;
-              break;
-            case "memory":
-              x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
-              y2 = cardRect.top - containerRect.top;
-              break;
-            case "models":
-            case "tray":
-              x2 = cardRect.left - containerRect.left;
-              y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
-              break;
-            case "appearance":
-            case "interaction":
-              x2 = cardRect.right - containerRect.left;
-              y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
-              break;
+        DOMAINS.forEach((domain) => {
+          if (!activeDomains.includes(domain.id)) {
+            if (newLines[domain.id] !== null) {
+              newLines[domain.id] = null;
+              changed = true;
+            }
+            return;
           }
 
-          if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
-            const existing = newLines[domain.id];
-            if (
-              !existing ||
-              Math.abs(existing.x1 - x1) > 0.5 ||
-              Math.abs(existing.y1 - y1) > 0.5 ||
-              Math.abs(existing.x2 - x2) > 0.5 ||
-              Math.abs(existing.y2 - y2) > 0.5
-            ) {
-              newLines[domain.id] = { x1, y1, x2, y2 };
+          const nodeEl = document.getElementById(`node-${domain.id}`);
+          const cardEl = document.getElementById(`card-${domain.id}`);
+
+          if (nodeEl && cardEl) {
+            const nodeRect = nodeEl.getBoundingClientRect();
+            const cardRect = cardEl.getBoundingClientRect();
+
+            const x1 = (nodeRect.left + nodeRect.right) / 2 - containerRect.left;
+            const y1 = (nodeRect.top + nodeRect.bottom) / 2 - containerRect.top;
+
+            let x2 = 0;
+            let y2 = 0;
+
+            // Connect to the edge of the card nearest to the node
+            switch (domain.id) {
+              case "persona":
+                x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
+                y2 = cardRect.bottom - containerRect.top;
+                break;
+              case "appearance":
+                x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
+                y2 = cardRect.top - containerRect.top;
+                break;
+              case "models":
+              case "tray":
+                x2 = cardRect.left - containerRect.left;
+                y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
+                break;
+              case "memory":
+              case "interaction":
+                x2 = cardRect.right - containerRect.left;
+                y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
+                break;
+            }
+
+            if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
+              const existing = newLines[domain.id];
+              if (
+                !existing ||
+                Math.abs(existing.x1 - x1) > 0.5 ||
+                Math.abs(existing.y1 - y1) > 0.5 ||
+                Math.abs(existing.x2 - x2) > 0.5 ||
+                Math.abs(existing.y2 - y2) > 0.5
+              ) {
+                newLines[domain.id] = { x1, y1, x2, y2 };
+                changed = true;
+              }
+            }
+          } else {
+            if (newLines[domain.id] !== null) {
+              newLines[domain.id] = null;
               changed = true;
             }
           }
-        } else {
-          if (newLines[domain.id] !== null) {
-            newLines[domain.id] = null;
-            changed = true;
-          }
+        });
+
+        if (changed) {
+          setLines(newLines);
         }
       });
-
-      if (changed) {
-        setLines(newLines);
-      }
     };
 
     // Calculate immediately on selection or size changes
@@ -787,6 +800,7 @@ export const Settings: React.FC = () => {
 
     return () => {
       clearTimeout(timer);
+      cancelAnimationFrame(calcRafId);
     };
   }, [activeDomains, isCompact, windowWidth, windowHeight]);
 
@@ -835,7 +849,7 @@ export const Settings: React.FC = () => {
               const line = lines[domain.id];
               if (!line) return null;
 
-              const isVertical = domain.id === "persona" || domain.id === "memory";
+              const isVertical = domain.id === "persona" || domain.id === "appearance";
               let pathD = "";
 
               // Determine the next point the line goes to after the start point (line.x1, line.y1)
@@ -848,7 +862,7 @@ export const Settings: React.FC = () => {
                   // Card is on the right
                   nextX = Math.min(line.x2, line.x1 + dx_mid);
                 } else {
-                  // Card is on the left (appearance, interaction)
+                  // Card is on the left (memory, interaction)
                   nextX = Math.max(line.x2, line.x1 - dx_mid);
                 }
                 nextY = line.y2;
@@ -905,9 +919,9 @@ export const Settings: React.FC = () => {
             <SettingsCardWrapper domain={DOMAINS[1]} isActive={activeDomains.includes("models")} layoutMode={layoutMode} />
           </div>
 
-          {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Appearance Card) */}
+          {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Memory Card) */}
           <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("appearance")} layoutMode={layoutMode} />
+            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("memory")} layoutMode={layoutMode} />
           </div>
 
           {/* Middle-Center Slot (Col 5-8, Row 3-4) -> Radial Hub Center Grid Cell */}
@@ -944,9 +958,9 @@ export const Settings: React.FC = () => {
             <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("tray")} layoutMode={layoutMode} />
           </div>
 
-          {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Memory Card) */}
+          {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Appearance Card) */}
           <div className="col-start-5 col-span-4 row-start-5 row-span-2 flex items-start justify-center p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[3]} isActive={activeDomains.includes("memory")} layoutMode={layoutMode} />
+            <SettingsCardWrapper domain={DOMAINS[3]} isActive={activeDomains.includes("appearance")} layoutMode={layoutMode} />
           </div>
 
         </div>

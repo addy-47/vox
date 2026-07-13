@@ -731,10 +731,10 @@ pub async fn check_tts_provider_health(
 }
 
 #[tauri::command]
-pub async fn list_remote_llm_models(
+pub async fn list_llm_models(
     state: State<'_, std::sync::Arc<AppState>>,
     provider: Option<crate::core::settings::LlmProviderConfig>,
-) -> Result<Vec<crate::core::settings::RemoteModelInfo>, String> {
+) -> Result<Vec<crate::core::settings::LlmModelInfo>, String> {
     use crate::core::settings::LlmProviderConfig;
     use crate::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
     use crate::utils::paths;

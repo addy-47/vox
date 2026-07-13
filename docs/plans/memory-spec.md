@@ -27,7 +27,7 @@ Vox separates memory into three independent cognitive systems, each implemented 
 |--------|--------|------|
 | **Working Memory** | 🟢 Completed | Active conversation |
 | **Episodic Memory** | 🟢 Completed | Historical conversations |
-| **Personal Memory** | ⚪ Not Started | Evolving user model |
+| **Personal Memory** | 🟡 Implemented (v1) | Evolving user model |
 
 Working Memory handles the active conversation. Episodic Memory preserves historical conversations. Personal Memory builds an evolving user model — it is **not** a knowledge graph, and its storage is intentionally abstract/unspecified.
 
@@ -200,7 +200,7 @@ This is the guiding principle for all future memory work.
 
 # Personal Memory
 
-**Status:** ⚪ Not Started · Purpose: *maintain a continuously evolving model of the user.* It answers *"What do I know about this user?"* rather than *"What facts exist?"* Implementation is intentionally abstract.
+**Status:** 🟡 Implemented (v1) · Purpose: *maintain a continuously evolving model of the user.* It answers *"What do I know about this user?"* rather than *"What facts exist?"* Implementation is intentionally abstract.
 
 ## Memory Categories
 
@@ -267,6 +267,15 @@ One branch preserves *what happened* (Episodic); the other preserves *what was l
 ## Design Constraints
 
 Personal Memory must **not** mandate a storage implementation — no graph database, Neo4j, RDF, or triples required. It may use any engine capable of representing temporal structured user knowledge, keeping the cognitive model stable while preserving implementation flexibility.
+
+## Implementation Note (v1)
+
+This note reconciles the design above with the v1 implementation; it does not change the design.
+
+- **Storage:** Turso SQLite. Current values live in `personal_memory(key, category, value, updated_at)` (INSERT OR REPLACE); an append-only `personal_memory_history(id, key, category, value, recorded_at)` preserves prior values. This matches the spec's Temporal Memory concept (history accumulates; current value resolved at retrieval).
+- **Extraction schema:** the implemented compaction prompt (`COMPACTION_SYSTEM_PROMPT_V2`) emits `{ "summary": "...", "memory_updates": [ { "category", "key", "value", "confidence" } ] }`, parsed into a **single** `profile_updates` array whose items each carry a `category` string (one of the spec's fixed categories). The spec's separate per-type arrays (`profile_updates` / `project_updates` / `experience_updates` / `goal_updates` / `task_updates`) were consolidated into this one categorized array.
+- **Retrieval:** structured key/value lookup, not semantic search. `load_user_profile` formats a `<user_profile>` block injected into the system prompt each turn (≤120 tokens).
+- **Live-path gap:** extraction currently runs only when an LLM provider is passed (used by benchmarks). At runtime `build_context` is called with `None` for the provider, so the LLM-compaction/extraction branch does not run live — only FIFO maintenance executes. Retrieval/injection is live; live-path extraction is not yet wired.
 
 ---
 

@@ -66,8 +66,8 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
       const isCompact = window.innerWidth < 1024;
       const routes = isCompact
-        ? ["/", "/history", "/settings", "/monitoring"]
-        : ["/", "/history", "/settings"];
+        ? ["/", "/memory", "/history", "/settings", "/monitoring"]
+        : ["/", "/memory", "/history", "/settings"];
 
       const currentIndex = routes.indexOf(location.pathname);
       if (currentIndex === -1) return;

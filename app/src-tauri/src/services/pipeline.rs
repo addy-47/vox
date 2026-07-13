@@ -613,7 +613,7 @@ impl PipelineOrchestrator {
             let s = self.settings.read().unwrap();
             s.interaction.pipeline_mode.clone()
         };
-        let local_is_remote_llm = {
+        let local_is_external_llm = {
             let s = self.settings.read().unwrap();
             matches!(
                 s.llm.provider,
@@ -1235,7 +1235,7 @@ impl PipelineOrchestrator {
                     let elapsed_secs = first_time.elapsed().as_secs_f32();
                     let tps = if elapsed_secs > 0.5 {
                         turn_tokens_generated as f32 / elapsed_secs
-                    } else if local_is_remote_llm {
+                    } else if local_is_external_llm {
                         30.0
                     } else {
                         3.5

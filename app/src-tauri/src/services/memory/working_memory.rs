@@ -531,7 +531,7 @@ mod tests {
     use crate::services::llm::providers::LlmProvider;
     use crate::core::events::VoxEvent;
     use crate::services::llm::ProviderKind;
-    use crate::core::settings::RemoteModelInfo;
+    use crate::core::settings::LlmModelInfo;
     use std::sync::mpsc;
     use std::sync::atomic::AtomicBool;
 
@@ -554,7 +554,7 @@ mod tests {
         }
 
         fn health_check(&self) -> bool { true }
-        fn list_models(&self) -> anyhow::Result<Vec<RemoteModelInfo>> { Ok(Vec::new()) }
+        fn list_models(&self) -> anyhow::Result<Vec<LlmModelInfo>> { Ok(Vec::new()) }
         fn kind(&self) -> ProviderKind { ProviderKind::Embedded }
     }
 

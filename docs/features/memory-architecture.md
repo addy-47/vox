@@ -5,6 +5,8 @@
 
 ---
 
+> **Terminology Update (v1):** This document previously described a "Semantic Memory" / "Knowledge Graph" layer and "Entity Extraction (NER)". Those terms are **retired**. The implemented system uses **Personal Memory** (a structured key/value user profile) and **Memory Extraction** (compaction-based profile extraction that reuses the chat LLM). The sections below reflect the current v1 implementation.
+
 ## 1. Subsystem Architecture Overview
 
 Vox implements a 3-tier cognitive memory architecture designed for real-time voice interaction without pipeline latency stalls.
@@ -26,10 +28,13 @@ Vox implements a 3-tier cognitive memory architecture designed for real-time voi
 │    - Turso Database Storage (`episodes` table with `F32_BLOB(1024)` vectors).               │
 │    - Zero-Magic-Number Dynamic Round-Robin Retrieval & Session Budgeting.                   │
 │                                                                                             │
-│ 3. SEMANTIC MEMORY & PROFILE LAYER (Planned Future Architecture)                            │
-│    - Structured Key-Value User Profile Store (`user_profile` table in Turso DB).            │
-│    - Hybrid Search: Turso `FTS5` BM25 Lexical Search + BGE-M3 Dense Vector RRF.              │
-│    - Turso Native Vector Indexing (`libsql_vector_idx` / DiskANN).                           │
+│ 3. PERSONAL MEMORY (Implemented v1)                                                             │
+│    - Turso KV store: `personal_memory` (current values) + `personal_memory_history` (append-only log). │
+│    - `<user_profile>` block injected into the system prompt every turn via structured key/value lookup. │
+│    - NOT semantic search, NOT FTS5. Key normalization collapses synonyms to canonical keys/categories. │
+│    - Extraction via `COMPACTION_SYSTEM_PROMPT_V2`: LLM emits a single `profile_updates` array (items carry a `category`). │
+│    - LIVE PATH: retrieval/injection is wired into the pipeline; extraction runs only when an LLM provider is passed │
+│      (currently benchmarks / test paths) — not yet active in the live pipeline (FIFO maintenance only). │
 │                                                                                             │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -71,13 +76,24 @@ Vox uses the pure-Rust **Turso Database Engine** (`turso` crate v0.7.0-pre, buil
 
 ## 4. Ingestion Write Path & Bullet-Chunk Architecture
 
-### 4.1 Ingestion Pipeline (`persistence/memory_worker.rs`)
-1. Active session finishes or transitions to `PipelineIdle`.
-2. `SessionReadyForIngestion { session_id, summary }` event sent to `vox-memory-worker` OS thread.
-3. Worker checks `current_session_id` guard (rejects active pipeline session to prevent race conditions).
-4. `summary` is split into **Bullet-Chunks** (individual lines $\ge 15$ characters).
-5. Each bullet chunk is embedded via BGE-M3 (1024-dim) and written to `episodes` table.
-6. `sessions.embedding_status` updated to `'embedded'`.
+### 4.1 Episodic Ingestion Path (`persistence/memory_worker.rs`)
+
+**Live path (idle sweep):** When the pipeline transitions to `PipelineIdle`, the `vox-memory-worker` OS thread runs `sweep_next_pending_session`, which selects the oldest session with `embedding_status = 'pending'` (excluding the current active session) and ingests its **last assistant turn text** (from `turns.assistant_text`) as the compaction summary. That summary is split into **Bullet-Chunks** (individual lines $\ge 15$ characters), each embedded via BGE-M3 (1024-dim) and written to the `episodes` table, after which `sessions.embedding_status` is set to `'embedded'`.
+
+**Intended / test path (`SessionReadyForIngestion`):** The worker also handles a `SessionReadyForIngestion { session_id, summary }` event (used by benchmarks and tests). It enforces a hard invariant — it rejects ingestion for the *active* pipeline session to prevent race conditions — then runs the same bullet-chunk embedding + `episodes` write. This event is **not emitted on the live runtime path** today; the idle sweep above is what drives live Episodic ingestion.
+
+### 4.2 Personal Memory Extraction (`services/memory/working_memory.rs` → `persistence/memory_worker.rs`)
+
+Personal Memory facts are extracted during **Working Memory compaction** (LLM-driven context compaction in `ConversationManager::perform_compaction_maintenance`):
+
+1. When the context crosses the critical threshold and an LLM provider is available, the conversation history is compressed using `COMPACTION_SYSTEM_PROMPT_V2`.
+2. The LLM returns JSON: `{ "summary": "...", "memory_updates": [ { "category": "...", "key": "...", "value": "...", "confidence": "..." } ] }`. The `memory_updates` field is parsed (alias `profile_updates`) into a `Vec<ProfileUpdate>` via `CompactionResponse`.
+3. The extracted `profile_updates` are forwarded as a `MemoryWorkerEvent::ProfileUpdatesReady { updates }` to the memory worker.
+4. `apply_profile_updates` normalizes each update (collapsing synonym keys/categories — e.g. `name|username|user_name → (Identity, name)`, `current_project|project → (Projects, current_project)`, `role|job|occupation → (Identity, role)`) and writes it to **both** tables:
+   - `personal_memory` via `INSERT OR REPLACE` (current value, keyed by canonical `key`).
+   - `personal_memory_history` via `INSERT` (append-only log of every change — the "Temporal Memory" concept).
+
+> **Live-path gap:** In the live pipeline (`services/pipeline.rs`), `build_context` is invoked with `None` for the LLM provider, so the LLM-compaction / profile-extraction branch does **not** run at runtime — only FIFO maintenance runs. Extraction therefore currently works only when a provider is passed (the benchmark binaries `src/bin/vox_sim_bench.rs` and `src/bin/vox_multi_session_bench.rs`, and unit tests). Personal Memory **retrieval/injection** is fully wired into the live pipeline; **extraction** is not yet active on the live path.
 
 ---
 
@@ -126,12 +142,13 @@ System Prompt Context Update (`conv_mgr.update_system_prompt`)
 
 ## 7. Recommendations & Future Architectural Roadmap
 
-1. **Structured User Profile Key-Value Store (`user_profile` table):**
-   - Create `user_profile (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER)` in Turso DB.
-   - Background worker automatically extracts core identity facts (`user_name`, `user_role`, `favorite_color`, `app_name`).
-   - Injected into system prompt as a fixed `<user_profile>` block (~50 tokens), guaranteeing **100% identity recall across infinite sessions**.
-2. **Hybrid Search (Turso FTS5 + BGE-M3 RRF):**
-   - Combine Turso `FTS5` BM25 full-text keyword search with BGE-M3 dense vector search using Reciprocal Rank Fusion (RRF).
-   - Ensures exact entity matches (`teal`, `Vox`, `Alex`) shoot to Rank #1.
-3. **Turso Native Vector Indexing (`libsql_vector_idx`):**
-   - Replace in-memory vector loop in Rust with Turso's native `libsql` vector search extensions and DiskANN indexing to support 100+ sessions at sub-10ms latency.
+1. **Structured User Profile Key-Value Store — ✅ IMPLEMENTED (v1) as `personal_memory` / `personal_memory_history`:**
+    - `personal_memory (key TEXT PRIMARY KEY, category TEXT, value TEXT, updated_at INTEGER)` holds the current value per canonical key (written via `INSERT OR REPLACE`).
+    - `personal_memory_history (id, key, category, value, recorded_at)` is an append-only log of every change (Temporal Memory).
+    - `load_user_profile` performs a structured `SELECT category, key, value FROM personal_memory ORDER BY category, key` and formats a `<user_profile>` block (truncated to ~120 tokens) injected into the system prompt every turn.
+    - Extraction (Working Memory compaction → `apply_profile_updates`) is implemented but **not yet active on the live pipeline path** (see §4.2).
+2. **Hybrid Search (Turso FTS5 + BGE-M3 RRF) — future recommendation:**
+    - Combine Turso `FTS5` BM25 full-text keyword search with BGE-M3 dense vector search using Reciprocal Rank Fusion (RRF).
+    - Ensures exact entity matches (`teal`, `Vox`, `Alex`) shoot to Rank #1.
+3. **Turso Native Vector Indexing (`libsql_vector_idx`) — future recommendation:**
+    - Replace the current in-memory linear cosine scan in Rust with Turso's native `libsql` vector search extensions and DiskANN indexing to support 100+ sessions at sub-10ms latency.

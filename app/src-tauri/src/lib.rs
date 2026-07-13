@@ -20,7 +20,7 @@ use crate::ipc::pipeline::{
 };
 use crate::ipc::settings::{
     check_llm_provider_health, check_stt_provider_health, check_tts_provider_health, get_settings,
-    list_remote_llm_models, request_boot_state, request_model_catalog, reset_settings,
+    list_llm_models, request_boot_state, request_model_catalog, reset_settings,
     setup_remote_server, update_setting, update_theme,
 };
 use crate::ipc::tray::{
@@ -461,7 +461,7 @@ pub fn run() {
             check_llm_provider_health,
             check_stt_provider_health,
             check_tts_provider_health,
-            list_remote_llm_models,
+            list_llm_models,
             crate::ipc::settings::probe_model_capabilities,
             setup_remote_server,
             get_settings,
@@ -506,6 +506,9 @@ pub fn run() {
             // Audio
             crate::ipc::audio::list_input_devices,
             crate::ipc::memory::get_personal_profile,
+            crate::ipc::memory::get_memory_stats,
+            crate::ipc::memory::get_memory_history,
+            crate::ipc::memory::trigger_memory_consolidation,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
