@@ -1,7 +1,7 @@
 use super::super::llama_cpp::LlmWorker;
 use super::{LlmProvider, ProviderKind};
 use crate::core::events::VoxEvent;
-use crate::core::settings::RemoteModelInfo;
+use crate::core::settings::LlmModelInfo;
 use super::super::LlmEngine as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -41,7 +41,7 @@ impl LlmProvider for EmbeddedProvider {
         self.model_path.exists()
     }
 
-    fn list_models(&self) -> anyhow::Result<Vec<RemoteModelInfo>> {
+    fn list_models(&self) -> anyhow::Result<Vec<LlmModelInfo>> {
         if let Some(parent) = self.model_path.parent() {
             Self::list_models_in_dir(parent)
         } else {
@@ -61,7 +61,7 @@ impl LlmProvider for EmbeddedProvider {
 
 
 impl EmbeddedProvider {
-    pub fn list_models_in_dir(dir: &Path) -> anyhow::Result<Vec<RemoteModelInfo>> {
+    pub fn list_models_in_dir(dir: &Path) -> anyhow::Result<Vec<LlmModelInfo>> {
         let mut models = Vec::new();
         if dir.exists() {
             for entry in std::fs::read_dir(dir)? {
@@ -101,7 +101,7 @@ impl EmbeddedProvider {
                                     .replace('_', " ")
                                     .replace('-', " ");
 
-                                models.push(RemoteModelInfo {
+                                models.push(LlmModelInfo {
                                     id: filename.to_string(),
                                     name: clean_name,
                                     size_bytes,

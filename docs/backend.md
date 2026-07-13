@@ -253,16 +253,24 @@ src/
 │   │       ├── supertonic.rs     # Supertonic 3 (sherpa-onnx, anti-aliasing LPF, 44kHz→24kHz)
 │   │       ├── chatterbox.rs     # ChatterboxEngine (local GGML, voice cloning, native 24kHz)
 │   │       └── chatterbox_remote.rs # ChatterboxRemoteProvider (remote GPU server, reqwest blocking)
-│   └── realtime/
-│       ├── mod.rs           # RealtimeVoiceProvider + RealtimeSession traits
-│       ├── engine.rs        # RealtimeEngine orchestrator (start/stop/barge_in)
-│       ├── audio_bridge.rs  # PCM → WebSocket sender (resampling, i16 conversion)
-│       ├── playback_bridge.rs # WebSocket receiver → PlaybackEngine
-│       ├── resampler.rs     # rubato-based sample rate conversion
-│       └── providers/
-│           ├── mod.rs
-│           ├── gemini_live.rs  # Full Gemini Live WebSocket (910 lines)
-│           └── deepgram_live.rs # Deepgram Voice Agent WebSocket (657 lines)
+│   ├── realtime/
+│   │   ├── mod.rs           # RealtimeVoiceProvider + RealtimeSession traits
+│   │   ├── engine.rs        # RealtimeEngine orchestrator (start/stop/barge_in)
+│   │   ├── audio_bridge.rs  # PCM → WebSocket sender (resampling, i16 conversion)
+│   │   ├── playback_bridge.rs # WebSocket receiver → PlaybackEngine
+│   │   ├── resampler.rs     # rubato-based sample rate conversion
+│   │   └── providers/
+│   │       ├── mod.rs
+│   │       ├── gemini_live.rs  # Full Gemini Live WebSocket (910 lines)
+│   │       └── deepgram_live.rs # Deepgram Voice Agent WebSocket (657 lines)
+│   └── memory/
+│       ├── mod.rs            # Module exports (classifier, embedder, retrieval, tokenizer, working_memory, personal_memory)
+│       ├── classifier.rs     # DistilBERT query-sieve (classify_query, init_classifier)
+│       ├── embedder.rs       # BGE-M3 1024-dim embeddings (generate_embedding, cosine_similarity)
+│       ├── retrieval.rs      # Episodic retrieval + personal memory injection
+│       ├── tokenizer.rs      # estimate_tokens
+│       ├── working_memory.rs # ConversationManager, compaction, ProfileUpdate
+│       └── personal_memory.rs # load_user_profile
 ├── ipc/
 │   ├── mod.rs
 │   ├── pipeline.rs  # launch_engine, stop_engine, engage, start/stop_realtime_session, pause/resume
@@ -272,6 +280,7 @@ src/
 │   ├── audio.rs     # list_input_devices
 │   ├── voices.rs    # Voice library CRUD (~725 lines — add_voice, list_voices, preview, clone)
 │   ├── monitoring.rs # Runtime snapshot retrieval
+│   ├── memory.rs    # get_personal_profile (Personal Memory profile read)
 │   └── setup.rs     # Boot state, manifest, model management
 ├── persistence/
 │   ├── mod.rs
@@ -279,7 +288,8 @@ src/
 │   ├── events.rs    # PersistenceEvent enum
 │   ├── schema.rs    # run_migrations()
 │   ├── voices.rs    # VoiceEntry struct, CRUD for voice library
-│   └── worker.rs    # spawn_persistence_worker() — dedicated OS thread
+│   ├── worker.rs    # spawn_persistence_worker() — dedicated OS thread
+│   └── memory_worker.rs # spawn_memory_worker() — background memory ingestion (episodic + personal)
 ├── monitoring/
 │   ├── mod.rs
 │   ├── aggregator.rs    # TelemetryAggregator — crossbeam-based background worker
@@ -309,6 +319,25 @@ src/
     ├── test-emotion-tags.rs  # Emotion tag test
     └── test-translit.rs      # Transliteration test
 ```
+
+### Memory Subsystem
+
+Vox implements three cooperating memory systems, all rooted in `services/memory/`
+and the background `persistence/memory_worker.rs`. See
+[`docs/features/memory-architecture.md`](features/memory-architecture.md) for the
+full design.
+
+| System | Purpose | Key files | Storage |
+|--------|---------|-----------|---------|
+| **Working Memory** | In-session conversation history, compaction, and profile-update extraction | `services/memory/working_memory.rs` (`ConversationManager`, `ProfileUpdate`) | In-memory (per session) |
+| **Episodic Memory** | Long-term recall of past sessions via semantic embeddings, gated by a DistilBERT query-sieve | `services/memory/embedder.rs` (BGE-M3 1024-dim), `classifier.rs` (DistilBERT gate), `retrieval.rs` (linear cosine retrieval); `episodes` table | `episodes` table |
+| **Personal Memory** | Durable user profile (`<user_profile>` block injected each turn), extracted by reusing the chat LLM | `services/memory/personal_memory.rs` (`load_user_profile`), `persistence/memory_worker.rs` (`apply_profile_updates`); `personal_memory` + `personal_memory_history` tables | `personal_memory` + `personal_memory_history` tables |
+
+The background memory worker is spawned in `lib.rs` **only when**
+`memory.bg_worker_enabled && memory.episodic_enabled && local_gpu_info.has_gpu`.
+On CPU-only / Tier 1A machines (no GPU), neither Personal Memory ingestion nor
+Episodic ingestion runs. Personal Memory extraction is currently active only when a
+provider is passed (benchmarks); the live pipeline uses FIFO maintenance.
 
 ## 7. Voice Activity Detection (VAD) - Tier 2
 
@@ -966,6 +995,7 @@ pub enum InteractionState {
     Thinking,
     AssistantSpeaking,
     Interrupted,
+    MaintainingContext, // Entered during context maintenance/compaction; plays a deterministic transition speech and is also the state used while Personal Memory extraction runs
 }
 ```
 

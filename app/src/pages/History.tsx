@@ -294,16 +294,23 @@ export const History: React.FC = () => {
 
   useEffect(() => {
     if (!containerRef.current) return;
+    let rafId: number;
     const observer = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        setDimensions({
-          width: entry.contentRect.width,
-          height: entry.contentRect.height,
-        });
-      }
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        for (let entry of entries) {
+          setDimensions({
+            width: entry.contentRect.width,
+            height: entry.contentRect.height,
+          });
+        }
+      });
     });
     observer.observe(containerRef.current);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const fetchSessions = useCallback(async () => {
@@ -496,7 +503,7 @@ export const History: React.FC = () => {
       .force("charge", forceManyBody<SessionNode>().strength(-120))
       .force("collide", forceCollide<SessionNode>().radius(135).iterations(4));
 
-    simulation.tick(120);
+    simulation.tick(30);
     simulation.stop();
 
     // Safe padding from the container edges

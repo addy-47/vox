@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::sync::Arc;
 
-use crate::core::settings::RemoteModelInfo;
+use crate::core::settings::LlmModelInfo;
 
 pub mod embedded;
 pub mod openai_compat;
@@ -28,7 +28,7 @@ pub trait LlmProvider: Send + Sync {
     fn health_check(&self) -> bool;
 
     /// Returns list of model IDs the provider can serve.
-    fn list_models(&self) -> anyhow::Result<Vec<RemoteModelInfo>>;
+    fn list_models(&self) -> anyhow::Result<Vec<LlmModelInfo>>;
 
     /// Human-readable provider kind.
     fn kind(&self) -> ProviderKind;

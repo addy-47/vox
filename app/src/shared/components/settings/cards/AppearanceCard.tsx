@@ -20,95 +20,56 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   return (
     <div 
       className={cn(
-        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between",
+        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between select-none",
         isSmall
           ? "w-full bg-transparent p-0"
           : cn(
-              "w-full glass-card p-5",
-              layoutMode === "full-min" ? "lg:w-[240px] xl:w-[280px] 2xl:w-[320px]" : "lg:w-[320px]"
+              "w-full glass-card p-5 h-[190px] xl:h-[195px]",
+              isMin ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]"
             )
       )}
     >
-      {/* Header */}
-      {!isSmall && (
-        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
-          <div className="flex items-center gap-2">
-            <Palette className="text-[rgb(var(--accent))]" size={18} />
-            <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
-              Appearance
-            </span>
-          </div>
-          
-          {/* Dark/Light Theme toggle for desktop */}
-          <div className="flex bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-xl">
-            {[
-              { id: "dark", icon: Moon },
-              { id: "light", icon: Sun },
-            ].map((t) => (
-              <button
-                key={t.id}
-                onClick={() => updateDraft("ui", "theme", t.id)}
-                className={cn(
-                  "p-1.5 rounded-lg transition-all duration-300",
-                  ui.theme === t.id
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                    : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-                aria-label={`Switch to ${t.id} theme`}
-              >
-                <t.icon size={16} />
-              </button>
-            ))}
-          </div>
+      {/* Top Row: Header Title & Simple Theme Mode Switcher side-by-side */}
+      <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+        <div className="flex items-center gap-2">
+          <Palette className="text-[rgb(var(--accent))]" size={16} />
+          <span className="text-[11px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+            Appearance Settings
+          </span>
         </div>
-      )}
 
-      {/* Mobile inline Theme toggle row */}
-      {isSmall && (
-        <div className="flex items-center justify-between mb-4 p-2 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] font-semibold text-[11px] shrink-0">
-          <span className="text-[rgb(var(--foreground-muted))]/70 tracking-wider">COLOR THEME</span>
-          <div className="flex bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-xl">
-            {[
-              { id: "dark", icon: Moon },
-              { id: "light", icon: Sun },
-            ].map((t) => (
-              <button
-                key={t.id}
-                onClick={() => updateDraft("ui", "theme", t.id)}
-                className={cn(
-                  "p-1.5 rounded-lg transition-all duration-300",
-                  ui.theme === t.id
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                    : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-                aria-label={`Switch to ${t.id} theme`}
-              >
-                <t.icon size={14} />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* HexColorPicker filling card width */}
-      <div className="flex-1 flex items-center justify-center py-1 min-h-[180px]">
-        <div className={cn("w-full flex justify-center", !isMin && "custom-color-picker-v2")}>
-          <HexColorPicker
-            color={ui.accent_seed}
-            onChange={(color) => updateDraft("ui", "accent_seed", color)}
-            className={cn("custom-color-picker", isMin && "custom-color-picker-min")}
-            style={{ 
-              width: "100%", 
-              height: isSmall ? "165px" : "155px" 
-            }}
-          />
+        {/* Simple Sun/Moon Icon Toggle Capsule */}
+        <div className="flex bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.08)] p-0.5 rounded-xl gap-0.5">
+          {[
+            { id: "dark", icon: Moon, desc: "Dark Mode" },
+            { id: "light", icon: Sun, desc: "Light Mode" },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => updateDraft("ui", "theme", t.id)}
+              className={cn(
+                "w-7.5 h-7.5 rounded-lg transition-all duration-300 cursor-pointer border flex items-center justify-center",
+                ui.theme === t.id
+                  ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.1)]"
+                  : "bg-transparent border-transparent text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+              )}
+              aria-label={t.desc}
+              title={t.desc}
+            >
+              <t.icon size={14} />
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Hex value display */}
-      <div className="mt-4 p-2.5 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] flex items-center justify-between font-mono text-[11px] shrink-0">
-        <span className="text-[rgb(var(--foreground-muted))]/70">ACCENT HEX</span>
-        <span className="text-[rgb(var(--accent))] font-bold uppercase">{ui.accent_seed}</span>
+      {/* Bottom Row: Full card width color picker */}
+      <div className="flex-1 flex items-center justify-center min-h-0 pt-0.5">
+        <HexColorPicker
+          color={ui.accent_seed}
+          onChange={(color) => updateDraft("ui", "accent_seed", color)}
+          className="custom-color-picker w-full"
+          style={{ width: "100%", height: "92px" }}
+        />
       </div>
     </div>
   );

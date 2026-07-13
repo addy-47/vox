@@ -585,8 +585,8 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
                 {/* Local | Remote | Cloud Pills (left-aligned) */}
                 <div className="flex items-center gap-3">
                   {[
-                    { id: "local", label: "Local", icon: Brain },
-                    { id: "remote", label: "Remote", icon: Server },
+                    { id: "local", label: "Embedded", icon: Brain },
+                    { id: "remote", label: "Server", icon: Server },
                     { id: "cloud", label: "Cloud", icon: Cloud }
                   ].map((mode, idx, arr) => {
                     const isActive = activePill === mode.id;
@@ -711,7 +711,7 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
               <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
                 <span className="font-bold text-[11px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
                   <Network size={16} className="text-[rgb(var(--accent))]" />
-                  Remote Host Settings
+                  Server Connection Settings
                 </span>
                 {renderLlmStatusBadge()}
               </div>
@@ -879,7 +879,7 @@ export const InteractionCard = memo(({ layoutMode = "full-max" }: InteractionCar
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">Remote Sandbox Path</label>
+                  <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">Server Sandbox Path</label>
                   <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
                     <input
                       type="text"

@@ -25,8 +25,12 @@ Vox is a **model-agnostic, role-based system** with a selection strategy that is
 | **TTS** (Primary) | **Supertonic 3** | `supertonic_tts` | ~144 MB | INT8, sherpa-onnx, 31 languages, 10 voices |
 | **TTS** (Local clone) | **Chatterbox Local** | `chatterbox_tts` | ~1.1 GB | 340M Q4 GGML, voice cloning from 5s reference |
 | **TTS** (Remote) | **Chatterbox Remote** | `chatterbox_remote` | 0 MB (local) | Offload to remote CUDA GPU server |
+| **Embedding** (Episodic) | **BGE-M3** | `bge-m3` | ~544 MB | 1024-dim ONNX INT8, L2-normalized, fixed path `~/.vox/models/embedding/bge-m3/` (not in manifest) |
+| **Query Classifier** (Episodic gate) | **DistilBERT `query-sieve`** | `distilbert-query-classifier` | — | Lightweight quantized ONNX, fixed path `~/.vox/models/classifier/distilbert-query-classifier/` (not in manifest) |
 
 > \* Cloud LLM options are available via `OpenAiCompatProvider` — see §6.2.
+>
+> \*\* The **Embedding** and **Query Classifier** models are part of the memory subsystem (see §2.1). Unlike the realtime roles above, they are **not listed in `manifests/models_manifest.json`** — they load from fixed paths under `~/.vox/models/` and are **gracefully skipped if absent** (Episodic Memory degrades to no-vector mode; the query gate falls back to `SEMANTIC`).
 
 ---
 
@@ -40,6 +44,23 @@ The system is architected around **four specialized roles**:
 4. **TTS (Text-to-Speech)** — Audio synthesis
 
 Each role has **strict memory + latency constraints** and is **replaceable** without affecting others.
+
+> **Beyond the four realtime roles**, the **memory subsystem** runs two additional local models that are *not* part of the live voice pipeline:
+> - **BGE-M3** (`bge-m3`) — dense vector embeddings for Episodic Memory retrieval.
+> - **DistilBERT `query-sieve`** (`distilbert-query-classifier`) — the Episodic query gate that decides whether a query needs RAG (`GENERIC` bypasses retrieval).
+>
+> These are loaded from fixed paths (not the manifest) and degrade gracefully when absent. See §2.1.
+
+### 2.1 Memory Models (Out-of-Pipeline)
+
+Personal Memory extraction does **not** use a dedicated model — it reuses the **configured chat LLM** (e.g. `llama_3_2_reasoning_q4`) via `COMPACTION_SYSTEM_PROMPT_V2`, which performs session compaction and emits `profile_updates` / `memory_updates`. The only dedicated memory models are the embedding and classifier models below.
+
+| Model | ID | Footprint | Details |
+| :--- | :--- | :---: | :--- |
+| **BGE-M3** embedding | `bge-m3` | ~544 MB | `BAAI/bge-m3` (Xenova ONNX INT8), 1024-dim, L2-normalized. Loaded from `~/.vox/models/embedding/bge-m3/`. Powers Episodic Memory vector search. |
+| **DistilBERT `query-sieve`** | `distilbert-query-classifier` | — | Quantized ONNX classifier. Loaded from `~/.vox/models/classifier/distilbert-query-classifier/`. Gates Episodic retrieval: `GENERIC` queries skip RAG. |
+
+Both models are **absent from `manifests/models_manifest.json`** and load from fixed paths. If the files are missing, the embedder logs a warning and skips init (Episodic Memory runs without vectors), and the classifier falls back to a safe `SEMANTIC` default so knowledge retention is preserved.
 
 ---
 

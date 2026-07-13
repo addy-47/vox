@@ -201,6 +201,22 @@ The chosen prompt always gets an expression tag appendix:
 
 These tags are processed by the TTS engine (Supertonic 3) to produce emotional/prosodic variation in the audio output. Verified working: `<laugh>` adds ~18% duration and produces audibly different audio.
 
+### Personal Memory Injection
+
+Every turn, after the language-routed prompt is resolved, Vox appends a **Personal Memory** `<user_profile>` block to the system prompt. This block is retrieved from the `personal_memory` Turso table via `load_user_profile` (`services/memory/personal_memory.rs`), which reads `category` / `key` / `value` rows and formats them as a structured, XML-style block:
+
+```
+<user_profile>
+[<category>]
+<key>: <value>
+...
+
+Instructions: Always address the user by name (Alex) when recalling their profile.
+</user_profile>
+```
+
+The block is truncated to a **≤120-token budget** (line-based truncation if exceeded) so it stays a small, fixed overhead on the context window. This is the "what Vox knows about the user" context and is **active in the live pipeline** — it is injected on every turn before LLM generation. (Extraction of new profile facts is a separate, not-yet-live path; see [Context Maintenance](#context-maintenance-working-memory).)
+
 ---
 
 ## Stage 5: LLM Generation (Llama-3.2-1B-Instruct)
@@ -537,11 +553,36 @@ Each interaction records:
          │     PlaybackFinish       │ (new SpeechStart)            │ LLM Token
          │     ┌────────────────────┘                              │
          │     ↓                                                   ↓
-    ┌──────────┐                                            ┌──────────┐
-    │Assistant │←───────────────────────────────────────────│  User    │
-    │Speaking  │  First TTSChunk                             │Speaking │ (handoff)
-    └──────────┘                                            └──────────┘
+     ┌──────────┐                                            ┌──────────┐
+     │Assistant │←───────────────────────────────────────────│  User    │
+     │Speaking  │  First TTSChunk                             │Speaking │ (handoff)
+     └──────────┘                                            └──────────┘
+
+     Context maintenance (FIFO threshold reached during Thinking / UserSpeaking):
+              ┌──────────────────┐
+              │ MaintainingContext│
+              └──────────────────┘
+                  │            ▲
+      threshold   │            │ transition speech
+      reached     │            │ played, resume generation
+                  ▼            │
+              ┌──────────┐
+              │ Thinking │
+              └──────────┘
 ```
+
+`MaintainingContext` is entered when context maintenance triggers during a turn. It plays a deterministic transition speech (so the user hears that context is being maintained) and then returns to `Thinking` to resume generation. See [Context Maintenance](#context-maintenance-working-memory) below.
+
+---
+
+## Context Maintenance (Working Memory)
+
+`ConversationManager` (Working Memory) owns context maintenance. When context utilization crosses a critical threshold, maintenance runs before the next generation:
+
+- **Threshold (FIFO sliding window):** drops the oldest `(User, Assistant)` pairs until utilization falls below the soft threshold. This is the **only maintenance strategy active in the live path** — `build_context` is invoked with `None` for the LLM provider, so the LLM-compaction branch is skipped at runtime.
+- **Opportunistic compaction (LLM-driven):** summarizes history and extracts Personal Memory profile updates. This branch only runs when an `LlmProvider` is passed (benchmarks / non-live paths), so **Personal Memory extraction is NOT yet active in the live pipeline** — only retrieval/injection (below) is.
+
+The `MaintainingContext` state (above) is entered when FIFO maintenance triggers; it plays a deterministic transition speech, then returns to `Thinking` to resume generation.
 
 ---
 
