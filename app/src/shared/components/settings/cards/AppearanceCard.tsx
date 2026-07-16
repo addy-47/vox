@@ -24,7 +24,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
         isSmall
           ? "w-full bg-transparent p-0"
           : cn(
-              "w-full glass-card p-5 h-[190px] xl:h-[195px]",
+              "w-full glass-card p-5 min-h-[180px] h-full",
               isMin ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]"
             )
       )}
