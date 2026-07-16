@@ -24,8 +24,8 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
         isSmall
           ? "w-full bg-transparent p-0"
           : cn(
-              "w-full glass-card p-5 h-[240px]",
-              isMin ? "lg:w-[320px] xl:w-[360px] 2xl:w-[380px]" : "lg:w-[380px]"
+              "w-full glass-card p-5 min-h-[310px] h-full justify-between transition-all duration-300",
+              isMin ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
             )
       )}
     >
