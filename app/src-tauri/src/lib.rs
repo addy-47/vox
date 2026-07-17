@@ -210,6 +210,7 @@ pub fn run() {
                 let memory_tx = crate::persistence::memory_worker::spawn_memory_worker(
                     crate::utils::paths::get().db.clone(),
                     std::sync::Arc::clone(&is_private_mode),
+                    std::sync::Arc::clone(&app_state.settings),
                 );
                 app_state.memory_tx = std::sync::Mutex::new(Some(memory_tx));
                 log::info!("[BOOTSTRAP] Memory Worker spawned on background thread.");
@@ -507,8 +508,13 @@ pub fn run() {
             crate::ipc::audio::list_input_devices,
             crate::ipc::memory::get_personal_profile,
             crate::ipc::memory::get_memory_stats,
-            crate::ipc::memory::get_memory_history,
             crate::ipc::memory::trigger_memory_consolidation,
+            crate::ipc::memory::get_collection_facts,
+            crate::ipc::memory::get_memory_graph,
+            crate::ipc::memory::get_memory_conflicts,
+            crate::ipc::memory::user_edit_memory,
+            crate::ipc::memory::user_delete_memory,
+            crate::ipc::memory::resolve_memory_conflict,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

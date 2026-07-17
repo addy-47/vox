@@ -126,41 +126,86 @@ Analyze the provided conversation log and compress it into a single high-density
 Output dense, high-information prose using structured sections (<user_profile>, <project_state>, <technical_history>). Do NOT use conversational intro/outro. Write strictly in technical prose.";
 
 pub const COMPACTION_SYSTEM_PROMPT_V2: &str = r#"
-You are Vox's Context Engineering subsystem.
+You are Vox's Memory Extraction Subsystem. Your output is consumed by a downstream Rust pipeline, not a human. It must be machine-parseable.
 
-Your task is to convert a completed conversation into:
-1. A compact summary for future context.
-2. Durable user memories that improve future conversations.
+CRITICAL RULES:
+1. OUTPUT LANGUAGE: Always write ALL output in ENGLISH. The conversation may be in any language (Hindi, Hinglish, etc.). Your JSON output — both summary and every memory fact — MUST be in English. Translate if needed.
+2. OUTPUT FORMAT: Return ONLY a valid JSON object. No markdown, no explanation, no preamble.
+3. NO HALLUCINATION: Never invent facts not explicitly stated in the conversation.
 
-Return ONLY valid JSON in this format:
+Your task is to extract:
+  A) A compact English summary for future context continuation.
+  B) Durable English memory facts about the USER, grouped by collection.
+
+Return this exact JSON structure:
 
 {
-  "summary": "...",
-  "memory_updates": [
-    {
-      "category": "Identity|Preferences|Projects|Goals|Experiences|Skills|Relationships|Devices|Locations|Tasks",
-      "key": "snake_case_key",
-      "value": "string",
-      "confidence": "high|medium|low"
-    }
-  ]
+  "summary": "string — compact English summary preserving decisions, constraints, project state, open questions. Remove greetings and filler. Optimized for resuming the conversation.",
+  "personal_memory": {
+    "Identity":      ["fact about who the user is"],
+    "Preferences":   ["fact about user preference"],
+    "Experiences":   ["fact about something the user experienced"],
+    "Projects":      ["fact about an active or past project"],
+    "Goals":         ["fact about a goal or target"],
+    "Skills":        ["fact about a skill or expertise"],
+    "Relationships": ["fact about a person in the user's life"]
+  }
 }
 
-Summary:
-- Preserve decisions, reasoning, constraints, progress and unresolved questions.
-- Remove greetings, repetition and filler.
-- Optimize for continuing the conversation later.
+MEMORY EXTRACTION RULES:
+- Only include collections that have real facts. Omit empty collections entirely.
+- Each fact must be a complete English sentence about the USER, not the assistant.
+- Facts must be durable (relevant across future sessions), not conversational.
+- If a preference changed in this conversation, include ONLY the newest value.
+- Do NOT include: one-time requests, assistant messages, small talk, questions the user asked, or temporary states.
+- Do NOT include Tasks, Devices, or Locations — those are handled separately.
 
-Memory Updates:
-- Extract only durable knowledge about the user.
-- Store information that will likely remain useful in future conversations.
-- Examples include identity, preferences, projects, goals, skills, important experiences, devices and locations.
-- Do NOT store temporary requests, one-time questions, assistant messages or small talk.
-- If a preference changed, return only the newest value.
-- If nothing durable was learned, return an empty memory_updates array.
-
-Rules:
-- Output only the JSON object.
-- Every value must be a JSON string.
-- Never invent information.
+VALID EXAMPLE:
+{
+  "summary": "User is building Vox, a real-time Rust voice engine. Discussed memory architecture. Decided to use DeBERTa NLI for contradiction detection. Open question: whether to use Turso vector_top_k or manual cosine scan.",
+  "personal_memory": {
+    "Identity": ["Works as a software engineer.", "Primarily codes in Rust."],
+    "Projects": ["Building Vox, a real-time desktop voice engine in Rust and Tauri."],
+    "Preferences": ["Prefers Neovim over VS Code."]
+  }
+}
 "#;
+
+// ─── Personal Memory v2 Collections ─────────────────────────────────────────
+pub const PM_COLLECTIONS: &[&str] = &[
+    "Identity", "Preferences", "Experiences", "Projects",
+    "Goals", "Tasks", "Relationships", "Skills", "Devices", "Locations",
+];
+
+// ─── Graph Relations ──────────────────────────────────────────────────────────
+pub const PM_RELATION_SUPPORTS: &str = "SUPPORTS";
+pub const PM_RELATION_CONFLICTS: &str = "CONFLICTS";
+pub const PM_RELATION_USER_SUPERSEDES: &str = "USER_SUPERSEDES";
+
+// ─── Memory Sources ───────────────────────────────────────────────────────────
+pub const PM_SOURCE_LLM: &str = "LLM";
+pub const PM_SOURCE_USER: &str = "User";
+pub const PM_SOURCE_IMPORT: &str = "Import";
+
+// ─── Retrieval Strategies ─────────────────────────────────────────────────────
+pub const PM_STRATEGY_ALWAYS: &str = "always";   // Identity
+pub const PM_STRATEGY_VECTOR: &str = "vector";   // semantic search
+pub const PM_STRATEGY_TOOL: &str = "tool";       // tool-call only
+
+// ─── Job Queue Status ─────────────────────────────────────────────────────────
+pub const PM_QUEUE_STATUS_PENDING: &str = "pending";
+pub const PM_QUEUE_STATUS_PROCESSING: &str = "processing";
+pub const PM_QUEUE_STATUS_DONE: &str = "done";
+pub const PM_QUEUE_STATUS_FAILED: &str = "failed";
+
+// ─── Model Paths ──────────────────────────────────────────────────────────────
+pub const MODEL_DIR_NLI: &str = "nli";
+pub const MODEL_FILE_NLI_ONNX: &str = "model_quantized.onnx";
+pub const MODEL_FILE_NLI_TOKENIZER: &str = "tokenizer.json";
+pub const MODEL_DIR_NLI_DEFAULT: &str = "deberta-v3-xsmall-nli";
+
+// ─── NLI Logit Label Indices ──────────────────────────────────────────────────
+pub const NLI_LABEL_CONTRADICTION: usize = 0;
+pub const NLI_LABEL_ENTAILMENT: usize = 1;
+pub const NLI_LABEL_NEUTRAL: usize = 2;
+
