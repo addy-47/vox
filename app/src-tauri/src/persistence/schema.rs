@@ -6,6 +6,10 @@ use turso::Connection;
 /// Idempotent — safe to call on every startup to ensure schema is current.
 /// Using INTEGER PRIMARY KEY for sessions.id (epoch ms) gives natural ordering.
 pub async fn run_migrations(conn: &Connection) -> Result<()> {
+    // Drop old v1 tables (non-destructive if they do not exist)
+    let _ = conn.execute("DROP TABLE IF EXISTS personal_memory", ()).await;
+    let _ = conn.execute("DROP TABLE IF EXISTS personal_memory_history", ()).await;
+
     let statements = [
         "CREATE TABLE IF NOT EXISTS sessions (
             id               INTEGER PRIMARY KEY,   -- epoch milliseconds
@@ -51,20 +55,55 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         );",
         "CREATE INDEX IF NOT EXISTS idx_episodes_session ON episodes(session_id);",
         "CREATE INDEX IF NOT EXISTS idx_episodes_created ON episodes(created_at DESC);",
-        "CREATE TABLE IF NOT EXISTS personal_memory (
-            key        TEXT PRIMARY KEY,
-            category   TEXT NOT NULL,
-            value      TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
+        
+        // --- Personal Memory v2 Tables ---
+        "CREATE TABLE IF NOT EXISTS memory_facts (
+            id           TEXT PRIMARY KEY,
+            collection   TEXT NOT NULL,
+            fact         TEXT NOT NULL,
+            source       TEXT NOT NULL DEFAULT 'LLM',
+            created_at   INTEGER NOT NULL,
+            session_id   TEXT NOT NULL DEFAULT '',
+            turn_id      TEXT NOT NULL DEFAULT '',
+            embedding_id INTEGER,
+            metadata     TEXT
         );",
-        "CREATE TABLE IF NOT EXISTS personal_memory_history (
+        "CREATE INDEX IF NOT EXISTS idx_mf_collection ON memory_facts(collection);",
+        "CREATE INDEX IF NOT EXISTS idx_mf_created ON memory_facts(created_at DESC);",
+        
+        "CREATE TABLE IF NOT EXISTS memory_facts_vectors (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            key         TEXT NOT NULL,
-            category    TEXT NOT NULL,
-            value       TEXT NOT NULL,
-            recorded_at INTEGER NOT NULL
+            fact_id     TEXT NOT NULL REFERENCES memory_facts(id),
+            collection  TEXT NOT NULL,
+            embedding   F32_BLOB(1024) NOT NULL
         );",
-        "CREATE INDEX IF NOT EXISTS idx_pm_history_key ON personal_memory_history(key, recorded_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_mfv_collection ON memory_facts_vectors(collection);",
+        
+        "CREATE TABLE IF NOT EXISTS memory_relations (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_id     TEXT NOT NULL REFERENCES memory_facts(id),
+            to_id       TEXT NOT NULL REFERENCES memory_facts(id),
+            relation    TEXT NOT NULL,
+            created_at  INTEGER NOT NULL,
+            UNIQUE(from_id, to_id, relation)
+        );",
+        "CREATE INDEX IF NOT EXISTS idx_mr_from ON memory_relations(from_id, relation);",
+        "CREATE INDEX IF NOT EXISTS idx_mr_to ON memory_relations(to_id, relation);",
+        
+        "CREATE TABLE IF NOT EXISTS personal_memory_queue (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            fact         TEXT NOT NULL,
+            collection   TEXT NOT NULL,
+            source       TEXT NOT NULL DEFAULT 'LLM',
+            session_id   TEXT NOT NULL DEFAULT '',
+            status       TEXT NOT NULL DEFAULT 'pending',
+            attempts     INTEGER NOT NULL DEFAULT 0,
+            error_msg    TEXT,
+            created_at   INTEGER NOT NULL,
+            processed_at INTEGER
+        );",
+        "CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, created_at ASC);",
+        "CREATE INDEX IF NOT EXISTS idx_episodes_search ON episodes USING fts (summary);"
     ];
 
     for stmt in statements {
@@ -189,25 +228,25 @@ mod tests {
             "embedding_status column must exist in sessions table"
         );
         
-        // Verify personal_memory table exists
+        // Verify memory_facts table exists
         let mut rows = conn
             .query(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='personal_memory'",
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memory_facts'",
                 (),
             )
             .await?;
-        let pm_count: i64 = rows.next().await?.unwrap().get(0)?;
-        assert_eq!(pm_count, 1);
+        let mf_count: i64 = rows.next().await?.unwrap().get(0)?;
+        assert_eq!(mf_count, 1);
 
-        // Verify personal_memory_history table exists
+        // Verify memory_relations table exists
         let mut rows = conn
             .query(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='personal_memory_history'",
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memory_relations'",
                 (),
             )
             .await?;
-        let pmh_count: i64 = rows.next().await?.unwrap().get(0)?;
-        assert_eq!(pmh_count, 1);
+        let mr_count: i64 = rows.next().await?.unwrap().get(0)?;
+        assert_eq!(mr_count, 1);
 
         Ok(())
     }

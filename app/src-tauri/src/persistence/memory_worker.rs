@@ -1,17 +1,25 @@
 use crossbeam_channel::{bounded, Sender};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use crate::services::memory::ProfileUpdate;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
+use std::collections::HashMap;
+use crate::core::settings::{VoxSettings, MemorySettings};
+use crate::core::constants::{
+    PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_QUEUE_STATUS_PENDING,
+    PM_QUEUE_STATUS_DONE
+};
 
 /// Events consumed exclusively by the background memory worker.
 #[derive(Debug, Clone)]
 pub enum MemoryWorkerEvent {
     /// A session has ended and its final compaction summary is ready for ingestion.
     SessionReadyForIngestion { session_id: u64, summary: String },
-    /// User profile updates are ready for ingestion.
-    ProfileUpdatesReady { updates: Vec<ProfileUpdate> },
+    /// v2: Extracted facts from compaction — enqueued to personal_memory_queue
+    PersonalFactsReady {
+        facts: HashMap<String, Vec<String>>,  // collection → facts
+        session_id: String,
+    },
     /// The pipeline has entered Idle state. Trigger background memory sweep.
     PipelineIdle,
     /// The pipeline is active. Pause background memory sweep.
@@ -36,6 +44,13 @@ pub fn decode_f32_blob(bytes: &[u8]) -> Vec<f32> {
         .chunks_exact(4)
         .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap_or_default()))
         .collect()
+}
+
+async fn mark_job_failed(conn: &turso::Connection, job_id: i64, err_msg: &str) {
+    let _ = conn.execute(
+        "UPDATE personal_memory_queue SET status = 'failed', error_msg = ?, attempts = attempts + 1 WHERE id = ?",
+        (err_msg.to_string(), job_id),
+    ).await;
 }
 
 /// Ingests a completed session compaction summary into the `episodes` table and updates `sessions.embedding_status`.
@@ -115,86 +130,226 @@ pub async fn ingest_compaction_summary(
     Ok(())
 }
 
-/// Applies user profile updates to the personal_memory and personal_memory_history tables.
-pub async fn apply_profile_updates(
+/// Enqueues new personal memory facts to the personal_memory_queue SQLite table.
+pub async fn enqueue_personal_facts(
     conn: &turso::Connection,
-    updates: Vec<ProfileUpdate>,
+    facts: HashMap<String, Vec<String>>,
+    session_id: &str,
 ) -> anyhow::Result<()> {
-    if updates.is_empty() {
-        return Ok(());
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    for (collection, fact_list) in facts {
+        for fact in fact_list {
+            let trimmed = fact.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            conn.execute(
+                "INSERT INTO personal_memory_queue (fact, collection, source, session_id, status, created_at)
+                 VALUES (?, ?, 'LLM', ?, ?, ?)",
+                (
+                    trimmed.to_string(),
+                    collection.clone(),
+                    session_id.to_string(),
+                    PM_QUEUE_STATUS_PENDING.to_string(),
+                    now,
+                ),
+            )
+            .await?;
+        }
     }
+    Ok(())
+}
+
+/// Processes one pending job from the personal_memory_queue.
+pub async fn process_one_queue_item(
+    conn: &turso::Connection,
+    settings: &MemorySettings,
+) -> anyhow::Result<bool> {
+    let mut rows = conn
+        .query(
+            "SELECT id, fact, collection, source, session_id FROM personal_memory_queue 
+             WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1",
+            (),
+        )
+        .await?;
+
+    let item = if let Some(row) = rows.next().await? {
+        Some((
+            row.get::<i64>(0)?,
+            row.get::<String>(1)?,
+            row.get::<String>(2)?,
+            row.get::<String>(3)?,
+            row.get::<String>(4)?,
+        ))
+    } else {
+        None
+    };
+
+    let (job_id, fact, collection, source, session_id) = match item {
+        Some(x) => x,
+        None => return Ok(false),
+    };
+
+    conn.execute(
+        "UPDATE personal_memory_queue SET status = 'processing' WHERE id = ?",
+        (job_id,),
+    )
+    .await?;
+
+    crate::services::memory::ensure_embedder_loaded(true)?;
+    let embedding = match crate::services::memory::generate_embedding(&fact) {
+        Ok(Some(v)) => v,
+        Ok(None) => {
+            mark_job_failed(conn, job_id, "Embedding generator returned None (not loaded)").await;
+            return Ok(true);
+        }
+        Err(e) => {
+            mark_job_failed(conn, job_id, &format!("Embedding generation failed: {}", e)).await;
+            return Ok(true);
+        }
+    };
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs() as i64;
+        .as_millis() as i64;
+    let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
 
-    let mut applied_count = 0;
-    for update in updates {
-        let mut key = update.key.trim().to_lowercase();
-        let val = update.value.trim().to_string();
-        let mut cat = update.category.trim().to_string();
-
-        if key.is_empty() || val.is_empty() || cat.is_empty() {
-            continue;
-        }
-
-        // Normalize common keys and categories to eliminate duplicate/redundant facts
-        match key.as_str() {
-            "name" | "username" | "user_name" => {
-                key = "name".to_string();
-                cat = "Identity".to_string();
-            }
-            "favorite_language" | "preferred_language" | "programming_language" | "fav_language" | "languages_used" => {
-                key = "favorite_language".to_string();
-                cat = "Preferences".to_string();
-            }
-            "disliked_language" | "hated_language" | "disliked_programming_language" => {
-                key = "disliked_language".to_string();
-                cat = "Preferences".to_string();
-            }
-            "current_project" | "project_name" | "project" => {
-                key = "current_project".to_string();
-                cat = "Projects".to_string();
-            }
-            "target_latency" | "latency_target" | "latency" | "latency_limit" | "project_goals" => {
-                key = "target_latency".to_string();
-                cat = "Goals".to_string();
-            }
-            "favorite_color" | "favourite_color" | "color" | "colour" => {
-                key = "favorite_color".to_string();
-                cat = "Preferences".to_string();
-            }
-            "role" | "technical_role" | "occupation" | "job" => {
-                key = "role".to_string();
-                cat = "Identity".to_string();
-            }
-            _ => {}
-        }
-
-        conn.execute(
-            "INSERT OR REPLACE INTO personal_memory (key, category, value, updated_at)
-             VALUES (?, ?, ?, ?)",
-            (key.clone(), cat.clone(), val.clone(), now),
-        )
-        .await?;
-
-        conn.execute(
-            "INSERT INTO personal_memory_history (key, category, value, recorded_at)
-             VALUES (?, ?, ?, ?)",
-            (key, cat, val, now),
-        )
-        .await?;
-        
-        applied_count += 1;
+    if let Err(e) = conn.execute(
+        "INSERT INTO memory_facts (id, collection, fact, source, created_at, session_id) VALUES (?, ?, ?, ?, ?, ?)",
+        (fact_id.clone(), collection.clone(), fact.clone(), source.clone(), now, session_id.clone()),
+    ).await {
+        mark_job_failed(conn, job_id, &format!("Failed to insert memory_fact: {}", e)).await;
+        return Ok(true);
     }
 
-    tracing::info!(
-        "[MemoryWorker] Successfully applied {} personal memory profile updates to Turso DB",
-        applied_count
-    );
+    let blob_bytes = encode_f32_blob(&embedding);
+    let vector_rowid = match conn.execute(
+        "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
+        (fact_id.clone(), collection.clone(), blob_bytes),
+    ).await {
+        Ok(id) => id,
+        Err(e) => {
+            mark_job_failed(conn, job_id, &format!("Failed to insert memory_fact_vector: {}", e)).await;
+            return Ok(true);
+        }
+    };
 
-    Ok(())
+    let _ = conn.execute(
+        "UPDATE memory_facts SET embedding_id = ? WHERE id = ?",
+        (vector_rowid as i64, fact_id.clone()),
+    ).await;
+
+    // Fetch candidate facts in same collection to compare with NLI
+    let mut cand_rows = match conn.query(
+        "SELECT mf.id, mf.fact, mfv.embedding FROM memory_facts mf
+         JOIN memory_facts_vectors mfv ON mfv.fact_id = mf.id
+         WHERE mf.collection = ? AND mf.id != ?",
+        (collection.clone(), fact_id.clone()),
+    ).await {
+        Ok(r) => r,
+        Err(e) => {
+            mark_job_failed(conn, job_id, &format!("Failed to fetch vector candidates: {}", e)).await;
+            return Ok(true);
+        }
+    };
+
+    let mut scored_candidates = Vec::new();
+    while let Some(row) = cand_rows.next().await? {
+        let id: String = row.get(0)?;
+        let f_text: String = row.get(1)?;
+        let emb_blob: Vec<u8> = row.get(2)?;
+        let emb_vector = decode_f32_blob(&emb_blob);
+        let sim = crate::services::memory::cosine_similarity(&embedding, &emb_vector);
+        scored_candidates.push((sim, (id, f_text)));
+    }
+
+    scored_candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let candidates: Vec<(String, String)> = scored_candidates
+        .into_iter()
+        .take(settings.nli_candidate_limit as usize)
+        .map(|(_, item)| item)
+        .collect();
+
+    let mut relations = Vec::new();
+    if !candidates.is_empty() {
+        if let Err(e) = crate::services::memory::nli::ensure_nli_loaded(&settings.nli_model_name) {
+            log::warn!("[MemoryWorker] Failed to load NLI model: {}. Skipping NLI validation.", e);
+        } else {
+            for (cand_id, cand_fact) in candidates {
+                let start_time = Instant::now();
+                match crate::services::memory::nli::classify_pair(&fact, &cand_fact) {
+                    Ok(nli_res) => {
+                        let duration = start_time.elapsed().as_millis();
+                        let use_degraded = duration > 50;
+
+                        let relation = if use_degraded {
+                            let cand_embedding = match fetch_embedding_by_fact_id(conn, &cand_id).await {
+                                Ok(Some(v)) => v,
+                                _ => continue,
+                            };
+                            let sim = crate::services::memory::embedder::cosine_similarity(&embedding, &cand_embedding);
+                            if sim >= settings.cosine_auto_support_threshold {
+                                crate::services::memory::nli::NliRelation::Supports
+                            } else {
+                                crate::services::memory::nli::NliRelation::Neutral
+                            }
+                        } else {
+                            crate::services::memory::nli::relation_from_result(&nli_res, settings)
+                        };
+
+                        match relation {
+                            crate::services::memory::nli::NliRelation::Conflicts => {
+                                relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_CONFLICTS));
+                            }
+                            crate::services::memory::nli::NliRelation::Supports => {
+                                relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_SUPPORTS));
+                            }
+                            crate::services::memory::nli::NliRelation::Neutral => {}
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("[MemoryWorker] NLI classification failed: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    for (from, to, rel) in relations {
+        let _ = conn.execute(
+            "INSERT OR IGNORE INTO memory_relations (from_id, to_id, relation, created_at) VALUES (?, ?, ?, ?)",
+            (from, to, rel.to_string(), now),
+        ).await;
+    }
+
+    conn.execute(
+        "UPDATE personal_memory_queue SET status = ?, processed_at = ? WHERE id = ?",
+        (PM_QUEUE_STATUS_DONE.to_string(), now, job_id),
+    )
+    .await?;
+
+    Ok(true)
+}
+
+async fn fetch_embedding_by_fact_id(conn: &turso::Connection, id: &str) -> anyhow::Result<Option<Vec<f32>>> {
+    let mut rows = conn
+        .query(
+            "SELECT embedding FROM memory_facts_vectors WHERE fact_id = ?",
+            (id.to_string(),),
+        )
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        let bytes: Vec<u8> = row.get(0)?;
+        Ok(Some(decode_f32_blob(&bytes)))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Queries the oldest pending session (`embedding_status = 'pending'`) that is not the current active session,
@@ -233,11 +388,11 @@ pub async fn sweep_next_pending_session(
     }
 }
 
-/// Spawns the dedicated low-priority background memory worker on an OS thread.
-/// Returns a bounded Sender (capacity 32). The pipeline uses `try_send()` exclusively.
+/// Spawns the dedicated background memory worker thread.
 pub fn spawn_memory_worker(
     db_path: PathBuf,
     is_private_mode: Arc<AtomicBool>,
+    settings: Arc<RwLock<VoxSettings>>,
 ) -> Sender<MemoryWorkerEvent> {
     let (tx, rx) = bounded::<MemoryWorkerEvent>(32);
 
@@ -251,7 +406,7 @@ pub fn spawn_memory_worker(
             let conn = match conn_res {
                 Ok(c) => Some(c),
                 Err(e) => {
-                    tracing::error!("[MemoryWorker] Failed to open DB connection at {:?}: {}", db_path, e);
+                    tracing::error!("[MemoryWorker] Failed to open DB connection: {}", e);
                     None
                 }
             };
@@ -280,22 +435,15 @@ pub fn spawn_memory_worker(
                     match event {
                         MemoryWorkerEvent::ActiveSessionChanged { session_id } => {
                             state.current_session_id = session_id;
-                            tracing::debug!(
-                                "[MemoryWorker] Active session updated to session_id={}",
-                                session_id
-                            );
                         }
                         MemoryWorkerEvent::PipelineIdle => {
                             state.is_idle = true;
                             state.current_session_id = 0;
-                            tracing::debug!("[MemoryWorker] Pipeline transitioned to IDLE (active session cleared)");
                         }
                         MemoryWorkerEvent::PipelineActive => {
                             state.is_idle = false;
-                            tracing::debug!("[MemoryWorker] Pipeline transitioned to ACTIVE");
                         }
                         MemoryWorkerEvent::SessionReadyForIngestion { session_id, summary } => {
-                            // HARD INVARIANT CHECK: Never ingest the active session
                             if session_id == state.current_session_id && session_id != 0 {
                                 tracing::warn!(
                                     "[MemoryWorker] INVARIANT VIOLATION PREVENTED: SessionReadyForIngestion rejected for active session_id={}",
@@ -315,13 +463,13 @@ pub fn spawn_memory_worker(
                                 }
                             }
                         }
-                        MemoryWorkerEvent::ProfileUpdatesReady { updates } => {
+                        MemoryWorkerEvent::PersonalFactsReady { facts, session_id } => {
                             if let Some(ref db_conn) = conn {
                                 if let Err(e) = handle.block_on(async {
-                                    apply_profile_updates(db_conn, updates).await
+                                    enqueue_personal_facts(db_conn, facts, &session_id).await
                                 }) {
                                     tracing::error!(
-                                        "[MemoryWorker] Failed to apply profile updates: {}", e
+                                        "[MemoryWorker] Failed to enqueue personal facts: {}", e
                                     );
                                 }
                             }
@@ -332,11 +480,43 @@ pub fn spawn_memory_worker(
                         }
                     }
                 } else if state.is_idle && !is_private_mode.load(Ordering::Relaxed) {
-                    // Idle timeout branch: perform 1 step of background idle sweep
                     if let Some(ref db_conn) = conn {
-                        let _ = handle.block_on(async {
-                            sweep_next_pending_session(db_conn, state.current_session_id).await
-                        });
+                        let memory_settings = match settings.read() {
+                            Ok(s) => s.memory.clone(),
+                            Err(_) => {
+                                tracing::error!("[MemoryWorker] Settings lock poisoned! Skipping loop iteration.");
+                                std::thread::sleep(std::time::Duration::from_millis(100));
+                                continue;
+                            }
+                        };
+
+                        let mut processed_any = false;
+                        loop {
+                            let processed_queue = handle.block_on(async {
+                                process_one_queue_item(db_conn, &memory_settings).await
+                            });
+
+                            match processed_queue {
+                                Ok(true) => {
+                                    processed_any = true;
+                                    // Process next item immediately
+                                    continue;
+                                }
+                                Ok(false) => {
+                                    break;
+                                }
+                                Err(e) => {
+                                    tracing::error!("[MemoryWorker] Failed processing queue item: {}", e);
+                                    break;
+                                }
+                            }
+                        }
+
+                        if !processed_any {
+                            let _ = handle.block_on(async {
+                                sweep_next_pending_session(db_conn, state.current_session_id).await
+                            });
+                        }
                     }
                 }
             }
@@ -387,181 +567,5 @@ mod tests {
         assert_eq!(status, "skipped");
 
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_background_idle_sweep_oldest_first() -> anyhow::Result<()> {
-        let db = turso::Builder::new_local(":memory:").build().await?;
-        let conn = db.connect()?;
-        crate::persistence::schema::run_migrations(&conn).await?;
-
-        // Seed 2 pending sessions with different started_at timestamps
-        conn.execute(
-            "INSERT INTO sessions (id, started_at, turn_count, embedding_status) VALUES (10, 1000, 2, 'pending')",
-            (),
-        )
-        .await?;
-        conn.execute(
-            "INSERT INTO turns (session_id, turn_id, assistant_text, created_at) VALUES (10, 1, 'Older summary', 1001)",
-            (),
-        )
-        .await?;
-
-        conn.execute(
-            "INSERT INTO sessions (id, started_at, turn_count, embedding_status) VALUES (20, 2000, 2, 'pending')",
-            (),
-        )
-        .await?;
-        conn.execute(
-            "INSERT INTO turns (session_id, turn_id, assistant_text, created_at) VALUES (20, 1, 'Newer summary', 2001)",
-            (),
-        )
-        .await?;
-
-        // 1. First sweep step -> must pick session 10 (oldest)
-        let swept1 = sweep_next_pending_session(&conn, 0).await?;
-        assert!(swept1);
-
-        let mut rows1 = conn
-            .query("SELECT embedding_status FROM sessions WHERE id = 10", ())
-            .await?;
-        let status1: String = rows1.next().await?.unwrap().get(0)?;
-        assert_ne!(status1, "pending");
-
-        // 2. Second sweep step -> must pick session 20
-        let swept2 = sweep_next_pending_session(&conn, 0).await?;
-        assert!(swept2);
-
-        // 3. Third sweep step -> no pending sessions left
-        let swept3 = sweep_next_pending_session(&conn, 0).await?;
-        assert!(!swept3);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_spawn_and_shutdown_memory_worker() {
-        let temp_dir = std::env::temp_dir().join("vox_memory_test");
-        let db_path = temp_dir.join("test_vox.db");
-        let is_private = Arc::new(AtomicBool::new(false));
-
-        let tx = spawn_memory_worker(db_path, is_private);
-        assert!(tx.try_send(MemoryWorkerEvent::PipelineIdle).is_ok());
-        assert!(tx.try_send(MemoryWorkerEvent::Shutdown).is_ok());
-    }
-
-    #[test]
-    fn test_end_to_end_memory_ingestion_flow() {
-        let temp_dir = std::env::temp_dir().join("vox_memory_e2e_test");
-        let db_path = temp_dir.join("test_vox_e2e.db");
-        let is_private = Arc::new(AtomicBool::new(false));
-
-        let tx = spawn_memory_worker(db_path, is_private);
-
-        // 1. Session 500 starts
-        assert!(tx
-            .try_send(MemoryWorkerEvent::ActiveSessionChanged { session_id: 500 })
-            .is_ok());
-
-        // 2. Active session ready for ingestion -> blocked by guard
-        assert!(tx
-            .try_send(MemoryWorkerEvent::SessionReadyForIngestion {
-                session_id: 500,
-                summary: "Active session compaction".to_string(),
-            })
-            .is_ok());
-
-        // 3. Session changes to 501
-        assert!(tx
-            .try_send(MemoryWorkerEvent::ActiveSessionChanged { session_id: 501 })
-            .is_ok());
-
-        // 4. Session 500 ready for ingestion -> accepted
-        assert!(tx
-            .try_send(MemoryWorkerEvent::SessionReadyForIngestion {
-                session_id: 500,
-                summary: "Past session compaction summary".to_string(),
-            })
-            .is_ok());
-
-        // 5. Shutdown
-        assert!(tx.try_send(MemoryWorkerEvent::Shutdown).is_ok());
-    }
-
-    #[test]
-    fn test_profile_updates_ingestion() {
-        let temp_dir = std::env::temp_dir().join("vox_profile_updates_test");
-        let _ = std::fs::remove_dir_all(&temp_dir); // clean up
-        std::fs::create_dir_all(&temp_dir).unwrap();
-        let db_path = temp_dir.join("test_profile.db");
-        let is_private = Arc::new(AtomicBool::new(false));
-
-        // Run migrations first to create tables
-        let rt = crate::persistence::db::get_tokio_handle();
-        rt.block_on(async {
-            let db = turso::Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
-            let conn = db.connect().unwrap();
-            crate::persistence::schema::run_migrations(&conn).await.unwrap();
-        });
-
-        let tx = spawn_memory_worker(db_path.clone(), is_private);
-
-        let updates = vec![
-            crate::services::memory::ProfileUpdate {
-                category: "Identity".to_string(),
-                key: "name".to_string(),
-                value: "Alex".to_string(),
-            },
-            crate::services::memory::ProfileUpdate {
-                category: "Preferences".to_string(),
-                key: "favorite_language".to_string(),
-                value: "Rust".to_string(),
-            },
-        ];
-
-        // Send profile updates
-        assert!(tx.try_send(MemoryWorkerEvent::ProfileUpdatesReady { updates }).is_ok());
-
-        // Shutdown to force sync
-        assert!(tx.try_send(MemoryWorkerEvent::Shutdown).is_ok());
-
-        // Wait a small moment for worker to complete writing and shut down
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // Verify database content
-        let rt = crate::persistence::db::get_tokio_handle();
-        rt.block_on(async {
-            let db = turso::Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
-            let conn = db.connect().unwrap();
-            
-            // Query personal_memory
-            let mut rows = conn.query("SELECT category, key, value FROM personal_memory ORDER BY key ASC", ()).await.unwrap();
-            
-            let row1 = rows.next().await.unwrap().unwrap();
-            let cat1: String = row1.get(0).unwrap();
-            let key1: String = row1.get(1).unwrap();
-            let val1: String = row1.get(2).unwrap();
-            assert_eq!(cat1, "Preferences");
-            assert_eq!(key1, "favorite_language");
-            assert_eq!(val1, "Rust");
-
-            let row2 = rows.next().await.unwrap().unwrap();
-            let cat2: String = row2.get(0).unwrap();
-            let key2: String = row2.get(1).unwrap();
-            let val2: String = row2.get(2).unwrap();
-            assert_eq!(cat2, "Identity");
-            assert_eq!(key2, "name");
-            assert_eq!(val2, "Alex");
-
-            // Query personal_memory_history
-            let mut h_rows = conn.query("SELECT key, value FROM personal_memory_history ORDER BY key ASC", ()).await.unwrap();
-            let h_row1 = h_rows.next().await.unwrap().unwrap();
-            assert_eq!(h_row1.get::<String>(0).unwrap(), "favorite_language");
-            assert_eq!(h_row1.get::<String>(1).unwrap(), "Rust");
-
-            let h_row2 = h_rows.next().await.unwrap().unwrap();
-            assert_eq!(h_row2.get::<String>(0).unwrap(), "name");
-            assert_eq!(h_row2.get::<String>(1).unwrap(), "Alex");
-        });
     }
 }

@@ -3,8 +3,8 @@ pub mod embedder;
 pub mod retrieval;
 pub mod tokenizer;
 pub mod working_memory;
+pub mod nli;
 pub mod personal_memory;
-
 
 pub use classifier::{
     classify_query, ensure_classifier_loaded, init_classifier, is_classifier_loaded,
@@ -19,5 +19,5 @@ pub use retrieval::{
 };
 pub use tokenizer::estimate_tokens;
 pub use working_memory::{
-    ChatMessage, ConversationContext, ConversationManager, Role, ProfileUpdate,
+    ChatMessage, ConversationContext, ConversationManager, Role,
 };
