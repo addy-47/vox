@@ -27,9 +27,14 @@ impl VoxDb {
     /// Opens a connection to the local database file.
     pub async fn open(path: &std::path::Path) -> Result<Connection> {
         let path_str = path.to_string_lossy();
-        let db = Builder::new_local(&path_str).build().await?;
+        let db = Builder::new_local(&path_str)
+            .experimental_index_method(true)
+            .build()
+            .await?;
         let conn = db.connect()?;
-        // Enable foreign keys
+        // Optimize SQLite concurrency characteristics
+        let _ = conn.execute("PRAGMA journal_mode = WAL;", ()).await;
+        let _ = conn.execute("PRAGMA busy_timeout = 5000;", ()).await;
         let _ = conn.execute("PRAGMA foreign_keys = ON;", ()).await;
         Ok(conn)
     }

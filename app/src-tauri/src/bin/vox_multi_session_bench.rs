@@ -5,12 +5,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::channel;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{MemorySettings, SttProviderConfig};
+use vox_lib::core::settings::{MemorySettings, SttProviderConfig, VoxSettings};
 use vox_lib::persistence::memory_worker::{spawn_memory_worker, MemoryWorkerEvent};
 use vox_lib::services::llm::{LlmProvider, OpenAiCompatProvider, ProviderKind};
 use vox_lib::services::memory::{
@@ -128,7 +128,8 @@ fn main() -> Result<()> {
 
     // Spawn Background Memory Worker
     let is_private_mode = Arc::new(AtomicBool::new(false));
-    let memory_tx = spawn_memory_worker(db_path.clone(), is_private_mode.clone());
+    let settings = Arc::new(RwLock::new(VoxSettings::default()));
+    let memory_tx = spawn_memory_worker(db_path.clone(), is_private_mode.clone(), settings);
 
     // Memory Settings Configuration (BGE-M3 1024-dim, strict 0.65 threshold)
     let memory_settings = MemorySettings {
@@ -137,6 +138,16 @@ fn main() -> Result<()> {
         top_k: 10,
         similarity_threshold: 0.65,
         max_context_share: 0.20,
+        personal_enabled: true,
+        personal_max_context_share: 0.08,
+        nli_candidate_limit: 5,
+        nli_contradiction_threshold: 0.85,
+        nli_entailment_threshold: 0.85,
+        nli_model_name: "deberta-v3-xsmall-nli".to_string(),
+        cosine_auto_support_threshold: 0.90,
+        cosine_neutral_lower_bound: 0.75,
+        personal_top_k_per_collection: 3,
+        personal_identity_always: true,
     };
 
     // 1. Load STT Engine
@@ -319,9 +330,13 @@ fn main() -> Result<()> {
 
             let episodic_context_block = format_retrieved_memories_for_prompt(&retrieved_episodes);
 
-            // 3. Load Personal Memory Profile
+            let query_vector = tokio_handle.block_on(async {
+                vox_lib::services::memory::ensure_embedder_loaded(true).ok();
+                vox_lib::services::memory::generate_embedding(&user_prompt).unwrap_or(None)
+            }).unwrap_or_else(|| vec![0.0; 1024]);
+
             let personal_memory_block = tokio_handle.block_on(async {
-                vox_lib::services::memory::personal_memory::load_user_profile(&conn).await.unwrap_or_default()
+                vox_lib::services::memory::personal_memory::retrieve_personal_context(&conn, &query_vector, &memory_settings, 2048, None).await.unwrap_or_default()
             });
 
             let mut full_system_prompt = vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.to_string();
@@ -334,11 +349,12 @@ fn main() -> Result<()> {
             conv_mgr.update_system_prompt(&full_system_prompt);
 
             conv_mgr.push_user_turn(user_prompt.clone());
-            let (ctx, speech, profile_updates) = conv_mgr.build_context(provider_kind, false, Some(&*provider));
+            let (ctx, speech, personal_memory) = conv_mgr.build_context(provider_kind, false, Some(&*provider));
 
-            if !profile_updates.is_empty() {
-                let _ = memory_tx.try_send(MemoryWorkerEvent::ProfileUpdatesReady {
-                    updates: profile_updates,
+            if !personal_memory.is_empty() {
+                let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
+                    facts: personal_memory,
+                    session_id: session_id.to_string(),
                 });
             }
 
@@ -531,33 +547,32 @@ fn main() -> Result<()> {
                 if !raw_response.trim().is_empty() {
                     println!("  [S{} COMPACTION] Raw Response:\n{}", session_num, raw_response);
                     #[derive(Debug, serde::Deserialize)]
-                    struct CompactionResponse {
+                    struct CompactionResponseV2 {
                         summary: String,
-                        #[serde(alias = "memory_updates")]
-                        profile_updates: Option<Vec<vox_lib::services::memory::ProfileUpdate>>,
+                        #[serde(default)]
+                        personal_memory: std::collections::HashMap<String, Vec<String>>,
                     }
 
                     let cleaned = vox_lib::utils::json::clean_json_content(&raw_response);
 
-                    match serde_json::from_str::<CompactionResponse>(&cleaned) {
+                    match serde_json::from_str::<CompactionResponseV2>(&cleaned) {
                         Ok(resp) => {
                             let summary = resp.summary;
                             println!("  [S{} COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
-                            if let Some(ref updates) = resp.profile_updates {
-                                println!("  [S{} COMPACTION] Found {} profile updates.", session_num, updates.len());
-                                for up in updates {
-                                    println!("    - {} | {}: {}", up.category, up.key, up.value);
+                            println!("  [S{} COMPACTION] Found {} personal facts.", session_num, resp.personal_memory.values().map(|v| v.len()).sum::<usize>());
+                            for (col, facts) in &resp.personal_memory {
+                                for fact in facts {
+                                    println!("    - {}: {}", col, fact);
                                 }
                             }
                             if !summary.trim().is_empty() && conv_mgr.commit_opportunistic(snap_len, summary.clone()) {
                                 total_opp_succeeded += 1;
                                 compaction_summaries.push(summary);
-                                if let Some(updates) = resp.profile_updates {
-                                    if !updates.is_empty() {
-                                        let _ = memory_tx.try_send(MemoryWorkerEvent::ProfileUpdatesReady {
-                                            updates,
-                                        });
-                                    }
+                                if !resp.personal_memory.is_empty() {
+                                    let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
+                                        facts: resp.personal_memory,
+                                        session_id: format!("bench_session_{}", session_num),
+                                    });
                                 }
                             } else {
                                 total_opp_cancelled += 1;
@@ -613,32 +628,31 @@ fn main() -> Result<()> {
             if !raw_response.trim().is_empty() {
                 println!("  [S{} FINAL COMPACTION] Raw Response:\n{}", session_num, raw_response);
                 #[derive(Debug, serde::Deserialize)]
-                struct CompactionResponse {
+                struct CompactionResponseV2 {
                     summary: String,
-                    #[serde(alias = "memory_updates")]
-                    profile_updates: Option<Vec<vox_lib::services::memory::ProfileUpdate>>,
+                    #[serde(default)]
+                    personal_memory: std::collections::HashMap<String, Vec<String>>,
                 }
 
                 let cleaned = vox_lib::utils::json::clean_json_content(&raw_response);
 
-                match serde_json::from_str::<CompactionResponse>(&cleaned) {
+                match serde_json::from_str::<CompactionResponseV2>(&cleaned) {
                     Ok(resp) => {
                         let summary = resp.summary;
                         println!("  [S{} FINAL COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
-                        if let Some(ref updates) = resp.profile_updates {
-                            println!("  [S{} FINAL COMPACTION] Found {} profile updates.", session_num, updates.len());
-                            for up in updates {
-                                println!("    - {} | {}: {}", up.category, up.key, up.value);
+                        println!("  [S{} FINAL COMPACTION] Found {} personal facts.", session_num, resp.personal_memory.values().map(|v| v.len()).sum::<usize>());
+                        for (col, facts) in &resp.personal_memory {
+                            for fact in facts {
+                                println!("    - {}: {}", col, fact);
                             }
                         }
                         if !summary.trim().is_empty() {
                             compaction_summaries.push(summary);
-                            if let Some(updates) = resp.profile_updates {
-                                if !updates.is_empty() {
-                                    let _ = memory_tx.try_send(MemoryWorkerEvent::ProfileUpdatesReady {
-                                        updates,
-                                    });
-                                }
+                            if !resp.personal_memory.is_empty() {
+                                let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
+                                    facts: resp.personal_memory,
+                                    session_id: format!("bench_session_{}", session_num),
+                                });
                             }
                         }
                     }

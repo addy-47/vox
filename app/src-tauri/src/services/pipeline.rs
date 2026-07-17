@@ -522,19 +522,33 @@ impl PipelineOrchestrator {
                 .replace("<lang>", lang)
                 .replace("<script>", script);
 
-            let provider_kind = {
+            let settings_snap = {
                 let s = self.settings.read().unwrap();
-                match &s.llm.provider {
-                    crate::core::settings::LlmProviderConfig::Embedded => crate::services::llm::ProviderKind::Embedded,
-                    crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } => crate::services::llm::ProviderKind::OpenAiCompat,
-                }
+                s.clone()
+            };
+
+            let provider_kind = match &settings_snap.llm.provider {
+                crate::core::settings::LlmProviderConfig::Embedded => crate::services::llm::ProviderKind::Embedded,
+                crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } => crate::services::llm::ProviderKind::OpenAiCompat,
             };
 
             let db_path = crate::utils::paths::db_path();
             let rt = crate::persistence::db::get_tokio_handle();
+
+            let query_embedding = rt.block_on(async {
+                crate::services::memory::ensure_embedder_loaded(settings_snap.memory.personal_enabled).ok();
+                crate::services::memory::generate_embedding(&text).unwrap_or(None)
+            }).unwrap_or_else(|| vec![0.0; 1024]);
+
             let personal_memory_block = rt.block_on(async {
                 if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
-                    crate::services::memory::personal_memory::load_user_profile(&conn).await.unwrap_or_default()
+                    crate::services::memory::personal_memory::retrieve_personal_context(
+                        &conn,
+                        &query_embedding,
+                        &settings_snap.memory,
+                        settings_snap.llm.ctx_size as usize,
+                        Some(&_app_handle),
+                    ).await.unwrap_or_default()
                 } else {
                     String::new()
                 }
@@ -545,22 +559,62 @@ impl PipelineOrchestrator {
                 final_prompt.push_str(&format!("\n\n{}", personal_memory_block));
             }
 
-            let (ctx, transition_speech, profile_updates) = {
+            let provider_ref: Option<Box<dyn crate::services::llm::LlmProvider>> = {
+                let is_tier_1a = provider_kind == crate::services::llm::ProviderKind::Embedded 
+                    && settings_snap.llm.ctx_size <= 4096;
+                
+                if settings_snap.memory.personal_enabled && !is_tier_1a {
+                    match &settings_snap.llm.provider {
+                        crate::core::settings::LlmProviderConfig::Embedded => {
+                            let provider = crate::services::llm::providers::embedded::EmbeddedProvider::new(
+                                &self.llm_path,
+                                settings_snap.llm.ctx_size,
+                                settings_snap.llm.threads,
+                            );
+                            if let Ok(p) = provider {
+                                Some(Box::new(p) as Box<dyn crate::services::llm::LlmProvider>)
+                            } else {
+                                None
+                            }
+                        }
+                        crate::core::settings::LlmProviderConfig::OpenAiCompat {
+                            base_url,
+                            model,
+                            api_key,
+                            provider_name,
+                        } => {
+                            let provider = crate::services::llm::providers::openai_compat::OpenAiCompatProvider::new(
+                                base_url,
+                                model,
+                                api_key.as_deref(),
+                                provider_name.as_deref(),
+                            );
+                            Some(Box::new(provider) as Box<dyn crate::services::llm::LlmProvider>)
+                        }
+                    }
+                } else {
+                    None
+                }
+            };
+
+            let (ctx, transition_speech, personal_memory) = {
                 let mut mgr = self.conversation_manager.lock().unwrap();
                 mgr.update_system_prompt(&final_prompt);
                 if mgr.context_utilization() == 0.0 {
                     mgr.new_session(&final_prompt);
                 }
                 mgr.push_user_turn(text.clone());
-                mgr.build_context(provider_kind, is_hi, None)
+                let provider_dyn: Option<&dyn crate::services::llm::LlmProvider> = provider_ref.as_ref().map(|p| p.as_ref());
+                mgr.build_context(provider_kind, is_hi, provider_dyn)
             };
 
-            if !profile_updates.is_empty() {
+            if !personal_memory.is_empty() {
                 if let Some(app_state) = _app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
                     let memory_tx = app_state.memory_tx.lock().unwrap();
                     if let Some(ref tx) = *memory_tx {
-                        let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::ProfileUpdatesReady {
-                            updates: profile_updates,
+                        let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::PersonalFactsReady {
+                            facts: personal_memory,
+                            session_id: self.conversation_id.load(Ordering::Relaxed).to_string(),
                         });
                     }
                 }
