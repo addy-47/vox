@@ -1,5 +1,5 @@
 use serde::de::Visitor;
-use serde::{Deserialize, Deserializer};
+use serde::Deserializer;
 use std::fmt;
 
 pub fn clean_json_content(content: &str) -> String {

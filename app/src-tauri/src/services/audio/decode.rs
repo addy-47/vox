@@ -285,7 +285,6 @@ pub fn write_wav_f32_raw<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn create_test_wav() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();

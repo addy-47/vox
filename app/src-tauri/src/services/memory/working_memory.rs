@@ -13,13 +13,7 @@ pub enum Role {
     Assistant,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProfileUpdate {
-    pub category: String,
-    pub key: String,
-    #[serde(deserialize_with = "crate::utils::json::deserialize_value_resilient")]
-    pub value: String,
-}
+// Deleted ProfileUpdate struct
 
 impl std::fmt::Display for Role {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -200,17 +194,17 @@ impl ConversationManager {
 
     /// Prepares context for LLM generation.
     /// If critical threshold is reached, executes Threshold Maintenance.
-    /// Returns (ConversationContext, Option<TransitionSpeechText>, Vec<ProfileUpdate>).
+    /// Returns (ConversationContext, Option<TransitionSpeechText>, HashMap<String, Vec<String>>).
     pub fn build_context(
         &mut self,
         provider_kind: ProviderKind,
         is_devanagari: bool,
         llm_provider: Option<&dyn LlmProvider>,
-    ) -> (ConversationContext, Option<String>, Vec<ProfileUpdate>) {
+    ) -> (ConversationContext, Option<String>, std::collections::HashMap<String, Vec<String>>) {
         self.cancel_opportunistic();
 
         let mut transition_speech = None;
-        let mut profile_updates = Vec::new();
+        let mut personal_memory = std::collections::HashMap::new();
 
         if self.needs_threshold_maintenance() {
             log::warn!(
@@ -238,7 +232,7 @@ impl ConversationManager {
             } else if let Some(provider) = llm_provider {
                 match self.perform_compaction_maintenance(provider) {
                     Ok(updates) => {
-                        profile_updates = updates;
+                        personal_memory = updates;
                     }
                     Err(e) => {
                         log::error!(
@@ -263,7 +257,7 @@ impl ConversationManager {
             kv_cache_index: kv_idx,
         };
 
-        (ctx, transition_speech, profile_updates)
+        (ctx, transition_speech, personal_memory)
     }
 
     /// FIFO Sliding Window Shift: Drops oldest (User, Assistant) pairs until below soft threshold.
@@ -304,13 +298,13 @@ impl ConversationManager {
     fn perform_compaction_maintenance(
         &mut self,
         provider: &dyn LlmProvider,
-    ) -> anyhow::Result<Vec<ProfileUpdate>> {
+    ) -> anyhow::Result<std::collections::HashMap<String, Vec<String>>> {
         if self.messages.len() <= 3 {
             self.perform_fifo_maintenance();
-            return Ok(Vec::new());
+            return Ok(std::collections::HashMap::new());
         }
 
-        log::info!("[WorkingMemory] Executing LLM Context Compaction via {:?}...", provider.kind());
+        log::info!("[WorkingMemory] Executing LLM Context Compaction via {:?}", provider.kind());
 
         let last_user_turn = self.messages.pop().ok_or_else(|| anyhow::anyhow!("No user turn"))?;
         let mut history_text = String::new();
@@ -355,23 +349,23 @@ impl ConversationManager {
             log::warn!("[WorkingMemory] Live LLM compaction produced empty summary. Falling back to FIFO shift.");
             self.messages.push(last_user_turn);
             self.perform_fifo_maintenance();
-            return Ok(Vec::new());
+            return Ok(std::collections::HashMap::new());
         }
 
         #[derive(Debug, Deserialize)]
-        struct CompactionResponse {
+        struct CompactionResponseV2 {
             summary: String,
-            #[serde(alias = "memory_updates")]
-            profile_updates: Option<Vec<ProfileUpdate>>,
+            #[serde(default)]
+            personal_memory: std::collections::HashMap<String, Vec<String>>,
         }
 
-        let (final_summary, profile_updates) = {
+        let (final_summary, personal_memory) = {
             let cleaned = crate::utils::json::clean_json_content(&summary_content);
-            if let Ok(resp) = serde_json::from_str::<CompactionResponse>(&cleaned) {
-                (resp.summary, resp.profile_updates.unwrap_or_default())
+            if let Ok(resp) = serde_json::from_str::<CompactionResponseV2>(&cleaned) {
+                (resp.summary, resp.personal_memory)
             } else {
                 log::warn!("[WorkingMemory] LLM compaction returned non-JSON/malformed content. Treating as raw summary.");
-                (summary_content, Vec::new())
+                (summary_content, std::collections::HashMap::new())
             }
         };
 
@@ -379,7 +373,7 @@ impl ConversationManager {
             log::warn!("[WorkingMemory] Live LLM compaction produced empty summary. Falling back to FIFO shift.");
             self.messages.push(last_user_turn);
             self.perform_fifo_maintenance();
-            return Ok(Vec::new());
+            return Ok(std::collections::HashMap::new());
         }
 
         let summary_msg = ChatMessage {
@@ -402,13 +396,13 @@ impl ConversationManager {
         self.kv_synced_index = 0; // Reset KV cache index for re-encode
 
         log::info!(
-            "[WorkingMemory] Compaction complete. Rebuilt context with 3 items ({} tokens, utilization {:.1}%). Extracted {} profile updates.",
+            "[WorkingMemory] Compaction complete. Rebuilt context with 3 items ({} tokens, utilization {:.1}%). Extracted {} personal facts.",
             self.total_token_count,
             self.context_utilization() * 100.0,
-            profile_updates.len()
+            personal_memory.values().map(|v| v.len()).sum::<usize>()
         );
 
-        Ok(profile_updates)
+        Ok(personal_memory)
     }
 
     pub fn try_trigger_opportunistic(&mut self) -> Option<(usize, Vec<ChatMessage>, Arc<AtomicBool>)> {
@@ -568,31 +562,18 @@ mod tests {
 
         let mock_response = r#"{
             "summary": "The user introduced himself as Alex and expressed his love for Rust.",
-            "profile_updates": [
-                {
-                    "category": "Identity",
-                    "key": "name",
-                    "value": "Alex"
-                },
-                {
-                    "category": "Preferences",
-                    "key": "favorite_language",
-                    "value": "Rust"
-                }
-            ]
+            "personal_memory": {
+                "Identity": ["Works as a software engineer.", "User's name is Alex."],
+                "Preferences": ["User loves coding in Rust."]
+            }
         }"#.to_string();
 
         let provider = MockProvider { response_text: mock_response };
         let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
 
         assert_eq!(updates.len(), 2);
-        assert_eq!(updates[0].category, "Identity");
-        assert_eq!(updates[0].key, "name");
-        assert_eq!(updates[0].value, "Alex");
-
-        assert_eq!(updates[1].category, "Preferences");
-        assert_eq!(updates[1].key, "favorite_language");
-        assert_eq!(updates[1].value, "Rust");
+        assert_eq!(updates.get("Identity").unwrap().len(), 2);
+        assert_eq!(updates.get("Preferences").unwrap().len(), 1);
     }
 
     #[test]
@@ -606,13 +587,9 @@ mod tests {
         let mock_response = r#"```json
         {
             "summary": "Alex introduced himself.",
-            "profile_updates": [
-                {
-                    "category": "Identity",
-                    "key": "name",
-                    "value": "Alex"
-                }
-            ]
+            "personal_memory": {
+                "Identity": ["User's name is Alex."]
+            }
         }
         ```"#.to_string();
 
@@ -620,9 +597,7 @@ mod tests {
         let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
 
         assert_eq!(updates.len(), 1);
-        assert_eq!(updates[0].category, "Identity");
-        assert_eq!(updates[0].key, "name");
-        assert_eq!(updates[0].value, "Alex");
+        assert_eq!(updates.get("Identity").unwrap()[0], "User's name is Alex.");
     }
 
     #[test]
@@ -661,34 +636,25 @@ mod tests {
         let fixed = crate::utils::json::fix_missing_commas_in_json(bad_json);
         let parsed: serde_json::Value = serde_json::from_str(&fixed).expect("Failed to parse fixed JSON");
         assert_eq!(parsed["summary"], "This is a summary");
-        assert_eq!(parsed["profile_updates"][0]["category"], "Identity");
-        assert_eq!(parsed["profile_updates"][0]["key"], "name");
-        assert_eq!(parsed["profile_updates"][0]["value"], "Alex");
     }
 
     #[test]
-    fn test_resilient_deserialization_of_profile_update() {
-        let json_data = r#"[
-            {
-                "category": "Skills",
-                "key": "system_programming_expertise",
-                "value": true
-            },
-            {
-                "category": "Informational Knowledge",
-                "key": "atomic_number_gold",
-                "value": 74
-            },
-            {
-                "category": "Identity",
-                "key": "name",
-                "value": "Alex"
+    fn test_resilient_deserialization_of_compaction_response() {
+        let json_data = r#"{
+            "summary": "User codes in Rust.",
+            "personal_memory": {
+                "Identity": ["Alex"],
+                "Preferences": ["Rust"]
             }
-        ]"#;
-        let updates: Vec<ProfileUpdate> = serde_json::from_str(json_data).expect("Failed to deserialize updates");
-        assert_eq!(updates.len(), 3);
-        assert_eq!(updates[0].value, "true");
-        assert_eq!(updates[1].value, "74");
-        assert_eq!(updates[2].value, "Alex");
+        }"#;
+        #[derive(Debug, Deserialize)]
+        struct CompactionResponseV2 {
+            summary: String,
+            personal_memory: std::collections::HashMap<String, Vec<String>>,
+        }
+        let resp: CompactionResponseV2 = serde_json::from_str(json_data).expect("Failed to deserialize compaction response");
+        assert_eq!(resp.summary, "User codes in Rust.");
+        assert_eq!(resp.personal_memory.get("Identity").unwrap()[0], "Alex");
+        assert_eq!(resp.personal_memory.get("Preferences").unwrap()[0], "Rust");
     }
 }

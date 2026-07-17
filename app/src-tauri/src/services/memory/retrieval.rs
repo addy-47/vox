@@ -1,7 +1,7 @@
 use crate::core::settings::MemorySettings;
-use crate::persistence::memory_worker::decode_f32_blob;
+use crate::persistence::memory_worker::encode_f32_blob;
 use crate::services::memory::classifier::classify_query;
-use crate::services::memory::embedder::{cosine_similarity, ensure_embedder_loaded, generate_embedding};
+use crate::services::memory::embedder::{ensure_embedder_loaded, generate_embedding};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,12 +14,6 @@ pub struct RetrievedEpisode {
 }
 
 /// Dynamically budgets and diversifies candidate episodes based strictly on context window share.
-///
-/// Zero Magic Numbers Architecture:
-/// - Takes `max_token_budget` derived strictly from `context_size * max_context_share` (e.g. 20% of 4096 = 819 tokens, or 20% of 1M = 200k tokens).
-/// - Dynamically computes a fair per-session token allocation (`per_session_token_budget = max_token_budget / num_active_sessions`).
-/// - Sorts bullet-chunk facts within each session by similarity descending.
-/// - Round-robin interleaves candidate facts across sessions to guarantee balanced representation across past history without session starvation.
 pub fn diversify_and_budget_episodes(
     candidates: Vec<RetrievedEpisode>,
     _top_k: usize,
@@ -39,8 +33,6 @@ pub fn diversify_and_budget_episodes(
     }
 
     let num_sessions = session_map.len();
-    // Fair per-session share cap: Each session gets at most (max_token_budget / num_sessions).
-    // For small session counts (<= 2), allow up to (max_token_budget / 2) per session.
     let per_session_token_budget = (max_token_budget / num_sessions).max(max_token_budget / 2);
 
     // 2. Sort candidates within each session by similarity descending and cap per-session token budget
@@ -83,13 +75,13 @@ pub fn diversify_and_budget_episodes(
             if let Some(queue) = session_filtered_queues.get(&s_id) {
                 if round < queue.len() {
                     let ep = &queue[round];
-                    if !seen_summaries.contains(&ep.summary) {
-                        if current_tokens + ep.token_count <= max_token_budget || selected.is_empty() {
-                            current_tokens += ep.token_count;
-                            seen_summaries.insert(ep.summary.clone());
-                            selected.push(ep.clone());
-                            added_any = true;
-                        }
+                    if !seen_summaries.contains(&ep.summary)
+                        && (current_tokens + ep.token_count <= max_token_budget || selected.is_empty())
+                    {
+                        current_tokens += ep.token_count;
+                        seen_summaries.insert(ep.summary.clone());
+                        selected.push(ep.clone());
+                        added_any = true;
                     }
                 }
             }
@@ -103,53 +95,147 @@ pub fn diversify_and_budget_episodes(
     selected
 }
 
-/// Performs vector search against episodes in DB, filtering by similarity_threshold, session diversification, and token budget.
+pub fn reciprocal_rank_fusion(
+    fts_results: Vec<RetrievedEpisode>,
+    vector_results: Vec<RetrievedEpisode>,
+    k: f32, // RRF smoothing constant, default = 60.0
+) -> Vec<RetrievedEpisode> {
+    let mut score_map: HashMap<String, (RetrievedEpisode, f32)> = HashMap::new();
+
+    for (rank, ep) in fts_results.into_iter().enumerate() {
+        let score = 1.0 / (k + (rank + 1) as f32);
+        score_map.insert(ep.summary.clone(), (ep, score));
+    }
+
+    for (rank, ep) in vector_results.into_iter().enumerate() {
+        let score = 1.0 / (k + (rank + 1) as f32);
+        score_map
+            .entry(ep.summary.clone())
+            .and_modify(|(_, s)| *s += score)
+            .or_insert((ep, score));
+    }
+
+    let mut merged: Vec<(RetrievedEpisode, f32)> = score_map.into_values().collect();
+    merged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    merged
+        .into_iter()
+        .map(|(mut ep, score)| {
+            ep.similarity = score; // Overload similarity field with the combined RRF score
+            ep
+        })
+        .collect()
+}
+
+pub async fn search_fts_episodes(
+    conn: &turso::Connection,
+    query_text: &str,
+    current_session_id: u64,
+) -> anyhow::Result<Vec<RetrievedEpisode>> {
+    let sanitized = query_text
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>();
+    let clean_query = sanitized.trim();
+    if clean_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut rows = conn
+        .query(
+            "SELECT session_id, summary, created_at, token_count
+             FROM episodes
+             WHERE fts_match('idx_episodes_search', ?) AND session_id != ?
+             LIMIT 50",
+            (clean_query.to_string(), current_session_id as i64),
+        )
+        .await?;
+
+    let mut list = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let session_id: i64 = row.get(0)?;
+        let summary: String = row.get(1)?;
+        let created_at: i64 = row.get(2)?;
+        let token_count: i64 = row.get(3)?;
+        list.push(RetrievedEpisode {
+            session_id: session_id as u64,
+            summary,
+            similarity: 0.0,
+            token_count: token_count as usize,
+            created_at,
+        });
+    }
+    Ok(list)
+}
+
+pub async fn search_vector_episodes(
+    conn: &turso::Connection,
+    query_vector: &[f32],
+    current_session_id: u64,
+) -> anyhow::Result<Vec<RetrievedEpisode>> {
+    let blob_bytes = encode_f32_blob(query_vector);
+    let mut rows = conn
+        .query(
+            "SELECT session_id, summary, created_at, token_count, vector_distance_cos(embedding, ?) as distance
+             FROM episodes
+             WHERE session_id != ?
+             ORDER BY distance ASC
+             LIMIT 50",
+            (blob_bytes, current_session_id as i64),
+        )
+        .await?;
+
+    let mut list = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let session_id: i64 = row.get(0)?;
+        let summary: String = row.get(1)?;
+        let created_at: i64 = row.get(2)?;
+        let token_count: i64 = row.get(3)?;
+        let distance = row.get::<f64>(4)? as f32;
+        
+        let similarity = 1.0 - distance;
+        list.push(RetrievedEpisode {
+            session_id: session_id as u64,
+            summary,
+            similarity,
+            token_count: token_count as usize,
+            created_at,
+        });
+    }
+    Ok(list)
+}
+
 pub async fn search_and_diversify_episodes(
     conn: &turso::Connection,
     query_vector: &[f32],
+    query_text: &str,
     current_session_id: u64,
     settings: &MemorySettings,
     context_size: usize,
 ) -> anyhow::Result<Vec<RetrievedEpisode>> {
-    let mut rows = conn
-        .query(
-            "SELECT session_id, summary, embedding, created_at, token_count FROM episodes WHERE session_id != ?",
-            (current_session_id as i64,),
-        )
-        .await?;
+    let vector_candidates = search_vector_episodes(conn, query_vector, current_session_id).await?;
+    let fts_candidates = if !query_text.trim().is_empty() {
+        search_fts_episodes(conn, query_text, current_session_id).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
-    let mut candidates = Vec::new();
-    while let Some(row) = rows.next().await? {
-        let session_id: i64 = row.get(0)?;
-        let summary: String = row.get(1)?;
-        let blob_bytes: Vec<u8> = row.get(2)?;
-        let created_at: i64 = row.get(3)?;
-        let token_count: i64 = row.get(4)?;
+    let filtered_vector: Vec<RetrievedEpisode> = vector_candidates
+        .into_iter()
+        .filter(|c| c.similarity >= settings.similarity_threshold)
+        .collect();
 
-        let ep_vec = decode_f32_blob(&blob_bytes);
-        let sim = cosine_similarity(query_vector, &ep_vec);
-
-        if sim >= settings.similarity_threshold {
-            candidates.push(RetrievedEpisode {
-                session_id: session_id as u64,
-                summary,
-                similarity: sim,
-                token_count: token_count as usize,
-                created_at,
-            });
-        }
-    }
+    let fused = reciprocal_rank_fusion(fts_candidates, filtered_vector, 60.0);
 
     let max_token_budget = (context_size as f32 * settings.max_context_share) as usize;
     Ok(diversify_and_budget_episodes(
-        candidates,
+        fused,
         settings.top_k as usize,
         max_token_budget,
     ))
 }
 
 /// Main entry point for Episodic Memory RAG retrieval.
-/// Executes Query Classification -> Query Embedding -> DB Search -> Session Diversification -> Token Budgeting.
 pub async fn retrieve_episodic_memories(
     conn: &turso::Connection,
     query_text: &str,
@@ -165,14 +251,12 @@ pub async fn retrieve_episodic_memories(
         return Ok(Vec::new());
     }
 
-    // Gate 1: Hot-Path Query Classification (query-sieve)
     let classification = classify_query(query_text);
     if classification.is_generic() {
         tracing::debug!("[Retrieval] Query classified as GENERIC. Bypassing RAG retrieval.");
         return Ok(Vec::new());
     }
 
-    // Gate 2: Query Embedding Generation (BGE-M3)
     ensure_embedder_loaded(settings.episodic_enabled)?;
     let query_vector = match generate_embedding(query_text)? {
         Some(vec) => vec,
@@ -182,8 +266,7 @@ pub async fn retrieve_episodic_memories(
         }
     };
 
-    // Gate 3: DB Vector Search & Session Diversification
-    let episodes = search_and_diversify_episodes(conn, &query_vector, current_session_id, settings, context_size).await?;
+    let episodes = search_and_diversify_episodes(conn, &query_vector, query_text, current_session_id, settings, context_size).await?;
     tracing::info!(
         "[Retrieval] Retrieved {} episode chunks for query='{}'",
         episodes.len(),
@@ -215,25 +298,38 @@ pub async fn retrieve_and_format_memory_context(
     settings: &MemorySettings,
     context_size: usize,
 ) -> anyhow::Result<String> {
-    // 1. Load user profile block (Personal Memory - always injected if present)
-    let personal_block = match super::personal_memory::load_user_profile(conn).await {
-        Ok(block) => block,
-        Err(e) => {
-            tracing::warn!("[Retrieval] Failed to load personal profile: {}", e);
-            String::new()
-        }
+    let query_vector = if (settings.personal_enabled || settings.episodic_enabled) && !query_text.trim().is_empty() {
+        ensure_embedder_loaded(true)?;
+        generate_embedding(query_text)?
+    } else {
+        None
     };
 
-    // 2. Load episodic memories (Episodic Memory - search if query is semantic)
+    let personal_block = if settings.personal_enabled {
+        if let Some(ref q_vec) = query_vector {
+            match super::personal_memory::retrieve_personal_context(conn, q_vec, settings, context_size, None).await {
+                Ok(block) => block,
+                Err(e) => {
+                    tracing::warn!("[Retrieval] Failed to load personal profile: {}", e);
+                    String::new()
+                }
+            }
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     let mut episodic_block = String::new();
     if settings.episodic_enabled && !query_text.trim().is_empty() {
         let classification = classify_query(query_text);
         if !classification.is_generic() {
-            ensure_embedder_loaded(settings.episodic_enabled)?;
-            if let Some(query_vector) = generate_embedding(query_text)? {
+            if let Some(ref q_vec) = query_vector {
                 let episodes = search_and_diversify_episodes(
                     conn,
-                    &query_vector,
+                    q_vec,
+                    query_text,
                     current_session_id,
                     settings,
                     context_size,

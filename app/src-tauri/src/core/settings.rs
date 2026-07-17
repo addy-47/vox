@@ -638,6 +638,28 @@ pub struct MemorySettings {
     pub similarity_threshold: f32,
     /// Maximum share of context window allocated to retrieved episodic memory (0.0 - 1.0).
     pub max_context_share: f32,
+
+    // --- Personal Memory v2 Additions ---
+    /// Enable Personal Memory v2 processing and graph relations.
+    pub personal_enabled: bool,
+    /// Maximum share of context window allocated to personal facts (0.0 - 1.0).
+    pub personal_max_context_share: f32,
+    /// Maximum number of candidate facts retrieved for NLI logical comparison (K-limit).
+    pub nli_candidate_limit: u32,
+    /// Threshold above which an NLI prediction is classified as Contradiction (0.0 - 1.0).
+    pub nli_contradiction_threshold: f32,
+    /// Threshold above which an NLI prediction is classified as Entailment (0.0 - 1.0).
+    pub nli_entailment_threshold: f32,
+    /// Name or path of the local NLI ONNX model directory under ~/.vox/models/nli/
+    pub nli_model_name: String,
+    /// Cosine threshold for auto-supporting candidate facts under degraded matching (0.0 - 1.0).
+    pub cosine_auto_support_threshold: f32,
+    /// Lower similarity bound under degraded matching above which facts are considered neutral (0.0 - 1.0).
+    pub cosine_neutral_lower_bound: f32,
+    /// Number of top personal memory facts to retrieve per collection.
+    pub personal_top_k_per_collection: u32,
+    /// Always inject Identity collection facts into prompt.
+    pub personal_identity_always: bool,
 }
 
 impl Default for MemorySettings {
@@ -648,6 +670,18 @@ impl Default for MemorySettings {
             top_k: 3,
             similarity_threshold: 0.65,
             max_context_share: 0.20,
+
+            // Personal Memory v2 Defaults
+            personal_enabled: true,
+            personal_max_context_share: 0.08,
+            nli_candidate_limit: 5,
+            nli_contradiction_threshold: 0.85,
+            nli_entailment_threshold: 0.85,
+            nli_model_name: "deberta-v3-xsmall-nli".to_string(),
+            cosine_auto_support_threshold: 0.90,
+            cosine_neutral_lower_bound: 0.75,
+            personal_top_k_per_collection: 3,
+            personal_identity_always: true,
         }
     }
 }
