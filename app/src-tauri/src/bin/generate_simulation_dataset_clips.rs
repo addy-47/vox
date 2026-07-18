@@ -46,11 +46,18 @@ fn main() -> Result<()> {
     println!("[Generator] Loading Supertonic 3 TTS Engine...");
     let tts_engine = TtsEngine::new(&super_tts_path, 0, 12, 1.05)?;
 
+    // We will generate audio clips for all 10 sessions
     let sessions = vec![
+        ("tests/dataset_session1.json", "tests/simulation_clips_session1"),
         ("tests/dataset_session2.json", "tests/simulation_clips_session2"),
         ("tests/dataset_session3.json", "tests/simulation_clips_session3"),
         ("tests/dataset_session4.json", "tests/simulation_clips_session4"),
         ("tests/dataset_session5.json", "tests/simulation_clips_session5"),
+        ("tests/dataset_session6.json", "tests/simulation_clips_session6"),
+        ("tests/dataset_session7.json", "tests/simulation_clips_session7"),
+        ("tests/dataset_session8.json", "tests/simulation_clips_session8"),
+        ("tests/dataset_session9.json", "tests/simulation_clips_session9"),
+        ("tests/dataset_session10.json", "tests/simulation_clips_session10"),
     ];
 
     for (dpath_str, outdir_str) in sessions {
@@ -83,9 +90,6 @@ fn main() -> Result<()> {
 
         for turn_item in &turns {
             let clip_path = clips_dir.join(format!("clip_{:02}.wav", turn_item.turn));
-            if clip_path.exists() {
-                continue;
-            }
             print!("  Synthesizing turn {:02} -> {:?}... ", turn_item.turn, clip_path);
 
             let cancel = Arc::new(AtomicBool::new(false));
@@ -113,6 +117,6 @@ fn main() -> Result<()> {
         }
     }
 
-    println!("[Generator] Successfully generated all 50 Session 2 audio clips!");
+    println!("[Generator] Successfully generated all simulation audio clips!");
     Ok(())
 }

@@ -388,18 +388,30 @@ fn apply_setting_mutation(
             settings.llm.model = value.as_str().ok_or("model must be a string")?.to_string();
         }
         ("llm", "ctx_size") => {
-            settings.llm.ctx_size = value
+            let val = value
                 .as_u64()
                 .ok_or("ctx_size must be a positive integer")?
                 as u32;
+            if let crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } = settings.llm.provider {
+                if val < 8192 {
+                    return Err("Cloud/Server LLM providers require a minimum context size of 8192 tokens".to_string());
+                }
+            }
+            settings.llm.ctx_size = val;
         }
         ("llm", "threads") => {
             settings.llm.threads =
                 value.as_u64().ok_or("threads must be a positive integer")? as u32;
         }
         ("llm", "provider") => {
-            settings.llm.provider = serde_json::from_value(value.clone())
+            let prov: crate::core::settings::LlmProviderConfig = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid provider: {}", e))?;
+            if let crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } = prov {
+                if settings.llm.ctx_size < 8192 {
+                    settings.llm.ctx_size = 8192;
+                }
+            }
+            settings.llm.provider = prov;
         }
         ("interaction", "main_app_mode") => {
             settings.interaction.main_app_mode = serde_json::from_value(value.clone())
