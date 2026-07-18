@@ -2,19 +2,20 @@ use crossbeam_channel::{bounded, Sender};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::collections::HashMap;
 use crate::core::settings::{VoxSettings, MemorySettings};
 use crate::core::constants::{
     PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_QUEUE_STATUS_PENDING,
-    PM_QUEUE_STATUS_DONE
+    PM_QUEUE_STATUS_STAGED, PM_QUEUE_STATUS_COMPLETED, collection_type,
+    PM_TYPE_OPERATIONAL, PM_TYPE_SEMANTIC
 };
 
 /// Events consumed exclusively by the background memory worker.
 #[derive(Debug, Clone)]
 pub enum MemoryWorkerEvent {
-    /// A session has ended and its final compaction summary is ready for ingestion.
-    SessionReadyForIngestion { session_id: u64, summary: String },
+    /// A session has ended. Trigger the consolidation sweep.
+    SessionEnd { session_id: String, summary: String },
     /// v2: Extracted facts from compaction — enqueued to personal_memory_queue
     PersonalFactsReady {
         facts: HashMap<String, Vec<String>>,  // collection → facts
@@ -53,83 +54,6 @@ async fn mark_job_failed(conn: &turso::Connection, job_id: i64, err_msg: &str) {
     ).await;
 }
 
-/// Ingests a completed session compaction summary into the `episodes` table and updates `sessions.embedding_status`.
-pub async fn ingest_compaction_summary(
-    conn: &turso::Connection,
-    session_id: u64,
-    summary: &str,
-) -> anyhow::Result<()> {
-    if summary.trim().is_empty() {
-        conn.execute(
-            "UPDATE sessions SET embedding_status = 'skipped' WHERE id = ?",
-            (session_id as i64,),
-        )
-        .await?;
-        return Ok(());
-    }
-
-    crate::services::memory::ensure_embedder_loaded(true)?;
-
-    // Extract chunks: full summary + individual bullet/section chunks for crisp vector retrieval
-    let mut chunks = Vec::new();
-    chunks.push(summary.trim().to_string());
-
-    for line in summary.lines() {
-        let trimmed = line.trim().trim_start_matches('-').trim_start_matches('*').trim();
-        if trimmed.len() > 15 && !trimmed.starts_with('#') {
-            chunks.push(trimmed.to_string());
-        }
-    }
-
-    let mut ingested_count = 0;
-    let created_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-
-    for chunk in chunks {
-        if let Some(embedding) = crate::services::memory::generate_embedding(&chunk)? {
-            let token_count = crate::services::memory::estimate_tokens(&chunk) as i64;
-            let blob_bytes = encode_f32_blob(&embedding);
-
-            conn.execute(
-                "INSERT INTO episodes (session_id, summary, embedding, created_at, token_count)
-                 VALUES (?, ?, ?, ?, ?)",
-                (
-                    session_id as i64,
-                    chunk,
-                    blob_bytes,
-                    created_at,
-                    token_count,
-                ),
-            )
-            .await?;
-            ingested_count += 1;
-        }
-    }
-
-    if ingested_count > 0 {
-        conn.execute(
-            "UPDATE sessions SET embedding_status = 'embedded' WHERE id = ?",
-            (session_id as i64,),
-        )
-        .await?;
-        tracing::info!(
-            "[MemoryWorker] Successfully ingested {} episodic memory chunks for session_id={}",
-            ingested_count,
-            session_id
-        );
-    } else {
-        conn.execute(
-            "UPDATE sessions SET embedding_status = 'skipped' WHERE id = ?",
-            (session_id as i64,),
-        )
-        .await?;
-    }
-
-    Ok(())
-}
-
 /// Enqueues new personal memory facts to the personal_memory_queue SQLite table.
 pub async fn enqueue_personal_facts(
     conn: &turso::Connection,
@@ -142,6 +66,13 @@ pub async fn enqueue_personal_facts(
         .as_millis() as i64;
 
     for (collection, fact_list) in facts {
+        let coll_type = collection_type(&collection);
+        let status = if coll_type == PM_TYPE_OPERATIONAL {
+            PM_QUEUE_STATUS_STAGED
+        } else {
+            PM_QUEUE_STATUS_PENDING
+        };
+
         for fact in fact_list {
             let trimmed = fact.trim();
             if trimmed.is_empty() {
@@ -154,7 +85,7 @@ pub async fn enqueue_personal_facts(
                     trimmed.to_string(),
                     collection.clone(),
                     session_id.to_string(),
-                    PM_QUEUE_STATUS_PENDING.to_string(),
+                    status.to_string(),
                     now,
                 ),
             )
@@ -163,6 +94,7 @@ pub async fn enqueue_personal_facts(
     }
     Ok(())
 }
+
 
 /// Processes one pending job from the personal_memory_queue.
 pub async fn process_one_queue_item(
@@ -200,6 +132,41 @@ pub async fn process_one_queue_item(
     )
     .await?;
 
+    let coll_type = collection_type(&collection);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
+
+    // For non-semantic collection types, insert directly and bypass embedding/NLI
+    if coll_type != PM_TYPE_SEMANTIC {
+        conn.execute("BEGIN TRANSACTION;", ()).await?;
+        match (|| async {
+            conn.execute(
+                "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id) 
+                 VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+                (fact_id.clone(), coll_type.to_string(), collection.clone(), fact.clone(), source.clone(), now, session_id.clone()),
+            ).await?;
+
+            conn.execute(
+                "UPDATE personal_memory_queue SET status = ?, processed_at = ? WHERE id = ?",
+                (PM_QUEUE_STATUS_COMPLETED.to_string(), now, job_id),
+            ).await?;
+            anyhow::Ok(())
+        })().await {
+            Ok(_) => {
+                conn.execute("COMMIT;", ()).await?;
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK;", ()).await;
+                mark_job_failed(conn, job_id, &format!("Transaction failed: {}", e)).await;
+            }
+        }
+        return Ok(true);
+    }
+
+    // Semantic collection: requires embedding and NLI
     crate::services::memory::ensure_embedder_loaded(true)?;
     let embedding = match crate::services::memory::generate_embedding(&fact) {
         Ok(Some(v)) => v,
@@ -213,43 +180,12 @@ pub async fn process_one_queue_item(
         }
     };
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-    let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
-
-    if let Err(e) = conn.execute(
-        "INSERT INTO memory_facts (id, collection, fact, source, created_at, session_id) VALUES (?, ?, ?, ?, ?, ?)",
-        (fact_id.clone(), collection.clone(), fact.clone(), source.clone(), now, session_id.clone()),
-    ).await {
-        mark_job_failed(conn, job_id, &format!("Failed to insert memory_fact: {}", e)).await;
-        return Ok(true);
-    }
-
-    let blob_bytes = encode_f32_blob(&embedding);
-    let vector_rowid = match conn.execute(
-        "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
-        (fact_id.clone(), collection.clone(), blob_bytes),
-    ).await {
-        Ok(id) => id,
-        Err(e) => {
-            mark_job_failed(conn, job_id, &format!("Failed to insert memory_fact_vector: {}", e)).await;
-            return Ok(true);
-        }
-    };
-
-    let _ = conn.execute(
-        "UPDATE memory_facts SET embedding_id = ? WHERE id = ?",
-        (vector_rowid as i64, fact_id.clone()),
-    ).await;
-
-    // Fetch candidate facts in same collection to compare with NLI
+    // Fetch candidate facts in same collection to compare with NLI (only active ones)
     let mut cand_rows = match conn.query(
         "SELECT mf.id, mf.fact, mfv.embedding FROM memory_facts mf
          JOIN memory_facts_vectors mfv ON mfv.fact_id = mf.id
-         WHERE mf.collection = ? AND mf.id != ?",
-        (collection.clone(), fact_id.clone()),
+         WHERE mf.collection = ? AND mf.status = 'active'",
+        (collection.clone(),),
     ).await {
         Ok(r) => r,
         Err(e) => {
@@ -269,123 +205,163 @@ pub async fn process_one_queue_item(
     }
 
     scored_candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    let candidates: Vec<(String, String)> = scored_candidates
+    let candidates: Vec<(f32, String, String)> = scored_candidates
         .into_iter()
         .take(settings.nli_candidate_limit as usize)
-        .map(|(_, item)| item)
+        .map(|(sim, (id, f_text))| (sim, id, f_text))
         .collect();
 
     let mut relations = Vec::new();
     if !candidates.is_empty() {
         if let Err(e) = crate::services::memory::nli::ensure_nli_loaded(&settings.nli_model_name) {
-            log::warn!("[MemoryWorker] Failed to load NLI model: {}. Skipping NLI validation.", e);
-        } else {
-            for (cand_id, cand_fact) in candidates {
-                let start_time = Instant::now();
-                match crate::services::memory::nli::classify_pair(&fact, &cand_fact) {
-                    Ok(nli_res) => {
-                        let duration = start_time.elapsed().as_millis();
-                        let use_degraded = duration > 50;
+            mark_job_failed(conn, job_id, &format!("Failed to load NLI model: {}", e)).await;
+            return Ok(true);
+        }
 
-                        let relation = if use_degraded {
-                            let cand_embedding = match fetch_embedding_by_fact_id(conn, &cand_id).await {
-                                Ok(Some(v)) => v,
-                                _ => continue,
-                            };
-                            let sim = crate::services::memory::embedder::cosine_similarity(&embedding, &cand_embedding);
-                            if sim >= settings.cosine_auto_support_threshold {
-                                crate::services::memory::nli::NliRelation::Supports
-                            } else {
-                                crate::services::memory::nli::NliRelation::Neutral
-                            }
-                        } else {
-                            crate::services::memory::nli::relation_from_result(&nli_res, settings)
-                        };
+        for (sim, cand_id, cand_fact) in candidates {
+            // Prune NLI below threshold
+            if sim < settings.candidate_similarity_search_threshold {
+                continue;
+            }
 
-                        match relation {
-                            crate::services::memory::nli::NliRelation::Conflicts => {
-                                relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_CONFLICTS));
-                            }
-                            crate::services::memory::nli::NliRelation::Supports => {
-                                relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_SUPPORTS));
-                            }
-                            crate::services::memory::nli::NliRelation::Neutral => {}
+            match crate::services::memory::nli::classify_pair(&fact, &cand_fact) {
+                Ok(nli_res) => {
+                    let relation = crate::services::memory::nli::relation_from_result(&nli_res, settings);
+                    match relation {
+                        crate::services::memory::nli::NliRelation::Conflicts => {
+                            relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_CONFLICTS));
                         }
+                        crate::services::memory::nli::NliRelation::Supports => {
+                            relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_SUPPORTS));
+                        }
+                        crate::services::memory::nli::NliRelation::Neutral => {}
                     }
-                    Err(e) => {
-                        log::error!("[MemoryWorker] NLI classification failed: {}", e);
-                    }
+                }
+                Err(e) => {
+                    mark_job_failed(conn, job_id, &format!("NLI classification error: {}", e)).await;
+                    return Ok(true);
                 }
             }
         }
     }
 
-    for (from, to, rel) in relations {
-        let _ = conn.execute(
-            "INSERT OR IGNORE INTO memory_relations (from_id, to_id, relation, created_at) VALUES (?, ?, ?, ?)",
-            (from, to, rel.to_string(), now),
-        ).await;
-    }
+    // Now write everything inside a single, safe transaction to prevent orphan rows/inconsistencies (Bug #1)
+    let blob_bytes = encode_f32_blob(&embedding);
+    conn.execute("BEGIN TRANSACTION;", ()).await?;
+    match (|| async {
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id) 
+             VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+            (fact_id.clone(), coll_type.to_string(), collection.clone(), fact.clone(), source.clone(), now, session_id.clone()),
+        ).await?;
 
-    conn.execute(
-        "UPDATE personal_memory_queue SET status = ?, processed_at = ? WHERE id = ?",
-        (PM_QUEUE_STATUS_DONE.to_string(), now, job_id),
-    )
-    .await?;
+        conn.execute(
+            "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
+            (fact_id.clone(), collection.clone(), blob_bytes),
+        ).await?;
+
+        for (from, to, rel) in relations {
+            conn.execute(
+                "INSERT OR IGNORE INTO memory_relations (from_id, to_id, relation, created_at) VALUES (?, ?, ?, ?)",
+                (from, to, rel.to_string(), now),
+            ).await?;
+        }
+
+        conn.execute(
+            "UPDATE personal_memory_queue SET status = ?, processed_at = ? WHERE id = ?",
+            (PM_QUEUE_STATUS_COMPLETED.to_string(), now, job_id),
+        ).await?;
+
+        anyhow::Ok(())
+    })().await {
+        Ok(_) => {
+            conn.execute("COMMIT;", ()).await?;
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK;", ()).await;
+            mark_job_failed(conn, job_id, &format!("Database write transaction failed: {}", e)).await;
+        }
+    }
 
     Ok(true)
 }
 
-async fn fetch_embedding_by_fact_id(conn: &turso::Connection, id: &str) -> anyhow::Result<Option<Vec<f32>>> {
+
+
+/// Session End Consolidation Sweep (spec §5.2).
+/// 1. Reads 'staged' Tasks and Goals for this session.
+/// 2. Inserts them into memory_facts as 'active' operational facts.
+/// 3. Deletes 'staged' WAL items.
+/// 4. Writes the raw session Context.
+pub async fn session_end_consolidation(
+    conn: &turso::Connection,
+    session_id: &str,
+    session_context_raw: &str,
+) -> anyhow::Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    // 1. Fetch staged tasks/goals/experiences for this session
     let mut rows = conn
         .query(
-            "SELECT embedding FROM memory_facts_vectors WHERE fact_id = ?",
-            (id.to_string(),),
+            "SELECT fact, collection, source FROM personal_memory_queue 
+             WHERE session_id = ? AND status = 'staged'",
+            (session_id.to_string(),),
         )
         .await?;
 
-    if let Some(row) = rows.next().await? {
-        let bytes: Vec<u8> = row.get(0)?;
-        Ok(Some(decode_f32_blob(&bytes)))
-    } else {
-        Ok(None)
+    let mut staged_facts = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let fact: String = row.get(0)?;
+        let collection: String = row.get(1)?;
+        let source: String = row.get(2)?;
+        staged_facts.push((fact, collection, source));
     }
-}
 
-/// Queries the oldest pending session (`embedding_status = 'pending'`) that is not the current active session,
-/// and ingests its compaction summary into the `episodes` table.
-/// Returns `Ok(true)` if a session was processed, `Ok(false)` if no pending sessions exist.
-pub async fn sweep_next_pending_session(
-    conn: &turso::Connection,
-    current_session_id: u64,
-) -> anyhow::Result<bool> {
-    let pending_target = {
-        let mut rows = conn
-            .query(
-                "SELECT s.id, COALESCE((SELECT assistant_text FROM turns WHERE session_id = s.id ORDER BY turn_id DESC LIMIT 1), '') FROM sessions s WHERE s.embedding_status = 'pending' AND s.id != ? ORDER BY s.started_at ASC LIMIT 1",
-                (current_session_id as i64,),
-            )
-            .await?;
-
-        if let Some(row) = rows.next().await? {
-            let session_id: i64 = row.get(0)?;
-            let summary: String = row.get(1)?;
-            Some((session_id as u64, summary))
-        } else {
-            None
+    // Wrap all session consolidation writes in a single database transaction (Optimization #3)
+    conn.execute("BEGIN TRANSACTION;", ()).await?;
+    match (|| async {
+        // 2. Write them to memory_facts as active operational/semantic facts
+        for (fact, collection, source) in staged_facts {
+            let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
+            let coll_type = collection_type(&collection);
+            conn.execute(
+                "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id) 
+                 VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+                (fact_id, coll_type.to_string(), collection, fact, source, now, session_id.to_string()),
+            ).await?;
         }
-    };
 
-    if let Some((session_id, summary)) = pending_target {
-        tracing::info!(
-            "[MemoryWorker] Background sweep processing pending session_id={}",
-            session_id
-        );
-        ingest_compaction_summary(conn, session_id, &summary).await?;
-        Ok(true)
-    } else {
-        Ok(false)
+        // 3. Delete staged queue items for this session
+        conn.execute(
+            "DELETE FROM personal_memory_queue WHERE session_id = ? AND status = 'staged'",
+            (session_id.to_string(),),
+        ).await?;
+
+        // 4. Write final session Context paragraph directly (never embedded)
+        if !session_context_raw.trim().is_empty() {
+            let context_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
+            conn.execute(
+                "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id) 
+                 VALUES (?, 'operational', 'Context', ?, 'LLM', 'active', ?, ?)",
+                (context_id, session_context_raw.trim().to_string(), now, session_id.to_string()),
+            ).await?;
+            tracing::info!("[MemoryWorker] Saved session Context memory for session_id={}", session_id);
+        }
+        anyhow::Ok(())
+    })().await {
+        Ok(_) => {
+            conn.execute("COMMIT;", ()).await?;
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK;", ()).await;
+            return Err(anyhow::anyhow!("Session consolidation transaction failed: {}", e));
+        }
     }
+
+    Ok(())
 }
 
 /// Spawns the dedicated background memory worker thread.
@@ -417,7 +393,14 @@ pub fn spawn_memory_worker(
             };
 
             loop {
-                let event = match rx.recv_timeout(Duration::from_millis(500)) {
+                // If idle, wait with shorter timeout to check for cooperative yield
+                let timeout = if state.is_idle {
+                    Duration::from_millis(100)
+                } else {
+                    Duration::from_millis(500)
+                };
+
+                let event = match rx.recv_timeout(timeout) {
                     Ok(e) => Some(e),
                     Err(crossbeam_channel::RecvTimeoutError::Timeout) => None,
                     Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
@@ -438,26 +421,17 @@ pub fn spawn_memory_worker(
                         }
                         MemoryWorkerEvent::PipelineIdle => {
                             state.is_idle = true;
-                            state.current_session_id = 0;
                         }
                         MemoryWorkerEvent::PipelineActive => {
                             state.is_idle = false;
                         }
-                        MemoryWorkerEvent::SessionReadyForIngestion { session_id, summary } => {
-                            if session_id == state.current_session_id && session_id != 0 {
-                                tracing::warn!(
-                                    "[MemoryWorker] INVARIANT VIOLATION PREVENTED: SessionReadyForIngestion rejected for active session_id={}",
-                                    session_id
-                                );
-                                continue;
-                            }
-
+                        MemoryWorkerEvent::SessionEnd { session_id, summary } => {
                             if let Some(ref db_conn) = conn {
                                 if let Err(e) = handle.block_on(async {
-                                    ingest_compaction_summary(db_conn, session_id, &summary).await
+                                    session_end_consolidation(db_conn, &session_id, &summary).await
                                 }) {
                                     tracing::error!(
-                                        "[MemoryWorker] Failed to ingest summary for session_id={}: {}",
+                                        "[MemoryWorker] Failed consolidation sweep for session_id={}: {}",
                                         session_id, e
                                     );
                                 }
@@ -480,6 +454,7 @@ pub fn spawn_memory_worker(
                         }
                     }
                 } else if state.is_idle && !is_private_mode.load(Ordering::Relaxed) {
+                    // Process queue items only when idle
                     if let Some(ref db_conn) = conn {
                         let memory_settings = match settings.read() {
                             Ok(s) => s.memory.clone(),
@@ -490,16 +465,21 @@ pub fn spawn_memory_worker(
                             }
                         };
 
-                        let mut processed_any = false;
                         loop {
+                            // Cooperative Yield Check:
+                            // Check if a new event is waiting in the channel (e.g. PipelineActive)
+                            // or if is_idle was toggled externally.
+                            if !state.is_idle || !rx.is_empty() {
+                                break;
+                            }
+
                             let processed_queue = handle.block_on(async {
                                 process_one_queue_item(db_conn, &memory_settings).await
                             });
 
                             match processed_queue {
                                 Ok(true) => {
-                                    processed_any = true;
-                                    // Process next item immediately
+                                    // Process next item immediately, yielding if channel has events
                                     continue;
                                 }
                                 Ok(false) => {
@@ -510,12 +490,6 @@ pub fn spawn_memory_worker(
                                     break;
                                 }
                             }
-                        }
-
-                        if !processed_any {
-                            let _ = handle.block_on(async {
-                                sweep_next_pending_session(db_conn, state.current_session_id).await
-                            });
                         }
                     }
                 }
@@ -538,34 +512,5 @@ mod tests {
         let decoded = decode_f32_blob(&encoded);
         assert_eq!(floats, decoded);
     }
-
-    #[tokio::test]
-    async fn test_ingest_compaction_summary_in_db() -> anyhow::Result<()> {
-        let db = turso::Builder::new_local(":memory:").build().await?;
-        let conn = db.connect()?;
-        crate::persistence::schema::run_migrations(&conn).await?;
-
-        let session_id = 12345u64;
-        let created_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
-
-        conn.execute(
-            "INSERT INTO sessions (id, started_at, turn_count) VALUES (?, ?, ?)",
-            (session_id as i64, created_at, 5),
-        )
-        .await?;
-
-        // Empty summary -> skipped
-        ingest_compaction_summary(&conn, session_id, "").await?;
-
-        let mut rows = conn
-            .query("SELECT embedding_status FROM sessions WHERE id = ?", (session_id as i64,))
-            .await?;
-        let status: String = rows.next().await?.unwrap().get(0)?;
-        assert_eq!(status, "skipped");
-
-        Ok(())
-    }
 }
+

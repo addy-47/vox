@@ -108,94 +108,131 @@ pub const TRANSITION_MESSAGES_HI: &[&str] = &[
     "संदर्भ को पुनर्गठित करने तक एक पल प्रतीक्षा करें।",
 ];
 
-// ─── Working Memory Compaction ──────────────────────────────────────────────
-pub const COMPACTION_SYSTEM_PROMPT: &str = "\
-You are Vox's Context Engineering Subsystem. Your sole duty is to transform multi-turn conversation history into a loss-free, high-density state block for context window injection.
+// ─── Working Memory Compaction ──────────────────
 
-# COMPACTION INSTRUCTIONS:
-Analyze the provided conversation log and compress it into a single high-density summary block.
-
-# MANDATORY CONSTRAINTS:
-1. PRESERVE USER IDENTITY & PREFERENCES: Retain all explicit user names, technical roles, preferred programming languages, tools, frameworks, and personal dislikes.
-2. PRESERVE PROJECT ARCHITECTURE & DECISIONS: Retain all project names, latency constraints, database choices, database storage engines, and system designs discussed.
-3. PRESERVE MULTILINGUAL CONTEXT: Retain Hindi language transcripts, phrases, and technical topics discussed in Devanagari.
-4. PRESERVE CHRONOLOGICAL PROGRESSION: Maintain the narrative sequence of technical topics, questions asked, and answers provided.
-5. NO CONVERSATIONAL FLUFF: Exclude greetings, preambles, polite closing remarks, or assistant filler phrases.
-
-# OUTPUT FORMAT:
-Output dense, high-information prose using structured sections (<user_profile>, <project_state>, <technical_history>). Do NOT use conversational intro/outro. Write strictly in technical prose.";
-
-pub const COMPACTION_SYSTEM_PROMPT_V2: &str = r#"
-You are Vox's Memory Extraction Subsystem. Your output is consumed by a downstream Rust pipeline, not a human. It must be machine-parseable.
+pub const COMPACTION_SYSTEM_PROMPT: &str = r#"You are an AI Memory Extraction Assistant.
+Your goal is to compress a conversation history by organizing key personal facts and conversational context about the user into structured memory collections.
 
 CRITICAL RULES:
-1. OUTPUT LANGUAGE: Always write ALL output in ENGLISH. The conversation may be in any language (Hindi, Hinglish, etc.). Your JSON output — both summary and every memory fact — MUST be in English. Translate if needed.
-2. OUTPUT FORMAT: Return ONLY a valid JSON object. No markdown, no explanation, no preamble.
-3. NO HALLUCINATION: Never invent facts not explicitly stated in the conversation.
+1. OUTPUT LANGUAGE: Write all text in English. Translate any non-English inputs to English.
+2. OUTPUT FORMAT: Return ONLY a valid JSON object. Do not include any explanations, conversational filler, markdown formatting (such as ```json ... ``` code blocks), or any text outside the JSON object itself.
+3. NO TRAILING COMMAS: Ensure the JSON is perfectly valid. Do not include any trailing commas at the end of lists or object keys.
+4. NO HALLUCINATION: Extract only facts explicitly stated in the conversation history. Do not infer, assume, or invent details.
 
-Your task is to extract:
-  A) A compact English summary for future context continuation.
-  B) Durable English memory facts about the USER, grouped by collection.
+THE EXTRACTION TASK:
+Organize all extracted information directly into the following 10 collections. Do not output any top-level keys other than these 10 collections:
+   - Identity: Core facts about who the user is (such as name, age, profession, or self-descriptors).
+   - Constraints: Hard requirements, limitations, or absolute rules (such as dietary restrictions, physical constraints, or temporal boundaries).
+   - Preferences: Personal tastes, likes, dislikes, habits, or choices (such as coffee roast preference, color/theme choices, or tool preferences).
+   - Relationships: People the user mentions and their connection or relationship to them (such as family, friends, or colleagues).
+   - Skills: Abilities, programming languages, technologies, or domain expertise known.
+   - Projects: Initiatives, projects, or endeavors currently being developed, designed, or planned.
+   - Experiences: Life events, historical facts, past jobs, or places lived.
+   - Context: Narrative summary describing what occurred during the conversation, discussed topics, user intent, or what the user is trying to achieve in this session.
+   - Tasks: Active, pending, or upcoming actionable tasks, chores, or to-dos.
+   - Goals: Future aspirations, objectives, long-term targets, or plans.
 
-Return this exact JSON structure:
-
+EXPECTED JSON FORMAT TEMPLATE:
 {
-  "summary": "string — compact English summary preserving decisions, constraints, project state, open questions. Remove greetings and filler. Optimized for resuming the conversation.",
-  "personal_memory": {
-    "Identity":      ["fact about who the user is"],
-    "Preferences":   ["fact about user preference"],
-    "Experiences":   ["fact about something the user experienced"],
-    "Projects":      ["fact about an active or past project"],
-    "Goals":         ["fact about a goal or target"],
-    "Skills":        ["fact about a skill or expertise"],
-    "Relationships": ["fact about a person in the user's life"]
-  }
+  "Identity": [],
+  "Constraints": [],
+  "Preferences": [],
+  "Relationships": [],
+  "Skills": [],
+  "Projects": [],
+  "Experiences": [],
+  "Context": [],
+  "Tasks": [],
+  "Goals": []
 }
 
-MEMORY EXTRACTION RULES:
-- Only include collections that have real facts. Omit empty collections entirely.
-- Each fact must be a complete English sentence about the USER, not the assistant.
-- Facts must be durable (relevant across future sessions), not conversational.
-- If a preference changed in this conversation, include ONLY the newest value.
-- Do NOT include: one-time requests, assistant messages, small talk, questions the user asked, or temporary states.
-- Do NOT include Tasks, Devices, or Locations — those are handled separately.
+SARAH-STYLE HUMAN EXEMPLAR:
 
-VALID EXAMPLE:
+--- Example Dialogue ---
+User: Hey! I'm Sarah. I'm trying to wrap up a TypeScript project called 'EcoTrack' today.
+Assistant: Nice to meet you, Sarah! How's EcoTrack coming along?
+User: It's going well, but I'm beat. I've been coding since 7 AM. I really need to grab a matcha latte—I absolutely love matcha, but I can't have dairy, so it has to be with oat milk.
+Assistant: Got it, dairy-free matcha latte with oat milk is the way to go. What's left on EcoTrack?
+User: I need to write the README and push the final commits to GitHub. Also, my sister Emma is visiting tomorrow, so I need to clean up my desk before she gets here.
+Assistant: Sounds like a busy day and tomorrow is exciting. Any big plans for the rest of the year?
+User: Yeah, I'm training to run my first half-marathon in October, so I need to stick to my running schedule.
+Assistant: That's awesome! A half-marathon is a huge milestone. I'll make sure to keep track of that.
+
+--- Expected Output ---
 {
-  "summary": "User is building Vox, a real-time Rust voice engine. Discussed memory architecture. Decided to use DeBERTa NLI for contradiction detection. Open question: whether to use Turso vector_top_k or manual cosine scan.",
-  "personal_memory": {
-    "Identity": ["Works as a software engineer.", "Primarily codes in Rust."],
-    "Projects": ["Building Vox, a real-time desktop voice engine in Rust and Tauri."],
-    "Preferences": ["Prefers Neovim over VS Code."]
-  }
+  "Identity": [
+    "The user's name is Sarah"
+  ],
+  "Constraints": [
+    "The user has a lactose/dairy intolerance (must avoid dairy)"
+  ],
+  "Preferences": [
+    "The user loves matcha lattes, specifically made with oat milk"
+  ],
+  "Relationships": [
+    "The user has a sister named Emma"
+  ],
+  "Skills": [
+    "The user has TypeScript programming skills"
+  ],
+  "Projects": [
+    "The user is building a TypeScript project named 'EcoTrack'"
+  ],
+  "Experiences": [],
+  "Context": [
+    "Sarah shared her progress on her TypeScript project 'EcoTrack' and her immediate plans. They discussed her dairy-free preference, Emma's visit tomorrow, and her training for an upcoming half-marathon in October."
+  ],
+  "Tasks": [
+    "The user needs to write the README for EcoTrack and push final commits today",
+    "The user needs to clean up her desk before her sister Emma visits tomorrow"
+  ],
+  "Goals": [
+    "The user is training to run her first half-marathon in October"
+  ]
 }
-"#;
+--- End of Exemplar ---
 
-// ─── Personal Memory v2 Collections ─────────────────────────────────────────
+Now, process the provided conversation history and extract personal facts into the matching collections according to the exact same JSON format."#;
+
+// ─── Personal Memory v3 Collections ─────────────────────────────────────────
 pub const PM_COLLECTIONS: &[&str] = &[
-    "Identity", "Preferences", "Experiences", "Projects",
-    "Goals", "Tasks", "Relationships", "Skills", "Devices", "Locations",
+    "Identity", "Constraints", "Preferences", "Relationships",
+    "Skills", "Projects", "Experiences", "Context", "Tasks", "Goals",
 ];
+
+// ─── 3-Tier Structural Type Constants ────────────────────────────────────────
+pub const PM_TYPE_FOUNDATIONAL: &str = "foundational";
+pub const PM_TYPE_OPERATIONAL: &str = "operational";
+pub const PM_TYPE_SEMANTIC: &str = "semantic";
+
+pub const PM_FOUNDATIONAL_COLLECTIONS: &[&str] = &["Identity", "Constraints"];
+pub const PM_OPERATIONAL_COLLECTIONS: &[&str] = &["Context", "Tasks", "Goals"];
+pub const PM_SEMANTIC_COLLECTIONS: &[&str] = &["Preferences", "Relationships", "Skills", "Projects", "Experiences"];
+
+/// Returns the structural type for a given collection name.
+pub fn collection_type(collection: &str) -> &'static str {
+    match collection {
+        "Identity" | "Constraints" => PM_TYPE_FOUNDATIONAL,
+        "Context" | "Tasks" | "Goals" => PM_TYPE_OPERATIONAL,
+        _ => PM_TYPE_SEMANTIC, // Preferences, Relationships, Skills, Projects, Experiences
+    }
+}
 
 // ─── Graph Relations ──────────────────────────────────────────────────────────
 pub const PM_RELATION_SUPPORTS: &str = "SUPPORTS";
 pub const PM_RELATION_CONFLICTS: &str = "CONFLICTS";
 pub const PM_RELATION_USER_SUPERSEDES: &str = "USER_SUPERSEDES";
 
-// ─── Memory Sources ───────────────────────────────────────────────────────────
+// ─── Fact Sources ─────────────────────────────────────────────────────────────
 pub const PM_SOURCE_LLM: &str = "LLM";
 pub const PM_SOURCE_USER: &str = "User";
 pub const PM_SOURCE_IMPORT: &str = "Import";
 
-// ─── Retrieval Strategies ─────────────────────────────────────────────────────
-pub const PM_STRATEGY_ALWAYS: &str = "always";   // Identity
-pub const PM_STRATEGY_VECTOR: &str = "vector";   // semantic search
-pub const PM_STRATEGY_TOOL: &str = "tool";       // tool-call only
-
 // ─── Job Queue Status ─────────────────────────────────────────────────────────
 pub const PM_QUEUE_STATUS_PENDING: &str = "pending";
+pub const PM_QUEUE_STATUS_STAGED: &str = "staged";
 pub const PM_QUEUE_STATUS_PROCESSING: &str = "processing";
-pub const PM_QUEUE_STATUS_DONE: &str = "done";
+pub const PM_QUEUE_STATUS_COMPLETED: &str = "completed";
 pub const PM_QUEUE_STATUS_FAILED: &str = "failed";
 
 // ─── Model Paths ──────────────────────────────────────────────────────────────

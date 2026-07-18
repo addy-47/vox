@@ -304,6 +304,7 @@ pub struct AppState {
     /// Whether the CPU governor is optimal ("performance"). True if unavailable (non-Linux).
     pub cpu_governor_optimal: Arc<AtomicBool>,
     pub setup_running: Arc<Mutex<bool>>,
+    pub conversation_manager: Arc<std::sync::Mutex<crate::services::memory::ConversationManager>>,
 }
 
 impl AppState {
@@ -407,6 +408,9 @@ impl AppState {
             cpu_governor: std::sync::Mutex::new(String::new()),
             cpu_governor_optimal: Arc::new(AtomicBool::new(true)), // optimistic default
             setup_running: Arc::new(Mutex::new(false)),
+            conversation_manager: Arc::new(std::sync::Mutex::new(
+                crate::services::memory::ConversationManager::new(2048),
+            )),
         }
     }
 }
