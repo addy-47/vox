@@ -29,7 +29,6 @@ pub fn spawn_persistence_worker(
             // Get the global/fallback Tokio runtime handle
             let rt_handle = crate::persistence::db::get_tokio_handle();
 
-            // Open DB and run migrations inside the tokio runtime
             let db = match rt_handle.block_on(VoxDb::open(&db_path)) {
                 Ok(d) => {
                     is_db_healthy.store(true, Ordering::Relaxed);
@@ -51,6 +50,13 @@ pub fn spawn_persistence_worker(
             if let Err(e) = rt_handle.block_on(cleanup_zero_turn_sessions(&db)) {
                 tracing::warn!(
                     "[Persistence] Zero-turn startup cleanup failed (non-fatal): {}",
+                    e
+                );
+            }
+
+            if let Err(e) = rt_handle.block_on(cleanup_stuck_queue_items(&db)) {
+                tracing::warn!(
+                    "[Persistence] Stuck queue items startup cleanup failed (non-fatal): {}",
                     e
                 );
             }
@@ -249,6 +255,15 @@ async fn cleanup_zero_turn_sessions(conn: &turso::Connection) -> anyhow::Result<
             "[Persistence] Startup cleanup: removed {} zero-activity session(s)",
             deleted
         );
+    }
+    Ok(())
+}
+
+/// Resets memory queue items stuck in 'processing' status to 'pending' (Bug #3).
+async fn cleanup_stuck_queue_items(conn: &turso::Connection) -> anyhow::Result<()> {
+    let reset = conn.execute("UPDATE personal_memory_queue SET status = 'pending' WHERE status = 'processing'", ()).await?;
+    if reset > 0 {
+        tracing::info!("[Persistence] Startup cleanup: reset {} stuck memory queue item(s) to pending", reset);
     }
     Ok(())
 }

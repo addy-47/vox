@@ -1,6 +1,5 @@
 pub mod classifier;
 pub mod embedder;
-pub mod retrieval;
 pub mod tokenizer;
 pub mod working_memory;
 pub mod nli;
@@ -13,9 +12,8 @@ pub use embedder::{
     cosine_similarity, ensure_embedder_loaded, generate_embedding, init_embedder,
     is_embedder_loaded,
 };
-pub use retrieval::{
-    format_retrieved_memories_for_prompt, retrieve_episodic_memories, RetrievedEpisode,
-    retrieve_and_format_memory_context,
+pub use personal_memory::{
+    retrieve_personal_context, MemoryFact,
 };
 pub use tokenizer::estimate_tokens;
 pub use working_memory::{

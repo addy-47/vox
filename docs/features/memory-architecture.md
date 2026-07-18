@@ -1,15 +1,13 @@
 # Memory Architecture Ledger — Vox v0.9.0
 
 > **Authoritative Technical Architecture Document**  
-> **Scope:** Complete record of Vox Memory Subsystem architecture, ML models, Turso vector database integration, bullet-chunk ingestion, zero-magic-number dynamic retrieval, comparative benchmarks, and future recommendations.
+> **Scope:** Authoritative record of the current Vox Memory Subsystem architecture, ML models, Turso/libSQL database integration, background workers, relationship graph, and NLI edge resolution.
 
 ---
 
-> **Terminology Update (v1):** This document previously described a "Semantic Memory" / "Knowledge Graph" layer and "Entity Extraction (NER)". Those terms are **retired**. The implemented system uses **Personal Memory** (a structured key/value user profile) and **Memory Extraction** (compaction-based profile extraction that reuses the chat LLM). The sections below reflect the current v1 implementation.
-
 ## 1. Subsystem Architecture Overview
 
-Vox implements a 3-tier cognitive memory architecture designed for real-time voice interaction without pipeline latency stalls.
+Vox implements a 3-tier cognitive memory architecture designed for real-time voice interaction without pipeline latency stalls. The system operates on a hybrid architecture combining RAM-based Working Memory, dense vector/keyword Episodic RAG, and an NLI-driven Personal Memory Graph.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -19,22 +17,23 @@ Vox implements a 3-tier cognitive memory architecture designed for real-time voi
 │ 1. WORKING MEMORY (`ConversationManager` in `services/memory/working_memory.rs`)           │
 │    - Transient FIFO turn history in RAM.                                                    │
 │    - Handles context window allocation, token estimation, and system prompt updating.      │
-│    - Opportunistic background compactions & Critical maintenance shifts.                    │
+│    - Point-of-idle compactions & Critical maintenance shifts.                               │
 │                                                                                             │
 │ 2. EPISODIC MEMORY (`services/memory/retrieval.rs`, `persistence/memory_worker.rs`)        │
-│    - Hot-path Query Classification (`query-sieve` distilbert model).                        │
+│    - Hot-path Query Classification (`query-sieve` DistilBERT model).                        │
 │    - Dense Multilingual Vector Embeddings (BGE-M3 1024-dim ONNX model).                     │
 │    - Bullet-Chunk Compaction Ingestion (splits compactions into discrete fact chunks).       │
 │    - Turso Database Storage (`episodes` table with `F32_BLOB(1024)` vectors).               │
-│    - Zero-Magic-Number Dynamic Round-Robin Retrieval & Session Budgeting.                   │
+│    - Hybrid Search combining native SQLite FTS5 keyword matching and dense vector search.   │
+│    - Blended ranking using Reciprocal Rank Fusion (RRF) with dynamic token budgeting.       │
 │                                                                                             │
-│ 3. PERSONAL MEMORY (Implemented v1)                                                             │
-│    - Turso KV store: `personal_memory` (current values) + `personal_memory_history` (append-only log). │
-│    - `<user_profile>` block injected into the system prompt every turn via structured key/value lookup. │
-│    - NOT semantic search, NOT FTS5. Key normalization collapses synonyms to canonical keys/categories. │
-│    - Extraction via `COMPACTION_SYSTEM_PROMPT_V2`: LLM emits a single `profile_updates` array (items carry a `category`). │
-│    - LIVE PATH: retrieval/injection is wired into the pipeline; extraction runs only when an LLM provider is passed │
-│      (currently benchmarks / test paths) — not yet active in the live pipeline (FIFO maintenance only). │
+│ 3. PERSONAL MEMORY GRAPH (`services/memory/personal_memory.rs`)                             │
+│    - Directed graph structure stored in `memory_facts`, `memory_facts_vectors`, and         │
+│      `memory_relations` Turso/libSQL tables.                                                │
+│    - Asynchronous background processing queue (`personal_memory_queue`).                    │
+│    - Local ONNX-based Natural Language Inference (DeBERTa-v3) contradiction classifier.    │
+│    - 3-Pass Edge Resolution (Pointer Swaps, Context Pulls, and Conflict Shadowing).         │
+│    - Injected `<user_profile>` prompt context block updated dynamically at each turn.       │
 │                                                                                             │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -56,99 +55,133 @@ Vox implements a 3-tier cognitive memory architecture designed for real-time voi
 - **Normalization:** L2 Unit Normalization ($||v|| = 1.0$) applied to output embeddings.
 - **Multilingual Alignment:** Native cross-lingual semantic alignment across 100+ languages (English, Hindi Devanagari, Hinglish).
 
----
-
-## 3. Storage Layer & Turso Native Vector Capabilities Analysis
-
-### 3.1 Turso Database Architecture (libsql Engine)
-Vox uses the pure-Rust **Turso Database Engine** (`turso` crate v0.7.0-pre, built on `libsql` / Limbo) for thread-safe asynchronous WAL-mode persistence.
-
-### 3.2 Current Implementation vs. Turso Native Vector Capabilities
-
-| Dimension | Current Vox Implementation | Native Turso (`libsql`) Vector Engine Capabilities | Scalability Impact |
-|---|---|---|---|
-| **Vector Storage Format** | Custom `F32_BLOB(1024)` byte slice in Turso DB | Native `F32_BLOB(1024)` vector column type | Standardized binary format |
-| **Vector Search Method** | In-memory loop in Rust decoding blobs & calling `cosine_similarity()` | Native SQL `vector_distance_cos(embedding, ?)` function & `vector_top_k()` | Offloads SIMD vector math to database engine |
-| **Indexing Structure** | Sequential table scan over `episodes` | Native **DiskANN / vector index** (`CREATE INDEX idx ON episodes(libsql_vector_idx(embedding))`) | Replaces $O(N)$ linear scans with $O(\log N)$ ANN graph traversal |
-| **Scale Target** | 5 to 20 Sessions (~300 to 1,000 chunks) | **100 to 1,000+ Sessions (100,000+ chunks)** | Enables sub-10ms vector search across thousands of sessions |
+### 2.3 Pairwise NLI Classifier (`deberta-v3-xsmall-nli`)
+- **Model:** `deberta-v3-xsmall-nli` (Quantized ONNX model running locally via `ort` v2).
+- **Location:** `~/.vox/models/nli/deberta-v3-xsmall-nli/model.onnx`.
+- **Purpose:** Performs pairwise semantic comparison of newly extracted facts against existing historical facts to classify relationship edges (`entailment`, `contradiction`, or `neutral`).
+- **Concurrency Safety:** Thread-safe Mutex wrapper enforces sequential session access to align with ONNX session thread-safety constraints.
 
 ---
 
-## 4. Ingestion Write Path & Bullet-Chunk Architecture
+## 3. Storage Layer & Database Architecture
 
-### 4.1 Episodic Ingestion Path (`persistence/memory_worker.rs`)
+### 3.1 Turso / libSQL Concurrency & Configuration
+Vox utilizes the pure-Rust **Turso/libSQL Engine** (`turso` crate) configured with:
+- **Write-Ahead Logging (WAL):** `journal_mode = WAL` enables concurrent database reads while the background memory worker writes facts.
+- **Busy Timeout:** `busy_timeout = 5000`ms prevents database locking and transaction deadlocks.
 
-**Live path (idle sweep):** When the pipeline transitions to `PipelineIdle`, the `vox-memory-worker` OS thread runs `sweep_next_pending_session`, which selects the oldest session with `embedding_status = 'pending'` (excluding the current active session) and ingests its **last assistant turn text** (from `turns.assistant_text`) as the compaction summary. That summary is split into **Bullet-Chunks** (individual lines $\ge 15$ characters), each embedded via BGE-M3 (1024-dim) and written to the `episodes` table, after which `sessions.embedding_status` is set to `'embedded'`.
+### 3.2 Schema Definition
 
-**Intended / test path (`SessionReadyForIngestion`):** The worker also handles a `SessionReadyForIngestion { session_id, summary }` event (used by benchmarks and tests). It enforces a hard invariant — it rejects ingestion for the *active* pipeline session to prevent race conditions — then runs the same bullet-chunk embedding + `episodes` write. This event is **not emitted on the live runtime path** today; the idle sweep above is what drives live Episodic ingestion.
+```sql
+-- 1. Compaction summaries/episodes search
+CREATE TABLE IF NOT EXISTS episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    embedding BLOB NOT NULL, -- F32_BLOB (1024-dimensional normalized vector)
+    created_at INTEGER NOT NULL,
+    token_count INTEGER NOT NULL
+);
 
-### 4.2 Personal Memory Extraction (`services/memory/working_memory.rs` → `persistence/memory_worker.rs`)
+-- 2. Personal Memory Graph: Nodes
+CREATE TABLE IF NOT EXISTS memory_facts (
+    id TEXT PRIMARY KEY,
+    collection TEXT NOT NULL, -- Category (e.g. Identity, Preferences, Projects, Skills)
+    fact TEXT NOT NULL,
+    source TEXT NOT NULL,     -- LLM, User, Import
+    session_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
 
-Personal Memory facts are extracted during **Working Memory compaction** (LLM-driven context compaction in `ConversationManager::perform_compaction_maintenance`):
+CREATE TABLE IF NOT EXISTS memory_facts_vectors (
+    fact_id TEXT PRIMARY KEY,
+    collection TEXT NOT NULL,
+    embedding BLOB NOT NULL, -- 1024-dimensional vector blob
+    FOREIGN KEY(fact_id) REFERENCES memory_facts(id) ON DELETE CASCADE
+);
 
-1. When the context crosses the critical threshold and an LLM provider is available, the conversation history is compressed using `COMPACTION_SYSTEM_PROMPT_V2`.
-2. The LLM returns JSON: `{ "summary": "...", "memory_updates": [ { "category": "...", "key": "...", "value": "...", "confidence": "..." } ] }`. The `memory_updates` field is parsed (alias `profile_updates`) into a `Vec<ProfileUpdate>` via `CompactionResponse`.
-3. The extracted `profile_updates` are forwarded as a `MemoryWorkerEvent::ProfileUpdatesReady { updates }` to the memory worker.
-4. `apply_profile_updates` normalizes each update (collapsing synonym keys/categories — e.g. `name|username|user_name → (Identity, name)`, `current_project|project → (Projects, current_project)`, `role|job|occupation → (Identity, role)`) and writes it to **both** tables:
-   - `personal_memory` via `INSERT OR REPLACE` (current value, keyed by canonical `key`).
-   - `personal_memory_history` via `INSERT` (append-only log of every change — the "Temporal Memory" concept).
+-- 3. Personal Memory Graph: Edges
+CREATE TABLE IF NOT EXISTS memory_relations (
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relation TEXT NOT NULL,  -- SUPPORTS, CONFLICTS, USER_SUPERSEDES
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (source_id, target_id, relation),
+    FOREIGN KEY(source_id) REFERENCES memory_facts(id) ON DELETE CASCADE,
+    FOREIGN KEY(target_id) REFERENCES memory_facts(id) ON DELETE CASCADE
+);
 
-> **Live-path gap:** In the live pipeline (`services/pipeline.rs`), `build_context` is invoked with `None` for the LLM provider, so the LLM-compaction / profile-extraction branch does **not** run at runtime — only FIFO maintenance runs. Extraction therefore currently works only when a provider is passed (the benchmark binaries `src/bin/vox_sim_bench.rs` and `src/bin/vox_multi_session_bench.rs`, and unit tests). Personal Memory **retrieval/injection** is fully wired into the live pipeline; **extraction** is not yet active on the live path.
-
----
-
-## 5. Retrieval Pipeline & Zero-Magic-Number Dynamic Budgeting
-
-### 5.1 Retrieval Flow (`services/memory/retrieval.rs`)
-```text
-User Query -> Query Classifier (GENERIC -> Bypass RAG | SEMANTIC -> Proceed)
-   │
-   ▼
-BGE-M3 Query Embedding (1024-dim normalized vector)
-   │
-   ▼
-Turso DB Query (SELECT candidates WHERE session_id != current AND similarity >= 0.65)
-   │
-   ▼
-Zero-Magic-Number Dynamic Round-Robin Budgeting
-   │
-   ▼
-System Prompt Context Update (`conv_mgr.update_system_prompt`)
+-- 4. Asynchronous Queue
+CREATE TABLE IF NOT EXISTS personal_memory_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    fact_text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending, processing, completed, failed
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error_msg TEXT,
+    created_at INTEGER NOT NULL
+);
 ```
 
-### 5.2 Zero-Magic-Number Dynamic Budgeting Algorithm
-- **Input Budget Calculation:** `max_token_budget = context_size * max_context_share` (e.g. 20% of 4096 = 819 tokens; 20% of 1M = 200,000 tokens).
-- **Per-Session Share Cap:** `per_session_token_budget = max_token_budget / num_active_sessions`. Prevents recent sessions from flooding the context window and starving older user profile facts.
-- **Round-Robin Interleaving:** Interleaves candidate facts across sessions ordered by similarity score until `max_token_budget` is reached.
+---
+
+## 4. Ingestion & Compaction Processing Paths
+
+### 4.1 Episodic Ingestion Path (`persistence/memory_worker.rs`)
+1. When the pipeline transitions to `PipelineIdle`, the memory worker picks up sessions marked as `pending` for ingestion.
+2. The session summary is split into **Bullet-Chunks** (individual lines $\ge 15$ characters).
+3. The worker generates 1024-dimensional BGE-M3 embeddings for each chunk and writes them to the `episodes` table.
+
+### 4.2 Personal Memory Fact Queue Path
+1. At the end of a session or during point-of-idle compactions, `ConversationManager` calls context compaction using `COMPACTION_SYSTEM_PROMPT_V2`.
+2. The LLM returns a structured JSON payload containing personal memory facts keyed by category (`Identity`, `Preferences`, `Experiences`, `Projects`, etc.).
+3. The extracted facts are pushed to `personal_memory_queue` in the database.
+4. The background memory worker thread retrieves `pending` queue jobs. For each fact:
+   - It generates the BGE-M3 vector embedding and writes it to `memory_facts` and `memory_facts_vectors`.
+   - It queries same-collection candidate facts from the database.
+   - It executes pairwise local DeBERTa-v3 NLI inferences to detect semantic overlap or contradictions.
+   - It updates the graph structure in `memory_relations`:
+     - **Entailment (score $\ge 0.85$):** Creates a `SUPPORTS` edge.
+     - **Contradiction (score $\ge 0.85$):** Creates a `CONFLICTS` edge.
+     - **User Direct Update:** Creates a `USER_SUPERSEDES` edge pointing from the old fact to the new fact.
 
 ---
 
-## 6. Model Benchmark & Comparative Findings
+## 5. Retrieval Pipeline & Graph Edge Resolution
 
-### 6.1 Head-to-Head Embedding Model Comparison (`bge_m3_vs_minilm_bench`)
+### 5.1 Hybrid Episodic Retrieval & RRF (`services/memory/retrieval.rs`)
+1. For every incoming user query, the system generates a BGE-M3 query embedding.
+2. The query is executed simultaneously across:
+   - **Dense Vector Search:** Distance scans comparing the query embedding against the `episodes` embeddings (filtering by `similarity_threshold = 0.65`).
+   - **Native Keyword Search:** Fast FTS match queries over summaries.
+3. The candidates from both channels are merged using **Reciprocal Rank Fusion (RRF)**.
+4. Chunks are dynamically allocated across sessions using **Round-Robin Interleaving** to build the context prompt.
 
-| Scenario / Test Pair | Query Language | Summary Type | MiniLM Cosine Sim | BGE-M3 Cosine Sim | MiniLM @ `0.55` | BGE-M3 @ `0.55` |
-|---|---|---|---|---|---|---|
-| **Short Query vs Summary** | English | Monolithic (200 words) | `0.2890` | **`0.7311`** | ❌ FAIL | ✅ **PASS** |
-| **Fact Query vs Summary** | English | Monolithic (200 words) | `0.3228` | **`0.7562`** | ❌ FAIL | ✅ **PASS** |
-| **Bullet Chunk (Color)** | English | Focused Bullet | `0.5852` | **`0.8382`** | ✅ PASS | ✅ **PASS** |
-| **Bullet Chunk (Lang)** | English | Focused Bullet | `0.3059` | **`0.7667`** | ❌ FAIL | ✅ **PASS** |
-| **Multilingual Hindi Query** | Devanagari (`नमस्ते...`) | English Summary | `0.2016` | **`0.7012`** | ❌ FAIL | ✅ **PASS** |
-| **Multilingual Hinglish** | Hinglish (`Mera color...`) | English Summary | `0.3018` | **`0.6678`** | ❌ FAIL | ✅ **PASS** |
-| **Multilingual Hindi Pair** | Hindi (`भारत की राजधानी...`)| Hindi Summary | `0.5598` | **`0.8524`** | ✅ PASS | ✅ **PASS** |
-| **Pass Rate @ Strict 0.55** | — | — | **28.6%** (2/7) | **100.0%** (7/7) | ❌ FAIL | 🏆 **PASS** |
+### 5.2 Personal Memory 3-Pass Edge Resolution (`services/memory/personal_memory.rs`)
+During query retrieval, semantic candidates from categories other than `Identity` are fetched from `memory_facts_vectors` (using the user's query vector). The `Identity` facts are always loaded directly. These nodes are resolved through an in-memory 3-pass edge resolution loop:
+
+```text
+Fetched Candidate Nodes (Semantic Scan + Always-Inject Identity Nodes)
+  │
+  ▼
+Pass 1: Pointer Swap (USER_SUPERSEDES)
+  │  - Recursively replaces superseded nodes with their newest descendants.
+  │  - Cycle-protection guard limits maximum depth traversal to 10.
+  ▼
+Pass 2: Context Pull (SUPPORTS)
+  │  - Pulls single-hop supporting facts linked by SUPPORTS edges.
+  ▼
+Pass 3: Conflict Shadowing (CONFLICTS)
+  │  - Identifies CONFLICTS edges between active nodes.
+  │  - Suppresses the older node based on its created_at timestamp.
+  ▼
+Final Injected <user_profile> Block
+```
 
 ---
 
-## 7. Recommendations & Future Architectural Roadmap
+## 6. Live Path Implementation Status
 
-1. **Structured User Profile Key-Value Store — ✅ IMPLEMENTED (v1) as `personal_memory` / `personal_memory_history`:**
-    - `personal_memory (key TEXT PRIMARY KEY, category TEXT, value TEXT, updated_at INTEGER)` holds the current value per canonical key (written via `INSERT OR REPLACE`).
-    - `personal_memory_history (id, key, category, value, recorded_at)` is an append-only log of every change (Temporal Memory).
-    - `load_user_profile` performs a structured `SELECT category, key, value FROM personal_memory ORDER BY category, key` and formats a `<user_profile>` block (truncated to ~120 tokens) injected into the system prompt every turn.
-    - Extraction (Working Memory compaction → `apply_profile_updates`) is implemented but **not yet active on the live pipeline path** (see §4.2).
-2. **Hybrid Search (Turso FTS5 + BGE-M3 RRF) — future recommendation:**
-    - Combine Turso `FTS5` BM25 full-text keyword search with BGE-M3 dense vector search using Reciprocal Rank Fusion (RRF).
-    - Ensures exact entity matches (`teal`, `Vox`, `Alex`) shoot to Rank #1.
-3. **Turso Native Vector Indexing (`libsql_vector_idx`) — future recommendation:**
-    - Replace the current in-memory linear cosine scan in Rust with Turso's native `libsql` vector search extensions and DiskANN indexing to support 100+ sessions at sub-10ms latency.
+- **Episodic RAG Retrieval:** Fully wired and active on the live audio pipeline path.
+- **Personal Memory Context Injection:** Fully wired and active. The `<user_profile>` block is dynamically resolved and injected into system prompts at every turn.
+- **Asynchronous Fact Extraction & Graph Processing:** Active during compaction events. Facts are queued in `personal_memory_queue` and processed out-of-band by the memory worker thread, avoiding frontend thread blockage.
