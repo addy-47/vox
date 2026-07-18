@@ -316,7 +316,7 @@ impl ConversationManager {
             messages: vec![
                 ChatMessage {
                     role: Role::System,
-                    content: crate::core::constants::COMPACTION_SYSTEM_PROMPT_V2.to_string(),
+                    content: crate::core::constants::COMPACTION_SYSTEM_PROMPT.to_string(),
                     timestamp_ms: current_timestamp_ms(),
                 },
                 ChatMessage {
@@ -352,22 +352,23 @@ impl ConversationManager {
             return Ok(std::collections::HashMap::new());
         }
 
-        #[derive(Debug, Deserialize)]
-        struct CompactionResponseV2 {
-            summary: String,
-            #[serde(default)]
-            personal_memory: std::collections::HashMap<String, Vec<String>>,
-        }
-
-        let (final_summary, personal_memory) = {
+        let personal_memory = {
             let cleaned = crate::utils::json::clean_json_content(&summary_content);
-            if let Ok(resp) = serde_json::from_str::<CompactionResponseV2>(&cleaned) {
-                (resp.summary, resp.personal_memory)
+            if let Ok(resp) = serde_json::from_str::<std::collections::HashMap<String, Vec<String>>>(&cleaned) {
+                resp
             } else {
                 log::warn!("[WorkingMemory] LLM compaction returned non-JSON/malformed content. Treating as raw summary.");
-                (summary_content, std::collections::HashMap::new())
+                std::collections::HashMap::new()
             }
         };
+
+        let final_summary = personal_memory
+            .get("Context")
+            .and_then(|v| v.first())
+            .cloned()
+            .unwrap_or_else(|| {
+                summary_content.clone()
+            });
 
         if final_summary.trim().is_empty() {
             log::warn!("[WorkingMemory] Live LLM compaction produced empty summary. Falling back to FIFO shift.");
@@ -491,6 +492,20 @@ impl ConversationManager {
             log::info!("[WorkingMemory] Opportunistic compaction cancelled.");
         }
     }
+
+    pub fn latest_summary(&self) -> String {
+        for msg in self.messages.iter().rev() {
+            if msg.role == Role::System {
+                if let Some(s) = msg.content.strip_prefix("[Compacted History Summary: ") {
+                    return s.strip_suffix("]").unwrap_or(s).to_string();
+                }
+                if let Some(s) = msg.content.strip_prefix("[Summary of prior context: ") {
+                    return s.strip_suffix("]").unwrap_or(s).to_string();
+                }
+            }
+        }
+        String::new()
+    }
 }
 
 
@@ -561,19 +576,18 @@ mod tests {
         mgr.push_user_turn("Yes, it is.".to_string());
 
         let mock_response = r#"{
-            "summary": "The user introduced himself as Alex and expressed his love for Rust.",
-            "personal_memory": {
-                "Identity": ["Works as a software engineer.", "User's name is Alex."],
-                "Preferences": ["User loves coding in Rust."]
-            }
+            "Identity": ["Works as a software engineer.", "User's name is Alex."],
+            "Preferences": ["User loves coding in Rust."],
+            "Context": ["The user introduced himself as Alex and expressed his love for Rust."]
         }"#.to_string();
 
         let provider = MockProvider { response_text: mock_response };
         let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
 
-        assert_eq!(updates.len(), 2);
+        assert_eq!(updates.len(), 3);
         assert_eq!(updates.get("Identity").unwrap().len(), 2);
         assert_eq!(updates.get("Preferences").unwrap().len(), 1);
+        assert_eq!(updates.get("Context").unwrap().len(), 1);
     }
 
     #[test]
@@ -586,17 +600,15 @@ mod tests {
 
         let mock_response = r#"```json
         {
-            "summary": "Alex introduced himself.",
-            "personal_memory": {
-                "Identity": ["User's name is Alex."]
-            }
+            "Identity": ["User's name is Alex."],
+            "Context": ["Alex introduced himself."]
         }
         ```"#.to_string();
 
         let provider = MockProvider { response_text: mock_response };
         let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
 
-        assert_eq!(updates.len(), 1);
+        assert_eq!(updates.len(), 2);
         assert_eq!(updates.get("Identity").unwrap()[0], "User's name is Alex.");
     }
 
@@ -648,11 +660,11 @@ mod tests {
             }
         }"#;
         #[derive(Debug, Deserialize)]
-        struct CompactionResponseV2 {
+        struct UnifiedCompactionPayload {
             summary: String,
             personal_memory: std::collections::HashMap<String, Vec<String>>,
         }
-        let resp: CompactionResponseV2 = serde_json::from_str(json_data).expect("Failed to deserialize compaction response");
+        let resp: UnifiedCompactionPayload = serde_json::from_str(json_data).expect("Failed to deserialize compaction response");
         assert_eq!(resp.summary, "User codes in Rust.");
         assert_eq!(resp.personal_memory.get("Identity").unwrap()[0], "Alex");
         assert_eq!(resp.personal_memory.get("Preferences").unwrap()[0], "Rust");

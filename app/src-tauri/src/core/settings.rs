@@ -321,12 +321,10 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("persistence", "max_sessions") => SettingReloadPolicy::Hot,
         ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
-        // Memory — episodic parameters hot, worker toggle command
-        ("memory", "episodic_enabled") => SettingReloadPolicy::Hot,
+        // Memory — personal parameters hot, worker toggle command, model path restart
         ("memory", "bg_worker_enabled") => SettingReloadPolicy::WorkerCommand,
-        ("memory", "top_k") => SettingReloadPolicy::Hot,
-        ("memory", "similarity_threshold") => SettingReloadPolicy::Hot,
-        ("memory", "max_context_share") => SettingReloadPolicy::Hot,
+        ("memory", "nli_model_name") => SettingReloadPolicy::Restart,
+        ("memory", _) => SettingReloadPolicy::Hot,
 
         // Assistant — hot update
         ("assistant", "modular_prompt") => SettingReloadPolicy::Hot,
@@ -625,25 +623,23 @@ impl Default for PersistenceSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
 pub struct MemorySettings {
-    /// Enable Episodic Memory subsystem.
-    pub episodic_enabled: bool,
     /// Enable background memory worker thread.
     pub bg_worker_enabled: bool,
-    /// Number of top historical session summaries to retrieve (RAG parameter).
-    pub top_k: u32,
-    /// Cosine similarity threshold for vector search filtering (0.0 - 1.0).
-    pub similarity_threshold: f32,
-    /// Maximum share of context window allocated to retrieved episodic memory (0.0 - 1.0).
-    pub max_context_share: f32,
 
-    // --- Personal Memory v2 Additions ---
-    /// Enable Personal Memory v2 processing and graph relations.
+    // --- Personal Memory v3 Settings ---
+    /// Enable Personal Memory v3 processing and graph relations.
     pub personal_enabled: bool,
-    /// Maximum share of context window allocated to personal facts (0.0 - 1.0).
-    pub personal_max_context_share: f32,
+    /// Foundational + Operational tier budget as share of context window (0.0 - 1.0).
+    /// Covers: Identity, Constraints, Context (time-windowed), Tasks, Goals.
+    pub foundational_budget_share: f32,
+    /// Semantic tier budget as share of context window (0.0 - 1.0).
+    /// Covers: Preferences, Relationships, Skills, Projects, Experiences.
+    pub semantic_budget_share: f32,
+    /// Time window in hours for Context Chaining (loads recent context summaries).
+    pub context_chaining_window_hours: u32,
     /// Maximum number of candidate facts retrieved for NLI logical comparison (K-limit).
     pub nli_candidate_limit: u32,
     /// Threshold above which an NLI prediction is classified as Contradiction (0.0 - 1.0).
@@ -652,39 +648,33 @@ pub struct MemorySettings {
     pub nli_entailment_threshold: f32,
     /// Name or path of the local NLI ONNX model directory under ~/.vox/models/nli/
     pub nli_model_name: String,
-    /// Cosine threshold for auto-supporting candidate facts under degraded matching (0.0 - 1.0).
-    pub cosine_auto_support_threshold: f32,
-    /// Lower similarity bound under degraded matching above which facts are considered neutral (0.0 - 1.0).
-    pub cosine_neutral_lower_bound: f32,
-    /// Number of top personal memory facts to retrieve per collection.
-    pub personal_top_k_per_collection: u32,
-    /// Always inject Identity collection facts into prompt.
-    pub personal_identity_always: bool,
+    /// Number of top personal memory facts to retrieve per semantic collection.
+    pub personal_top_k_per_semantic_collection: u32,
+    /// Cosine similarity threshold below which NLI comparison is skipped (0.0 - 1.0).
+    /// Facts with cosine similarity below this threshold are classified as Neutral immediately.
+    pub candidate_similarity_search_threshold: f32,
 }
 
 impl Default for MemorySettings {
     fn default() -> Self {
         Self {
-            episodic_enabled: true,
             bg_worker_enabled: true,
-            top_k: 3,
-            similarity_threshold: 0.65,
-            max_context_share: 0.20,
 
-            // Personal Memory v2 Defaults
+            // Personal Memory v3 Defaults
             personal_enabled: true,
-            personal_max_context_share: 0.08,
+            foundational_budget_share: 0.07,     // 7% hard cap
+            semantic_budget_share: 0.08,         // 8% hard cap
+            context_chaining_window_hours: 12,   // 12-hour window
             nli_candidate_limit: 5,
             nli_contradiction_threshold: 0.85,
             nli_entailment_threshold: 0.85,
             nli_model_name: "deberta-v3-xsmall-nli".to_string(),
-            cosine_auto_support_threshold: 0.90,
-            cosine_neutral_lower_bound: 0.75,
-            personal_top_k_per_collection: 3,
-            personal_identity_always: true,
+            personal_top_k_per_semantic_collection: 5,
+            candidate_similarity_search_threshold: 0.82,
         }
     }
 }
+
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SetupSettings {
@@ -844,7 +834,12 @@ impl VoxSettings {
 
         if let Ok(content) = fs::read_to_string(&path) {
             // 1. Try current nested format
-            if let Ok(settings) = serde_json::from_str::<Self>(&content) {
+            if let Ok(mut settings) = serde_json::from_str::<Self>(&content) {
+                if let LlmProviderConfig::OpenAiCompat { .. } = settings.llm.provider {
+                    if settings.llm.ctx_size < 8192 {
+                        settings.llm.ctx_size = 8192;
+                    }
+                }
                 log::info!("[Settings] Loaded configuration from {:?}", path);
                 return settings;
             }
@@ -858,7 +853,13 @@ impl VoxSettings {
                         .unwrap_or(false)
                 {
                     log::warn!("[Settings] Phase 6.0 legacy config detected. Migrating...");
-                    return Self::migrate_from_v6_0(legacy);
+                    let mut settings = Self::migrate_from_v6_0(legacy);
+                    if let LlmProviderConfig::OpenAiCompat { .. } = settings.llm.provider {
+                        if settings.llm.ctx_size < 8192 {
+                            settings.llm.ctx_size = 8192;
+                        }
+                    }
+                    return settings;
                 }
             }
 
@@ -872,7 +873,12 @@ impl VoxSettings {
         }
 
         log::info!("[Settings] No valid settings.json found. Using system defaults.");
-        let settings = Self::default();
+        let mut settings = Self::default();
+        if let LlmProviderConfig::OpenAiCompat { .. } = settings.llm.provider {
+            if settings.llm.ctx_size < 8192 {
+                settings.llm.ctx_size = 8192;
+            }
+        }
         let _ = settings.save();
         settings
     }
@@ -934,17 +940,16 @@ mod tests {
     #[test]
     fn test_memory_settings_defaults() {
         let settings = VoxSettings::default();
-        assert!(settings.memory.episodic_enabled);
         assert!(settings.memory.bg_worker_enabled);
-        assert_eq!(settings.memory.top_k, 3);
-        assert!((settings.memory.similarity_threshold - 0.65).abs() < 0.001);
-        assert!((settings.memory.max_context_share - 0.20).abs() < 0.001);
+        assert!(settings.memory.personal_enabled);
+        assert!((settings.memory.foundational_budget_share - 0.07).abs() < 0.001);
+        assert!((settings.memory.semantic_budget_share - 0.08).abs() < 0.001);
     }
 
     #[test]
     fn test_memory_settings_reload_policy() {
         assert_eq!(
-            reload_policy_for("memory", "episodic_enabled"),
+            reload_policy_for("memory", "personal_enabled"),
             SettingReloadPolicy::Hot
         );
         assert_eq!(

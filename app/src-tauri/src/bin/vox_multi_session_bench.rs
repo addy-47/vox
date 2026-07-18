@@ -15,8 +15,7 @@ use vox_lib::persistence::memory_worker::{spawn_memory_worker, MemoryWorkerEvent
 use vox_lib::services::llm::{LlmProvider, OpenAiCompatProvider, ProviderKind};
 use vox_lib::services::memory::{
     classify_query, ensure_classifier_loaded, ensure_embedder_loaded, estimate_tokens,
-    format_retrieved_memories_for_prompt, retrieve_episodic_memories, ChatMessage,
-    ConversationContext, ConversationManager, Role,
+    ChatMessage, ConversationContext, ConversationManager, Role,
 };
 use vox_lib::services::stt::providers::{create_stt_provider, SttProvider, SttProviderKind};
 use vox_lib::services::tts::providers::TtsProvider;
@@ -27,7 +26,7 @@ use vox_lib::utils::bench_reporter::BenchReporter;
 #[command(
     author,
     version,
-    about = "Vox Comprehensive 5-Session BGE-M3 Episodic Memory & Voice Pipeline Bench"
+    about = "Vox Comprehensive Multi-Session BGE-M3 Episodic Memory & Voice Pipeline Bench"
 )]
 struct Args {
     /// Target Tier: 2a (Remote GPU Ollama @ 100.86.62.14), 2b (Cloud Gemini API)
@@ -38,19 +37,32 @@ struct Args {
     #[arg(short = 'c', long, default_value_t = 4096)]
     ctx_size: usize,
 
-    /// Number of simulation turns per session (default 50)
-    #[arg(short = 'n', long, default_value_t = 50)]
+    /// Number of simulation turns per session (default 10)
+    #[arg(short = 'n', long, default_value_t = 10)]
     turns: usize,
 
-    /// Output folder prefix (e.g. '0.9.0_multisession_5sessions_tier2a')
+    /// Number of sessions to run (default 10)
+    #[arg(short = 's', long, default_value_t = 10)]
+    sessions: usize,
+
+    /// Use Nvidia LLM-as-a-Judge for semantic evaluation of probes
+    #[arg(short = 'j', long, default_value_t = false)]
+    eval_judge: bool,
+
+    /// Output folder prefix
     #[arg(short = 'o', long)]
     output: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DatasetTurn {
+    turn: usize,
     user: String,
     assistant: String,
+    #[serde(default)]
+    is_probe: bool,
+    #[serde(default)]
+    expected_facts: Vec<String>,
 }
 
 fn load_gemini_key() -> String {
@@ -76,6 +88,120 @@ fn load_gemini_key() -> String {
     std::env::var("GEMINI_API_KEY").unwrap_or_default()
 }
 
+fn load_nvidia_key() -> String {
+    let candidates = vec![
+        PathBuf::from("temp/.env"),
+        PathBuf::from("../temp/.env"),
+        PathBuf::from("../../temp/.env"),
+    ];
+    for env_path in candidates {
+        if env_path.exists() {
+            if let Ok(content) = fs::read_to_string(&env_path) {
+                for line in content.lines() {
+                    if let Some(key) = line.strip_prefix("NVIDIA_API_KEY=") {
+                        let trimmed = key.trim().trim_matches('"').trim_matches('\'').to_string();
+                        if !trimmed.is_empty() {
+                            return trimmed;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    std::env::var("NVIDIA_API_KEY").unwrap_or_default()
+}
+
+fn call_nvidia_judge(
+    api_key: &str,
+    user_query: &str,
+    expected_facts: &[String],
+    assistant_response: &str,
+) -> Result<(bool, String)> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()?;
+    let url = "https://integrate.api.nvidia.com/v1/chat/completions";
+    
+    let system_prompt = "You are an independent semantic evaluator. You judge if the assistant correctly recalled the expected facts in its response given the user's query.\n\
+                         You must output ONLY valid JSON of format:\n\
+                         {\n  \"passed\": true/false,\n  \"reason\": \"One sentence explanation\"\n}";
+                         
+    let user_content = format!(
+        "User Query: {}\n\
+         Expected Facts: {:?}\n\
+         Assistant Response: {}",
+        user_query, expected_facts, assistant_response
+    );
+    
+    let payload = serde_json::json!({
+        "model": "meta/llama-3.1-70b-instruct",
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_content }
+        ],
+        "temperature": 0.0
+    });
+    
+    let res = client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()?;
+        
+    if !res.status().is_success() {
+        return Err(anyhow!("Nvidia API returned error status: {}", res.status()));
+    }
+    
+    #[derive(Deserialize)]
+    struct NvidiaResponse {
+        choices: Vec<Choice>,
+    }
+    #[derive(Deserialize)]
+    struct Choice {
+        message: Message,
+    }
+    #[derive(Deserialize)]
+    struct Message {
+        content: String,
+    }
+    
+    let parsed: NvidiaResponse = res.json()?;
+    if let Some(choice) = parsed.choices.first() {
+        let cleaned = vox_lib::utils::json::clean_json_content(&choice.message.content);
+        #[derive(Deserialize)]
+        struct JudgeResult {
+            passed: bool,
+            reason: String,
+        }
+        let result: JudgeResult = serde_json::from_str(&cleaned)?;
+        Ok((result.passed, result.reason))
+    } else {
+        Err(anyhow!("Empty choices returned from Nvidia API"))
+    }
+}
+
+fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if from_rate == to_rate {
+        return input.to_vec();
+    }
+    let ratio = from_rate as f64 / to_rate as f64;
+    let num_samples = (input.len() as f64 / ratio) as usize;
+    let mut output = Vec::with_capacity(num_samples);
+    for i in 0..num_samples {
+        let pos = i as f64 * ratio;
+        let idx = pos as usize;
+        let frac = pos - idx as f64;
+        if idx + 1 < input.len() {
+            let s = input[idx] * (1.0 - frac as f32) + input[idx + 1] * frac as f32;
+            output.push(s);
+        } else if idx < input.len() {
+            output.push(input[idx]);
+        }
+    }
+    output
+}
+
 struct FallbackStt;
 impl SttProvider for FallbackStt {
     fn transcribe(&self, _audio: &[f32]) -> Result<String> {
@@ -98,7 +224,7 @@ impl SttProvider for FallbackStt {
 fn main() -> Result<()> {
     let args = Args::parse();
     let tier_str = args.tier.to_lowercase();
-    let max_turns = args.turns.min(50);
+    let mut max_turns = args.turns;
     let ctx_window = args.ctx_size;
 
     let prefix = args.output.unwrap_or_else(|| format!("0.9.0_5session_bge_m3_tier_{}", tier_str));
@@ -133,21 +259,17 @@ fn main() -> Result<()> {
 
     // Memory Settings Configuration (BGE-M3 1024-dim, strict 0.65 threshold)
     let memory_settings = MemorySettings {
-        episodic_enabled: true,
         bg_worker_enabled: true,
-        top_k: 10,
-        similarity_threshold: 0.65,
-        max_context_share: 0.20,
         personal_enabled: true,
-        personal_max_context_share: 0.08,
+        foundational_budget_share: 0.07,
+        semantic_budget_share: 0.08,
+        context_chaining_window_hours: 12,
         nli_candidate_limit: 5,
         nli_contradiction_threshold: 0.85,
         nli_entailment_threshold: 0.85,
         nli_model_name: "deberta-v3-xsmall-nli".to_string(),
-        cosine_auto_support_threshold: 0.90,
-        cosine_neutral_lower_bound: 0.75,
-        personal_top_k_per_collection: 3,
-        personal_identity_always: true,
+        personal_top_k_per_semantic_collection: 5,
+        candidate_similarity_search_threshold: 0.82,
     };
 
     // 1. Load STT Engine
@@ -213,14 +335,15 @@ fn main() -> Result<()> {
     let _ = ensure_classifier_loaded();
     let _ = ensure_embedder_loaded(true);
 
-    // Session Definitions: (dataset_path, audio_clips_dir)
-    let session_configs = vec![
-        ("tests/dataset.json", "tests/simulation_clips"),
-        ("tests/dataset_session2.json", "tests/simulation_clips_session2"),
-        ("tests/dataset_session3.json", "tests/simulation_clips_session3"),
-        ("tests/dataset_session4.json", "tests/simulation_clips_session4"),
-        ("tests/dataset_session5.json", "tests/simulation_clips_session5"),
-    ];
+    // Dynamic Session Definitions: (dataset_path, audio_clips_dir)
+    let total_sessions = args.sessions.min(10);
+    let mut session_configs = Vec::new();
+    for s in 1..=total_sessions {
+        session_configs.push((
+            format!("tests/dataset_session{}.json", s),
+            format!("tests/simulation_clips_session{}", s),
+        ));
+    }
 
     let base_timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -245,7 +368,7 @@ fn main() -> Result<()> {
 
     let mut total_probes_evaluated = 0usize;
     let mut total_probes_passed = 0usize;
-    let mut total_rag_hits = 0usize;
+    let total_rag_hits = 0usize;
 
     // ─────────────────────────────────────────────────────────────────────────
     // 5-SESSION SIMULATION LOOP
@@ -258,6 +381,7 @@ fn main() -> Result<()> {
         let dpath_b = PathBuf::from("app/src-tauri").join(dpath_rel);
         let dataset_path = if dpath_a.exists() { dpath_a } else { dpath_b };
         let turns: Vec<DatasetTurn> = serde_json::from_str(&fs::read_to_string(&dataset_path)?)?;
+        max_turns = args.turns.min(turns.len());
 
         conv_mgr.new_session(vox_lib::core::constants::SYSTEM_PROMPT_MODULAR);
 
@@ -272,7 +396,7 @@ fn main() -> Result<()> {
         let _ = memory_tx.try_send(MemoryWorkerEvent::PipelineActive);
 
         println!("\n────────────────────────────────────────────────────────────");
-        println!("  [SESSION {} / 5] Executing {} turns (ID: {})", session_num, max_turns, session_id);
+        println!("  [SESSION {} / {}] Executing {} turns (ID: {})", session_num, session_configs.len(), max_turns, session_id);
         println!("────────────────────────────────────────────────────────────\n");
 
         let mut compaction_summaries = Vec::new();
@@ -289,7 +413,9 @@ fn main() -> Result<()> {
             if clip_path.exists() {
                 let _ = fs::copy(&clip_path, turn_dir.join("input_audio.wav"));
                 if let Ok(mut reader) = hound::WavReader::open(&clip_path) {
-                    raw_audio = reader.samples::<i16>().map(|s| s.unwrap_or(0) as f32 / 32768.0).collect();
+                    let spec = reader.spec();
+                    let samples_f32: Vec<f32> = reader.samples::<i16>().map(|s| s.unwrap_or(0) as f32 / 32768.0).collect();
+                    raw_audio = resample_linear(&samples_f32, spec.sample_rate, 16000);
                 }
             }
 
@@ -311,25 +437,8 @@ fn main() -> Result<()> {
                 semantic_query_count += 1;
             }
 
-            // 2. BGE-M3 RAG Retrieval if SEMANTIC
+            // 2. Personal Memory Retrieval
             let rag_start = Instant::now();
-            let retrieved_episodes = if !classification.is_generic() {
-                tokio_handle.block_on(async {
-                    retrieve_episodic_memories(&conn, &user_prompt, session_id, &memory_settings, ctx_window).await
-                }).unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-            let rag_latency = rag_start.elapsed().as_millis() as u64;
-            if !classification.is_generic() {
-                overall_rag_latency.push(rag_latency);
-            }
-            if !retrieved_episodes.is_empty() {
-                total_rag_hits += retrieved_episodes.len();
-            }
-
-            let episodic_context_block = format_retrieved_memories_for_prompt(&retrieved_episodes);
-
             let query_vector = tokio_handle.block_on(async {
                 vox_lib::services::memory::ensure_embedder_loaded(true).ok();
                 vox_lib::services::memory::generate_embedding(&user_prompt).unwrap_or(None)
@@ -338,13 +447,12 @@ fn main() -> Result<()> {
             let personal_memory_block = tokio_handle.block_on(async {
                 vox_lib::services::memory::personal_memory::retrieve_personal_context(&conn, &query_vector, &memory_settings, 2048, None).await.unwrap_or_default()
             });
+            let rag_latency = rag_start.elapsed().as_millis() as u64;
+            overall_rag_latency.push(rag_latency);
 
             let mut full_system_prompt = vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.to_string();
             if !personal_memory_block.is_empty() {
                 full_system_prompt.push_str(&format!("\n\n{}", personal_memory_block));
-            }
-            if !episodic_context_block.is_empty() {
-                full_system_prompt.push_str(&episodic_context_block);
             }
             conv_mgr.update_system_prompt(&full_system_prompt);
 
@@ -363,16 +471,15 @@ fn main() -> Result<()> {
                 println!("  🚨 [S{} Turn {:02}] Maintenance Speech: \"{}\"", session_num, turn, trans);
             }
 
-            fs::write(turn_dir.join("rag_context.txt"), &episodic_context_block)?;
+            fs::write(turn_dir.join("rag_context.txt"), &personal_memory_block)?;
 
             println!(
-                "  [S{} Turn {:02}] Query: \"{}\" | Class: {} | RAG Hits: {} ({} tokens) | Latency: {}ms",
+                "  [S{} Turn {:02}] Query: \"{}\" | Class: {} | Personal Mem Size: {} chars | Latency: {}ms",
                 session_num,
                 turn,
                 user_prompt.chars().take(40).collect::<String>(),
                 if classification.is_generic() { "GENERIC" } else { "SEMANTIC" },
-                retrieved_episodes.len(),
-                retrieved_episodes.iter().map(|e| e.token_count).sum::<usize>(),
+                personal_memory_block.len(),
                 rag_latency
             );
 
@@ -406,112 +513,72 @@ fn main() -> Result<()> {
             fs::write(turn_dir.join("response.txt"), &assistant_resp)?;
 
             // Probe Evaluation for Cross-Session Semantic Recall
-            let resp_lower = assistant_resp.to_lowercase();
-            let query_lower = user_prompt.to_lowercase();
-            if session_num >= 2 {
-                let mut evaluated_probes = 0;
-                let mut passed_probes = 0;
-
-                let words: std::collections::HashSet<&str> = query_lower
-                    .split(|c: char| !c.is_alphanumeric())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-
-                let has_me = words.contains("me");
-                let has_my = words.contains("my");
-                let has_i = words.contains("i");
-                let has_recall = words.contains("recall");
-                let has_remember = words.contains("remember");
-                let has_about = words.contains("about");
-
-                let is_about_me = (has_about && has_me) || (words.contains("who") && words.contains("am") && has_i);
-
-                let is_name_probe = (words.contains("name") && (has_my || has_me || has_recall || has_remember))
-                    || is_about_me;
-
-                let is_role_probe = (words.contains("role") && (has_my || has_me || (words.contains("do") && has_i) || has_recall || has_remember))
-                    || words.contains("occupation")
-                    || words.contains("job")
-                    || is_about_me;
-
-                let is_fav_lang_probe = ((words.contains("favorite") || words.contains("favourite") || words.contains("preferred")) && (words.contains("language") || words.contains("programming")))
-                    || (words.contains("language") && words.contains("preferences"))
-                    || is_about_me
-                    || (has_recall && words.contains("language"));
-
-                let is_disliked_lang_probe = ((words.contains("dislike") || words.contains("hate") || words.contains("disliked")) && (words.contains("language") || words.contains("backend")))
-                    || (words.contains("language") && words.contains("preferences"))
-                    || is_about_me
-                    || (has_recall && (words.contains("all") || words.contains("everything") || words.contains("across")));
-
-                let is_color_probe = (words.contains("color") || words.contains("colour"))
-                    && (has_my || words.contains("favorite") || words.contains("favourite") || is_about_me || has_recall || has_remember);
-
-                let is_app_probe = (words.contains("app") || words.contains("application"))
-                    && (words.contains("building") || words.contains("name") || words.contains("project") || is_about_me || has_recall || has_remember);
-
-                let is_latency_probe = words.contains("latency")
-                    && (words.contains("target") || words.contains("limit") || words.contains("specif") || words.contains("specified") || words.contains("goal") || has_my || words.contains("want") || is_about_me || has_recall || has_remember);
-
-                // 1. Name Probe
-                if is_name_probe {
-                    evaluated_probes += 1;
-                    let passed = resp_lower.contains("alex");
-                    if passed { passed_probes += 1; }
-                    println!("      🔍 [Probe S{}-T{:02}] Recall Name(Alex): {}", session_num, turn, passed);
-                }
-
-                // 2. Role Probe
-                if is_role_probe {
-                    evaluated_probes += 1;
-                    let passed = resp_lower.contains("engineer") || resp_lower.contains("system");
-                    if passed { passed_probes += 1; }
-                    println!("      🔍 [Probe S{}-T{:02}] Recall Role(Engineer): {}", session_num, turn, passed);
-                }
-
-                // 3. Favorite Language Probe
-                if is_fav_lang_probe {
-                    evaluated_probes += 1;
-                    let passed = resp_lower.contains("rust");
-                    if passed { passed_probes += 1; }
-                    println!("      🔍 [Probe S{}-T{:02}] Recall FavLanguage(Rust): {}", session_num, turn, passed);
-                }
-
-                // 4. Disliked Language Probe
-                if is_disliked_lang_probe {
-                    evaluated_probes += 1;
-                    let passed = resp_lower.contains("python");
-                    if passed { passed_probes += 1; }
-                    println!("      🔍 [Probe S{}-T{:02}] Recall DislikedLanguage(Python): {}", session_num, turn, passed);
-                }
-
-                // 5. Favorite Color Probe
-                if is_color_probe {
-                    evaluated_probes += 1;
-                    let passed = resp_lower.contains("teal");
-                    if passed { passed_probes += 1; }
-                    println!("      🔍 [Probe S{}-T{:02}] Recall Color(Teal): {}", session_num, turn, passed);
-                }
-
-                // 6. Voice App Name Probe
-                if is_app_probe {
-                    evaluated_probes += 1;
-                    let passed = resp_lower.contains("vox");
-                    if passed { passed_probes += 1; }
-                    println!("      🔍 [Probe S{}-T{:02}] Recall App(Vox): {}", session_num, turn, passed);
-                }
-
-                // 7. Latency Target Probe
-                if is_latency_probe {
-                    evaluated_probes += 1;
-                    let passed = resp_lower.contains("500") || resp_lower.contains("latency");
-                    if passed { passed_probes += 1; }
-                    println!("      🔍 [Probe S{}-T{:02}] Recall Latency(sub-500ms): {}", session_num, turn, passed);
-                }
-
-                if evaluated_probes > 0 {
-                    total_probes_evaluated += evaluated_probes;
-                    total_probes_passed += passed_probes;
+            if turns[turn - 1].is_probe {
+                total_probes_evaluated += 1;
+                if args.eval_judge {
+                    let nvidia_key = load_nvidia_key();
+                    if !nvidia_key.is_empty() {
+                        print!("      🔍 [Probe S{}-T{:02}] Evaluating semantic recall via Nvidia LLM-as-a-Judge... ", session_num, turn);
+                        let _ = std::io::Write::flush(&mut std::io::stdout());
+                        match call_nvidia_judge(&nvidia_key, &user_prompt, &turns[turn - 1].expected_facts, &assistant_resp) {
+                            Ok((passed, reason)) => {
+                                if passed {
+                                    total_probes_passed += 1;
+                                }
+                                println!("{} (Reason: {})", if passed { "PASSED ✅" } else { "FAILED ❌" }, reason);
+                            }
+                            Err(e) => {
+                                println!("ERROR 🚨 (Failed to invoke judge: {})", e);
+                                // Fallback to expected fact check: if all expected facts appear as substrings in the response (case-insensitive)
+                                let resp_lower = assistant_resp.to_lowercase();
+                                let mut all_passed = true;
+                                for fact in &turns[turn - 1].expected_facts {
+                                    if !resp_lower.contains(&fact.to_lowercase()) {
+                                        all_passed = false;
+                                        break;
+                                    }
+                                }
+                                if all_passed {
+                                    total_probes_passed += 1;
+                                    println!("      🔍 [Probe S{}-T{:02}] Fallback substring check: PASSED ✅", session_num, turn);
+                                } else {
+                                    println!("      🔍 [Probe S{}-T{:02}] Fallback substring check: FAILED ❌", session_num, turn);
+                                }
+                            }
+                        }
+                    } else {
+                        println!("      🔍 [Probe S{}-T{:02}] Warning: NVIDIA_API_KEY missing. Skipping LLM-as-a-Judge, running fallback check...", session_num, turn);
+                        let resp_lower = assistant_resp.to_lowercase();
+                        let mut all_passed = true;
+                        for fact in &turns[turn - 1].expected_facts {
+                            if !resp_lower.contains(&fact.to_lowercase()) {
+                                all_passed = false;
+                                break;
+                            }
+                        }
+                        if all_passed {
+                            total_probes_passed += 1;
+                            println!("      🔍 [Probe S{}-T{:02}] Substring check: PASSED ✅", session_num, turn);
+                        } else {
+                            println!("      🔍 [Probe S{}-T{:02}] Substring check: FAILED ❌", session_num, turn);
+                        }
+                    }
+                } else {
+                    // Default to substring check of expected_facts
+                    let resp_lower = assistant_resp.to_lowercase();
+                    let mut all_passed = true;
+                    for fact in &turns[turn - 1].expected_facts {
+                        if !resp_lower.contains(&fact.to_lowercase()) {
+                            all_passed = false;
+                            break;
+                        }
+                    }
+                    if all_passed {
+                        total_probes_passed += 1;
+                        println!("      🔍 [Probe S{}-T{:02}] Substring check: PASSED ✅", session_num, turn);
+                    } else {
+                        println!("      🔍 [Probe S{}-T{:02}] Substring check: FAILED ❌", session_num, turn);
+                    }
                 }
             }
 
@@ -524,7 +591,7 @@ fn main() -> Result<()> {
                 }
                 let comp_ctx = ConversationContext {
                     messages: vec![
-                        ChatMessage { role: Role::System, content: vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT_V2.to_string(), timestamp_ms: 0 },
+                        ChatMessage { role: Role::System, content: vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT.to_string(), timestamp_ms: 0 },
                         ChatMessage { role: Role::User, content: format!("Here is the full conversation history to compress:\n\n{}", history_text), timestamp_ms: 0 },
                     ],
                     token_count: estimate_tokens(&history_text) + 100,
@@ -535,7 +602,7 @@ fn main() -> Result<()> {
                 let (c_tx, c_rx) = channel();
                 let mut raw_response = String::new();
                 if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
-                    while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(10000)) {
+                    while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(30000)) {
                         match evt {
                             VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
                             VoxEvent::LlmFinished { .. } => break,
@@ -546,21 +613,18 @@ fn main() -> Result<()> {
 
                 if !raw_response.trim().is_empty() {
                     println!("  [S{} COMPACTION] Raw Response:\n{}", session_num, raw_response);
-                    #[derive(Debug, serde::Deserialize)]
-                    struct CompactionResponseV2 {
-                        summary: String,
-                        #[serde(default)]
-                        personal_memory: std::collections::HashMap<String, Vec<String>>,
-                    }
-
                     let cleaned = vox_lib::utils::json::clean_json_content(&raw_response);
 
-                    match serde_json::from_str::<CompactionResponseV2>(&cleaned) {
-                        Ok(resp) => {
-                            let summary = resp.summary;
+                    match serde_json::from_str::<std::collections::HashMap<String, Vec<String>>>(&cleaned) {
+                        Ok(personal_memory) => {
+                            let summary = personal_memory
+                                .get("Context")
+                                .and_then(|v| v.first())
+                                .cloned()
+                                .unwrap_or_else(|| raw_response.clone());
                             println!("  [S{} COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
-                            println!("  [S{} COMPACTION] Found {} personal facts.", session_num, resp.personal_memory.values().map(|v| v.len()).sum::<usize>());
-                            for (col, facts) in &resp.personal_memory {
+                            println!("  [S{} COMPACTION] Found {} personal facts.", session_num, personal_memory.values().map(|v| v.len()).sum::<usize>());
+                            for (col, facts) in &personal_memory {
                                 for fact in facts {
                                     println!("    - {}: {}", col, fact);
                                 }
@@ -568,9 +632,9 @@ fn main() -> Result<()> {
                             if !summary.trim().is_empty() && conv_mgr.commit_opportunistic(snap_len, summary.clone()) {
                                 total_opp_succeeded += 1;
                                 compaction_summaries.push(summary);
-                                if !resp.personal_memory.is_empty() {
+                                if !personal_memory.is_empty() {
                                     let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
-                                        facts: resp.personal_memory,
+                                        facts: personal_memory,
                                         session_id: format!("bench_session_{}", session_num),
                                     });
                                 }
@@ -605,7 +669,7 @@ fn main() -> Result<()> {
             }
             let comp_ctx = ConversationContext {
                 messages: vec![
-                    ChatMessage { role: Role::System, content: vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT_V2.to_string(), timestamp_ms: 0 },
+                    ChatMessage { role: Role::System, content: vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT.to_string(), timestamp_ms: 0 },
                     ChatMessage { role: Role::User, content: format!("Here is the remaining conversation history to compress:\n\n{}", history_text), timestamp_ms: 0 },
                 ],
                 token_count: estimate_tokens(&history_text) + 100,
@@ -616,7 +680,7 @@ fn main() -> Result<()> {
             let (c_tx, c_rx) = channel();
             let mut raw_response = String::new();
             if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
-                while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(10000)) {
+                while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(30000)) {
                     match evt {
                         VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
                         VoxEvent::LlmFinished { .. } => break,
@@ -627,30 +691,27 @@ fn main() -> Result<()> {
 
             if !raw_response.trim().is_empty() {
                 println!("  [S{} FINAL COMPACTION] Raw Response:\n{}", session_num, raw_response);
-                #[derive(Debug, serde::Deserialize)]
-                struct CompactionResponseV2 {
-                    summary: String,
-                    #[serde(default)]
-                    personal_memory: std::collections::HashMap<String, Vec<String>>,
-                }
-
                 let cleaned = vox_lib::utils::json::clean_json_content(&raw_response);
 
-                match serde_json::from_str::<CompactionResponseV2>(&cleaned) {
-                    Ok(resp) => {
-                        let summary = resp.summary;
+                match serde_json::from_str::<std::collections::HashMap<String, Vec<String>>>(&cleaned) {
+                    Ok(personal_memory) => {
+                        let summary = personal_memory
+                            .get("Context")
+                            .and_then(|v| v.first())
+                            .cloned()
+                            .unwrap_or_else(|| raw_response.clone());
                         println!("  [S{} FINAL COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
-                        println!("  [S{} FINAL COMPACTION] Found {} personal facts.", session_num, resp.personal_memory.values().map(|v| v.len()).sum::<usize>());
-                        for (col, facts) in &resp.personal_memory {
+                        println!("  [S{} FINAL COMPACTION] Found {} personal facts.", session_num, personal_memory.values().map(|v| v.len()).sum::<usize>());
+                        for (col, facts) in &personal_memory {
                             for fact in facts {
                                 println!("    - {}: {}", col, fact);
                             }
                         }
                         if !summary.trim().is_empty() {
                             compaction_summaries.push(summary);
-                            if !resp.personal_memory.is_empty() {
+                            if !personal_memory.is_empty() {
                                 let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
-                                    facts: resp.personal_memory,
+                                    facts: personal_memory,
                                     session_id: format!("bench_session_{}", session_num),
                                 });
                             }
@@ -679,8 +740,8 @@ fn main() -> Result<()> {
 
         println!("  [S{} END] Transitioning Pipeline to PipelineIdle...", session_num);
         let _ = memory_tx.try_send(MemoryWorkerEvent::PipelineIdle);
-        let _ = memory_tx.try_send(MemoryWorkerEvent::SessionReadyForIngestion {
-            session_id,
+        let _ = memory_tx.try_send(MemoryWorkerEvent::SessionEnd {
+            session_id: session_id.to_string(),
             summary: s_summary,
         });
 
@@ -688,7 +749,7 @@ fn main() -> Result<()> {
         thread::sleep(Duration::from_millis(2000));
 
         let stored_episodes: i64 = tokio_handle.block_on(async {
-            let mut rows = conn.query("SELECT COUNT(*) FROM episodes", ()).await?;
+            let mut rows = conn.query("SELECT COUNT(*) FROM memory_facts WHERE collection = 'Context'", ()).await?;
             if let Ok(Some(row)) = rows.next().await {
                 let val: i64 = row.get(0).unwrap_or(0);
                 Ok::<i64, anyhow::Error>(val)
@@ -701,14 +762,14 @@ fn main() -> Result<()> {
 
     let _ = memory_tx.try_send(MemoryWorkerEvent::Shutdown);
 
-    let total_executed_turns = max_turns * 5;
+    let total_executed_turns = max_turns * session_configs.len();
     let avg_ttft = if !overall_ttft_samples.is_empty() { overall_ttft_samples.iter().sum::<u64>() / overall_ttft_samples.len() as u64 } else { 0 };
     let avg_stt = if !total_stt_latency_ms.is_empty() { total_stt_latency_ms.iter().sum::<u64>() / total_stt_latency_ms.len() as u64 } else { 0 };
     let avg_rag_lat = if !overall_rag_latency.is_empty() { overall_rag_latency.iter().sum::<u64>() / overall_rag_latency.len() as u64 } else { 0 };
     let recall_acc = if total_probes_evaluated > 0 { (total_probes_passed as f32 / total_probes_evaluated as f32) * 100.0 } else { 100.0 };
 
     let total_stored_episodes: i64 = tokio_handle.block_on(async {
-        let mut rows = conn.query("SELECT COUNT(*) FROM episodes", ()).await?;
+        let mut rows = conn.query("SELECT COUNT(*) FROM memory_facts WHERE collection = 'Context'", ()).await?;
         if let Ok(Some(row)) = rows.next().await {
             let val: i64 = row.get(0).unwrap_or(0);
             Ok::<i64, anyhow::Error>(val)
@@ -720,10 +781,10 @@ fn main() -> Result<()> {
     let peak_rss_mb = BenchReporter::get_memory_snapshot().rss_mb;
 
     println!("\n============================================================");
-    println!("  5-SESSION BGE-M3 COMPREHENSIVE BENCHMARK EXECUTION SUMMARY ");
+    println!("  MULTI-SESSION BGE-M3 COMPREHENSIVE BENCHMARK SUMMARY       ");
     println!("============================================================");
     println!(" Tier Tested                    : Tier {}", tier_str.to_uppercase());
-    println!(" Total Sessions Executed        : 5 Sessions");
+    println!(" Total Sessions Executed        : {} Sessions", session_configs.len());
     println!(" Total Simulation Turns         : {} Turns", total_executed_turns);
     println!(" Embedding Model Used           : BGE-M3 (1024-dim, Multilingual ONNX)");
     println!(" Evaluated Threshold            : 0.65 (Strict BGE-M3 Filtering)");
@@ -735,13 +796,46 @@ fn main() -> Result<()> {
     println!(" Memory Consumption (Peak RSS)  : {} MB", peak_rss_mb);
     println!(" Query Classifier Breakdown     : Semantic={}, Generic={}", semantic_query_count, generic_query_count);
     println!(" Critical Maintenance Shifts    : {}", total_critical_maintenance);
-    println!(" Opportunistic Compactions      : Triggered={}, Succeeded={}, Cancelled={}", total_opp_triggered, total_opp_succeeded, total_opp_cancelled);
+    println!(" Point-of-Idle Compactions      : Triggered={}, Succeeded={}, Cancelled={}", total_opp_triggered, total_opp_succeeded, total_opp_cancelled);
     println!(" Total Bullet Chunks Stored     : {} Chunks in SQLite", total_stored_episodes);
     println!(" Total RAG Retrieval Hits       : {} Hits", total_rag_hits);
     println!(" Semantic Recall Probes         : {} / {} Passed", total_probes_passed, total_probes_evaluated);
-    println!(" 5-Session Cross-Recall Accuracy: {:.1}%", recall_acc);
+    println!(" Cross-Session Recall Accuracy  : {:.1}%", recall_acc);
     println!(" Benchmark Status               : PASS (Zero budget violations)");
     println!("============================================================\n");
+
+    println!("--- SQLite Database Contents ---");
+    tokio_handle.block_on(async {
+        if let Ok(mut rows) = conn.query("SELECT category, fact, session_id FROM memory_facts", ()).await {
+            println!("  [memory_facts]");
+            while let Ok(Some(row)) = rows.next().await {
+                let cat: String = row.get(0).unwrap_or_default();
+                let fact: String = row.get(1).unwrap_or_default();
+                let sess_id: String = row.get(2).unwrap_or_default();
+                println!("    - [{}] (sess: {}): {}", cat, sess_id, fact);
+            }
+        }
+        if let Ok(mut rows) = conn.query("SELECT source_id, target_id, relation FROM memory_relations", ()).await {
+            println!("  [memory_relations]");
+            while let Ok(Some(row)) = rows.next().await {
+                let src: String = row.get(0).unwrap_or_default();
+                let tgt: String = row.get(1).unwrap_or_default();
+                let rel: String = row.get(2).unwrap_or_default();
+                println!("    - {} --[{}]--> {}", src, rel, tgt);
+            }
+        }
+        if let Ok(mut rows) = conn.query("SELECT id, session_id, fact_text, status FROM personal_memory_queue", ()).await {
+            println!("  [personal_memory_queue]");
+            while let Ok(Some(row)) = rows.next().await {
+                let id: i64 = row.get(0).unwrap_or(0);
+                let sess_id: String = row.get(1).unwrap_or_default();
+                let text: String = row.get(2).unwrap_or_default();
+                let status: String = row.get(3).unwrap_or_default();
+                println!("    - #{}: (sess: {}, status: {}): {}", id, sess_id, status, text);
+            }
+        }
+    });
+    println!("--------------------------------\n");
 
     Ok(())
 }

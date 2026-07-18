@@ -203,7 +203,7 @@ pub fn run() {
             // ── 0.9 Memory Worker (Gated on Tier 1B+ and MemorySettings) ───────────
             let memory_enabled = {
                 let s = app_state.settings.read().unwrap();
-                s.memory.bg_worker_enabled && s.memory.episodic_enabled
+                s.memory.bg_worker_enabled && s.memory.personal_enabled
             };
 
             if memory_enabled && local_gpu_info.has_gpu {
@@ -531,8 +531,26 @@ pub fn run() {
                     let _ = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown);
                 }
                 
+                // Gracefully signal background memory worker to flush and shutdown
+                {
+                    let mut memory_tx_lock = state.memory_tx.lock().unwrap();
+                    if let Some(tx) = memory_tx_lock.take() {
+                        log::info!("[Vox] Sending Shutdown signal to memory worker...");
+                        let _ = tx.send(crate::persistence::memory_worker::MemoryWorkerEvent::Shutdown);
+                    }
+                }
+
+                // Gracefully signal persistence worker to flush and shutdown
+                {
+                    let mut persist_tx_lock = state.persist_tx.lock().unwrap();
+                    if let Some(tx) = persist_tx_lock.take() {
+                        log::info!("[Vox] Sending Shutdown signal to persistence worker...");
+                        let _ = tx.send(crate::persistence::events::PersistenceEvent::Shutdown);
+                    }
+                }
+
                 // Allow time for threads to join
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                std::thread::sleep(std::time::Duration::from_millis(150));
             }
         });
 }

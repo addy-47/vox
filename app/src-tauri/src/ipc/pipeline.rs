@@ -231,6 +231,16 @@ pub async fn engage(
                             .fetch_add(1, Ordering::Relaxed);
                     }
                 }
+
+                // Trigger Memory SessionEnd consolidation
+                let memory_tx = state.memory_tx.lock().unwrap();
+                if let Some(ref tx) = *memory_tx {
+                    let summary = state.conversation_manager.lock().unwrap().latest_summary();
+                    let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
+                        session_id: conv_id.to_string(),
+                        summary,
+                    });
+                }
             }
         }
 
@@ -614,6 +624,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         std::sync::Arc::clone(&state.is_llm_loaded),
         std::sync::Arc::clone(&state.is_tts_loaded),
         std::sync::Arc::clone(&state.is_sleeping),
+        std::sync::Arc::clone(&state.conversation_manager),
     );
 
     let playback_for_orch = std::sync::Arc::clone(&playback_engine);

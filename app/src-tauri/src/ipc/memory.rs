@@ -307,7 +307,7 @@ pub async fn get_memory_stats(
     };
 
     let mut rows = conn
-        .query("SELECT count(*) FROM episodes", ())
+        .query("SELECT count(*) FROM memory_facts WHERE collection = 'Context'", ())
         .await
         .map_err(|e| e.to_string())?;
     let total_episodes = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
@@ -354,12 +354,15 @@ pub async fn trigger_memory_consolidation(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
+    let memory_settings = {
+        let s = state.settings.read().unwrap();
+        s.memory.clone()
+    };
+
     let mut compacted_count = 0;
     
     loop {
-        let active_sess_id = state.conversation_id.load(std::sync::atomic::Ordering::Relaxed);
-        
-        match crate::persistence::memory_worker::sweep_next_pending_session(&conn, active_sess_id).await {
+        match crate::persistence::memory_worker::process_one_queue_item(&conn, &memory_settings).await {
             Ok(true) => {
                 compacted_count += 1;
             }
@@ -367,7 +370,7 @@ pub async fn trigger_memory_consolidation(
                 break;
             }
             Err(e) => {
-                return Err(format!("Sweep failed: {}", e));
+                return Err(format!("Queue processing failed: {}", e));
             }
         }
     }

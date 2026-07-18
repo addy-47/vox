@@ -2,15 +2,10 @@ use anyhow::Result;
 use turso::Connection;
 
 /// Runs the CREATE TABLE IF NOT EXISTS migrations against the given connection.
-///
-/// Idempotent — safe to call on every startup to ensure schema is current.
-/// Using INTEGER PRIMARY KEY for sessions.id (epoch ms) gives natural ordering.
 pub async fn run_migrations(conn: &Connection) -> Result<()> {
-    // Drop old v1 tables (non-destructive if they do not exist)
-    let _ = conn.execute("DROP TABLE IF EXISTS personal_memory", ()).await;
-    let _ = conn.execute("DROP TABLE IF EXISTS personal_memory_history", ()).await;
-
     let statements = [
+        "DROP TABLE IF EXISTS episodes;",
+        // ─── Session & Turn Tracking (unchanged) ────────────────────────
         "CREATE TABLE IF NOT EXISTS sessions (
             id               INTEGER PRIMARY KEY,   -- epoch milliseconds
             started_at       INTEGER NOT NULL,
@@ -29,6 +24,8 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             created_at      INTEGER NOT NULL
         );",
         "CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);",
+
+        // ─── Voice Management (unchanged) ───────────────────────────────
         "CREATE TABLE IF NOT EXISTS voices (
             id          TEXT    PRIMARY KEY,    -- UUID v4
             name        TEXT    NOT NULL,
@@ -39,71 +36,61 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             preview_wav TEXT                    -- ~/.vox/voices/{uuid}/preview.wav
         );",
         "CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at DESC);",
-        "CREATE TABLE IF NOT EXISTS memory_entries (
-            id         TEXT PRIMARY KEY,            -- UUID v4
-            content    TEXT NOT NULL,               -- The text snippet
-            embedding  F32_BLOB(384) NOT NULL,      -- MiniLM embedding (384 floats)
-            created_at INTEGER NOT NULL             -- Unix epoch seconds
-        );",
-        "CREATE TABLE IF NOT EXISTS episodes (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-            summary     TEXT    NOT NULL,
-            embedding   F32_BLOB(1024) NOT NULL,
-            created_at  INTEGER NOT NULL,
-            token_count INTEGER NOT NULL
-        );",
-        "CREATE INDEX IF NOT EXISTS idx_episodes_session ON episodes(session_id);",
-        "CREATE INDEX IF NOT EXISTS idx_episodes_created ON episodes(created_at DESC);",
-        
-        // --- Personal Memory v2 Tables ---
+
+        // ─── V3 Memory: Core Facts Table ────────────────────────────────
+        // Houses all 9 collections under 3 structural types
         "CREATE TABLE IF NOT EXISTS memory_facts (
-            id           TEXT PRIMARY KEY,
-            collection   TEXT NOT NULL,
+            id           TEXT PRIMARY KEY,              -- UUID v4
+            type         TEXT NOT NULL,                 -- 'foundational', 'operational', 'semantic'
+            collection   TEXT NOT NULL,                 -- Context, Constraints, Identity, Preferences, etc.
             fact         TEXT NOT NULL,
-            source       TEXT NOT NULL DEFAULT 'LLM',
-            created_at   INTEGER NOT NULL,
-            session_id   TEXT NOT NULL DEFAULT '',
-            turn_id      TEXT NOT NULL DEFAULT '',
-            embedding_id INTEGER,
-            metadata     TEXT
+            source       TEXT NOT NULL DEFAULT 'LLM',   -- 'LLM', 'User', 'Import'
+            status       TEXT NOT NULL DEFAULT 'active', -- 'active', 'superseded', 'deleted'
+            session_id   TEXT NOT NULL DEFAULT '',      -- Provenance tracking
+            turn_id      TEXT NOT NULL DEFAULT '',      -- Provenance tracking
+            created_at   INTEGER NOT NULL               -- Millisecond epoch timestamp
         );",
-        "CREATE INDEX IF NOT EXISTS idx_mf_collection ON memory_facts(collection);",
-        "CREATE INDEX IF NOT EXISTS idx_mf_created ON memory_facts(created_at DESC);",
-        
+
+        // ─── V3 Memory: Vectors Table (semantic-type only) ──────────────
         "CREATE TABLE IF NOT EXISTS memory_facts_vectors (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            fact_id     TEXT NOT NULL REFERENCES memory_facts(id),
+            fact_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
             collection  TEXT NOT NULL,
-            embedding   F32_BLOB(1024) NOT NULL
+            embedding   F32_BLOB(1024) NOT NULL         -- 1024-dim BGE-M3 dense vector
         );",
-        "CREATE INDEX IF NOT EXISTS idx_mfv_collection ON memory_facts_vectors(collection);",
-        
+
+        // ─── V3 Memory: Relations Graph ─────────────────────────────────
         "CREATE TABLE IF NOT EXISTS memory_relations (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            from_id     TEXT NOT NULL REFERENCES memory_facts(id),
-            to_id       TEXT NOT NULL REFERENCES memory_facts(id),
-            relation    TEXT NOT NULL,
+            from_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
+            to_id       TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
+            relation    TEXT NOT NULL,                  -- 'SUPPORTS', 'CONFLICTS', 'USER_SUPERSEDES'
             created_at  INTEGER NOT NULL,
             UNIQUE(from_id, to_id, relation)
         );",
-        "CREATE INDEX IF NOT EXISTS idx_mr_from ON memory_relations(from_id, relation);",
-        "CREATE INDEX IF NOT EXISTS idx_mr_to ON memory_relations(to_id, relation);",
-        
+
+        // ─── V3 Memory: Unified Queue + Staging WAL ─────────────────────
         "CREATE TABLE IF NOT EXISTS personal_memory_queue (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             fact         TEXT NOT NULL,
             collection   TEXT NOT NULL,
             source       TEXT NOT NULL DEFAULT 'LLM',
             session_id   TEXT NOT NULL DEFAULT '',
-            status       TEXT NOT NULL DEFAULT 'pending',
+            status       TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'staged', 'processing', 'completed', 'failed'
             attempts     INTEGER NOT NULL DEFAULT 0,
             error_msg    TEXT,
             created_at   INTEGER NOT NULL,
             processed_at INTEGER
         );",
+
+        // ─── V3 Performance Indices ─────────────────────────────────────
+        "CREATE INDEX IF NOT EXISTS idx_mf_type_status ON memory_facts(type, status);",
+        "CREATE INDEX IF NOT EXISTS idx_mf_collection_status ON memory_facts(collection, status);",
+        "CREATE INDEX IF NOT EXISTS idx_mf_created ON memory_facts(created_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_mfv_collection ON memory_facts_vectors(collection);",
+        "CREATE INDEX IF NOT EXISTS idx_mr_from ON memory_relations(from_id, relation);",
+        "CREATE INDEX IF NOT EXISTS idx_mr_to ON memory_relations(to_id, relation);",
         "CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, created_at ASC);",
-        "CREATE INDEX IF NOT EXISTS idx_episodes_search ON episodes USING fts (summary);"
     ];
 
     for stmt in statements {
@@ -196,14 +183,29 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_schema_migrations_and_episodes_table() -> Result<()> {
+    async fn test_schema_migrations_v3_idempotent() -> Result<()> {
         let db = turso::Builder::new_local(":memory:").build().await?;
         let conn = db.connect()?;
         run_migrations(&conn).await?;
         // Test idempotency (run migrations twice)
         run_migrations(&conn).await?;
 
-        // Verify episodes table exists
+        // Verify memory_facts table exists with type and status columns
+        let mut col_rows = conn.query("PRAGMA table_info(memory_facts)", ()).await?;
+        let mut found_type = false;
+        let mut found_status = false;
+        while let Some(row) = col_rows.next().await? {
+            let col_name: String = row.get(1)?;
+            match col_name.as_str() {
+                "type" => found_type = true,
+                "status" => found_status = true,
+                _ => {}
+            }
+        }
+        assert!(found_type, "memory_facts must have 'type' column");
+        assert!(found_status, "memory_facts must have 'status' column");
+
+        // Verify episodes table does NOT exist (V3 removed it)
         let mut rows = conn
             .query(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='episodes'",
@@ -211,7 +213,19 @@ mod tests {
             )
             .await?;
         let count: i64 = rows.next().await?.unwrap().get(0)?;
-        assert_eq!(count, 1);
+        assert_eq!(count, 0, "episodes table must not exist in V3 schema");
+
+        // Verify all 4 V3 memory tables exist
+        for table in &["memory_facts", "memory_facts_vectors", "memory_relations", "personal_memory_queue"] {
+            let mut rows = conn
+                .query(
+                    &format!("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='{}'", table),
+                    (),
+                )
+                .await?;
+            let count: i64 = rows.next().await?.unwrap().get(0)?;
+            assert_eq!(count, 1, "Table '{}' must exist", table);
+        }
 
         // Verify sessions.embedding_status column exists
         let mut col_rows = conn.query("PRAGMA table_info(sessions)", ()).await?;
@@ -227,27 +241,8 @@ mod tests {
             found_embedding_status,
             "embedding_status column must exist in sessions table"
         );
-        
-        // Verify memory_facts table exists
-        let mut rows = conn
-            .query(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memory_facts'",
-                (),
-            )
-            .await?;
-        let mf_count: i64 = rows.next().await?.unwrap().get(0)?;
-        assert_eq!(mf_count, 1);
-
-        // Verify memory_relations table exists
-        let mut rows = conn
-            .query(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memory_relations'",
-                (),
-            )
-            .await?;
-        let mr_count: i64 = rows.next().await?.unwrap().get(0)?;
-        assert_eq!(mr_count, 1);
 
         Ok(())
     }
 }
+

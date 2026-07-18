@@ -156,6 +156,7 @@ impl PipelineOrchestrator {
         is_llm_loaded: Arc<AtomicBool>,
         is_tts_loaded: Arc<AtomicBool>,
         is_sleeping: Arc<AtomicBool>,
+        conversation_manager: Arc<std::sync::Mutex<crate::services::memory::ConversationManager>>,
     ) -> Self {
         Self {
             cancel_flag,
@@ -183,9 +184,7 @@ impl PipelineOrchestrator {
             is_llm_loaded,
             is_tts_loaded,
             is_sleeping,
-            conversation_manager: Arc::new(std::sync::Mutex::new(
-                crate::services::memory::ConversationManager::new(2048),
-            )),
+            conversation_manager,
         }
     }
 
@@ -962,6 +961,18 @@ impl PipelineOrchestrator {
                                             id: conv_id,
                                             timestamp_ms: now,
                                         });
+                                    }
+
+                                    // Trigger Memory SessionEnd consolidation
+                                    if let Some(app_state) = app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
+                                        let memory_tx = app_state.memory_tx.lock().unwrap();
+                                        if let Some(ref tx) = *memory_tx {
+                                            let summary = self.conversation_manager.lock().unwrap().latest_summary();
+                                            let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
+                                                session_id: conv_id.to_string(),
+                                                summary,
+                                            });
+                                        }
                                     }
                                 }
                             }
