@@ -7,8 +7,7 @@ use std::collections::HashMap;
 use crate::core::settings::{VoxSettings, MemorySettings};
 use crate::core::constants::{
     PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_QUEUE_STATUS_PENDING,
-    PM_QUEUE_STATUS_STAGED, PM_QUEUE_STATUS_COMPLETED, collection_type,
-    PM_TYPE_OPERATIONAL, PM_TYPE_SEMANTIC
+    PM_QUEUE_STATUS_STAGED, PM_QUEUE_STATUS_COMPLETED, collection_type
 };
 
 /// Events consumed exclusively by the background memory worker.
@@ -66,8 +65,7 @@ pub async fn enqueue_personal_facts(
         .as_millis() as i64;
 
     for (collection, fact_list) in facts {
-        let coll_type = collection_type(&collection);
-        let status = if coll_type == PM_TYPE_OPERATIONAL {
+        let status = if collection == "Context" {
             PM_QUEUE_STATUS_STAGED
         } else {
             PM_QUEUE_STATUS_PENDING
@@ -139,8 +137,9 @@ pub async fn process_one_queue_item(
         .as_millis() as i64;
     let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
 
-    // For non-semantic collection types, insert directly and bypass embedding/NLI
-    if coll_type != PM_TYPE_SEMANTIC {
+    // Only Context collection bypasses embedding and NLI/cross-encoder resolution.
+    // (Note: Context is usually staged and processed during consolidation, but we keep this as a safe fallback)
+    if collection == "Context" {
         conn.execute("BEGIN TRANSACTION;", ()).await?;
         match (|| async {
             conn.execute(

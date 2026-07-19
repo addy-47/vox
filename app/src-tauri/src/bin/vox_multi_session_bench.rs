@@ -33,8 +33,16 @@ struct Args {
     #[arg(short = 't', long, default_value = "2a")]
     tier: String,
 
-    /// Context Window size in tokens (default 4096)
-    #[arg(short = 'c', long, default_value_t = 4096)]
+    /// LLM model name to configure dynamically (e.g. gemma4:12b)
+    #[arg(short = 'm', long, default_value = "gemma4:12b")]
+    model: String,
+
+    /// Text-only mode: bypass STT & TTS engine loading and audio checks
+    #[arg(long, default_value_t = false)]
+    text_only: bool,
+
+    /// Context Window size in tokens (default 8192)
+    #[arg(short = 'c', long, default_value_t = 8192)]
     ctx_size: usize,
 
     /// Number of simulation turns per session (default 10)
@@ -272,12 +280,14 @@ fn main() -> Result<()> {
         candidate_similarity_search_threshold: 0.82,
     };
 
-    // 1. Load STT Engine
     let nemotron_path = vox_lib::utils::paths::get()
         .models
         .join(vox_lib::core::constants::MODEL_DIR_STT_NEMOTRON);
 
-    let stt_provider: Box<dyn SttProvider> = if nemotron_path.exists() {
+    let stt_provider: Box<dyn SttProvider> = if args.text_only {
+        println!("  [INFO] Text-Only Mode active. Skipping Real STT Engine loading...");
+        Box::new(FallbackStt)
+    } else if nemotron_path.exists() {
         println!("  [INFO] Loading Real Nemotron-3.5 ASR Engine...");
         create_stt_provider(
             &SttProviderConfig::Embedded {
@@ -294,7 +304,7 @@ fn main() -> Result<()> {
     let (provider, provider_kind): (Box<dyn LlmProvider>, ProviderKind) = match tier_str.as_str() {
         "2a" => {
             let url = "http://100.86.62.14:11434";
-            let model = "llama3.1:8b-instruct-q4_K_M";
+            let model = args.model.as_str();
             println!("  [INFO] Connecting to Remote GPU Ollama Provider at {} ({})", url, model);
             (
                 Box::new(OpenAiCompatProvider::new(url, model, None, None)),
@@ -321,7 +331,10 @@ fn main() -> Result<()> {
 
     // 3. Load TTS Engine
     let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
-    let _tts_engine: Option<Box<dyn TtsProvider>> = if super_tts_path.exists() {
+    let _tts_engine: Option<Box<dyn TtsProvider>> = if args.text_only {
+        println!("  [INFO] Text-Only Mode active. Skipping Real TTS Engine loading...");
+        None
+    } else if super_tts_path.exists() {
         println!("  [INFO] Loading Real TTS Engine (Supertonic 3)...");
         TtsEngine::new(&super_tts_path, 0, 12, 1.05)
             .ok()
@@ -410,7 +423,7 @@ fn main() -> Result<()> {
             let clip_path = if clip_path_a.exists() { clip_path_a } else { clip_path_b };
 
             let mut raw_audio = Vec::new();
-            if clip_path.exists() {
+            if !args.text_only && clip_path.exists() {
                 let _ = fs::copy(&clip_path, turn_dir.join("input_audio.wav"));
                 if let Ok(mut reader) = hound::WavReader::open(&clip_path) {
                     let spec = reader.spec();
@@ -592,66 +605,94 @@ fn main() -> Result<()> {
                 let comp_ctx = ConversationContext {
                     messages: vec![
                         ChatMessage { role: Role::System, content: vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT.to_string(), timestamp_ms: 0 },
-                        ChatMessage { role: Role::User, content: format!("Here is the full conversation history to compress:\n\n{}", history_text), timestamp_ms: 0 },
+                        ChatMessage {
+                            role: Role::User,
+                            content: format!(
+                                "<conversation_history>\n{}\n</conversation_history>\n\n\
+                                 <task>\n\
+                                 Extract facts from the <conversation_history> above into the 10 collections from <schema>, following every rule in <rules>.\n\
+                                 Return ONLY the JSON object, starting with {{ and ending with }}.\n\
+                                 </task>",
+                                history_text
+                            ),
+                            timestamp_ms: 0,
+                        },
                     ],
-                    token_count: estimate_tokens(&history_text) + 100,
+                    token_count: estimate_tokens(&history_text)
+                        + estimate_tokens(vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT)
+                        + 150,
                     kv_cache_index: 0,
                 };
 
-                let comp_cancel = Arc::new(AtomicBool::new(false));
-                let (c_tx, c_rx) = channel();
                 let mut raw_response = String::new();
-                if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
-                    while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(30000)) {
-                        match evt {
-                            VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
-                            VoxEvent::LlmFinished { .. } => break,
-                            _ => {}
+                let mut parsed_memory = None;
+                let mut attempts = 0;
+                let max_attempts = 3;
+
+                while attempts < max_attempts {
+                    attempts += 1;
+                    raw_response.clear();
+                    let comp_cancel = Arc::new(AtomicBool::new(false));
+                    let (c_tx, c_rx) = channel();
+                    
+                    println!("  [S{} COMPACTION] Attempt {}/{}...", session_num, attempts, max_attempts);
+                    if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
+                        while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(90000)) {
+                            match evt {
+                                VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
+                                VoxEvent::LlmFinished { .. } => break,
+                                _ => {}
+                            }
                         }
+                    }
+
+                    if !raw_response.trim().is_empty() {
+                        match vox_lib::utils::json::parse_compaction_json(&raw_response) {
+                            Some(personal_memory) => {
+                                parsed_memory = Some(personal_memory);
+                                break;
+                            }
+                            None => {
+                                println!("  [S{} COMPACTION] JSON parsing failed on attempt {}/{}.", session_num, attempts, max_attempts);
+                            }
+                        }
+                    } else {
+                        println!("  [S{} COMPACTION] Attempt {}/{} returned empty or timed out.", session_num, attempts, max_attempts);
                     }
                 }
 
-                if !raw_response.trim().is_empty() {
-                    println!("  [S{} COMPACTION] Raw Response:\n{}", session_num, raw_response);
-                    let cleaned = vox_lib::utils::json::clean_json_content(&raw_response);
-
-                    match serde_json::from_str::<std::collections::HashMap<String, Vec<String>>>(&cleaned) {
-                        Ok(personal_memory) => {
-                            let summary = personal_memory
-                                .get("Context")
-                                .and_then(|v| v.first())
-                                .cloned()
-                                .unwrap_or_else(|| raw_response.clone());
-                            println!("  [S{} COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
-                            println!("  [S{} COMPACTION] Found {} personal facts.", session_num, personal_memory.values().map(|v| v.len()).sum::<usize>());
-                            for (col, facts) in &personal_memory {
-                                for fact in facts {
-                                    println!("    - {}: {}", col, fact);
-                                }
-                            }
-                            if !summary.trim().is_empty() && conv_mgr.commit_opportunistic(snap_len, summary.clone()) {
-                                total_opp_succeeded += 1;
-                                compaction_summaries.push(summary);
-                                if !personal_memory.is_empty() {
-                                    let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
-                                        facts: personal_memory,
-                                        session_id: format!("bench_session_{}", session_num),
-                                    });
-                                }
-                            } else {
-                                total_opp_cancelled += 1;
-                            }
+                if let Some(personal_memory) = parsed_memory {
+                    let summary = personal_memory
+                        .get("Context")
+                        .and_then(|v| v.first())
+                        .cloned()
+                        .unwrap_or_else(|| raw_response.clone());
+                    println!("  [S{} COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
+                    println!("  [S{} COMPACTION] Found {} personal facts.", session_num, personal_memory.values().map(|v| v.len()).sum::<usize>());
+                    for (col, facts) in &personal_memory {
+                        for fact in facts {
+                            println!("    - {}: {}", col, fact);
                         }
-                        Err(e) => {
-                            println!("  [S{} COMPACTION] JSON parsing failed: {:?}. Cleaned text:\n{}", session_num, e, cleaned);
-                            // Fallback: treat raw response as prose summary
-                            if conv_mgr.commit_opportunistic(snap_len, raw_response.clone()) {
-                                total_opp_succeeded += 1;
-                                compaction_summaries.push(raw_response);
-                            } else {
-                                total_opp_cancelled += 1;
-                            }
+                    }
+                    if !summary.trim().is_empty() && conv_mgr.commit_opportunistic(snap_len, summary.clone()) {
+                        total_opp_succeeded += 1;
+                        compaction_summaries.push(summary);
+                        if !personal_memory.is_empty() {
+                            let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
+                                facts: personal_memory,
+                                session_id: format!("bench_session_{}", session_num),
+                            });
                         }
+                    } else {
+                        total_opp_cancelled += 1;
+                    }
+                } else if !raw_response.trim().is_empty() {
+                    println!("  [S{} COMPACTION] Retries exhausted. Falling back to treating last raw response as prose summary.", session_num);
+                    if conv_mgr.commit_opportunistic(snap_len, raw_response.clone()) {
+                        total_opp_succeeded += 1;
+                        compaction_summaries.push(raw_response);
+                    } else {
+                        total_opp_cancelled += 1;
                     }
                 } else {
                     total_opp_cancelled += 1;
@@ -670,58 +711,87 @@ fn main() -> Result<()> {
             let comp_ctx = ConversationContext {
                 messages: vec![
                     ChatMessage { role: Role::System, content: vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT.to_string(), timestamp_ms: 0 },
-                    ChatMessage { role: Role::User, content: format!("Here is the remaining conversation history to compress:\n\n{}", history_text), timestamp_ms: 0 },
+                    ChatMessage {
+                        role: Role::User,
+                        content: format!(
+                            "<conversation_history>\n{}\n</conversation_history>\n\n\
+                             <task>\n\
+                             Extract facts from the <conversation_history> above into the 10 collections from <schema>, following every rule in <rules>.\n\
+                             Return ONLY the JSON object, starting with {{ and ending with }}.\n\
+                             </task>",
+                            history_text
+                        ),
+                        timestamp_ms: 0,
+                    },
                 ],
-                token_count: estimate_tokens(&history_text) + 100,
+                token_count: estimate_tokens(&history_text)
+                    + estimate_tokens(vox_lib::core::constants::COMPACTION_SYSTEM_PROMPT)
+                    + 150,
                 kv_cache_index: 0,
             };
 
-            let comp_cancel = Arc::new(AtomicBool::new(false));
-            let (c_tx, c_rx) = channel();
             let mut raw_response = String::new();
-            if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
-                while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(30000)) {
-                    match evt {
-                        VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
-                        VoxEvent::LlmFinished { .. } => break,
-                        _ => {}
+            let mut parsed_memory = None;
+            let mut attempts = 0;
+            let max_attempts = 3;
+
+            while attempts < max_attempts {
+                attempts += 1;
+                raw_response.clear();
+                let comp_cancel = Arc::new(AtomicBool::new(false));
+                let (c_tx, c_rx) = channel();
+
+                println!("  [S{} FINAL COMPACTION] Attempt {}/{}...", session_num, attempts, max_attempts);
+                if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
+                    while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(90000)) {
+                        match evt {
+                            VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
+                            VoxEvent::LlmFinished { .. } => break,
+                            _ => {}
+                        }
                     }
+                }
+
+                if !raw_response.trim().is_empty() {
+                    match vox_lib::utils::json::parse_compaction_json(&raw_response) {
+                        Some(personal_memory) => {
+                            parsed_memory = Some(personal_memory);
+                            break;
+                        }
+                        None => {
+                            println!("  [S{} FINAL COMPACTION] JSON parsing failed on attempt {}/{}.", session_num, attempts, max_attempts);
+                        }
+                    }
+                } else {
+                    println!("  [S{} FINAL COMPACTION] Attempt {}/{} returned empty or timed out.", session_num, attempts, max_attempts);
                 }
             }
 
-            if !raw_response.trim().is_empty() {
-                println!("  [S{} FINAL COMPACTION] Raw Response:\n{}", session_num, raw_response);
-                let cleaned = vox_lib::utils::json::clean_json_content(&raw_response);
-
-                match serde_json::from_str::<std::collections::HashMap<String, Vec<String>>>(&cleaned) {
-                    Ok(personal_memory) => {
-                        let summary = personal_memory
-                            .get("Context")
-                            .and_then(|v| v.first())
-                            .cloned()
-                            .unwrap_or_else(|| raw_response.clone());
-                        println!("  [S{} FINAL COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
-                        println!("  [S{} FINAL COMPACTION] Found {} personal facts.", session_num, personal_memory.values().map(|v| v.len()).sum::<usize>());
-                        for (col, facts) in &personal_memory {
-                            for fact in facts {
-                                println!("    - {}: {}", col, fact);
-                            }
-                        }
-                        if !summary.trim().is_empty() {
-                            compaction_summaries.push(summary);
-                            if !personal_memory.is_empty() {
-                                let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
-                                    facts: personal_memory,
-                                    session_id: format!("bench_session_{}", session_num),
-                                });
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!("  [S{} FINAL COMPACTION] JSON parsing failed: {:?}. Cleaned text:\n{}", session_num, e, cleaned);
-                        compaction_summaries.push(raw_response);
+            if let Some(personal_memory) = parsed_memory {
+                let summary = personal_memory
+                    .get("Context")
+                    .and_then(|v| v.first())
+                    .cloned()
+                    .unwrap_or_else(|| raw_response.clone());
+                println!("  [S{} FINAL COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
+                println!("  [S{} FINAL COMPACTION] Found {} personal facts.", session_num, personal_memory.values().map(|v| v.len()).sum::<usize>());
+                for (col, facts) in &personal_memory {
+                    for fact in facts {
+                        println!("    - {}: {}", col, fact);
                     }
                 }
+                if !summary.trim().is_empty() {
+                    compaction_summaries.push(summary);
+                    if !personal_memory.is_empty() {
+                        let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
+                            facts: personal_memory,
+                            session_id: format!("bench_session_{}", session_num),
+                        });
+                    }
+                }
+            } else if !raw_response.trim().is_empty() {
+                println!("  [S{} FINAL COMPACTION] Retries exhausted. Falling back to treating last raw response as prose summary.", session_num);
+                compaction_summaries.push(raw_response);
             }
         }
 
@@ -806,16 +876,18 @@ fn main() -> Result<()> {
 
     println!("--- SQLite Database Contents ---");
     tokio_handle.block_on(async {
-        if let Ok(mut rows) = conn.query("SELECT category, fact, session_id FROM memory_facts", ()).await {
+        if let Ok(mut rows) = conn.query("SELECT collection, fact, session_id FROM memory_facts", ()).await {
             println!("  [memory_facts]");
             while let Ok(Some(row)) = rows.next().await {
-                let cat: String = row.get(0).unwrap_or_default();
+                let col: String = row.get(0).unwrap_or_default();
                 let fact: String = row.get(1).unwrap_or_default();
                 let sess_id: String = row.get(2).unwrap_or_default();
-                println!("    - [{}] (sess: {}): {}", cat, sess_id, fact);
+                println!("    - [{}] (sess: {}): {}", col, sess_id, fact);
             }
+        } else {
+            println!("  [memory_facts] query failed!");
         }
-        if let Ok(mut rows) = conn.query("SELECT source_id, target_id, relation FROM memory_relations", ()).await {
+        if let Ok(mut rows) = conn.query("SELECT from_id, to_id, relation FROM memory_relations", ()).await {
             println!("  [memory_relations]");
             while let Ok(Some(row)) = rows.next().await {
                 let src: String = row.get(0).unwrap_or_default();
@@ -823,8 +895,10 @@ fn main() -> Result<()> {
                 let rel: String = row.get(2).unwrap_or_default();
                 println!("    - {} --[{}]--> {}", src, rel, tgt);
             }
+        } else {
+            println!("  [memory_relations] query failed!");
         }
-        if let Ok(mut rows) = conn.query("SELECT id, session_id, fact_text, status FROM personal_memory_queue", ()).await {
+        if let Ok(mut rows) = conn.query("SELECT id, session_id, fact, status FROM personal_memory_queue", ()).await {
             println!("  [personal_memory_queue]");
             while let Ok(Some(row)) = rows.next().await {
                 let id: i64 = row.get(0).unwrap_or(0);
@@ -833,6 +907,8 @@ fn main() -> Result<()> {
                 let status: String = row.get(3).unwrap_or_default();
                 println!("    - #{}: (sess: {}, status: {}): {}", id, sess_id, status, text);
             }
+        } else {
+            println!("  [personal_memory_queue] query failed!");
         }
     });
     println!("--------------------------------\n");

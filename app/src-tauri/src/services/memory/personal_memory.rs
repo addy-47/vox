@@ -403,40 +403,6 @@ async fn fetch_context_chain(
     Ok(block)
 }
 
-/// Fetch candidate facts for a specific semantic collection using vector search.
-async fn fetch_semantic_candidates(
-    conn: &Connection,
-    query_blob: &[u8],
-    collection: &str,
-    limit: i64,
-) -> Result<Vec<MemoryFact>> {
-    let mut rows = conn
-        .query(
-            "SELECT mf.id, mf.type, mf.collection, mf.fact, mf.source, mf.status, mf.created_at
-             FROM memory_facts mf
-             JOIN memory_facts_vectors mfv ON mfv.fact_id = mf.id
-             WHERE mfv.collection = ? AND mf.status = 'active'
-             ORDER BY vector_distance_cos(mfv.embedding, ?) ASC
-             LIMIT ?",
-            (collection.to_string(), query_blob.to_vec(), limit),
-        )
-        .await?;
-
-    let mut list = Vec::new();
-    while let Some(row) = rows.next().await? {
-        list.push(MemoryFact {
-            id: row.get(0)?,
-            fact_type: row.get(1)?,
-            collection: row.get(2)?,
-            fact: row.get(3)?,
-            source: row.get(4)?,
-            status: row.get(5)?,
-            created_at: row.get(6)?,
-        });
-    }
-    Ok(list)
-}
-
 // ─── Edge Resolution ────────────────────────────────────────────────────────
 
 /// Runs three-pass Edge Resolution over retrieved candidate facts in Rust memory.

@@ -1,6 +1,6 @@
 [package]
 name = "Vox"
-version = "0.8.5"
+version = "0.8.6"
 description = "Vox - A modern desktop voice inference engine built for edge devices."
 authors = ["addy-47"]
 edition = "2021"

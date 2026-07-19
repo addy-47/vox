@@ -1,8 +1,9 @@
 {
-  "latest_version": "0.8.5",
+  "latest_version": "0.8.6",
   "release_notes": [
-    "Redesigned Vox UI to resemble the vision .",
-    "OpenAI-Compatible Remote LLM Support, fully provider agnostic and custom API endpoints alongside embedded local inference."
+    "Redesigned Vox UI to resemble the vision.",
+    "OpenAI-Compatible Remote LLM Support, fully provider agnostic and custom API endpoints alongside embedded local inference.",
+    "Phase 9: V3 Human-Centric Cognitive Memory Subsystem with strict local ONNX NLI, 10-collection personal memory graph, and two-tier budget-capped retrieval."
   ],
   "linux": {
     "package": "vox",
