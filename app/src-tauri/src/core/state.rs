@@ -338,6 +338,7 @@ impl AppState {
     ) -> Self {
         // paths::init() must have been called before AppState::new()
         let settings = VoxSettings::load();
+        let initial_ctx_size = settings.llm.ctx_size as usize;
         is_private_mode.store(settings.persistence.private_mode, Ordering::Relaxed);
 
         let model_manager = Arc::new(crate::setup::model_manager::ModelManager::new(Some(
@@ -409,7 +410,7 @@ impl AppState {
             cpu_governor_optimal: Arc::new(AtomicBool::new(true)), // optimistic default
             setup_running: Arc::new(Mutex::new(false)),
             conversation_manager: Arc::new(std::sync::Mutex::new(
-                crate::services::memory::ConversationManager::new(2048),
+                crate::services::memory::ConversationManager::new(initial_ctx_size),
             )),
         }
     }
