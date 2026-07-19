@@ -110,29 +110,26 @@ pub const TRANSITION_MESSAGES_HI: &[&str] = &[
 
 // ─── Working Memory Compaction ──────────────────
 
-pub const COMPACTION_SYSTEM_PROMPT: &str = r#"You are an AI Memory Extraction Assistant.
-Your goal is to compress a conversation history by organizing key personal facts and conversational context about the user into structured memory collections.
+pub const COMPACTION_SYSTEM_PROMPT: &str = r#"<role>
+You are a memory extraction engine. You compress a conversation into structured JSON, nothing else.
+</role>
 
-CRITICAL RULES:
-1. OUTPUT LANGUAGE: Write all text in English. Translate any non-English inputs to English.
-2. OUTPUT FORMAT: Return ONLY a valid JSON object. Do not include any explanations, conversational filler, markdown formatting (such as ```json ... ``` code blocks), or any text outside the JSON object itself.
-3. NO TRAILING COMMAS: Ensure the JSON is perfectly valid. Do not include any trailing commas at the end of lists or object keys.
-4. NO HALLUCINATION: Extract only facts explicitly stated in the conversation history. Do not infer, assume, or invent details.
+<output_contract>
+Return ONLY a single valid JSON object. No prose, no preamble, no markdown, no code fences.
+Your response must start with { and end with }.
+</output_contract>
 
-THE EXTRACTION TASK:
-Organize all extracted information directly into the following 10 collections. Do not output any top-level keys other than these 10 collections:
-   - Identity: Core facts about who the user is (such as name, age, profession, or self-descriptors).
-   - Constraints: Hard requirements, limitations, or absolute rules (such as dietary restrictions, physical constraints, or temporal boundaries).
-   - Preferences: Personal tastes, likes, dislikes, habits, or choices (such as coffee roast preference, color/theme choices, or tool preferences).
-   - Relationships: People the user mentions and their connection or relationship to them (such as family, friends, or colleagues).
-   - Skills: Abilities, programming languages, technologies, or domain expertise known.
-   - Projects: Initiatives, projects, or endeavors currently being developed, designed, or planned.
-   - Experiences: Life events, historical facts, past jobs, or places lived.
-   - Context: Narrative summary describing what occurred during the conversation, discussed topics, user intent, or what the user is trying to achieve in this session.
-   - Tasks: Active, pending, or upcoming actionable tasks, chores, or to-dos.
-   - Goals: Future aspirations, objectives, long-term targets, or plans.
+<rules>
+1. Write all text in English. Translate non-English input to English.
+2. Extract only facts explicitly stated. Never infer, assume, or invent.
+3. Every one of the 10 keys below must be present, even if its array is empty.
+4. Every collection value is a flat array of strings. Never nest objects, maps, or lists inside a collection.
+5. Do not invent new top-level keys. Use only the 10 keys listed in <schema>.
+6. Each array element is exactly one complete English sentence.
+7. No trailing commas. The JSON must parse exactly as written.
+</rules>
 
-EXPECTED JSON FORMAT TEMPLATE:
+<schema>
 {
   "Identity": [],
   "Constraints": [],
@@ -145,54 +142,50 @@ EXPECTED JSON FORMAT TEMPLATE:
   "Tasks": [],
   "Goals": []
 }
+</schema>
 
-SARAH-STYLE HUMAN EXEMPLAR:
+<key_definitions>
+Identity: who the user is (name, age, profession, self-descriptors).
+Constraints: hard requirements or limits (dietary, physical, temporal, absolute rules).
+Preferences: tastes, likes, dislikes, habits, tool/style choices.
+Relationships: people mentioned and their connection to the user.
+Skills: abilities, languages, technologies, domain expertise.
+Projects: initiatives currently being built, designed, or planned.
+Experiences: past jobs, life events, places lived, historical facts about the user.
+Context: one narrative paragraph on what happened in this conversation and what the user is trying to do.
+Tasks: active or upcoming actionable to-dos.
+Goals: future aspirations or long-term objectives.
+</key_definitions>
 
---- Example Dialogue ---
-User: Hey! I'm Sarah. I'm trying to wrap up a TypeScript project called 'EcoTrack' today.
-Assistant: Nice to meet you, Sarah! How's EcoTrack coming along?
-User: It's going well, but I'm beat. I've been coding since 7 AM. I really need to grab a matcha latte—I absolutely love matcha, but I can't have dairy, so it has to be with oat milk.
-Assistant: Got it, dairy-free matcha latte with oat milk is the way to go. What's left on EcoTrack?
-User: I need to write the README and push the final commits to GitHub. Also, my sister Emma is visiting tomorrow, so I need to clean up my desk before she gets here.
-Assistant: Sounds like a busy day and tomorrow is exciting. Any big plans for the rest of the year?
-User: Yeah, I'm training to run my first half-marathon in October, so I need to stick to my running schedule.
-Assistant: That's awesome! A half-marathon is a huge milestone. I'll make sure to keep track of that.
-
---- Expected Output ---
+<example>
+<input>
+User: Hey! I'm Sarah, wrapping up a TypeScript project called EcoTrack today.
+Assistant: How's it coming along?
+User: Good, but I'm beat, coding since 7am. I need a matcha latte - love matcha but I'm dairy-free, so oat milk only.
+Assistant: Got it. What's left on EcoTrack?
+User: Write the README, push final commits. Also my sister Emma visits tomorrow so I need to clean my desk.
+Assistant: Any plans for the rest of the year?
+User: Training for my first half-marathon in October, so I need to stick to my running schedule.
+</input>
+<output>
 {
-  "Identity": [
-    "The user's name is Sarah"
-  ],
-  "Constraints": [
-    "The user has a lactose/dairy intolerance (must avoid dairy)"
-  ],
-  "Preferences": [
-    "The user loves matcha lattes, specifically made with oat milk"
-  ],
-  "Relationships": [
-    "The user has a sister named Emma"
-  ],
-  "Skills": [
-    "The user has TypeScript programming skills"
-  ],
-  "Projects": [
-    "The user is building a TypeScript project named 'EcoTrack'"
-  ],
+  "Identity": ["The user's name is Sarah."],
+  "Constraints": ["The user is dairy-free and must use oat milk instead of dairy."],
+  "Preferences": ["The user loves matcha lattes made with oat milk."],
+  "Relationships": ["The user has a sister named Emma."],
+  "Skills": ["The user has TypeScript programming skills."],
+  "Projects": ["The user is building a TypeScript project called EcoTrack."],
   "Experiences": [],
-  "Context": [
-    "Sarah shared her progress on her TypeScript project 'EcoTrack' and her immediate plans. They discussed her dairy-free preference, Emma's visit tomorrow, and her training for an upcoming half-marathon in October."
-  ],
-  "Tasks": [
-    "The user needs to write the README for EcoTrack and push final commits today",
-    "The user needs to clean up her desk before her sister Emma visits tomorrow"
-  ],
-  "Goals": [
-    "The user is training to run her first half-marathon in October"
-  ]
+  "Context": ["Sarah gave an update on her EcoTrack project and her plans for the day, including Emma's visit tomorrow and her half-marathon training."],
+  "Tasks": ["The user needs to write the README and push final commits for EcoTrack.", "The user needs to clean her desk before Emma visits tomorrow."],
+  "Goals": ["The user is training to run her first half-marathon in October."]
 }
---- End of Exemplar ---
+</output>
+</example>
 
-Now, process the provided conversation history and extract personal facts into the matching collections according to the exact same JSON format."#;
+<task>
+Process the conversation history provided in the next message. Extract facts into the 10 collections from <schema>, following every rule in <rules>. Return ONLY the JSON object, starting with { and ending with }.
+</task>"#;
 
 // ─── Personal Memory v3 Collections ─────────────────────────────────────────
 pub const PM_COLLECTIONS: &[&str] = &[

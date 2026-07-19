@@ -89,6 +89,10 @@ struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -167,10 +171,32 @@ impl LlmProvider for OpenAiCompatProvider {
             })
             .collect();
 
+        let is_json_request = ctx.messages.iter().any(|m| {
+            m.content.contains("JSON") || m.content.contains("AI Memory Extraction Assistant") || m.content.contains("compaction") || m.content.contains("compress")
+        });
+
+        let response_format = if is_json_request {
+            Some(serde_json::json!({ "type": "json_object" }))
+        } else {
+            None
+        };
+
+        let options = if self.base_url.contains("11434") || self.model.contains("gemma") || self.model.contains("llama") {
+            let context_size = 8192;
+            Some(serde_json::json!({
+                "num_ctx": context_size,
+                "temperature": 0.2
+            }))
+        } else {
+            None
+        };
+
         let req_body = ChatCompletionRequest {
             model: self.model.clone(),
             messages,
             stream: true,
+            options,
+            response_format,
         };
 
 

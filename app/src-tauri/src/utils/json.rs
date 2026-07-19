@@ -198,3 +198,8 @@ where
 
     deserializer.deserialize_any(ValueVisitor)
 }
+
+pub fn parse_compaction_json(content: &str) -> Option<std::collections::HashMap<String, Vec<String>>> {
+    let cleaned = clean_json_content(content);
+    serde_json::from_str::<std::collections::HashMap<String, Vec<String>>>(&cleaned).ok()
+}

@@ -534,24 +534,32 @@ impl PipelineOrchestrator {
             let db_path = crate::utils::paths::db_path();
             let rt = crate::persistence::db::get_tokio_handle();
 
-            let query_embedding = rt.block_on(async {
-                crate::services::memory::ensure_embedder_loaded(settings_snap.memory.personal_enabled).ok();
-                crate::services::memory::generate_embedding(&text).unwrap_or(None)
-            }).unwrap_or_else(|| vec![0.0; 1024]);
+            let classification = crate::services::memory::classify_query(&text);
+            log::info!("[Pipeline] Query Sieve Classification: {:?}", classification);
 
-            let personal_memory_block = rt.block_on(async {
-                if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
-                    crate::services::memory::personal_memory::retrieve_personal_context(
-                        &conn,
-                        &query_embedding,
-                        &settings_snap.memory,
-                        settings_snap.llm.ctx_size as usize,
-                        Some(&_app_handle),
-                    ).await.unwrap_or_default()
-                } else {
-                    String::new()
-                }
-            });
+            let personal_memory_block = if classification.is_generic() {
+                log::info!("[Pipeline] Query Sieve: GENERIC turn. Bypassing embedding generation and database RAG lookup.");
+                String::new()
+            } else {
+                let query_embedding = rt.block_on(async {
+                    crate::services::memory::ensure_embedder_loaded(settings_snap.memory.personal_enabled).ok();
+                    crate::services::memory::generate_embedding(&text).unwrap_or(None)
+                }).unwrap_or_else(|| vec![0.0; 1024]);
+
+                rt.block_on(async {
+                    if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
+                        crate::services::memory::personal_memory::retrieve_personal_context(
+                            &conn,
+                            &query_embedding,
+                            &settings_snap.memory,
+                            settings_snap.llm.ctx_size as usize,
+                            Some(&_app_handle),
+                        ).await.unwrap_or_default()
+                    } else {
+                        String::new()
+                    }
+                })
+            };
 
             let mut final_prompt = resolved_prompt.clone();
             if !personal_memory_block.is_empty() {
@@ -598,6 +606,7 @@ impl PipelineOrchestrator {
 
             let (ctx, transition_speech, personal_memory) = {
                 let mut mgr = self.conversation_manager.lock().unwrap();
+                mgr.set_max_context_tokens(settings_snap.llm.ctx_size as usize);
                 mgr.update_system_prompt(&final_prompt);
                 if mgr.context_utilization() == 0.0 {
                     mgr.new_session(&final_prompt);
