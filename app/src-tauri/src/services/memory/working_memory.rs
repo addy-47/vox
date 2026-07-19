@@ -321,26 +321,54 @@ impl ConversationManager {
                 },
                 ChatMessage {
                     role: Role::User,
-                    content: format!("Here is the full conversation history to compress:\n\n{}", history_text),
+                    content: format!(
+                        "<conversation_history>\n{}\n</conversation_history>\n\n\
+                         <task>\n\
+                         Extract facts from the <conversation_history> above into the 10 collections from <schema>, following every rule in <rules>.\n\
+                         Return ONLY the JSON object, starting with {{ and ending with }}.\n\
+                         </task>",
+                        history_text
+                    ),
                     timestamp_ms: current_timestamp_ms(),
                 },
             ],
-            token_count: estimate_tokens(&history_text) + 100,
+            token_count: estimate_tokens(&history_text)
+                + estimate_tokens(crate::core::constants::COMPACTION_SYSTEM_PROMPT)
+                + 150,
             kv_cache_index: 0,
         };
 
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let (tx, rx) = std::sync::mpsc::channel();
-
         let mut summary_content = String::new();
-        if provider.generate(&temp_ctx, 999_999, &cancel_flag, &tx).is_ok() {
-            while let Ok(event) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
-                match event {
-                    crate::core::events::VoxEvent::LlmToken { token, .. } => {
-                        summary_content.push_str(&token);
+        let mut personal_memory = std::collections::HashMap::new();
+        let mut attempts = 0;
+        let max_attempts = 2;
+
+        while attempts < max_attempts {
+            attempts += 1;
+            summary_content.clear();
+            let cancel_flag = Arc::new(AtomicBool::new(false));
+            let (tx, rx) = std::sync::mpsc::channel();
+
+            log::info!("[WorkingMemory] Compaction attempt {}/{}...", attempts, max_attempts);
+            if provider.generate(&temp_ctx, 999_999, &cancel_flag, &tx).is_ok() {
+                while let Ok(event) = rx.recv_timeout(std::time::Duration::from_secs(45)) {
+                    match event {
+                        crate::core::events::VoxEvent::LlmToken { token, .. } => {
+                            summary_content.push_str(&token);
+                        }
+                        crate::core::events::VoxEvent::LlmFinished { .. } => break,
+                        _ => {}
                     }
-                    crate::core::events::VoxEvent::LlmFinished { .. } => break,
-                    _ => {}
+                }
+            }
+
+            if !summary_content.trim().is_empty() {
+                if let Some(resp) = crate::utils::json::parse_compaction_json(&summary_content) {
+                    personal_memory = resp;
+                    log::info!("[WorkingMemory] Compaction JSON parsed successfully on attempt {}.", attempts);
+                    break;
+                } else {
+                    log::warn!("[WorkingMemory] Compaction JSON parsing failed on attempt {}/{}.", attempts, max_attempts);
                 }
             }
         }
@@ -352,15 +380,9 @@ impl ConversationManager {
             return Ok(std::collections::HashMap::new());
         }
 
-        let personal_memory = {
-            let cleaned = crate::utils::json::clean_json_content(&summary_content);
-            if let Ok(resp) = serde_json::from_str::<std::collections::HashMap<String, Vec<String>>>(&cleaned) {
-                resp
-            } else {
-                log::warn!("[WorkingMemory] LLM compaction returned non-JSON/malformed content. Treating as raw summary.");
-                std::collections::HashMap::new()
-            }
-        };
+        if personal_memory.is_empty() {
+            log::warn!("[WorkingMemory] LLM compaction returned non-JSON/malformed content after retries. Treating as raw summary fallback.");
+        }
 
         let final_summary = personal_memory
             .get("Context")

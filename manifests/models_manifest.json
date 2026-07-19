@@ -5,7 +5,7 @@
     "Supertonic 3 replaces Kokoro (EN) + Piper (HI) as the sole TTS engine.",
     "Chatterbox TTS integrated"
   ],
-  "total_size_bytes": 9398491074,
+  "total_size_bytes": 10081171563,
   "model_groups": [
     {
       "id": "ten_vad",
@@ -288,6 +288,50 @@
           "sha256": "50f998b9837e9b8934e1ad946fe2d32555a472379bb1d2982a4938ed4262fda0",
           "archive": "tar.gz",
           "required": false
+        }
+      ]
+    },
+    {
+      "id": "bge_m3",
+      "name": "BGE-M3 Multilingual Embedding Engine",
+      "category": "embedding",
+      "version": "1.0.0",
+      "files": [
+        {
+          "id": "embedding_bge_m3_onnx",
+          "path": "embedding/bge-m3/model_quantized.onnx",
+          "size": 569694530,
+          "sha256": "0826f8c1ab9edf1801db86c61919d4d108e8bfc0b809ec823ad366882ff0b77d",
+          "required": true
+        },
+        {
+          "id": "embedding_bge_m3_tokenizer",
+          "path": "embedding/bge-m3/tokenizer.json",
+          "size": 17082821,
+          "sha256": "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "deberta_v3_xsmall_nli",
+      "name": "DeBERTa-v3 XSmall NLI Contradiction Engine",
+      "category": "nli",
+      "version": "1.0.0",
+      "files": [
+        {
+          "id": "nli_deberta_onnx",
+          "path": "nli/deberta-v3-xsmall-nli/model_quantized.onnx",
+          "size": 87246587,
+          "sha256": "3fac2500c45c75af42c7711de0d1b93d59577456100208be0dc1f9e8811946b6",
+          "required": true
+        },
+        {
+          "id": "nli_deberta_tokenizer",
+          "path": "nli/deberta-v3-xsmall-nli/tokenizer.json",
+          "size": 8656551,
+          "sha256": "a86f883318afa11c8c10466f1bf4efaeb6ded28a52cbe57217a8fa0d0a2a87df",
+          "required": true
         }
       ]
     }
