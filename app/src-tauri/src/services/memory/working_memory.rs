@@ -61,6 +61,8 @@ pub struct ConversationManager {
 
     opportunistic_active: bool,
     opportunistic_cancel: Arc<AtomicBool>,
+
+    current_personal_memory: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl ConversationManager {
@@ -84,6 +86,7 @@ impl ConversationManager {
             kv_synced_index: 0,
             opportunistic_active: false,
             opportunistic_cancel: Arc::new(AtomicBool::new(false)),
+            current_personal_memory: std::collections::HashMap::new(),
         }
     }
 
@@ -110,7 +113,8 @@ impl ConversationManager {
         self.total_token_count = sys_tokens;
         self.kv_synced_index = 0;
         self.cancel_opportunistic();
-        log::info!("[WorkingMemory] New session started. System prompt set.");
+        self.current_personal_memory.clear();
+        log::info!("[WorkingMemory] New session started. System prompt set and personal memory cleared.");
     }
 
     pub fn update_system_prompt(&mut self, new_system_prompt: &str) {
@@ -312,6 +316,32 @@ impl ConversationManager {
             history_text.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
         }
 
+        let is_first = self.current_personal_memory.is_empty() || self.current_personal_memory.values().all(|v| v.is_empty());
+        let user_content = if is_first {
+            format!(
+                "<conversation_history>\n{}\n</conversation_history>\n\n\
+                 <task>\n\
+                 Analyze the <conversation_history> above and extract all stated user facts into the 10 flat collections from the <schema>.\n\
+                 Follow every rule in <rules> and output the finalized JSON object starting with {{ and ending with }}.\n\
+                 </task>",
+                history_text
+            )
+        } else {
+            let serialized_memory = serde_json::to_string_pretty(&self.current_personal_memory).unwrap_or_default();
+            format!(
+                "<current_personal_memory>\n{}\n</current_personal_memory>\n\n\
+                 <conversation_history>\n{}\n</conversation_history>\n\n\
+                 <task>\n\
+                 Analyze the new <conversation_history> turns against the existing facts in <current_personal_memory>.\n\
+                 Perform a differential extraction: incorporate new facts, update modified facts, and remove or resolve any contradictions.\n\
+                 Output the complete, finalized JSON state of all 10 collections from <schema> incorporating these changes.\n\
+                 Follow every rule in <rules> and output ONLY the JSON object starting with {{ and ending with }}.\n\
+                 </task>",
+                serialized_memory,
+                history_text
+            )
+        };
+
         let temp_ctx = ConversationContext {
             messages: vec![
                 ChatMessage {
@@ -321,14 +351,7 @@ impl ConversationManager {
                 },
                 ChatMessage {
                     role: Role::User,
-                    content: format!(
-                        "<conversation_history>\n{}\n</conversation_history>\n\n\
-                         <task>\n\
-                         Extract facts from the <conversation_history> above into the 10 collections from <schema>, following every rule in <rules>.\n\
-                         Return ONLY the JSON object, starting with {{ and ending with }}.\n\
-                         </task>",
-                        history_text
-                    ),
+                    content: user_content,
                     timestamp_ms: current_timestamp_ms(),
                 },
             ],
@@ -418,14 +441,35 @@ impl ConversationManager {
         self.total_token_count = sys_tokens + summary_tokens + user_tokens;
         self.kv_synced_index = 0; // Reset KV cache index for re-encode
 
+        // Compute the diff (the unique additions) to enqueue to the database queue
+        let mut diff_to_enqueue = std::collections::HashMap::new();
+        for (col, new_facts) in &personal_memory {
+            let mut additions = Vec::new();
+            if let Some(old_facts) = self.current_personal_memory.get(col) {
+                for fact in new_facts {
+                    if !old_facts.contains(fact) {
+                        additions.push(fact.clone());
+                    }
+                }
+            } else {
+                additions = new_facts.clone();
+            }
+            if !additions.is_empty() {
+                diff_to_enqueue.insert(col.clone(), additions);
+            }
+        }
+
+        self.current_personal_memory = personal_memory.clone();
+
         log::info!(
-            "[WorkingMemory] Compaction complete. Rebuilt context with 3 items ({} tokens, utilization {:.1}%). Extracted {} personal facts.",
+            "[WorkingMemory] Compaction complete. Rebuilt context with 3 items ({} tokens, utilization {:.1}%). Extracted {} personal facts ({} new additions).",
             self.total_token_count,
             self.context_utilization() * 100.0,
-            personal_memory.values().map(|v| v.len()).sum::<usize>()
+            personal_memory.values().map(|v| v.len()).sum::<usize>(),
+            diff_to_enqueue.values().map(|v| v.len()).sum::<usize>()
         );
 
-        Ok(personal_memory)
+        Ok(diff_to_enqueue)
     }
 
     pub fn try_trigger_opportunistic(&mut self) -> Option<(usize, Vec<ChatMessage>, Arc<AtomicBool>)> {
@@ -507,7 +551,7 @@ impl ConversationManager {
         self.cancel_opportunistic();
     }
 
-    fn cancel_opportunistic(&mut self) {
+    pub fn cancel_opportunistic(&mut self) {
         if self.opportunistic_active {
             self.opportunistic_cancel.store(true, Ordering::Relaxed);
             self.opportunistic_active = false;

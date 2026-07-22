@@ -8,12 +8,20 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalBackendKind {
+    Ollama,
+    LmStudio,
+    StandardOpenAi,
+}
+
 pub struct OpenAiCompatProvider {
     base_url: String,
     model: String,
     api_key: Option<String>,
     provider_name: Option<String>,
     async_client: reqwest::Client,
+    backend_kind: Arc<std::sync::RwLock<Option<LocalBackendKind>>>,
 }
 
 impl OpenAiCompatProvider {
@@ -46,7 +54,7 @@ impl OpenAiCompatProvider {
 
         let async_client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(180))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
@@ -56,6 +64,7 @@ impl OpenAiCompatProvider {
             api_key: api_key.map(|s| s.trim_matches(|c| c == '"' || c == '\'').to_string()),
             provider_name: provider_name.map(|s| s.to_string()),
             async_client,
+            backend_kind: Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -76,6 +85,59 @@ impl OpenAiCompatProvider {
         }
         builder
     }
+
+    pub fn detect_backend_kind(&self) -> LocalBackendKind {
+        let cached = {
+            let read_guard = self.backend_kind.read().unwrap();
+            *read_guard
+        };
+
+        if let Some(kind) = cached {
+            return kind;
+        }
+
+        let mut detected = LocalBackendKind::StandardOpenAi;
+
+        // Try to probe Ollama
+        let ollama_url = format!("{}/api/tags", self.base_url);
+        let mut builder = self.async_client.get(&ollama_url).timeout(Duration::from_secs(2));
+        builder = self.inject_headers(builder);
+
+        let is_ollama = block_on(async {
+            match builder.send().await {
+                Ok(resp) => resp.status().is_success(),
+                Err(_) => false,
+            }
+        });
+
+        if is_ollama {
+            log::info!("[OpenAiCompat] Detected Ollama native backend at {}", self.base_url);
+            detected = LocalBackendKind::Ollama;
+        } else {
+            // Try to probe LM Studio
+            let lms_url = format!("{}/api/v1/models", self.base_url);
+            let mut builder = self.async_client.get(&lms_url).timeout(Duration::from_secs(2));
+            builder = self.inject_headers(builder);
+
+            let is_lms = block_on(async {
+                match builder.send().await {
+                    Ok(resp) => resp.status().is_success(),
+                    Err(_) => false,
+                }
+            });
+
+            if is_lms {
+                log::info!("[OpenAiCompat] Detected LM Studio native backend at {}", self.base_url);
+                detected = LocalBackendKind::LmStudio;
+            } else {
+                log::info!("[OpenAiCompat] Fallback to standard OpenAI compatibility at {}", self.base_url);
+            }
+        }
+
+        let mut write_guard = self.backend_kind.write().unwrap();
+        *write_guard = Some(detected);
+        detected
+    }
 }
 
 #[derive(Serialize)]
@@ -84,16 +146,6 @@ struct ChatMessage {
     content: String,
 }
 
-#[derive(Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    stream: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    options: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    response_format: Option<serde_json::Value>,
-}
 
 #[derive(Deserialize)]
 struct ChatCompletionChunk {
@@ -181,33 +233,52 @@ impl LlmProvider for OpenAiCompatProvider {
             None
         };
 
-        let options = if self.base_url.contains("11434") || self.model.contains("gemma") || self.model.contains("llama") {
-            let context_size = 8192;
-            Some(serde_json::json!({
-                "num_ctx": context_size,
-                "temperature": 0.2
-            }))
-        } else {
-            None
-        };
+        let kind = self.detect_backend_kind();
 
-        let req_body = ChatCompletionRequest {
-            model: self.model.clone(),
-            messages,
-            stream: true,
-            options,
-            response_format,
+        let (url, req_body) = match kind {
+            LocalBackendKind::Ollama => {
+                let url = format!("{}/api/chat", self.base_url);
+                let req_body = serde_json::json!({
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": true,
+                    "options": {
+                        "num_ctx": 8192,
+                        "temperature": 0.2
+                    }
+                });
+                (url, req_body)
+            }
+            LocalBackendKind::LmStudio => {
+                let url = format!("{}/api/v1/chat", self.base_url);
+                let req_body = serde_json::json!({
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": true,
+                    "context_length": 8192,
+                    "temperature": 0.2
+                });
+                (url, req_body)
+            }
+            LocalBackendKind::StandardOpenAi => {
+                let url = if self.base_url.ends_with("/chat/completions") {
+                    self.base_url.clone()
+                } else if self.base_url.ends_with("/v1") || self.base_url.ends_with("/openai") {
+                    format!("{}/chat/completions", self.base_url)
+                } else {
+                    format!("{}/v1/chat/completions", self.base_url)
+                };
+                let req_body = serde_json::json!({
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": true,
+                    "response_format": response_format,
+                });
+                (url, req_body)
+            }
         };
-
 
         block_on(async {
-            let url = if self.base_url.ends_with("/chat/completions") {
-                self.base_url.clone()
-            } else if self.base_url.ends_with("/v1") || self.base_url.ends_with("/openai") {
-                format!("{}/chat/completions", self.base_url)
-            } else {
-                format!("{}/v1/chat/completions", self.base_url)
-            };
             let mut builder = self.async_client.post(&url).json(&req_body);
             builder = self.inject_headers(builder);
 
@@ -297,16 +368,22 @@ impl LlmProvider for OpenAiCompatProvider {
     }
 
     fn health_check(&self) -> bool {
-        let url = format!("{}/v1/models", self.base_url);
-        let mut builder = self.async_client.get(&url).timeout(Duration::from_secs(3));
-        builder = self.inject_headers(builder);
+        let kind = self.detect_backend_kind();
+        match kind {
+            LocalBackendKind::Ollama | LocalBackendKind::LmStudio => true,
+            LocalBackendKind::StandardOpenAi => {
+                let url = format!("{}/v1/models", self.base_url);
+                let mut builder = self.async_client.get(&url).timeout(Duration::from_secs(3));
+                builder = self.inject_headers(builder);
 
-        block_on(async {
-            match builder.send().await {
-                Ok(resp) => resp.status().is_success(),
-                Err(_) => false,
+                block_on(async {
+                    match builder.send().await {
+                        Ok(resp) => resp.status().is_success(),
+                        Err(_) => false,
+                    }
+                })
             }
-        })
+        }
     }
 
     fn list_models(&self) -> anyhow::Result<Vec<LlmModelInfo>> {
@@ -423,6 +500,45 @@ fn process_line(line: &str, turn_id: u32, tx: &mpsc::Sender<VoxEvent>, finished:
         }
 
         if let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(data) {
+            if let Some(choice) = chunk.choices.first() {
+                if let Some(token) = &choice.delta.content {
+                    if !token.is_empty() {
+                        let _ = tx.send(VoxEvent::LlmToken {
+                            turn_id,
+                            token: token.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    } else {
+        // Try parsing as native Ollama chat stream event
+        #[derive(Deserialize)]
+        struct OllamaMessage {
+            content: String,
+        }
+        #[derive(Deserialize)]
+        struct OllamaChatChunk {
+            message: Option<OllamaMessage>,
+            done: Option<bool>,
+        }
+        if let Ok(chunk) = serde_json::from_str::<OllamaChatChunk>(line) {
+            if let Some(msg) = chunk.message {
+                if !msg.content.is_empty() {
+                    let _ = tx.send(VoxEvent::LlmToken {
+                        turn_id,
+                        token: msg.content,
+                    });
+                }
+            }
+            if chunk.done.unwrap_or(false) {
+                *finished = true;
+            }
+            return;
+        }
+
+        // Try parsing as raw JSON ChatCompletionChunk (some providers stream raw JSON without data: prefix)
+        if let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(line) {
             if let Some(choice) = chunk.choices.first() {
                 if let Some(token) = &choice.delta.content {
                     if !token.is_empty() {
