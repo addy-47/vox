@@ -2,7 +2,7 @@ use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
 use serde::Serialize;
 use tauri::State;
-use crate::core::constants::{PM_RELATION_USER_SUPERSEDES, PM_RELATION_CONFLICTS, PM_SOURCE_USER};
+use crate::core::constants::{PM_RELATION_USER_SUPERSEDES, PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_SOURCE_USER};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryFactEntry {
@@ -137,7 +137,7 @@ pub async fn get_memory_graph(
         };
 
         let supports_count = {
-            let mut s_rows = conn.query("SELECT count(*) FROM memory_relations WHERE (from_id = ? OR to_id = ?) AND relation = ?", (id.clone(), id.clone(), PM_RELATION_CONFLICTS.to_string())).await.map_err(|e| e.to_string())?;
+            let mut s_rows = conn.query("SELECT count(*) FROM memory_relations WHERE (from_id = ? OR to_id = ?) AND relation = ?", (id.clone(), id.clone(), PM_RELATION_SUPPORTS.to_string())).await.map_err(|e| e.to_string())?;
             s_rows.next().await.map_err(|e| e.to_string())?.map(|r| r.get::<i64>(0).unwrap_or(0) as u32).unwrap_or(0)
         };
 

@@ -1,238 +1,210 @@
-# Master Architectural Specification: Human-Centric Cognitive Memory System (v3)
+# Master Cognitive Memory Specification: Personal & Working Memory Subsystems
 
-**Document ID:** SEC-SPEC-MEM-V3-HUMAN-FINAL  
-**Status:** ARCHITECT APPROVED / CORE AUDIT PASS / READY FOR DEVELOPER AGENT  
-**Audience:** Backend Developer Agent & Cognitive Engineers  
-
----
-
-## 1. Architectural Philosophy & Core Pivot
-
-The legacy memory specifications suffered from a deep, systemic **Technical Bias**, assuming the system tray assistant was interacting exclusively with a systems engineer or developer. This led to schemas, prompts, and evaluation suites dominated by technical jargon (e.g., "WAL mode," "Neovim config," "ONNX mutex").
-
-To build an assistant that behaves as an intuitive, context-aware human companion, **we must design for standard human life patterns**. The system must reason about daily routines, culinary efforts, language learning progress, social dynamics, personal emotions, grocery lists, health, and hobbies.
-
-### 1.1 The Dimensional Mismatch of Context Vector Searches
-Prior specifications computed a 1024-dimensional dense vector of a session's cohesive context summary and performed semantic vector searches against it using a short, turn-level user query. This represents a severe **mathematical and dimensional mismatch**:
-1. **Information Density Mismatch:** A short, turn-level query has high semantic sparsity. A multi-topic cohesive paragraph has extremely high semantic density, incorporating multiple disparate topics (e.g., baking a cake, calling a grandmother, feeling stressed). 
-2. **Coordinate Centroid Drift:** The dense embedding of a multi-topic paragraph sits at the average centroid of those topics. A specific query on one topic will rarely yield a high cosine similarity score against the diluted average coordinate.
-
-**The Redesign:** We completely deprecate context embeddings. The cohesive context summary is stored as raw text under a dedicated `'Context'` collection. It is retrieved using **Time-Windowed Context Chaining**, bypassing vector search overhead entirely.
-
-### 1.2 Trap 1: The Micro-Session Context Erasure
-A naive temporal chaining rule that fetches the immediate prior session context (`ORDER BY created_at DESC LIMIT 1`) introduces a major logical bug:
-*   *The Trap:* Sarah has a rich 20-minute cooking session discussing an apple tart recipe. She exits. Five minutes later, she starts Vox just to say, "Set a baking timer for 10 minutes." That 10-second micro-session ends. When she returns an hour later and asks, "How is the tart doing?", a naive `LIMIT 1` retrieves *only* the timer micro-session context. The apple tart context is completely erased from prompt memory!
-*   *The Fix:* We replace `LIMIT 1` with a **Time-Windowed Dynamic Context Rollup** (fetching all active context paragraphs within a configurable 12-hour window and dynamically budgeting them, formatted as a chronological relative timeline).
+**Document ID:** SPEC-COG-MEM-V4-FINAL  
+**Status:** SPECIFICATION FROZEN / VALIDATED (V4 COGNITIVE ERA)  
+**Audience:** System Architects, Cognitive Engineers, and Developer Agents  
 
 ---
 
-## 2. Sarah's Weekend Routine: A Concrete Human Trace
+## 1. Concept & Scope
 
-To ground this system, we trace a concrete human-centric scenario: **Sarah's Saturday French Apple Tart & Family Routine**.
+This specification governs the behavioral contract of the **Vox Hybrid Cognitive Memory System**. 
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Sarah as Sarah (User)
-    participant WM as Working Memory (In-Memory)
-    participant DB as SQLite (Durable)
+The memory system is responsible for maintaining context across real-time voice conversations and building a durable, self-healing model of the user. It is comprised of two coordinated subsystems:
+1.  **Working Memory:** A transient, active memory system in RAM that manages real-time conversation turns, enforces token budgets, and executes low-latency context compactions.
+2.  **Personal Memory:** A long-term, structured memory system that extracts, stores, relates, and retrieves personal traits, preferences, experiences, active tasks, goals, and session contexts.
 
-    Note over Sarah, DB: SESSION 1: Saturday Morning (Household Chores)
-    Sarah->>WM: "I'm baking a gluten-free French apple tart today. I also need to call my grandmother Evelyn at 4 PM."
-    Note over WM: Compaction threshold is NOT met. <br/>All tasks/goals are kept raw in-memory.
-    Sarah->>WM: "Goodbye, going to clean up."
-    Note over WM: SESSION END consolidation triggers!
-    Note over WM: Compactor extracts flat JSON: <br/>- Durable: Sarah loves French baking.<br/>- Ephemeral: Tasks: Call grandmother (pending).
-    WM->>DB: Write Context raw paragraph under 'Context' collection.<br/>Embed and write Durable Core facts.<br/>Write Ephemeral states as 'staged' in the queue.
-
-    Note over Sarah, DB: SESSION 2: Saturday Evening (Post-Call)
-    Sarah->>WM: Starts session: "I'm back!"
-    Note over DB, WM: Chaining Rule: Fetch Session 1's Context raw text.<br/>Fetch Durable Core.
-    WM->>Sarah: Injects Session 1 Context into prompt. <br/>Vox knows: "Last we spoke, you were preparing a gluten-free French apple tart..."
-    Sarah->>WM: "I called my grandmother Evelyn! It was lovely. Now I need to do the baking."
-    Note over WM: Update in-memory: 'Call grandmother' -> COMPLETED.
-    Sarah->>WM: "Going to bake now. Bye!"
-    Note over WM: SESSION END consolidation triggers!
-    WM->>DB: Write Session 2 Context raw paragraph.<br/>Write finalized task state: 'Call grandmother' is completed.
-```
+### 1.1 Out of Scope
+*   **Static World Knowledge:** General knowledge querying is delegated entirely to the foundational LLM; this spec only governs knowledge related directly to the user.
+*   **Physical Vector Database Administration:** The low-level configuration of indexing algorithms or storage engine paging is handled by downstream database drivers and is excluded from this contract.
+*   **Audio DSP & ASR/TTS Pipelines:** The transcription of voice to text (STT) and text to voice (TTS) are treated as clean, external stream interfaces.
 
 ---
 
-## 3. The 3-Tier Cognitive Taxonomy
+## 2. Historical Evolution (The Cognitive Lineage)
 
-The personal memory database divides all 9 logical collections into **3 structural types**, establishing a clean, modular hierarchy and slashing background embedding overhead:
+To prevent regressions, maintain deep technical traceability, and provide future agents with a step-by-step roadmap to reproduce or test any version of the system, all implementations must respect the design decisions, failures, and architectural lessons accumulated across historical iterations:
 
+```text
+  ┌───────────────────────────────────────────────────────────────┐
+  │ v1 Cognitive Era: Working + Episodic (Vector) + Semantic (NLP)│
+  └───────────────────────────────┬───────────────────────────────┘
+                                  │
+                                  ▼ [Morph: NLP deprecated]
+  ┌───────────────────────────────────────────────────────────────┐
+  │ v2 Cognitive Era: Working + Episodic (Vector) + Personal (LLM)│
+  └───────────────────────────────┬───────────────────────────────┘
+                                  │
+                                  ▼ [Absorption: Episodic deprecated]
+  ┌───────────────────────────────────────────────────────────────┐
+  │ v3 Cognitive Era: Working + Personal (10 Categorized Flat Lists)
+  └───────────────────────────────┬───────────────────────────────┘
+                                  │
+                                  ▼ [Dual-Defense: Relations & Self-Healing]
+  ┌───────────────────────────────────────────────────────────────┐
+  │ v4 Cognitive Era (Active): Directed Relations Graph (HITL)    │
+  └───────────────────────────────────────────────────────────────┘
 ```
-                    ┌──────────────────────────────────────────────┐
-                    │            9 COGNITIVE COLLECTIONS           │
-                    └──────┬──────────────────┬─────────────────┬──┘
-                           │                  │                 │
-            ┌──────────────▼──────┐   ┌───────▼─────────────┐   │
-            │   FOUNDATIONAL      │   │     OPERATIONAL     │   │
-            │ Constraints,Identity│   │Context, Tasks, Goals│   │
-            └─────────────────────┘   └─────────────────────┘   │
-                                                                │
-                                            ┌───────────────────▼─┐
-                                            │      SEMANTIC       │
-                                            │Prefs,Relations,     │
-                                            │Skills, Projects     │
-                                            └─────────────────────┘
-```
 
-| Type | Predefined Collections | Embedding Requirement | Retrieval Style | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **`foundational`** | `Identity`, `Constraints` | **Never Embedded** | Always-Active Injection | Core, slow-moving biological/persona rules loaded unconditionally on every turn. |
-| **`operational`** | `Context`, `Tasks`, `Goals` | **Never Embedded** | Time-Windowed / Deterministic SQL Load | Dynamic session contextual summary and active/pending action items. |
-| **`semantic`** | `Preferences`, `Relationships`, `Skills`, `Projects` | **Embedded Individually** (BGE-M3) | Semantic Vector Search + Round-Robin Interleaving | Long-term user profiles and personal traits searched semantically. |
+### 2.1 The v1 Cognitive Era (Pure Subsystems)
+*   **Subsystem Configuration:** 
+    *   **Working Memory:** A transient RAM-based rolling FIFO list of conversation messages.
+    *   **Episodic Memory:** A separate chunk-based persistent vector store. Utilized `all-MiniLM-L6-v2` (384-dimensional dense vector) to embed 5-turn session chunks. Query similarity matching score threshold was set to `0.55`.
+    *   **Semantic Memory:** A separate, rigid rule-based NLP entity extraction pipeline.
+*   **Failures & Latency Bottlenecks:**
+    *   *Coordinate Centroid Drift:* Searching dense multi-topic episode summaries using short, sparse turn-level user queries caused a dimensional mismatch. Cosine similarity scores hovered near the mean centroid, failing to fetch relevant episodes.
+    *   *Brittle NLP:* Rule-based NLP entity extraction failed completely on natural, loose human dialogue, causing high processing latencies ($>400$ms) on CPU.
+
+### 2.2 The v2 Cognitive Era (The Personal Memory Morph)
+*   **Subsystem Configuration:**
+    *   **Episodic Memory:** Shifted embedding model to `BGE-M3` (1024-dimensional dense vectors with Unit-L2 normalization). Similarity threshold raised to `0.65`.
+    *   **Personal Memory (The Morph):** Rule-based NLP Semantic Memory was deprecated. Personal Memory was introduced. Rather than using a separate NLP model, extraction was delegated directly to the LLM during Working Memory compactions (via `COMPACTION_SYSTEM_PROMPT_V2`), emitting structured updates.
+    *   **NLI Verification Engine:** Introduced a local, quantized INT8 local ONNX Natural Language Inference model (`cross-encoder/nli-MiniLM2-L6-H768` ~33M parameters, ~30MB footprint on disk) to evaluate logical connections (Entailment/Contradiction/Neutral) between new facts and candidates.
+*   **Failures & Latency Bottlenecks:**
+    *   *NLI CPU Pinning:* Processing every single extracted fact against $K=5$ candidates via local cross-encoder NLI pinned CPU cores, causing audio stuttering during live pipeline playback.
+    *   *Fact Duplication:* No upstream filtering existed. The LLM continuously re-extracted identical or slightly reworded facts, bloating prompt context.
+    *   *Micro-Session Context Erasure:* A naive temporal chaining rule that fetched only the immediate prior session summary meant a 10-second micro-session (e.g., "Set a timer") completely erased the rich, multi-topic context of a 20-minute discussion that occurred just minutes prior.
+
+### 2.3 The v3 Cognitive Era (Episodic Absorption)
+*   **Subsystem Configuration:**
+    *   **Episodic Memory:** Fully deprecated as an independent subsystem. Long-term session histories were absorbed directly into Personal Memory under a dedicated operational `Context` collection. Linear vector searches of context summaries were completely replaced by **Time-Windowed Context Chaining** (vectorless chronological SQL queries).
+    *   **Personal Memory (Category Consolidation):** The memory model was consolidated into a flat collection model of 10 explicit categories (`Identity`, `Constraints`, `Preferences`, `Relationships`, `Skills`, `Projects`, `Experiences`, `Context`, `Tasks`, `Goals`).
+    *   **Two-Tier Budgeted Retrieval:** Introduced a strict 15% hard cap of the overall LLM context window, splitting context into Tier 1 (7% Foundational Core) and Tier 2 (8% Semantic Profiles).
+    *   **NLI Cosine Pruning:** To resolve NLI CPU pinning, BGE-M3 cosine similarity was calculated first. If the score was $<0.82$, the NLI cross-encoder was bypassed, and the relationship was classified as `Neutral` immediately. This cut CPU pinning during sweeps by over 85%, reducing latency to $<150$ms on CPU.
+*   **Failures & Latency Bottlenecks:**
+    *   *Semantic Lossiness:* Compactions flattened previously extracted multi-dimensional categories into a single, lossy summary sentence, causing subsequent compactions to lose historical granularity.
+    *   *Upstream Redundancy:* The compaction template repeated instructions across system and user turns, wasting tokens.
+    *   *Automatic Suppression Defects:* In conflicts, the backend automatically marked the older fact as inactive behind the user's back. This caused silent context loss and left the user with no visibility or control over why their profile state shifted.
+
+### 2.4 The v4 Cognitive Era (The Self-Healing Graph)
+*   **Subsystem Configuration:** Introduces a **Directed Relations Graph** where facts are linked via explicit relationship edges: `SUPPORTS`, `CONFLICTS`, `USER_SUPERSEDES`, and the newly specified `SIMILAR` and `MERGED` edges.
+*   It implements **Multi-Tier Cosine Similarity Range Routing `[0.65 - 0.95]`** to bypass performance bottlenecks and exact-match NLI failures.
+*   **Automatic Merge:** If the BGE-M3 cosine similarity between a new fact and an existing fact is exactly `1.0` (or has a Jaccard similarity of `1.0`), they are automatically merged, bypassing downstream NLI and similarity checks entirely.
+*   It establishes **Conversational Self-Healing via Explicit Context Injection**, presenting unresolved similarities and contradictions directly to the active prompt RAG context so that the LLM can resolve them during natural user turns (Human-in-the-Loop).
+*   It optimizes the compaction harness by stripping redundant system-level tasks and passing structured JSON blocks during differential extractions to prevent duplication.
 
 ---
 
-## 4. Redesigned SQLite Database Schema
+## 3. Cognitive Hardware Tiers
 
-We completely collapse the database schema from the legacy design down to **exactly four core tables**, with 100% of the functionality preserved:
+To ensure portability across hardware configurations, the memory system dynamically adapts its logical capability based on the active hardware tier:
 
-```sql
--- 1. Core Facts Table (Houses all 9 collections under 3 structural types)
-CREATE TABLE IF NOT EXISTS memory_facts (
-    id           TEXT PRIMARY KEY,              -- UUID v4
-    type         TEXT NOT NULL,                 -- 'foundational', 'operational', 'semantic'
-    collection   TEXT NOT NULL,                 -- Context, Constraints, Identity, Preferences, Relationships, Skills, Projects, Tasks, Goals
-    fact         TEXT NOT NULL,
-    source       TEXT NOT NULL DEFAULT 'LLM',   -- 'LLM', 'User', or 'Import'
-    status       TEXT NOT NULL DEFAULT 'active',-- 'active', 'superseded', 'deleted'
-    session_id   TEXT NOT NULL DEFAULT '',      -- Provenance tracking
-    turn_id      TEXT NOT NULL DEFAULT '',      -- Provenance tracking
-    created_at   INTEGER NOT NULL               -- Millisecond epoch timestamp
-);
-
--- 2. Separate Vectors Table (SQLite Page-loading performance optimization - SEMANTIC ONLY)
-CREATE TABLE IF NOT EXISTS memory_facts_vectors (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    fact_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-    collection  TEXT NOT NULL,
-    embedding   F32_BLOB(1024) NOT NULL         -- 1024-dimensional BGE-M3 dense vector
-);
-
--- 3. Directed Relations Graph Table (SUPPORTS / CONFLICTS / USER_SUPERSEDES)
-CREATE TABLE IF NOT EXISTS memory_relations (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-    to_id       TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-    relation    TEXT NOT NULL,                  -- 'SUPPORTS', 'CONFLICTS', 'USER_SUPERSEDES'
-    created_at  INTEGER NOT NULL,
-    UNIQUE(from_id, to_id, relation)
-);
-
--- 4. Unified Ingestion Queue & Staging Table (Acts as Queue AND Crash Recovery WAL)
-CREATE TABLE IF NOT EXISTS personal_memory_queue (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    fact         TEXT NOT NULL,
-    collection   TEXT NOT NULL,
-    source       TEXT NOT NULL DEFAULT 'LLM',
-    session_id   TEXT NOT NULL DEFAULT '',
-    status       TEXT NOT NULL DEFAULT 'pending',-- 'pending' (to embed), 'staged' (active session WAL), 'processing', 'completed', 'failed'
-    attempts     INTEGER NOT NULL DEFAULT 0,
-    error_msg    TEXT,
-    created_at   INTEGER NOT NULL,
-    processed_at INTEGER
-);
-
--- Performance Indices
-CREATE INDEX IF NOT EXISTS idx_mf_type_status ON memory_facts(type, status);
-CREATE INDEX IF NOT EXISTS idx_mf_collection_status ON memory_facts(collection, status);
-CREATE INDEX IF NOT EXISTS idx_mf_created ON memory_facts(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_mfv_collection ON memory_facts_vectors(collection);
-CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, created_at ASC);
-```
-
-### 4.1 The $O(1)$ Status Optimization
-By introducing the `status` column directly into `memory_facts` (allowed values: `'active' | 'superseded' | 'deleted'`), we bypass complex graph traversals during the hot-path retrieval loop. Soft-deletes and NLI-suppressions write directly to this field, reducing prompt generation lookups to simple `WHERE status = 'active'` checks.
-
-### 4.2 Why Separate the Embedding Table?
-SQLite is a row-oriented database. Keeping a heavy 4KB vector blob directly inside the `memory_facts` row causes high disk-paging overhead. Separating vectors into `memory_facts_vectors` keeps the core `memory_facts` table tiny, allowing lightning-fast traversals and deterministic SQL loads.
+| Tier | Name | Working Memory Behavior | Personal Memory Behavior |
+| :--- | :--- | :--- | :--- |
+| **Tier 1A** | Pure Local (Low RAM) | Strict transient RAM-based FIFO message truncation. | **Disabled.** No background worker, no durable database, no extraction, and no context injection. |
+| **Tier 1B** | Pure Local (GPU) | Transient RAM with threshold-based compaction. | **Enabled.** Durable category database, local embedding generation, and local contradiction/entailment sweeps. |
+| **Tier 2A/2B** | Hybrid (Remote LLM) | Transient RAM with threshold-based compaction. | **Enabled.** Durable category database, utilizes remote cloud models for structured extraction during compaction, and local embedding/NLI sweeps. |
+| **Tier 3** | Stateful / Realtime | Stateful provider-managed KV cache syncing. | **Enabled.** Real-time tool-driven updates; LLM decisions dynamically trigger targeted graph reads and writes. |
 
 ---
 
-## 5. Pipeline A: Memory Creation & Ingestion
+## 4. Working Memory Behavioral Contract
 
-Memory Ingestion is responsible for processing active working memory turns, enqueuing raw text facts, and executing the final **Session End Consolidation Sweep** to write facts to the database.
+Working Memory governs the active conversation context. It must ensure the system remains responsive, stays within safety budgets, and never drops user speech.
 
-### 5.1 Rolling In-Memory Turn Compaction (Single Master Prompt)
-* When active token count exceeds `critical_threshold` (e.g., 85% of 4096 tokens), the system executes an **In-Memory Compaction Shift**.
-* It prompts the LLM using **exactly one single master compaction prompt** (`COMPACTION_SYSTEM_PROMPT`) to digest the history, preserving user state inside a single rolling context paragraph. No other legacy compaction prompts are retained.
-* Conversational turn limits are reset, maintaining an active short-term memory footprint of less than 1000 tokens.
+### 4.1 Message History and Token Budgeting
+1.  **Strict Token Budget Enforcement:** Before any LLM turn, the system must compute the current active message token footprint.
+2.  **Transition State Invocation:** When the active conversation token footprint exceeds a configured `critical_threshold`, the system must:
+    *   Immediately suspend standard turn execution.
+    *   Enter a dedicated context management state.
+    *   Play a local, deterministic transition audio asset (e.g., *"Give me a moment to organize our conversation"*). This asset must be loaded locally and never generated by an LLM, ensuring zero added latency.
+    *   Trigger the compaction process.
+3.  **Barge-in Safety Contract:** If the user speaks while the system is in the context management state, the system must:
+    *   Never discard the user's speech.
+    *   Buffer the incoming transcription in a temporary queue.
+    *   Once compaction completes, append the buffered turn to the newly compacted conversation history and proceed with standard turn execution.
 
-### 5.2 Persistent Asynchronous Ingestion & Session-Recovery WAL
-To prevent CPU thermal spikes and audio stuttering while the user is actively speaking, **no heavy model execution (BGE-M3 embedding or NLI cross-encoders) occurs synchronously during active voice turns.**
-*   **In-Session Compaction:** Compactor parses the 9-collection flat JSON. 
-    *   *Durable Core facts* (`type = 'semantic'`) are written directly to `personal_memory_queue` as `status = 'pending'`.
-    *   *Ephemeral Tasks and Goals* (`type = 'operational'`) are written to the queue as `status = 'staged'`. This serves as our lightweight, crash-safe Write-Ahead Log (WAL).
-*   **Background Worker Sweep (`PipelineIdle`):** The background thread only processes queue items when the system is in an idle state. It sweeps `WHERE status = 'pending'`, calculates dense embeddings **only for `type = 'semantic'` items**, runs NLI edge comparisons, commits to `memory_facts` & `memory_facts_vectors`, and marks the queue item as `'completed'`. If the user begins speaking, the thread immediately yields.
-*   **On App Crash Recovery:** If the application exits unexpectedly, the system on next boot queries `WHERE status = 'staged'` and loads the uncompleted active task states directly back into memory.
-*   **On Session End (Timeout or Exit):** Triggered when the pipeline is idle for more than the configured `auto_sleep_timeout` (defaults to 400 seconds). The system consolidates active Tasks and Goals:
-    1. Deletes all intermediate `'staged'` items for the current session from `personal_memory_queue`.
-    2. Writes the final session context paragraph to `memory_facts` directly with `type = 'operational'`, `collection = 'Context'`, `status = 'active'`. **It is never embedded.**
-    3. Enqueues the finalized, stable states of Tasks and Goals directly to `memory_facts` (with `type = 'operational'`, `status = 'active'`). **These are never embedded.**
-
-### 5.3 Ingest CPU Optimization (NLI Cosine Pruning)
-Before executing the expensive local DeBERTa ONNX model during queue sweeps, the worker calculates the cosine similarity between the embeddings of the new fact and candidate facts. If the similarity is $< 0.82$, it bypasses NLI and classifies the pair as `Neutral` immediately. This cuts CPU core pinning during sweeps by **over 85%** (reducing latency to $<150$ms).
+### 4.2 The Compaction Contract
+During compaction, the conversation history is condensed. The contract requires that:
+1.  **The original user request is preserved:** Compaction must process the history up to the second-to-last turn, leaving the user's latest active prompt uncompacted so that it is responded to directly.
+2.  **No concurrent mutations:** The active conversation history must remain read-only during the compaction thread run.
 
 ---
 
-## 6. Pipeline B: Memory Retrieval & Prompt Assembly
+## 5. Personal Memory Behavioral Contract
 
-Memory Retrieval is responsible for dynamically reconstructing the active system prompt context block for each new turn.
+Personal Memory builds, relates, and retrieves structured user facts across 10 defined collections:
+`Identity` · `Constraints` · `Preferences` · `Relationships` · `Skills` · `Projects` · `Experiences` · `Context` · `Tasks` · `Goals`
 
-### 6.1 Single-Session Retrieval Mechanics (Zero I/O Overhead)
-Once a session is active, conversational continuity is maintained entirely by the working memory's system prompt (which holds the current rolling compaction summary). **No vector retrieval of context paragraphs is executed during an active session**, reducing retrieval latency to less than 10ms and eliminating database I/O overhead.
+### 5.1 The 3-Tier Collection Taxonomy
+To minimize embedding generation overhead and maximize database retrieval efficiency, the 10 collections are divided into three operational categories:
 
-### 6.2 Redesigned Token Budget Allocation (15% Hard Cap)
-We enforce a strict **15% hard cap of the overall context window** for all personal memory injections. This budget is split into two prioritized, isolated tiers:
+1.  **Foundational Core (`Identity`, `Constraints`):**
+    *   *Contract:* Slow-moving, critical biological or behavioral constraints.
+    *   *Embedding:* **Never embedded.**
+    *   *Retrieval:* Loaded unconditionally and injected into every conversation turn.
+2.  **Operational Core (`Context`, `Tasks`, `Goals`):**
+    *   *Contract:* Active, dynamic session histories and actionable state trackers.
+    *   *Embedding:* **Never embedded.**
+    *   *Retrieval:* Loaded deterministically via vectorless chronological and status queries.
+3.  **Semantic Profiles (`Preferences`, `Relationships`, `Skills`, `Projects`):**
+    *   *Contract:* Long-term traits and social/project contexts.
+    *   *Embedding:* **Individually embedded** using dense vectors.
+    *   *Retrieval:* Retrieved semantically using user-query similarity searches.
 
+### 5.2 Dynamic Compaction prompt Contract
+To completely eliminate duplicate facts during extraction, subsequent compactions in a session must use a differential prompt harness:
+1.  **First Compaction in Session:** The extraction task is "extract all." The LLM parses the raw turns and extracts all stated user facts into a structured JSON block.
+2.  **Subsequent Compactions:** 
+    *   The previously extracted facts are injected as a structured JSON block inside a `<current_personal_memory>` tag.
+    *   The extraction task is dynamically mutated to a "differential" extraction.
+    *   The LLM must compare the new raw turns against `<current_personal_memory>` and output **only** unique additions, updates, or explicit contradictions, emitting the finalized state of the JSON.
+3.  **Narrative Chaining:** Session-level summaries are compiled into a cumulative narrative ledger (Ledger Summary $N = \text{Ledger Summary } N-1 + \text{Additions } N$) to preserve temporal progression.
+
+### 5.3 Directed Relations Graph and Multi-Tier Cosine Range Routing
+When a new semantic fact $F_{\text{new}}$ is extracted, it must be aligned against all active existing facts $F_{\text{existing}}$ within the same collection. To solve logical contradiction loops and cross-encoder performance bottlenecks, alignment must execute a **Multi-Tier Cosine Range Filter**:
+
+1.  **The $O(1)$ Semantic Identity Match:**
+    *   If the cosine similarity score $S$ between the BGE-M3 embedding of $F_{\text{new}}$ and $F_{\text{existing}}$ is exactly `1.0`, or if the normalized lexical Jaccard similarity score is exactly `1.0`, the facts are deemed identical.
+    *   *Action:* The new fact is **automatically merged** into the existing record. The system updates the `created_at` timestamp of the existing fact to represent reinforcement, bypasses NLI entirely, and writes a `MERGED` relation edge. No duplicate fact is inserted.
+
+2.  **Multi-Tier Routing Matrix:**
+
+```text
+               Cosine Similarity Score (S) between F_new and F_existing
+                                     │
+         ┌───────────────────────────┼───────────────────────────┐
+         ▼                           ▼                           ▼
+      S < 0.65                  0.65 <= S <= 0.95             S > 0.95
+   [Neutral Zone]               [NLI Candidate Zone]      [Near-Duplicate Zone]
+         │                           │                           │
+         ▼                           ▼                           ▼
+     Skip NLI.                 Run DeBERTa-v3 NLI.            Skip NLI.
+     No Edge.              Contradiction >= 0.85?        Write SIMILAR Edge.
+                           ├── Yes -> Write CONFLICTS    Both facts stay active.
+                           └── No -> Check Entailment
+                                     (>= 0.85 -> SUPPORTS)
 ```
-                  ┌──────────────────────────────────────────────┐
-                  │          TOTAL PERSONAL MEMORY (15%)         │
-                  └──────┬────────────────────────────────┬──────┘
-                         │                                │
-        ┌────────────────▼────────────────┐     ┌─────────▼──────────────────────┐
-        │   TIER 1: FOUNDATIONAL (7%)     │     │     TIER 2: SEMANTIC (8%)      │
-        │   Context, Identity,            │     │  Preferences, Relationships,   │
-        │   Constraints, Tasks, Goals     │     │       Skills, Projects         │
-        └─────────────────────────────────┘     └────────────────────────────────┘
-```
 
-#### Tier 1: Foundational & Operational Core (7% hard cap)
-*   **Collections:** `Context` (time-windowed chained summaries), `Identity`, `Constraints`, `Tasks`, `Goals`.
-*   **Retrieval Style:** Deterministic, vectorless loading.
-    *   *Identity & Constraints*: Loaded unconditionally if active.
-    *   *Tasks & Goals*: Loaded deterministically where `type = 'operational'` AND `status = 'active'`.
-    *   *Time-Windowed Chained Context*: Loaded from `memory_facts` according to Section 6.3.
-*   **Budget Overfill Guard:** If the core text exceeds the 7% threshold, we apply chronological FIFO pruning (keeping the most recently updated tasks/goals/constraints), guaranteeing it never overflows the 7% cap.
+*   **Range 1: $S < 0.65$ (Neutral Zone):** The facts are semantically disjoint. The system must skip NLI evaluation. No relationship edge is written.
+*   **Range 2: $0.65 \le S \le 0.95$ (Candidate Zone):** The facts represent a potential logical overlap or contradiction. The pair must be passed to the DeBERTa-v3 Natural Language Inference (NLI) model:
+    *   An NLI contradiction score $\ge 0.85$ must write an explicit `CONFLICTS` edge in the relationship graph.
+    *   An NLI entailment score $\ge 0.85$ must write an explicit `SUPPORTS` edge in the relationship graph.
+*   **Range 3: $S > 0.95$ (Near-Duplicate Zone):** The facts are lexically or semantically nearly identical. The system must bypass NLI evaluation (preventing false negatives on minor word reorderings or punctuation shifts) and automatically write a `SIMILAR` relationship edge. Both facts remain active in the database.
 
-#### Tier 2: Semantic Profiles (8% hard cap)
-*   **Collections:** `Preferences`, `Relationships`, `Skills`, `Projects`.
-*   **Retrieval Style:** Vector similarity search interleaved via **Interleaved Round-Robin Selection**:
-    1.  We generate a query embedding and fetch the top $K=5$ candidates independently from each of these four vector collections.
-    2.  To prevent a single collection (like a massive list of projects) from crowding out other vital preferences or social relationship context, we select them sequentially:
-        *   *Cycle 1:* Preferences Candidate 1, Relationships Candidate 1, Skills Candidate 1, Projects Candidate 1.
-        *   *Cycle 2:* Preferences Candidate 2, Relationships Candidate 2, Skills Candidate 2, Projects Candidate 2...
-    3.  We track the cumulative token count. The moment we hit the 8% semantic budget limit, we stop selecting immediately!
-    4.  Once selected, the final set of facts is **sorted chronologically** by their `created_at` timestamp before prompt injection, preserving emotional transitions and life progressions over time.
+---
 
-### 6.3 Time-Windowed Context Chaining (Trap 1 Prevention)
-When starting a brand-new session, the system automatically carries forward all raw text context summaries from within a configurable time window:
-1.  **Chaining Window Config**: Governed by `context_chaining_window_hours` inside `settings.rs` (defaults to **12 hours**).
-2.  **SQL Query**: Fetch all active context paragraphs from the window (newest first):
-    ```sql
-    SELECT fact, created_at FROM memory_facts 
-    WHERE type = 'operational' AND collection = 'Context' AND status = 'active'
-      AND created_at >= :window_start_ms
-    ORDER BY created_at DESC;
-    ```
-3.  **Dynamic Budget Loading**:
-    *   Calculate remaining tokens in the Tier 1 (7%) budget after loading Identity, Constraints, Tasks, and Goals.
-    *   Iterate through the retrieved contexts, counting tokens and prepending them to the prompt until the remaining budget is consumed.
-4.  **Relative Chronological Timeline Formatting**: Inject them into the prompt as a clean series with relative timestamps:
+## 6. Prompt Assembly & Conversational Self-Healing
+
+Prompt Assembly is responsible for dynamically reconstructing the active system prompt context block for each new turn.
+
+### 6.1 Priority-Based Token Budgeting (15% Hard Cap)
+The total injected personal memory context must never exceed a strict **15% hard cap of the overall context window**. This budget is split into two prioritized, isolated tiers:
+
+1.  **Tier 1: Foundational & Operational Core (7% hard cap):**
+    *   Loaded vectorlessly: unconditional `Identity` and `Constraints`, active `Tasks` and `Goals`, and Time-Windowed Chained `Context` paragraphs.
+    *   *Overfill Guard:* If the core text exceeds the 7% threshold, chronological FIFO pruning must be applied to keep only the most recently updated operational facts, guaranteeing it never overflows the 7% cap.
+2.  **Tier 2: Semantic Profiles (8% hard cap):**
+    *   Loaded via semantic search interleaved using **Interleaved Round-Robin Selection**:
+        *   Generate a query embedding and fetch the top $K=5$ candidates independently from `Preferences`, `Relationships`, `Skills`, and `Projects`.
+        *   Select candidates sequentially: Preference 1, Relationship 1, Skill 1, Project 1, Preference 2, Relationship 2...
+        *   Stop selecting the moment the cumulative token footprint hits the 8% limit.
+        *   Sort the selected facts chronologically by their creation timestamp before injection.
+
+### 6.2 Relative Time-Windowed Context Chaining (Trap 1 Prevention)
+When starting a brand-new session, the system must automatically carry forward all raw text context summaries from previous sessions within a configurable time window (defaults to **12 hours**):
+1.  **Dynamic Budget Loading:** Calculate the remaining tokens in the Tier 1 (7%) budget after loading Identity, Constraints, Tasks, and Goals.
+2.  **Timeline Formatting:** Retrieve active context paragraphs within the window, sort them chronologically, and inject them into the prompt as a relative chronological timeline:
     ```markdown
     [Past Contexts within the Last 12 Hours]
 
@@ -242,40 +214,22 @@ When starting a brand-new session, the system automatically carries forward all 
     - 1 hour ago (Session 1):
       Sarah prepared a gluten-free French apple tart. She discussed her grandmother Evelyn, noting it was lovely. She left to clean up.
     ```
-5.  **Distant Memory Container**: If no contexts exist in the last 12 hours, but a prior context exists older than 7 days, retrieve only that single latest context and format it inside a `"Recollection (Distant Memory)"` container to let the LLM transition gracefully.
+3.  **Distant Memory Container:** If no contexts exist in the last 12 hours, but a prior context exists older than 7 days, retrieve only that single latest context and format it inside a `"Recollection (Distant Memory)"` container to let the LLM transition gracefully.
 
-### 6.4 Chronological Formatting for ALL Collections
-To ensure the LLM understands user progressions and emotional trajectories chronologically over time:
-1. Every memory fact written to the `memory_facts` table is stamped with a millisecond epoch `created_at` timestamp.
-2. When facts from any collection are retrieved to build the prompt, they are sorted chronologically and labeled with relative or absolute timestamps (e.g., `[3 days ago]`, `[Yesterday]`):
-   ```markdown
-   [Personal Preferences: Chronological History]
-   - [3 weeks ago] User was trying a dairy-free diet.
-   - [Yesterday] User prefers oat milk over soy milk.
-   ```
+### 6.3 Conversational Self-Healing (HITL)
+To resolve semantic overlaps and logical contradictions without silently destroying data, the memory system must execute the following Human-in-the-Loop (HITL) self-healing contract:
 
-### 6.5 Deep History Recall Tool [FUTURE DEFERRED]
-* Deep-history searches (context paragraphs prior to the chaining window) are completely excluded from default turns to avoid prompt pollution.
-* Explicit individual tool call retrieval endpoints (like `search_past_sessions`) are **completely deferred for now**.
-* **##TODO:** In a future phase, deep history lookup will be handled via a single, general-purpose dynamic SQL querying tool (`query_db`), where the LLM can write and execute SQL queries over historical sessions and profiles only when explicitly required by a user query.
+1.  **Dual Active State Maintenance:** Facts participating in unresolved `CONFLICTS` or `SIMILAR` relationships must remain active in the database and be retrieved by semantic search.
+2.  **Metadata Injection Formatting:** During RAG context assembly, retrieved facts carrying active conflict or similarity edges must be formatted inside the `<user_profile>` system prompt with explicit relation headers:
+    *   `- [Unresolved Conflict] "Fact A" CONFLICTS WITH "Fact B"`
+    *   `- [Unresolved Similarity] "Fact A" is SIMILAR TO "Fact B"`
+3.  **Conversational Awareness:** Surfacing these relations ensures the active conversational LLM has complete situational awareness, allowing it to naturally prompt the user for clarification during dialogue (e.g., *"Hey, I noticed you mentioned studying Spanish, but earlier you said you were studying Japanese. Are you doing both, or should we correct that?"*).
+4.  **Graph Healing Commit:** When the user provides clarification, the resulting in-session compaction emits the resolution. The worker writes a `USER_SUPERSEDES` (for conflict resolution) or `MERGED` (for similarity merging) edge, and marks the losing fact status as `'superseded'`, cleanly resolving the graph and removing the superseded fact from future active turn retrievals.
 
 ---
 
-## 7. Action Checklist for the Backend Developer Agent
+## 8. Rules & Negative Constraints (Must Not Happen)
 
-The developer agent must execute the following file integrations:
-1. **`constants.rs`:** Purge legacy `COMPACTION_SYSTEM_PROMPT` and `COMPACTION_SYSTEM_PROMPT_V2`, and keep **exactly one single master compaction prompt** (`COMPACTION_SYSTEM_PROMPT`) containing the unified 9-collection flat PascalCase JSON.
-2. **`working_memory.rs`:** Overwrite `CompactionResponseV2` with `UnifiedCompactionPayload` and implement flat deserialization with trailing-comma cleansing.
-3. **`schema.rs`:** Create the simplified database schema (dropping `episodes` and implementing the 4 unified tables: `memory_facts` with `type` and `status`, `memory_facts_vectors`, `memory_relations`, and `personal_memory_queue`).
-4. **`personal_memory.rs`:**
-   - Prepend global always-active `Constraints` to the prompt assembly.
-   - Implement **Deterministic SQL retrieval** (vectorless) for `Tasks` and `Goals`.
-   - Implement **Time-Windowed Context Chaining** (querying `Context` facts from the last `context_chaining_window_hours`, budgeting them within the remaining Tier 1 tokens, and formatting as a relative chronological timeline).
-   - Implement **Prioritized Dynamic Budgeting (7% Foundational, 8% Semantic, 15% overall)**.
-   - Implement **Interleaved Round-Robin Selection** for the semantic collections.
-   - Sort all retrieved facts chronologically before prompt injection.
-5. **`memory_worker.rs`:**
-   - Background worker processes queue items, calculating embeddings **only for `type = 'semantic'` items**. Operational and Foundational items are never embedded.
-   - Integrate Cosine Similarity Pruning (threshold $= 0.82$) in `process_one_queue_item` before executing DeBERTa ONNX.
-   - Implement cooperative asynchronous yield checks checking `state.is_idle`.
-   - Execute the **Session End Consolidation Sweep** writing active states to the durable database and flushing intermediate staged tasks/goals on session end (linked to `auto_sleep_timeout`).
+*   **No Synchronous Model Sweeps during Conversational Turns:** Under no circumstances may expensive embedding generation (BGE-M3) or NLI evaluation run synchronously during active user speech turns, ensuring voice pipeline latency is never impacted.
+*   **No Direct Overwrites of Prior Facts:** To preserve chronological lineage, the system must never directly overwrite or hard-delete prior facts in the database. Updates must soft-delete or write a relationship edge, keeping the timeline fully auditable.
+*   **No Silent Subsystem State Changes:** No background thread may modify active Working Memory states concurrently without completing atomically, preventing conversational context corruption under interruption.

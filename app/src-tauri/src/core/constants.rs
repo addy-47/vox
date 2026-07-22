@@ -181,11 +181,7 @@ User: Training for my first half-marathon in October, so I need to stick to my r
   "Goals": ["The user is training to run her first half-marathon in October."]
 }
 </output>
-</example>
-
-<task>
-Process the conversation history provided in the next message. Extract facts into the 10 collections from <schema>, following every rule in <rules>. Return ONLY the JSON object, starting with { and ending with }.
-</task>"#;
+</example>"#;
 
 // ─── Personal Memory v3 Collections ─────────────────────────────────────────
 pub const PM_COLLECTIONS: &[&str] = &[
@@ -215,6 +211,8 @@ pub fn collection_type(collection: &str) -> &'static str {
 pub const PM_RELATION_SUPPORTS: &str = "SUPPORTS";
 pub const PM_RELATION_CONFLICTS: &str = "CONFLICTS";
 pub const PM_RELATION_USER_SUPERSEDES: &str = "USER_SUPERSEDES";
+pub const PM_RELATION_SIMILAR: &str = "SIMILAR";
+pub const PM_RELATION_MERGED: &str = "MERGED";
 
 // ─── Fact Sources ─────────────────────────────────────────────────────────────
 pub const PM_SOURCE_LLM: &str = "LLM";

@@ -22,6 +22,16 @@ use vox_lib::services::tts::providers::TtsProvider;
 use vox_lib::services::tts::TtsEngine;
 use vox_lib::utils::bench_reporter::BenchReporter;
 
+macro_rules! println {
+    ($($arg:tt)*) => {{
+        std::println!($($arg)*);
+        {
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+        }
+    }};
+}
+
 #[derive(Parser, Debug)]
 #[command(
     author,
@@ -41,8 +51,8 @@ struct Args {
     #[arg(long, default_value_t = false)]
     text_only: bool,
 
-    /// Context Window size in tokens (default 8192)
-    #[arg(short = 'c', long, default_value_t = 8192)]
+    /// Context Window size in tokens (default 3000)
+    #[arg(short = 'c', long, default_value_t = 3000)]
     ctx_size: usize,
 
     /// Number of simulation turns per session (default 10)
@@ -230,6 +240,7 @@ impl SttProvider for FallbackStt {
 }
 
 fn main() -> Result<()> {
+    let _ = env_logger::try_init();
     let args = Args::parse();
     let tier_str = args.tier.to_lowercase();
     let mut max_turns = args.turns;
@@ -326,7 +337,22 @@ fn main() -> Result<()> {
                 ProviderKind::OpenAiCompat,
             )
         }
-        _ => return Err(anyhow!("Invalid tier '{}'. Use 2a or 2b.", tier_str)),
+        "nvidia" => {
+            let key = load_nvidia_key();
+            let url = "https://integrate.api.nvidia.com/v1";
+            let model = args.model.as_str();
+            println!("  [INFO] Connecting to Nvidia API Provider ({})", model);
+            (
+                Box::new(OpenAiCompatProvider::new(
+                    url,
+                    model,
+                    Some(&key),
+                    None,
+                )),
+                ProviderKind::OpenAiCompat,
+            )
+        }
+        _ => return Err(anyhow!("Invalid tier '{}'. Use 2a, 2b or nvidia.", tier_str)),
     };
 
     // 3. Load TTS Engine
@@ -696,6 +722,7 @@ fn main() -> Result<()> {
                     }
                 } else {
                     total_opp_cancelled += 1;
+                    conv_mgr.cancel_opportunistic();
                 }
             }
 
@@ -811,15 +838,33 @@ fn main() -> Result<()> {
         println!("  [S{} END] Transitioning Pipeline to PipelineIdle...", session_num);
         let _ = memory_tx.try_send(MemoryWorkerEvent::PipelineIdle);
         let _ = memory_tx.try_send(MemoryWorkerEvent::SessionEnd {
-            session_id: session_id.to_string(),
+            session_id: format!("bench_session_{}", session_num),
             summary: s_summary,
         });
 
-        // Give background worker thread 2.0 seconds to perform bullet-chunk vector ingestion
-        thread::sleep(Duration::from_millis(2000));
+        // Wait for background memory worker to finish processing all queue items for this session
+        println!("  [S{} END] Waiting for background memory worker to finish processing session queue...", session_num);
+        loop {
+            let count: i64 = tokio_handle.block_on(async {
+                let conn_temp = vox_lib::persistence::db::VoxDb::open(&db_path).await?;
+                let mut rows = conn_temp.query("SELECT COUNT(*) FROM personal_memory_queue WHERE status IN ('pending', 'staged')", ()).await?;
+                let val: i64 = if let Ok(Some(row)) = rows.next().await {
+                    row.get(0).unwrap_or(0)
+                } else {
+                    0
+                };
+                Ok::<i64, anyhow::Error>(val)
+            }).unwrap_or(0);
+
+            if count == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
 
         let stored_episodes: i64 = tokio_handle.block_on(async {
-            let mut rows = conn.query("SELECT COUNT(*) FROM memory_facts WHERE collection = 'Context'", ()).await?;
+            let conn_temp = vox_lib::persistence::db::VoxDb::open(&db_path).await?;
+            let mut rows = conn_temp.query("SELECT COUNT(*) FROM memory_facts WHERE collection = 'Context'", ()).await?;
             if let Ok(Some(row)) = rows.next().await {
                 let val: i64 = row.get(0).unwrap_or(0);
                 Ok::<i64, anyhow::Error>(val)
@@ -828,6 +873,26 @@ fn main() -> Result<()> {
             }
         })?;
         println!("  [S{} END] Cumulative Episodes/Chunks in SQLite: {}", session_num, stored_episodes);
+    }
+
+    // Final wait before shutdown to ensure 100% of all enqueued/pending jobs have been fully processed
+    println!("  [INFO] Performing final queue verification before shutting down memory worker...");
+    loop {
+        let count: i64 = tokio_handle.block_on(async {
+            let conn_temp = vox_lib::persistence::db::VoxDb::open(&db_path).await?;
+            let mut rows = conn_temp.query("SELECT COUNT(*) FROM personal_memory_queue WHERE status IN ('pending', 'staged')", ()).await?;
+            let val: i64 = if let Ok(Some(row)) = rows.next().await {
+                row.get(0).unwrap_or(0)
+            } else {
+                0
+            };
+            Ok::<i64, anyhow::Error>(val)
+        }).unwrap_or(0);
+
+        if count == 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
     let _ = memory_tx.try_send(MemoryWorkerEvent::Shutdown);
