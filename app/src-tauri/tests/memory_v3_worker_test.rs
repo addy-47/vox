@@ -19,7 +19,7 @@ async fn test_v3_worker_type_aware_processing() -> Result<()> {
 
     // 1. Enqueue facts of different collections
     let mut facts = HashMap::new();
-    facts.insert("Identity".to_string(), vec!["User is named Alex".to_string()]); // Foundational
+    facts.insert("Identity".to_string(), vec!["User is named Alex".to_string()]); // Foundational (pending)
     facts.insert("Tasks".to_string(), vec!["Call doctor (pending)".to_string()]); // Operational (staged)
 
     enqueue_personal_facts(&conn, facts, session_id).await?;
@@ -37,7 +37,7 @@ async fn test_v3_worker_type_aware_processing() -> Result<()> {
     let processed = process_one_queue_item(&conn, &settings).await?;
     assert!(processed, "Must process one pending item");
 
-    // Identity should now be inserted directly into memory_facts without embedding/NLI
+    // Identity should now be inserted directly into memory_facts (it will generate embedding/NLI)
     let mut rows = conn.query("SELECT fact, type, status FROM memory_facts WHERE collection = 'Identity'", ()).await?;
     let row = rows.next().await?.unwrap();
     assert_eq!(row.get::<String>(0)?, "User is named Alex");
@@ -75,42 +75,50 @@ async fn test_v3_session_end_consolidation() -> Result<()> {
     let summary = "Discussed various task plans and defined goals.";
     session_end_consolidation(&conn, session_id, summary).await?;
 
-    // 1. Verify staged items are deleted from queue
+    // 1. Verify staged items are deleted/updated (i.e. status is no longer 'staged')
     let mut rows = conn.query("SELECT count(*) FROM personal_memory_queue WHERE session_id = ? AND status = 'staged'", (session_id,)).await?;
     assert_eq!(rows.next().await?.unwrap().get::<i64>(0)?, 0);
 
-    // 2. Verify operational facts inserted directly into memory_facts as active
-    let mut rows = conn.query("SELECT fact, collection, type, status FROM memory_facts WHERE session_id = ? ORDER BY collection ASC, fact ASC", (session_id,)).await?;
-    
-    // We expect 3 facts:
-    // - "Discussed various task plans and defined goals." (Context)
-    // - "Long term goal B" (Goals)
-    // - "Active task A" (Tasks)
+    // Verify Tasks and Goals are now 'pending' in the queue
+    let mut rows = conn.query("SELECT count(*) FROM personal_memory_queue WHERE session_id = ? AND status = 'pending'", (session_id,)).await?;
+    assert_eq!(rows.next().await?.unwrap().get::<i64>(0)?, 2);
+
+    // 2. Verify Context fact was written directly to memory_facts
+    let mut rows = conn.query("SELECT fact, collection, type, status FROM memory_facts WHERE collection = 'Context'", ()).await?;
+    let row = rows.next().await?.unwrap();
+    assert_eq!(row.get::<String>(0)?, summary);
+    assert_eq!(row.get::<String>(1)?, "Context");
+    assert_eq!(row.get::<String>(2)?, PM_TYPE_OPERATIONAL);
+    assert_eq!(row.get::<String>(3)?, "active");
+
+    // 3. Process the pending queue items (which are Tasks and Goals)
+    let settings = MemorySettings::default();
+    let processed1 = process_one_queue_item(&conn, &settings).await?;
+    assert!(processed1, "Must process first pending item");
+    let processed2 = process_one_queue_item(&conn, &settings).await?;
+    assert!(processed2, "Must process second pending item");
+
+    // 4. Verify operational facts are now in memory_facts
+    let mut rows = conn.query("SELECT fact, collection, type, status FROM memory_facts WHERE session_id = ? AND collection IN ('Tasks', 'Goals') ORDER BY collection ASC", (session_id,)).await?;
     
     let mut facts_list = Vec::new();
     while let Some(row) = rows.next().await? {
         facts_list.push((row.get::<String>(0)?, row.get::<String>(1)?, row.get::<String>(2)?, row.get::<String>(3)?));
     }
     
-    assert_eq!(facts_list.len(), 3);
+    assert_eq!(facts_list.len(), 2);
     
-    // Check Context fact
-    assert_eq!(facts_list[0].0, summary);
-    assert_eq!(facts_list[0].1, "Context");
+    // Check Goals fact
+    assert_eq!(facts_list[0].0, "Long term goal B");
+    assert_eq!(facts_list[0].1, "Goals");
     assert_eq!(facts_list[0].2, PM_TYPE_OPERATIONAL);
     assert_eq!(facts_list[0].3, "active");
 
-    // Check Goals fact
-    assert_eq!(facts_list[1].0, "Long term goal B");
-    assert_eq!(facts_list[1].1, "Goals");
+    // Check Tasks fact
+    assert_eq!(facts_list[1].0, "Active task A");
+    assert_eq!(facts_list[1].1, "Tasks");
     assert_eq!(facts_list[1].2, PM_TYPE_OPERATIONAL);
     assert_eq!(facts_list[1].3, "active");
-
-    // Check Tasks fact
-    assert_eq!(facts_list[2].0, "Active task A");
-    assert_eq!(facts_list[2].1, "Tasks");
-    assert_eq!(facts_list[2].2, PM_TYPE_OPERATIONAL);
-    assert_eq!(facts_list[2].3, "active");
 
     Ok(())
 }

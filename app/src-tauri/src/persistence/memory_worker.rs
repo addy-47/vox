@@ -6,8 +6,8 @@ use std::time::Duration;
 use std::collections::HashMap;
 use crate::core::settings::{VoxSettings, MemorySettings};
 use crate::core::constants::{
-    PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_QUEUE_STATUS_PENDING,
-    PM_QUEUE_STATUS_STAGED, PM_QUEUE_STATUS_COMPLETED, collection_type
+    PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_RELATION_SIMILAR, PM_RELATION_MERGED,
+    PM_QUEUE_STATUS_PENDING, PM_QUEUE_STATUS_STAGED, PM_QUEUE_STATUS_COMPLETED, collection_type
 };
 
 /// Events consumed exclusively by the background memory worker.
@@ -46,6 +46,32 @@ pub fn decode_f32_blob(bytes: &[u8]) -> Vec<f32> {
         .collect()
 }
 
+pub fn jaccard_similarity(s1: &str, s2: &str) -> f32 {
+    let w1: std::collections::HashSet<String> = s1
+        .to_lowercase()
+        .split_whitespace()
+        .map(|s| s.replace(|c: char| !c.is_alphanumeric(), ""))
+        .filter(|s| !s.is_empty())
+        .collect();
+    let w2: std::collections::HashSet<String> = s2
+        .to_lowercase()
+        .split_whitespace()
+        .map(|s| s.replace(|c: char| !c.is_alphanumeric(), ""))
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if w1.is_empty() && w2.is_empty() {
+        return 1.0;
+    }
+    if w1.is_empty() || w2.is_empty() {
+        return 0.0;
+    }
+
+    let intersection = w1.intersection(&w2).count() as f32;
+    let union = w1.union(&w2).count() as f32;
+    intersection / union
+}
+
 async fn mark_job_failed(conn: &turso::Connection, job_id: i64, err_msg: &str) {
     let _ = conn.execute(
         "UPDATE personal_memory_queue SET status = 'failed', error_msg = ?, attempts = attempts + 1 WHERE id = ?",
@@ -65,7 +91,7 @@ pub async fn enqueue_personal_facts(
         .as_millis() as i64;
 
     for (collection, fact_list) in facts {
-        let status = if collection == "Context" {
+        let status = if collection == "Context" || collection == "Tasks" || collection == "Goals" {
             PM_QUEUE_STATUS_STAGED
         } else {
             PM_QUEUE_STATUS_PENDING
@@ -92,6 +118,7 @@ pub async fn enqueue_personal_facts(
     }
     Ok(())
 }
+
 
 
 /// Processes one pending job from the personal_memory_queue.
@@ -137,35 +164,9 @@ pub async fn process_one_queue_item(
         .as_millis() as i64;
     let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
 
-    // Only Context collection bypasses embedding and NLI/cross-encoder resolution.
-    // (Note: Context is usually staged and processed during consolidation, but we keep this as a safe fallback)
-    if collection == "Context" {
-        conn.execute("BEGIN TRANSACTION;", ()).await?;
-        match (|| async {
-            conn.execute(
-                "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id) 
-                 VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
-                (fact_id.clone(), coll_type.to_string(), collection.clone(), fact.clone(), source.clone(), now, session_id.clone()),
-            ).await?;
 
-            conn.execute(
-                "UPDATE personal_memory_queue SET status = ?, processed_at = ? WHERE id = ?",
-                (PM_QUEUE_STATUS_COMPLETED.to_string(), now, job_id),
-            ).await?;
-            anyhow::Ok(())
-        })().await {
-            Ok(_) => {
-                conn.execute("COMMIT;", ()).await?;
-            }
-            Err(e) => {
-                let _ = conn.execute("ROLLBACK;", ()).await;
-                mark_job_failed(conn, job_id, &format!("Transaction failed: {}", e)).await;
-            }
-        }
-        return Ok(true);
-    }
 
-    // Semantic collection: requires embedding and NLI
+    // Semantic collection: requires embedding and multi-tier routing
     crate::services::memory::ensure_embedder_loaded(true)?;
     let embedding = match crate::services::memory::generate_embedding(&fact) {
         Ok(Some(v)) => v,
@@ -179,12 +180,12 @@ pub async fn process_one_queue_item(
         }
     };
 
-    // Fetch candidate facts in same collection to compare with NLI (only active ones)
+    // Fetch candidate facts in same collection to compare (only active ones)
     let mut cand_rows = match conn.query(
         "SELECT mf.id, mf.fact, mfv.embedding FROM memory_facts mf
          JOIN memory_facts_vectors mfv ON mfv.fact_id = mf.id
          WHERE mf.collection = ? AND mf.status = 'active'",
-        (collection.clone(),),
+         (collection.clone(),),
     ).await {
         Ok(r) => r,
         Err(e) => {
@@ -203,7 +204,67 @@ pub async fn process_one_queue_item(
         scored_candidates.push((sim, (id, f_text)));
     }
 
+    // Sort candidates descending by similarity score
     scored_candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Check for $O(1)$ Semantic Identity Match among ALL candidates (not just candidate limit)
+    let mut exact_match = None;
+    for (sim, (cand_id, cand_fact)) in &scored_candidates {
+        let jacc_sim = jaccard_similarity(&fact, cand_fact);
+        if *sim >= 0.9999 || jacc_sim >= 1.0 {
+            log::info!("[MemoryWorker] O(1) Semantic Identity Match found. Cosine: {}, Jaccard: {}. Candidate: {:?}", sim, jacc_sim, cand_id);
+            exact_match = Some(cand_id.clone());
+            break;
+        }
+    }
+
+    if let Some(matched_cand_id) = exact_match {
+        // Run automatic merge bypass transaction:
+        // Update existing fact's created_at, write MERGED relation, mark job completed.
+        let blob_bytes = encode_f32_blob(&embedding);
+        conn.execute("BEGIN TRANSACTION;", ()).await?;
+        match (|| async {
+            // Write new fact as superseded to preserve history and vector reference
+            conn.execute(
+                "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id) 
+                 VALUES (?, ?, ?, ?, ?, 'superseded', ?, ?)",
+                (fact_id.clone(), coll_type.to_string(), collection.clone(), fact.clone(), source.clone(), now, session_id.clone()),
+            ).await?;
+
+            conn.execute(
+                "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
+                (fact_id.clone(), collection.clone(), blob_bytes),
+            ).await?;
+
+            conn.execute(
+                "INSERT OR IGNORE INTO memory_relations (from_id, to_id, relation, created_at) VALUES (?, ?, ?, ?)",
+                (fact_id.clone(), matched_cand_id.clone(), PM_RELATION_MERGED.to_string(), now),
+            ).await?;
+
+            conn.execute(
+                "UPDATE memory_facts SET created_at = ? WHERE id = ?",
+                (now, matched_cand_id.clone()),
+            ).await?;
+
+            conn.execute(
+                "UPDATE personal_memory_queue SET status = ?, processed_at = ? WHERE id = ?",
+                (PM_QUEUE_STATUS_COMPLETED.to_string(), now, job_id),
+            ).await?;
+
+            anyhow::Ok(())
+        })().await {
+            Ok(_) => {
+                conn.execute("COMMIT;", ()).await?;
+                log::info!("[MemoryWorker] O(1) Consolidation completed successfully.");
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK;", ()).await;
+                mark_job_failed(conn, job_id, &format!("O(1) Consolidation transaction failed: {}", e)).await;
+            }
+        }
+        return Ok(true);
+    }
+
     let candidates: Vec<(f32, String, String)> = scored_candidates
         .into_iter()
         .take(settings.nli_candidate_limit as usize)
@@ -211,26 +272,38 @@ pub async fn process_one_queue_item(
         .collect();
 
     let mut relations = Vec::new();
-    if !candidates.is_empty() {
+    let mut nli_pairs_to_classify = Vec::new();
+
+    for (sim, cand_id, cand_fact) in candidates {
+        if sim > 0.95 {
+            // Near-duplicate zone: Bypass NLI, write SIMILAR edge
+            log::info!("[MemoryWorker] Multi-Tier Routing: Near-duplicate similarity detected ({:.4}). Writing SIMILAR edge.", sim);
+            relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_SIMILAR));
+        } else if sim >= 0.65 {
+            // Candidate zone: Queue for DeBERTa-v3 cross-encoder classification
+            nli_pairs_to_classify.push((cand_id, cand_fact));
+        } else {
+            // Neutral zone: sim < 0.65. Skip.
+        }
+    }
+
+    if !nli_pairs_to_classify.is_empty() {
         if let Err(e) = crate::services::memory::nli::ensure_nli_loaded(&settings.nli_model_name) {
             mark_job_failed(conn, job_id, &format!("Failed to load NLI model: {}", e)).await;
             return Ok(true);
         }
 
-        for (sim, cand_id, cand_fact) in candidates {
-            // Prune NLI below threshold
-            if sim < settings.candidate_similarity_search_threshold {
-                continue;
-            }
-
+        for (cand_id, cand_fact) in nli_pairs_to_classify {
             match crate::services::memory::nli::classify_pair(&fact, &cand_fact) {
                 Ok(nli_res) => {
                     let relation = crate::services::memory::nli::relation_from_result(&nli_res, settings);
                     match relation {
                         crate::services::memory::nli::NliRelation::Conflicts => {
+                            log::info!("[MemoryWorker] NLI: Conflict detected between enqueued fact and candidate fact.");
                             relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_CONFLICTS));
                         }
                         crate::services::memory::nli::NliRelation::Supports => {
+                            log::info!("[MemoryWorker] NLI: Supports relationship detected between enqueued fact and candidate fact.");
                             relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_SUPPORTS));
                         }
                         crate::services::memory::nli::NliRelation::Neutral => {}
@@ -302,44 +375,24 @@ pub async fn session_end_consolidation(
         .unwrap_or_default()
         .as_millis() as i64;
 
-    // 1. Fetch staged tasks/goals/experiences for this session
-    let mut rows = conn
-        .query(
-            "SELECT fact, collection, source FROM personal_memory_queue 
-             WHERE session_id = ? AND status = 'staged'",
-            (session_id.to_string(),),
-        )
-        .await?;
-
-    let mut staged_facts = Vec::new();
-    while let Some(row) = rows.next().await? {
-        let fact: String = row.get(0)?;
-        let collection: String = row.get(1)?;
-        let source: String = row.get(2)?;
-        staged_facts.push((fact, collection, source));
-    }
-
     // Wrap all session consolidation writes in a single database transaction (Optimization #3)
     conn.execute("BEGIN TRANSACTION;", ()).await?;
     match (|| async {
-        // 2. Write them to memory_facts as active operational/semantic facts
-        for (fact, collection, source) in staged_facts {
-            let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
-            let coll_type = collection_type(&collection);
-            conn.execute(
-                "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id) 
-                 VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
-                (fact_id, coll_type.to_string(), collection, fact, source, now, session_id.to_string()),
-            ).await?;
-        }
+        // 1. Bulk-update staged Tasks and Goals to pending in personal_memory_queue so they undergo embedding and NLI
+        conn.execute(
+            "UPDATE personal_memory_queue 
+             SET status = 'pending' 
+             WHERE session_id = ? AND status = 'staged' AND collection IN ('Tasks', 'Goals')",
+            (session_id.to_string(),),
+        ).await?;
 
-        // 3. Delete staged queue items for this session
+        // 2. Delete any other staged queue items for this session (e.g. Context)
         conn.execute(
             "DELETE FROM personal_memory_queue WHERE session_id = ? AND status = 'staged'",
             (session_id.to_string(),),
         ).await?;
 
-        // 4. Write final session Context paragraph directly (never embedded)
+        // 3. Write final session Context paragraph directly (never embedded)
         if !session_context_raw.trim().is_empty() {
             let context_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
             conn.execute(
@@ -362,6 +415,7 @@ pub async fn session_end_consolidation(
 
     Ok(())
 }
+
 
 /// Spawns the dedicated background memory worker thread.
 pub fn spawn_memory_worker(

@@ -225,8 +225,58 @@ pub async fn retrieve_personal_context(
         return Ok(String::new());
     }
 
+    let mut conflict_block = String::new();
+    let mut similarity_block = String::new();
+
+    if !selected_semantic_facts.is_empty() {
+        let selected_ids: HashSet<String> = selected_semantic_facts.iter().map(|f| f.id.clone()).collect();
+        let mut rel_rows = conn.query("SELECT from_id, to_id, relation FROM memory_relations", ()).await?;
+        let mut printed_pairs = HashSet::new();
+
+        while let Some(row) = rel_rows.next().await? {
+            let from_id: String = row.get(0)?;
+            let to_id: String = row.get(1)?;
+            let relation: String = row.get(2)?;
+
+            if selected_ids.contains(&from_id) && selected_ids.contains(&to_id) {
+                let mut pair = (from_id.clone(), to_id.clone());
+                if pair.0 > pair.1 {
+                    std::mem::swap(&mut pair.0, &mut pair.1);
+                }
+                if printed_pairs.contains(&pair) {
+                    continue;
+                }
+                printed_pairs.insert(pair);
+
+                let fact_a = selected_semantic_facts.iter().find(|f| f.id == from_id).map(|f| f.fact.as_str()).unwrap_or("");
+                let fact_b = selected_semantic_facts.iter().find(|f| f.id == to_id).map(|f| f.fact.as_str()).unwrap_or("");
+
+                if !fact_a.is_empty() && !fact_b.is_empty() {
+                    match relation.as_str() {
+                        "CONFLICTS" => {
+                            conflict_block.push_str(&format!("- [Unresolved Conflict] \"{}\" CONFLICTS WITH \"{}\"\n", fact_a, fact_b));
+                        }
+                        "SIMILAR" => {
+                            similarity_block.push_str(&format!("- [Unresolved Similarity] \"{}\" is SIMILAR TO \"{}\"\n", fact_a, fact_b));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
     let mut out = String::new();
     out.push_str("<user_profile>\n");
+
+    if !conflict_block.is_empty() {
+        out.push_str("[Unresolved Contradictions]\n");
+        out.push_str(&conflict_block);
+    }
+    if !similarity_block.is_empty() {
+        out.push_str("[Unresolved Near-Duplicates]\n");
+        out.push_str(&similarity_block);
+    }
 
     if !identity_block.is_empty() {
         out.push_str("[Identity]\n");
@@ -524,8 +574,7 @@ pub async fn resolve_edges(
         candidate_map.remove(old_id);
     }
 
-    // 5. In-memory Pass 3: CONFLICTS Detection & Shadow Policy
-    let mut to_suppress = HashSet::new();
+    // 5. In-memory Pass 3: CONFLICTS Detection (surfaced to UI, no automatic suppression)
     let final_candidate_ids: Vec<String> = candidate_map.keys().cloned().collect();
 
     for i in 0..final_candidate_ids.len() {
@@ -539,17 +588,6 @@ pub async fn resolve_edges(
             }
 
             if conflicts_set.contains(&pair) {
-                let fact_a = &candidate_map[id_a];
-                let fact_b = &candidate_map[id_b];
-
-                let (_winner_id, loser_id) = if fact_a.created_at >= fact_b.created_at {
-                    (id_a, id_b)
-                } else {
-                    (id_b, id_a)
-                };
-
-                to_suppress.insert(loser_id.clone());
-
                 if let Some(app) = tauri_app {
                     use tauri::Emitter;
                     let payload = serde_json::json!({
@@ -560,10 +598,6 @@ pub async fn resolve_edges(
                 }
             }
         }
-    }
-
-    for id in to_suppress {
-        candidate_map.remove(&id);
     }
 
     let mut resolved: Vec<MemoryFact> = candidate_map.into_values().collect();

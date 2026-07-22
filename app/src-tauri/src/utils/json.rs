@@ -201,5 +201,83 @@ where
 
 pub fn parse_compaction_json(content: &str) -> Option<std::collections::HashMap<String, Vec<String>>> {
     let cleaned = clean_json_content(content);
-    serde_json::from_str::<std::collections::HashMap<String, Vec<String>>>(&cleaned).ok()
+    let parsed_val = serde_json::from_str::<serde_json::Value>(&cleaned).ok()?;
+    let obj = parsed_val.as_object()?;
+
+    let mut results = std::collections::HashMap::new();
+    let known_keys = [
+        "Identity", "Constraints", "Preferences", "Relationships",
+        "Skills", "Projects", "Experiences", "Context", "Tasks", "Goals"
+    ];
+
+    for &k in &known_keys {
+        results.insert(k.to_string(), Vec::new());
+    }
+
+    fn extract_strings(val: &serde_json::Value, list: &mut Vec<String>) {
+        match val {
+            serde_json::Value::Null => {}
+            serde_json::Value::Bool(b) => list.push(b.to_string()),
+            serde_json::Value::Number(n) => list.push(n.to_string()),
+            serde_json::Value::String(s) => {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    list.push(trimmed.to_string());
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                for item in arr {
+                    extract_strings(item, list);
+                }
+            }
+            serde_json::Value::Object(map) => {
+                let mut found = false;
+                for possible_key in &["text", "fact", "description", "desc", "content", "value", "name"] {
+                    if let Some(sub_val) = map.get(*possible_key) {
+                        extract_strings(sub_val, list);
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    let mut parts = Vec::new();
+                    for (k, v) in map {
+                        let mut sub_strs = Vec::new();
+                        extract_strings(v, &mut sub_strs);
+                        if !sub_strs.is_empty() {
+                            parts.push(format!("{}: {}", k, sub_strs.join(", ")));
+                        }
+                    }
+                    if !parts.is_empty() {
+                        list.push(parts.join("; "));
+                    }
+                }
+            }
+        }
+    }
+
+    for (k, v) in obj {
+        let target_key = match k.to_ascii_lowercase().as_str() {
+            "identity" => Some("Identity"),
+            "constraints" => Some("Constraints"),
+            "preferences" => Some("Preferences"),
+            "relationships" | "relationship" => Some("Relationships"),
+            "skills" | "skill" => Some("Skills"),
+            "projects" | "project" => Some("Projects"),
+            "experiences" | "experience" => Some("Experiences"),
+            "context" => Some("Context"),
+            "tasks" | "task" => Some("Tasks"),
+            "goals" | "goal" => Some("Goals"),
+            _ => None,
+        };
+
+        if let Some(tk) = target_key {
+            if let Some(list) = results.get_mut(tk) {
+                extract_strings(v, list);
+            }
+        }
+    }
+
+    Some(results)
 }
+
