@@ -484,7 +484,7 @@ fn main() -> Result<()> {
             }).unwrap_or_else(|| vec![0.0; 1024]);
 
             let personal_memory_block = tokio_handle.block_on(async {
-                vox_lib::services::memory::personal_memory::retrieve_personal_context(&conn, &query_vector, &memory_settings, 2048, None).await.unwrap_or_default()
+                vox_lib::services::memory::retrieval::retrieve_personal_context(&conn, &query_vector, &memory_settings, 2048, None).await.unwrap_or_default()
             });
             let rag_latency = rag_start.elapsed().as_millis() as u64;
             overall_rag_latency.push(rag_latency);
@@ -495,8 +495,10 @@ fn main() -> Result<()> {
             }
             conv_mgr.update_system_prompt(&full_system_prompt);
 
-            conv_mgr.push_user_turn(user_prompt.clone());
-            let (ctx, speech, personal_memory) = conv_mgr.build_context(provider_kind, false, Some(&*provider));
+            let known_facts = tokio_handle.block_on(async {
+                vox_lib::persistence::repository::fetch_active_facts_grouped(&conn).await.unwrap_or_default()
+            });
+            let (ctx, speech, personal_memory) = conv_mgr.build_context(provider_kind, false, Some(&*provider), &known_facts);
 
             if !personal_memory.is_empty() {
                 let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
