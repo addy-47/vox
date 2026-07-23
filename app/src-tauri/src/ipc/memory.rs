@@ -217,7 +217,7 @@ pub async fn user_edit_memory(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    crate::services::memory::personal_memory::supersede_user_fact(&conn, &old_fact_id, &new_fact, &collection)
+    crate::persistence::repository::supersede_user_fact(&conn, &old_fact_id, &new_fact, &collection)
         .await
         .map_err(|e| e.to_string())
 }
@@ -362,11 +362,12 @@ pub async fn trigger_memory_consolidation(
     let mut compacted_count = 0;
     
     loop {
-        match crate::persistence::memory_worker::process_one_queue_item(&conn, &memory_settings).await {
-            Ok(true) => {
+        match crate::services::memory::orchestrator::process_one_queue_item(&conn, &memory_settings).await {
+            Ok(crate::services::memory::orchestrator::PipelineOutcome::Merged { .. })
+          | Ok(crate::services::memory::orchestrator::PipelineOutcome::Ingested { .. }) => {
                 compacted_count += 1;
             }
-            Ok(false) => {
+            Ok(crate::services::memory::orchestrator::PipelineOutcome::NoWork) => {
                 break;
             }
             Err(e) => {

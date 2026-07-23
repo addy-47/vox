@@ -61,8 +61,6 @@ pub struct ConversationManager {
 
     opportunistic_active: bool,
     opportunistic_cancel: Arc<AtomicBool>,
-
-    current_personal_memory: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl ConversationManager {
@@ -86,7 +84,6 @@ impl ConversationManager {
             kv_synced_index: 0,
             opportunistic_active: false,
             opportunistic_cancel: Arc::new(AtomicBool::new(false)),
-            current_personal_memory: std::collections::HashMap::new(),
         }
     }
 
@@ -113,8 +110,7 @@ impl ConversationManager {
         self.total_token_count = sys_tokens;
         self.kv_synced_index = 0;
         self.cancel_opportunistic();
-        self.current_personal_memory.clear();
-        log::info!("[WorkingMemory] New session started. System prompt set and personal memory cleared.");
+        log::info!("[WorkingMemory] New session started. System prompt set.");
     }
 
     pub fn update_system_prompt(&mut self, new_system_prompt: &str) {
@@ -204,6 +200,7 @@ impl ConversationManager {
         provider_kind: ProviderKind,
         is_devanagari: bool,
         llm_provider: Option<&dyn LlmProvider>,
+        known_facts: &std::collections::HashMap<String, Vec<String>>,
     ) -> (ConversationContext, Option<String>, std::collections::HashMap<String, Vec<String>>) {
         self.cancel_opportunistic();
 
@@ -234,7 +231,7 @@ impl ConversationManager {
             if use_fifo || llm_provider.is_none() {
                 self.perform_fifo_maintenance();
             } else if let Some(provider) = llm_provider {
-                match self.perform_compaction_maintenance(provider) {
+                match self.perform_compaction_maintenance(provider, known_facts) {
                     Ok(updates) => {
                         personal_memory = updates;
                     }
@@ -298,178 +295,62 @@ impl ConversationManager {
         );
     }
 
-    /// LLM-driven Context Compaction: Summarizes history messages[1..N-1] into a single high-density summary block and extracts user profile updates.
+    /// LLM-driven Context Compaction: Delegates ingestion & prompt generation to `ingestion::run_compaction` (v5 §5.1).
     fn perform_compaction_maintenance(
         &mut self,
         provider: &dyn LlmProvider,
+        known_facts: &std::collections::HashMap<String, Vec<String>>,
     ) -> anyhow::Result<std::collections::HashMap<String, Vec<String>>> {
         if self.messages.len() <= 3 {
             self.perform_fifo_maintenance();
             return Ok(std::collections::HashMap::new());
         }
 
-        log::info!("[WorkingMemory] Executing LLM Context Compaction via {:?}", provider.kind());
-
         let last_user_turn = self.messages.pop().ok_or_else(|| anyhow::anyhow!("No user turn"))?;
-        let mut history_text = String::new();
-        for msg in &self.messages[1..] {
-            history_text.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
-        }
+        let history_slice = &self.messages[1..];
 
-        let is_first = self.current_personal_memory.is_empty() || self.current_personal_memory.values().all(|v| v.is_empty());
-        let user_content = if is_first {
-            format!(
-                "<conversation_history>\n{}\n</conversation_history>\n\n\
-                 <task>\n\
-                 Analyze the <conversation_history> above and extract all stated user facts into the 10 flat collections from the <schema>.\n\
-                 Follow every rule in <rules> and output the finalized JSON object starting with {{ and ending with }}.\n\
-                 </task>",
-                history_text
-            )
-        } else {
-            let serialized_memory = serde_json::to_string_pretty(&self.current_personal_memory).unwrap_or_default();
-            format!(
-                "<current_personal_memory>\n{}\n</current_personal_memory>\n\n\
-                 <conversation_history>\n{}\n</conversation_history>\n\n\
-                 <task>\n\
-                 Analyze the new <conversation_history> turns against the existing facts in <current_personal_memory>.\n\
-                 Perform a differential extraction: incorporate new facts, update modified facts, and remove or resolve any contradictions.\n\
-                 Output the complete, finalized JSON state of all 10 collections from <schema> incorporating these changes.\n\
-                 Follow every rule in <rules> and output ONLY the JSON object starting with {{ and ending with }}.\n\
-                 </task>",
-                serialized_memory,
-                history_text
-            )
-        };
-
-        let temp_ctx = ConversationContext {
-            messages: vec![
-                ChatMessage {
+        match crate::services::memory::ingestion::run_compaction(
+            provider,
+            history_slice,
+            &last_user_turn,
+            known_facts,
+        ) {
+            Ok(result) => {
+                let summary_msg = ChatMessage {
                     role: Role::System,
-                    content: crate::core::constants::COMPACTION_SYSTEM_PROMPT.to_string(),
+                    content: format!("[Compacted History Summary: {}]", result.context_summary.trim()),
                     timestamp_ms: current_timestamp_ms(),
-                },
-                ChatMessage {
-                    role: Role::User,
-                    content: user_content,
-                    timestamp_ms: current_timestamp_ms(),
-                },
-            ],
-            token_count: estimate_tokens(&history_text)
-                + estimate_tokens(crate::core::constants::COMPACTION_SYSTEM_PROMPT)
-                + 150,
-            kv_cache_index: 0,
-        };
+                };
 
-        let mut summary_content = String::new();
-        let mut personal_memory = std::collections::HashMap::new();
-        let mut attempts = 0;
-        let max_attempts = 2;
+                let summary_tokens = estimate_tokens(&summary_msg.content);
+                let sys_tokens = estimate_tokens(&self.system_prompt.content);
+                let user_tokens = estimate_tokens(&last_user_turn.content);
 
-        while attempts < max_attempts {
-            attempts += 1;
-            summary_content.clear();
-            let cancel_flag = Arc::new(AtomicBool::new(false));
-            let (tx, rx) = std::sync::mpsc::channel();
+                self.messages = vec![
+                    self.system_prompt.clone(),
+                    summary_msg,
+                    last_user_turn,
+                ];
 
-            log::info!("[WorkingMemory] Compaction attempt {}/{}...", attempts, max_attempts);
-            if provider.generate(&temp_ctx, 999_999, &cancel_flag, &tx).is_ok() {
-                while let Ok(event) = rx.recv_timeout(std::time::Duration::from_secs(45)) {
-                    match event {
-                        crate::core::events::VoxEvent::LlmToken { token, .. } => {
-                            summary_content.push_str(&token);
-                        }
-                        crate::core::events::VoxEvent::LlmFinished { .. } => break,
-                        _ => {}
-                    }
-                }
+                self.total_token_count = sys_tokens + summary_tokens + user_tokens;
+                self.kv_synced_index = 0;
+
+                log::info!(
+                    "[WorkingMemory] Compaction complete. Context rebuilt with 3 items ({} tokens, utilization {:.1}%). Enqueued {} new additions.",
+                    self.total_token_count,
+                    self.context_utilization() * 100.0,
+                    result.diff_to_enqueue.values().map(|v| v.len()).sum::<usize>()
+                );
+
+                Ok(result.diff_to_enqueue)
             }
-
-            if !summary_content.trim().is_empty() {
-                if let Some(resp) = crate::utils::json::parse_compaction_json(&summary_content) {
-                    personal_memory = resp;
-                    log::info!("[WorkingMemory] Compaction JSON parsed successfully on attempt {}.", attempts);
-                    break;
-                } else {
-                    log::warn!("[WorkingMemory] Compaction JSON parsing failed on attempt {}/{}.", attempts, max_attempts);
-                }
+            Err(e) => {
+                log::warn!("[WorkingMemory] Ingestion compaction failed: {}. Falling back to FIFO shift.", e);
+                self.messages.push(last_user_turn);
+                self.perform_fifo_maintenance();
+                Ok(std::collections::HashMap::new())
             }
         }
-
-        if summary_content.trim().is_empty() {
-            log::warn!("[WorkingMemory] Live LLM compaction produced empty summary. Falling back to FIFO shift.");
-            self.messages.push(last_user_turn);
-            self.perform_fifo_maintenance();
-            return Ok(std::collections::HashMap::new());
-        }
-
-        if personal_memory.is_empty() {
-            log::warn!("[WorkingMemory] LLM compaction returned non-JSON/malformed content after retries. Treating as raw summary fallback.");
-        }
-
-        let final_summary = personal_memory
-            .get("Context")
-            .and_then(|v| v.first())
-            .cloned()
-            .unwrap_or_else(|| {
-                summary_content.clone()
-            });
-
-        if final_summary.trim().is_empty() {
-            log::warn!("[WorkingMemory] Live LLM compaction produced empty summary. Falling back to FIFO shift.");
-            self.messages.push(last_user_turn);
-            self.perform_fifo_maintenance();
-            return Ok(std::collections::HashMap::new());
-        }
-
-        let summary_msg = ChatMessage {
-            role: Role::System,
-            content: format!("[Compacted History Summary: {}]", final_summary.trim()),
-            timestamp_ms: current_timestamp_ms(),
-        };
-
-        let summary_tokens = estimate_tokens(&summary_msg.content);
-        let sys_tokens = estimate_tokens(&self.system_prompt.content);
-        let user_tokens = estimate_tokens(&last_user_turn.content);
-
-        self.messages = vec![
-            self.system_prompt.clone(),
-            summary_msg,
-            last_user_turn,
-        ];
-
-        self.total_token_count = sys_tokens + summary_tokens + user_tokens;
-        self.kv_synced_index = 0; // Reset KV cache index for re-encode
-
-        // Compute the diff (the unique additions) to enqueue to the database queue
-        let mut diff_to_enqueue = std::collections::HashMap::new();
-        for (col, new_facts) in &personal_memory {
-            let mut additions = Vec::new();
-            if let Some(old_facts) = self.current_personal_memory.get(col) {
-                for fact in new_facts {
-                    if !old_facts.contains(fact) {
-                        additions.push(fact.clone());
-                    }
-                }
-            } else {
-                additions = new_facts.clone();
-            }
-            if !additions.is_empty() {
-                diff_to_enqueue.insert(col.clone(), additions);
-            }
-        }
-
-        self.current_personal_memory = personal_memory.clone();
-
-        log::info!(
-            "[WorkingMemory] Compaction complete. Rebuilt context with 3 items ({} tokens, utilization {:.1}%). Extracted {} personal facts ({} new additions).",
-            self.total_token_count,
-            self.context_utilization() * 100.0,
-            personal_memory.values().map(|v| v.len()).sum::<usize>(),
-            diff_to_enqueue.values().map(|v| v.len()).sum::<usize>()
-        );
-
-        Ok(diff_to_enqueue)
     }
 
     pub fn try_trigger_opportunistic(&mut self) -> Option<(usize, Vec<ChatMessage>, Arc<AtomicBool>)> {
@@ -592,7 +473,8 @@ mod tests {
 
         assert!(mgr.needs_threshold_maintenance());
 
-        let (ctx, speech, _) = mgr.build_context(ProviderKind::Embedded, false, None);
+        let known_facts = std::collections::HashMap::new();
+        let (ctx, speech, _) = mgr.build_context(ProviderKind::Embedded, false, None, &known_facts);
 
         assert!(speech.is_some());
         assert!(!mgr.needs_threshold_maintenance());
@@ -647,8 +529,9 @@ mod tests {
             "Context": ["The user introduced himself as Alex and expressed his love for Rust."]
         }"#.to_string();
 
+        let known_facts = std::collections::HashMap::new();
         let provider = MockProvider { response_text: mock_response };
-        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
+        let updates = mgr.perform_compaction_maintenance(&provider, &known_facts).unwrap();
 
         assert_eq!(updates.len(), 3);
         assert_eq!(updates.get("Identity").unwrap().len(), 2);
@@ -671,8 +554,9 @@ mod tests {
         }
         ```"#.to_string();
 
+        let known_facts = std::collections::HashMap::new();
         let provider = MockProvider { response_text: mock_response };
-        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
+        let updates = mgr.perform_compaction_maintenance(&provider, &known_facts).unwrap();
 
         assert_eq!(updates.len(), 2);
         assert_eq!(updates.get("Identity").unwrap()[0], "User's name is Alex.");
@@ -689,8 +573,9 @@ mod tests {
         // Plain prose instead of JSON
         let mock_response = "The user is Alex. He loves system programming.".to_string();
 
+        let known_facts = std::collections::HashMap::new();
         let provider = MockProvider { response_text: mock_response };
-        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
+        let updates = mgr.perform_compaction_maintenance(&provider, &known_facts).unwrap();
 
         // Should fall back to prose, return no profile updates, but successfully compact the conversation
         assert_eq!(updates.len(), 0);
