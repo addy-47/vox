@@ -1,11 +1,10 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use turso::Connection;
 use crate::core::settings::MemorySettings;
 use crate::services::memory::estimate_tokens;
-use crate::core::constants::{
-    PM_SEMANTIC_COLLECTIONS, PM_RELATION_USER_SUPERSEDES, PM_SOURCE_USER,
-};
+use crate::core::constants::PM_SEMANTIC_COLLECTIONS;
+use crate::persistence::repository;
 
 #[derive(Debug, Clone)]
 pub struct MemoryFact {
@@ -18,8 +17,8 @@ pub struct MemoryFact {
     pub created_at: i64,
 }
 
-/// V3 Two-Tier Budgeted Retrieval.
-/// Returns a formatted <user_profile> prompt context block.
+/// Phase 4 Budgeted RAG Retrieval & Context Assembly (v5 §5.1 / §5.3 Phase 4).
+/// Assembles Tier 1 Foundational/Operational and Tier 2 Semantic Profiles into <user_profile>.
 pub async fn retrieve_personal_context(
     conn: &Connection,
     query_embedding: &[f32],
@@ -38,7 +37,6 @@ pub async fn retrieve_personal_context(
         tier1_budget = tier1_budget.max(80);
         tier2_budget = tier2_budget.max(80);
     } else {
-        // Under tight resource constraints, scale down budgets to strictly respect the 15% hard cap (spec §6.2)
         let overall_budget = (context_size as f32 * (settings.foundational_budget_share + settings.semantic_budget_share)) as usize;
         tier1_budget = (overall_budget as f32 * (7.0 / 15.0)) as usize;
         tier2_budget = overall_budget.saturating_sub(tier1_budget);
@@ -46,18 +44,13 @@ pub async fn retrieve_personal_context(
 
     // ─── Tier 1: Foundational + Operational (7% hard cap) ───────────
 
-    // 1a. Load Identity + Constraints unconditionally
-    let foundational_facts = fetch_foundational_facts(conn).await?;
+    let foundational_facts = repository::fetch_foundational_facts(conn).await?;
+    let operational_facts = repository::fetch_operational_facts(conn).await?;
 
-    // 1b. Load Tasks + Goals deterministically
-    let operational_facts = fetch_operational_facts(conn).await?;
-
-    // 1c. Load Time-Windowed Context Chain
     let mut tier1_used_tokens = 0;
     let mut identity_block = String::new();
     let mut constraints_block = String::new();
 
-    // Foundational Facts: only consume budget if we successfully append them
     for fact in &foundational_facts {
         let line = format!("- {}\n", fact.fact);
         let tokens = estimate_tokens(&line);
@@ -76,7 +69,6 @@ pub async fn retrieve_personal_context(
         }
     }
 
-    // Operational Facts: budget priority newest-first, format chronological ascending (spec §6.4)
     let mut budgeted_tasks = Vec::new();
     let mut budgeted_goals = Vec::new();
 
@@ -98,7 +90,6 @@ pub async fn retrieve_personal_context(
         }
     }
 
-    // Chronologically sort (ascending) before string formatting
     budgeted_tasks.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     budgeted_goals.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
@@ -112,14 +103,12 @@ pub async fn retrieve_personal_context(
         goals_block.push_str(&format!("- {}\n", fact.fact));
     }
 
-    // Context chaining with remaining Tier 1 budget
     let context_remaining = tier1_budget.saturating_sub(tier1_used_tokens);
     let context_block = fetch_context_chain(conn, settings.context_chaining_window_hours, context_remaining).await?;
 
     // ─── Tier 2: Semantic Profiles (8% hard cap) ────────────────────
 
-    // Single-query optimization to fetch top K candidates for all 5 semantic collections in 1 DB round-trip
-    let query_blob = crate::persistence::memory_worker::encode_f32_blob(query_embedding);
+    let query_blob = repository::encode_f32_blob(query_embedding);
     let limit = settings.personal_top_k_per_semantic_collection as i64;
     let mut collection_buckets: HashMap<String, Vec<MemoryFact>> = HashMap::new();
 
@@ -156,7 +145,6 @@ pub async fn retrieve_personal_context(
         collection_buckets.entry(fact.collection.clone()).or_default().push(fact);
     }
 
-    // Edge resolution on semantic candidates
     let mut candidate_map: HashMap<String, MemoryFact> = HashMap::new();
     let mut direct_hit_ids = HashSet::new();
 
@@ -169,14 +157,12 @@ pub async fn retrieve_personal_context(
 
     if !candidate_map.is_empty() {
         let resolved = resolve_edges(conn, candidate_map, &direct_hit_ids, settings, tauri_app).await?;
-        // Re-bucket resolved facts by collection
         collection_buckets.clear();
         for fact in resolved {
             collection_buckets.entry(fact.collection.clone()).or_default().push(fact);
         }
     }
 
-    // Interleaved Round-Robin Selection (spec §6.2)
     let collection_keys: Vec<String> = PM_SEMANTIC_COLLECTIONS
         .iter()
         .filter(|c| collection_buckets.contains_key(**c))
@@ -209,7 +195,6 @@ pub async fn retrieve_personal_context(
         }
     }
 
-    // Sort selected semantic facts chronologically
     selected_semantic_facts.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     // ─── Prompt Assembly ────────────────────────────────────────────
@@ -298,7 +283,6 @@ pub async fn retrieve_personal_context(
         out.push_str(&context_block);
     }
 
-    // Format semantic facts grouped by collection with chronological timestamps
     let mut semantic_by_collection: HashMap<String, Vec<&MemoryFact>> = HashMap::new();
     for fact in &selected_semantic_facts {
         semantic_by_collection.entry(fact.collection.clone()).or_default().push(fact);
@@ -318,63 +302,7 @@ pub async fn retrieve_personal_context(
     Ok(out)
 }
 
-// ─── Data Fetchers ──────────────────────────────────────────────────────────
-
-/// Fetch active Identity + Constraints facts.
-async fn fetch_foundational_facts(conn: &Connection) -> Result<Vec<MemoryFact>> {
-    let mut rows = conn
-        .query(
-            "SELECT id, type, collection, fact, source, status, created_at FROM memory_facts
-             WHERE type = 'foundational' AND status = 'active'
-             ORDER BY created_at ASC",
-            (),
-        )
-        .await?;
-
-    let mut list = Vec::new();
-    while let Some(row) = rows.next().await? {
-        list.push(MemoryFact {
-            id: row.get(0)?,
-            fact_type: row.get(1)?,
-            collection: row.get(2)?,
-            fact: row.get(3)?,
-            source: row.get(4)?,
-            status: row.get(5)?,
-            created_at: row.get(6)?,
-        });
-    }
-    Ok(list)
-}
-
-/// Fetch active Tasks + Goals facts.
-async fn fetch_operational_facts(conn: &Connection) -> Result<Vec<MemoryFact>> {
-    let mut rows = conn
-        .query(
-            "SELECT id, type, collection, fact, source, status, created_at FROM memory_facts
-             WHERE type = 'operational' AND collection IN ('Tasks', 'Goals') AND status = 'active'
-             ORDER BY created_at DESC",
-            (),
-        )
-        .await?;
-
-    let mut list = Vec::new();
-    while let Some(row) = rows.next().await? {
-        list.push(MemoryFact {
-            id: row.get(0)?,
-            fact_type: row.get(1)?,
-            collection: row.get(2)?,
-            fact: row.get(3)?,
-            source: row.get(4)?,
-            status: row.get(5)?,
-            created_at: row.get(6)?,
-        });
-    }
-    Ok(list)
-}
-
-/// Time-Windowed Context Chaining (spec §6.3).
-/// Fetches recent Context paragraphs within the configured time window,
-/// formats them as a relative chronological timeline.
+/// Time-Windowed Context Chaining (v5 §5.1 / §5.3).
 async fn fetch_context_chain(
     conn: &Connection,
     window_hours: u32,
@@ -404,7 +332,6 @@ async fn fetch_context_chain(
     }
 
     if contexts.is_empty() {
-        // Fallback: fetch the single most recent active context older than the current window start
         let mut fallback_rows = conn
             .query(
                 "SELECT fact, created_at FROM memory_facts
@@ -428,7 +355,6 @@ async fn fetch_context_chain(
         return Ok(String::new());
     }
 
-    // Build timeline with budget tracking (Budget in newest-first order)
     let header = format!("[Past Contexts within the Last {} Hours]\n", window_hours);
     let mut used_tokens = estimate_tokens(&header);
     let mut selected_contexts = Vec::new();
@@ -444,7 +370,6 @@ async fn fetch_context_chain(
         used_tokens += tokens;
     }
 
-    // Format as a chronological timeline (oldest first, spec §6.3)
     let mut block = header;
     for (ts_label, fact) in selected_contexts.into_iter().rev() {
         block.push_str(&format!("- {}:\n  {}\n", ts_label, fact));
@@ -453,9 +378,7 @@ async fn fetch_context_chain(
     Ok(block)
 }
 
-// ─── Edge Resolution ────────────────────────────────────────────────────────
-
-/// Runs three-pass Edge Resolution over retrieved candidate facts in Rust memory.
+/// Runs Edge Resolution over retrieved candidate facts in Rust memory (v5 §5.3 Phase 4).
 pub async fn resolve_edges(
     conn: &Connection,
     mut candidate_map: HashMap<String, MemoryFact>,
@@ -465,7 +388,6 @@ pub async fn resolve_edges(
 ) -> Result<Vec<MemoryFact>> {
     let now_inst = std::time::Instant::now();
 
-    // 1. Fetch ALL relationships in a single fast query
     let mut rows = conn
         .query(
             "SELECT from_id, to_id, relation FROM memory_relations",
@@ -473,9 +395,9 @@ pub async fn resolve_edges(
         )
         .await?;
 
-    let mut supersedes_map: HashMap<String, String> = HashMap::new(); // old -> new
-    let mut supports_map: HashMap<String, Vec<String>> = HashMap::new(); // from_id -> Vec<to_id>
-    let mut conflicts_set: HashSet<(String, String)> = HashSet::new(); // (id_a, id_b) where id_a < id_b
+    let mut supersedes_map: HashMap<String, String> = HashMap::new();
+    let mut supports_map: HashMap<String, Vec<String>> = HashMap::new();
+    let mut conflicts_set: HashSet<(String, String)> = HashSet::new();
 
     while let Some(row) = rows.next().await? {
         let from_id: String = row.get(0)?;
@@ -487,8 +409,6 @@ pub async fn resolve_edges(
                 supersedes_map.insert(to_id, from_id);
             }
             "SUPPORTS" => {
-                // Map supported fact (to_id) -> supporting fact (from_id)
-                // This ensures if the main supported fact is a direct hit, we fetch its supporting details.
                 supports_map.entry(to_id).or_default().push(from_id);
             }
             "CONFLICTS" => {
@@ -502,7 +422,6 @@ pub async fn resolve_edges(
         }
     }
 
-    // 2. In-memory Pass 1: Resolve USER_SUPERSEDES Pointer Swaps recursively with Cycle Detection
     let mut superseded_swaps = HashMap::new();
     let mut required_ids = HashSet::new();
 
@@ -514,7 +433,7 @@ pub async fn resolve_edges(
 
         while let Some(newer_id) = supersedes_map.get(&current_id) {
             if visited.contains(newer_id) || depth >= 10 {
-                log::warn!("[Memory] Cycle or excessive depth detected in USER_SUPERSEDES for: {}", id);
+                log::warn!("[MemoryRetrieval] Cycle or excessive depth detected in USER_SUPERSEDES for: {}", id);
                 break;
             }
             current_id = newer_id.clone();
@@ -528,7 +447,6 @@ pub async fn resolve_edges(
         required_ids.insert(current_id);
     }
 
-    // 3. In-memory Pass 2: Pull Supporting facts for active surviving direct-hits
     let mut supporting_to_pull = HashSet::new();
     for id in direct_hit_ids {
         let active_id = superseded_swaps.get(id).unwrap_or(id);
@@ -540,7 +458,6 @@ pub async fn resolve_edges(
         }
     }
 
-    // 4. Batch fetch missing facts in exactly one step
     let missing_ids: Vec<String> = required_ids
         .iter()
         .filter(|id| !candidate_map.contains_key(*id))
@@ -569,12 +486,10 @@ pub async fn resolve_edges(
         }
     }
 
-    // Apply swaps
     for old_id in superseded_swaps.keys() {
         candidate_map.remove(old_id);
     }
 
-    // 5. In-memory Pass 3: CONFLICTS Detection (surfaced to UI, no automatic suppression)
     let final_candidate_ids: Vec<String> = candidate_map.keys().cloned().collect();
 
     for i in 0..final_candidate_ids.len() {
@@ -603,77 +518,9 @@ pub async fn resolve_edges(
     let mut resolved: Vec<MemoryFact> = candidate_map.into_values().collect();
     resolved.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
-    log::info!("[Memory] V3 edge resolution completed in {}ms", now_inst.elapsed().as_millis());
+    log::info!("[MemoryRetrieval] Edge resolution completed in {}ms", now_inst.elapsed().as_millis());
     Ok(resolved)
 }
-
-// ─── User-Initiated Fact Editing ────────────────────────────────────────────
-
-/// Inserts a manually edited user fact and writes a USER_SUPERSEDES edge old → new.
-/// Marks the old fact as superseded.
-pub async fn supersede_user_fact(
-    conn: &Connection,
-    old_id: &str,
-    new_fact_text: &str,
-    collection: &str,
-) -> Result<String> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-
-    let new_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
-    let fact_type = crate::core::constants::collection_type(collection);
-
-    // Insert new fact
-    conn.execute(
-        "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)",
-        (
-            new_id.clone(),
-            fact_type.to_string(),
-            collection.to_string(),
-            new_fact_text.to_string(),
-            PM_SOURCE_USER.to_string(),
-            now,
-        ),
-    ).await?;
-
-    // Only embed if semantic type
-    if fact_type == crate::core::constants::PM_TYPE_SEMANTIC {
-        crate::services::memory::ensure_embedder_loaded(true)?;
-        let embedding = match crate::services::memory::generate_embedding(new_fact_text)? {
-            Some(v) => v,
-            None => return Err(anyhow!("Failed to generate embedding for edited fact.")),
-        };
-
-        let blob_bytes = crate::persistence::memory_worker::encode_f32_blob(&embedding);
-        conn.execute(
-            "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
-            (new_id.clone(), collection.to_string(), blob_bytes),
-        ).await?;
-    }
-
-    // Write supersedes edge
-    conn.execute(
-        "INSERT INTO memory_relations (from_id, to_id, relation, created_at) VALUES (?, ?, ?, ?)",
-        (
-            new_id.clone(),
-            old_id.to_string(),
-            PM_RELATION_USER_SUPERSEDES.to_string(),
-            now,
-        ),
-    ).await?;
-
-    // Mark old fact as superseded
-    conn.execute(
-        "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
-        (old_id.to_string(),),
-    ).await?;
-
-    Ok(new_id)
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
 
 /// Formats a millisecond epoch timestamp as a human-readable relative time label.
 pub fn format_relative_timestamp(created_at_ms: i64) -> String {
