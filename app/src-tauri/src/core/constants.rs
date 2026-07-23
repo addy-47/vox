@@ -145,17 +145,25 @@ Your response must start with { and end with }.
 </schema>
 
 <key_definitions>
-Identity: who the user is (name, age, profession, self-descriptors).
-Constraints: hard requirements or limits (dietary, physical, temporal, absolute rules).
-Preferences: tastes, likes, dislikes, habits, tool/style choices.
-Relationships: people mentioned and their connection to the user.
-Skills: abilities, languages, technologies, domain expertise.
-Projects: initiatives currently being built, designed, or planned.
-Experiences: past jobs, life events, places lived, historical facts about the user.
-Context: one narrative paragraph on what happened in this conversation and what the user is trying to do.
-Tasks: active or upcoming actionable to-dos.
-Goals: future aspirations or long-term objectives.
+Identity: Present-tense, stable facts about who the user is today (name, age, profession, self-descriptors). Excludes past jobs or finished projects.
+Constraints: Hard, non-negotiable limits (allergies, medical restrictions, absolute time/budget limits). Violating a constraint causes actual harm or breaking failure.
+Preferences: Soft tastes, habits, likes/dislikes (dark mode, oat milk preference, style choices). Opposite is less ideal, but not breaking.
+Relationships: Named people other than the user and their relation (sister Emma, manager David, spouse).
+Skills: Capabilities, technical tools, languages, or domain expertise the user possesses (Rust, TypeScript, accounting).
+Projects: Active, in-progress builds or initiatives currently being worked on. Finished builds belong in Experiences.
+Experiences: Past completed events, past jobs, education, finished projects, places lived.
+Context: One narrative paragraph summarizing what happened in THIS conversation session.
+Tasks: Concrete, near-term actionable to-dos with an immediate finish line (write README today, clean desk).
+Goals: Longer-horizon aspirations or objectives without an immediate checklist item (train for marathon in Oct).
 </key_definitions>
+
+<boundary_disambiguation>
+- Constraints vs Preferences: Violating a Constraint breaks things or causes harm (allergy/hard limit). A Preference is just taste (oat milk, dark mode).
+- Skills vs Experiences: The capability itself -> Skills. The past job or event where it was used -> Experiences.
+- Projects vs Experiences: In-progress or active build -> Projects. Finished or shipped build -> Experiences.
+- Tasks vs Goals: Near-term checkable to-do (days) -> Tasks. Long-horizon aspiration (months/years) -> Goals.
+- Identity vs Experiences: Currently true present role/descriptor -> Identity. Past role/event -> Experiences.
+</boundary_disambiguation>
 
 <example>
 <input>
@@ -183,6 +191,74 @@ User: Training for my first half-marathon in October, so I need to stick to my r
 </output>
 </example>"#;
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum MemoryCollection {
+    Identity,
+    Constraints,
+    Preferences,
+    Relationships,
+    Skills,
+    Projects,
+    Experiences,
+    Context,
+    Tasks,
+    Goals,
+}
+
+impl MemoryCollection {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Identity => "Identity",
+            Self::Constraints => "Constraints",
+            Self::Preferences => "Preferences",
+            Self::Relationships => "Relationships",
+            Self::Skills => "Skills",
+            Self::Projects => "Projects",
+            Self::Experiences => "Experiences",
+            Self::Context => "Context",
+            Self::Tasks => "Tasks",
+            Self::Goals => "Goals",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "Identity" => Some(Self::Identity),
+            "Constraints" => Some(Self::Constraints),
+            "Preferences" => Some(Self::Preferences),
+            "Relationships" => Some(Self::Relationships),
+            "Skills" => Some(Self::Skills),
+            "Projects" => Some(Self::Projects),
+            "Experiences" => Some(Self::Experiences),
+            "Context" => Some(Self::Context),
+            "Tasks" => Some(Self::Tasks),
+            "Goals" => Some(Self::Goals),
+            _ => None,
+        }
+    }
+
+    pub fn collection_type(&self) -> &'static str {
+        match self {
+            Self::Identity | Self::Constraints => PM_TYPE_FOUNDATIONAL,
+            Self::Context | Self::Tasks | Self::Goals => PM_TYPE_OPERATIONAL,
+            _ => PM_TYPE_SEMANTIC,
+        }
+    }
+
+    pub fn is_staged_during_session(&self) -> bool {
+        matches!(self, Self::Context | Self::Tasks)
+    }
+}
+
+impl std::fmt::Display for MemoryCollection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 // ─── Personal Memory v3 Collections ─────────────────────────────────────────
 pub const PM_COLLECTIONS: &[&str] = &[
     "Identity", "Constraints", "Preferences", "Relationships",
@@ -200,10 +276,10 @@ pub const PM_SEMANTIC_COLLECTIONS: &[&str] = &["Preferences", "Relationships", "
 
 /// Returns the structural type for a given collection name.
 pub fn collection_type(collection: &str) -> &'static str {
-    match collection {
-        "Identity" | "Constraints" => PM_TYPE_FOUNDATIONAL,
-        "Context" | "Tasks" | "Goals" => PM_TYPE_OPERATIONAL,
-        _ => PM_TYPE_SEMANTIC, // Preferences, Relationships, Skills, Projects, Experiences
+    if let Some(col) = MemoryCollection::parse(collection) {
+        col.collection_type()
+    } else {
+        PM_TYPE_SEMANTIC
     }
 }
 
