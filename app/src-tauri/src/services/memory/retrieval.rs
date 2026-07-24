@@ -24,9 +24,10 @@ pub async fn retrieve_personal_context(
     query_embedding: &[f32],
     settings: &MemorySettings,
     context_size: usize,
-    tauri_app: Option<&tauri::AppHandle>,
+    current_session_id: &str,
+    _tauri_app: Option<&tauri::AppHandle>,
 ) -> Result<String> {
-    if !settings.personal_enabled {
+    if !settings.context_retrieval_enabled {
         return Ok(String::new());
     }
 
@@ -44,8 +45,8 @@ pub async fn retrieve_personal_context(
 
     // ─── Tier 1: Foundational + Operational (7% hard cap) ───────────
 
-    let foundational_facts = repository::fetch_foundational_facts(conn).await?;
-    let operational_facts = repository::fetch_operational_facts(conn).await?;
+    let foundational_facts = repository::fetch_foundational_facts(conn, current_session_id).await?;
+    let operational_facts = repository::fetch_operational_facts(conn, current_session_id).await?;
 
     let mut tier1_used_tokens = 0;
     let mut identity_block = String::new();
@@ -106,16 +107,31 @@ pub async fn retrieve_personal_context(
     let context_remaining = tier1_budget.saturating_sub(tier1_used_tokens);
     let context_block = fetch_context_chain(conn, settings.context_chaining_window_hours, context_remaining).await?;
 
+    // ─── Memory Manifest (Active Record Counts) ──────────────────────
+
+    let active_counts = repository::fetch_active_collection_counts(conn, current_session_id).await.unwrap_or_default();
+    let total_active_facts: usize = active_counts.values().sum();
+    let manifest_parts: Vec<String> = PM_SEMANTIC_COLLECTIONS
+        .iter()
+        .map(|c| format!("{}: {}", c, active_counts.get(*c).copied().unwrap_or(0)))
+        .collect();
+    let manifest_header = format!(
+        "<memory_manifest total_active_facts=\"{}\">\n  {}\n</memory_manifest>\n\n",
+        total_active_facts,
+        manifest_parts.join(" | ")
+    );
+
     // ─── Tier 2: Semantic Profiles (8% hard cap) ────────────────────
 
     let query_blob = repository::encode_f32_blob(query_embedding);
-    let limit = settings.personal_top_k_per_semantic_collection as i64;
-    let mut collection_buckets: HashMap<String, Vec<MemoryFact>> = HashMap::new();
+    let k_base = settings.personal_top_k_per_semantic_collection as i64;
+    let mut collection_buckets: HashMap<String, Vec<(MemoryFact, f32)>> = HashMap::new();
 
     let mut rows = conn
         .query(
             "WITH Ranked AS (
                  SELECT mf.id, mf.type, mf.collection, mf.fact, mf.source, mf.status, mf.created_at,
+                        (1.0 - vector_distance_cos(mfv.embedding, ?)) as similarity,
                         ROW_NUMBER() OVER (
                             PARTITION BY mfv.collection
                             ORDER BY vector_distance_cos(mfv.embedding, ?) ASC
@@ -124,14 +140,15 @@ pub async fn retrieve_personal_context(
                  JOIN memory_facts_vectors mfv ON mfv.fact_id = mf.id
                  WHERE mfv.collection IN ('Preferences', 'Relationships', 'Skills', 'Projects', 'Experiences')
                    AND mf.status = 'active'
+                   AND (mf.session_id = '' OR mf.session_id != ?)
              )
-             SELECT id, type, collection, fact, source, status, created_at
-             FROM Ranked
-             WHERE rank <= ?",
-            (query_blob, limit),
+             SELECT id, type, collection, fact, source, status, created_at, similarity
+             FROM Ranked",
+            (query_blob.clone(), query_blob, current_session_id.to_string()),
         )
         .await?;
 
+    let mut all_scored_facts: Vec<(MemoryFact, f32)> = Vec::new();
     while let Some(row) = rows.next().await? {
         let fact = MemoryFact {
             id: row.get(0)?,
@@ -142,55 +159,49 @@ pub async fn retrieve_personal_context(
             status: row.get(5)?,
             created_at: row.get(6)?,
         };
-        collection_buckets.entry(fact.collection.clone()).or_default().push(fact);
+        let similarity: f32 = row.get::<f64>(7)? as f32;
+        collection_buckets.entry(fact.collection.clone()).or_default().push((fact.clone(), similarity));
+        all_scored_facts.push((fact, similarity));
     }
 
-    let mut candidate_map: HashMap<String, MemoryFact> = HashMap::new();
-    let mut direct_hit_ids = HashSet::new();
-
-    for (_, bucket) in &collection_buckets {
-        for fact in bucket {
-            direct_hit_ids.insert(fact.id.clone());
-            candidate_map.insert(fact.id.clone(), fact.clone());
-        }
-    }
-
-    if !candidate_map.is_empty() {
-        let resolved = resolve_edges(conn, candidate_map, &direct_hit_ids, settings, tauri_app).await?;
-        collection_buckets.clear();
-        for fact in resolved {
-            collection_buckets.entry(fact.collection.clone()).or_default().push(fact);
-        }
-    }
-
-    let collection_keys: Vec<String> = PM_SEMANTIC_COLLECTIONS
-        .iter()
-        .filter(|c| collection_buckets.contains_key(**c))
-        .map(|c| c.to_string())
-        .collect();
-
+    let mut selected_fact_ids = HashSet::new();
     let mut selected_semantic_facts: Vec<MemoryFact> = Vec::new();
     let mut tier2_used_tokens = 0;
-    let mut round = 0;
 
-    loop {
-        let mut added_any = false;
-        for col in &collection_keys {
-            if let Some(bucket) = collection_buckets.get(col) {
-                if round < bucket.len() {
-                    let fact = &bucket[round];
-                    let line = format!("- {}\n", fact.fact);
-                    let tokens = estimate_tokens(&line);
-                    if tier2_used_tokens + tokens <= tier2_budget {
+    // Step 2A: Guaranteed Anchor Floor (Top K_base per collection)
+    for col in PM_SEMANTIC_COLLECTIONS {
+        if let Some(bucket) = collection_buckets.get_mut(*col) {
+            bucket.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            for (fact, _sim) in bucket.iter().take(k_base as usize) {
+                let line = format!("- {}\n", fact.fact);
+                let tokens = estimate_tokens(&line);
+                if tier2_used_tokens + tokens <= tier2_budget {
+                    if selected_fact_ids.insert(fact.id.clone()) {
                         tier2_used_tokens += tokens;
                         selected_semantic_facts.push(fact.clone());
-                        added_any = true;
                     }
                 }
             }
         }
-        round += 1;
-        if !added_any || tier2_used_tokens >= tier2_budget {
+    }
+
+    // Step 2B: Global Similarity Competitive Pool (similarity >= settings.semantic_similarity_cutoff across ALL collections)
+    let similarity_cutoff = settings.semantic_similarity_cutoff;
+    all_scored_facts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (fact, sim) in all_scored_facts {
+        if sim < similarity_cutoff {
+            break; // Sorted descending; stop when below user-configured similarity floor
+        }
+        if selected_fact_ids.contains(&fact.id) {
+            continue;
+        }
+        let line = format!("- {}\n", fact.fact);
+        let tokens = estimate_tokens(&line);
+        if tier2_used_tokens + tokens <= tier2_budget {
+            tier2_used_tokens += tokens;
+            selected_fact_ids.insert(fact.id.clone());
+            selected_semantic_facts.push(fact);
+        } else {
             break;
         }
     }
@@ -253,6 +264,7 @@ pub async fn retrieve_personal_context(
 
     let mut out = String::new();
     out.push_str("<user_profile>\n");
+    out.push_str(&manifest_header);
 
     if !conflict_block.is_empty() {
         out.push_str("[Unresolved Contradictions]\n");
