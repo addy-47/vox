@@ -542,17 +542,19 @@ impl PipelineOrchestrator {
                 String::new()
             } else {
                 let query_embedding = rt.block_on(async {
-                    crate::services::memory::ensure_embedder_loaded(settings_snap.memory.personal_enabled).ok();
+                    crate::services::memory::ensure_embedder_loaded(settings_snap.memory.context_retrieval_enabled).ok();
                     crate::services::memory::generate_embedding(&text).unwrap_or(None)
                 }).unwrap_or_else(|| vec![0.0; 1024]);
 
                 rt.block_on(async {
                     if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
+                        let active_session_id = self.conversation_id.load(Ordering::Relaxed).to_string();
                         crate::services::memory::retrieval::retrieve_personal_context(
                             &conn,
                             &query_embedding,
                             &settings_snap.memory,
                             settings_snap.llm.ctx_size as usize,
+                            &active_session_id,
                             Some(&_app_handle),
                         ).await.unwrap_or_default()
                     } else {
@@ -570,7 +572,7 @@ impl PipelineOrchestrator {
                 let is_tier_1a = provider_kind == crate::services::llm::ProviderKind::Embedded 
                     && settings_snap.llm.ctx_size <= 4096;
                 
-                if settings_snap.memory.personal_enabled && !is_tier_1a {
+                if settings_snap.memory.context_retrieval_enabled && !is_tier_1a {
                     match &settings_snap.llm.provider {
                         crate::core::settings::LlmProviderConfig::Embedded => {
                             let provider = crate::services::llm::providers::embedded::EmbeddedProvider::new(

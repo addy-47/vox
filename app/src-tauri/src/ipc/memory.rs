@@ -361,8 +361,9 @@ pub async fn trigger_memory_consolidation(
 
     let mut compacted_count = 0;
     
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     loop {
-        match crate::services::memory::orchestrator::process_one_queue_item(&conn, &memory_settings).await {
+        match crate::services::memory::orchestrator::process_one_queue_item(&conn, &memory_settings, &cancel_flag).await {
             Ok(crate::services::memory::orchestrator::PipelineOutcome::Merged { .. })
           | Ok(crate::services::memory::orchestrator::PipelineOutcome::Ingested { .. }) => {
                 compacted_count += 1;

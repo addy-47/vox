@@ -322,8 +322,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
         // Memory — personal parameters hot, worker toggle command, model path restart
-        ("memory", "bg_worker_enabled") => SettingReloadPolicy::WorkerCommand,
-        ("memory", "nli_model_name") => SettingReloadPolicy::Restart,
+        ("memory", "pipeline_processing_enabled") => SettingReloadPolicy::WorkerCommand,
         ("memory", _) => SettingReloadPolicy::Hot,
 
         // Assistant — hot update
@@ -626,51 +625,45 @@ impl Default for PersistenceSettings {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
 pub struct MemorySettings {
-    /// Enable background memory worker thread.
-    pub bg_worker_enabled: bool,
+    /// Toggle 1: Controls whether retrieved memory is injected into live LLM turn prompts.
+    /// When false: Bypasses memory retrieval for LLM queries to avoid context pollution.
+    /// Ingestion and compaction continue uninterrupted in background.
+    pub context_retrieval_enabled: bool,
 
-    // --- Personal Memory v3 Settings ---
-    /// Enable Personal Memory v3 processing and graph relations.
-    pub personal_enabled: bool,
-    /// Foundational + Operational tier budget as share of context window (0.0 - 1.0).
-    /// Covers: Identity, Constraints, Context (time-windowed), Tasks, Goals.
+    /// Toggle 2: Controls whether the background worker thread processes queue items (Phase 1-3).
+    /// When true: Background worker processes 'pending' queue items when idle.
+    /// When false: Extracted facts from session compaction are inserted into personal_memory_queue with status = 'staged'.
+    /// Worker loop remains dormant (PipelineOutcome::NoWork). Zero embedding and ONNX NLI execution occurs.
+    pub pipeline_processing_enabled: bool,
+
+    /// Foundational + Operational tier budget share of context window (0.0 - 1.0).
     pub foundational_budget_share: f32,
-    /// Semantic tier budget as share of context window (0.0 - 1.0).
-    /// Covers: Preferences, Relationships, Skills, Projects, Experiences.
+
+    /// Semantic tier budget share of context window (0.0 - 1.0).
     pub semantic_budget_share: f32,
-    /// Time window in hours for Context Chaining (loads recent context summaries).
+
+    /// Time window in hours for Context Chaining.
     pub context_chaining_window_hours: u32,
-    /// Maximum number of candidate facts retrieved for NLI logical comparison (K-limit).
-    pub nli_candidate_limit: u32,
-    /// Threshold above which an NLI prediction is classified as Contradiction (0.0 - 1.0).
-    pub nli_contradiction_threshold: f32,
-    /// Threshold above which an NLI prediction is classified as Entailment (0.0 - 1.0).
-    pub nli_entailment_threshold: f32,
-    /// Name or path of the local NLI ONNX model directory under ~/.vox/models/nli/
-    pub nli_model_name: String,
-    /// Number of top personal memory facts to retrieve per semantic collection.
+
+    /// Tier 2A Guaranteed Anchor Floor: Top-K anchor facts retrieved per semantic collection.
+    /// Preserves user identity anchors across topic shifts regardless of cosine distance.
     pub personal_top_k_per_semantic_collection: u32,
-    /// Cosine similarity threshold below which NLI comparison is skipped (0.0 - 1.0).
-    /// Facts with cosine similarity below this threshold are classified as Neutral immediately.
-    pub candidate_similarity_search_threshold: f32,
+
+    /// Tier 2B Global Similarity Cutoff Floor (0.0 - 1.0, default 0.65).
+    /// Candidates in Tier 2B competitive pool must meet or exceed this cosine similarity score.
+    pub semantic_similarity_cutoff: f32,
 }
 
 impl Default for MemorySettings {
     fn default() -> Self {
         Self {
-            bg_worker_enabled: true,
-
-            // Personal Memory v3 Defaults
-            personal_enabled: true,
-            foundational_budget_share: 0.07,     // 7% hard cap
-            semantic_budget_share: 0.08,         // 8% hard cap
-            context_chaining_window_hours: 12,   // 12-hour window
-            nli_candidate_limit: 5,
-            nli_contradiction_threshold: 0.85,
-            nli_entailment_threshold: 0.85,
-            nli_model_name: "deberta-v3-xsmall-nli".to_string(),
+            context_retrieval_enabled: true,
+            pipeline_processing_enabled: true,
+            foundational_budget_share: 0.07,
+            semantic_budget_share: 0.08,
+            context_chaining_window_hours: 12,
             personal_top_k_per_semantic_collection: 5,
-            candidate_similarity_search_threshold: 0.82,
+            semantic_similarity_cutoff: 0.65,
         }
     }
 }
@@ -940,8 +933,8 @@ mod tests {
     #[test]
     fn test_memory_settings_defaults() {
         let settings = VoxSettings::default();
-        assert!(settings.memory.bg_worker_enabled);
-        assert!(settings.memory.personal_enabled);
+        assert!(settings.memory.context_retrieval_enabled);
+        assert!(settings.memory.pipeline_processing_enabled);
         assert!((settings.memory.foundational_budget_share - 0.07).abs() < 0.001);
         assert!((settings.memory.semantic_budget_share - 0.08).abs() < 0.001);
     }
@@ -949,11 +942,11 @@ mod tests {
     #[test]
     fn test_memory_settings_reload_policy() {
         assert_eq!(
-            reload_policy_for("memory", "personal_enabled"),
+            reload_policy_for("memory", "context_retrieval_enabled"),
             SettingReloadPolicy::Hot
         );
         assert_eq!(
-            reload_policy_for("memory", "bg_worker_enabled"),
+            reload_policy_for("memory", "pipeline_processing_enabled"),
             SettingReloadPolicy::WorkerCommand
         );
     }

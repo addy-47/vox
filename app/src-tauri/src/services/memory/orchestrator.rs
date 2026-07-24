@@ -2,12 +2,19 @@ use anyhow::Result;
 use turso::Connection;
 use crate::core::settings::MemorySettings;
 use crate::core::constants::{
-    PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_RELATION_SIMILAR,
+    PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_RELATION_SIMILAR, MODEL_DIR_NLI_DEFAULT,
 };
 use crate::persistence::repository;
 use crate::services::memory::deduplication::{jaccard_similarity, is_exact_duplicate};
 use crate::services::memory::embedder::{ensure_embedder_loaded, generate_embedding, cosine_similarity};
 use crate::services::memory::nli::{ensure_nli_loaded, classify_pair, relation_from_result, NliRelation};
+
+/// Maximum candidate facts retrieved for NLI logical comparison.
+pub const NLI_CANDIDATE_LIMIT: usize = 5;
+/// Cosine similarity threshold above which candidate is classified as SIMILAR (0.95 .. 0.98 range).
+pub const SIMILAR_EDGE_THRESHOLD: f32 = 0.95;
+/// Cosine similarity threshold below which NLI comparison is skipped (< 0.65 is Neutral).
+pub const NLI_CLASSIFICATION_MIN_THRESHOLD: f32 = 0.65;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PipelineOutcome {
@@ -16,12 +23,20 @@ pub enum PipelineOutcome {
     Ingested { fact_id: String, relations: Vec<String> },
 }
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 /// Master memory pipeline orchestrator driving Phase 1 -> Phase 2 -> Phase 3 (v5 §5.1 / §5.3).
 /// Processes one queued job from `personal_memory_queue`.
 pub async fn process_one_queue_item(
     conn: &Connection,
     settings: &MemorySettings,
+    cancel_flag: &Arc<AtomicBool>,
 ) -> Result<PipelineOutcome> {
+    if !settings.pipeline_processing_enabled || cancel_flag.load(Ordering::Relaxed) {
+        return Ok(PipelineOutcome::NoWork);
+    }
+
     let mut rows = conn
         .query(
             "SELECT id, fact, collection, source, session_id FROM personal_memory_queue 
@@ -58,6 +73,13 @@ pub async fn process_one_queue_item(
         .unwrap_or_default()
         .as_millis() as i64;
     let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
+
+    // Check cancellation before heavy ONNX embedding inference
+    if cancel_flag.load(Ordering::Relaxed) {
+        let _ = conn.execute("UPDATE personal_memory_queue SET status = 'pending' WHERE id = ?", (job_id,)).await;
+        log::info!("[Orchestrator] Interrupted before ONNX embedding generation. Reverted job to pending.");
+        return Ok(PipelineOutcome::NoWork);
+    }
 
     // ─── PHASE 1: Dual-Defense Fast Hard Deduplication & Embedding ────
 
@@ -119,23 +141,30 @@ pub async fn process_one_queue_item(
 
     let candidates: Vec<(f32, String, String)> = scored_candidates
         .into_iter()
-        .take(settings.nli_candidate_limit as usize)
+        .take(NLI_CANDIDATE_LIMIT)
         .collect();
 
     let mut relations = Vec::new();
     let mut nli_pairs_to_classify = Vec::new();
 
     for (sim, cand_id, cand_fact) in candidates {
-        if sim > 0.95 {
+        if sim > SIMILAR_EDGE_THRESHOLD {
             log::info!("[Orchestrator] Multi-Tier Routing: Near-duplicate ({:.4}). Writing SIMILAR edge.", sim);
             relations.push((fact_id.clone(), cand_id.clone(), PM_RELATION_SIMILAR));
-        } else if sim >= 0.65 {
+        } else if sim >= NLI_CLASSIFICATION_MIN_THRESHOLD {
             nli_pairs_to_classify.push((cand_id, cand_fact));
         }
     }
 
     if !nli_pairs_to_classify.is_empty() {
-        if let Err(e) = ensure_nli_loaded(&settings.nli_model_name) {
+        // Check cancellation before heavy ONNX DeBERTa NLI inference
+        if cancel_flag.load(Ordering::Relaxed) {
+            let _ = conn.execute("UPDATE personal_memory_queue SET status = 'pending' WHERE id = ?", (job_id,)).await;
+            log::info!("[Orchestrator] Interrupted before ONNX NLI classification. Reverted job to pending.");
+            return Ok(PipelineOutcome::NoWork);
+        }
+
+        if let Err(e) = ensure_nli_loaded(MODEL_DIR_NLI_DEFAULT) {
             repository::mark_job_failed(conn, job_id, &format!("Failed to load NLI model: {}", e)).await;
             return Ok(PipelineOutcome::NoWork);
         }
@@ -143,7 +172,7 @@ pub async fn process_one_queue_item(
         for (cand_id, cand_fact) in nli_pairs_to_classify {
             match classify_pair(&fact, &cand_fact) {
                 Ok(nli_res) => {
-                    let relation = relation_from_result(&nli_res, settings);
+                    let relation = relation_from_result(&nli_res);
                     match relation {
                         NliRelation::Conflicts => {
                             log::info!("[Orchestrator] NLI: Conflict detected between enqueued fact and candidate fact.");
@@ -193,7 +222,8 @@ mod tests {
         crate::persistence::schema::run_migrations(&conn).await?;
 
         let settings = MemorySettings::default();
-        let outcome = process_one_queue_item(&conn, &settings).await?;
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let outcome = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
         assert_eq!(outcome, PipelineOutcome::NoWork);
         Ok(())
     }

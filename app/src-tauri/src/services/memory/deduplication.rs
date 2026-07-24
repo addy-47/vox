@@ -1,5 +1,10 @@
 use std::collections::HashSet;
 
+/// Cosine similarity threshold for Phase 1 hard deduplication merge (>= 0.98 or Jaccard == 1.0).
+pub const COSINE_HARD_MATCH_THRESHOLD: f32 = 0.98;
+/// Jaccard token set similarity threshold for exact match.
+pub const JACCARD_EXACT_MATCH_THRESHOLD: f32 = 1.0;
+
 /// Calculates Jaccard Word-Set Overlap Similarity between two strings.
 /// Formula: J(A, B) = |A ∩ B| / |A ∪ B| on alphanumeric lowercased word tokens.
 pub fn jaccard_similarity(s1: &str, s2: &str) -> f32 {
@@ -28,15 +33,8 @@ pub fn jaccard_similarity(s1: &str, s2: &str) -> f32 {
     intersection / union
 }
 
-/// Evaluates Phase 1 O(1) exact merge condition (v5 §5.3 Phase 1).
-/// Returns true if cosine similarity is >= 0.9999 or Jaccard similarity is 1.0.
 pub fn is_exact_duplicate(cosine_sim: f32, jaccard_sim: f32) -> bool {
-    cosine_sim >= 0.9999 || jaccard_sim >= 1.0
-}
-
-/// Evaluates Phase 1 Cosine Hard Match check (v5 §5.3 Step 1C).
-pub fn is_cosine_hard_match(cosine_sim: f32) -> bool {
-    cosine_sim > 0.999
+    cosine_sim >= COSINE_HARD_MATCH_THRESHOLD || jaccard_sim >= JACCARD_EXACT_MATCH_THRESHOLD
 }
 
 #[cfg(test)]
@@ -60,8 +58,8 @@ mod tests {
 
     #[test]
     fn test_exact_duplicate_checks() {
-        assert!(is_exact_duplicate(0.9999, 0.5));
+        assert!(is_exact_duplicate(0.99, 0.5));
         assert!(is_exact_duplicate(0.5, 1.0));
-        assert!(!is_exact_duplicate(0.98, 0.9));
+        assert!(!is_exact_duplicate(0.97, 0.9));
     }
 }

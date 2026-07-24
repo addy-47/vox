@@ -22,7 +22,7 @@ async fn test_v3_worker_type_aware_processing() -> Result<()> {
     facts.insert("Identity".to_string(), vec!["User is named Alex".to_string()]); // Foundational (pending)
     facts.insert("Tasks".to_string(), vec!["Call doctor (pending)".to_string()]); // Operational (staged)
 
-    enqueue_personal_facts(&conn, facts, session_id).await?;
+    enqueue_personal_facts(&conn, facts, session_id, true).await?;
 
     // Verify Identity is enqueued as pending
     let mut rows = conn.query("SELECT count(*) FROM personal_memory_queue WHERE status = 'pending'", ()).await?;
@@ -34,8 +34,9 @@ async fn test_v3_worker_type_aware_processing() -> Result<()> {
 
     // 2. Process pending items (which is Identity)
     let settings = MemorySettings::default();
-    let processed = process_one_queue_item(&conn, &settings).await?;
-    assert!(processed, "Must process one pending item");
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let outcome = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
+    assert!(matches!(outcome, vox_lib::services::memory::orchestrator::PipelineOutcome::Ingested { .. } | vox_lib::services::memory::orchestrator::PipelineOutcome::Merged { .. }));
 
     // Identity should now be inserted directly into memory_facts (it will generate embedding/NLI)
     let mut rows = conn.query("SELECT fact, type, status FROM memory_facts WHERE collection = 'Identity'", ()).await?;
@@ -67,7 +68,7 @@ async fn test_v3_session_end_consolidation() -> Result<()> {
     ).await?;
     conn.execute(
         "INSERT INTO personal_memory_queue (fact, collection, status, session_id, created_at)
-         VALUES ('Long term goal B', 'Goals', 'staged', ?, 1100)",
+         VALUES ('Long term goal B', 'Goals', 'pending', ?, 1100)",
         (session_id,),
     ).await?;
 
@@ -93,10 +94,11 @@ async fn test_v3_session_end_consolidation() -> Result<()> {
 
     // 3. Process the pending queue items (which are Tasks and Goals)
     let settings = MemorySettings::default();
-    let processed1 = process_one_queue_item(&conn, &settings).await?;
-    assert!(processed1, "Must process first pending item");
-    let processed2 = process_one_queue_item(&conn, &settings).await?;
-    assert!(processed2, "Must process second pending item");
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let outcome1 = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
+    assert!(matches!(outcome1, vox_lib::services::memory::orchestrator::PipelineOutcome::Ingested { .. } | vox_lib::services::memory::orchestrator::PipelineOutcome::Merged { .. }));
+    let outcome2 = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
+    assert!(matches!(outcome2, vox_lib::services::memory::orchestrator::PipelineOutcome::Ingested { .. } | vox_lib::services::memory::orchestrator::PipelineOutcome::Merged { .. }));
 
     // 4. Verify operational facts are now in memory_facts
     let mut rows = conn.query("SELECT fact, collection, type, status FROM memory_facts WHERE session_id = ? AND collection IN ('Tasks', 'Goals') ORDER BY collection ASC", (session_id,)).await?;

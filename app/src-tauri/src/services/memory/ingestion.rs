@@ -54,7 +54,7 @@ pub fn run_compaction(
              <task>\n\
              Analyze the new <conversation_history> turns against <known_facts>.\n\
              Extract ONLY BRAND-NEW facts or explicit updates introduced in <conversation_history>.\n\
-             CRITICAL: Do NOT re-extract, re-word, or output facts already present in <known_facts>.\n\
+             CRITICAL: NEVER re-extract, re-word, or output facts already present in <known_facts>.\n\
              For collections with no new facts, return an empty array [].\n\
              Follow every rule in <rules> and <boundary_disambiguation>. Output ONLY the JSON object starting with {{ and ending with }}.\n\
              </task>",

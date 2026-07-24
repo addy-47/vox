@@ -278,17 +278,13 @@ fn main() -> Result<()> {
 
     // Memory Settings Configuration (BGE-M3 1024-dim, strict 0.65 threshold)
     let memory_settings = MemorySettings {
-        bg_worker_enabled: true,
-        personal_enabled: true,
+        context_retrieval_enabled: true,
+        pipeline_processing_enabled: true,
         foundational_budget_share: 0.07,
         semantic_budget_share: 0.08,
         context_chaining_window_hours: 12,
-        nli_candidate_limit: 5,
-        nli_contradiction_threshold: 0.85,
-        nli_entailment_threshold: 0.85,
-        nli_model_name: "deberta-v3-xsmall-nli".to_string(),
         personal_top_k_per_semantic_collection: 5,
-        candidate_similarity_search_threshold: 0.82,
+        semantic_similarity_cutoff: 0.65,
     };
 
     let nemotron_path = vox_lib::utils::paths::get()
@@ -484,7 +480,7 @@ fn main() -> Result<()> {
             }).unwrap_or_else(|| vec![0.0; 1024]);
 
             let personal_memory_block = tokio_handle.block_on(async {
-                vox_lib::services::memory::retrieval::retrieve_personal_context(&conn, &query_vector, &memory_settings, 2048, None).await.unwrap_or_default()
+                vox_lib::services::memory::retrieval::retrieve_personal_context(&conn, &query_vector, &memory_settings, 2048, &session_id.to_string(), None).await.unwrap_or_default()
             });
             let rag_latency = rag_start.elapsed().as_millis() as u64;
             overall_rag_latency.push(rag_latency);
