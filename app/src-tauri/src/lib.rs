@@ -203,7 +203,7 @@ pub fn run() {
             // ── 0.9 Memory Worker (Gated on Tier 1B+ and MemorySettings) ───────────
             let memory_enabled = {
                 let s = app_state.settings.read().unwrap();
-                s.memory.bg_worker_enabled && s.memory.personal_enabled
+                s.memory.pipeline_processing_enabled
             };
 
             if memory_enabled && local_gpu_info.has_gpu {

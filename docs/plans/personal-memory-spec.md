@@ -261,24 +261,49 @@ All extracted facts must flow sequentially through the 4 phases managed by `orch
      COMMIT;
      ```
 
-#### Phase 4: RAG Retrieval & Edge Resolution (User Query Time)
-1. **Two-Tier Budgeted Retrieval (`retrieval.rs`)**:
-   * Tier 1 (7% budget): Unconditional `Identity` & `Constraints`, active `Tasks` & `Goals`, and Time-Windowed `Context` timeline.
-   * Tier 2 (8% budget): Vector search across `Preferences`, `Relationships`, `Skills`, `Projects`, `Experiences` interleaved via Round-Robin selection.
-2. **Edge Resolution (`resolve_edges`)**:
+#### Phase 4: RAG Retrieval, 2-Tier Allocation & Edge Resolution (User Query Time)
+1. **Active Session Exclusion Guard**:
+   * All Tier 1 and Tier 2 SQL queries strictly enforce `AND (session_id = '' OR session_id != ?)`.
+   * Context retrieval **strictly fetches facts from PREVIOUS sessions**, as working memory is the sole authoritative context for the active live session. This eliminates 100% of context duplication between system prompt `<user_profile>` and working memory turns.
+2. **System Prompt `<memory_manifest>` Record Header**:
+   * Prepend an active record count manifest at the top of `<user_profile>`:
+     ```xml
+     <memory_manifest total_active_facts="142">
+       Identity: 2 | Constraints: 3 | Preferences: 24 | Skills: 45 | Projects: 18 | Experiences: 50
+     </memory_manifest>
+     ```
+   * Signal to downstream agentic tool-calling modules that additional un-injected profile facts exist in SQLite.
+3. **2-Tier Semantic Memory Allocation Algorithm (`retrieval.rs`)**:
+   * **Tier 2A — Guaranteed Anchor Floor ($K_{\text{base}}$ per collection)**:
+     * For each of the 5 semantic collections (`Preferences`, `Relationships`, `Skills`, `Projects`, `Experiences`), select top $K_{\text{base}}$ candidates ($K_{\text{base}} = 5$).
+     * Preserves the user's personal identity anchor across all 5 dimensions regardless of topic shifts.
+   * **Tier 2B — Global Similarity Competitive Pool ($\theta \ge 0.65$)**:
+     * Collect all remaining candidates across ALL 5 semantic collections having a similarity score $\ge 0.65$.
+     * Sort globally by cosine similarity score descending.
+     * Fill all remaining 8% Tier 2 context window budget dynamically based on pure relevance, allowing deep topic concentration.
+4. **Edge Resolution (`resolve_edges`)**:
    * Recursively resolves `USER_SUPERSEDES` pointers to replace superseded facts with their newest active versions.
    * Pulls supporting details for active `SUPPORTS` edges.
-3. **Self-Healing Context Assembly**:
+5. **Self-Healing Context Assembly**:
    * Surfacing unresolved `CONFLICTS` and `SIMILAR` relations inside the `<user_profile>` system prompt so the active LLM can naturally clarify contradictions with the user during conversation turns.
 
 ---
 
-## 6. Edge Cases, Optimizations & Failure Recovery
+## 6. Edge Cases, Optimizations & Worker Governance
 
-1. **Parallel Jaccard Optimization**: Jaccard similarity is purely lexical and CPU-bound. Executing it in parallel across candidate sets reduces pre-embedding evaluation time to $< 2$ms, eliminating unnecessary ONNX embedding calls.
-2. **NLI Fallback & Resilience**: If the local ONNX NLI model fails to load or encounters an inference exception, candidate pairs fall back gracefully to `Neutral` without crashing the application or corrupting SQLite state.
-3. **Cycle Detection in Pointer Swaps**: When resolving `USER_SUPERSEDES` graph chains, depth is capped at 10 hops with a `HashSet` visited check to prevent infinite loops from malformed database state.
-4. **Private Mode Isolation**: When Private Mode is active, all pipeline events (`PersonalFactsReady`, `SessionEnd`) are dropped in memory immediately. Zero disk writes or vector embeddings are performed.
+1. **30-Second Minimum Idle Debounce Window (`MIN_IDLE_DEBOUNCE_SECS = 30`)**:
+   * The background `vox-memory-worker` tracks continuous pipeline idle duration (`idle_since`).
+   * Background queue orchestration is suppressed on short pauses (e.g. 1–5 second gaps between turns) and only triggers after 30 seconds of continuous pipeline idle.
+2. **ONNX Interrupt Safety & CPU/GPU Contention Guard**:
+   * If `MemoryWorkerEvent::PipelineActive` arrives while a queue item is being processed, an atomic `cancel_flag` immediately aborts in-flight BGE-M3 embedding generation or DeBERTa NLI cross-encoder inference.
+   * Interrupted items revert status from `processing` back to `pending` to be re-tried during the next true idle window, completely eliminating CPU/GPU contention during speech capture.
+3. **Multilingual Combining Mark (Matra) Preservation**:
+   * Tokenization in `deduplication.rs` explicitly targets ASCII and Devanagari punctuation (`c.is_ascii_punctuation() || c == '।'`) instead of `!c.is_alphanumeric()`.
+   * Preserves Devanagari vowel marks/matras (`ॉ`, `्`, `ा`, `े`, `ै`), guaranteeing accurate Jaccard token set overlap scores for Hindi and Hinglish.
+4. **Parallel Jaccard Optimization**: Jaccard similarity is purely lexical and CPU-bound. Executing it in parallel across candidate sets reduces pre-embedding evaluation time to $< 2$ms, eliminating unnecessary ONNX embedding calls.
+5. **NLI Fallback & Resilience**: If the local ONNX NLI model fails to load or encounters an inference exception, candidate pairs fall back gracefully to `Neutral` without crashing the application or corrupting SQLite state.
+6. **Cycle Detection in Pointer Swaps**: When resolving `USER_SUPERSEDES` graph chains, depth is capped at 10 hops with a `HashSet` visited check to prevent infinite loops from malformed database state.
+7. **Private Mode Isolation**: When Private Mode is active, all pipeline events (`PersonalFactsReady`, `SessionEnd`) are dropped in memory immediately. Zero disk writes or vector embeddings are performed.
 
 ---
 
@@ -286,5 +311,6 @@ All extracted facts must flow sequentially through the 4 phases managed by `orch
 
 *   **No Synchronous Model Sweeps during Conversational Turns:** Under no circumstances may expensive embedding generation or NLI evaluation run synchronously during active user speech turns.
 *   **No Intra-Session Task Pollution:** Intermediate tasks produced during active sessions must NEVER be written to disk or embedded until session end.
+*   **No Active-Session RAG Duplication:** RAG context retrieval must NEVER fetch facts created during the active live session; active session context belongs exclusively to Working Memory.
 *   **No Logic Mixing Across Files:** Functionality must strictly adhere to the single-responsibility module boundaries defined in Section 5.1.
 *   **No Un-Transacted Graph Writes:** All database writes (facts + vectors + relations) must be wrapped in a single SQLite transaction to guarantee database consistency.

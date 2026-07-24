@@ -26,6 +26,7 @@ pub async fn enqueue_personal_facts(
     conn: &Connection,
     facts: HashMap<String, Vec<String>>,
     session_id: &str,
+    pipeline_processing_enabled: bool,
 ) -> Result<()> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -35,8 +36,10 @@ pub async fn enqueue_personal_facts(
     for (collection, fact_list) in facts {
         let status = if MemoryCollection::parse(&collection).map_or(false, |mc| mc.is_staged_during_session()) {
             PM_QUEUE_STATUS_STAGED
-        } else {
+        } else if pipeline_processing_enabled {
             PM_QUEUE_STATUS_PENDING
+        } else {
+            PM_QUEUE_STATUS_STAGED
         };
 
         for fact in fact_list {
@@ -69,14 +72,18 @@ pub async fn mark_job_failed(conn: &Connection, job_id: i64, err_msg: &str) {
     ).await;
 }
 
-/// Fetches active Identity + Constraints facts (Tier 1 Foundational).
-pub async fn fetch_foundational_facts(conn: &Connection) -> Result<Vec<MemoryFact>> {
+/// Fetches active Identity + Constraints facts (Tier 1 Foundational), excluding the active session to avoid context duplication.
+pub async fn fetch_foundational_facts(
+    conn: &Connection,
+    current_session_id: &str,
+) -> Result<Vec<MemoryFact>> {
     let mut rows = conn
         .query(
             "SELECT id, type, collection, fact, source, status, created_at FROM memory_facts
              WHERE type = 'foundational' AND status = 'active'
+               AND (session_id = '' OR session_id != ?)
              ORDER BY created_at ASC",
-            (),
+            (current_session_id.to_string(),),
         )
         .await?;
 
@@ -95,14 +102,18 @@ pub async fn fetch_foundational_facts(conn: &Connection) -> Result<Vec<MemoryFac
     Ok(list)
 }
 
-/// Fetches active Tasks + Goals facts (Tier 1 Operational).
-pub async fn fetch_operational_facts(conn: &Connection) -> Result<Vec<MemoryFact>> {
+/// Fetches active Tasks + Goals facts (Tier 1 Operational), excluding the active session to avoid context duplication.
+pub async fn fetch_operational_facts(
+    conn: &Connection,
+    current_session_id: &str,
+) -> Result<Vec<MemoryFact>> {
     let mut rows = conn
         .query(
             "SELECT id, type, collection, fact, source, status, created_at FROM memory_facts
              WHERE type = 'operational' AND collection IN ('Tasks', 'Goals') AND status = 'active'
+               AND (session_id = '' OR session_id != ?)
              ORDER BY created_at DESC",
-            (),
+            (current_session_id.to_string(),),
         )
         .await?;
 
@@ -119,6 +130,29 @@ pub async fn fetch_operational_facts(conn: &Connection) -> Result<Vec<MemoryFact
         });
     }
     Ok(list)
+}
+
+/// Fetches active record counts for all memory collections, excluding the current session.
+pub async fn fetch_active_collection_counts(
+    conn: &Connection,
+    current_session_id: &str,
+) -> Result<HashMap<String, usize>> {
+    let mut rows = conn
+        .query(
+            "SELECT collection, COUNT(*) FROM memory_facts
+             WHERE status = 'active' AND (session_id = '' OR session_id != ?)
+             GROUP BY collection",
+            (current_session_id.to_string(),),
+        )
+        .await?;
+
+    let mut map = HashMap::new();
+    while let Some(row) = rows.next().await? {
+        let col: String = row.get(0)?;
+        let count: i64 = row.get(1)?;
+        map.insert(col, count as usize);
+    }
+    Ok(map)
 }
 
 /// Fetches all currently active facts from SQLite grouped by collection.
@@ -401,7 +435,7 @@ mod tests {
         facts.insert("Goals".to_string(), vec!["Run marathon".to_string()]);
         facts.insert("Identity".to_string(), vec!["Name is Alex".to_string()]);
 
-        enqueue_personal_facts(&conn, facts, "session_123").await?;
+        enqueue_personal_facts(&conn, facts, "session_123", true).await?;
 
         // Verify Context and Tasks are 'staged'
         let mut rows = conn.query("SELECT collection, status FROM personal_memory_queue WHERE session_id = 'session_123'", ()).await?;
@@ -430,7 +464,7 @@ mod tests {
         let mut facts = HashMap::new();
         facts.insert("Context".to_string(), vec!["Intermediate context".to_string()]);
         facts.insert("Tasks".to_string(), vec!["Final task".to_string()]);
-        enqueue_personal_facts(&conn, facts, "session_456").await?;
+        enqueue_personal_facts(&conn, facts, "session_456", true).await?;
 
         session_end_consolidation(&conn, "session_456", "Final session summary narrative.").await?;
 
