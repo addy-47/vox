@@ -3,13 +3,27 @@ use ndarray::Array2;
 use std::path::Path;
 use std::sync::OnceLock;
 use tokenizers::Tokenizer;
-use crate::core::settings::MemorySettings;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Threshold above which an NLI prediction is classified as Contradiction.
+pub const NLI_CONTRADICTION_THRESHOLD: f32 = 0.85;
+/// Threshold above which an NLI prediction is classified as Entailment.
+pub const NLI_ENTAILMENT_THRESHOLD: f32 = 0.85;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum NliLabel {
     Contradiction,
     Entailment,
     Neutral,
+}
+
+impl NliLabel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NliLabel::Contradiction => "Contradiction",
+            NliLabel::Entailment => "Entailment",
+            NliLabel::Neutral => "Neutral",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -258,12 +272,29 @@ pub fn classify_pair(premise: &str, hypothesis: &str) -> Result<NliResult> {
 }
 
 /// Determines the logical relationship classification based on prediction scores and settings.
-pub fn relation_from_result(result: &NliResult, settings: &MemorySettings) -> NliRelation {
-    if result.contradiction >= settings.nli_contradiction_threshold {
+pub fn relation_from_result(result: &NliResult) -> NliRelation {
+    if result.contradiction >= NLI_CONTRADICTION_THRESHOLD {
         NliRelation::Conflicts
-    } else if result.entailment >= settings.nli_entailment_threshold {
+    } else if result.entailment >= NLI_ENTAILMENT_THRESHOLD {
         NliRelation::Supports
     } else {
         NliRelation::Neutral
     }
 }
+
+/// Returns the calibrated class mapping ([index 0, index 1, index 2]) if the engine is loaded.
+pub fn get_calibrated_class_mapping() -> Option<[NliLabel; 3]> {
+    NLI_ENGINE.get().map(|engine| engine.class_mapping)
+}
+
+/// Returns the calibrated class mapping as string labels if the engine is loaded.
+pub fn get_calibrated_class_mapping_strings() -> Option<Vec<&'static str>> {
+    NLI_ENGINE.get().map(|engine| {
+        engine
+            .class_mapping
+            .iter()
+            .map(|label| label.as_str())
+            .collect()
+    })
+}
+

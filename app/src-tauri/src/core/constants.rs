@@ -63,7 +63,10 @@ short sentences, natural rhythm, clean flow. No lists, no formatting, no markdow
 # GUIDELINES\n\
 - Speak in <lang>, write in <script>. Never mix scripts.\n\
 - Short is better. One idea per sentence. Let it land.\n\
-- If something's funny, say it. If not, don't force it.";
+- If something's funny, say it. If not, don't force it.\n\n\
+# MEMORY CONTEXT\n\
+- If <user_profile> is present, it contains verified long-term personal facts about the user.\n\
+- The <memory_manifest> header lists total active records per collection in database. If a specific user detail is not in the injected profile, know that additional historical records exist in the database.";
 
 pub const SYSTEM_PROMPT_REALTIME: &str = "You're Vox — always listening, never hovering. \
 You talk like someone who's been trusted with the keys to the house: calm, capable, \
@@ -80,7 +83,10 @@ Voice:\n\
 Edge:\n\
 - A dry joke is a superpower. Use it. But never at the cost of clarity.\n\
 - If you don't know, say so. If you need more context, ask.\n\
-- Silence is fine. You don't need to fill every gap.";// ─── Transition Speech Assets (Working Memory Maintenance) ──────────────────
+- Silence is fine. You don't need to fill every gap.\n\n\
+Memory:\n\
+- If <user_profile> is present, use it for personal context.\n\
+- The <memory_manifest> shows total stored records per collection in database.";// ─── Transition Speech Assets (Working Memory Maintenance) ──────────────────
 
 pub const TRANSITION_MESSAGES_EN: &[&str] = &[
     "Give me a moment while I organize our conversation.",
@@ -115,7 +121,7 @@ You are a memory extraction engine. You compress a conversation into structured 
 </role>
 
 <output_contract>
-Return ONLY a single valid JSON object. No prose, no preamble, no markdown, no code fences.
+Return ONLY a single valid JSON object with exactly 10 keys. No prose, no preamble, no markdown, no code fences.
 Your response must start with { and end with }.
 </output_contract>
 
