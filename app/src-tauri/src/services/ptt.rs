@@ -166,7 +166,7 @@ pub async fn ptt_stop(
     }
 
     let (turn, buffer_clone, is_realtime) = {
-        let buffer = state.ptt.audio_buffer.lock().unwrap();
+        let buffer = state.ptt.audio_buffer.lock();
         let turn = state.ptt.turn_id.load(Ordering::Relaxed);
 
         state.ptt.is_recording.store(false, Ordering::SeqCst);
@@ -251,7 +251,7 @@ pub async fn ptt_cancel(
 
     state.ptt.is_recording.store(false, Ordering::SeqCst);
     {
-        let mut buffer = state.ptt.audio_buffer.lock().unwrap();
+        let mut buffer = state.ptt.audio_buffer.lock();
         buffer.clear();
     }
 
@@ -366,7 +366,7 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
         return;
     }
 
-    let mut buffer = state.ptt.audio_buffer.lock().unwrap();
+    let mut buffer = state.ptt.audio_buffer.lock();
 
     // Capture ALL audio — the user's button press is the gate.
     if buffer.len() < MAX_PTT_SAMPLES {
@@ -458,7 +458,7 @@ pub fn handle_ptt_audio_sync(app: &AppHandle, samples: &[f32]) {
 }
 
 pub fn reset_ptt_state_inner(ptt: &crate::core::state::PttState) {
-    ptt.audio_buffer.lock().unwrap().clear();
+    ptt.audio_buffer.lock().clear();
     ptt.samples_since_partial.store(0, Ordering::Relaxed);
     ptt.samples_since_waveform.store(0, Ordering::Relaxed);
     ptt.speech_detected.store(false, Ordering::SeqCst);
@@ -471,7 +471,7 @@ pub fn reset_ptt_state_inner(ptt: &crate::core::state::PttState) {
 
 pub fn discard_ptt_hold_inner(ptt: &crate::core::state::PttState) {
     ptt.is_recording.store(false, Ordering::SeqCst);
-    ptt.audio_buffer.lock().unwrap().clear();
+    ptt.audio_buffer.lock().clear();
 }
 
 #[cfg(test)]
@@ -486,7 +486,7 @@ mod tests {
         let ptt = PttState {
             is_recording: std::sync::atomic::AtomicBool::new(true),
             turn_id: Arc::new(AtomicU32::new(5)),
-            audio_buffer: std::sync::Mutex::new(vec![1.0, 2.0, 3.0]),
+            audio_buffer: parking_lot::Mutex::new(vec![1.0, 2.0, 3.0]),
             samples_since_partial: std::sync::atomic::AtomicUsize::new(100),
             samples_since_waveform: std::sync::atomic::AtomicUsize::new(200),
             speech_detected: std::sync::atomic::AtomicBool::new(true),
@@ -495,7 +495,7 @@ mod tests {
 
         // Test reset_ptt_state_inner
         reset_ptt_state_inner(&ptt);
-        assert_eq!(ptt.audio_buffer.lock().unwrap().len(), 0);
+        assert_eq!(ptt.audio_buffer.lock().len(), 0);
         assert_eq!(ptt.samples_since_partial.load(Ordering::Relaxed), 0);
         assert_eq!(ptt.samples_since_waveform.load(Ordering::Relaxed), 0);
         assert!(!ptt.speech_detected.load(Ordering::SeqCst));
@@ -503,10 +503,10 @@ mod tests {
 
         // Test discard_ptt_hold_inner
         ptt.is_recording.store(true, Ordering::SeqCst);
-        ptt.audio_buffer.lock().unwrap().extend_from_slice(&[1.0, 2.0]);
+        ptt.audio_buffer.lock().extend_from_slice(&[1.0, 2.0]);
         discard_ptt_hold_inner(&ptt);
         assert!(!ptt.is_recording.load(Ordering::SeqCst));
-        assert_eq!(ptt.audio_buffer.lock().unwrap().len(), 0);
+        assert_eq!(ptt.audio_buffer.lock().len(), 0);
     }
 }
 

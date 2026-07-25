@@ -9,33 +9,6 @@ pub const TELEMETRY_INTERVAL: Duration = Duration::from_millis(60); // ~16.6Hz
 pub const STT_THROTTLE_MS: u64 = 800;
 pub const SYSTEM_STATS_INTERVAL: Duration = Duration::from_secs(5);
 
-// ─── Model Names & Files ─────────────────────────────────────────────────────
-pub const MODEL_DIR_STT: &str = "stt/qwen3-asr";
-pub const MODEL_DIR_STT_NEMOTRON: &str = "stt/nvidia-nemotron-3.5";
-pub const MODEL_DIR_LLM: &str = "llm/llama";
-pub const MODEL_DIR_VAD: &str = "vad";
-
-pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
-
-// ASR Filenames (Qwen3-ASR)
-pub const MODEL_FILE_ASR_FRONTEND: &str = "conv_frontend.onnx";
-pub const MODEL_FILE_ASR_ENCODER: &str = "encoder.int8.onnx";
-pub const MODEL_FILE_ASR_DECODER: &str = "decoder.int8.onnx";
-pub const MODEL_FILE_ASR_TOKENIZER: &str = "tokenizer";
-
-// LLM Filenames (Llama 3.2 1B Instruct)
-pub const MODEL_FILE_LLM_GGUF: &str = "Llama-3.2-1B-Instruct-Q4_K_M.gguf";
-
-// TTS Filenames (Supertonic 3)
-pub const MODEL_DIR_TTS_SUPER: &str = "tts/supertonic-3";
-pub const MODEL_FILE_TTS_SUPER_TEXT_ENCODER: &str = "text_encoder.int8.onnx";
-pub const MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR: &str = "duration_predictor.int8.onnx";
-pub const MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR: &str = "vector_estimator.int8.onnx";
-pub const MODEL_FILE_TTS_SUPER_VOCODER: &str = "vocoder.int8.onnx";
-pub const MODEL_FILE_TTS_SUPER_CONFIG: &str = "tts.json";
-pub const MODEL_FILE_TTS_SUPER_INDEXER: &str = "unicode_indexer.bin";
-pub const MODEL_FILE_TTS_SUPER_VOICE: &str = "voice.bin";
-
 // ─── Persistence & History ──────────────────────────────────────────────────
 pub const DB_FILENAME: &str = "vox.db";
 pub const SETTINGS_FILENAME: &str = "settings.json";
@@ -307,15 +280,4 @@ pub const PM_QUEUE_STATUS_STAGED: &str = "staged";
 pub const PM_QUEUE_STATUS_PROCESSING: &str = "processing";
 pub const PM_QUEUE_STATUS_COMPLETED: &str = "completed";
 pub const PM_QUEUE_STATUS_FAILED: &str = "failed";
-
-// ─── Model Paths ──────────────────────────────────────────────────────────────
-pub const MODEL_DIR_NLI: &str = "nli";
-pub const MODEL_FILE_NLI_ONNX: &str = "model_quantized.onnx";
-pub const MODEL_FILE_NLI_TOKENIZER: &str = "tokenizer.json";
-pub const MODEL_DIR_NLI_DEFAULT: &str = "deberta-v3-xsmall-nli";
-
-// ─── NLI Logit Label Indices ──────────────────────────────────────────────────
-pub const NLI_LABEL_CONTRADICTION: usize = 0;
-pub const NLI_LABEL_ENTAILMENT: usize = 1;
-pub const NLI_LABEL_NEUTRAL: usize = 2;
 

@@ -5,11 +5,12 @@ use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
     OfflineTtsSupertonicModelConfig,
 };
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Minimum quality steps (fast but slurred).
 const MIN_QUALITY_STEPS: u32 = 2;
@@ -129,18 +130,18 @@ impl TtsEngine {
             model: OfflineTtsModelConfig {
                 supertonic: OfflineTtsSupertonicModelConfig {
                     duration_predictor: Some(mp(
-                        crate::core::constants::MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR,
+                        crate::services::tts::MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR,
                     )),
                     text_encoder: Some(mp(
-                        crate::core::constants::MODEL_FILE_TTS_SUPER_TEXT_ENCODER,
+                        crate::services::tts::MODEL_FILE_TTS_SUPER_TEXT_ENCODER,
                     )),
                     vector_estimator: Some(mp(
-                        crate::core::constants::MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR,
+                        crate::services::tts::MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR,
                     )),
-                    vocoder: Some(mp(crate::core::constants::MODEL_FILE_TTS_SUPER_VOCODER)),
-                    tts_json: Some(mp(crate::core::constants::MODEL_FILE_TTS_SUPER_CONFIG)),
-                    unicode_indexer: Some(mp(crate::core::constants::MODEL_FILE_TTS_SUPER_INDEXER)),
-                    voice_style: Some(mp(crate::core::constants::MODEL_FILE_TTS_SUPER_VOICE)),
+                    vocoder: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_VOCODER)),
+                    tts_json: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_CONFIG)),
+                    unicode_indexer: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_INDEXER)),
+                    voice_style: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_VOICE)),
                 },
                 num_threads: 2,
                 debug: false,
@@ -234,7 +235,7 @@ impl TtsProvider for TtsEngine {
         let event_tx_cb = event_tx.clone();
         let mut lpf = BiquadFilter::new_lpf_11k();
 
-        let tts_guard = self.tts.lock().unwrap();
+        let tts_guard = self.tts.lock();
         let audio = tts_guard.generate_with_config(
             text,
             &gen_config,
