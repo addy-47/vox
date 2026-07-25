@@ -46,9 +46,7 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
             .pipeline
             .current_state_atomic
             .store(InteractionState::Idle as u32, Ordering::Relaxed);
-        if let Ok(mut state_lock) = state.pipeline.state.lock() {
-            *state_lock = InteractionState::Idle;
-        }
+        *state.pipeline.state.lock() = InteractionState::Idle;
 
         // 2. Signal threads via channels (Primary exit path)
         let _ = engine.pipeline_tx.send(VoxEvent::Shutdown);
@@ -70,7 +68,7 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
         // 3. Gracefully shutdown Persistence Worker (Architect's requirement)
         // This closes the SQLite connection and flushes the WAL.
         {
-            let mut persist_lock = state.persist_tx.lock().unwrap();
+            let mut persist_lock = state.persist_tx.lock();
             if let Some(tx) = persist_lock.take() {
                 let _ = tx.send(crate::persistence::events::PersistenceEvent::Shutdown);
                 log::info!("[PIPELINE] Persistence worker signaled to shutdown/flush.");
@@ -119,7 +117,7 @@ pub async fn engage(
 
             // Persist Session Start
             {
-                let persist_tx = state.persist_tx.lock().unwrap();
+                let persist_tx = state.persist_tx.lock();
                 if let Some(ref tx) = *persist_tx {
                     if let Err(_) = tx.try_send(
                         crate::persistence::events::PersistenceEvent::SessionStarted {
@@ -136,7 +134,7 @@ pub async fn engage(
 
             // Notify Memory Worker of Active Session Change
             {
-                let memory_tx = state.memory_tx.lock().unwrap();
+                let memory_tx = state.memory_tx.lock();
                 if let Some(ref tx) = *memory_tx {
                     let _ = tx.try_send(
                         crate::persistence::memory_worker::MemoryWorkerEvent::ActiveSessionChanged {
@@ -214,7 +212,7 @@ pub async fn engage(
                     "[Session] <<< USER SESSION ENDED (User Disengaged): id={}",
                     conv_id
                 );
-                let persist_tx = state.persist_tx.lock().unwrap();
+                let persist_tx = state.persist_tx.lock();
                 if let Some(ref tx) = *persist_tx {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -233,9 +231,9 @@ pub async fn engage(
                 }
 
                 // Trigger Memory SessionEnd consolidation
-                let memory_tx = state.memory_tx.lock().unwrap();
+                let memory_tx = state.memory_tx.lock();
                 if let Some(ref tx) = *memory_tx {
-                    let summary = state.conversation_manager.lock().unwrap().latest_summary();
+                    let summary = state.conversation_manager.lock().latest_summary();
                     let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
                         session_id: conv_id.to_string(),
                         summary,
@@ -249,7 +247,7 @@ pub async fn engage(
             .store(InteractionOwner::Tray as u32, Ordering::Relaxed);
 
         {
-            let mut state_lock = state.pipeline.state.lock().unwrap();
+            let mut state_lock = state.pipeline.state.lock();
             *state_lock = InteractionState::Idle;
         }
         let _ = app.emit_to("main", "state_changed", InteractionState::Idle);
@@ -291,7 +289,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     // ── Re-spawn Persistence Worker if needed ──────────────────────────────
     // If the app was idle, the persistence worker was shut down to free the DB lock.
     {
-        let mut persist_lock = state.persist_tx.lock().unwrap();
+        let mut persist_lock = state.persist_tx.lock();
         if persist_lock.is_none() {
             log::info!("[PIPELINE] Re-spawning Persistence Worker...");
             let tx = crate::persistence::worker::spawn_persistence_worker(
@@ -353,9 +351,9 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             crate::core::settings::SttProviderConfig::Embedded { ref model_type } => {
                 let path = match model_type.as_str() {
                     "nvidia_nemotron" => {
-                        models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON)
+                        models_dir.join(crate::services::stt::MODEL_DIR_STT_NEMOTRON)
                     }
-                    _ => models_dir.join(crate::core::constants::MODEL_DIR_STT),
+                    _ => models_dir.join(crate::services::stt::MODEL_DIR_STT_QWEN),
                 };
                 match create_stt_provider(&asr_provider, &path) {
                     Ok(provider) => {
@@ -403,22 +401,22 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                     } else {
                         Some(
                             models_dir
-                                .join(crate::core::constants::MODEL_DIR_VAD)
-                                .join(crate::core::constants::MODEL_FILE_VAD),
+                                .join(crate::services::vad::MODEL_DIR_VAD)
+                                .join(crate::services::vad::MODEL_FILE_VAD),
                         )
                     }
                 } else {
                     Some(
                         models_dir
-                            .join(crate::core::constants::MODEL_DIR_VAD)
-                            .join(crate::core::constants::MODEL_FILE_VAD),
+                            .join(crate::services::vad::MODEL_DIR_VAD)
+                            .join(crate::services::vad::MODEL_FILE_VAD),
                     )
                 }
             } else {
                 Some(
                     models_dir
-                        .join(crate::core::constants::MODEL_DIR_VAD)
-                        .join(crate::core::constants::MODEL_FILE_VAD),
+                        .join(crate::services::vad::MODEL_DIR_VAD)
+                        .join(crate::services::vad::MODEL_FILE_VAD),
                 )
             }
         } else {
@@ -557,21 +555,21 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                     models_dir.join(&file.path)
                 } else {
                     models_dir
-                        .join(crate::core::constants::MODEL_DIR_LLM)
-                        .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+                        .join(crate::services::llm::MODEL_DIR_LLM)
+                        .join(crate::services::llm::MODEL_FILE_LLM_GGUF)
                 }
             } else {
                 models_dir
-                    .join(crate::core::constants::MODEL_DIR_LLM)
-                    .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+                    .join(crate::services::llm::MODEL_DIR_LLM)
+                    .join(crate::services::llm::MODEL_FILE_LLM_GGUF)
             }
         } else {
             models_dir
-                .join(crate::core::constants::MODEL_DIR_LLM)
-                .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+                .join(crate::services::llm::MODEL_DIR_LLM)
+                .join(crate::services::llm::MODEL_FILE_LLM_GGUF)
         };
 
-        let super_tts = models_dir.join(crate::core::constants::MODEL_DIR_TTS_SUPER);
+        let super_tts = models_dir.join(crate::services::tts::MODEL_DIR_TTS_SUPER);
 
         (super_tts, llm)
     };
@@ -616,7 +614,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         std::sync::Arc::clone(&state.pipeline.is_engaged),
         std::sync::Arc::clone(&state.pipeline.transcript_history),
         std::sync::Arc::clone(&state.conversation_id),
-        state.persist_tx.lock().unwrap().clone(),
+        state.persist_tx.lock().clone(),
         std::sync::Arc::clone(&state.dropped_persistence_events),
         std::sync::Arc::clone(&state.latest_voice_latency_ms),
         std::sync::Arc::clone(&state.latest_tts_rtf),

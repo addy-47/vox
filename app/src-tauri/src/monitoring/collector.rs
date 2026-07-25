@@ -123,7 +123,6 @@ fn collect_snapshot(
         persistence_queue_depth: state
             .persist_tx
             .lock()
-            .unwrap()
             .as_ref()
             .map(|tx| tx.len())
             .unwrap_or(0),
@@ -159,7 +158,7 @@ fn collect_snapshot(
         is_sleeping: state.is_sleeping.load(Ordering::Relaxed),
         is_engaged: state.pipeline.is_engaged.load(Ordering::Relaxed),
 
-        cpu_governor: state.cpu_governor.lock().unwrap().clone(),
+        cpu_governor: state.cpu_governor.lock().clone(),
         cpu_governor_optimal: state.cpu_governor_optimal.load(Ordering::Relaxed),
 
         timestamp_ms: now,

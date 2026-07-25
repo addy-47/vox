@@ -214,7 +214,7 @@ fn main() -> Result<()> {
         },
         ModelConfig {
             name: "DeBERTa-v3-xSmall-NLI".to_string(),
-            dir_name: "deberta-v3-xsmall-nli".to_string(),
+            dir_name: "deberta-v3-xsmall".to_string(),
         },
         ModelConfig {
             name: "DeBERTa-v3-Small-NLI".to_string(),

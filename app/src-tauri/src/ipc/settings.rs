@@ -614,18 +614,18 @@ pub async fn check_llm_provider_health(
                         models_dir.join(&file.path)
                     } else {
                         models_dir
-                            .join(crate::core::constants::MODEL_DIR_LLM)
-                            .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+                            .join(crate::services::llm::MODEL_DIR_LLM)
+                            .join(crate::services::llm::MODEL_FILE_LLM_GGUF)
                     }
                 } else {
                     models_dir
-                        .join(crate::core::constants::MODEL_DIR_LLM)
-                        .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+                        .join(crate::services::llm::MODEL_DIR_LLM)
+                        .join(crate::services::llm::MODEL_FILE_LLM_GGUF)
                 }
             } else {
                 models_dir
-                    .join(crate::core::constants::MODEL_DIR_LLM)
-                    .join(crate::core::constants::MODEL_FILE_LLM_GGUF)
+                    .join(crate::services::llm::MODEL_DIR_LLM)
+                    .join(crate::services::llm::MODEL_FILE_LLM_GGUF)
             };
 
             Ok(llm_path.exists())
@@ -669,8 +669,8 @@ pub async fn check_stt_provider_health(
         SttProviderConfig::Embedded { model_type } => {
             let models_dir = paths::get().models.clone();
             let model_path = match model_type.as_str() {
-                "nvidia_nemotron" => models_dir.join(crate::core::constants::MODEL_DIR_STT_NEMOTRON),
-                _ => models_dir.join(crate::core::constants::MODEL_DIR_STT),
+                "nvidia_nemotron" => models_dir.join(crate::services::stt::MODEL_DIR_STT_NEMOTRON),
+                _ => models_dir.join(crate::services::stt::MODEL_DIR_STT_QWEN),
             };
             Ok(model_path.exists())
         }
@@ -711,12 +711,12 @@ pub async fn check_tts_provider_health(
     match config {
         TtsProviderConfig::Supertonic => {
             let models_dir = paths::get().models.clone();
-            let model_path = models_dir.join(crate::core::constants::MODEL_DIR_TTS_SUPER);
+            let model_path = models_dir.join(crate::services::tts::MODEL_DIR_TTS_SUPER);
             Ok(model_path.exists())
         }
         TtsProviderConfig::Chatterbox { .. } => {
             let models_dir = paths::get().models.clone();
-            let model_path = models_dir.join("tts").join("chatterbox");
+            let model_path = models_dir.join(crate::services::tts::MODEL_DIR_TTS_CHATTERBOX);
             Ok(model_path.exists())
         }
         TtsProviderConfig::ChatterboxRemote { ref endpoint, .. } => {
@@ -764,7 +764,7 @@ pub async fn list_llm_models(
         LlmProviderConfig::Embedded => {
             let llm_dir = paths::get()
                 .models
-                .join(crate::core::constants::MODEL_DIR_LLM);
+                .join(crate::services::llm::MODEL_DIR_LLM);
             let models =
                 EmbeddedProvider::list_models_in_dir(&llm_dir).map_err(|e| e.to_string())?;
             Ok(models)

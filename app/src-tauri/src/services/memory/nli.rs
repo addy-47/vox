@@ -39,8 +39,12 @@ pub enum NliRelation {
     Neutral,
 }
 
+pub const NLI_MODEL_DIR: &str = "deberta-v3-xsmall";
+pub const NLI_MODEL_FILENAME: &str = "model_quantized.onnx";
+pub const TOKENIZER_FILENAME: &str = "tokenizer.json";
+
 pub struct NliEngine {
-    session: std::sync::Mutex<ort::session::Session>,
+    session: parking_lot::Mutex<ort::session::Session>,
     tokenizer: Tokenizer,
     has_token_type_ids: bool,
     class_mapping: [NliLabel; 3],
@@ -49,22 +53,19 @@ pub struct NliEngine {
 static NLI_ENGINE: OnceLock<NliEngine> = OnceLock::new();
 
 /// Loads the NLI model from disk and runs calibration to determine output label indices.
-pub fn init_nli_engine(model_dir: &Path) -> Result<()> {
-    let model_path = if model_dir.join("model_quantized.onnx").exists() {
-        model_dir.join("model_quantized.onnx")
-    } else if model_dir.join("model_int8.onnx").exists() {
-        model_dir.join("model_int8.onnx")
-    } else {
-        model_dir.join("model.onnx")
-    };
-
-    let tokenizer_path = model_dir.join("tokenizer.json");
+/// Returns `Ok(true)` if loaded, `Ok(false)` if model assets are missing.
+pub fn init_nli_engine(model_dir: &Path) -> Result<bool> {
+    let model_path = model_dir.join(NLI_MODEL_FILENAME);
+    let tokenizer_path = model_dir.join(TOKENIZER_FILENAME);
 
     if !model_path.exists() || !tokenizer_path.exists() {
-        return Err(anyhow!(
-            "[NliEngine] Model or tokenizer file missing in {:?}",
-            model_dir
-        ));
+        log::warn!(
+            "[NliEngine] NLI model or tokenizer file missing in {:?}. Expected model: {}, tokenizer: {}. Skipping init.",
+            model_dir,
+            NLI_MODEL_FILENAME,
+            TOKENIZER_FILENAME
+        );
+        return Ok(false);
     }
 
     let mut tokenizer = Tokenizer::from_file(&tokenizer_path)
@@ -93,7 +94,7 @@ pub fn init_nli_engine(model_dir: &Path) -> Result<()> {
     let class_mapping = [NliLabel::Contradiction, NliLabel::Entailment, NliLabel::Neutral];
 
     let mut engine = NliEngine {
-        session: std::sync::Mutex::new(session),
+        session: parking_lot::Mutex::new(session),
         tokenizer,
         has_token_type_ids,
         class_mapping,
@@ -111,7 +112,7 @@ pub fn init_nli_engine(model_dir: &Path) -> Result<()> {
         );
     }
 
-    Ok(())
+    Ok(true)
 }
 
 impl NliEngine {
@@ -162,50 +163,57 @@ impl NliEngine {
     }
 
     fn raw_predict(&self, premise: &str, hypothesis: &str) -> Result<Vec<f32>> {
-        let encoding = self.tokenizer
-            .encode((premise, hypothesis), true)
-            .map_err(|e| anyhow!("Tokenization failed: {:?}", e))?;
+        let encoding = self
+            .tokenizer
+            .encode(format!("{} [SEP] {}", premise, hypothesis), true)
+            .map_err(|e| anyhow!("NLI Tokenization failed: {:?}", e))?;
 
         let ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
-        let mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
+        let mask: Vec<i64> = encoding
+            .get_attention_mask()
+            .iter()
+            .map(|&x| x as i64)
+            .collect();
         let seq_len = ids.len();
-
-        if seq_len == 0 {
-            return Ok(vec![0.0, 0.0, 0.0]);
-        }
 
         let input_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), ids)?;
         let attention_mask_arr = Array2::<i64>::from_shape_vec((1, seq_len), mask)?;
 
         let input_ids_tensor = ort::value::Tensor::from_array(input_ids_arr)
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("Failed to create NLI input_ids tensor: {:?}", e))?;
         let attention_mask_tensor = ort::value::Tensor::from_array(attention_mask_arr)
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("Failed to create NLI attention_mask tensor: {:?}", e))?;
 
-        let mut session_guard = self.session.lock().map_err(|e| anyhow!("Session lock poisoned: {}", e))?;
+        let mut session_guard = self.session.lock();
 
         let outputs = if self.has_token_type_ids {
             let type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
             let type_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), type_ids)?;
             let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
-                .map_err(|e| anyhow!("{:?}", e))?;
+                .map_err(|e| anyhow!("Failed to create NLI type_ids tensor: {:?}", e))?;
+
             session_guard.run(ort::inputs![
                 "input_ids" => input_ids_tensor,
                 "attention_mask" => attention_mask_tensor,
                 "token_type_ids" => type_ids_tensor
-            ]).map_err(|e| anyhow!("{:?}", e))?
+            ]).map_err(|e| anyhow!("NLI ONNX inference error: {:?}", e))?
         } else {
             session_guard.run(ort::inputs![
                 "input_ids" => input_ids_tensor,
                 "attention_mask" => attention_mask_tensor
-            ]).map_err(|e| anyhow!("{:?}", e))?
+            ]).map_err(|e| anyhow!("NLI ONNX inference error: {:?}", e))?
         };
 
-        let output_key = outputs.keys().next().ok_or_else(|| anyhow!("No output in model"))?;
-        let logits_array = outputs[output_key].try_extract_array::<f32>().map_err(|e| anyhow!("{:?}", e))?;
+        let output_key = outputs
+            .keys()
+            .next()
+            .ok_or_else(|| anyhow!("No output key found in NLI ONNX model"))?;
+        let logits_array = outputs[output_key]
+            .try_extract_array::<f32>()
+            .map_err(|e| anyhow!("Failed to extract NLI logits array: {:?}", e))?;
 
         let shape = logits_array.shape();
-        if shape.len() < 2 || shape[0] != 1 || shape[1] < 3 {
+        if shape.len() < 2 || shape[1] < 3 {
             return Err(anyhow!(
                 "Invalid output logits tensor dimensions. Expected [1, >=3], received: {:?}",
                 shape
@@ -221,9 +229,10 @@ impl NliEngine {
 }
 
 /// Lazily loads the NLI engine if not already loaded.
-pub fn ensure_nli_loaded(model_name: &str) -> Result<()> {
+/// Returns `Ok(true)` if ready, `Ok(false)` if assets are missing.
+pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {
     if NLI_ENGINE.get().is_some() {
-        return Ok(());
+        return Ok(true);
     }
 
     let models_dir = if let Some(p) = crate::utils::paths::try_get() {
@@ -232,7 +241,16 @@ pub fn ensure_nli_loaded(model_name: &str) -> Result<()> {
         dirs::home_dir().unwrap_or_default().join(".vox").join("models")
     };
 
-    let nli_model_dir = models_dir.join("nli").join(model_name);
+    let target_dir = if model_name.is_empty()
+        || model_name == "deberta-v3-xsmall-nli"
+        || model_name == "deberta-v3-xsmall"
+    {
+        NLI_MODEL_DIR
+    } else {
+        model_name
+    };
+
+    let nli_model_dir = models_dir.join("nli").join(target_dir);
     init_nli_engine(&nli_model_dir)
 }
 

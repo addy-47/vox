@@ -1,4 +1,4 @@
-use crate::core::constants::{
+use crate::services::stt::{
     MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER, MODEL_FILE_ASR_FRONTEND,
     MODEL_FILE_ASR_TOKENIZER,
 };

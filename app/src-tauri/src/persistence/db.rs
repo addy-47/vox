@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::core::error::PersistenceError;
 use turso::{Builder, Connection};
 
 /// Global static cell to hold the main Tokio runtime handle.
@@ -25,7 +25,7 @@ pub struct VoxDb;
 
 impl VoxDb {
     /// Opens a connection to the local database file.
-    pub async fn open(path: &std::path::Path) -> Result<Connection> {
+    pub async fn open(path: &std::path::Path) -> Result<Connection, PersistenceError> {
         let path_str = path.to_string_lossy();
         let db = Builder::new_local(&path_str)
             .experimental_index_method(true)
@@ -41,7 +41,7 @@ impl VoxDb {
 
     /// Open a connection for IPC history queries.
     /// In Turso, since connections are cheap and safe, this behaves exactly like `open`.
-    pub async fn open_readonly(path: &std::path::Path) -> Result<Connection> {
+    pub async fn open_readonly(path: &std::path::Path) -> Result<Connection, PersistenceError> {
         Self::open(path).await
     }
 }

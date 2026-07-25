@@ -289,7 +289,7 @@ fn main() -> Result<()> {
 
     let nemotron_path = vox_lib::utils::paths::get()
         .models
-        .join(vox_lib::core::constants::MODEL_DIR_STT_NEMOTRON);
+        .join(vox_lib::services::stt::MODEL_DIR_STT_NEMOTRON);
 
     let stt_provider: Box<dyn SttProvider> = if args.text_only {
         println!("  [INFO] Text-Only Mode active. Skipping Real STT Engine loading...");

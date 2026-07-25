@@ -111,7 +111,7 @@ pub struct VoxEngine {
 pub struct PttState {
     pub is_recording: std::sync::atomic::AtomicBool,
     pub turn_id: Arc<AtomicU32>,
-    pub audio_buffer: std::sync::Mutex<Vec<f32>>,
+    pub audio_buffer: parking_lot::Mutex<Vec<f32>>,
     pub samples_since_partial: std::sync::atomic::AtomicUsize,
     pub samples_since_waveform: std::sync::atomic::AtomicUsize,
     pub speech_detected: std::sync::atomic::AtomicBool,
@@ -141,12 +141,12 @@ pub struct PipelineAtomics {
     /// Persistence identity is AppState::conversation_id.
     pub turn_id: Arc<AtomicU32>,
     /// Current interaction state (Idle, Listening, etc.)
-    pub state: Arc<std::sync::Mutex<InteractionState>>,
+    pub state: Arc<parking_lot::Mutex<InteractionState>>,
     /// `true` if the main application is "engaged" (active interaction).
     /// If false, the pipeline remains in a dormant, STT-only state.
     pub is_engaged: Arc<AtomicBool>,
     /// In-memory history of recent transcripts. Bridge to Phase 6.3 persistence.
-    pub transcript_history: Arc<std::sync::Mutex<VecDeque<String>>>,
+    pub transcript_history: Arc<parking_lot::Mutex<VecDeque<String>>>,
     /// Track playback underruns for monitoring.
     pub playback_underruns: Arc<std::sync::atomic::AtomicU64>,
     /// `true` while the system is in AssistantSpeaking state.
@@ -167,9 +167,9 @@ impl PipelineAtomics {
             llm_generating: Arc::new(AtomicBool::new(false)),
             tts_generating: Arc::new(AtomicBool::new(false)),
             turn_id: Arc::new(AtomicU32::new(0)),
-            state: Arc::new(std::sync::Mutex::new(InteractionState::Idle)),
+            state: Arc::new(parking_lot::Mutex::new(InteractionState::Idle)),
             is_engaged: Arc::new(AtomicBool::new(false)),
-            transcript_history: Arc::new(std::sync::Mutex::new(VecDeque::with_capacity(
+            transcript_history: Arc::new(parking_lot::Mutex::new(VecDeque::with_capacity(
                 crate::core::constants::TRANSCRIPT_HISTORY_LIMIT,
             ))),
             playback_underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -188,7 +188,7 @@ impl PipelineAtomics {
         owner: InteractionOwner,
         app_handle: &tauri::AppHandle,
     ) {
-        let mut state_lock = self.state.lock().unwrap();
+        let mut state_lock = self.state.lock();
         if *state_lock != new_state {
             log::debug!(
                 "[Pipeline] State changed -> {:?} (Owner: {:?})",
@@ -281,11 +281,11 @@ pub struct AppState {
     pub runtime_status: Arc<std::sync::atomic::AtomicU32>, // RuntimeStatus as u32
 
     /// Persistence worker channel. None if persistence is disabled or hibernating.
-    pub persist_tx: std::sync::Mutex<
+    pub persist_tx: parking_lot::Mutex<
         Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
     >,
     /// Background memory worker channel. None if memory worker is disabled.
-    pub memory_tx: std::sync::Mutex<
+    pub memory_tx: parking_lot::Mutex<
         Option<crossbeam_channel::Sender<crate::persistence::memory_worker::MemoryWorkerEvent>>,
     >,
     /// Track dropped persistence events for monitoring.
@@ -300,11 +300,11 @@ pub struct AppState {
     pub manifest: Arc<tokio::sync::RwLock<Option<crate::setup::manifest::VoxManifest>>>,
 
     /// CPU frequency governor (Linux). Checked once at startup. Empty string if unavailable.
-    pub cpu_governor: std::sync::Mutex<String>,
+    pub cpu_governor: parking_lot::Mutex<String>,
     /// Whether the CPU governor is optimal ("performance"). True if unavailable (non-Linux).
     pub cpu_governor_optimal: Arc<AtomicBool>,
     pub setup_running: Arc<Mutex<bool>>,
-    pub conversation_manager: Arc<std::sync::Mutex<crate::services::memory::ConversationManager>>,
+    pub conversation_manager: Arc<parking_lot::Mutex<crate::services::memory::ConversationManager>>,
 }
 
 impl AppState {
@@ -360,7 +360,7 @@ impl AppState {
             ptt: PttState {
                 is_recording: std::sync::atomic::AtomicBool::new(false),
                 turn_id: Arc::new(AtomicU32::new(0)),
-                audio_buffer: std::sync::Mutex::new(Vec::new()),
+                audio_buffer: parking_lot::Mutex::new(Vec::new()),
                 samples_since_partial: std::sync::atomic::AtomicUsize::new(0),
                 samples_since_waveform: std::sync::atomic::AtomicUsize::new(0),
                 speech_detected: std::sync::atomic::AtomicBool::new(false),
@@ -399,17 +399,17 @@ impl AppState {
             is_vad_loaded: Arc::new(AtomicBool::new(false)),
             is_sleeping: Arc::new(AtomicBool::new(false)),
             runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
-            persist_tx: std::sync::Mutex::new(None),
-            memory_tx: std::sync::Mutex::new(None),
+            persist_tx: parking_lot::Mutex::new(None),
+            memory_tx: parking_lot::Mutex::new(None),
             dropped_persistence_events: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             dropped_telemetry_events,
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
             model_manager,
             manifest,
-            cpu_governor: std::sync::Mutex::new(String::new()),
+            cpu_governor: parking_lot::Mutex::new(String::new()),
             cpu_governor_optimal: Arc::new(AtomicBool::new(true)), // optimistic default
             setup_running: Arc::new(Mutex::new(false)),
-            conversation_manager: Arc::new(std::sync::Mutex::new(
+            conversation_manager: Arc::new(parking_lot::Mutex::new(
                 crate::services::memory::ConversationManager::new(initial_ctx_size),
             )),
         }

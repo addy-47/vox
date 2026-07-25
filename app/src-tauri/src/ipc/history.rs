@@ -8,7 +8,7 @@ use tauri::State;
 pub async fn get_transcript_history(
     state: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
-    let history = state.pipeline.transcript_history.lock().unwrap();
+    let history = state.pipeline.transcript_history.lock();
     Ok(history.iter().cloned().collect())
 }
 
@@ -19,7 +19,7 @@ pub async fn commit_session_to_history(
     state: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
     if !text.trim().is_empty() {
-        let mut history = state.pipeline.transcript_history.lock().unwrap();
+        let mut history = state.pipeline.transcript_history.lock();
         // Prevent duplicate consecutive entries
         if history.front() != Some(&text) {
             history.push_front(text);
@@ -32,7 +32,7 @@ pub async fn commit_session_to_history(
             }
         }
     }
-    let history = state.pipeline.transcript_history.lock().unwrap();
+    let history = state.pipeline.transcript_history.lock();
     Ok(history.iter().cloned().collect())
 }
 

@@ -13,10 +13,11 @@ use crate::core::events::VoxEvent;
 use super::{TtsProvider, TtsProviderKind};
 use anyhow::{anyhow, Result};
 use chatterbox_rs::{Engine, EngineOptions};
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Minimum quality steps (fast, lower audio quality).
 const MIN_QUALITY_STEPS: u32 = 2;
@@ -57,16 +58,8 @@ impl ChatterboxEngine {
         speed: f32,
         reference_audio: Option<&str>,
     ) -> Result<Self> {
-        let t3_path = if model_path.join("t3-q4_0.gguf").exists() {
-            model_path.join("t3-q4_0.gguf")
-        } else {
-            model_path.join("chatterbox-t3-mtl-q4_0.gguf")
-        };
-        let s3_path = if model_path.join("s3gen-f16.gguf").exists() {
-            model_path.join("s3gen-f16.gguf")
-        } else {
-            model_path.join("chatterbox-s3gen-mtl-f16.gguf")
-        };
+        let t3_path = model_path.join("t3-q4_0.gguf");
+        let s3_path = model_path.join("s3gen-f16.gguf");
 
         if !t3_path.exists() {
             return Err(anyhow!(
@@ -212,9 +205,7 @@ impl TtsProvider for ChatterboxEngine {
 
         // Lock engine, synthesize, release lock before sending events.
         let pcm = {
-            let engine = self.engine.lock().map_err(|e| {
-                anyhow!("Chatterbox mutex poisoned: {}", e)
-            })?;
+            let engine = self.engine.lock();
             let result = engine.synthesize(text).map_err(|e| {
                 anyhow!("Chatterbox synthesis failed: {}", e)
             })?;
