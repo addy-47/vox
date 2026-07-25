@@ -5,7 +5,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use crate::core::settings::VoxSettings;
-pub use crate::persistence::repository::{encode_f32_blob, decode_f32_blob, enqueue_personal_facts, session_end_consolidation};
+pub use crate::persistence::{encode_f32_blob, decode_f32_blob};
+pub use crate::persistence::mutations::{enqueue_personal_facts, session_end_consolidation};
 pub use crate::services::memory::orchestrator::process_one_queue_item;
 
 pub const MIN_IDLE_DEBOUNCE_SECS: u64 = 30;
