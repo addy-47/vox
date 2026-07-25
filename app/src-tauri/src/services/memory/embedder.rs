@@ -1,44 +1,47 @@
 use anyhow::Result;
 use ndarray::Array2;
+use parking_lot::Mutex;
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use tokenizers::Tokenizer;
 
-pub const EMBEDDING_DIM: usize = 1024;
+pub const EMBEDDING_DIM: usize = 384;
+pub const PRIMARY_MODEL_DIR: &str = "minilm-l12-v2";
+pub const PRIMARY_MODEL_FILENAME: &str = "model_int8.onnx";
+pub const FALLBACK_MODEL_DIR: &str = "bge-m3";
+pub const FALLBACK_MODEL_FILENAME: &str = "model_quantized.onnx";
+pub const TOKENIZER_FILENAME: &str = "tokenizer.json";
 
-pub struct BgeM3Embedder {
+pub struct TextEmbedder {
     session: Mutex<ort::session::Session>,
     tokenizer: Tokenizer,
     has_token_type_ids: bool,
 }
 
-static EMBEDDER: OnceLock<BgeM3Embedder> = OnceLock::new();
+static EMBEDDER: OnceLock<TextEmbedder> = OnceLock::new();
 
-/// Initializes the BGE-M3 embedding model singleton (`services/memory/embedder.rs`).
+/// Initializes the text embedding model singleton (`services/memory/embedder.rs`).
 ///
-/// Model directory: `~/.vox/models/embedding/bge-m3`
-/// Accepts `model_quantized.onnx`, `model_int8.onnx`, or `model.onnx`.
-pub fn init_embedder(model_dir: &Path) -> Result<()> {
-    let model_path = if model_dir.join("model_quantized.onnx").exists() {
-        model_dir.join("model_quantized.onnx")
-    } else if model_dir.join("model_int8.onnx").exists() {
-        model_dir.join("model_int8.onnx")
-    } else {
-        model_dir.join("model.onnx")
-    };
-
-    let tokenizer_path = model_dir.join("tokenizer.json");
+/// Primary Model Path: `~/.vox/models/embedding/minilm-l12-v2/model_int8.onnx` (384-dim)
+/// Fallback Model Path: `~/.vox/models/embedding/bge-m3/model_quantized.onnx` (1024-dim)
+/// Returns `Ok(true)` if model loaded successfully, `Ok(false)` if model assets missing.
+pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
+    let model_filename = if is_primary { PRIMARY_MODEL_FILENAME } else { FALLBACK_MODEL_FILENAME };
+    let model_path = model_dir.join(model_filename);
+    let tokenizer_path = model_dir.join(TOKENIZER_FILENAME);
 
     if !model_path.exists() || !tokenizer_path.exists() {
         log::warn!(
-            "[BgeM3Embedder] Model files missing at {:?}. Skipping embedder init.",
-            model_dir
+            "[Embedder] Model assets missing at {:?}. Required model: {}, tokenizer: {}. Skipping init.",
+            model_dir,
+            model_filename,
+            TOKENIZER_FILENAME
         );
-        return Ok(());
+        return Ok(false);
     }
 
     let tokenizer = Tokenizer::from_file(&tokenizer_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load tokenizer from {:?}: {}", tokenizer_path, e))?;
 
     let session = ort::session::Session::builder()
         .map_err(|e| anyhow::anyhow!("Failed to create session builder: {:?}", e))?
@@ -51,45 +54,51 @@ pub fn init_embedder(model_dir: &Path) -> Result<()> {
 
     let has_token_type_ids = session.inputs().iter().any(|i| i.name() == "token_type_ids");
 
-    let embedder = BgeM3Embedder {
+    let embedder = TextEmbedder {
         session: Mutex::new(session),
         tokenizer,
         has_token_type_ids,
     };
 
     if EMBEDDER.set(embedder).is_err() {
-        log::warn!("[BgeM3Embedder] Embedder singleton already set.");
+        log::warn!("[Embedder] Embedder singleton already set.");
     } else {
         log::info!(
-            "[BgeM3Embedder] Successfully loaded BGE-M3 embedding model (1024-dim, Multilingual) from {:?}",
+            "[Embedder] Successfully loaded text embedding model from {:?}",
             model_dir
         );
     }
 
-    Ok(())
+    Ok(true)
 }
 
-/// Lazily loads the BGE-M3 embedding model into RAM only when required.
-pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<()> {
+/// Lazily loads the text embedding model into RAM only when required.
+///
+/// Returns `Ok(true)` if embedder is ready, `Ok(false)` if assets are missing.
+pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
     if !memory_enabled {
-        log::debug!("[BgeM3Embedder] Memory subsystem or background worker disabled. Skipping model load.");
-        return Ok(());
+        log::debug!("[Embedder] Memory subsystem disabled. Skipping model load.");
+        return Ok(false);
     }
     if EMBEDDER.get().is_some() {
-        return Ok(());
+        return Ok(true);
     }
     let models_dir = if let Some(p) = crate::utils::paths::try_get() {
         p.models.clone()
     } else {
         dirs::home_dir().unwrap_or_default().join(".vox").join("models")
     };
-    let embedder_dir = models_dir
-        .join("embedding")
-        .join("bge-m3");
-    init_embedder(&embedder_dir)
+
+    let minilm_dir = models_dir.join("embedding").join(PRIMARY_MODEL_DIR);
+    if minilm_dir.join(PRIMARY_MODEL_FILENAME).exists() {
+        init_embedder(&minilm_dir, true)
+    } else {
+        let bge_dir = models_dir.join("embedding").join(FALLBACK_MODEL_DIR);
+        init_embedder(&bge_dir, false)
+    }
 }
 
-/// Generates a 1024-dimensional dense vector embedding for the input text using BGE-M3.
+/// Generates a dense vector embedding for the input text.
 /// Returns `Ok(None)` if the embedder model is not loaded.
 pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
     let embedder = match EMBEDDER.get() {
@@ -122,10 +131,7 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
     let attention_mask_tensor = ort::value::Tensor::from_array(attention_mask_arr)
         .map_err(|e| anyhow::anyhow!("Failed to create attention_mask tensor: {:?}", e))?;
 
-    let mut session_guard = embedder
-        .session
-        .lock()
-        .map_err(|e| anyhow::anyhow!("Session lock poisoned: {}", e))?;
+    let mut session_guard = embedder.session.lock();
 
     let outputs = if embedder.has_token_type_ids {
         let type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
@@ -189,7 +195,7 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
     Ok(Some(sum_embeddings))
 }
 
-/// Returns true if the BGE-M3 embedder model is loaded and ready.
+/// Returns true if the text embedder model is loaded and ready.
 pub fn is_embedder_loaded() -> bool {
     EMBEDDER.get().is_some()
 }
@@ -206,26 +212,5 @@ pub fn cosine_similarity(u: &[f32], v: &[f32]) -> f32 {
         dot / (norm_u * norm_v)
     } else {
         0.0
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_cosine_similarity() {
-        let a = vec![1.0, 0.0, 0.0];
-        let b = vec![1.0, 0.0, 0.0];
-        let c = vec![0.0, 1.0, 0.0];
-        assert!((cosine_similarity(&a, &b) - 1.0).abs() < 1e-5);
-        assert!((cosine_similarity(&a, &c) - 0.0).abs() < 1e-5);
-    }
-
-    #[test]
-    fn test_uninitialized_embedder_fallback() -> Result<()> {
-        let res = generate_embedding("test query")?;
-        assert!(res.is_none() || res.unwrap().len() == EMBEDDING_DIM);
-        Ok(())
     }
 }

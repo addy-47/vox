@@ -8,6 +8,8 @@ pub mod retrieval;
 pub mod tokenizer;
 pub mod working_memory;
 
+pub use crate::core::error::MemoryError;
+
 pub use classifier::{
     classify_query, ensure_classifier_loaded, init_classifier, is_classifier_loaded,
 };

@@ -118,11 +118,11 @@ fn main() -> anyhow::Result<()> {
     let stt_path = if args.asr == "nemotron" {
         vox_lib::utils::paths::get()
             .models
-            .join(vox_lib::core::constants::MODEL_DIR_STT_NEMOTRON)
+            .join(vox_lib::services::stt::MODEL_DIR_STT_NEMOTRON)
     } else {
         vox_lib::utils::paths::get()
             .models
-            .join(vox_lib::core::constants::MODEL_DIR_STT)
+            .join(vox_lib::services::stt::MODEL_DIR_STT_QWEN)
     };
 
     let snap_1 = BenchReporter::get_memory_snapshot();
