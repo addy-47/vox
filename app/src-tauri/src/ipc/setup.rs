@@ -88,12 +88,12 @@ pub async fn start_model_setup(
     );
 
     tauri::async_runtime::spawn(async move {
-        // Filter models based on selection or requirement using group structures
+        // Filter models based on selection, ensuring mandatory model groups are always included
         let target_models: Vec<_> = if let Some(ids) = selected_ids {
             manifest
                 .model_groups
                 .into_iter()
-                .filter(|g| ids.contains(&g.id))
+                .filter(|g| ids.contains(&g.id) || g.files.iter().any(|f| f.required))
                 .flat_map(|g| g.files)
                 .collect()
         } else {
