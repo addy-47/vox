@@ -4,7 +4,7 @@ use turso::Connection;
 use crate::core::settings::MemorySettings;
 use crate::services::memory::estimate_tokens;
 use crate::core::constants::PM_SEMANTIC_COLLECTIONS;
-use crate::persistence::repository;
+use crate::persistence::queries;
 
 #[derive(Debug, Clone)]
 pub struct MemoryFact {
@@ -17,8 +17,9 @@ pub struct MemoryFact {
     pub created_at: i64,
 }
 
-/// Phase 4 Budgeted RAG Retrieval & Context Assembly (v5 §5.1 / §5.3 Phase 4).
-/// Assembles Tier 1 Foundational/Operational and Tier 2 Semantic Profiles into <user_profile>.
+/// Phase 4 Seed-and-Expand Graph Traversal & Context Tree Assembly (v6 §8.1 / §8.2 / §9).
+/// Assembles Class A, Class B, and Class C seeds into Global Seed Pool, executes BFS graph expansion,
+/// applies dynamic parent quota budgeting, and renders clean prompt tree context into <user_profile>.
 pub async fn retrieve_personal_context(
     conn: &Connection,
     query_embedding: &[f32],
@@ -31,85 +32,121 @@ pub async fn retrieve_personal_context(
         return Ok(String::new());
     }
 
-    let mut tier1_budget = (context_size as f32 * settings.foundational_budget_share) as usize;
-    let mut tier2_budget = (context_size as f32 * settings.semantic_budget_share) as usize;
+    let operational_budget = (context_size as f32 * settings.operational_budget_share) as usize;
+    let semantic_budget = (context_size as f32 * settings.semantic_budget_share) as usize;
 
-    if context_size >= 1066 {
-        tier1_budget = tier1_budget.max(80);
-        tier2_budget = tier2_budget.max(80);
-    } else {
-        let overall_budget = (context_size as f32 * (settings.foundational_budget_share + settings.semantic_budget_share)) as usize;
-        tier1_budget = (overall_budget as f32 * (7.0 / 15.0)) as usize;
-        tier2_budget = overall_budget.saturating_sub(tier1_budget);
-    }
+    // ─── 1. Seed Generation Phase (v6 §8.1) ─────────────────────────────────
 
-    // ─── Tier 1: Foundational + Operational (7% hard cap) ───────────
+    // Class A: Identity & Context (Direct Isolation, Deterministic SQL)
+    let foundational_facts = queries::fetch_foundational_facts(conn, current_session_id).await?;
+    let context_block = fetch_context_chain(conn, settings.context_chaining_window_hours, operational_budget / 2).await?;
 
-    let foundational_facts = repository::fetch_foundational_facts(conn, current_session_id).await?;
-    let operational_facts = repository::fetch_operational_facts(conn, current_session_id).await?;
+    // Class B: Constraints, Tasks, Goals (Operational State, Top-K per collection)
+    let operational_facts = queries::fetch_operational_facts(conn, current_session_id).await?;
 
-    let mut tier1_used_tokens = 0;
-    let mut identity_block = String::new();
-    let mut constraints_block = String::new();
+    // Class C: Skills, Preferences, Projects, Experiences, Relationships (Semantic Knowledge, ANN Vector Search)
+    let semantic_seeds = queries::fetch_semantic_seeds(
+        conn,
+        query_embedding,
+        settings.semantic_similarity_cutoff,
+        settings.top_k_facts as i64,
+        current_session_id,
+    ).await?;
 
-    for fact in &foundational_facts {
-        let line = format!("- {}\n", fact.fact);
-        let tokens = estimate_tokens(&line);
-        if tier1_used_tokens + tokens <= tier1_budget {
-            match fact.collection.as_str() {
-                "Identity" => {
-                    identity_block.push_str(&line);
-                    tier1_used_tokens += tokens;
-                }
-                "Constraints" => {
-                    constraints_block.push_str(&line);
-                    tier1_used_tokens += tokens;
-                }
-                _ => {}
-            }
+    // ─── 2. Global Seed Pool & Seed Deduplication ────────────────────────────
+
+    let mut visited_fact_ids: HashSet<String> = HashSet::new();
+    let mut parent_seeds: Vec<MemoryFact> = Vec::new();
+
+    // Add Identity, Constraints, Tasks, Goals, and Semantic seeds to Global Seed Pool
+    for fact in foundational_facts.iter().chain(operational_facts.iter()).chain(semantic_seeds.iter()) {
+        if visited_fact_ids.insert(fact.id.clone()) {
+            parent_seeds.push(fact.clone());
         }
     }
 
-    let mut budgeted_tasks = Vec::new();
-    let mut budgeted_goals = Vec::new();
+    if parent_seeds.is_empty() && context_block.is_empty() {
+        return Ok(String::new());
+    }
 
-    for fact in &operational_facts {
-        let line = format!("- {}\n", fact.fact);
-        let tokens = estimate_tokens(&line);
-        if tier1_used_tokens + tokens <= tier1_budget {
-            match fact.collection.as_str() {
-                "Tasks" => {
-                    budgeted_tasks.push(fact.clone());
-                    tier1_used_tokens += tokens;
+    // ─── 3. Bi-directional Seed-and-Expand Traversal (max_hops = 2) ──────────
+
+    let mut frontier: Vec<String> = parent_seeds.iter().map(|f| f.id.clone()).collect();
+    let max_hops = settings.max_hops.min(3) as usize;
+    let mut child_edges_by_parent: HashMap<String, Vec<(String, MemoryFact)>> = HashMap::new(); // parent_id -> Vec<(relation, child_fact)>
+    let mut superseded_target_ids: HashSet<String> = HashSet::new();
+    let mut conflict_pairs: Vec<(String, String)> = Vec::new();
+
+    for _hop in 1..=max_hops {
+        if frontier.is_empty() {
+            break;
+        }
+
+        let neighbors = queries::fetch_graph_neighbors(conn, &frontier).await?;
+        if neighbors.is_empty() {
+            break;
+        }
+
+        let mut next_unvisited_ids: Vec<String> = Vec::new();
+        let mut edge_mapping: Vec<(String, String, String)> = Vec::new(); // (parent_id, child_id, relation)
+
+        for (from_id, to_id, relation, _source) in neighbors {
+            match relation.as_str() {
+                "SUPERSEDES" => {
+                    // to_id is superseded by from_id -> mark to_id for hard exclusion
+                    superseded_target_ids.insert(to_id.clone());
                 }
-                "Goals" => {
-                    budgeted_goals.push(fact.clone());
-                    tier1_used_tokens += tokens;
+                "CONFLICTS" => {
+                    conflict_pairs.push((from_id.clone(), to_id.clone()));
                 }
-                _ => {}
+                _ => {
+                    let parent_id = if visited_fact_ids.contains(&from_id) {
+                        from_id.clone()
+                    } else {
+                        to_id.clone()
+                    };
+                    let child_id = if parent_id == from_id { to_id } else { from_id };
+
+                    if !visited_fact_ids.contains(&child_id) {
+                        next_unvisited_ids.push(child_id.clone());
+                        edge_mapping.push((parent_id, child_id, relation));
+                    }
+                }
             }
         }
+
+        next_unvisited_ids.sort();
+        next_unvisited_ids.dedup();
+
+        if next_unvisited_ids.is_empty() {
+            break;
+        }
+
+        let fetched_children = queries::fetch_facts_by_ids(conn, &next_unvisited_ids).await?;
+
+        for (parent_id, child_id, relation) in edge_mapping {
+            if let Some(child_fact) = fetched_children.get(&child_id) {
+                if !superseded_target_ids.contains(&child_id) {
+                    child_edges_by_parent.entry(parent_id).or_default().push((relation, child_fact.clone()));
+                    visited_fact_ids.insert(child_id);
+                }
+            }
+        }
+
+        frontier = next_unvisited_ids;
     }
 
-    budgeted_tasks.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-    budgeted_goals.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    // Filter out superseded seeds
+    parent_seeds.retain(|f| !superseded_target_ids.contains(&f.id));
 
-    let mut tasks_block = String::new();
-    for fact in budgeted_tasks {
-        tasks_block.push_str(&format!("- {}\n", fact.fact));
-    }
+    // ─── 4. Dynamic Fair-Share Parent Budget Allocation with Redistribution (§8.2) ─────────────
 
-    let mut goals_block = String::new();
-    for fact in budgeted_goals {
-        goals_block.push_str(&format!("- {}\n", fact.fact));
-    }
+    let mut remaining_semantic_budget = semantic_budget;
+    let num_parents = parent_seeds.len();
 
-    let context_remaining = tier1_budget.saturating_sub(tier1_used_tokens);
-    let context_block = fetch_context_chain(conn, settings.context_chaining_window_hours, context_remaining).await?;
+    // ─── 5. Context Manifest Header & Memory Sections ───────────────────────
 
-    // ─── Memory Manifest (Active Record Counts) ──────────────────────
-
-    let active_counts = repository::fetch_active_collection_counts(conn, current_session_id).await.unwrap_or_default();
+    let active_counts = queries::fetch_active_collection_counts(conn, current_session_id).await.unwrap_or_default();
     let total_active_facts: usize = active_counts.values().sum();
     let manifest_parts: Vec<String> = PM_SEMANTIC_COLLECTIONS
         .iter()
@@ -121,197 +158,77 @@ pub async fn retrieve_personal_context(
         manifest_parts.join(" | ")
     );
 
-    // ─── Tier 2: Semantic Profiles (8% hard cap) ────────────────────
-
-    let query_blob = repository::encode_f32_blob(query_embedding);
-    let k_base = settings.personal_top_k_per_semantic_collection as i64;
-    let mut collection_buckets: HashMap<String, Vec<(MemoryFact, f32)>> = HashMap::new();
-
-    let mut rows = conn
-        .query(
-            "WITH Ranked AS (
-                 SELECT mf.id, mf.type, mf.collection, mf.fact, mf.source, mf.status, mf.created_at,
-                        (1.0 - vector_distance_cos(mfv.embedding, ?)) as similarity,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY mfv.collection
-                            ORDER BY vector_distance_cos(mfv.embedding, ?) ASC
-                        ) as rank
-                 FROM memory_facts mf
-                 JOIN memory_facts_vectors mfv ON mfv.fact_id = mf.id
-                 WHERE mfv.collection IN ('Preferences', 'Relationships', 'Skills', 'Projects', 'Experiences')
-                   AND mf.status = 'active'
-                   AND (mf.session_id = '' OR mf.session_id != ?)
-             )
-             SELECT id, type, collection, fact, source, status, created_at, similarity
-             FROM Ranked",
-            (query_blob.clone(), query_blob, current_session_id.to_string()),
-        )
-        .await?;
-
-    let mut all_scored_facts: Vec<(MemoryFact, f32)> = Vec::new();
-    while let Some(row) = rows.next().await? {
-        let fact = MemoryFact {
-            id: row.get(0)?,
-            fact_type: row.get(1)?,
-            collection: row.get(2)?,
-            fact: row.get(3)?,
-            source: row.get(4)?,
-            status: row.get(5)?,
-            created_at: row.get(6)?,
-        };
-        let similarity: f32 = row.get::<f64>(7)? as f32;
-        collection_buckets.entry(fact.collection.clone()).or_default().push((fact.clone(), similarity));
-        all_scored_facts.push((fact, similarity));
-    }
-
-    let mut selected_fact_ids = HashSet::new();
-    let mut selected_semantic_facts: Vec<MemoryFact> = Vec::new();
-    let mut tier2_used_tokens = 0;
-
-    // Step 2A: Guaranteed Anchor Floor (Top K_base per collection)
-    for col in PM_SEMANTIC_COLLECTIONS {
-        if let Some(bucket) = collection_buckets.get_mut(*col) {
-            bucket.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            for (fact, _sim) in bucket.iter().take(k_base as usize) {
-                let line = format!("- {}\n", fact.fact);
-                let tokens = estimate_tokens(&line);
-                if tier2_used_tokens + tokens <= tier2_budget {
-                    if selected_fact_ids.insert(fact.id.clone()) {
-                        tier2_used_tokens += tokens;
-                        selected_semantic_facts.push(fact.clone());
-                    }
-                }
-            }
-        }
-    }
-
-    // Step 2B: Global Similarity Competitive Pool (similarity >= settings.semantic_similarity_cutoff across ALL collections)
-    let similarity_cutoff = settings.semantic_similarity_cutoff;
-    all_scored_facts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    for (fact, sim) in all_scored_facts {
-        if sim < similarity_cutoff {
-            break; // Sorted descending; stop when below user-configured similarity floor
-        }
-        if selected_fact_ids.contains(&fact.id) {
-            continue;
-        }
-        let line = format!("- {}\n", fact.fact);
-        let tokens = estimate_tokens(&line);
-        if tier2_used_tokens + tokens <= tier2_budget {
-            tier2_used_tokens += tokens;
-            selected_fact_ids.insert(fact.id.clone());
-            selected_semantic_facts.push(fact);
-        } else {
-            break;
-        }
-    }
-
-    selected_semantic_facts.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-
-    // ─── Prompt Assembly ────────────────────────────────────────────
-
-    let has_any = !identity_block.is_empty()
-        || !constraints_block.is_empty()
-        || !tasks_block.is_empty()
-        || !goals_block.is_empty()
-        || !context_block.is_empty()
-        || !selected_semantic_facts.is_empty();
-
-    if !has_any {
-        return Ok(String::new());
-    }
-
+    let mut identity_block = String::new();
+    let mut constraints_block = String::new();
+    let mut tasks_block = String::new();
+    let mut goals_block = String::new();
+    let mut semantic_block = String::new();
     let mut conflict_block = String::new();
-    let mut similarity_block = String::new();
 
-    if !selected_semantic_facts.is_empty() {
-        let selected_ids: HashSet<String> = selected_semantic_facts.iter().map(|f| f.id.clone()).collect();
-        let mut rel_rows = conn.query("SELECT from_id, to_id, relation FROM memory_relations", ()).await?;
-        let mut printed_pairs = HashSet::new();
-
-        while let Some(row) = rel_rows.next().await? {
-            let from_id: String = row.get(0)?;
-            let to_id: String = row.get(1)?;
-            let relation: String = row.get(2)?;
-
-            if selected_ids.contains(&from_id) && selected_ids.contains(&to_id) {
-                let mut pair = (from_id.clone(), to_id.clone());
-                if pair.0 > pair.1 {
-                    std::mem::swap(&mut pair.0, &mut pair.1);
-                }
-                if printed_pairs.contains(&pair) {
-                    continue;
-                }
-                printed_pairs.insert(pair);
-
-                let fact_a = selected_semantic_facts.iter().find(|f| f.id == from_id).map(|f| f.fact.as_str()).unwrap_or("");
-                let fact_b = selected_semantic_facts.iter().find(|f| f.id == to_id).map(|f| f.fact.as_str()).unwrap_or("");
-
-                if !fact_a.is_empty() && !fact_b.is_empty() {
-                    match relation.as_str() {
-                        "CONFLICTS" => {
-                            conflict_block.push_str(&format!("- [Unresolved Conflict] \"{}\" CONFLICTS WITH \"{}\"\n", fact_a, fact_b));
-                        }
-                        "SIMILAR" => {
-                            similarity_block.push_str(&format!("- [Unresolved Similarity] \"{}\" is SIMILAR TO \"{}\"\n", fact_a, fact_b));
-                        }
-                        _ => {}
-                    }
-                }
+    // Render Conflict Warnings
+    let mut printed_conflicts = HashSet::new();
+    let all_known_facts = queries::fetch_facts_by_ids(conn, &visited_fact_ids.into_iter().collect::<Vec<_>>()).await?;
+    for (a_id, b_id) in conflict_pairs {
+        let mut pair = (a_id.clone(), b_id.clone());
+        if pair.0 > pair.1 {
+            std::mem::swap(&mut pair.0, &mut pair.1);
+        }
+        if printed_conflicts.insert(pair) {
+            if let (Some(fa), Some(fb)) = (all_known_facts.get(&a_id), all_known_facts.get(&b_id)) {
+                conflict_block.push_str(&format!(
+                    "- [Unresolved Conflict] \"{}\" CONFLICTS WITH \"{}\"\n",
+                    fa.fact, fb.fact
+                ));
             }
         }
     }
 
-    let mut out = String::new();
-    out.push_str("<user_profile>\n");
-    out.push_str(&manifest_header);
+    // Partition Parent Seeds with Dynamic Budget Redistribution (§8.2 point 5)
+    for (i, parent) in parent_seeds.iter().enumerate() {
+        let remaining_parents = num_parents - i;
+        let parent_quota_tokens = (remaining_semantic_budget / remaining_parents.max(1)).max(30);
 
-    if !conflict_block.is_empty() {
-        out.push_str("[Unresolved Contradictions]\n");
-        out.push_str(&conflict_block);
-    }
-    if !similarity_block.is_empty() {
-        out.push_str("[Unresolved Near-Duplicates]\n");
-        out.push_str(&similarity_block);
-    }
+        let ts_label = format_relative_timestamp(parent.created_at);
+        let mut parent_tree = format!("- [{}] {}\n", ts_label, parent.fact);
 
-    if !identity_block.is_empty() {
-        out.push_str("[Identity]\n");
-        out.push_str(&identity_block);
-    }
-    if !constraints_block.is_empty() {
-        out.push_str("[Constraints]\n");
-        out.push_str(&constraints_block);
-    }
-    if !tasks_block.is_empty() {
-        out.push_str("[Active Tasks]\n");
-        out.push_str(&tasks_block);
-    }
-    if !goals_block.is_empty() {
-        out.push_str("[Active Goals]\n");
-        out.push_str(&goals_block);
-    }
-    if !context_block.is_empty() {
-        out.push_str(&context_block);
-    }
+        let mut used_parent_tokens = estimate_tokens(&parent_tree);
 
-    let mut semantic_by_collection: HashMap<String, Vec<&MemoryFact>> = HashMap::new();
-    for fact in &selected_semantic_facts {
-        semantic_by_collection.entry(fact.collection.clone()).or_default().push(fact);
-    }
-
-    for collection in PM_SEMANTIC_COLLECTIONS {
-        if let Some(facts) = semantic_by_collection.get(*collection) {
-            out.push_str(&format!("[{}]\n", collection));
-            for fact in facts {
-                let ts_label = format_relative_timestamp(fact.created_at);
-                out.push_str(&format!("- [{}] {}\n", ts_label, fact.fact));
+        // Render Child Edges under Dynamic Parent Quota
+        if let Some(children) = child_edges_by_parent.get(&parent.id) {
+            for (rel, child) in children {
+                let child_ts = format_relative_timestamp(child.created_at);
+                let child_line = format!("  └─ ({}) -> [{}] {}\n", rel, child_ts, child.fact);
+                let child_tokens = estimate_tokens(&child_line);
+                if used_parent_tokens + child_tokens <= parent_quota_tokens {
+                    parent_tree.push_str(&child_line);
+                    used_parent_tokens += child_tokens;
+                }
             }
+        }
+
+        remaining_semantic_budget = remaining_semantic_budget.saturating_sub(used_parent_tokens);
+
+        match parent.collection.as_str() {
+            "Identity" => identity_block.push_str(&format!("- {}\n", parent.fact)),
+            "Constraints" => constraints_block.push_str(&parent_tree),
+            "Tasks" => tasks_block.push_str(&parent_tree),
+            "Goals" => goals_block.push_str(&parent_tree),
+            _ => semantic_block.push_str(&format!("[{}]\n{}", parent.collection, parent_tree)),
         }
     }
 
-    out.push_str("</user_profile>");
-    Ok(out)
+    // ─── 6. Clean Prompt Tree Assembly (<user_profile>) ─────────────────────
+
+    Ok(format_user_profile_context(
+        &manifest_header,
+        &conflict_block,
+        &identity_block,
+        &constraints_block,
+        &tasks_block,
+        &goals_block,
+        &context_block,
+        &semantic_block,
+    ))
 }
 
 /// Time-Windowed Context Chaining (v5 §5.1 / §5.3).
@@ -320,51 +237,26 @@ async fn fetch_context_chain(
     window_hours: u32,
     budget_tokens: usize,
 ) -> Result<String> {
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-    let window_start = now_ms - (window_hours as i64 * 3600 * 1000);
-
-    let mut rows = conn
-        .query(
-            "SELECT fact, created_at FROM memory_facts
-             WHERE type = 'operational' AND collection = 'Context' AND status = 'active'
-               AND created_at >= ?
-             ORDER BY created_at DESC",
-            (window_start,),
-        )
-        .await?;
-
-    let mut contexts: Vec<(String, i64)> = Vec::new();
-    while let Some(row) = rows.next().await? {
-        let fact: String = row.get(0)?;
-        let created_at: i64 = row.get(1)?;
-        contexts.push((fact, created_at));
+    let contexts = queries::fetch_context_records(conn, window_hours).await?;
+    if contexts.is_empty() {
+        return Ok(String::new());
     }
 
-    if contexts.is_empty() {
-        let mut fallback_rows = conn
-            .query(
-                "SELECT fact, created_at FROM memory_facts
-                 WHERE type = 'operational' AND collection = 'Context' AND status = 'active'
-                   AND created_at < ?
-                 ORDER BY created_at DESC LIMIT 1",
-                (window_start,),
-            )
-            .await?;
-
-        if let Some(row) = fallback_rows.next().await? {
-            let fact: String = row.get(0)?;
-            let created_at: i64 = row.get(1)?;
+    // Single distant fallback record check
+    if contexts.len() == 1 {
+        let (ref fact, created_at) = contexts[0];
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let window_start = now_ms - (window_hours as i64 * 3600 * 1000);
+        if created_at < window_start {
             let ts_label = format_relative_timestamp(created_at);
             return Ok(format!(
                 "[Recollection (Distant Memory)]\n- {}: {}\n",
                 ts_label, fact
             ));
         }
-
-        return Ok(String::new());
     }
 
     let header = format!("[Past Contexts within the Last {} Hours]\n", window_hours);
@@ -390,180 +282,4 @@ async fn fetch_context_chain(
     Ok(block)
 }
 
-/// Runs Edge Resolution over retrieved candidate facts in Rust memory (v5 §5.3 Phase 4).
-pub async fn resolve_edges(
-    conn: &Connection,
-    mut candidate_map: HashMap<String, MemoryFact>,
-    direct_hit_ids: &HashSet<String>,
-    _settings: &MemorySettings,
-    tauri_app: Option<&tauri::AppHandle>,
-) -> Result<Vec<MemoryFact>> {
-    let now_inst = std::time::Instant::now();
-
-    let mut rows = conn
-        .query(
-            "SELECT from_id, to_id, relation FROM memory_relations",
-            (),
-        )
-        .await?;
-
-    let mut supersedes_map: HashMap<String, String> = HashMap::new();
-    let mut supports_map: HashMap<String, Vec<String>> = HashMap::new();
-    let mut conflicts_set: HashSet<(String, String)> = HashSet::new();
-
-    while let Some(row) = rows.next().await? {
-        let from_id: String = row.get(0)?;
-        let to_id: String = row.get(1)?;
-        let relation: String = row.get(2)?;
-
-        match relation.as_str() {
-            "USER_SUPERSEDES" => {
-                supersedes_map.insert(to_id, from_id);
-            }
-            "SUPPORTS" => {
-                supports_map.entry(to_id).or_default().push(from_id);
-            }
-            "CONFLICTS" => {
-                let mut pair = (from_id, to_id);
-                if pair.0 > pair.1 {
-                    std::mem::swap(&mut pair.0, &mut pair.1);
-                }
-                conflicts_set.insert(pair);
-            }
-            _ => {}
-        }
-    }
-
-    let mut superseded_swaps = HashMap::new();
-    let mut required_ids = HashSet::new();
-
-    for id in candidate_map.keys() {
-        let mut current_id = id.clone();
-        let mut visited = HashSet::new();
-        visited.insert(current_id.clone());
-        let mut depth = 0;
-
-        while let Some(newer_id) = supersedes_map.get(&current_id) {
-            if visited.contains(newer_id) || depth >= 10 {
-                log::warn!("[MemoryRetrieval] Cycle or excessive depth detected in USER_SUPERSEDES for: {}", id);
-                break;
-            }
-            current_id = newer_id.clone();
-            visited.insert(current_id.clone());
-            depth += 1;
-        }
-
-        if current_id != *id {
-            superseded_swaps.insert(id.clone(), current_id.clone());
-        }
-        required_ids.insert(current_id);
-    }
-
-    let mut supporting_to_pull = HashSet::new();
-    for id in direct_hit_ids {
-        let active_id = superseded_swaps.get(id).unwrap_or(id);
-        if let Some(supporting_ids) = supports_map.get(active_id) {
-            for sup_id in supporting_ids {
-                required_ids.insert(sup_id.clone());
-                supporting_to_pull.insert(sup_id.clone());
-            }
-        }
-    }
-
-    let missing_ids: Vec<String> = required_ids
-        .iter()
-        .filter(|id| !candidate_map.contains_key(*id))
-        .cloned()
-        .collect();
-
-    if !missing_ids.is_empty() {
-        let placeholders = vec!["?"; missing_ids.len()].join(",");
-        let query_str = format!(
-            "SELECT id, type, collection, fact, source, status, created_at FROM memory_facts WHERE id IN ({}) AND status = 'active'",
-            placeholders
-        );
-
-        let mut fact_rows = conn.query(&query_str, missing_ids).await?;
-        while let Some(row) = fact_rows.next().await? {
-            let fact = MemoryFact {
-                id: row.get(0)?,
-                fact_type: row.get(1)?,
-                collection: row.get(2)?,
-                fact: row.get(3)?,
-                source: row.get(4)?,
-                status: row.get(5)?,
-                created_at: row.get(6)?,
-            };
-            candidate_map.insert(fact.id.clone(), fact);
-        }
-    }
-
-    for old_id in superseded_swaps.keys() {
-        candidate_map.remove(old_id);
-    }
-
-    let final_candidate_ids: Vec<String> = candidate_map.keys().cloned().collect();
-
-    for i in 0..final_candidate_ids.len() {
-        for j in (i + 1)..final_candidate_ids.len() {
-            let id_a = &final_candidate_ids[i];
-            let id_b = &final_candidate_ids[j];
-
-            let mut pair = (id_a.clone(), id_b.clone());
-            if pair.0 > pair.1 {
-                std::mem::swap(&mut pair.0, &mut pair.1);
-            }
-
-            if conflicts_set.contains(&pair) {
-                if let Some(app) = tauri_app {
-                    use tauri::Emitter;
-                    let payload = serde_json::json!({
-                        "fact_a_id": id_a,
-                        "fact_b_id": id_b,
-                    });
-                    let _ = app.emit("memory:conflict_detected", payload);
-                }
-            }
-        }
-    }
-
-    let mut resolved: Vec<MemoryFact> = candidate_map.into_values().collect();
-    resolved.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-
-    log::info!("[MemoryRetrieval] Edge resolution completed in {}ms", now_inst.elapsed().as_millis());
-    Ok(resolved)
-}
-
-/// Formats a millisecond epoch timestamp as a human-readable relative time label.
-pub fn format_relative_timestamp(created_at_ms: i64) -> String {
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-    let diff_ms = now_ms - created_at_ms;
-
-    if diff_ms < 0 {
-        return "Just now".to_string();
-    }
-
-    let minutes = diff_ms / 60_000;
-    let hours = diff_ms / 3_600_000;
-    let days = diff_ms / 86_400_000;
-    let weeks = days / 7;
-
-    if minutes < 1 {
-        "Just now".to_string()
-    } else if minutes < 60 {
-        format!("{} minute{} ago", minutes, if minutes == 1 { "" } else { "s" })
-    } else if hours < 24 {
-        format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" })
-    } else if days == 1 {
-        "Yesterday".to_string()
-    } else if days < 7 {
-        format!("{} days ago", days)
-    } else if weeks < 4 {
-        format!("{} week{} ago", weeks, if weeks == 1 { "" } else { "s" })
-    } else {
-        format!("{} days ago", days)
-    }
-}
+pub use crate::services::memory::formatter::{format_relative_timestamp, format_user_profile_context};

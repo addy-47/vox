@@ -605,7 +605,7 @@ impl PipelineOrchestrator {
 
             let active_known_facts = rt.block_on(async {
                 if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
-                    crate::persistence::repository::fetch_active_facts_grouped(&conn).await.unwrap_or_default()
+                    crate::persistence::queries::fetch_active_facts_grouped(&conn).await.unwrap_or_default()
                 } else {
                     std::collections::HashMap::new()
                 }

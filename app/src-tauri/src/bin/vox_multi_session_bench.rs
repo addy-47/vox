@@ -276,15 +276,16 @@ fn main() -> Result<()> {
     let settings = Arc::new(RwLock::new(VoxSettings::default()));
     let memory_tx = spawn_memory_worker(db_path.clone(), is_private_mode.clone(), settings);
 
-    // Memory Settings Configuration (BGE-M3 1024-dim, strict 0.65 threshold)
+    // Memory Settings Configuration (MiniLM-L12 384-dim, 0.40 threshold)
     let memory_settings = MemorySettings {
         context_retrieval_enabled: true,
         pipeline_processing_enabled: true,
-        foundational_budget_share: 0.07,
-        semantic_budget_share: 0.08,
+        operational_budget_share: 0.05,
+        semantic_budget_share: 0.10,
         context_chaining_window_hours: 12,
-        personal_top_k_per_semantic_collection: 5,
-        semantic_similarity_cutoff: 0.65,
+        top_k_facts: 5,
+        max_hops: 2,
+        semantic_similarity_cutoff: 0.40,
     };
 
     let nemotron_path = vox_lib::utils::paths::get()
@@ -492,7 +493,7 @@ fn main() -> Result<()> {
             conv_mgr.update_system_prompt(&full_system_prompt);
 
             let known_facts = tokio_handle.block_on(async {
-                vox_lib::persistence::repository::fetch_active_facts_grouped(&conn).await.unwrap_or_default()
+                vox_lib::persistence::queries::fetch_active_facts_grouped(&conn).await.unwrap_or_default()
             });
             let (ctx, speech, personal_memory) = conv_mgr.build_context(provider_kind, false, Some(&*provider), &known_facts);
 
