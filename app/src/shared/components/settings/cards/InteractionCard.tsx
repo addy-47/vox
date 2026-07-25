@@ -36,6 +36,12 @@ const CLOUD_PROVIDERS = [
     keyPlaceholder: "AIzaSy...",
   },
   {
+    id: "nvidia",
+    name: "NVIDIA NIM",
+    url: "https://integrate.api.nvidia.com/v1",
+    keyPlaceholder: "nvapi-...",
+  },
+  {
     id: "anthropic",
     name: "Anthropic",
     url: "https://api.anthropic.com/v1",
@@ -130,7 +136,8 @@ const checkIfCloudUrl = (url: string) => {
     url.includes("openai.com") ||
     url.includes("googleapis.com") ||
     url.includes("anthropic.com") ||
-    url.includes("groq.com")
+    url.includes("groq.com") ||
+    url.includes("nvidia.com")
   );
 };
 
@@ -359,27 +366,11 @@ export const InteractionCard = memo(
         window.removeEventListener("sync_interaction_category", handleSync);
     }, []);
 
-    const savedProvider = settings?.llm?.provider || { kind: "embedded" };
-
     // Live query effect for remote/cloud health checks and provider name persistence
     useEffect(() => {
-      const hasProviderChanges =
-        currentProvider.kind !== savedProvider.kind ||
-        currentProvider.base_url !== savedProvider.base_url ||
-        currentProvider.api_key !== savedProvider.api_key;
-
-      if (hasProviderChanges || currentProvider.kind !== "open_ai_compat") {
+      if (currentProvider.kind !== "open_ai_compat" || !currentProvider.base_url) {
         setIsHealthy(null);
         setModelsError(null);
-        return;
-      }
-
-      if (savedProvider.kind !== "open_ai_compat") {
-        setIsHealthy(null);
-        return;
-      }
-      if (!savedProvider.base_url) {
-        setIsHealthy(null);
         return;
       }
 
@@ -389,19 +380,19 @@ export const InteractionCard = memo(
           setModelsError(null);
           try {
             const healthy = await invoke<boolean>("check_llm_provider_health", {
-              provider: savedProvider,
+              provider: currentProvider,
             });
             setIsHealthy(healthy);
 
             if (healthy) {
               // Detect and persist remote provider name (e.g. Ollama vs OpenAI Compatible Host)
               if (providerPill === "remote") {
-                const detectedName = savedProvider.base_url?.includes("11434")
+                const detectedName = currentProvider.base_url?.includes("11434")
                   ? "Ollama"
                   : "Remote Host";
-                if (savedProvider.provider_name !== detectedName) {
+                if (currentProvider.provider_name !== detectedName) {
                   updateDraft("llm", "provider", {
-                    ...savedProvider,
+                    ...currentProvider,
                     provider_name: detectedName,
                   });
                 }
@@ -422,12 +413,11 @@ export const InteractionCard = memo(
 
       return () => clearTimeout(timer);
     }, [
-      savedProvider.base_url,
-      savedProvider.api_key,
-      savedProvider.kind,
       currentProvider.base_url,
       currentProvider.api_key,
       currentProvider.kind,
+      currentProvider.provider_name,
+      providerPill,
     ]);
 
     const handleLlmPillChange = (value: string) => {
