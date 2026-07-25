@@ -143,7 +143,7 @@ async fn main() -> Result<()> {
             println!("Total Raw Extracted Facts: {}\n", extracted_facts.len());
 
             // Initialize in-memory Turso SQLite database
-            let db = turso::Builder::new_local(":memory:").build().await?;
+            let db = turso::Builder::new_local(":memory:").experimental_index_method(true).build().await?;
             let conn = db.connect()?;
             schema::run_migrations(&conn).await?;
 

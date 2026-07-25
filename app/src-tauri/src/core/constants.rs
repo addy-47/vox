@@ -238,11 +238,15 @@ impl std::fmt::Display for MemoryCollection {
     }
 }
 
-// ─── Personal Memory v3 Collections ─────────────────────────────────────────
+// ─── Personal Memory v6 Collections & Taxonomy ─────────────────────────────
 pub const PM_COLLECTIONS: &[&str] = &[
     "Identity", "Constraints", "Preferences", "Relationships",
     "Skills", "Projects", "Experiences", "Context", "Tasks", "Goals",
 ];
+
+pub const PM_CLASS_A_COLLECTIONS: &[&str] = &["Identity", "Context"];
+pub const PM_CLASS_B_COLLECTIONS: &[&str] = &["Constraints", "Tasks", "Goals"];
+pub const PM_CLASS_C_COLLECTIONS: &[&str] = &["Skills", "Preferences", "Projects", "Experiences", "Relationships"];
 
 // ─── 3-Tier Structural Type Constants ────────────────────────────────────────
 pub const PM_TYPE_FOUNDATIONAL: &str = "foundational";
@@ -265,14 +269,31 @@ pub fn collection_type(collection: &str) -> &'static str {
 // ─── Graph Relations ──────────────────────────────────────────────────────────
 pub const PM_RELATION_SUPPORTS: &str = "SUPPORTS";
 pub const PM_RELATION_CONFLICTS: &str = "CONFLICTS";
-pub const PM_RELATION_USER_SUPERSEDES: &str = "USER_SUPERSEDES";
-pub const PM_RELATION_SIMILAR: &str = "SIMILAR";
-pub const PM_RELATION_MERGED: &str = "MERGED";
+pub const PM_RELATION_SUPERSEDES: &str = "SUPERSEDES";
+
+// ─── Inter-Collection Edge Policy Matrix ──────────────────────────────────────
+/// Returns (forward_edge, deterministic_inverse_edge) for valid Class B pairs.
+/// Returns None if no inter-collection relation policy exists for the pair.
+pub fn inter_collection_edge(src: &str, tgt: &str) -> Option<(&'static str, &'static str)> {
+    match (src, tgt) {
+        ("Projects", "Constraints") => Some(("constrained_by", "restricts_project")),
+        ("Projects", "Skills") => Some(("requires_skill", "used_in_project")),
+        ("Projects", "Tasks") => Some(("contains_task", "belongs_to_project")),
+        ("Projects", "Goals") => Some(("drives_goal", "supported_by_project")),
+        ("Preferences", "Constraints") => Some(("restricted_by", "shapes_preference")),
+        ("Preferences", "Experiences") => Some(("shaped_by", "influenced_preference")),
+        ("Skills", "Experiences") => Some(("acquired_in", "demonstrated_skill")),
+        ("Relationships", "Experiences") => Some(("involved_in", "included_relationship")),
+        ("Relationships", "Projects") => Some(("collaborates_on", "project_contributor")),
+        _ => None,
+    }
+}
 
 // ─── Fact Sources ─────────────────────────────────────────────────────────────
 pub const PM_SOURCE_LLM: &str = "LLM";
 pub const PM_SOURCE_USER: &str = "User";
 pub const PM_SOURCE_IMPORT: &str = "Import";
+pub const PM_SOURCE_NLI: &str = "NLI";
 
 // ─── Job Queue Status ─────────────────────────────────────────────────────────
 pub const PM_QUEUE_STATUS_PENDING: &str = "pending";
@@ -280,4 +301,5 @@ pub const PM_QUEUE_STATUS_STAGED: &str = "staged";
 pub const PM_QUEUE_STATUS_PROCESSING: &str = "processing";
 pub const PM_QUEUE_STATUS_COMPLETED: &str = "completed";
 pub const PM_QUEUE_STATUS_FAILED: &str = "failed";
+
 

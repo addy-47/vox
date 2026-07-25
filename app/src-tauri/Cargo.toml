@@ -43,7 +43,7 @@ parking_lot = "0.12"
 thiserror = "2"
 thread-priority = "1.1"
 
-turso = { version = "0.7.0" }
+turso = { version = "0.7.1" }
 
 # Phase 4 — LLM runtime (llama.cpp Rust bindings, compiles llama.cpp from source, CPU-only)
 # Dynamic linking disabled (default includes dynamic-link) — we want static linking
@@ -110,5 +110,3 @@ split-debuginfo = "unpacked"
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
-
-

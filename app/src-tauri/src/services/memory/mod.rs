@@ -1,7 +1,9 @@
 pub mod classifier;
 pub mod deduplication;
 pub mod embedder;
+pub mod formatter;
 pub mod ingestion;
+pub mod llm_edge_classifier;
 pub mod nli;
 pub mod orchestrator;
 pub mod retrieval;
@@ -17,6 +19,7 @@ pub use embedder::{
     cosine_similarity, ensure_embedder_loaded, generate_embedding, init_embedder,
     is_embedder_loaded,
 };
+pub use formatter::format_relative_timestamp;
 pub use retrieval::{
     retrieve_personal_context, MemoryFact,
 };

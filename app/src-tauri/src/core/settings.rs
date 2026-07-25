@@ -636,27 +636,23 @@ pub struct MemorySettings {
     /// Worker loop remains dormant (PipelineOutcome::NoWork). Zero embedding and ONNX NLI execution occurs.
     pub pipeline_processing_enabled: bool,
 
-    /// Foundational + Operational tier budget share of context window (0.0 - 1.0).
-    pub foundational_budget_share: f32,
+    /// Operational/Foundational tier budget share of context window (0.0 - 1.0, default 0.05 / 5%).
+    pub operational_budget_share: f32,
 
-    /// Semantic tier budget share of context window (0.0 - 1.0).
+    /// Semantic tier budget share of context window (0.0 - 1.0, default 0.10 / 10%).
     pub semantic_budget_share: f32,
 
     /// Time window in hours for Context Chaining.
     pub context_chaining_window_hours: u32,
 
-    /// Tier 2A Guaranteed Anchor Floor: Top-K anchor facts retrieved per semantic collection.
-    /// Preserves user identity anchors across topic shifts regardless of cosine distance.
-    pub personal_top_k_per_semantic_collection: u32,
+    /// Top-K facts limit per collection for retrieval (default 5).
+    pub top_k_facts: u32,
+
+    /// Maximum graph traversal expansion depth during Seed-and-Expand (default 2).
+    pub max_hops: u32,
 
     /// Tier 2B Global Similarity Cutoff Floor (0.0 - 1.0, default 0.40 for MiniLM-L12).
     /// Candidates in Tier 2B competitive pool must meet or exceed this cosine similarity score.
-    ///
-    /// # MODEL THRESHOLD CALIBRATION MATRIX
-    /// Cosine similarity distributions vary significantly by embedding model architecture & vector space geometry:
-    /// - `paraphrase-multilingual-MiniLM-L12-v2` (384d INT8 ONNX): Set to **0.40** (Noise baseline: 0.04-0.23, Margin: 0.34)
-    /// - `bge-m3` (1024d INT8 ONNX): Set to **0.65** (Noise baseline: 0.58-0.74, Margin: 0.14)
-    /// - `multilingual-e5-small` / `multilingual-e5-base`: Set to **0.75** (Noise baseline: 0.75-0.85, Margin: 0.05)
     pub semantic_similarity_cutoff: f32,
 }
 
@@ -665,14 +661,16 @@ impl Default for MemorySettings {
         Self {
             context_retrieval_enabled: true,
             pipeline_processing_enabled: true,
-            foundational_budget_share: 0.07,
-            semantic_budget_share: 0.08,
+            operational_budget_share: 0.05,
+            semantic_budget_share: 0.10,
             context_chaining_window_hours: 12,
-            personal_top_k_per_semantic_collection: 5,
+            top_k_facts: 5,
+            max_hops: 2,
             semantic_similarity_cutoff: 0.40,
         }
     }
 }
+
 
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -941,8 +939,8 @@ mod tests {
         let settings = VoxSettings::default();
         assert!(settings.memory.context_retrieval_enabled);
         assert!(settings.memory.pipeline_processing_enabled);
-        assert!((settings.memory.foundational_budget_share - 0.07).abs() < 0.001);
-        assert!((settings.memory.semantic_budget_share - 0.08).abs() < 0.001);
+        assert_eq!(settings.memory.top_k_facts, 5);
+        assert_eq!(settings.memory.max_hops, 2);
     }
 
     #[test]
