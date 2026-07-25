@@ -65,32 +65,32 @@ export const ModelCategory = ({
             )}
         >
             <div 
-                className="flex items-center justify-between p-5 cursor-pointer select-none" 
+                className="flex items-center justify-between p-5 cursor-pointer select-none gap-4" 
                 onClick={() => setIsExpanded(!isExpanded)}
             >
-                <div className="flex items-center gap-5">
+                <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className={cn(
-                        "w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-500",
+                        "w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-500 shrink-0",
                         selected ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.1)]" : "bg-white/5 text-[rgb(var(--foreground-muted))]"
                     )}>
                         {React.cloneElement(icon as React.ReactElement<any>, { className: "w-5 h-5" })}
                     </div>
-                    <div className="flex flex-col">
-                        <div className="flex items-center gap-3 mb-1">
-                            <span className="text-[13px] font-black text-[rgb(var(--foreground))] uppercase tracking-[0.2em]">{label}</span>
+                    <div className="flex flex-col flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-[13px] font-black text-[rgb(var(--foreground))] uppercase tracking-[0.15em]">{label}</span>
                             {required ? (
-                                <span className="text-[11px] font-black bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgb(var(--accent))]/20">Mandatory</span>
+                                <span className="text-[10px] font-black bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgb(var(--accent))]/20 shrink-0">Mandatory</span>
                             ) : (
-                                <span className="text-[11px] font-black bg-white/5 text-[rgb(var(--foreground-muted))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgba(var(--border),0.08)]">Optional Layer</span>
+                                <span className="text-[10px] font-black bg-white/5 text-[rgb(var(--foreground-muted))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgba(var(--border),0.08)] shrink-0">Optional Layer</span>
                             )}
                         </div>
-                        <p className="text-[11px] text-[rgb(var(--foreground-muted))] font-bold uppercase tracking-[0.1em]">
+                        <p className="text-[11px] text-[rgb(var(--foreground-muted))] font-bold uppercase tracking-[0.05em] truncate">
                             {subLabel}
                         </p>
                     </div>
                 </div>
                 
-                <div className="flex items-center gap-8">
+                <div className="flex items-center gap-6 shrink-0">
                     <div className="flex flex-col items-end gap-1.5">
                         <span className="text-[11px] font-black text-[rgb(var(--accent))] tracking-widest">{formatSize(totalSize)}</span>
                         <div 

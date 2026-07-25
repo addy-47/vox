@@ -40,6 +40,7 @@ impl OpenAiCompatProvider {
                 || resolved_url.contains("api.openai.com")
                 || resolved_url.contains("generativelanguage.googleapis.com")
                 || resolved_url.contains("api.anthropic.com")
+                || resolved_url.contains("api.nvidia.com")
             {
                 if p_lower == "openai" {
                     resolved_url = "https://api.openai.com".to_string();
@@ -48,6 +49,8 @@ impl OpenAiCompatProvider {
                         "https://generativelanguage.googleapis.com/v1beta/openai".to_string();
                 } else if p_lower == "anthropic" {
                     resolved_url = "https://api.anthropic.com".to_string();
+                } else if p_lower == "nvidia" {
+                    resolved_url = "https://integrate.api.nvidia.com/v1".to_string();
                 }
             }
         }
@@ -372,7 +375,11 @@ impl LlmProvider for OpenAiCompatProvider {
         match kind {
             LocalBackendKind::Ollama | LocalBackendKind::LmStudio => true,
             LocalBackendKind::StandardOpenAi => {
-                let url = format!("{}/v1/models", self.base_url);
+                let url = if self.base_url.ends_with("/v1") || self.base_url.ends_with("/openai") {
+                    format!("{}/models", self.base_url)
+                } else {
+                    format!("{}/v1/models", self.base_url)
+                };
                 let mut builder = self.async_client.get(&url).timeout(Duration::from_secs(3));
                 builder = self.inject_headers(builder);
 
@@ -432,8 +439,12 @@ impl LlmProvider for OpenAiCompatProvider {
                 }
             }
 
-            // Fallback: standard /v1/models
-            let url = format!("{}/v1/models", self.base_url);
+            // Fallback: standard /v1/models (or /models if base_url already contains version path)
+            let url = if self.base_url.ends_with("/v1") || self.base_url.ends_with("/openai") {
+                format!("{}/models", self.base_url)
+            } else {
+                format!("{}/v1/models", self.base_url)
+            };
             let mut builder = self.async_client.get(&url).timeout(Duration::from_secs(3));
             builder = self.inject_headers(builder);
 
