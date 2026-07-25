@@ -4,7 +4,8 @@ import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Database, BrainCircuit, Mic, 
-  Check, ArrowRight, Languages
+  Check, ArrowRight, Languages,
+  Layers, ShieldCheck, Filter
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
@@ -199,9 +200,33 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             groups: manifest.model_groups.filter(g => g.category === 'translit')
         },
         {
+            id: 'embedding',
+            label: 'Multilingual Vector Embeddings',
+            subLabel: 'MiniLM-L12-v2 / BGE-M3 (384/1024-dim)',
+            icon: <Layers />,
+            required: true,
+            groups: manifest.model_groups.filter(g => g.category === 'embedding')
+        },
+        {
+            id: 'nli',
+            label: 'Contradiction & Memory Verification',
+            subLabel: 'DeBERTa-v3 XSmall NLI Engine',
+            icon: <ShieldCheck />,
+            required: true,
+            groups: manifest.model_groups.filter(g => g.category === 'nli')
+        },
+        {
+            id: 'classifier',
+            label: 'Query Intent Router',
+            subLabel: 'DistilBERT Query Classifier',
+            icon: <Filter />,
+            required: true,
+            groups: manifest.model_groups.filter(g => g.category === 'classifier')
+        },
+        {
             id: 'llm',
             label: 'Intelligence Layer (LLM)',
-            subLabel: 'Gemma / Llama Reasoning',
+            subLabel: 'Gemma-4 / Llama-3.2 Reasoning',
             icon: <BrainCircuit />,
             required: false,
             groups: manifest.model_groups.filter(g => g.category === 'llm')
@@ -209,7 +234,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'tts',
             label: 'Speech Synthesis (TTS)',
-            subLabel: 'Supertonic 3 Multilingual',
+            subLabel: 'Supertonic 3 / Chatterbox Multilingual',
             icon: <VolumeIcon />,
             required: false,
             groups: manifest.model_groups.filter(g => g.category === 'tts')

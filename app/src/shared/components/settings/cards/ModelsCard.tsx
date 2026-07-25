@@ -5,28 +5,15 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { 
   Brain, Volume2, Database, Trash2,
-  Languages, Activity, Sparkles, Check, ArrowLeft,
+  Activity, Sparkles, Check, ArrowLeft,
   Download, RefreshCw, Info, AlertCircle, Network,
-  ChevronLeft, ChevronRight, Loader2, Folder, Mic
+  ChevronLeft, ChevronRight, Loader2, Folder, Mic,
+  Layers
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
 
-const PRICING_MAP: Record<string, string> = {
-  "gpt-4o-mini": "$0.15 / $0.60",
-  "gpt-4o": "$2.50 / $10.00",
-  "gpt-4-turbo": "$10.00 / $30.00",
-  "gemini-1.5-flash": "$0.075 / $0.30",
-  "gemini-1.5-pro": "$1.25 / $5.00",
-  "gemini-2.0-flash": "$0.075 / $0.30",
-  "gemini-2.5-flash": "$0.075 / $0.30",
-  "claude-3-5-sonnet": "$3.00 / $15.00",
-  "claude-3-5-haiku": "$0.80 / $4.00",
-  "claude-3-opus": "$15.00 / $75.00",
-  "llama-3.3-70b": "$0.59 / $0.79",
-  "llama3-8b": "$0.05 / $0.08",
-  "mixtral-8x7b": "$0.24 / $0.24",
-};
+
 
 interface ModelStatus {
   step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
@@ -655,7 +642,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const { settings, draftSettings, updateDraft, modelCatalog } = useSettings();
   const [downloadStatuses, setDownloadStatuses] = useState<Record<string, ModelStatus>>({});
   const [modelPresence, setModelPresence] = useState<Record<string, boolean>>({});
-  const [activePipelineTab, setActivePipelineTab] = useState<"vad" | "asr" | "translit" | "llm" | "tts">("llm");
+  const [activePipelineTab, setActivePipelineTab] = useState<"vad" | "asr" | "llm" | "tts" | "auxiliary">("llm");
   const [activeCategoryTab, setActiveCategoryTab] = useState<"model" | "settings">("model");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [outdatedModels, setOutdatedModels] = useState<string[]>([]);
@@ -876,6 +863,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         filtered = remoteModels.filter(m => 
           m.id.toLowerCase().includes("claude")
         );
+      } else if (name.includes("nvidia")) {
+        filtered = remoteModels.filter(m => 
+          !m.id.toLowerCase().includes("embedding") && 
+          !m.id.toLowerCase().includes("rerank") &&
+          !m.id.toLowerCase().includes("clip") &&
+          !m.id.toLowerCase().includes("guard")
+        );
       } else if (name.includes("groq")) {
         filtered = remoteModels.filter(m => 
           (m.id.toLowerCase().includes("llama") || m.id.toLowerCase().includes("mixtral") || m.id.toLowerCase().includes("gemma")) && 
@@ -914,15 +908,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     return [];
   }, [provider?.provider_name, remoteModels]);
 
-  const getModelPricing = useCallback((modelId: string): string | null => {
-    const idLower = modelId.toLowerCase().replace(/^models\//, "");
-    for (const key of Object.keys(PRICING_MAP)) {
-      if (idLower.includes(key)) {
-        return PRICING_MAP[key];
-      }
-    }
-    return null;
-  }, []);
+
 
   useEffect(() => {
     if (provider?.model) {
@@ -1143,8 +1129,6 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const selectedAsrId = draftSettings.asr.model;
   const isAsrVerified = modelPresence[selectedAsrId];
 
-  const isTranslitVerified = modelPresence["vox_translit_rnn"];
-
   const selectedLlmId = draftSettings.llm.model;
   const isLlmDownloaded = modelPresence[selectedLlmId];
 
@@ -1152,13 +1136,11 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   const isVadCategoryMissing = activeVadBackend === "ten_vad" && !modelPresence["ten_vad"];
   const isAsrCategoryMissing = !modelPresence[selectedAsrId];
-  const isTranslitCategoryMissing = !modelPresence["vox_translit_rnn"];
   const isLlmCategoryMissing = !modelPresence[selectedLlmId];
   const isTtsCategoryMissing = !modelPresence["supertonic_tts"] && !modelPresence["chatterbox_tts"];
 
   const hasVadUpdate = outdatedModels.includes("ten_vad");
   const hasAsrUpdate = outdatedModels.includes(selectedAsrId);
-  const hasTranslitUpdate = outdatedModels.includes("vox_translit_rnn");
   const hasLlmUpdate = outdatedModels.includes(selectedLlmId);
   const hasTtsUpdate = outdatedModels.includes("supertonic_tts") || outdatedModels.includes("chatterbox_tts");
 
@@ -1308,14 +1290,14 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           >
             {renderOverlayIcon(isVadCategoryMissing, hasVadUpdate)}
             <Activity size={18} className={cn("transition-colors shrink-0", activePipelineTab === "vad" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">Silence</span>
+            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">VAD</span>
             <span className={cn(
               "w-1 h-1 rounded-full shrink-0 mt-0.5",
               isVadVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
             )} />
           </button>
 
-          {/* NODE 2: ASR */}
+          {/* NODE 2: STT */}
           <button
             onClick={() => setActivePipelineTab("asr")}
             className={cn(
@@ -1329,35 +1311,14 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           >
             {renderOverlayIcon(isAsrCategoryMissing, hasAsrUpdate)}
             <Sparkles size={18} className={cn("transition-colors shrink-0", activePipelineTab === "asr" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">ASR</span>
+            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">STT</span>
             <span className={cn(
               "w-1 h-1 rounded-full shrink-0 mt-0.5",
               isAsrVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
             )} />
           </button>
 
-          {/* NODE 3: TRANSLIT */}
-          <button
-            onClick={() => setActivePipelineTab("translit")}
-            className={cn(
-              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
-              activePipelineTab === "translit"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
-              getPulseClass(isTranslitCategoryMissing, hasTranslitUpdate)
-            )}
-          >
-            {renderOverlayIcon(isTranslitCategoryMissing, hasTranslitUpdate)}
-            <Languages size={18} className={cn("transition-colors shrink-0", activePipelineTab === "translit" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">Hinglish</span>
-            <span className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isTranslitVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
-            )} />
-          </button>
-
-          {/* NODE 4: LLM */}
+          {/* NODE 3: LLM */}
           <button
             onClick={() => setActivePipelineTab("llm")}
             className={cn(
@@ -1378,7 +1339,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             )} />
           </button>
 
-          {/* NODE 5: TTS */}
+          {/* NODE 4: TTS */}
           <button
             onClick={() => setActivePipelineTab("tts")}
             className={cn(
@@ -1392,10 +1353,31 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           >
             {renderOverlayIcon(isTtsCategoryMissing, hasTtsUpdate)}
             <Volume2 size={18} className={cn("transition-colors shrink-0", activePipelineTab === "tts" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">Voice</span>
+            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">TTS</span>
             <span className={cn(
               "w-1 h-1 rounded-full shrink-0 mt-0.5",
               isTtsVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
+            )} />
+          </button>
+
+          {/* NODE 5: AUXILIARY */}
+          <button
+            onClick={() => setActivePipelineTab("auxiliary")}
+            className={cn(
+              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
+              activePipelineTab === "auxiliary"
+                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
+                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
+            )}
+          >
+            <Layers size={18} className={cn("transition-colors shrink-0", activePipelineTab === "auxiliary" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
+            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">Auxiliary</span>
+            <span className={cn(
+              "w-1 h-1 rounded-full shrink-0 mt-0.5",
+              (modelPresence["distilbert_query_classifier"] && modelPresence["minilm_l12_v2"] && modelPresence["deberta_v3_xsmall_nli"] && modelPresence["vox_translit_rnn"])
+                ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
+                : "bg-[rgb(var(--accent))]/30"
             )} />
           </button>
 
@@ -1513,30 +1495,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             </div>
           )}
 
-          {/* TAB 3: ROMAN TRANSLITERATION */}
-          {activePipelineTab === "translit" && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-3">
-                <SubModelCard
-                  id="vox_translit_rnn"
-                  name="Vox Hinglish RNN"
-                  description="Converts Devanagari (Hindi) scripts dynamically to natural Hinglish phonetic spelling (~18MB)."
-                  parameters="18 MB"
-                  ramUsage="~18 MB"
-                  isDownloaded={isTranslitVerified}
-                  isActive={true}
-                  isRequired={false}
-                  layoutMode={layoutMode}
-                  onSelect={() => {}}
-                  confirmDeleteId={confirmDeleteId}
-                  setConfirmDeleteId={setConfirmDeleteId}
-                  downloadStatus={downloadStatuses["vox_translit_rnn"]}
-                  startDownload={() => startDownload("vox_translit_rnn")}
-                  deleteModel={() => deleteModel("vox_translit_rnn")}
-                />
-              </div>
-            </div>
-          )}
+
 
           {/* TAB 4: AI REASONING (LLM) */}
           {activePipelineTab === "llm" && (
@@ -1694,11 +1653,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                               </div>
 
                               <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-                                {getModelPricing(model.id) && (
-                                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--foreground),0.03)]" title="Prompt / Completion pricing per 1M tokens">
-                                    {getModelPricing(model.id)}
-                                  </span>
-                                )}
+
                                 {isSelected && (
                                   <div className="w-5 h-5 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] flex items-center justify-center">
                                     <Check size={16} strokeWidth={3} />
@@ -2250,8 +2205,63 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             </div>
           )}
 
-        </div>
+          {/* TAB 5: AUXILIARY UTILITY MODELS */}
+          {activePipelineTab === "auxiliary" && (
+            <div className="space-y-4">
+              <div className={cn("grid gap-2.5", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
+                {(() => {
+                  const auxiliaryCategories = ["classifier", "embedding", "nli", "translit"];
+                  const groups = (manifest?.model_groups || []).filter(g => auxiliaryCategories.includes(g.category));
+                  
+                  if (groups.length === 0) {
+                    return (
+                      <div className="col-span-2 text-center py-6 text-[11px] text-[rgb(var(--foreground-muted))]/70">
+                        Loading auxiliary models manifest from backend...
+                      </div>
+                    );
+                  }
 
+                  const categoryDescriptions: Record<string, string> = {
+                    classifier: "Intent router classifying user queries into Generic or Semantic memory paths.",
+                    embedding: "Dense vector encoder for personal memory retrieval & semantic search.",
+                    nli: "Intra-collection contradiction detector ensuring memory consistency.",
+                    translit: "Converts Devanagari (Hindi) script to natural Hinglish phonetic spelling."
+                  };
+
+                  return groups.map((group) => {
+                    const totalBytes = group.files.reduce((acc, f) => acc + f.size, 0);
+                    const formattedSize = totalBytes > 0 ? `${(totalBytes / (1024 * 1024)).toFixed(1)} MB` : "ONNX";
+                    const isDownloaded = modelPresence[group.id] ?? false;
+                    const isRequired = group.files.some(f => f.required);
+                    const status = downloadStatuses[group.id];
+
+                    return (
+                      <SubModelCard
+                        key={group.id}
+                        id={group.id}
+                        name={group.name}
+                        description={categoryDescriptions[group.category] || `${group.name} engine.`}
+                        parameters={formattedSize}
+                        ramUsage={`~${Math.round(totalBytes / (1024 * 1024))} MB`}
+                        isDownloaded={isDownloaded}
+                        isActive={true}
+                        isRequired={isRequired}
+                        layoutMode={layoutMode}
+                        onSelect={() => {}}
+                        confirmDeleteId={confirmDeleteId}
+                        setConfirmDeleteId={setConfirmDeleteId}
+                        downloadStatus={status}
+                        startDownload={() => startDownload(group.id)}
+                        deleteModel={() => deleteModel(group.id)}
+                      />
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );
