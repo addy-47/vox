@@ -514,4 +514,172 @@ mod tests {
             "Spending any more than than than. thousand or greater because they are not they have said that they are spending only through credit. Right now."
         );
     }
+
+    #[test]
+    fn test_translit_mixed_script_preservation() {
+        init_paths_for_testing();
+
+        // Initialize transliteration engine if local models exist
+        if let Some(home) = dirs::home_dir() {
+            let vox_root = home.join(".vox");
+            if vox_root.exists() {
+                let _ = crate::utils::paths::init_with_root(vox_root);
+                let _ = crate::services::translit::init_transliteration_engine();
+            }
+        }
+
+        // 1. Pure ASCII / Numbers / Emojis without Devanagari
+        let pure_mixed = "Hello namaste hai! 123 😊";
+        assert!(!is_devanagari(pure_mixed));
+        let res_pure = transliterate_if_hi(pure_mixed, true, true);
+        assert_eq!(
+            res_pure, pure_mixed,
+            "Pure non-Devanagari text should be untouched"
+        );
+
+        // 2. Mixed Devanagari script + ASCII + Numbers + Punctuation + Emojis
+        let mixed_input = "Hello नमस्ते hai! 123 😊";
+        assert!(is_devanagari(mixed_input));
+
+        let res_mixed = transliterate_if_hi(mixed_input, true, true);
+
+        // Verify ASCII prefixes/suffixes, numbers, punctuation, spaces, and emojis are intact
+        assert!(
+            res_mixed.starts_with("Hello "),
+            "ASCII prefix 'Hello ' should be preserved"
+        );
+        assert!(
+            res_mixed.ends_with(" hai! 123 😊"),
+            "ASCII, numbers, punctuation, and emoji suffix should be preserved"
+        );
+        assert!(res_mixed.contains("123"), "Numbers '123' must be preserved");
+        assert!(res_mixed.contains("😊"), "Emoji '😊' must be preserved");
+
+        // If engine was initialized, "नमस्ते" should be converted to Roman script ("namaste" / "namas")
+        if crate::services::translit::TRANSLITERATION_ENGINE
+            .get()
+            .is_some()
+        {
+            assert!(
+                res_mixed.to_lowercase().contains("namaste")
+                    || res_mixed.to_lowercase().contains("namas"),
+                "Devanagari 'नमस्ते' should be transliterated to Roman script, got: '{}'",
+                res_mixed
+            );
+        } else {
+            // Fallback mode without engine: Devanagari word is kept as raw "नमस्ते"
+            assert!(res_mixed.contains("नमस्ते"));
+        }
+
+        // 3. Disabling transliteration entirely
+        let res_disabled = transliterate_if_hi(mixed_input, true, false);
+        assert_eq!(
+            res_disabled, mixed_input,
+            "With transliterate_enabled=false, input should be untouched"
+        );
+
+        // 4. Incomplete word protection (is_final = false)
+        // Trailing word without boundary should remain raw Devanagari to avoid partial transliteration artifacts
+        let incomplete_input = "Hello नमस";
+        let res_incomplete = transliterate_if_hi(incomplete_input, false, true);
+        assert_eq!(
+            res_incomplete, "Hello नमस",
+            "Incomplete final word should remain raw Devanagari when is_final=false"
+        );
+
+        // When trailing boundary (space) is present even with is_final=false, word is complete
+        let complete_input = "Hello नमस ";
+        let res_complete = transliterate_if_hi(complete_input, false, true);
+        assert!(res_complete.starts_with("Hello "), "Prefix preserved");
+        assert!(res_complete.ends_with(" "), "Trailing space preserved");
+    }
+
+    #[test]
+    fn test_devanagari_matra_normalization() {
+        init_paths_for_testing();
+
+        if let Some(home) = dirs::home_dir() {
+            let vox_root = home.join(".vox");
+            if vox_root.exists() {
+                let _ = crate::utils::paths::init_with_root(vox_root);
+                let _ = crate::services::translit::init_transliteration_engine();
+            }
+        }
+
+        // 1. Devanagari Matras (dependent vowel signs), Virama (halant), Anusvara, Chandrabindu
+        let matra_words = vec![
+            ("नमस्ते", "Virama/Halant conjunct + E matra"),
+            ("क्या", "Half consonant + AA matra"),
+            ("कुत्ता", "Short U matra + virama + AA matra"),
+            ("हिंदी", "Anusvara + I matra + II matra"),
+            ("हाँ", "Chandrabindu + AA matra"),
+            ("देश", "E matra"),
+            ("पैसा", "AI matra"),
+            ("सोना", "O matra"),
+            ("कौन", "AU matra"),
+            ("वॉक्स", "Candra O matra + virama"),
+        ];
+
+        for (word, desc) in &matra_words {
+            assert!(
+                is_devanagari(word),
+                "is_devanagari failed for {} ({})",
+                word,
+                desc
+            );
+
+            // Verify transliterate_if_hi handles matra words without panic or byte corruption
+            let res = transliterate_if_hi(word, true, true);
+            assert!(
+                !res.is_empty(),
+                "Transliteration result should not be empty for {} ({})",
+                word,
+                desc
+            );
+        }
+
+        // 2. Devanagari Nukta Normalization (Precomposed vs Decomposed)
+        // Precomposed: 'फ़' (U+095E FA), 'ज़' (U+095B ZA), 'क़' (U+0958 QA), 'ख़' (U+0959 KHHA), 'ग़' (U+095A GHHA), 'ड़' (U+095C DDDHA), 'ढ़' (U+095D RHA)
+        // Decomposed: Base consonant + '़' (U+093C Nukta) e.g. 'फ' + '़'
+        let precomposed_phone = "फ़ोन 123";
+        let decomposed_phone = "फ\u{093C}ोन 123";
+
+        assert!(
+            is_devanagari(precomposed_phone),
+            "Precomposed nukta should be detected as Devanagari"
+        );
+        assert!(
+            is_devanagari(decomposed_phone),
+            "Decomposed nukta should be detected as Devanagari"
+        );
+
+        let res_pre = transliterate_if_hi(precomposed_phone, true, true);
+        let res_dec = transliterate_if_hi(decomposed_phone, true, true);
+
+        // Both must preserve ASCII and numbers
+        assert!(
+            res_pre.ends_with(" 123"),
+            "Precomposed nukta test should preserve ' 123'"
+        );
+        assert!(
+            res_dec.ends_with(" 123"),
+            "Decomposed nukta test should preserve ' 123'"
+        );
+
+        // 3. Multi-word Devanagari string with mixed matras, nuktas, numbers, and emojis
+        let complex_devanagari = "यह ख़बर फ़ोन पर 100% सही है! 👍";
+        assert!(is_devanagari(complex_devanagari));
+
+        let res_complex = transliterate_if_hi(complex_devanagari, true, true);
+        assert!(
+            res_complex.contains("100%"),
+            "Percentage and numbers must be preserved"
+        );
+        assert!(
+            res_complex.contains("!"),
+            "Punctuation must be preserved"
+        );
+        assert!(res_complex.contains("👍"), "Emoji must be preserved");
+    }
 }
+

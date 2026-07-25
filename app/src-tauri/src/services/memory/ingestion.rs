@@ -163,3 +163,46 @@ pub fn run_compaction(
         diff_to_enqueue,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::llm::ProviderKind;
+
+    #[test]
+    fn test_compaction_empty_history() {
+        struct MockProvider;
+        impl LlmProvider for MockProvider {
+            fn kind(&self) -> ProviderKind {
+                ProviderKind::Embedded
+            }
+            fn health_check(&self) -> bool {
+                true
+            }
+            fn list_models(&self) -> Result<Vec<crate::core::settings::LlmModelInfo>> {
+                Ok(vec![])
+            }
+            fn generate(
+                &self,
+                _context: &ConversationContext,
+                _max_tokens: u32,
+                _cancel_flag: &Arc<AtomicBool>,
+                _event_tx: &std::sync::mpsc::Sender<VoxEvent>,
+            ) -> Result<()> {
+                Ok(())
+            }
+        }
+
+        let provider = MockProvider;
+        let history: Vec<ChatMessage> = vec![];
+        let last_user_turn = ChatMessage {
+            role: Role::User,
+            content: "Hello".to_string(),
+            timestamp_ms: 0,
+        };
+        let personal_mem = HashMap::new();
+
+        let res = run_compaction(&provider, &history, &last_user_turn, &personal_mem);
+        assert!(res.is_err(), "run_compaction should return Err when history is empty");
+    }
+}

@@ -185,12 +185,7 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
     }
 
     // L2 Normalization
-    let norm: f32 = sum_embeddings.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        for dim in 0..hidden_size {
-            sum_embeddings[dim] /= norm;
-        }
-    }
+    l2_normalize_in_place(&mut sum_embeddings);
 
     Ok(Some(sum_embeddings))
 }
@@ -198,6 +193,25 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
 /// Returns true if the text embedder model is loaded and ready.
 pub fn is_embedder_loaded() -> bool {
     EMBEDDER.get().is_some()
+}
+
+/// L2 normalizes a slice of floats in-place.
+/// Safe against zero vectors, subnormal values, and non-finite numbers.
+pub fn l2_normalize_in_place(v: &mut [f32]) {
+    let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > 0.0 && norm.is_finite() {
+        for val in v.iter_mut() {
+            *val /= norm;
+        }
+    }
+}
+
+/// L2 normalizes a vector, returning a new normalized vector.
+/// If norm is zero or non-finite, returns the original vector cloned.
+pub fn l2_normalize(v: &[f32]) -> Vec<f32> {
+    let mut out = v.to_vec();
+    l2_normalize_in_place(&mut out);
+    out
 }
 
 /// Calculates the cosine similarity between two float vectors.
@@ -214,3 +228,92 @@ pub fn cosine_similarity(u: &[f32], v: &[f32]) -> f32 {
         0.0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_l2_normalization_zero_vector() {
+        // All-zero vector
+        let zero_vec = vec![0.0f32; 384];
+        let normalized = l2_normalize(&zero_vec);
+        assert_eq!(normalized.len(), 384);
+        assert!(normalized.iter().all(|&x| x == 0.0));
+        assert!(!normalized.iter().any(|&x| x.is_nan()));
+
+        // Empty vector
+        let empty_vec: Vec<f32> = vec![];
+        let normalized_empty = l2_normalize(&empty_vec);
+        assert!(normalized_empty.is_empty());
+
+        // In-place on zero vector
+        let mut zero_vec_mut = vec![0.0f32; 4];
+        l2_normalize_in_place(&mut zero_vec_mut);
+        assert_eq!(zero_vec_mut, vec![0.0, 0.0, 0.0, 0.0]);
+        assert!(!zero_vec_mut.iter().any(|&x| x.is_nan()));
+    }
+
+    #[test]
+    fn test_l2_normalization_standard() {
+        // Simple 2D vector [3.0, 4.0] -> L2 norm = 5.0 -> [0.6, 0.8]
+        let v2d = vec![3.0f32, 4.0f32];
+        let norm_2d = l2_normalize(&v2d);
+        let l2_len: f32 = norm_2d.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((l2_len - 1.0).abs() < 1e-6, "Expected unit length 1.0, got {}", l2_len);
+        assert!((norm_2d[0] - 0.6).abs() < 1e-6);
+        assert!((norm_2d[1] - 0.8).abs() < 1e-6);
+
+        // 3D vector [1.0, 2.0, 2.0] -> L2 norm = 3.0 -> [1/3, 2/3, 2/3]
+        let v3d = vec![1.0f32, 2.0f32, 2.0f32];
+        let norm_3d = l2_normalize(&v3d);
+        let l2_len_3d: f32 = norm_3d.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((l2_len_3d - 1.0).abs() < 1e-6);
+        assert!((norm_3d[0] - (1.0 / 3.0)).abs() < 1e-6);
+
+        // In-place normalization check
+        let mut v_inplace = vec![0.0f32, 0.0, 5.0];
+        l2_normalize_in_place(&mut v_inplace);
+        let l2_inplace: f32 = v_inplace.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((l2_inplace - 1.0).abs() < 1e-6);
+        assert_eq!(v_inplace, vec![0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn test_cosine_similarity_edge_cases() {
+        // Identical vectors (similarity should be 1.0)
+        let a = vec![1.0f32, 2.0, 3.0];
+        let sim_identical = cosine_similarity(&a, &a);
+        assert!((sim_identical - 1.0).abs() < 1e-6, "Identical vectors similarity expected 1.0, got {}", sim_identical);
+
+        // Orthogonal vectors (similarity should be 0.0)
+        let u = vec![1.0f32, 0.0, 0.0];
+        let v = vec![0.0f32, 1.0, 0.0];
+        let sim_ortho = cosine_similarity(&u, &v);
+        assert!(sim_ortho.abs() < 1e-6, "Orthogonal vectors similarity expected 0.0, got {}", sim_ortho);
+
+        // Opposite vectors (similarity should be -1.0)
+        let x = vec![1.0f32, 2.0, 3.0];
+        let y = vec![-1.0f32, -2.0, -3.0];
+        let sim_opposite = cosine_similarity(&x, &y);
+        assert!((sim_opposite - (-1.0)).abs() < 1e-6, "Opposite vectors similarity expected -1.0, got {}", sim_opposite);
+
+        // Mismatched vector dimensions (should safely return 0.0)
+        let short_vec = vec![1.0f32, 2.0];
+        let long_vec = vec![1.0f32, 2.0, 3.0];
+        let sim_mismatched = cosine_similarity(&short_vec, &long_vec);
+        assert_eq!(sim_mismatched, 0.0, "Mismatched dimensions expected 0.0, got {}", sim_mismatched);
+
+        // Zero vector input (should safely return 0.0 without NaN)
+        let zero_vec = vec![0.0f32; 3];
+        let sim_zero = cosine_similarity(&zero_vec, &x);
+        assert_eq!(sim_zero, 0.0);
+        assert!(!sim_zero.is_nan());
+
+        // Empty vector input (should safely return 0.0)
+        let empty: Vec<f32> = vec![];
+        let sim_empty = cosine_similarity(&empty, &empty);
+        assert_eq!(sim_empty, 0.0);
+    }
+}
+

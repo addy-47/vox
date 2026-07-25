@@ -290,3 +290,227 @@ pub async fn supersede_user_fact(
 
     Ok(new_id)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use turso::Connection;
+
+    async fn setup_test_db() -> Result<Connection> {
+        let db = turso::Builder::new_local(":memory:")
+            .experimental_index_method(true)
+            .build()
+            .await?;
+        let conn = db.connect()?;
+        crate::persistence::schema::run_migrations(&conn).await?;
+        Ok(conn)
+    }
+
+    #[tokio::test]
+    async fn test_enqueue_personal_facts() -> Result<()> {
+        let conn = setup_test_db().await?;
+        let mut facts = HashMap::new();
+        facts.insert("Tasks".to_string(), vec!["Buy groceries".to_string(), "  ".to_string()]);
+        facts.insert("Skills".to_string(), vec!["Rust programming".to_string()]);
+
+        enqueue_personal_facts(&conn, facts, "session_123", true).await?;
+
+        let mut rows = conn
+            .query("SELECT fact, collection, status, session_id FROM personal_memory_queue ORDER BY id ASC", ())
+            .await?;
+
+        let mut queue_items = Vec::new();
+        while let Some(row) = rows.next().await? {
+            queue_items.push((
+                row.get::<String>(0)?,
+                row.get::<String>(1)?,
+                row.get::<String>(2)?,
+                row.get::<String>(3)?,
+            ));
+        }
+
+        assert_eq!(queue_items.len(), 2);
+        queue_items.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(queue_items[0], ("Buy groceries".to_string(), "Tasks".to_string(), "staged".to_string(), "session_123".to_string()));
+        assert_eq!(queue_items[1], ("Rust programming".to_string(), "Skills".to_string(), "pending".to_string(), "session_123".to_string()));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mark_job_failed() -> Result<()> {
+        let conn = setup_test_db().await?;
+        conn.execute(
+            "INSERT INTO personal_memory_queue (fact, collection, session_id, status, attempts, created_at) VALUES ('fact1', 'Skills', 'sess1', 'pending', 0, 1000)",
+            (),
+        ).await?;
+
+        mark_job_failed(&conn, 1, "Connection timeout").await;
+
+        let mut rows = conn.query("SELECT status, error_msg, attempts FROM personal_memory_queue WHERE id = 1", ()).await?;
+        let row = rows.next().await?.expect("job should exist");
+        let status: String = row.get(0)?;
+        let err_msg: String = row.get(1)?;
+        let attempts: i64 = row.get(2)?;
+
+        assert_eq!(status, "failed");
+        assert_eq!(err_msg, "Connection timeout");
+        assert_eq!(attempts, 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_insert_exact_merged_fact() -> Result<()> {
+        let conn = setup_test_db().await?;
+        conn.execute(
+            "INSERT INTO personal_memory_queue (id, fact, collection, session_id, status, created_at) VALUES (10, 'Rust dev', 'Skills', 'sess1', 'pending', 1000)",
+            (),
+        ).await?;
+
+        let dummy_embedding = vec![0.1f32; 384];
+        insert_exact_merged_fact(
+            &conn,
+            10,
+            "mem_new_1",
+            "Rust dev",
+            "Skills",
+            "LLM",
+            "sess1",
+            "mem_old_1",
+            &dummy_embedding,
+            2000,
+        ).await?;
+
+        let mut rows = conn.query("SELECT id, collection, status FROM memory_facts WHERE id = 'mem_new_1'", ()).await?;
+        let row = rows.next().await?.expect("fact should exist");
+        assert_eq!(row.get::<String>(0)?, "mem_new_1");
+        assert_eq!(row.get::<String>(1)?, "Skills");
+        assert_eq!(row.get::<String>(2)?, "merged");
+
+        let mut v_rows = conn.query("SELECT fact_id FROM memory_facts_vectors WHERE fact_id = 'mem_new_1'", ()).await?;
+        assert!(v_rows.next().await?.is_some());
+
+        let mut r_rows = conn.query("SELECT from_id, to_id, relation, source FROM memory_relations WHERE from_id = 'mem_new_1'", ()).await?;
+        let r_row = r_rows.next().await?.expect("relation edge should exist");
+        assert_eq!(r_row.get::<String>(0)?, "mem_new_1");
+        assert_eq!(r_row.get::<String>(1)?, "mem_old_1");
+        assert_eq!(r_row.get::<String>(2)?, "SUPERSEDES");
+        assert_eq!(r_row.get::<String>(3)?, "DEDUP");
+
+        let mut q_rows = conn.query("SELECT status FROM personal_memory_queue WHERE id = 10", ()).await?;
+        assert_eq!(q_rows.next().await?.unwrap().get::<String>(0)?, "completed");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_insert_fact_with_vector_and_relations() -> Result<()> {
+        let conn = setup_test_db().await?;
+        conn.execute(
+            "INSERT INTO personal_memory_queue (id, fact, collection, session_id, status, created_at) VALUES (5, 'Knows Rust', 'Skills', 'sess1', 'pending', 1000)",
+            (),
+        ).await?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES ('mem_target_1', 'semantic', 'Projects', 'Building Vox', 'LLM', 'active', 900)",
+            (),
+        ).await?;
+
+        let dummy_embedding = vec![0.2f32; 384];
+        let relations = vec![
+            ("mem_fact_1".to_string(), "mem_target_1".to_string(), "requires_skill", "LLM"),
+            ("mem_target_1".to_string(), "mem_fact_1".to_string(), "used_in_project", "LLM"),
+        ];
+
+        insert_fact_with_vector_and_relations(
+            &conn,
+            5,
+            "mem_fact_1",
+            "Knows Rust",
+            "Skills",
+            "LLM",
+            "sess1",
+            &dummy_embedding,
+            relations,
+            2000,
+        ).await?;
+
+        let mut rows = conn.query("SELECT status FROM memory_facts WHERE id = 'mem_fact_1'", ()).await?;
+        assert_eq!(rows.next().await?.unwrap().get::<String>(0)?, "active");
+
+        let mut r_rows = conn.query("SELECT from_id, to_id, relation FROM memory_relations ORDER BY id ASC", ()).await?;
+        let mut edges = Vec::new();
+        while let Some(row) = r_rows.next().await? {
+            edges.push((row.get::<String>(0)?, row.get::<String>(1)?, row.get::<String>(2)?));
+        }
+        assert_eq!(edges.len(), 2);
+        assert_eq!(edges[0], ("mem_fact_1".to_string(), "mem_target_1".to_string(), "requires_skill".to_string()));
+        assert_eq!(edges[1], ("mem_target_1".to_string(), "mem_fact_1".to_string(), "used_in_project".to_string()));
+
+        let mut q_rows = conn.query("SELECT status FROM personal_memory_queue WHERE id = 5", ()).await?;
+        assert_eq!(q_rows.next().await?.unwrap().get::<String>(0)?, "completed");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_session_end_consolidation() -> Result<()> {
+        let conn = setup_test_db().await?;
+
+        conn.execute(
+            "INSERT INTO personal_memory_queue (fact, collection, session_id, status, created_at) VALUES ('Task 1', 'Tasks', 'sess_alpha', 'staged', 1000)",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO personal_memory_queue (fact, collection, session_id, status, created_at) VALUES ('Task 2', 'Tasks', 'sess_beta', 'staged', 1000)",
+            (),
+        ).await?;
+
+        session_end_consolidation(&conn, "sess_alpha", "User discussed task priorities for session alpha").await?;
+
+        let mut rows = conn.query("SELECT status FROM personal_memory_queue WHERE session_id = 'sess_alpha'", ()).await?;
+        assert_eq!(rows.next().await?.unwrap().get::<String>(0)?, "pending");
+
+        let mut rows_b = conn.query("SELECT status FROM personal_memory_queue WHERE session_id = 'sess_beta'", ()).await?;
+        assert_eq!(rows_b.next().await?.unwrap().get::<String>(0)?, "staged");
+
+        let mut ctx_rows = conn.query("SELECT collection, fact, type, status FROM memory_facts WHERE session_id = 'sess_alpha'", ()).await?;
+        let ctx_row = ctx_rows.next().await?.expect("Context fact should be created");
+        assert_eq!(ctx_row.get::<String>(0)?, "Context");
+        assert_eq!(ctx_row.get::<String>(1)?, "User discussed task priorities for session alpha");
+        assert_eq!(ctx_row.get::<String>(2)?, "operational");
+        assert_eq!(ctx_row.get::<String>(3)?, "active");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_supersede_user_fact_non_semantic() -> Result<()> {
+        let conn = setup_test_db().await?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES ('old_id_1', 'foundational', 'Identity', 'Name is Alex', 'LLM', 'active', 1000)",
+            (),
+        ).await?;
+
+        let new_id = supersede_user_fact(&conn, "old_id_1", "Name is Alexander", "Identity").await?;
+
+        let mut old_rows = conn.query("SELECT status FROM memory_facts WHERE id = 'old_id_1'", ()).await?;
+        assert_eq!(old_rows.next().await?.unwrap().get::<String>(0)?, "superseded");
+
+        let mut new_rows = conn.query("SELECT fact, source, status FROM memory_facts WHERE id = ?", (new_id.clone(),)).await?;
+        let new_row = new_rows.next().await?.expect("new fact should exist");
+        assert_eq!(new_row.get::<String>(0)?, "Name is Alexander");
+        assert_eq!(new_row.get::<String>(1)?, "User");
+        assert_eq!(new_row.get::<String>(2)?, "active");
+
+        let mut rel_rows = conn.query("SELECT from_id, to_id, relation, source FROM memory_relations WHERE from_id = ?", (new_id,)).await?;
+        let rel_row = rel_rows.next().await?.expect("supersedes relation should exist");
+        assert_eq!(rel_row.get::<String>(1)?, "old_id_1");
+        assert_eq!(rel_row.get::<String>(2)?, "SUPERSEDES");
+        assert_eq!(rel_row.get::<String>(3)?, "USER");
+
+        Ok(())
+    }
+}

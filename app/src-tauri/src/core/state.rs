@@ -33,6 +33,23 @@ impl From<u32> for InteractionOwner {
     }
 }
 
+impl From<u8> for InteractionOwner {
+    fn from(v: u8) -> Self {
+        match v {
+            1 => InteractionOwner::MainWindow,
+            2 => InteractionOwner::Ptt,
+            3 => InteractionOwner::Wizard,
+            _ => InteractionOwner::Tray,
+        }
+    }
+}
+
+impl From<InteractionOwner> for u8 {
+    fn from(owner: InteractionOwner) -> Self {
+        owner as u8
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub enum InteractionState {
     Idle,

@@ -283,3 +283,253 @@ async fn fetch_context_chain(
 }
 
 pub use crate::services::memory::formatter::{format_relative_timestamp, format_user_profile_context};
+
+// ─── Pure Vector Search & Ranking Helper Functions ─────────────────────────────
+
+/// Calculates cosine similarity between two float vectors.
+pub fn calculate_cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut dot = 0.0f32;
+    let mut norm_a = 0.0f32;
+    let mut norm_b = 0.0f32;
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    if norm_a <= 0.0 || norm_b <= 0.0 {
+        return 0.0;
+    }
+    dot / (norm_a.sqrt() * norm_b.sqrt())
+}
+
+/// Calculates cosine vector distance (1.0 - cosine_similarity).
+pub fn calculate_vector_distance_cos(a: &[f32], b: &[f32]) -> f32 {
+    1.0 - calculate_cosine_similarity(a, b)
+}
+
+/// Represents a candidate vector search result with similarity score.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VectorSearchResult<T> {
+    pub item: T,
+    pub collection: String,
+    pub similarity: f32,
+}
+
+/// Filters vector search candidates by similarity cutoff and ranks them in descending order of similarity score (ascending vector distance).
+pub fn filter_and_rank_candidates<T: Clone>(
+    candidates: Vec<VectorSearchResult<T>>,
+    similarity_threshold: f32,
+) -> Vec<VectorSearchResult<T>> {
+    let mut filtered: Vec<_> = candidates
+        .into_iter()
+        .filter(|c| c.similarity >= similarity_threshold)
+        .collect();
+
+    // Sort descending by similarity (highest similarity score first)
+    filtered.sort_by(|a, b| {
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    filtered
+}
+
+/// Performs top-k truncation math per collection group on ranked vector candidates.
+pub fn truncate_top_k_per_collection<T: Clone>(
+    candidates: Vec<VectorSearchResult<T>>,
+    top_k_per_collection: usize,
+) -> Vec<VectorSearchResult<T>> {
+    let mut collection_counts: HashMap<String, usize> = HashMap::new();
+    let mut truncated = Vec::new();
+
+    for candidate in candidates {
+        let count = collection_counts
+            .entry(candidate.collection.clone())
+            .or_insert(0);
+        if *count < top_k_per_collection {
+            *count += 1;
+            truncated.push(candidate);
+        }
+    }
+
+    truncated
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vector_distance_cos_and_similarity_math() {
+        let v1 = vec![1.0, 0.0, 0.0];
+        let v2 = vec![1.0, 0.0, 0.0];
+        let v3 = vec![0.0, 1.0, 0.0];
+        let v4 = vec![-1.0, 0.0, 0.0];
+
+        // Identical vectors -> similarity = 1.0, distance = 0.0
+        assert!((calculate_cosine_similarity(&v1, &v2) - 1.0).abs() < 1e-6);
+        assert!((calculate_vector_distance_cos(&v1, &v2) - 0.0).abs() < 1e-6);
+
+        // Orthogonal vectors -> similarity = 0.0, distance = 1.0
+        assert!((calculate_cosine_similarity(&v1, &v3) - 0.0).abs() < 1e-6);
+        assert!((calculate_vector_distance_cos(&v1, &v3) - 1.0).abs() < 1e-6);
+
+        // Diametrically opposite vectors -> similarity = -1.0, distance = 2.0
+        assert!((calculate_cosine_similarity(&v1, &v4) - (-1.0)).abs() < 1e-6);
+        assert!((calculate_vector_distance_cos(&v1, &v4) - 2.0).abs() < 1e-6);
+
+        // Length mismatch or empty -> returns 0.0
+        assert_eq!(calculate_cosine_similarity(&v1, &vec![1.0, 0.0]), 0.0);
+        assert_eq!(calculate_cosine_similarity(&[], &[]), 0.0);
+    }
+
+    #[test]
+    fn test_threshold_filtering_logic() {
+        let candidates = vec![
+            VectorSearchResult {
+                item: "fact_high",
+                collection: "Skills".to_string(),
+                similarity: 0.95,
+            },
+            VectorSearchResult {
+                item: "fact_exact_cutoff",
+                collection: "Skills".to_string(),
+                similarity: 0.75,
+            },
+            VectorSearchResult {
+                item: "fact_below_cutoff",
+                collection: "Skills".to_string(),
+                similarity: 0.74,
+            },
+            VectorSearchResult {
+                item: "fact_low",
+                collection: "Skills".to_string(),
+                similarity: 0.40,
+            },
+        ];
+
+        let threshold = 0.75;
+        let filtered = filter_and_rank_candidates(candidates, threshold);
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].item, "fact_high");
+        assert_eq!(filtered[1].item, "fact_exact_cutoff");
+    }
+
+    #[test]
+    fn test_vector_distance_ranking_order() {
+        let candidates = vec![
+            VectorSearchResult {
+                item: "item_mid",
+                collection: "Preferences".to_string(),
+                similarity: 0.80,
+            },
+            VectorSearchResult {
+                item: "item_top",
+                collection: "Preferences".to_string(),
+                similarity: 0.98,
+            },
+            VectorSearchResult {
+                item: "item_low",
+                collection: "Preferences".to_string(),
+                similarity: 0.60,
+            },
+        ];
+
+        let ranked = filter_and_rank_candidates(candidates, 0.50);
+
+        assert_eq!(ranked.len(), 3);
+        assert_eq!(ranked[0].item, "item_top");
+        assert_eq!(ranked[1].item, "item_mid");
+        assert_eq!(ranked[2].item, "item_low");
+
+        // Verify distances are strictly monotonically non-decreasing
+        let d0 = 1.0 - ranked[0].similarity;
+        let d1 = 1.0 - ranked[1].similarity;
+        let d2 = 1.0 - ranked[2].similarity;
+
+        assert!(d0 <= d1);
+        assert!(d1 <= d2);
+    }
+
+    #[test]
+    fn test_top_k_truncation_per_collection_math() {
+        let candidates = vec![
+            VectorSearchResult { item: "skill_1", collection: "Skills".to_string(), similarity: 0.95 },
+            VectorSearchResult { item: "skill_2", collection: "Skills".to_string(), similarity: 0.90 },
+            VectorSearchResult { item: "skill_3", collection: "Skills".to_string(), similarity: 0.85 },
+            VectorSearchResult { item: "skill_4", collection: "Skills".to_string(), similarity: 0.80 },
+            VectorSearchResult { item: "project_1", collection: "Projects".to_string(), similarity: 0.92 },
+            VectorSearchResult { item: "project_2", collection: "Projects".to_string(), similarity: 0.88 },
+            VectorSearchResult { item: "pref_1", collection: "Preferences".to_string(), similarity: 0.78 },
+        ];
+
+        let top_k = 2;
+        let truncated = truncate_top_k_per_collection(candidates, top_k);
+
+        // Skills should be truncated from 4 to 2 (skill_1, skill_2)
+        // Projects has 2 items -> both retained (project_1, project_2)
+        // Preferences has 1 item -> retained (pref_1)
+        // Total items expected: 2 + 2 + 1 = 5
+        assert_eq!(truncated.len(), 5);
+
+        let skills_retained: Vec<_> = truncated
+            .iter()
+            .filter(|c| c.collection == "Skills")
+            .map(|c| c.item)
+            .collect();
+        assert_eq!(skills_retained, vec!["skill_1", "skill_2"]);
+
+        let projects_retained: Vec<_> = truncated
+            .iter()
+            .filter(|c| c.collection == "Projects")
+            .map(|c| c.item)
+            .collect();
+        assert_eq!(projects_retained, vec!["project_1", "project_2"]);
+
+        let prefs_retained: Vec<_> = truncated
+            .iter()
+            .filter(|c| c.collection == "Preferences")
+            .map(|c| c.item)
+            .collect();
+        assert_eq!(prefs_retained, vec!["pref_1"]);
+    }
+
+    #[test]
+    fn test_combined_retrieval_ranking_pipeline() {
+        let raw_candidates = vec![
+            VectorSearchResult { item: "s1", collection: "Skills".to_string(), similarity: 0.95 },
+            VectorSearchResult { item: "s2", collection: "Skills".to_string(), similarity: 0.70 }, // below threshold
+            VectorSearchResult { item: "s3", collection: "Skills".to_string(), similarity: 0.88 },
+            VectorSearchResult { item: "s4", collection: "Skills".to_string(), similarity: 0.82 },
+            VectorSearchResult { item: "p1", collection: "Projects".to_string(), similarity: 0.91 },
+            VectorSearchResult { item: "p2", collection: "Projects".to_string(), similarity: 0.85 },
+        ];
+
+        let cutoff = 0.75;
+        let top_k = 2;
+
+        let filtered_and_ranked = filter_and_rank_candidates(raw_candidates, cutoff);
+        let final_results = truncate_top_k_per_collection(filtered_and_ranked, top_k);
+
+        // Filtered out: s2 (0.70 < 0.75)
+        // Skills remaining ranked: s1 (0.95), s3 (0.88), s4 (0.82)
+        // Skills top-k=2 truncation: s1, s3
+        // Projects remaining ranked: p1 (0.91), p2 (0.85)
+        // Projects top-k=2 truncation: p1, p2
+        // Total expected: 4 items
+        assert_eq!(final_results.len(), 4);
+
+        let final_items: Vec<_> = final_results.iter().map(|c| c.item).collect();
+        assert!(final_items.contains(&"s1"));
+        assert!(final_items.contains(&"s3"));
+        assert!(!final_items.contains(&"s4")); // truncated out
+        assert!(!final_items.contains(&"s2")); // filtered out
+        assert!(final_items.contains(&"p1"));
+        assert!(final_items.contains(&"p2"));
+    }
+}
+

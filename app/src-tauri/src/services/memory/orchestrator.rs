@@ -63,6 +63,16 @@ pub async fn process_one_queue_item(
         None => return Ok(PipelineOutcome::NoWork),
     };
 
+    if fact.trim().is_empty() {
+        let _ = conn
+            .execute(
+                "UPDATE personal_memory_queue SET status = 'completed' WHERE id = ?",
+                (job_id,),
+            )
+            .await;
+        return Ok(PipelineOutcome::NoWork);
+    }
+
     conn.execute(
         "UPDATE personal_memory_queue SET status = 'processing' WHERE id = ?",
         (job_id,),
@@ -287,6 +297,91 @@ mod tests {
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let outcome = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
         assert_eq!(outcome, PipelineOutcome::NoWork);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_memory_ingestion_empty_and_whitespace() -> Result<()> {
+        let db = turso::Builder::new_local(":memory:").experimental_index_method(true).build().await?;
+        let conn = db.connect()?;
+        crate::persistence::schema::run_migrations(&conn).await?;
+
+        let settings = MemorySettings::default();
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+
+        let test_cases = vec!["", "   ", "\n\t"];
+        for (i, empty_fact) in test_cases.into_iter().enumerate() {
+            conn.execute(
+                "INSERT INTO personal_memory_queue (id, fact, collection, source, session_id, status, created_at)
+                 VALUES (?, ?, 'Skills', 'test', 'sess_1', 'pending', 1000)",
+                (i as i64 + 1, empty_fact.to_string()),
+            )
+            .await?;
+
+            let outcome = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
+            assert_eq!(outcome, PipelineOutcome::NoWork);
+        }
+
+        // Verify zero facts inserted into memory_facts table
+        let mut rows = conn.query("SELECT COUNT(*) FROM memory_facts", ()).await?;
+        let count: i64 = rows.next().await?.unwrap().get(0)?;
+        assert_eq!(count, 0, "No memory_facts should be created for empty/whitespace inputs");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_memory_ingestion_class_a_direct_isolation() -> Result<()> {
+        let db = turso::Builder::new_local(":memory:").experimental_index_method(true).build().await?;
+        let conn = db.connect()?;
+        crate::persistence::schema::run_migrations(&conn).await?;
+
+        let settings = MemorySettings::default();
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+
+        // Insert Class A facts: Identity and Context
+        conn.execute(
+            "INSERT INTO personal_memory_queue (id, fact, collection, source, session_id, status, created_at)
+             VALUES (1, 'User prefers dark theme', 'Identity', 'test', 'sess_1', 'pending', 1000)",
+            (),
+        )
+        .await?;
+
+        conn.execute(
+            "INSERT INTO personal_memory_queue (id, fact, collection, source, session_id, status, created_at)
+             VALUES (2, 'User discussed Rust performance', 'Context', 'test', 'sess_1', 'pending', 1001)",
+            (),
+        )
+        .await?;
+
+        // Process item 1 (Identity)
+        let outcome1 = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
+        match outcome1 {
+            PipelineOutcome::Ingested { relations, .. } => {
+                assert!(relations.is_empty(), "Class A items must bypass NLI/LLM and create 0 relation edges");
+            }
+            other => panic!("Expected Ingested outcome for Class A item 1, got {:?}", other),
+        }
+
+        // Process item 2 (Context)
+        let outcome2 = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
+        match outcome2 {
+            PipelineOutcome::Ingested { relations, .. } => {
+                assert!(relations.is_empty(), "Class A items must bypass NLI/LLM and create 0 relation edges");
+            }
+            other => panic!("Expected Ingested outcome for Class A item 2, got {:?}", other),
+        }
+
+        // Verify zero relations created in memory_relations DB table
+        let mut rel_rows = conn.query("SELECT COUNT(*) FROM memory_relations", ()).await?;
+        let rel_count: i64 = rel_rows.next().await?.unwrap().get(0)?;
+        assert_eq!(rel_count, 0, "Class A ingestion must create 0 memory_relations rows in DB");
+
+        // Verify facts were directly stored in memory_facts
+        let mut fact_rows = conn.query("SELECT COUNT(*) FROM memory_facts WHERE collection IN ('Identity', 'Context')", ()).await?;
+        let fact_count: i64 = fact_rows.next().await?.unwrap().get(0)?;
+        assert_eq!(fact_count, 2, "Class A facts must be directly ingested into memory_facts");
+
         Ok(())
     }
 }

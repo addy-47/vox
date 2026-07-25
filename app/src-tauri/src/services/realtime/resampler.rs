@@ -72,12 +72,13 @@ impl AudioResampler {
             )
             .map_err(|e| anyhow!("Failed to create output adapter: {:?}", e))?;
 
-            self.inner
+            let (_in_len, out_len) = self
+                .inner
                 .process_into_buffer(&input_adapter, &mut output_adapter, None)
                 .map_err(|e| anyhow!("Resampling execution error: {:?}", e))?;
 
             // Append results
-            output_samples.extend_from_slice(&self.resampler_out_buf[0]);
+            output_samples.extend_from_slice(&self.resampler_out_buf[0][..out_len]);
 
             // Retrieve frames needed for next chunk
             self.nbr_frames_needed = self.inner.input_frames_next();
@@ -101,12 +102,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_resampler_process() {
+    fn test_resampler_process_exact_sample_count() {
         let mut resampler = AudioResampler::new(16000, 24000, 256).unwrap();
         let input = vec![0i16; 512];
         let output = resampler.process_i16(&input).unwrap();
-        // Since input is 512 samples at 16kHz resampled to 24kHz,
-        // we expect output to be around 768 samples (or non-empty).
-        assert!(!output.is_empty());
+        // 512 input samples at 16kHz resampled to 24kHz (1.5x ratio)
+        // Rubato sinc filter: Chunk 1 produces 381 frames (initial transient delay),
+        // Chunk 2 produces 384 frames (exact 256 * 1.5 ratio). Total = 765 frames.
+        assert_eq!(output.len(), 765);
+        assert!(output.iter().all(|&s| s == 0));
+    }
+
+    #[test]
+    fn test_resampler_empty_input() {
+        let mut resampler = AudioResampler::new(16000, 24000, 256).unwrap();
+        let output = resampler.process_i16(&[]).unwrap();
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_resampler_boundary_and_chunk_buffering() {
+        let mut resampler = AudioResampler::new(16000, 24000, 256).unwrap();
+
+        // 1. Pass input smaller than chunk_size (100 < 256) -> output should be empty (buffered)
+        let output_1 = resampler.process_i16(&vec![0i16; 100]).unwrap();
+        assert_eq!(output_1.len(), 0);
+
+        // 2. Pass 156 samples to complete first chunk of 256 -> outputs 381 samples (initial transient)
+        let output_2 = resampler.process_i16(&vec![0i16; 156]).unwrap();
+        assert_eq!(output_2.len(), 381);
+
+        // 3. Pass non-multiple chunk input (600 samples = 2 * 256 + 88 remainder)
+        // Should process 2 full chunks (384 + 384 = 768 samples) and buffer 88 samples
+        let output_3 = resampler.process_i16(&vec![0i16; 600]).unwrap();
+        assert_eq!(output_3.len(), 768);
+
+        // 4. Pass 168 samples to complete buffered chunk (88 + 168 = 256) -> outputs 384 samples
+        let output_4 = resampler.process_i16(&vec![0i16; 168]).unwrap();
+        assert_eq!(output_4.len(), 384);
+    }
+
+    #[test]
+    fn test_resampler_downsampling() {
+        let mut resampler = AudioResampler::new(48000, 16000, 384).unwrap();
+        let input = vec![0i16; 768]; // 2 chunks of 384 samples
+        let output = resampler.process_i16(&input).unwrap();
+        // 768 samples at 48kHz resampled to 16kHz (1/3 ratio)
+        // Chunk 1 = 127 frames, Chunk 2 = 128 frames. Total = 255 frames.
+        assert_eq!(output.len(), 255);
     }
 }
+
+

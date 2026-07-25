@@ -354,7 +354,11 @@ fn apply_setting_mutation(
                 as u32;
         }
         ("vad", "threshold") => {
-            settings.vad.threshold = value.as_f64().ok_or("threshold must be a number")? as f32;
+            let threshold = value.as_f64().ok_or("threshold must be a number")? as f32;
+            if !(0.0..=1.0).contains(&threshold) {
+                return Err("threshold must be between 0.0 and 1.0".to_string());
+            }
+            settings.vad.threshold = threshold;
         }
         ("vad", "ptt_noise_gate") => {
             settings.vad.ptt_noise_gate =
@@ -503,6 +507,63 @@ fn apply_setting_mutation(
         ("realtime", "elevenlabs") => {
             settings.realtime.elevenlabs = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid elevenlabs config: {}", e))?;
+        }
+        ("memory", "context_retrieval_enabled") => {
+            settings.memory.context_retrieval_enabled = value
+                .as_bool()
+                .ok_or("context_retrieval_enabled must be a boolean")?;
+        }
+        ("memory", "pipeline_processing_enabled") => {
+            settings.memory.pipeline_processing_enabled = value
+                .as_bool()
+                .ok_or("pipeline_processing_enabled must be a boolean")?;
+        }
+        ("memory", "operational_budget_share") => {
+            let val = value.as_f64().ok_or("operational_budget_share must be a number")? as f32;
+            if !(0.0..=1.0).contains(&val) {
+                return Err("operational_budget_share must be between 0.0 and 1.0".to_string());
+            }
+            settings.memory.operational_budget_share = val;
+        }
+        ("memory", "semantic_budget_share") => {
+            let val = value.as_f64().ok_or("semantic_budget_share must be a number")? as f32;
+            if !(0.0..=1.0).contains(&val) {
+                return Err("semantic_budget_share must be between 0.0 and 1.0".to_string());
+            }
+            settings.memory.semantic_budget_share = val;
+        }
+        ("memory", "context_chaining_window_hours") => {
+            settings.memory.context_chaining_window_hours = value
+                .as_u64()
+                .ok_or("context_chaining_window_hours must be a positive integer")?
+                as u32;
+        }
+        ("memory", "top_k_facts") => {
+            let top_k = value
+                .as_u64()
+                .ok_or("top_k_facts must be a positive integer")?
+                as u32;
+            if top_k == 0 || top_k > 100 {
+                return Err("top_k_facts must be between 1 and 100".to_string());
+            }
+            settings.memory.top_k_facts = top_k;
+        }
+        ("memory", "max_hops") => {
+            let max_hops = value
+                .as_u64()
+                .ok_or("max_hops must be a positive integer")?
+                as u32;
+            if max_hops == 0 || max_hops > 10 {
+                return Err("max_hops must be between 1 and 10".to_string());
+            }
+            settings.memory.max_hops = max_hops;
+        }
+        ("memory", "semantic_similarity_cutoff") => {
+            let val = value.as_f64().ok_or("semantic_similarity_cutoff must be a number")? as f32;
+            if !(0.0..=1.0).contains(&val) {
+                return Err("semantic_similarity_cutoff must be between 0.0 and 1.0".to_string());
+            }
+            settings.memory.semantic_similarity_cutoff = val;
         }
         _ => return Ok(false),
     }
@@ -1023,4 +1084,96 @@ pub async fn setup_remote_server(
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_apply_setting_mutation_type_safety() {
+        let mut settings = VoxSettings::default();
+
+        // 1. Valid key and correct type
+        let res = apply_setting_mutation(&mut settings, "ui", "theme", &json!("light"));
+        assert_eq!(res, Ok(true));
+        assert_eq!(settings.ui.theme, "light");
+
+        // 2. Invalid domain ("invalid_domain")
+        let res = apply_setting_mutation(&mut settings, "invalid_domain", "theme", &json!("dark"));
+        assert_eq!(res, Ok(false));
+
+        // 3. Unknown key within valid domain
+        let res = apply_setting_mutation(&mut settings, "ui", "unknown_key", &json!("val"));
+        assert_eq!(res, Ok(false));
+
+        // 4. Type mismatch: string passed to boolean field (tray_enabled)
+        let res = apply_setting_mutation(&mut settings, "ui", "tray_enabled", &json!("not_a_bool"));
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.contains("tray_enabled must be a boolean"));
+
+        // 5. Type mismatch: string passed to numeric field (tray_blur_density)
+        let res = apply_setting_mutation(&mut settings, "ui", "tray_blur_density", &json!("dense"));
+        assert!(res.is_err());
+
+        // 6. Type mismatch: boolean passed to string field (theme)
+        let res = apply_setting_mutation(&mut settings, "ui", "theme", &json!(true));
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_setting_numeric_bounds() {
+        let mut settings = VoxSettings::default();
+
+        // --- VAD threshold bounds ---
+        // Valid threshold (0.75)
+        let res = apply_setting_mutation(&mut settings, "vad", "threshold", &json!(0.75));
+        assert_eq!(res, Ok(true));
+        assert_eq!(settings.vad.threshold, 0.75);
+
+        // Lower bound (0.0)
+        let res = apply_setting_mutation(&mut settings, "vad", "threshold", &json!(0.0));
+        assert_eq!(res, Ok(true));
+        assert_eq!(settings.vad.threshold, 0.0);
+
+        // Upper bound (1.0)
+        let res = apply_setting_mutation(&mut settings, "vad", "threshold", &json!(1.0));
+        assert_eq!(res, Ok(true));
+        assert_eq!(settings.vad.threshold, 1.0);
+
+        // Below 0.0 -> Err
+        let res = apply_setting_mutation(&mut settings, "vad", "threshold", &json!(-0.1));
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("threshold must be between 0.0 and 1.0"));
+
+        // Above 1.0 -> Err
+        let res = apply_setting_mutation(&mut settings, "vad", "threshold", &json!(1.5));
+        assert!(res.is_err());
+
+        // --- Memory top_k_facts bounds ---
+        // Valid top_k_facts
+        let res = apply_setting_mutation(&mut settings, "memory", "top_k_facts", &json!(10));
+        assert_eq!(res, Ok(true));
+        assert_eq!(settings.memory.top_k_facts, 10);
+
+        // Lower boundary (1)
+        let res = apply_setting_mutation(&mut settings, "memory", "top_k_facts", &json!(1));
+        assert_eq!(res, Ok(true));
+        assert_eq!(settings.memory.top_k_facts, 1);
+
+        // Upper boundary (100)
+        let res = apply_setting_mutation(&mut settings, "memory", "top_k_facts", &json!(100));
+        assert_eq!(res, Ok(true));
+        assert_eq!(settings.memory.top_k_facts, 100);
+
+        // Zero (0) -> Out of bounds
+        let res = apply_setting_mutation(&mut settings, "memory", "top_k_facts", &json!(0));
+        assert!(res.is_err());
+
+        // Over 100 (101) -> Out of bounds
+        let res = apply_setting_mutation(&mut settings, "memory", "top_k_facts", &json!(101));
+        assert!(res.is_err());
+    }
 }
