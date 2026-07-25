@@ -1,3 +1,12 @@
+//! ============================================================================
+//! capability_probe_tests.rs — System Hardware & LLM Capability Probing Test
+//! ============================================================================
+//! Category     : Integration Test
+//! Component    : Capability Engine (`vox_lib::services::llm::CapabilityProbeEngine`)
+//! Prerequisites: Requires network access to Ollama / Cloud APIs
+//! Execution    : cargo test --test capability_probe_tests
+//! ============================================================================
+
 use vox_lib::core::settings::LlmProviderConfig;
 use vox_lib::services::llm::CapabilityProbeEngine;
 

@@ -1,87 +1,91 @@
-# AGENTS.md — Vox v6 Cognitive Memory Subsystem & Gate 1 Benchmarking Framework
-
-## 1. Project Overview & Current State
-
-Vox is a voice-native, agent-first AI platform built on a real-time, event-driven native pipeline. The memory system is governed by the **v6 Hybrid Cognitive Memory Subsystem Specification** (`docs/plans/v6-memory-architecture-spec.md`).
-
-### Current Phase Focus: Gate 1 Local Model Benchmarking & Edge Creation Verification
-* **Primary Target**: Validate local inference engines (`deberta-v3-xsmall` ONNX for Class A NLI, `LFM2.5-230M` GGUF for Class B LLM inter-collection edge creation) on real-world synthetic data simulating real-time code behavior as closely as possible.
-* **Testing Scope**:
-  1. Class A Intra-Collection NLI (`Constraints`, `Tasks`, `Goals`) using `deberta-v3-xsmall` (Candidate filter `same_collection_candidate_search = 0.65`, threshold `0.85`).
-  2. Class B Inter-Collection LLM Edge Generation (`Skills`, `Preferences`, `Projects`, `Experiences`, `Relationships`) using `LFM2.5-230M` GGUF (Candidate filter `inter_collection_candidate_search = 0.75`).
-  3. Class C (`Identity`, `Context`) & Class B Intra-Collection Strict Isolation Verification (Zero NLI/LLM passes).
-  4. Automatic Deterministic Inverse Edge Mapping in SQLite runtime.
+# AGENTS.md — Vox Workspace Rules
 
 ---
 
-## 2. Agent Roles & Operational Rules
+## 1. Project Context
 
-### MANDATORY SUBAGENT REUSE RULE
-* **CRITICAL**: System Architect MUST re-use the three defined subagents (`ai_test_engineer`, `qa_reviewer`, `backend_engineer`) throughout the lifecycle.
-* **DO NOT** spawn duplicate or new subagents for every turn. Use `send_message` with the existing conversation IDs so subagents maintain context!
+Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Constraint: 8GB RAM, CPU-first inference, sub-200ms perceived pipeline latency.
 
-### 2.1 System Architect (Parent / Lead Agent)
-* **Role**: Strategy, intent alignment, system architecture, loop orchestration, gate governance, and report synthesis.
-* **Constraints**:
-  * **MUST NEVER** make direct source code edits in `app/src-tauri/src/` without approved plan.
-  * **MUST NEVER** self-approve test results or benchmark metrics.
-  * **MUST ALWAYS** delegate test execution to `ai_test_engineer`, audits to `qa_reviewer`, and backend code implementation to `backend_engineer`.
-
-### 2.2 AI Test Engineer (`ai_test_engineer`)
-* **Role**: Synthetic dataset generation (using NVIDIA API key `meta/llama-3.1-70b-instruct`), test script harness engineering, and executing local model benchmarks.
-* **Constraints**:
-  * Must utilize NVIDIA API strictly for dataset generation and baseline comparison.
-  * Must run local benchmarks using ONNX Runtime for DeBERTa-v3-xsmall and llama.cpp/GGUF runtime for LFM2.5-230M.
-  * Must capture real-time system metrics: execution latency per pair (ms), RAM allocation, CPU/GPU utilization, throughput, and error outputs.
-
-### 2.3 QA Reviewer (`qa_reviewer`)
-* **Role**: Independent audit of benchmark results, latency distributions, semantic edge precision, false positive rates, and spec compliance against `docs/plans/v6-memory-architecture-spec.md`.
-* **Constraints**:
-  * **MUST NEVER** accept `exit code 0` as proof of accuracy or performance.
-  * **MUST NEVER** approve vanity counts (e.g. "20 edges created" without checking if edges match connection matrix).
-  * Must audit Class A conflict auto-resolution (`Tasks`/`Goals` $\rightarrow$ `SUPERSEDES`, `Constraints` $\rightarrow$ `CONFLICTS`), Class B inter-collection relation validity, and inverse deterministic edge mapping.
-
-### 2.4 Senior Backend Engineer (`backend_engineer`)
-* **Role**: Implementation of Rust backend memory services in `app/src-tauri/src/services/memory/`.
-* **Constraints**:
-  * Must strictly adhere to `.agents/rules/backend-engineer.md`.
-  * Must verify code using `cargo check` and `cargo clippy`. No unreviewed warnings.
+**Crate structure:** Single Rust library crate `vox_lib` at `app/src-tauri/`. `main.rs` is 1 line. `lib.rs` is module declarations + Tauri assembly only. All logic lives in modules.
 
 ---
 
-## 3. Evaluation & Gate 1 Passing Criteria
+## 2. Workspace Directory Map
 
-### ❌ BANS (Never Accept As Gate Pass)
-1. **Exit Code 0**: A Python or Rust harness finishing without an exception is NOT proof of model correctness or latency compliance.
-2. **Mock Data Fallbacks**: Benchmarking must run on actual local weights (`LFM2.5-230M` GGUF and `deberta-v3-xsmall-nli`).
-3. **Spec Violations**: Any LLM edge generated between forbidden collections (e.g., Class C or Class B intra-collection) is an instant Gate 1 failure.
+| Path | Purpose | Rules |
+|---|---|---|
+| `app/src-tauri/src/` | Production Rust source | No test logic. No benchmarks. |
+| `app/src-tauri/tests/` | Integration tests (`cargo test --tests`) | Named `<feature>_test.rs`. Tests public API only. |
+| `app/src-tauri/benches/` | Performance benchmarks (`cargo test --benches`) | Named `<feature>_bench.rs`. `harness = false` + custom `fn main()`. |
+| `app/src-tauri/examples/` | Utility CLI tools (`cargo run --example <name>`) | Standalone tools. No `#[test]`. No assertions. |
+| `.agents/rules/` | Role-specific agent instruction files | Read relevant file before acting in that role. |
+| `docs/plans/` | Architecture specs and phase plans | Source of truth for specs. Do not contradict. |
+| `docs/features/` | Implemented feature ledgers | Update after completing features. |
+| `sandbox/` | Scratch space for experiments, evaluations, scripts | Non-production code. Results in `sandbox/results/`. Datasets in `sandbox/datasets/`. |
+| `temp/` | Ephemeral runtime files: logs, raw LLM outputs | `temp/.env` (API keys). `temp/server.txt` (remote GPU server creds). Not versioned. |
+| `submodules/` | Git submodules | `chatterbox-rs`, `query-sieve-rs`, `distilbert-query-classifier`, `vox-models`. Do not edit directly. |
+| `~/.vox/models/` | Local model weights | Canonical manifest: `~/.vox/models/models_manifest.json`. |
 
-### ✅ MANDATORY GATE 1 METRICS
-* **Class A NLI Latency & Accuracy**:
-  * Intra-pair inference latency: $< 20\text{ ms}$ on CPU/GPU.
-  * Contradiction / Entailment classification accuracy: $\ge 90\%$.
-  * Conflict resolution compliance: 100% (Tasks/Goals auto-resolve to `SUPERSEDES`; Constraints preserved as `CONFLICTS`).
-* **Class B Inter-Collection LLM Latency & Precision**:
-  * Inter-pair inference latency: $< 100\text{ ms}$ (LFM2.5-230M).
-  * Edge generation precision: $\ge 85\%$ against gold reference.
-  * Connection Policy Matrix compliance: 100% allowed pairs only.
-  * Quantization Comparison: Benchmark `Q8_0` vs `Q4_K_M` / `Q4_0`.
-* **Deterministic Inverse Mapping**: 100% forward edges auto-trigger runtime inverse edge creation.
-* **Isolation Verification**: 0% false-positive NLI/LLM calls for Class C (`Identity`, `Context`) or Class B intra-collection.
+**Remote GPU server:** `hypr4@100.86.62.14` (creds in `temp/server.txt`). Ollama + LMS available. **Never kill running server processes.**
 
 ---
 
-## 4. Inference Provider & Model Governance
+## 3. HARD GATE: Code Modification Gate
 
-* **Synthetic Data Generation**: NVIDIA API (`meta/llama-3.1-70b-instruct`) using `NVIDIA_API_KEY` in `temp/.env`.
-* **Local NLI Model**: `~/.vox/models/nli/deberta-v3-xsmall-nli/model_quantized.onnx`.
-* **Local Class B LLM Model**: `~/.vox/models/llm/LFM2.5-230M-Q8_0.gguf` (and `Q4_K_M` / `Q4_0` variants).
-* **Embedding Model**: `~/.vox/models/embedding/bge-m3/model_quantized.onnx` (1024-dim BGE-M3).
+> 🛑 **MANDATORY CONTEXT GATE:**
+> - **WRITE TASK (Adding/editing code, refactoring, fixing bugs):** You MUST read `.agents/rules/code-style-guide.md` AND the relevant role rule file (e.g. `.agents/rules/backend-engineer.md` or `frontend-engineer.md`) BEFORE modifying code.
+> - **READ-ONLY TASK (Auditing, answering questions, running tests/benchmarks, searching code):** DO NOT read code style files. Save context tokens.
 
 ---
 
-## 5. Key Specifications & Sources of Truth
+## 4. Agent Roles
 
-* `docs/plans/v6-memory-architecture-spec.md` — Vox v6 Frozen Architecture Specification.
-* `docs/features/memory-architecture.md` — Implemented Subsystem Ledger.
-* `sandbox/v6_harness/` — Gate 1 Benchmarking Harnesses & Synthetic Datasets.
+| Role | Rule File | Scope |
+|---|---|---|
+| System Architect | `.agents/rules/system-architect.md` | Strategy, gates, plan approval |
+| Backend Engineer | `.agents/rules/backend-engineer.md` | `app/src-tauri/src/` implementation |
+| Frontend Engineer | `.agents/rules/frontend-engineer.md` | `app/src/` implementation |
+| QA Engineer | `.agents/rules/qa-engineer.md` | Test audit, benchmark validation |
+
+**Subagent reuse rule:** Re-use existing subagent conversation IDs via `send_message`. Do not spawn duplicate subagents per turn.
+
+---
+
+## 5. Current Phase — Gate 1: Local Model Benchmarking & Edge Verification
+
+### What is being validated
+1. **Class B Intra-Collection NLI** (`Constraints`, `Tasks`, `Goals`) — `deberta-v3-xsmall` ONNX. Candidate filter: `same_collection_candidate_search = 0.40`. NLI threshold: `0.85`.
+2. **Class C Inter-Collection LLM Edge Generation** (`Skills`, `Preferences`, `Projects`, `Experiences`, `Relationships`) — `LFM2.5-230M-Q8_0.gguf`. Candidate filter: `inter_collection_candidate_search = 0.75`.
+3. **Class A Strict Isolation** (`Identity`, `Context`) — zero NLI or LLM calls. Direct write only.
+4. **Deterministic Inverse Edge Mapping** — every forward edge auto-generates its inverse at runtime in SQLite.
+
+### Collection Taxonomy (`core/constants.rs`)
+| Constant | Collections | Behavior |
+|---|---|---|
+| `PM_CLASS_A_COLLECTIONS` | `Identity`, `Context` | Direct isolation. No NLI. No LLM. |
+| `PM_CLASS_B_COLLECTIONS` | `Constraints`, `Tasks`, `Goals` | Intra-collection NLI only. |
+| `PM_CLASS_C_COLLECTIONS` | `Skills`, `Preferences`, `Projects`, `Experiences`, `Relationships` | Inter-collection LLM edge creation only. |
+
+### Gate 1 Pass Criteria
+| Metric | Target |
+|---|---|
+| Class B NLI latency | < 20ms per pair |
+| Class B NLI accuracy | ≥ 90% |
+| Class C LLM edge latency | < 100ms per pair |
+| Class C edge precision | ≥ 85% vs gold reference |
+| Connection policy compliance | 100% |
+| Inverse edge auto-creation | 100% of forward edges |
+| Class A isolation false-positive rate | 0% |
+
+### Bans — Never accept as Gate pass
+- Exit code 0 without reading metric output
+- Mock model fallbacks (must run actual local weights)
+- LLM edges between forbidden collections (Class A or Class B intra-collection)
+- Vanity counts ("20 edges created") without checking against connection matrix
+
+### Model Paths & Harness
+- NLI: `~/.vox/models/nli/deberta-v3-xsmall/model_quantized.onnx`
+- Class B LLM: `~/.vox/models/llm/LFM2.5-230M-Q8_0.gguf` (+ `Q4_K_M`, `Q4_0` variants)
+- Embedding: `~/.vox/models/embedding/bge-m3/model_quantized.onnx` (1024-dim)
+- Primary Harness: `benches/vox_multi_session_bench.rs` (`cargo test --bench vox_multi_session_bench`)
+- Specs: `docs/plans/v6-memory-architecture-spec.md`, `docs/features/memory-architecture.md`
