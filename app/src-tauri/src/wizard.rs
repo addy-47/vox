@@ -1,4 +1,7 @@
-use crate::core::constants::*;
+use crate::services::llm::{MODEL_DIR_LLM, MODEL_FILE_LLM_GGUF};
+use crate::services::stt::{MODEL_DIR_STT_NEMOTRON, MODEL_DIR_STT_QWEN, MODEL_FILE_ASR_ENCODER};
+use crate::services::tts::{MODEL_DIR_TTS_SUPER, MODEL_FILE_TTS_SUPER_TEXT_ENCODER};
+use crate::services::vad::{MODEL_DIR_VAD, MODEL_FILE_VAD};
 use crate::utils::paths;
 
 /// Configures the wizard window with specific attributes.
@@ -32,7 +35,7 @@ pub fn check_setup_health() -> bool {
         .join(MODEL_FILE_ASR_ENCODER)
         .exists()
         || p.models
-            .join(MODEL_DIR_STT)
+            .join(MODEL_DIR_STT_QWEN)
             .join(MODEL_FILE_ASR_ENCODER)
             .exists();
     if !stt_ok {

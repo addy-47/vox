@@ -1,5 +1,7 @@
-use anyhow::Result;
+use crate::core::error::PersistenceError;
 use turso::Connection;
+
+pub type Result<T> = std::result::Result<T, PersistenceError>;
 
 /// Runs the CREATE TABLE IF NOT EXISTS migrations against the given connection.
 pub async fn run_migrations(conn: &Connection) -> Result<()> {
@@ -122,11 +124,10 @@ async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
         return Ok(());
     }
 
-    let entries = std::fs::read_dir(&packaged_voices_dir)
-        .map_err(|e| anyhow::anyhow!("Failed to read packaged voices: {}", e))?;
+    let entries = std::fs::read_dir(&packaged_voices_dir)?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| anyhow::anyhow!("Entry error: {}", e))?;
+        let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
             if let Some(name_str) = path.file_name().and_then(|n| n.to_str()) {

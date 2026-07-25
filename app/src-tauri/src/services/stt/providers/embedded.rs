@@ -6,7 +6,7 @@
 
 use super::{SttProvider, SttProviderKind};
 use crate::services::stt::SttEngine;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 // ─── Internal State ────────────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ impl EmbeddedSttProvider {
 
 impl SttProvider for EmbeddedSttProvider {
     fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         if let Some(ref engine) = inner.nemotron_engine {
             engine.transcribe(audio)
         } else if let Some(ref engine) = inner.qwen_engine {
@@ -74,7 +74,7 @@ impl SttProvider for EmbeddedSttProvider {
     }
 
     fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
 
         if inner.nemotron_engine.is_some() {
             inner.stt_audio_buffer.extend_from_slice(chunk);
@@ -111,14 +111,14 @@ impl SttProvider for EmbeddedSttProvider {
     }
 
     fn reset_state(&self) -> anyhow::Result<()> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         inner.stt_audio_buffer.clear();
         inner.stitched_transcript.clear();
         Ok(())
     }
 
     fn health_check(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner.nemotron_engine.is_some() || inner.qwen_engine.is_some()
     }
 

@@ -658,19 +658,19 @@ pub async fn preview_voice(id: String) -> Result<String, String> {
 
 struct ActiveRecorder {
     _stream: cpal::Stream,
-    samples: Arc<std::sync::Mutex<Vec<f32>>>,
+    samples: Arc<parking_lot::Mutex<Vec<f32>>>,
     sample_rate: u32,
 }
 
 unsafe impl Send for ActiveRecorder {}
 unsafe impl Sync for ActiveRecorder {}
 
-static ACTIVE_RECORDER: Lazy<std::sync::Mutex<Option<ActiveRecorder>>> =
-    Lazy::new(|| std::sync::Mutex::new(None));
+static ACTIVE_RECORDER: Lazy<parking_lot::Mutex<Option<ActiveRecorder>>> =
+    Lazy::new(|| parking_lot::Mutex::new(None));
 
 #[tauri::command]
 pub async fn start_backend_recording() -> Result<(), String> {
-    let mut recorder_guard = ACTIVE_RECORDER.lock().unwrap();
+    let mut recorder_guard = ACTIVE_RECORDER.lock();
     if recorder_guard.is_some() {
         return Err("Recording is already in progress".to_string());
     }
@@ -688,14 +688,14 @@ pub async fn start_backend_recording() -> Result<(), String> {
     let sample_rate = config.sample_rate.0;
     let channels = config.channels as usize;
 
-    let samples = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let samples = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let samples_clone = Arc::clone(&samples);
 
     let stream = device
         .build_input_stream(
             &config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let mut guard = samples_clone.lock().unwrap();
+                let mut guard = samples_clone.lock();
                 if channels == 1 {
                     guard.extend_from_slice(data);
                 } else {
@@ -728,7 +728,7 @@ pub async fn start_backend_recording() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn stop_backend_recording() -> Result<(Vec<f32>, u32), String> {
-    let mut recorder_guard = ACTIVE_RECORDER.lock().unwrap();
+    let mut recorder_guard = ACTIVE_RECORDER.lock();
     let recorder = recorder_guard
         .take()
         .ok_or_else(|| "No active recording found to stop".to_string())?;
@@ -736,7 +736,7 @@ pub async fn stop_backend_recording() -> Result<(Vec<f32>, u32), String> {
     // Drop the recorder stream to stop recording immediately
     drop(recorder._stream);
 
-    let samples = recorder.samples.lock().unwrap().clone();
+    let samples = recorder.samples.lock().clone();
     let sample_rate = recorder.sample_rate;
 
     log::info!(

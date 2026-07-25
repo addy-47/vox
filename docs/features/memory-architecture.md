@@ -161,9 +161,12 @@ CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, creat
 - **Latency:** $< 1.5$ ms CPU inference time.
 
 ### 4.2 Multilingual Dense Embedder (`services/memory/embedder.rs`)
-- **Model:** `BAAI/bge-m3` (`Xenova/bge-m3` ONNX quantized INT8).
-- **Path:** `~/.vox/models/embedding/bge-m3/model_quantized.onnx`.
-- **Vector Dimensions:** 1,024 float dimensions with L2 unit normalization.
+- **Primary Model:** `paraphrase-multilingual-MiniLM-L12-v2` (384-dim INT8 ONNX quantized).
+- **Primary Path:** `~/.vox/models/embedding/paraphrase-multilingual-MiniLM-L12-v2/model_int8.onnx`.
+- **Fallback Path:** `~/.vox/models/embedding/bge-m3/model_quantized.onnx` (1024-dim fallback).
+- **Vector Dimensions:** 384 float dimensions with L2 unit normalization (1,536 bytes per SQLite vector row).
+- **Performance:** 10.06 ms CPU inference latency (8.6x faster than BGE-M3), 118 MB RAM footprint.
+- **Cutoff Floor (`semantic_similarity_cutoff`):** Set to `0.40` to align with MiniLM-L12 vector geometry (Noise baseline: 0.04-0.23, Margin: 0.34).
 - **Scope:** Computed **strictly for `semantic` type facts**. Foundational and Operational collections are vectorless.
 
 ### 4.3 Pairwise NLI Classifier (`services/memory/nli.rs`)

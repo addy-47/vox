@@ -8,6 +8,12 @@ pub use capability_probe::CapabilityProbeEngine;
 pub use llama_cpp::LlmWorker;
 pub use providers::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, ProviderKind};
 
+// ─── LLM Model Constants ───────────────────────────────────────────────────
+pub const MODEL_DIR_LLM: &str = "llm/llama";
+pub const MODEL_FILE_LLM_GGUF: &str = "llama-3.2-1b-q4_k_m.gguf";
+pub const MODEL_DIR_LLM_GEMMA: &str = "llm/gemma4";
+pub const MODEL_FILE_LLM_GEMMA_GGUF: &str = "gemma-4-e2b-q4_k_m.gguf";
+
 /// Large Language Model engine contract.
 ///
 /// This is the lower-level interface for local GGUF inference via llama.cpp.

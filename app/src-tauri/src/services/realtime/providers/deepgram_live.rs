@@ -1,7 +1,8 @@
 use anyhow::{anyhow, bail, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::tungstenite::Message;
@@ -115,7 +116,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 let msg = Message::Binary(bytes.into());
 
                 let opt_tx = {
-                    let guard = ws_sender_audio.lock().unwrap();
+                    let guard = ws_sender_audio.lock();
                     guard.clone()
                 };
                 if let Some(tx) = opt_tx {
@@ -142,7 +143,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 };
 
                 let opt_tx = {
-                    let guard = ws_sender_control.lock().unwrap();
+                    let guard = ws_sender_control.lock();
                     guard.clone()
                 };
                 if let Some(tx) = opt_tx {
@@ -165,7 +166,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 }).to_string();
 
                 let opt_tx = {
-                    let guard = ws_sender_keepalive.lock().unwrap();
+                    let guard = ws_sender_keepalive.lock();
                     guard.clone()
                 };
                 if let Some(tx) = opt_tx {
@@ -177,7 +178,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
 
         // Set up the first active connection
         let (ws_write_tx, mut ws_write_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
-        *ws_sender.lock().unwrap() = Some(ws_write_tx);
+        *ws_sender.lock() = Some(ws_write_tx);
 
         let write_task = handle.spawn(async move {
             while let Some(msg) = ws_write_rx.recv().await {
@@ -248,7 +249,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 tokio::select! {
                     _ = &mut shutdown_rx => {
                         log::info!("[DeepgramVoiceAgent] Session shutdown requested. Aborting tasks.");
-                        *ws_sender.lock().unwrap() = None;
+                        *ws_sender.lock() = None;
                         if let Some(t) = active_write_task.take() { t.abort(); }
                         if let Some(t) = active_receiver_task.take() { t.abort(); }
                         audio_sender_task.abort();
@@ -258,7 +259,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                     }
                     _ = &mut reconnect_rx => {
                         log::warn!("[DeepgramVoiceAgent] Connection dropped. Cleaning up active connection tasks...");
-                        *ws_sender.lock().unwrap() = None;
+                        *ws_sender.lock() = None;
                         if let Some(t) = active_write_task.take() { t.abort(); }
                         if let Some(t) = active_receiver_task.take() { t.abort(); }
                     }
@@ -285,7 +286,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                             ws_connected_clone.store(true, Ordering::SeqCst);
 
                             let (new_ws_write_tx, mut new_ws_write_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
-                            *ws_sender.lock().unwrap() = Some(new_ws_write_tx);
+                            *ws_sender.lock() = Some(new_ws_write_tx);
 
                             let new_write_task = tokio::spawn(async move {
                                 while let Some(msg) = new_ws_write_rx.recv().await {
@@ -362,7 +363,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                         turn_id: 0,
                         message: "Deepgram connection lost permanently after multiple retries.".to_string(),
                     });
-                    *ws_sender.lock().unwrap() = None;
+                    *ws_sender.lock() = None;
                     audio_sender_task.abort();
                     control_sender_task.abort();
                     break 'reconnect_loop;
@@ -373,7 +374,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         Ok(Box::new(DeepgramVoiceAgentSession {
             audio_tx,
             control_tx,
-            shutdown_tx: std::sync::Mutex::new(Some(shutdown_tx)),
+            shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
             ws_connected,
             last_activity_time: last_activity_time_sender,
         }))
@@ -537,7 +538,7 @@ struct SessionState {
 pub struct DeepgramVoiceAgentSession {
     audio_tx: tokio::sync::mpsc::UnboundedSender<Vec<i16>>,
     control_tx: tokio::sync::mpsc::UnboundedSender<ControlEvent>,
-    shutdown_tx: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    shutdown_tx: parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     ws_connected: Arc<std::sync::atomic::AtomicBool>,
     last_activity_time: Arc<std::sync::atomic::AtomicU64>,
 }
@@ -558,7 +559,7 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
     }
 
     fn disconnect(&self) -> Result<()> {
-        if let Some(tx) = self.shutdown_tx.lock().unwrap().take() {
+        if let Some(tx) = self.shutdown_tx.lock().take() {
             let _ = tx.send(());
         }
         Ok(())
@@ -590,7 +591,7 @@ fn handle_deepgram_server_message(
     let val: serde_json::Value = serde_json::from_str(text)?;
 
     {
-        let s_lock = state.lock().unwrap();
+        let s_lock = state.lock();
         s_lock.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, Ordering::Relaxed);
     }
 
@@ -598,7 +599,7 @@ fn handle_deepgram_server_message(
         match msg_type {
             "UserStartedSpeaking" => {
                 log::info!("[DeepgramVoiceAgent] User started speaking (barge-in).");
-                let mut s_lock = state.lock().unwrap();
+                let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
                 let _ = event_tx.send(VoxEvent::Cancelled { turn_id: 0 });
             }
@@ -615,7 +616,7 @@ fn handle_deepgram_server_message(
                     });
                 } else if role == "assistant" {
                     log::debug!("[DeepgramVoiceAgent] Assistant transcript: {:?}", content);
-                    let mut s_lock = state.lock().unwrap();
+                    let mut s_lock = state.lock();
                     let last_text = &s_lock.last_assistant_text;
                     if content.starts_with(last_text) {
                         let delta = &content[last_text.len()..];
@@ -636,7 +637,7 @@ fn handle_deepgram_server_message(
             }
             "AgentAudioDone" => {
                 log::debug!("[DeepgramVoiceAgent] Agent audio done.");
-                let mut s_lock = state.lock().unwrap();
+                let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
                 let _ = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 });
             }

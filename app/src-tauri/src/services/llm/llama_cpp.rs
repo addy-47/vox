@@ -276,8 +276,8 @@ pub struct LlmWorker {
     ctx_size: u32,
     _n_threads: u32,
     family: ModelFamily,
-    ctx: std::sync::Mutex<Option<llama_cpp_4::context::LlamaContext<'static>>>,
-    cache_state: std::sync::Mutex<Option<CacheState>>,
+    ctx: parking_lot::Mutex<Option<llama_cpp_4::context::LlamaContext<'static>>>,
+    cache_state: parking_lot::Mutex<Option<CacheState>>,
 }
 
 unsafe impl Send for LlmWorker {}
@@ -332,8 +332,8 @@ impl LlmWorker {
             ctx_size,
             _n_threads: n_threads,
             family,
-            ctx: std::sync::Mutex::new(None),
-            cache_state: std::sync::Mutex::new(None),
+            ctx: parking_lot::Mutex::new(None),
+            cache_state: parking_lot::Mutex::new(None),
         })
     }
 
@@ -408,10 +408,7 @@ impl LlmEngine for LlmWorker {
             .map(|m| m.content.as_str())
             .unwrap_or("You are Vox.");
 
-        let mut ctx_lock = self
-            .ctx
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock context"))?;
+        let mut ctx_lock = self.ctx.lock();
         if ctx_lock.is_none() {
             log::info!("[LLM] Lazy initializing LlamaContext on stable execution address...");
             let ctx_params = LlamaContextParams::default()
@@ -432,10 +429,7 @@ impl LlmEngine for LlmWorker {
         }
         let ctx = ctx_lock.as_mut().unwrap();
 
-        let mut cache_lock = self
-            .cache_state
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock cache state"))?;
+        let mut cache_lock = self.cache_state.lock();
 
         if conv_ctx.kv_cache_index == 0 {
             log::info!("[LLM] kv_cache_index is 0. Resetting KV cache state...");

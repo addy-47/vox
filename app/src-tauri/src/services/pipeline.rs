@@ -11,6 +11,7 @@ use crate::core::metrics::{MetricField, PipelineMetrics};
 use crate::core::settings::VoxSettings;
 use crate::core::state::InteractionOwner;
 use crate::services::utils::{count_words, is_devanagari, should_flush, transliterate_if_hi};
+use parking_lot::Mutex;
 use crossbeam_channel::Sender;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -99,13 +100,13 @@ pub struct PipelineOrchestrator {
     _playback_active: Arc<AtomicBool>,
     tts_generating: Arc<AtomicBool>,
     turn_id: Arc<AtomicU32>,
-    state: Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
+    state: Arc<Mutex<crate::core::state::InteractionState>>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
     settings: Arc<RwLock<VoxSettings>>,
     llm_path: PathBuf,
     super_tts_path: PathBuf,
     is_engaged: Arc<AtomicBool>,
-    pub transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+    pub transcript_history: Arc<Mutex<std::collections::VecDeque<String>>>,
     pub conversation_id: Arc<std::sync::atomic::AtomicU64>,
     pub persist_tx: Option<Sender<crate::persistence::events::PersistenceEvent>>,
     pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
@@ -116,12 +117,10 @@ pub struct PipelineOrchestrator {
     pub latest_playback_start_ms: Arc<std::sync::atomic::AtomicU32>,
 
     // Lifecycle management
-    llm_tx:
-        Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
-    tts_tx:
-        Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::services::tts::TtsCommand>>>>,
-    pub llm_handle: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
-    pub tts_handle: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
+    llm_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
+    tts_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<crate::services::tts::TtsCommand>>>>,
+    pub llm_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    pub tts_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 
     // Residency Flags
     pub is_llm_loaded: Arc<AtomicBool>,
@@ -129,7 +128,7 @@ pub struct PipelineOrchestrator {
     pub is_sleeping: Arc<AtomicBool>,
 
     // Working Memory
-    pub conversation_manager: Arc<std::sync::Mutex<crate::services::memory::ConversationManager>>,
+    pub conversation_manager: Arc<Mutex<crate::services::memory::ConversationManager>>,
 }
 
 
@@ -140,13 +139,13 @@ impl PipelineOrchestrator {
         playback_active: Arc<AtomicBool>,
         tts_generating: Arc<AtomicBool>,
         turn_id: Arc<AtomicU32>,
-        state: Arc<std::sync::Mutex<crate::core::state::InteractionState>>,
+        state: Arc<Mutex<crate::core::state::InteractionState>>,
         event_tx: std::sync::mpsc::Sender<VoxEvent>,
         settings: Arc<RwLock<VoxSettings>>,
         llm_path: PathBuf,
         super_tts_path: PathBuf,
         is_engaged: Arc<AtomicBool>,
-        transcript_history: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+        transcript_history: Arc<Mutex<std::collections::VecDeque<String>>>,
         conversation_id: Arc<std::sync::atomic::AtomicU64>,
         persist_tx: Option<Sender<crate::persistence::events::PersistenceEvent>>,
         dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
@@ -156,7 +155,7 @@ impl PipelineOrchestrator {
         is_llm_loaded: Arc<AtomicBool>,
         is_tts_loaded: Arc<AtomicBool>,
         is_sleeping: Arc<AtomicBool>,
-        conversation_manager: Arc<std::sync::Mutex<crate::services::memory::ConversationManager>>,
+        conversation_manager: Arc<Mutex<crate::services::memory::ConversationManager>>,
     ) -> Self {
         Self {
             cancel_flag,
@@ -177,10 +176,10 @@ impl PipelineOrchestrator {
             latest_voice_latency_ms,
             latest_tts_rtf,
             latest_playback_start_ms,
-            llm_tx: Arc::new(std::sync::Mutex::new(None)),
-            tts_tx: Arc::new(std::sync::Mutex::new(None)),
-            llm_handle: Arc::new(std::sync::Mutex::new(None)),
-            tts_handle: Arc::new(std::sync::Mutex::new(None)),
+            llm_tx: Arc::new(Mutex::new(None)),
+            tts_tx: Arc::new(Mutex::new(None)),
+            llm_handle: Arc::new(Mutex::new(None)),
+            tts_handle: Arc::new(Mutex::new(None)),
             is_llm_loaded,
             is_tts_loaded,
             is_sleeping,
@@ -191,7 +190,7 @@ impl PipelineOrchestrator {
 
     /// Initialize the LLM worker if it's not already running.
     pub fn warm_up_llm(&self, app: &tauri::AppHandle) -> Result<(), String> {
-        let mut lock = self.llm_tx.lock().map_err(|e| e.to_string())?;
+        let mut lock = self.llm_tx.lock();
         if lock.is_some() {
             return Ok(());
         }
@@ -259,7 +258,7 @@ impl PipelineOrchestrator {
             })
             .map_err(|e| e.to_string())?;
 
-        let mut handle_lock = self.llm_handle.lock().map_err(|e| e.to_string())?;
+        let mut handle_lock = self.llm_handle.lock();
         *handle_lock = Some(handle);
 
         // Reset sleep state when warming up
@@ -269,11 +268,10 @@ impl PipelineOrchestrator {
     }
 
     pub fn cool_down_llm(&self) {
-        if let Ok(mut lock) = self.llm_tx.lock() {
-            if let Some(tx) = lock.take() {
-                let _ = tx.send(crate::services::llm::LlmCommand::Shutdown);
-                log::info!("[Pipeline] LLM Shutdown sent (Offloading).");
-            }
+        let mut lock = self.llm_tx.lock();
+        if let Some(tx) = lock.take() {
+            let _ = tx.send(crate::services::llm::LlmCommand::Shutdown);
+            log::info!("[Pipeline] LLM Shutdown sent (Offloading).");
         }
     }
 
@@ -285,7 +283,7 @@ impl PipelineOrchestrator {
         &self,
         app: &tauri::AppHandle,
     ) -> Result<(), String> {
-        let mut lock = self.tts_tx.lock().map_err(|e| e.to_string())?;
+        let mut lock = self.tts_tx.lock();
         if lock.is_some() {
             return Ok(());
         }
@@ -368,7 +366,7 @@ impl PipelineOrchestrator {
             })
             .map_err(|e| e.to_string())?;
 
-        let mut handle_lock = self.tts_handle.lock().map_err(|e| e.to_string())?;
+        let mut handle_lock = self.tts_handle.lock();
         *handle_lock = Some(handle);
 
         // Reset sleep state when warming up
@@ -378,10 +376,9 @@ impl PipelineOrchestrator {
     }
 
     pub fn cool_down_tts(&self) {
-        if let Ok(mut lock) = self.tts_tx.lock() {
-            *lock = None; // Dropping sender closes worker
-            log::info!("[Pipeline] TTS Shutdown (Offloading).");
-        }
+        let mut lock = self.tts_tx.lock();
+        *lock = None; // Dropping sender closes worker
+        log::info!("[Pipeline] TTS Shutdown (Offloading).");
     }
 
     /// Update internal state and emit IPC event to the **owning** window only.
@@ -391,7 +388,7 @@ impl PipelineOrchestrator {
         owner: InteractionOwner,
         app_handle: &tauri::AppHandle,
     ) {
-        let mut state_lock = self.state.lock().unwrap();
+        let mut state_lock = self.state.lock();
         if *state_lock != new_state {
             log::debug!(
                 "[Pipeline] State changed -> {:?} (Owner: {:?})",
@@ -409,7 +406,7 @@ impl PipelineOrchestrator {
 
             // Notify Memory Worker of Pipeline Idle / Active state change
             if let Some(app_state) = app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
-                let memory_tx = app_state.memory_tx.lock().unwrap();
+                let memory_tx = app_state.memory_tx.lock();
                 if let Some(ref tx) = *memory_tx {
                     let event = if new_state == crate::core::state::InteractionState::Idle {
                         crate::persistence::memory_worker::MemoryWorkerEvent::PipelineIdle
@@ -503,7 +500,7 @@ impl PipelineOrchestrator {
             return new_turn;
         }
 
-        let lock = self.llm_tx.lock().unwrap();
+        let lock = self.llm_tx.lock();
         if let Some(tx) = &*lock {
             // RCA Fix: Ensure cancel_flag is false right before generation starts.
             // If SpeechStart set it to true but no playback was active to emit
@@ -615,7 +612,7 @@ impl PipelineOrchestrator {
             });
 
             let (ctx, transition_speech, personal_memory) = {
-                let mut mgr = self.conversation_manager.lock().unwrap();
+                let mut mgr = self.conversation_manager.lock();
                 mgr.set_max_context_tokens(settings_snap.llm.ctx_size as usize);
                 mgr.update_system_prompt(&final_prompt);
                 if mgr.context_utilization() == 0.0 {
@@ -628,7 +625,7 @@ impl PipelineOrchestrator {
 
             if !personal_memory.is_empty() {
                 if let Some(app_state) = _app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
-                    let memory_tx = app_state.memory_tx.lock().unwrap();
+                    let memory_tx = app_state.memory_tx.lock();
                     if let Some(ref tx) = *memory_tx {
                         let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::PersonalFactsReady {
                             facts: personal_memory,
@@ -645,13 +642,12 @@ impl PipelineOrchestrator {
                     owner,
                     &_app_handle,
                 );
-                if let Ok(lock) = self.tts_tx.lock() {
-                    if let Some(tts_sender) = lock.as_ref() {
-                        let _ = tts_sender.send(crate::services::tts::TtsCommand::Generate {
-                            text: speech_text,
-                            turn_id: new_turn,
-                        });
-                    }
+                let lock = self.tts_tx.lock();
+                if let Some(tts_sender) = lock.as_ref() {
+                    let _ = tts_sender.send(crate::services::tts::TtsCommand::Generate {
+                        text: speech_text,
+                        turn_id: new_turn,
+                    });
                 }
             }
 
@@ -869,7 +865,7 @@ impl PipelineOrchestrator {
             // Sync Realtime state changes based on playback activity
             if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                 let playback_active = self._playback_active.load(Ordering::Relaxed);
-                let current_state = self.state.lock().unwrap().clone();
+                let current_state = self.state.lock().clone();
                 let owner = self.get_current_owner(&app_handle);
 
                 if playback_active {
@@ -984,9 +980,9 @@ impl PipelineOrchestrator {
 
                                     // Trigger Memory SessionEnd consolidation
                                     if let Some(app_state) = app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
-                                        let memory_tx = app_state.memory_tx.lock().unwrap();
+                                        let memory_tx = app_state.memory_tx.lock();
                                         if let Some(ref tx) = *memory_tx {
-                                            let summary = self.conversation_manager.lock().unwrap().latest_summary();
+                                            let summary = self.conversation_manager.lock().latest_summary();
                                             let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
                                                 session_id: conv_id.to_string(),
                                                 summary,
@@ -1063,7 +1059,6 @@ impl PipelineOrchestrator {
                 VoxEvent::SpeechStart { turn_id, owner } => {
                     self.conversation_manager
                         .lock()
-                        .unwrap()
                         .on_speech_start();
                     let is_engaged = self.is_engaged.load(Ordering::Relaxed);
 
@@ -1075,7 +1070,7 @@ impl PipelineOrchestrator {
                     playback_engine.reset_samples_ingested();
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         if owner != InteractionOwner::Ptt {
-                            let current_state = self.state.lock().unwrap().clone();
+                            let current_state = self.state.lock().clone();
                             if current_state != crate::core::state::InteractionState::Listening
                                 && current_state != crate::core::state::InteractionState::Idle
                             {
@@ -1344,15 +1339,14 @@ impl PipelineOrchestrator {
                                 );
                             }
 
-                            if let Ok(lock) = self.tts_tx.lock() {
-                                if let Some(tx) = lock.as_ref() {
-                                    let _ = tx.send(crate::services::tts::TtsCommand::Generate {
-                                        turn_id,
-                                        text: chunk,
-                                    });
-                                    tts_queued_chunks += 1;
-                                    self.tts_generating.store(true, Ordering::Relaxed);
-                                }
+                            let lock = self.tts_tx.lock();
+                            if let Some(tx) = lock.as_ref() {
+                                let _ = tx.send(crate::services::tts::TtsCommand::Generate {
+                                    turn_id,
+                                    text: chunk,
+                                });
+                                tts_queued_chunks += 1;
+                                self.tts_generating.store(true, Ordering::Relaxed);
                             }
                             token_buf.clear();
                             last_tts_flush = std::time::Instant::now();
@@ -1400,7 +1394,6 @@ impl PipelineOrchestrator {
                     );
                     self.conversation_manager
                         .lock()
-                        .unwrap()
                         .push_assistant_turn(turn_assistant_text.clone());
 
 
@@ -1413,15 +1406,14 @@ impl PipelineOrchestrator {
                         if metrics.tts_start.is_none() {
                             metrics.mark(MetricField::TtsStart);
                         }
-                        if let Ok(lock) = self.tts_tx.lock() {
-                            if let Some(tx) = lock.as_ref() {
-                                let _ = tx.send(crate::services::tts::TtsCommand::Generate {
-                                    turn_id,
-                                    text: remainder,
-                                });
-                                tts_queued_chunks += 1;
-                                self.tts_generating.store(true, Ordering::Relaxed);
-                            }
+                        let lock = self.tts_tx.lock();
+                        if let Some(tx) = lock.as_ref() {
+                            let _ = tx.send(crate::services::tts::TtsCommand::Generate {
+                                turn_id,
+                                text: remainder,
+                            });
+                            tts_queued_chunks += 1;
+                            self.tts_generating.store(true, Ordering::Relaxed);
                         }
                         last_tts_flush = std::time::Instant::now();
                     }
@@ -1480,7 +1472,7 @@ impl PipelineOrchestrator {
                         if owner != InteractionOwner::Ptt {
                             // Realtime Passive mode: SpeechEnd is a noop for state transition.
                             // Start local_silence_time tracking when silence is detected.
-                            let current_state = self.state.lock().unwrap().clone();
+                            let current_state = self.state.lock().clone();
                             if current_state == crate::core::state::InteractionState::UserSpeaking {
                                 if local_silence_time.is_none() {
                                     log::info!("[Pipeline] Local VAD detected silence in UserSpeaking state. Starting 10s timeout guard.");
@@ -1578,7 +1570,6 @@ impl PipelineOrchestrator {
                     log::info!("[Pipeline] Cancelled (turn {})", turn_id);
                     self.conversation_manager
                         .lock()
-                        .unwrap()
                         .pop_last_user_turn();
 
                     // Only cancel playback if it's actually active — avoid phantom
@@ -1669,28 +1660,22 @@ impl PipelineOrchestrator {
                     let _ = translit_tx.send(TranslitTask::Shutdown);
 
                     // 1. Shutdown LLM Worker
-                    if let Ok(mut lock) = self.llm_tx.lock() {
+                    {
+                        let mut lock = self.llm_tx.lock();
                         if let Some(tx) = lock.take() {
                             let _ = tx.send(crate::services::llm::LlmCommand::Shutdown);
                         }
                     }
-                    let llm_handle_opt = if let Ok(mut lock) = self.llm_handle.lock() {
-                        lock.take()
-                    } else {
-                        None
-                    };
+                    let llm_handle_opt = self.llm_handle.lock().take();
 
                     // 2. Shutdown TTS Worker
-                    if let Ok(mut lock) = self.tts_tx.lock() {
+                    {
+                        let mut lock = self.tts_tx.lock();
                         if let Some(tx) = lock.take() {
                             let _ = tx.send(crate::services::tts::TtsCommand::Shutdown);
                         }
                     }
-                    let tts_handle_opt = if let Ok(mut lock) = self.tts_handle.lock() {
-                        lock.take()
-                    } else {
-                        None
-                    };
+                    let tts_handle_opt = self.tts_handle.lock().take();
 
                     // Join workers asynchronously in a background thread to prevent Tauri exit/shutdown deadlocks
                     std::thread::spawn(move || {
@@ -1722,31 +1707,29 @@ impl PipelineOrchestrator {
                     // Forward TTS hot-updatable settings to the worker
                     if new_settings.tts.quality_steps != local_quality_steps {
                         local_quality_steps = new_settings.tts.quality_steps;
-                        if let Ok(lock) = self.tts_tx.lock() {
-                            if let Some(tx) = lock.as_ref() {
-                                let _ =
-                                    tx.send(crate::services::tts::TtsCommand::UpdateQualitySteps(
-                                        local_quality_steps,
-                                    ));
-                                log::debug!(
-                                    "[Pipeline] Dispatched UpdateQualitySteps({}) to TTS worker",
-                                    local_quality_steps
-                                );
-                            }
+                        let lock = self.tts_tx.lock();
+                        if let Some(tx) = lock.as_ref() {
+                            let _ =
+                                tx.send(crate::services::tts::TtsCommand::UpdateQualitySteps(
+                                    local_quality_steps,
+                                ));
+                            log::debug!(
+                                "[Pipeline] Dispatched UpdateQualitySteps({}) to TTS worker",
+                                local_quality_steps
+                            );
                         }
                     }
                     if (new_settings.tts.speed - local_speed).abs() > f32::EPSILON {
                         local_speed = new_settings.tts.speed;
-                        if let Ok(lock) = self.tts_tx.lock() {
-                            if let Some(tx) = lock.as_ref() {
-                                let _ = tx.send(crate::services::tts::TtsCommand::UpdateSpeed(
-                                    local_speed,
-                                ));
-                                log::debug!(
-                                    "[Pipeline] Dispatched UpdateSpeed({:.2}) to TTS worker",
-                                    local_speed
-                                );
-                            }
+                        let lock = self.tts_tx.lock();
+                        if let Some(tx) = lock.as_ref() {
+                            let _ = tx.send(crate::services::tts::TtsCommand::UpdateSpeed(
+                                local_speed,
+                            ));
+                            log::debug!(
+                                "[Pipeline] Dispatched UpdateSpeed({:.2}) to TTS worker",
+                                local_speed
+                            );
                         }
                     }
                 }

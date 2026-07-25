@@ -8,7 +8,7 @@ use sysinfo::{ProcessRefreshKind, System};
 
 
 use vox_lib::core::constants::{
-    PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_RELATION_SIMILAR, MODEL_DIR_NLI_DEFAULT,
+    PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_RELATION_SIMILAR,
 };
 use vox_lib::persistence::schema;
 use vox_lib::persistence::repository;
@@ -16,12 +16,12 @@ use vox_lib::services::memory::deduplication::{jaccard_similarity, is_exact_dupl
 use vox_lib::services::memory::embedder::{ensure_embedder_loaded, generate_embedding, cosine_similarity};
 use vox_lib::services::memory::nli::{
     ensure_nli_loaded, classify_pair, relation_from_result, get_calibrated_class_mapping_strings,
-    NliRelation, NLI_CONTRADICTION_THRESHOLD, NLI_ENTAILMENT_THRESHOLD,
+    NliRelation, NLI_CONTRADICTION_THRESHOLD, NLI_ENTAILMENT_THRESHOLD, NLI_MODEL_DIR,
 };
 
 const NLI_CANDIDATE_LIMIT: usize = 5;
 const SIMILAR_EDGE_THRESHOLD: f32 = 0.95;
-const NLI_CLASSIFICATION_MIN_THRESHOLD: f32 = 0.82;
+const NLI_CLASSIFICATION_MIN_THRESHOLD: f32 = 0.65;
 
 #[derive(Parser, Debug)]
 #[command(name = "nli_graph_test")]
@@ -193,23 +193,7 @@ async fn main() -> Result<()> {
                 let embedding = generate_embedding(&fact)?.unwrap();
                 total_embedding_ms += emb_start.elapsed().as_secs_f64() * 1000.0;
 
-                // Class C Guardrail: Identity & Context are completely isolated (No Candidate Search, No NLI Edges)
-                let is_class_c = collection.eq_ignore_ascii_case("Identity") || collection.eq_ignore_ascii_case("Context");
-                let is_class_a = collection.eq_ignore_ascii_case("Tasks") || collection.eq_ignore_ascii_case("Goals") || collection.eq_ignore_ascii_case("Constraints");
-
-                if is_class_c || !is_class_a {
-                    // Store fact directly without graph edges
-                    let db_start = Instant::now();
-                    repository::insert_fact_with_vector_and_relations(
-                        &conn, job_id, &fact_id, &fact, &collection, &source, &session_id, &embedding, Vec::new(), now
-                    ).await?;
-                    total_db_persistence_ms += db_start.elapsed().as_secs_f64() * 1000.0;
-                    ingested_count += 1;
-                    total_pipeline_ms += item_start.elapsed().as_secs_f64() * 1000.0;
-                    continue;
-                }
-
-                // Candidate Similarity (Strictly Intra-Collection for Class A)
+                // Candidate Similarity
                 let sim_start = Instant::now();
                 let candidate_vectors = repository::fetch_active_candidate_vectors(&conn, &collection).await?;
                 let mut scored_candidates = Vec::new();
@@ -254,7 +238,7 @@ async fn main() -> Result<()> {
                     }
 
                     if !nli_pairs_to_classify.is_empty() {
-                        ensure_nli_loaded(MODEL_DIR_NLI_DEFAULT)?;
+                        ensure_nli_loaded(NLI_MODEL_DIR)?;
                         for (sim, cand_id, cand_fact) in nli_pairs_to_classify {
                             let nli_start = Instant::now();
                             let nli_res = classify_pair(&fact, &cand_fact)?;

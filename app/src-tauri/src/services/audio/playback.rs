@@ -47,9 +47,11 @@ pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
 
 // ─── Playback Engine ──────────────────────────────────────────────────────────
 
+use parking_lot::Mutex;
+
 pub struct PlaybackEngine {
     /// Producer half of the lock-free ring buffer (Mono 48kHz).
-    producer: std::sync::Mutex<HeapProd<f32>>,
+    producer: Mutex<HeapProd<f32>>,
     /// `true` while CPAL is actively draining (used for mic ducking in Speaker mode).
     playback_active: Arc<AtomicBool>,
     /// Set `true` to clear the buffer and stop playback.
@@ -111,7 +113,7 @@ impl PlaybackEngine {
         )?;
 
         Ok(Self {
-            producer: std::sync::Mutex::new(producer),
+            producer: Mutex::new(producer),
             playback_active,
             cancel_flag,
             discard_request,
@@ -138,7 +140,7 @@ impl PlaybackEngine {
         }
 
         let upsampled = upsample_2x(chunk_24khz);
-        let mut prod = self.producer.lock().unwrap();
+        let mut prod = self.producer.lock();
 
         let pushed = prod.push_slice(&upsampled);
         if pushed < upsampled.len() {
@@ -174,10 +176,9 @@ impl PlaybackEngine {
         self.cancel_flag.store(true, Ordering::Relaxed);
         self.playback_active.store(false, Ordering::Relaxed);
         self.discard_request.store(true, Ordering::Relaxed);
-        if let Ok(_prod) = self.producer.lock() {
-            // No easy 'clear' in ringbuf v0.4 producer, but we can't block here.
-            // The callback will see cancel_flag and drop its own consumer state.
-        }
+        let _prod = self.producer.lock();
+        // No easy 'clear' in ringbuf v0.4 producer, but we can't block here.
+        // The callback will see cancel_flag and drop its own consumer state.
         self.buffer_samples.store(0, Ordering::SeqCst);
         log::info!("[Playback] Cancelled — buffer signal sent");
     }

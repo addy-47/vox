@@ -4,6 +4,10 @@ pub mod ten_onnx;
 
 pub use actor::spawn_vad_actor;
 
+// ─── VAD Model Constants ───────────────────────────────────────────────────
+pub const MODEL_DIR_VAD: &str = "vad";
+pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
+
 /// Voice Activity Detection engine contract.
 pub trait VadEngine {
     fn predict(&mut self, chunk: &[f32]) -> bool;

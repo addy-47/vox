@@ -649,8 +649,14 @@ pub struct MemorySettings {
     /// Preserves user identity anchors across topic shifts regardless of cosine distance.
     pub personal_top_k_per_semantic_collection: u32,
 
-    /// Tier 2B Global Similarity Cutoff Floor (0.0 - 1.0, default 0.65).
+    /// Tier 2B Global Similarity Cutoff Floor (0.0 - 1.0, default 0.40 for MiniLM-L12).
     /// Candidates in Tier 2B competitive pool must meet or exceed this cosine similarity score.
+    ///
+    /// # MODEL THRESHOLD CALIBRATION MATRIX
+    /// Cosine similarity distributions vary significantly by embedding model architecture & vector space geometry:
+    /// - `paraphrase-multilingual-MiniLM-L12-v2` (384d INT8 ONNX): Set to **0.40** (Noise baseline: 0.04-0.23, Margin: 0.34)
+    /// - `bge-m3` (1024d INT8 ONNX): Set to **0.65** (Noise baseline: 0.58-0.74, Margin: 0.14)
+    /// - `multilingual-e5-small` / `multilingual-e5-base`: Set to **0.75** (Noise baseline: 0.75-0.85, Margin: 0.05)
     pub semantic_similarity_cutoff: f32,
 }
 
@@ -663,7 +669,7 @@ impl Default for MemorySettings {
             semantic_budget_share: 0.08,
             context_chaining_window_hours: 12,
             personal_top_k_per_semantic_collection: 5,
-            semantic_similarity_cutoff: 0.65,
+            semantic_similarity_cutoff: 0.40,
         }
     }
 }

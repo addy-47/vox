@@ -1,12 +1,13 @@
 use ndarray::{Array1, Array2, Array3};
 use ort::session::Session;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
 
 pub struct TransliterationEngine {
-    encoder_sess: std::sync::Mutex<Session>,
-    decoder_sess: std::sync::Mutex<Session>,
+    encoder_sess: Mutex<Session>,
+    decoder_sess: Mutex<Session>,
     src_vocab: HashMap<String, i64>,
     tgt_vocab: HashMap<String, i64>,
     tgt_idx2char: HashMap<i64, String>,
@@ -62,8 +63,8 @@ impl TransliterationEngine {
             .map_err(|e| e.to_string())?;
 
         Ok(Self {
-            encoder_sess: std::sync::Mutex::new(encoder_sess),
-            decoder_sess: std::sync::Mutex::new(decoder_sess),
+            encoder_sess: Mutex::new(encoder_sess),
+            decoder_sess: Mutex::new(decoder_sess),
             src_vocab,
             tgt_vocab,
             tgt_idx2char,
@@ -93,7 +94,7 @@ impl TransliterationEngine {
         // Run Encoder
         let input_ids_tensor = ort::value::Tensor::from_array(input_ids)
             .map_err(|e| format!("Failed to create input_ids tensor: {}", e))?;
-        let mut enc_sess = self.encoder_sess.lock().unwrap();
+        let mut enc_sess = self.encoder_sess.lock();
         let enc_outputs = enc_sess
             .run(ort::inputs![
                 "input_ids" => input_ids_tensor
@@ -150,7 +151,7 @@ impl TransliterationEngine {
             let enc_outputs_tensor = ort::value::Tensor::from_array(enc_outputs_owned.clone())
                 .map_err(|e| format!("Failed to convert enc_outputs: {}", e))?;
 
-            let mut dec_sess = self.decoder_sess.lock().unwrap();
+            let mut dec_sess = self.decoder_sess.lock();
             let decoder_outputs = dec_sess
                 .run(ort::inputs![
                     "input_char" => dec_input_tensor,

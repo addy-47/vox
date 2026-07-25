@@ -1,8 +1,8 @@
 use super::SttEngine as SttEngineTrait;
 use anyhow::{anyhow, Result};
 use parakeet_rs::Nemotron;
+use parking_lot::Mutex;
 use std::path::Path;
-use std::sync::Mutex;
 
 pub struct SttEngine {
     model: Mutex<Nemotron>,
@@ -34,7 +34,7 @@ impl SttEngineTrait for SttEngine {
         }
 
         let start = std::time::Instant::now();
-        let mut model_lock = self.model.lock().unwrap();
+        let mut model_lock = self.model.lock();
 
         // Nemotron uses a streaming ASR model that expects 8960-sample (560ms) chunks.
         // The internal state persists across transcribe_chunk() calls and must not be
@@ -96,7 +96,7 @@ impl SttEngineTrait for SttEngine {
             return Ok(String::new());
         }
 
-        let mut model_lock = self.model.lock().unwrap();
+        let mut model_lock = self.model.lock();
         let text = model_lock
             .transcribe_chunk(chunk)
             .map_err(|e| anyhow!("Nemotron chunk transcription failed: {:?}", e))?;
@@ -105,7 +105,7 @@ impl SttEngineTrait for SttEngine {
     }
 
     fn reset_state(&self) -> Result<()> {
-        let mut model_lock = self.model.lock().unwrap();
+        let mut model_lock = self.model.lock();
         model_lock.reset();
         Ok(())
     }

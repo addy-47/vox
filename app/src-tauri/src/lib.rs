@@ -189,7 +189,7 @@ pub fn run() {
                 is_private_mode.clone(),
                 dropped_telemetry_events,
             );
-            app_state.persist_tx = std::sync::Mutex::new(Some(persist_tx));
+            app_state.persist_tx = parking_lot::Mutex::new(Some(persist_tx));
 
             // ── 0.8 Hardware GPU & Tier Resolution ─────────────────────────────────
             let local_gpu_info = crate::utils::hardware::detect_local_gpu();
@@ -212,7 +212,7 @@ pub fn run() {
                     std::sync::Arc::clone(&is_private_mode),
                     std::sync::Arc::clone(&app_state.settings),
                 );
-                app_state.memory_tx = std::sync::Mutex::new(Some(memory_tx));
+                app_state.memory_tx = parking_lot::Mutex::new(Some(memory_tx));
                 log::info!("[BOOTSTRAP] Memory Worker spawned on background thread.");
             } else {
                 log::info!(
@@ -309,7 +309,7 @@ pub fn run() {
                 if let Some(governor) = crate::utils::check_cpu_governor() {
                     let is_optimal = governor == "performance";
                     // Store in AppState so frontend can read from snapshot (avoids race with listener setup)
-                    *state.cpu_governor.lock().unwrap() = governor.clone();
+                    *state.cpu_governor.lock() = governor.clone();
                     state.cpu_governor_optimal.store(is_optimal, std::sync::atomic::Ordering::Relaxed);
 
                     if !is_optimal {
@@ -533,7 +533,7 @@ pub fn run() {
                 
                 // Gracefully signal background memory worker to flush and shutdown
                 {
-                    let mut memory_tx_lock = state.memory_tx.lock().unwrap();
+                    let mut memory_tx_lock = state.memory_tx.lock();
                     if let Some(tx) = memory_tx_lock.take() {
                         log::info!("[Vox] Sending Shutdown signal to memory worker...");
                         let _ = tx.send(crate::persistence::memory_worker::MemoryWorkerEvent::Shutdown);
@@ -542,7 +542,7 @@ pub fn run() {
 
                 // Gracefully signal persistence worker to flush and shutdown
                 {
-                    let mut persist_tx_lock = state.persist_tx.lock().unwrap();
+                    let mut persist_tx_lock = state.persist_tx.lock();
                     if let Some(tx) = persist_tx_lock.take() {
                         log::info!("[Vox] Sending Shutdown signal to persistence worker...");
                         let _ = tx.send(crate::persistence::events::PersistenceEvent::Shutdown);

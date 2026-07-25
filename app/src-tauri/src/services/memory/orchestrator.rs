@@ -2,12 +2,12 @@ use anyhow::Result;
 use turso::Connection;
 use crate::core::settings::MemorySettings;
 use crate::core::constants::{
-    PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_RELATION_SIMILAR, MODEL_DIR_NLI_DEFAULT,
+    PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_RELATION_SIMILAR,
 };
 use crate::persistence::repository;
 use crate::services::memory::deduplication::{jaccard_similarity, is_exact_duplicate};
 use crate::services::memory::embedder::{ensure_embedder_loaded, generate_embedding, cosine_similarity};
-use crate::services::memory::nli::{ensure_nli_loaded, classify_pair, relation_from_result, NliRelation};
+use crate::services::memory::nli::{ensure_nli_loaded, classify_pair, relation_from_result, NliRelation, NLI_MODEL_DIR};
 
 /// Maximum candidate facts retrieved for NLI logical comparison.
 pub const NLI_CANDIDATE_LIMIT: usize = 5;
@@ -164,7 +164,7 @@ pub async fn process_one_queue_item(
             return Ok(PipelineOutcome::NoWork);
         }
 
-        if let Err(e) = ensure_nli_loaded(MODEL_DIR_NLI_DEFAULT) {
+        if let Err(e) = ensure_nli_loaded(NLI_MODEL_DIR) {
             repository::mark_job_failed(conn, job_id, &format!("Failed to load NLI model: {}", e)).await;
             return Ok(PipelineOutcome::NoWork);
         }
