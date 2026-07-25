@@ -2,7 +2,7 @@ use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
 use serde::Serialize;
 use tauri::State;
-use crate::core::constants::{PM_RELATION_USER_SUPERSEDES, PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_SOURCE_USER};
+use crate::core::constants::{PM_RELATION_SUPERSEDES, PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_SOURCE_USER};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryFactEntry {
@@ -46,7 +46,7 @@ pub async fn get_personal_profile(
             "SELECT id, collection, fact, source, created_at FROM memory_facts 
              WHERE id NOT IN (SELECT to_id FROM memory_relations WHERE relation = ?) AND fact != ''
              ORDER BY collection, created_at DESC",
-            (PM_RELATION_USER_SUPERSEDES.to_string(),),
+            (PM_RELATION_SUPERSEDES.to_string(),),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -83,7 +83,7 @@ pub async fn get_collection_facts(
             "SELECT id, collection, fact, source, created_at FROM memory_facts 
              WHERE collection = ? AND id NOT IN (SELECT to_id FROM memory_relations WHERE relation = ?) AND fact != ''
              ORDER BY created_at DESC",
-            (collection, PM_RELATION_USER_SUPERSEDES.to_string()),
+            (collection, PM_RELATION_SUPERSEDES.to_string()),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -127,7 +127,7 @@ pub async fn get_memory_graph(
         let id: String = row.get(0).map_err(|e| e.to_string())?;
         
         let is_superseded = {
-            let mut s_rows = conn.query("SELECT 1 FROM memory_relations WHERE to_id = ? AND relation = ?", (id.clone(), PM_RELATION_USER_SUPERSEDES.to_string())).await.map_err(|e| e.to_string())?;
+            let mut s_rows = conn.query("SELECT 1 FROM memory_relations WHERE to_id = ? AND relation = ?", (id.clone(), PM_RELATION_SUPERSEDES.to_string())).await.map_err(|e| e.to_string())?;
             s_rows.next().await.map_err(|e| e.to_string())?.is_some()
         };
 
@@ -172,7 +172,7 @@ pub async fn get_memory_conflicts(
              WHERE relation = ? 
              AND from_id NOT IN (SELECT to_id FROM memory_relations WHERE relation = ?)
              AND to_id NOT IN (SELECT to_id FROM memory_relations WHERE relation = ?)",
-            (PM_RELATION_CONFLICTS.to_string(), PM_RELATION_USER_SUPERSEDES.to_string(), PM_RELATION_USER_SUPERSEDES.to_string()),
+            (PM_RELATION_CONFLICTS.to_string(), PM_RELATION_SUPERSEDES.to_string(), PM_RELATION_SUPERSEDES.to_string()),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -217,7 +217,7 @@ pub async fn user_edit_memory(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    crate::persistence::repository::supersede_user_fact(&conn, &old_fact_id, &new_fact, &collection)
+    crate::persistence::mutations::supersede_user_fact(&conn, &old_fact_id, &new_fact, &collection)
         .await
         .map_err(|e| e.to_string())
 }
@@ -245,8 +245,8 @@ pub async fn user_delete_memory(
     ).await.map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT INTO memory_relations (from_id, to_id, relation, created_at) VALUES (?, ?, ?, ?)",
-        (tombstone_id, fact_id, PM_RELATION_USER_SUPERSEDES.to_string(), now),
+        "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
+        (tombstone_id, fact_id, PM_RELATION_SUPERSEDES.to_string(), now),
     ).await.map_err(|e| e.to_string())?;
 
     Ok(())
@@ -270,12 +270,13 @@ pub async fn resolve_memory_conflict(
 
     // Resolve conflict by having winner supersede the loser
     conn.execute(
-        "INSERT INTO memory_relations (from_id, to_id, relation, created_at) VALUES (?, ?, ?, ?)",
-        (winner_id, loser_id, PM_RELATION_USER_SUPERSEDES.to_string(), now),
+        "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
+        (winner_id, loser_id, PM_RELATION_SUPERSEDES.to_string(), now),
     ).await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
+
 
 #[tauri::command]
 pub async fn get_memory_stats(

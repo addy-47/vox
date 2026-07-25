@@ -15,10 +15,10 @@ Every query entering the Vox memory subsystem follows a single unified, linear p
                       │
                       ▼
 ┌─────────────────────────────────────────────────────────┐
-┌─────────────────────────────────────────────────────────┐
 │ 1. Unified Seed Generation Phase                        │
-│    ├─► Deterministic SQL Seeds (Class A / Class C)     │
-│    └─► MiniLM-L12 Dense Vector Seeds (Class B, 384d)   │
+│    ├─► Deterministic SQL Seeds (Class A)                │
+│    ├─► Deterministic SQL Seeds (Class B, top_k_facts)   │
+│    └─► MiniLM-L12 Dense Vector Seeds (Class C, 384d)   │
 └─────────────────────────┬───────────────────────────────┘
                           │
                           ▼
@@ -55,6 +55,36 @@ Every query entering the Vox memory subsystem follows a single unified, linear p
 └─────────────────────────┬───────────────────────────────┘
 ```
 
+### 1.1 Ingestion Pipeline & Parallel Worker Pool Architecture
+
+Background memory ingestion processes enqueued facts extracted during session maintenance through a decoupled 5-step pipeline:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                             5-Step Async Ingestion Pipeline                                 │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Step 1: O(1) String Deduplication                                                           │
+│         Check exact Jaccard match (1.0). If duplicate, update timestamp in 0ms & complete. │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Step 2: Parallel Embedding Pool (Multi-Worker)                                              │
+│         Dispatch fact text across N worker threads (MiniLM-L12 384d INT8 ONNX, ~30MB/worker).│
+│         Generates 384-dimensional dense float vector concurrently across CPU cores.         │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Step 3: Taxonomy Class Dispatch & Candidate Search                                          │
+│         • Class A (Identity, Context): Zero candidate search. Bypasses NLI/LLM.             │
+│         • Class B (Constraints, Tasks, Goals): Intra-collection vector search (cos >= 0.40).  │
+│         • Class C (Skills, Projects, etc.): Inter-collection Policy Matrix search (cos >= 0.55).│
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Step 4: Parallel NLI / LLM Classification                                                   │
+│         • Class B: ONNX DeBERTa-v3-xsmall NLI model (SUPERSEDES, SUPPORTS, CONFLICTS).      │
+│         • Class C: Local LFM2.5-230M GGUF edge classifier + deterministic inverse edge map.  │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Step 5: Atomic Persistence (Turso Engine MVCC Transaction)                                  │
+│         Atomic BEGIN TRANSACTION ... COMMIT writes memory_facts (status = 'active'),        │
+│         memory_facts_vectors, and memory_relations (source provenance), marking queue item. │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## 2. Core Architectural Principles
@@ -78,8 +108,8 @@ Every query entering the Vox memory subsystem follows a single unified, linear p
 | :--- | :---: | :--- | :--- |
 | `primary_embedding_model` | **`MiniLM-L12`** | Primary / Architecture | `paraphrase-multilingual-MiniLM-L12-v2` (384-dim INT8 ONNX, 10.06ms CPU latency). |
 | `semantic_similarity_cutoff` | **`0.40`** | Primary / User-Facing | Retrieval cutoff threshold for vector similarity search using MiniLM-L12 vector geometry. |
-| `same_collection_candidate_search` | **`0.65`** | Internal / Ingestion | Candidate pre-filter threshold for intra-collection candidate generation. |
-| `inter_collection_candidate_search` | **`0.75`** | Internal / Ingestion | Candidate pre-filter threshold for inter-collection candidate generation. |
+| `same_collection_candidate_search` | **`0.40`** | Internal / Ingestion | Candidate pre-filter threshold for intra-collection Class B NLI processing. |
+| `inter_collection_candidate_search` | **`0.55`** | Internal / Ingestion | Candidate pre-filter threshold for inter-collection Class C LLM processing. |
 | `top_k_facts` | **`5`** | Primary / User-Facing | Top-$K$ facts limit per collection (used for Class A, B, and C). |
 | `max_hops` | **`2`** | Primary / User-Facing | Maximum graph traversal expansion depth during Seed-and-Expand. |
 | `NLI_CONTRADICTION_THRESHOLD` | **`0.85`** | Internal / NLI | Minimum probability required for NLI `CONFLICTS` classification. |
@@ -99,7 +129,7 @@ Cosine similarity distributions vary by embedding model vector geometry:
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                  Vox v6 3-Class Taxonomy                                        │
 ├──────────────────────────────────┬────────────────────────────────┬─────────────────────────────┤
-│ Class C: Isolated Foundational   │ Class A: Operational State     │ Class B: Semantic Knowledge │
+│ Class A: Direct Isolation        │ Class B: Operational State     │ Class C: Semantic Knowledge │
 │ (Deterministic SQL Only)         │ (Deterministic + Intra NLI)    │ (Vector Search + Inter LLM) │
 ├──────────────────────────────────┼────────────────────────────────┼─────────────────────────────┤
 │ • Identity                       │ • Constraints                  │ • Skills                    │
@@ -112,33 +142,33 @@ Cosine similarity distributions vary by embedding model vector geometry:
 
 ### Ingestion & Seed Generation Rules
 
-#### Class C (Isolated Foundational)
+#### Class A (Direct Isolation)
 * **Collections**: `Identity`, `Context`
-* **Ingestion**: Phase 1 strict hard-deduplication ONLY. Zero NLI, Zero LLM, Zero edge creation. Isolated from graph traversal.
+* **Ingestion**: Step 1 strict hard-deduplication ONLY. Zero NLI, Zero LLM, Zero edge creation. Isolated from graph traversal.
 * **Retrieval Policy**:
   - `Identity`: 100% active facts fetched deterministically via SQL (`WHERE status = 'active'`).
   - `Context`: Time-window chaining fetched deterministically via SQL (`WHERE created_at >= window_start`).
 
-#### Class A (Operational State)
+#### Class B (Operational State)
 * **Collections**: `Constraints`, `Tasks`, `Goals`
-* **Ingestion**: Phase 1 strict hard-deduplication $\rightarrow$ Candidate search within same collection (`same_collection_candidate_search = 0.65`) $\rightarrow$ **Intra-collection NLI ONLY** (`deberta-v3-xsmall`).
+* **Ingestion**: Step 1 strict hard-deduplication $\rightarrow$ Candidate search within same collection (`same_collection_candidate_search = 0.40`) $\rightarrow$ **Intra-collection NLI ONLY** (`deberta-v3-xsmall`).
 * **Retrieval Policy**: Deterministic SQL (`Latest K = top_k_facts (5)` facts for `Tasks`, `Goals`, and `Constraints`). Seeds enter Unified Global Seed Pool.
 
-#### Class B (Semantic Knowledge Graph)
+#### Class C (Semantic Knowledge Graph)
 * **Collections**: `Skills`, `Preferences`, `Projects`, `Experiences`, `Relationships`
 * **Ingestion**:
-  - Intra-collection: Phase 1 strict hard deduplication in 0ms. **Zero LLM passes.**
-  - Inter-collection: Candidate search across connected collections (`inter_collection_candidate_search = 0.75`) $\rightarrow$ **Inter-collection LLM ONLY** (`LFM2.5-230M` GGUF).
-* **Retrieval Policy**: BGE-M3 Dense Vector Search (`cosine_similarity = 0.70`, `top_k_facts = 5`). Seeds enter Unified Global Seed Pool and trigger bi-directional Seed-and-Expand graph traversal up to `max_hops = 2`.
+  - Intra-collection: Step 1 strict hard deduplication in 0ms. **Zero LLM passes.**
+  - Inter-collection: Candidate search across connected Policy Matrix collections (`inter_collection_candidate_search = 0.55`) $\rightarrow$ **Inter-collection LLM ONLY** (`LFM2.5-230M` GGUF).
+* **Retrieval Policy**: MiniLM-L12 Dense Vector Search (`cosine_similarity >= 0.40`, `top_k_facts = 5`). Seeds enter Unified Global Seed Pool and trigger bi-directional Seed-and-Expand graph traversal up to `max_hops = 2`.
 
 ---
 
-## 5. Class B Edge Creation LLM Specification (`LFM2.5-230M`)
+## 5. Class C Edge Creation LLM Specification (`LFM2.5-230M`)
 
 ### 5.1 Conceptual Purpose
 The Edge Creation LLM is a dedicated, ultra-lightweight local model (`LiquidAI/LFM2.5-230M` GGUF, ~230 million parameters) whose sole task is to determine whether a newly ingested fact in Source Collection A has a semantic relationship to an existing fact in Target Collection B across distinct memory domains.
 
-It operates as a constrained, single-token binary/multi-class classifier during background memory ingestion candidate processing (`inter_collection_candidate_search >= 0.75`).
+It operates as a constrained, single-token binary/multi-class classifier during background memory ingestion candidate processing (`inter_collection_candidate_search >= 0.55`).
 
 ### 5.2 Provided Input Context
 To evaluate relationship ground truth accurately without hallucination, the model receives **both the fact content AND session context** for each candidate:
@@ -206,7 +236,7 @@ $$\text{(Fact 2: Task)} \xrightarrow{\quad\text{belongs\_to\_project [Runtime Au
 
 ## 7. Intra-Collection Edge Resolution & Prompt Rendering Matrix
 
-NLI runs **strictly on Class A intra-collection pairs** (`same_collection_candidate_search = 0.65`). Edge Resolution Logic during context assembly is collection-specific:
+NLI runs **strictly on Class B intra-collection pairs** (`same_collection_candidate_search = 0.40`). Edge Resolution Logic during context assembly is collection-specific:
 
 | Collection | Edge Type | Resolution & Retrieval Action | Prompt Context Formatting |
 | :--- | :--- | :--- | :--- |
@@ -280,7 +310,27 @@ Retrieved facts in `<user_profile>` **never contain internal database `fact_id`s
 
 ```sql
 -- Provenance enum values for memory_relations
--- 'NLI'  : Automatically generated by deberta-v3-xsmall NLI model during Class A ingestion.
--- 'LLM'  : Automatically generated by LFM2.5-230M GGUF model during Class B ingestion.
+-- 'NLI'  : Automatically generated by deberta-v3-xsmall NLI model during Class B ingestion.
+-- 'LLM'  : Automatically generated by LFM2.5-230M GGUF model during Class C ingestion.
 -- 'USER' : Explicitly created or resolved by user via UI interaction (highest precedence).
 ```
+
+---
+
+## 11. Queue Staging & Crash Resilience Lifecycle (`personal_memory_queue`)
+
+Extracted facts from LLM session compaction are decoupled from active memory storage via `personal_memory_queue`:
+
+```sql
+-- Queue Status Lifecycle
+-- 'pending'   : Fact enqueued during LLM compaction, awaiting worker pick-up.
+-- 'staged'    : Fact queued while pipeline_processing_enabled setting is false (held without execution).
+-- 'processing': Locked status applied when worker thread starts processing queue item.
+-- 'completed' : Fact successfully embedded, graph-classified, and persisted to memory_facts.
+-- 'failed'    : Error occurred during embedding/ONNX/GGUF execution; records error_msg and attempts.
+```
+
+### Crash Resilience Contract
+1. **Isolated Active Memory**: A fact is inserted into `memory_facts` (`status = 'active'`) **only at Step 5 after full pipeline completion**.
+2. **Zero Memory Corruption**: If an application crash occurs mid-pipeline (during Step 2 embedding or Step 4 classification), no partial or un-embedded facts are written to `memory_facts`.
+3. **Automatic Restart Recovery**: Upon Vox app startup, any queue items remaining in `'processing'` status are automatically reset back to `'pending'` and re-processed cleanly from Step 1.
