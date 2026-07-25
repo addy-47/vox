@@ -1,3 +1,12 @@
+//! ============================================================================
+//! memory_v3_worker_test.rs — Memory Worker Queue Consolidation Integration Test
+//! ============================================================================
+//! Category     : Integration Test
+//! Component    : Memory Worker & Queue (`vox_lib::persistence::memory_worker`)
+//! Prerequisites: None (runs in-memory SQLite database)
+//! Execution    : cargo test --test memory_v3_worker_test
+//! ============================================================================
+
 use anyhow::Result;
 use std::collections::HashMap;
 use vox_lib::persistence::schema::run_migrations;

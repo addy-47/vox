@@ -110,3 +110,55 @@ split-debuginfo = "unpacked"
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
+
+[[bench]]
+name = "vox_multi_session_bench"
+harness = false
+
+[[bench]]
+name = "vox_bench"
+harness = false
+
+[[bench]]
+name = "vector_bench"
+harness = false
+
+[[bench]]
+name = "nli_bench"
+harness = false
+
+[[bench]]
+name = "embedding_bench"
+harness = false
+
+[[bench]]
+name = "vox_realtime_bench"
+harness = false
+
+[[bench]]
+name = "tts_bench"
+harness = false
+
+[[bench]]
+name = "vox_clone_bench"
+harness = false
+
+[[bench]]
+name = "dedup_bench"
+harness = false
+
+[[bench]]
+name = "translit_bench"
+harness = false
+
+[[example]]
+name = "voice_clone"
+
+[[example]]
+name = "vops_tts"
+
+[[example]]
+name = "generate_simulation_dataset_clips"
+
+[[example]]
+name = "query_embeddings"

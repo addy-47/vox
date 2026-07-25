@@ -1,3 +1,12 @@
+//! ============================================================================
+//! emotion_tags_test.rs — Supertonic 3 TTS Emotion Tag Processing Integration Test
+//! ============================================================================
+//! Category     : Integration Test
+//! Component    : TTS Engine (`vox_lib::services::tts`)
+//! Prerequisites: Local Supertonic model at `~/.vox/models/tts/supertonic-3`
+//! Execution    : cargo test --test emotion_tags_test
+//! ============================================================================
+
 //! Test whether Supertonic 3 TTS actually processes emotion tags (<laugh>, <breath>, <sigh>).
 //!
 //! Synthesizes tagged and plain variants of the same text, saves both as WAV files,

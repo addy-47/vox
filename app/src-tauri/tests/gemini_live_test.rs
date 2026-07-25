@@ -1,3 +1,12 @@
+//! ============================================================================
+//! gemini_live_test.rs — Gemini Live S2S WebSockets Streaming Test
+//! ============================================================================
+//! Category     : Integration Test
+//! Component    : Realtime Voice Providers (`vox_lib::services::realtime`)
+//! Prerequisites: Spawns local mock WebSocket server
+//! Execution    : cargo test --test gemini_live_test
+//! ============================================================================
+
 use futures_util::{SinkExt, StreamExt};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
