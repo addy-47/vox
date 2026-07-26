@@ -1,3 +1,12 @@
+//! ============================================================================
+//! query_embeddings.rs — Interactive Embedding Vector Query Utility CLI
+//! ============================================================================
+//! Category     : Utility Tool (Cargo Example)
+//! Component    : Embedding Engine & Turso Vector Database
+//! Prerequisites: Local ONNX embedding model at `~/.vox/models/embedding/`
+//! Execution    : cargo run --example query_embeddings -- --help
+//! ============================================================================
+
 use clap::Parser;
 use ndarray::Array2;
 use ort::session::Session;

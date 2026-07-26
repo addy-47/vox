@@ -1,3 +1,12 @@
+//! ============================================================================
+//! translit_bench.rs — ONNX Hinglish/Devanagari Transliteration Benchmark
+//! ============================================================================
+//! Category     : Benchmark
+//! Component    : Transliteration Engine (`vox_lib::services::utils`)
+//! Prerequisites: Local ONNX transliteration model at `~/.vox/models/translit/`
+//! Execution    : cargo test --bench translit_bench
+//! ============================================================================
+
 use ndarray::{Array1, Array2, Array3};
 use ort::session::Session;
 use std::collections::HashMap;

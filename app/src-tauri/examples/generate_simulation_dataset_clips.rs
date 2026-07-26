@@ -1,3 +1,12 @@
+//! ============================================================================
+//! generate_simulation_dataset_clips.rs — Synthetic Audio Clip Generator Utility
+//! ============================================================================
+//! Category     : Utility Tool (Cargo Example)
+//! Component    : Sherpa-ONNX TTS / Dataset Generator
+//! Prerequisites: Local TTS model at `~/.vox/models/tts/supertonic-3`
+//! Execution    : cargo run --example generate_simulation_dataset_clips
+//! ============================================================================
+
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
 use std::fs;

@@ -1,3 +1,12 @@
+//! ============================================================================
+//! llm_provider_tests.rs — Local GGUF & Remote SSE OpenAI LLM Provider Test
+//! ============================================================================
+//! Category     : Integration Test
+//! Component    : LLM Providers (`vox_lib::services::llm`)
+//! Prerequisites: Spawns local mock SSE HTTP server for remote stream tests
+//! Execution    : cargo test --test llm_provider_tests
+//! ============================================================================
+
 use std::io::Write;
 use std::net::TcpListener;
 use std::sync::atomic::AtomicBool;
