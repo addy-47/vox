@@ -450,3 +450,255 @@ pub async fn fetch_session_context(
 
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use turso::Connection;
+
+    async fn setup_test_db() -> Result<Connection> {
+        let db = turso::Builder::new_local(":memory:")
+            .experimental_index_method(true)
+            .build()
+            .await?;
+        let conn = db.connect()?;
+        crate::persistence::schema::run_migrations(&conn).await?;
+        Ok(conn)
+    }
+
+    #[tokio::test]
+    async fn test_fetch_foundational_facts() -> Result<()> {
+        let conn = setup_test_db().await?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id)
+             VALUES ('id_1', 'foundational', 'Identity', 'Name is Bob', 'User', 'active', 100, 'sess_1')",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id)
+             VALUES ('id_2', 'foundational', 'Constraints', 'No nuts', 'LLM', 'active', 200, '')",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id)
+             VALUES ('id_3', 'foundational', 'Constraints', 'No sugar', 'LLM', 'superseded', 300, '')",
+            (),
+        ).await?;
+
+        let facts = fetch_foundational_facts(&conn, "sess_1").await?;
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].id, "id_2");
+
+        let facts2 = fetch_foundational_facts(&conn, "sess_2").await?;
+        assert_eq!(facts2.len(), 2);
+        assert_eq!(facts2[0].id, "id_1");
+        assert_eq!(facts2[1].id, "id_2");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fetch_operational_facts() -> Result<()> {
+        let conn = setup_test_db().await?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id)
+             VALUES ('op_1', 'operational', 'Tasks', 'Task A', 'LLM', 'active', 100, '')",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id)
+             VALUES ('op_2', 'operational', 'Goals', 'Goal B', 'LLM', 'active', 200, '')",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id)
+             VALUES ('op_3', 'operational', 'Context', 'Ctx C', 'LLM', 'active', 300, '')",
+            (),
+        ).await?;
+
+        let facts = fetch_operational_facts(&conn, "sess_none").await?;
+        assert_eq!(facts.len(), 2);
+        assert_eq!(facts[0].id, "op_2");
+        assert_eq!(facts[1].id, "op_1");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fetch_facts_by_ids() -> Result<()> {
+        let conn = setup_test_db().await?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('f_1', 'semantic', 'Skills', 'Rust', 'LLM', 'active', 100)",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('f_2', 'semantic', 'Skills', 'C++', 'LLM', 'superseded', 100)",
+            (),
+        ).await?;
+
+        let ids = vec!["f_1".to_string(), "f_2".to_string(), "f_3".to_string()];
+        let map = fetch_facts_by_ids(&conn, &ids).await?;
+
+        assert_eq!(map.len(), 1);
+        assert!(map.contains_key("f_1"));
+        assert_eq!(map.get("f_1").unwrap().fact, "Rust");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fetch_active_collection_counts_and_grouped() -> Result<()> {
+        let conn = setup_test_db().await?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('c_1', 'foundational', 'Identity', 'Alex', 'LLM', 'active', 100)",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('c_2', 'semantic', 'Skills', 'Rust', 'LLM', 'active', 100)",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('c_3', 'semantic', 'Skills', 'Go', 'LLM', 'active', 200)",
+            (),
+        ).await?;
+
+        let counts = fetch_active_collection_counts(&conn, "sess_1").await?;
+        assert_eq!(counts.get("Identity"), Some(&1));
+        assert_eq!(counts.get("Skills"), Some(&2));
+
+        let grouped = fetch_active_facts_grouped(&conn).await?;
+        assert_eq!(grouped.get("Skills").unwrap().len(), 2);
+        assert_eq!(grouped.get("Skills").unwrap(), &vec!["Rust".to_string(), "Go".to_string()]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fetch_graph_neighbors() -> Result<()> {
+        let conn = setup_test_db().await?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('node_a', 'semantic', 'Projects', 'Project Vox', 'LLM', 'active', 100)",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('node_b', 'semantic', 'Skills', 'Rust', 'LLM', 'active', 100)",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('node_c', 'operational', 'Tasks', 'Write tests', 'LLM', 'active', 100)",
+            (),
+        ).await?;
+
+        conn.execute(
+            "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at)
+             VALUES ('node_a', 'node_b', 'requires_skill', 'LLM', 1000)",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at)
+             VALUES ('node_b', 'node_a', 'used_in_project', 'LLM', 1000)",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at)
+             VALUES ('node_a', 'node_c', 'contains_task', 'LLM', 1000)",
+            (),
+        ).await?;
+
+        let neighbors_b = fetch_graph_neighbors(&conn, &["node_b".to_string()]).await?;
+        assert_eq!(neighbors_b.len(), 2);
+
+        let neighbors_a = fetch_graph_neighbors(&conn, &["node_a".to_string()]).await?;
+        assert_eq!(neighbors_a.len(), 3);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fetch_intra_and_inter_collection_candidates() -> Result<()> {
+        let conn = setup_test_db().await?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('v_1', 'semantic', 'Skills', 'Rust programming', 'LLM', 'active', 100)",
+            (),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
+             VALUES ('v_2', 'semantic', 'Projects', 'Vox desktop app', 'LLM', 'active', 100)",
+            (),
+        ).await?;
+
+        let emb1 = vec![1.0f32; 384];
+        let emb2 = vec![0.5f32; 384];
+        let blob1 = encode_f32_blob(&emb1);
+        let blob2 = encode_f32_blob(&emb2);
+
+        conn.execute(
+            "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES ('v_1', 'Skills', ?)",
+            (blob1,),
+        ).await?;
+        conn.execute(
+            "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES ('v_2', 'Projects', ?)",
+            (blob2,),
+        ).await?;
+
+        let query_emb = vec![1.0f32; 384];
+        let intra = fetch_intra_collection_candidates(&conn, "Skills", &query_emb, 0.5, 10).await?;
+        assert_eq!(intra.len(), 1);
+        assert_eq!(intra[0].0, "v_1");
+
+        let target_colls = vec!["Skills", "Projects"];
+        let inter = fetch_inter_collection_candidates(&conn, &target_colls, &query_emb, 0.5, 10).await?;
+        assert_eq!(inter.len(), 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fetch_context_records_and_session_context() -> Result<()> {
+        let conn = setup_test_db().await?;
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, session_id, created_at)
+             VALUES ('ctx_1', 'operational', 'Context', 'Session 1 context summary', 'LLM', 'active', 's1', ?)",
+            (now_ms - 1000,),
+        ).await?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, session_id, created_at)
+             VALUES ('ctx_old', 'operational', 'Context', 'Old context summary', 'LLM', 'active', 's1', ?)",
+            (now_ms - (100 * 3600 * 1000),),
+        ).await?;
+
+        let records = fetch_context_records(&conn, 24).await?;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].0, "Session 1 context summary");
+
+        let ctx = fetch_session_context(&conn, "s1", now_ms).await?;
+        assert_eq!(ctx, Some("Session 1 context summary".to_string()));
+
+        let fact_ctx = fetch_fact_session_context(&conn, "ctx_1").await?;
+        assert_eq!(fact_ctx, Some("Session 1 context summary".to_string()));
+
+        Ok(())
+    }
+}

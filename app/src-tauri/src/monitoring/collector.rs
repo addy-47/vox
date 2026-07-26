@@ -164,3 +164,103 @@ fn collect_snapshot(
         timestamp_ms: now,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::monitoring::runtime_state::MonitoringState;
+
+    fn mock_snapshot(timestamp_ms: u64) -> RuntimeSnapshot {
+        RuntimeSnapshot {
+            pipeline_state: "Idle".to_string(),
+            current_turn_id: 1,
+            conversation_id: 100,
+            playback_active: false,
+            tts_generating: false,
+            system_cpu_usage: 12.5,
+            system_ram_mb: 2048,
+            vox_cpu_usage: 3.2,
+            vox_ram_mb: 180,
+            total_ram_mb: 16384,
+            cpu_cores: 8,
+            vad_energy: 0.05,
+            vad_probability: 0.01,
+            stt_latency_ms: Some(150),
+            ttft_ms: Some(280),
+            total_voice_latency_ms: Some(430),
+            persistence_queue_depth: 0,
+            dropped_persistence_events: 0,
+            playback_buffer_samples: 512,
+            playback_underruns: 0,
+            active_owner: "MainWindow".to_string(),
+            active_threads: 10,
+            tts_rtf: Some(0.42),
+            playback_start_ms: Some(300),
+            persistence_writes_per_sec: 2.5,
+            is_db_healthy: true,
+            is_llm_loaded: true,
+            llm_provider_kind: "embedded".to_string(),
+            is_tts_loaded: true,
+            is_stt_loaded: true,
+            is_vad_loaded: true,
+            is_sleeping: false,
+            is_engaged: true,
+            cpu_governor: "performance".to_string(),
+            cpu_governor_optimal: true,
+            timestamp_ms,
+        }
+    }
+
+    #[test]
+    fn test_telemetry_metrics_collector_window() {
+        let monitoring = MonitoringState::new();
+
+        // 1. Initial state check
+        assert!(monitoring.get_latest().is_none());
+        assert!(monitoring.get_history().is_empty());
+
+        // 2. Push 10 snapshots and verify order and latest update
+        for i in 0..10 {
+            monitoring.push(mock_snapshot(1000 + i));
+        }
+
+        let history = monitoring.get_history();
+        assert_eq!(history.len(), 10);
+        assert_eq!(history[0].timestamp_ms, 1000);
+        assert_eq!(history[9].timestamp_ms, 1009);
+
+        let latest = monitoring.get_latest().unwrap();
+        assert_eq!(latest.timestamp_ms, 1009);
+
+        // 3. Overflow test: Push 650 total snapshots (capacity is MAX_SNAPSHOT_HISTORY = 600)
+        for i in 10..650 {
+            monitoring.push(mock_snapshot(1000 + i));
+        }
+
+        let bounded_history = monitoring.get_history();
+        assert_eq!(
+            bounded_history.len(),
+            600,
+            "History should be bounded by MAX_SNAPSHOT_HISTORY (600)"
+        );
+
+        // Oldest 50 snapshots (timestamps 1000..1049) should be evicted
+        assert_eq!(
+            bounded_history[0].timestamp_ms, 1050,
+            "Oldest snapshot in window should have timestamp 1050"
+        );
+        assert_eq!(
+            bounded_history[599].timestamp_ms, 1649,
+            "Newest snapshot in window should have timestamp 1649"
+        );
+
+        let new_latest = monitoring.get_latest().unwrap();
+        assert_eq!(new_latest.timestamp_ms, 1649);
+
+        // 4. Clear history check
+        monitoring.clear();
+        assert!(monitoring.get_latest().is_none());
+        assert!(monitoring.get_history().is_empty());
+    }
+}
+

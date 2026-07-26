@@ -252,3 +252,46 @@ pub fn transliterate(word: &str) -> String {
         word.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_transliteration_engine_uninitialized_fallback() {
+        assert_eq!(transliterate("नमस्ते"), "नमस्ते");
+        assert_eq!(transliterate("hello"), "hello");
+    }
+
+    #[test]
+    fn test_transliteration_engine_local_models() {
+        if let Some(home) = dirs::home_dir() {
+            let model_path = home.join(".vox/models/translit");
+            if model_path.exists() {
+                let engine = TransliterationEngine::new(&model_path);
+                assert!(
+                    engine.is_ok(),
+                    "TransliterationEngine failed to load from {:?}",
+                    model_path
+                );
+                let engine = engine.unwrap();
+
+                // Test single Devanagari word transliteration
+                let res = engine.transliterate_word("नमस्ते");
+                assert!(res.is_ok());
+                let transliterated = res.unwrap();
+                assert!(
+                    !transliterated.is_empty(),
+                    "Transliterated output should not be empty"
+                );
+                assert!(
+                    transliterated.to_lowercase().contains("namas")
+                        || transliterated.to_lowercase().contains("namaste"),
+                    "Unexpected transliteration result: '{}'",
+                    transliterated
+                );
+            }
+        }
+    }
+}
+

@@ -1,6 +1,9 @@
 use crate::services::realtime::{resampler::AudioResampler, RealtimeAudioConfig, RealtimeSession};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Sender};
+
+static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub struct AudioBridge {
     tx: Option<Sender<Vec<i16>>>,
@@ -67,9 +70,7 @@ impl AudioBridge {
             if let Err(e) = tx.try_send(samples.to_vec()) {
                 match e {
                     tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                        static DROP_COUNT: std::sync::atomic::AtomicUsize =
-                            std::sync::atomic::AtomicUsize::new(0);
-                        let prev = DROP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let prev = DROP_COUNT.fetch_add(1, Ordering::Relaxed);
                         if prev % 100 == 0 {
                             log::warn!(
                                 "[AudioBridge] Channel buffer full, dropping input audio chunk. Dropped {} chunks so far.",
@@ -83,5 +84,55 @@ impl AudioBridge {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_bridge_non_blocking_drop() {
+        let mut bridge = AudioBridge::new();
+        let (tx, _rx) = channel::<Vec<i16>>(100);
+        bridge.tx = Some(tx);
+
+        let initial_drops = DROP_COUNT.load(Ordering::Relaxed);
+
+        let chunk = vec![0i16; 320];
+        // Fill bounded MPSC audio channel (100 capacity) to saturation
+        for _ in 0..100 {
+            bridge.send_pcm(&chunk);
+        }
+
+        let drops_after_filling = DROP_COUNT.load(Ordering::Relaxed);
+        assert_eq!(
+            drops_after_filling, initial_drops,
+            "No chunks should be dropped when channel is within capacity"
+        );
+
+        // Invoke send_pcm with 101st chunk
+        bridge.send_pcm(&chunk);
+
+        let drops_after_overflow = DROP_COUNT.load(Ordering::Relaxed);
+        assert_eq!(
+            drops_after_overflow,
+            initial_drops + 1,
+            "101st chunk should trigger non-blocking drop and increment drop counter"
+        );
+    }
+
+    #[test]
+    fn test_audio_bridge_closed_channel_safety() {
+        let mut bridge = AudioBridge::new();
+        let (tx, rx) = channel::<Vec<i16>>(100);
+        bridge.tx = Some(tx);
+
+        // Drop receiver to simulate WebSocket disconnect
+        drop(rx);
+
+        let chunk = vec![0i16; 320];
+        // Verify send_pcm completes safely without panic
+        bridge.send_pcm(&chunk);
     }
 }
