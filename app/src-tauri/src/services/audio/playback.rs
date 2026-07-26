@@ -376,3 +376,160 @@ impl Drop for PlaybackEngine {
         self.cancel();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+    use std::sync::Arc;
+
+    #[test]
+    fn test_upsample_2x_boundaries() {
+        let test_cases: Vec<Vec<f32>> = vec![
+            vec![],
+            vec![0.5],
+            vec![0.2, -0.8],
+            vec![0.1, 0.5, -0.3],
+            vec![0.0; 100],
+        ];
+
+        for input in test_cases {
+            let output = upsample_2x(&input);
+            assert_eq!(
+                output.len(),
+                input.len() * 2,
+                "Output length must be exactly 2 * N for input len {}",
+                input.len()
+            );
+            for &sample in &output {
+                assert!(
+                    sample.is_finite(),
+                    "Sample must be finite (not NaN or Inf): {}",
+                    sample
+                );
+            }
+        }
+
+        // Additional boundary test with 100 alternating non-zero samples
+        let non_zero_100: Vec<f32> = (0..100)
+            .map(|i| if i % 2 == 0 { 0.9 } else { -0.9 })
+            .collect();
+        let output_100 = upsample_2x(&non_zero_100);
+        assert_eq!(output_100.len(), 200);
+        for &sample in &output_100 {
+            assert!(sample.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_upsample_2x_sine_wave_fidelity() {
+        // Generate 100ms of 1kHz sine wave at 24kHz sample rate with peak amplitude 0.8
+        let freq = 1000.0f32;
+        let sample_rate = 24000.0f32;
+        let num_samples = 2400; // 100ms
+        let peak_amp = 0.8f32;
+
+        let input: Vec<f32> = (0..num_samples)
+            .map(|i| {
+                (2.0 * std::f32::consts::PI * freq * (i as f32) / sample_rate).sin() * peak_amp
+            })
+            .collect();
+
+        let output = upsample_2x(&input);
+
+        assert_eq!(output.len(), num_samples * 2);
+
+        let input_peak = input.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        let output_peak = output.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+
+        // Verify output peak amplitude matches input peak amplitude within tight tolerance
+        let peak_diff = (input_peak - output_peak).abs();
+        assert!(
+            peak_diff < 0.02,
+            "Peak amplitude mismatch: input peak {}, output peak {}, diff {}",
+            input_peak,
+            output_peak,
+            peak_diff
+        );
+
+        // Verify output does not exceed clipping boundary or experience severe overshoot
+        assert!(
+            output_peak <= 1.0,
+            "Output clipped or overshot boundary: peak {}",
+            output_peak
+        );
+
+        // Verify all samples are finite
+        for &sample in &output {
+            assert!(sample.is_finite(), "Output sample contains NaN or Inf");
+        }
+    }
+
+    #[test]
+    fn test_playback_barge_in_discard() {
+        let playback_active = Arc::new(AtomicBool::new(false));
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let playback_energy = Arc::new(AtomicU32::new(0));
+        let playback_low = Arc::new(AtomicU32::new(0));
+        let playback_mid = Arc::new(AtomicU32::new(0));
+        let playback_high = Arc::new(AtomicU32::new(0));
+        let playback_underruns = Arc::new(AtomicU64::new(0));
+        let is_assistant_speaking = Arc::new(AtomicBool::new(false));
+
+        let engine = match PlaybackEngine::new(
+            playback_active.clone(),
+            cancel_flag.clone(),
+            playback_energy.clone(),
+            playback_low.clone(),
+            playback_mid.clone(),
+            playback_high.clone(),
+            playback_underruns.clone(),
+            is_assistant_speaking.clone(),
+        ) {
+            Ok(engine) => engine,
+            Err(e) => {
+                // Audio device may not be available in headless CI/container environment
+                eprintln!(
+                    "[test_playback_barge_in_discard] Audio device not available: {}",
+                    e
+                );
+                return;
+            }
+        };
+
+        // 1. Initially idle with empty buffer
+        assert!(engine.is_idle());
+        assert_eq!(engine.buffer_len(), 0);
+        assert_eq!(engine.total_samples_ingested(), 0);
+
+        // 2. Ingest 24kHz audio chunk (100 samples -> 200 upsampled samples)
+        let chunk = vec![0.1f32; 100];
+        engine.ingest_chunk(&chunk);
+
+        assert_eq!(engine.buffer_len(), 200);
+        assert_eq!(engine.total_samples_ingested(), 200);
+
+        // 3. Start playback
+        engine.start_playback();
+        assert!(!engine.is_idle());
+
+        // 4. Simulate Barge-In: Trigger cancel / discard
+        engine.cancel();
+
+        // Verify buffer is cleared and engine returns to idle
+        assert_eq!(engine.buffer_len(), 0);
+        assert!(engine.is_idle());
+        assert!(cancel_flag.load(Ordering::Relaxed));
+
+        // 5. Ingesting while cancelled should be rejected / dropped
+        let new_chunk = vec![0.5f32; 50];
+        engine.ingest_chunk(&new_chunk);
+        assert_eq!(engine.buffer_len(), 0);
+
+        // 6. Test sample counter reset
+        assert_eq!(engine.total_samples_ingested(), 200);
+        engine.reset_samples_ingested();
+        assert_eq!(engine.total_samples_ingested(), 0);
+    }
+}
+
