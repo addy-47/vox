@@ -83,7 +83,8 @@ struct Args {
 
 #[derive(Debug, Deserialize)]
 struct DatasetTurn {
-    turn: usize,
+    #[serde(rename = "turn")]
+    _turn: usize,
     user: String,
     assistant: String,
     #[serde(default)]
@@ -501,10 +502,7 @@ fn main() -> Result<()> {
             }
             conv_mgr.update_system_prompt(&full_system_prompt);
 
-            let known_facts = tokio_handle.block_on(async {
-                vox_lib::persistence::queries::fetch_active_facts_grouped(&conn).await.unwrap_or_default()
-            });
-            let (ctx, speech, personal_memory) = conv_mgr.build_context(provider_kind, false, Some(&*provider), &known_facts);
+            let (ctx, speech, personal_memory) = conv_mgr.build_context(provider_kind, false, Some(&*provider));
 
             if !personal_memory.is_empty() {
                 let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {

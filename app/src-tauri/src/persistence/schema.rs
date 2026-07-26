@@ -38,7 +38,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         );",
         "CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at DESC);",
 
-        // ─── V6 Cognitive Memory Subsystem Tables ───────────────────────
+        // ─── Cognitive Memory Subsystem Tables ───────────────────────
         "CREATE TABLE IF NOT EXISTS memory_facts (
             id           TEXT PRIMARY KEY,              -- UUID v4 ('mem_{timestamp}_{uuid}')
             type         TEXT NOT NULL,                 -- 'foundational', 'operational', 'semantic'
@@ -217,7 +217,7 @@ mod tests {
         }
         assert!(found_source, "memory_relations must have 'source' column");
 
-        // Verify all 4 V6 memory tables exist
+        // Verify all 4 memory tables exist
         for table in &["memory_facts", "memory_facts_vectors", "memory_relations", "personal_memory_queue"] {
             let mut rows = conn
                 .query(

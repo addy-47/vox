@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn test_class_c_taxonomy_connection_matrix_compliance() {
-        // Allowed inter-collection edges according to v6 §4 / constants.rs
+        // Allowed inter-collection edges according to constants.rs
         let allowed_pairs = [
             ("Projects", "Constraints", "constrained_by", "restricts_project"),
             ("Projects", "Skills", "requires_skill", "used_in_project"),

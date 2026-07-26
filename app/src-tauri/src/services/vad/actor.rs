@@ -380,12 +380,7 @@ where
             let mut detected = vad.predict(&chunk);
 
             // Override hallucinated speech on sub-threshold noise
-            let effective_noise_gate = if is_earshot {
-                noise_gate * 1.5
-            } else {
-                noise_gate
-            };
-            if raw_energy < effective_noise_gate {
+            if !is_above_noise_gate(raw_energy, noise_gate, is_earshot) {
                 detected = false;
             }
 
@@ -498,38 +493,6 @@ where
     }
 }
 
-/// Buffers incoming variable-length audio chunks and emits fixed-size frames (e.g., 512 samples).
-#[derive(Debug)]
-pub(crate) struct AudioFramer {
-    buffer: Vec<f32>,
-    frame_size: usize,
-}
-
-impl AudioFramer {
-    pub fn new(frame_size: usize) -> Self {
-        Self {
-            buffer: Vec::with_capacity(frame_size * 2),
-            frame_size,
-        }
-    }
-
-    /// Push arbitrary length samples into the framer, returning all complete frames of length `frame_size`.
-    pub fn push(&mut self, samples: &[f32]) -> Vec<Vec<f32>> {
-        self.buffer.extend_from_slice(samples);
-        let mut frames = Vec::new();
-        while self.buffer.len() >= self.frame_size {
-            let frame = self.buffer.drain(..self.frame_size).collect();
-            frames.push(frame);
-        }
-        frames
-    }
-
-    /// Returns the number of unframe-allocated samples remaining in the buffer.
-    pub fn remaining_len(&self) -> usize {
-        self.buffer.len()
-    }
-}
-
 /// Bounded circular-like buffer for retaining pre-roll audio before speech onset.
 #[derive(Debug)]
 pub(crate) struct PreRollBuffer {
@@ -552,14 +515,6 @@ impl PreRollBuffer {
             let excess = self.buffer.len() - self.max_capacity;
             self.buffer.drain(0..excess);
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.buffer.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.buffer.is_empty()
     }
 
     pub fn clear(&mut self) {
@@ -594,68 +549,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_vad_framing_non_uniform_chunks() {
-        let mut framer = AudioFramer::new(512);
-
-        // Chunks with non-uniform lengths: 128, 256, 441 samples
-        let chunk1 = vec![0.1f32; 128];
-        let chunk2 = vec![0.2f32; 256];
-        let chunk3 = vec![0.3f32; 441];
-
-        // Push chunk 1 (128 samples): total = 128 < 512 -> 0 frames
-        let frames1 = framer.push(&chunk1);
-        assert_eq!(frames1.len(), 0);
-        assert_eq!(framer.remaining_len(), 128);
-
-        // Push chunk 2 (256 samples): total = 128 + 256 = 384 < 512 -> 0 frames
-        let frames2 = framer.push(&chunk2);
-        assert_eq!(frames2.len(), 0);
-        assert_eq!(framer.remaining_len(), 384);
-
-        // Push chunk 3 (441 samples): total = 384 + 441 = 825 >= 512 -> 1 frame of 512 samples
-        let frames3 = framer.push(&chunk3);
-        assert_eq!(frames3.len(), 1);
-        assert_eq!(frames3[0].len(), 512);
-        assert_eq!(framer.remaining_len(), 825 - 512); // 313 samples remaining
-
-        // Verify zero sample drops: emitted frame samples + remaining samples == total input samples
-        let total_input_samples = chunk1.len() + chunk2.len() + chunk3.len();
-        let total_emitted_samples = (frames1.len() + frames2.len() + frames3.len()) * 512;
-        assert_eq!(total_input_samples, total_emitted_samples + framer.remaining_len());
-
-        // Push another 200 samples to trigger a second 512 frame (313 + 200 = 513 >= 512)
-        let chunk4 = vec![0.4f32; 200];
-        let frames4 = framer.push(&chunk4);
-        assert_eq!(frames4.len(), 1);
-        assert_eq!(frames4[0].len(), 512);
-        assert_eq!(framer.remaining_len(), 1);
-
-        let grand_total_input = total_input_samples + chunk4.len();
-        let grand_total_emitted = (frames1.len() + frames2.len() + frames3.len() + frames4.len()) * 512;
-        assert_eq!(grand_total_input, grand_total_emitted + framer.remaining_len());
-    }
-
-    #[test]
     fn test_pre_roll_circular_buffer_cap() {
         let mut pre_roll = PreRollBuffer::new(8000);
-        assert_eq!(pre_roll.len(), 0);
-        assert!(pre_roll.is_empty());
+        assert_eq!(pre_roll.as_slice().len(), 0);
+        assert!(pre_roll.as_slice().is_empty());
 
         // Push 100,000 samples of silence (in chunks of 256)
         let silence_chunk = vec![0.0f32; 256];
         let total_samples_pushed = 100_000;
         for _ in 0..(total_samples_pushed / 256) {
             pre_roll.push(&silence_chunk);
-            assert!(pre_roll.len() <= 8000, "Pre-roll length exceeded cap: {}", pre_roll.len());
+            assert!(pre_roll.as_slice().len() <= 8000, "Pre-roll length exceeded cap: {}", pre_roll.as_slice().len());
         }
 
         // Verify pre-roll capacity stays strictly bounded at 8,000 samples (500ms at 16kHz)
-        assert_eq!(pre_roll.len(), 8000);
+        assert_eq!(pre_roll.as_slice().len(), 8000);
 
         // Push non-silence chunk with distinct values to verify old samples are drained (FIFO)
         let marker_chunk = vec![0.99f32; 256];
         pre_roll.push(&marker_chunk);
-        assert_eq!(pre_roll.len(), 8000);
+        assert_eq!(pre_roll.as_slice().len(), 8000);
 
         // The last 256 samples in buffer should be marker_chunk (0.99)
         let slice = pre_roll.as_slice();
@@ -663,8 +576,8 @@ mod tests {
 
         // Test clear
         pre_roll.clear();
-        assert_eq!(pre_roll.len(), 0);
-        assert!(pre_roll.is_empty());
+        assert_eq!(pre_roll.as_slice().len(), 0);
+        assert!(pre_roll.as_slice().is_empty());
     }
 
     #[test]

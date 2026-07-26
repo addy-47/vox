@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// A user-created cloned voice entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceEntry {
-    /// UUID v4 — stable identifier used in settings and filesystem paths.
+    /// UUID — stable identifier used in settings and filesystem paths.
     pub id: String,
     /// User-visible display name.
     pub name: String,

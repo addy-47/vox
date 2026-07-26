@@ -163,6 +163,48 @@ Cosine similarity distributions vary by embedding model vector geometry:
 
 ---
 
+## 4.1 Stateless Compaction Ingestion Architecture
+
+### 1. Architectural Mandate: $O(1)$ Stateless Extraction
+To prevent prompt context bloat and attention degradation over long sessions, **Compaction LLM execution MUST be 100% stateless**:
+- The Compaction LLM prompt receives **ONLY** the new conversation history turns (10–15 turns, ~1,000 tokens).
+- Passing accumulated `<known_facts>` in the compaction prompt is **STRICTLY PROHIBITED**.
+- Deduplication and superseding are performed statelessly outside the LLM prompt at the database insertion / SQLite staging layer.
+
+### 2. Working Memory Context Budget Allocation & Hard Caps
+
+For a standard $N$-token context window (e.g. $4,096$ or $16,384$ tokens):
+
+| Component | Budget Share / Cap | Calculation ($4K$ Window) | Calculation ($16K$ Window) |
+| :--- | :--- | :--- | :--- |
+| **System Prompt Baseline** | Fixed Base | ~260 tokens | ~260 tokens |
+| **RAG Injected Profile (`<user_profile>`)** | **Hard Cap 15%** | **614 tokens** | **2,457 tokens** |
+| **Narrative History Chain (Message 1)** | **Soft Cap 5%** | **204 tokens** | **819 tokens** |
+| **Working Dialogue Turns** | Remaining (~80%) | ~3,000+ tokens | ~13,000+ tokens |
+
+---
+
+## 4.2 Message 1 Backward Prepending Narrative Context Chain Algorithm
+
+When $N$ compactions have run in an active session ($C_1, C_2, \dots, C_{N-1}, C_N$), Message 1 in Working Memory is constructed using a **Backward Prepending Context Chain**:
+
+```
+Step 1: Start with candidate array containing latest compaction context [C_N].
+Step 2: Prepend C_{N-1} -> [C_{N-1}, C_N]. Calculate token count.
+Step 3: If total tokens <= 5% soft cap (~204 tokens), prepend C_{N-2} -> [C_{N-2}, C_{N-1}, C_N].
+Step 4: Continue prepending backwards until adding C_i would exceed the 5% soft cap.
+Step 5: Render the final selected array chronologically left-to-right:
+        Message 1 = "[Compacted History Summary: <Context_C_{N-k}>. ... <Context_C_{N-1}>. <Context_C_N>.]"
+```
+
+### Properties Guarantees:
+1. **Recency Priority**: Always keeps the most recent compaction contexts ($C_N, C_{N-1}, \dots$).
+2. **Strict Budget Bound**: Never exceeds 5% of the Turn LLM's context window.
+3. **Forward Chronological Flow**: Because older contexts are prepended during backward traversal, the rendered output string flows naturally forward in time ($C_{N-k} \to C_N$).
+
+---
+
+
 ## 5. Class C Edge Creation LLM Specification (`LFM2.5-230M`)
 
 ### 5.1 Conceptual Purpose
