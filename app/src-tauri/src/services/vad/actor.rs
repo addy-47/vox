@@ -38,7 +38,7 @@ where
     let mut current_turn_id: u32 = 0;
     let mut utterance_buffer: Vec<f32> = Vec::new();
     let mut samples_since_partial = 0;
-    let mut pre_roll_buffer: Vec<f32> = Vec::with_capacity(8000); // 500ms pre-roll
+    let mut pre_roll_buffer = PreRollBuffer::new(8000); // 500ms pre-roll
     let mut active_frames = 0;
     let mut inactive_frames = 0;
 
@@ -192,8 +192,7 @@ where
             // ── Phase 5: High-Frequency Telemetry ────────────────────────
             // Process the chunk through our filter bank to get low, mid, and high RMS
             let (raw_low, raw_mid, raw_high) = filter_bank.process_chunk(&chunk);
-            let raw_energy =
-                (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt();
+            let raw_energy = calculate_rms(&chunk);
 
             // Gate individual bands as well, keeping mid and high relative to low/energy
             let gated_raw = if raw_energy > noise_gate {
@@ -304,6 +303,7 @@ where
                             // SPEECH ONSET TRANSITION: Flush pre-roll buffer to avoid clipping the first word
                             if let Some(ref tx) = realtime_tx {
                                 let pre_roll_i16: Vec<i16> = pre_roll_buffer
+                                    .as_slice()
                                     .iter()
                                     .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
                                     .collect();
@@ -344,11 +344,7 @@ where
                 // In both Modular and Realtime PTT: Accumulate pre-roll when not in speech
                 let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
                 if !state.ptt.speech_detected.load(Ordering::Relaxed) {
-                    pre_roll_buffer.extend_from_slice(&chunk);
-                    if pre_roll_buffer.len() > 8000 {
-                        let excess = pre_roll_buffer.len() - 8000;
-                        pre_roll_buffer.drain(0..excess);
-                    }
+                    pre_roll_buffer.push(&chunk);
                 }
 
                 if in_speech {
@@ -423,7 +419,7 @@ where
                         "session_id": current_turn_id
                     }));
                     utterance_buffer.clear();
-                    utterance_buffer.extend_from_slice(&pre_roll_buffer);
+                    utterance_buffer.extend_from_slice(pre_roll_buffer.as_slice());
                     samples_since_partial = utterance_buffer.len();
                     pre_roll_buffer.clear();
                 }
@@ -494,14 +490,227 @@ where
                     samples_since_partial = 0;
                 }
             } else {
-                pre_roll_buffer.extend_from_slice(&chunk);
-                if pre_roll_buffer.len() > 8000 {
-                    let excess = pre_roll_buffer.len() - 8000;
-                    pre_roll_buffer.drain(0..excess);
-                }
+                pre_roll_buffer.push(&chunk);
             }
         } else {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
     }
 }
+
+/// Buffers incoming variable-length audio chunks and emits fixed-size frames (e.g., 512 samples).
+#[derive(Debug)]
+pub(crate) struct AudioFramer {
+    buffer: Vec<f32>,
+    frame_size: usize,
+}
+
+impl AudioFramer {
+    pub fn new(frame_size: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(frame_size * 2),
+            frame_size,
+        }
+    }
+
+    /// Push arbitrary length samples into the framer, returning all complete frames of length `frame_size`.
+    pub fn push(&mut self, samples: &[f32]) -> Vec<Vec<f32>> {
+        self.buffer.extend_from_slice(samples);
+        let mut frames = Vec::new();
+        while self.buffer.len() >= self.frame_size {
+            let frame = self.buffer.drain(..self.frame_size).collect();
+            frames.push(frame);
+        }
+        frames
+    }
+
+    /// Returns the number of unframe-allocated samples remaining in the buffer.
+    pub fn remaining_len(&self) -> usize {
+        self.buffer.len()
+    }
+}
+
+/// Bounded circular-like buffer for retaining pre-roll audio before speech onset.
+#[derive(Debug)]
+pub(crate) struct PreRollBuffer {
+    buffer: Vec<f32>,
+    max_capacity: usize,
+}
+
+impl PreRollBuffer {
+    pub fn new(max_capacity: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(max_capacity),
+            max_capacity,
+        }
+    }
+
+    /// Appends new audio samples to the pre-roll buffer, draining oldest samples if capacity is exceeded.
+    pub fn push(&mut self, chunk: &[f32]) {
+        self.buffer.extend_from_slice(chunk);
+        if self.buffer.len() > self.max_capacity {
+            let excess = self.buffer.len() - self.max_capacity;
+            self.buffer.drain(0..excess);
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+    }
+
+    pub fn as_slice(&self) -> &[f32] {
+        &self.buffer
+    }
+}
+
+/// Calculates Root Mean Square (RMS) energy of an audio sample slice.
+pub(crate) fn calculate_rms(chunk: &[f32]) -> f32 {
+    if chunk.is_empty() {
+        return 0.0;
+    }
+    (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt()
+}
+
+/// Evaluates if raw energy satisfies the noise gate threshold.
+pub(crate) fn is_above_noise_gate(raw_energy: f32, noise_gate: f32, is_earshot: bool) -> bool {
+    let effective_noise_gate = if is_earshot {
+        noise_gate * 1.5
+    } else {
+        noise_gate
+    };
+    raw_energy >= effective_noise_gate
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vad_framing_non_uniform_chunks() {
+        let mut framer = AudioFramer::new(512);
+
+        // Chunks with non-uniform lengths: 128, 256, 441 samples
+        let chunk1 = vec![0.1f32; 128];
+        let chunk2 = vec![0.2f32; 256];
+        let chunk3 = vec![0.3f32; 441];
+
+        // Push chunk 1 (128 samples): total = 128 < 512 -> 0 frames
+        let frames1 = framer.push(&chunk1);
+        assert_eq!(frames1.len(), 0);
+        assert_eq!(framer.remaining_len(), 128);
+
+        // Push chunk 2 (256 samples): total = 128 + 256 = 384 < 512 -> 0 frames
+        let frames2 = framer.push(&chunk2);
+        assert_eq!(frames2.len(), 0);
+        assert_eq!(framer.remaining_len(), 384);
+
+        // Push chunk 3 (441 samples): total = 384 + 441 = 825 >= 512 -> 1 frame of 512 samples
+        let frames3 = framer.push(&chunk3);
+        assert_eq!(frames3.len(), 1);
+        assert_eq!(frames3[0].len(), 512);
+        assert_eq!(framer.remaining_len(), 825 - 512); // 313 samples remaining
+
+        // Verify zero sample drops: emitted frame samples + remaining samples == total input samples
+        let total_input_samples = chunk1.len() + chunk2.len() + chunk3.len();
+        let total_emitted_samples = (frames1.len() + frames2.len() + frames3.len()) * 512;
+        assert_eq!(total_input_samples, total_emitted_samples + framer.remaining_len());
+
+        // Push another 200 samples to trigger a second 512 frame (313 + 200 = 513 >= 512)
+        let chunk4 = vec![0.4f32; 200];
+        let frames4 = framer.push(&chunk4);
+        assert_eq!(frames4.len(), 1);
+        assert_eq!(frames4[0].len(), 512);
+        assert_eq!(framer.remaining_len(), 1);
+
+        let grand_total_input = total_input_samples + chunk4.len();
+        let grand_total_emitted = (frames1.len() + frames2.len() + frames3.len() + frames4.len()) * 512;
+        assert_eq!(grand_total_input, grand_total_emitted + framer.remaining_len());
+    }
+
+    #[test]
+    fn test_pre_roll_circular_buffer_cap() {
+        let mut pre_roll = PreRollBuffer::new(8000);
+        assert_eq!(pre_roll.len(), 0);
+        assert!(pre_roll.is_empty());
+
+        // Push 100,000 samples of silence (in chunks of 256)
+        let silence_chunk = vec![0.0f32; 256];
+        let total_samples_pushed = 100_000;
+        for _ in 0..(total_samples_pushed / 256) {
+            pre_roll.push(&silence_chunk);
+            assert!(pre_roll.len() <= 8000, "Pre-roll length exceeded cap: {}", pre_roll.len());
+        }
+
+        // Verify pre-roll capacity stays strictly bounded at 8,000 samples (500ms at 16kHz)
+        assert_eq!(pre_roll.len(), 8000);
+
+        // Push non-silence chunk with distinct values to verify old samples are drained (FIFO)
+        let marker_chunk = vec![0.99f32; 256];
+        pre_roll.push(&marker_chunk);
+        assert_eq!(pre_roll.len(), 8000);
+
+        // The last 256 samples in buffer should be marker_chunk (0.99)
+        let slice = pre_roll.as_slice();
+        assert_eq!(&slice[8000 - 256..], marker_chunk.as_slice());
+
+        // Test clear
+        pre_roll.clear();
+        assert_eq!(pre_roll.len(), 0);
+        assert!(pre_roll.is_empty());
+    }
+
+    #[test]
+    fn test_noise_gate_rms_threshold() {
+        // Test RMS energy calculation
+        let silence = vec![0.0f32; 256];
+        assert_eq!(calculate_rms(&silence), 0.0);
+
+        // Constant DC signal of 0.5 -> RMS = 0.5
+        let dc_signal = vec![0.5f32; 256];
+        let dc_rms = calculate_rms(&dc_signal);
+        assert!((dc_rms - 0.5).abs() < 1e-6);
+
+        // Sine wave with amplitude A -> RMS = A / sqrt(2) approx 0.7071 * A
+        let amplitude = 0.8f32;
+        let sine_wave: Vec<f32> = (0..256)
+            .map(|i| amplitude * (2.0 * std::f32::consts::PI * i as f32 / 16.0).sin())
+            .collect();
+        let sine_rms = calculate_rms(&sine_wave);
+        let expected_rms = amplitude / 2.0f32.sqrt();
+        assert!((sine_rms - expected_rms).abs() < 1e-3);
+
+        // Test noise gate thresholding logic
+        let noise_gate = 0.02f32;
+
+        // Sub-threshold noise
+        let quiet_noise = vec![0.005f32; 256];
+        let quiet_rms = calculate_rms(&quiet_noise);
+        assert!(quiet_rms < noise_gate);
+        assert!(!is_above_noise_gate(quiet_rms, noise_gate, false));
+
+        // Super-threshold signal
+        let loud_signal = vec![0.1f32; 256];
+        let loud_rms = calculate_rms(&loud_signal);
+        assert!(loud_rms > noise_gate);
+        assert!(is_above_noise_gate(loud_rms, noise_gate, false));
+
+        // Test Earshot effective noise gate multiplier (1.5x multiplier)
+        let _earshot_gate = noise_gate * 1.5; // 0.03
+        let borderline_noise = vec![0.025f32; 256]; // RMS = 0.025
+        let borderline_rms = calculate_rms(&borderline_noise);
+
+        // Should pass standard gate (0.025 >= 0.02)
+        assert!(is_above_noise_gate(borderline_rms, noise_gate, false));
+        // Should fail Earshot gate (0.025 < 0.03)
+        assert!(!is_above_noise_gate(borderline_rms, noise_gate, true));
+    }
+}
+
