@@ -1,4 +1,4 @@
-/// Pure XML Prompt Context Tree Formatter & Relative Timestamp Helper (v6 §9).
+/// Pure XML Prompt Context Tree Formatter & Relative Timestamp Helper.
 /// Formats retrieved personal context into standard <user_profile> structure with zero fact_id leaks.
 
 /// Formats a millisecond epoch timestamp as a human-readable relative time label.

@@ -14,7 +14,7 @@ use std::time::Instant;
 use tokenizers::Tokenizer;
 
 struct ModelInstance {
-    name: String,
+    _name: String,
     session: ort::session::Session,
     tokenizer: Tokenizer,
     dim: usize,
@@ -22,7 +22,7 @@ struct ModelInstance {
 }
 
 impl ModelInstance {
-    fn load_file(name: &str, dir: &PathBuf, filename: &str, expected_dim: usize) -> Result<Self> {
+    fn load_file(_name: &str, dir: &PathBuf, filename: &str, expected_dim: usize) -> Result<Self> {
         let model_path = if dir.join(filename).exists() {
             dir.join(filename)
         } else if dir.join("onnx").join(filename).exists() {
@@ -58,7 +58,7 @@ impl ModelInstance {
         let has_token_type_ids = session.inputs().iter().any(|i| i.name() == "token_type_ids");
 
         Ok(Self {
-            name: name.to_string(),
+            _name: _name.to_string(),
             session,
             tokenizer,
             dim: expected_dim,

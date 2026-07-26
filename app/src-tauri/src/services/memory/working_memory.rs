@@ -5,6 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+// ─── Working Memory Budget Constants ──────────────────────────────────────────
+/// Soft cap share (5%) of total context window reserved for Message 1 narrative history chain.
+pub const NARRATIVE_CHAIN_SOFT_CAP_SHARE: f32 = 0.05;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
@@ -59,6 +63,9 @@ pub struct ConversationManager {
 
     kv_synced_index: usize,
 
+    session_compaction_contexts: Vec<String>,
+    latest_compaction_facts: std::collections::HashMap<String, Vec<String>>,
+
     opportunistic_active: bool,
     opportunistic_cancel: Arc<AtomicBool>,
 }
@@ -82,6 +89,8 @@ impl ConversationManager {
             critical_threshold: 0.85,
             soft_threshold: 0.65,
             kv_synced_index: 0,
+            session_compaction_contexts: Vec::new(),
+            latest_compaction_facts: std::collections::HashMap::new(),
             opportunistic_active: false,
             opportunistic_cancel: Arc::new(AtomicBool::new(false)),
         }
@@ -109,8 +118,34 @@ impl ConversationManager {
         self.messages = vec![sys_msg];
         self.total_token_count = sys_tokens;
         self.kv_synced_index = 0;
+        self.session_compaction_contexts.clear();
+        self.latest_compaction_facts.clear();
         self.cancel_opportunistic();
         log::info!("[WorkingMemory] New session started. System prompt set.");
+    }
+
+    /// Constructs a chronological narrative context chain from session compactions (C_1 -> C_N)
+    /// using backward prepending (from C_N down to C_1) up to the soft_cap_tokens limit (5% of ctx window).
+    pub fn build_narrative_context_chain(&self, soft_cap_tokens: usize) -> String {
+        let mut selected: Vec<&str> = Vec::new();
+        let mut current_tokens = 0;
+
+        for ctx in self.session_compaction_contexts.iter().rev() {
+            let clean_ctx = ctx.trim();
+            if clean_ctx.is_empty() {
+                continue;
+            }
+            let ctx_tokens = estimate_tokens(clean_ctx);
+            if selected.is_empty() || (current_tokens + ctx_tokens <= soft_cap_tokens) {
+                selected.push(clean_ctx);
+                current_tokens += ctx_tokens;
+            } else {
+                break;
+            }
+        }
+
+        selected.reverse();
+        selected.join(" ")
     }
 
     pub fn update_system_prompt(&mut self, new_system_prompt: &str) {
@@ -200,7 +235,6 @@ impl ConversationManager {
         provider_kind: ProviderKind,
         is_devanagari: bool,
         llm_provider: Option<&dyn LlmProvider>,
-        known_facts: &std::collections::HashMap<String, Vec<String>>,
     ) -> (ConversationContext, Option<String>, std::collections::HashMap<String, Vec<String>>) {
         self.cancel_opportunistic();
 
@@ -231,7 +265,7 @@ impl ConversationManager {
             if use_fifo || llm_provider.is_none() {
                 self.perform_fifo_maintenance();
             } else if let Some(provider) = llm_provider {
-                match self.perform_compaction_maintenance(provider, known_facts) {
+                match self.perform_compaction_maintenance(provider) {
                     Ok(updates) => {
                         personal_memory = updates;
                     }
@@ -244,6 +278,49 @@ impl ConversationManager {
                     }
                 }
             }
+        }
+
+        // Format <session_history> XML block (narrative chain + recent 9-collection compaction facts)
+        let soft_cap = ((self.max_context_tokens as f32) * NARRATIVE_CHAIN_SOFT_CAP_SHARE) as usize;
+        let narrative_chain = self.build_narrative_context_chain(soft_cap.max(50));
+
+        let mut session_history = String::new();
+        if !narrative_chain.is_empty() || !self.latest_compaction_facts.is_empty() {
+            session_history.push_str("<session_history>\n");
+            if !narrative_chain.is_empty() {
+                session_history.push_str("  <narrative_chain>\n  ");
+                session_history.push_str(&narrative_chain);
+                session_history.push_str("\n  </narrative_chain>\n");
+            }
+            if !self.latest_compaction_facts.is_empty() {
+                session_history.push_str("  <recent_compaction_facts>\n");
+                for (col, facts) in &self.latest_compaction_facts {
+                    if !facts.is_empty() {
+                        session_history.push_str(&format!("    [{}]\n", col));
+                        for f in facts {
+                            session_history.push_str(&format!("    - {}\n", f));
+                        }
+                    }
+                }
+                session_history.push_str("  </recent_compaction_facts>\n");
+            }
+            session_history.push_str("</session_history>");
+        }
+
+        // Consolidate into single System Message at messages[0]
+        if !session_history.is_empty() && !self.messages.is_empty() && self.messages[0].role == Role::System {
+            let base_prompt = &self.system_prompt.content;
+            let consolidated_prompt = if let Some(idx) = base_prompt.find("<user_profile>") {
+                let (prefix, suffix) = base_prompt.split_at(idx);
+                format!("{}\n{}\n\n{}", prefix.trim_end(), session_history, suffix)
+            } else {
+                format!("{}\n\n{}", base_prompt, session_history)
+            };
+
+            let old_sys_tokens = estimate_tokens(&self.messages[0].content);
+            let new_sys_tokens = estimate_tokens(&consolidated_prompt);
+            self.messages[0].content = consolidated_prompt;
+            self.total_token_count = self.total_token_count.saturating_sub(old_sys_tokens) + new_sys_tokens;
         }
 
         let kv_idx = if provider_kind == ProviderKind::Embedded {
@@ -295,11 +372,10 @@ impl ConversationManager {
         );
     }
 
-    /// LLM-driven Context Compaction: Delegates ingestion & prompt generation to `ingestion::run_compaction` (v5 §5.1).
+    /// LLM-driven Context Compaction: Delegates ingestion & prompt generation to `ingestion::run_compaction`.
     fn perform_compaction_maintenance(
         &mut self,
         provider: &dyn LlmProvider,
-        known_facts: &std::collections::HashMap<String, Vec<String>>,
     ) -> anyhow::Result<std::collections::HashMap<String, Vec<String>>> {
         if self.messages.len() <= 3 {
             self.perform_fifo_maintenance();
@@ -308,38 +384,42 @@ impl ConversationManager {
 
         let last_user_turn = self.messages.pop().ok_or_else(|| anyhow::anyhow!("No user turn"))?;
         let history_slice = &self.messages[1..];
+        let last_context_summary = self.session_compaction_contexts.last().map(|s| s.as_str());
 
         match crate::services::memory::ingestion::run_compaction(
             provider,
             history_slice,
             &last_user_turn,
-            known_facts,
+            last_context_summary,
         ) {
             Ok(result) => {
-                let summary_msg = ChatMessage {
-                    role: Role::System,
-                    content: format!("[Compacted History Summary: {}]", result.context_summary.trim()),
-                    timestamp_ms: current_timestamp_ms(),
-                };
+                let context_summary = result.context_summary.trim().to_string();
+                if !context_summary.is_empty() {
+                    self.session_compaction_contexts.push(context_summary);
+                }
 
-                let summary_tokens = estimate_tokens(&summary_msg.content);
+                // Store 9 non-Context collections from this compaction for immediate Turn LLM visibility
+                let mut facts_9_col = result.personal_memory.clone();
+                facts_9_col.remove("Context");
+                self.latest_compaction_facts = facts_9_col;
+
                 let sys_tokens = estimate_tokens(&self.system_prompt.content);
                 let user_tokens = estimate_tokens(&last_user_turn.content);
 
+                // Single System Message Architecture: All compaction state lives inside messages[0]
                 self.messages = vec![
                     self.system_prompt.clone(),
-                    summary_msg,
                     last_user_turn,
                 ];
 
-                self.total_token_count = sys_tokens + summary_tokens + user_tokens;
+                self.total_token_count = sys_tokens + user_tokens;
                 self.kv_synced_index = 0;
 
                 log::info!(
-                    "[WorkingMemory] Compaction complete. Context rebuilt with 3 items ({} tokens, utilization {:.1}%). Enqueued {} new additions.",
+                    "[WorkingMemory] Compaction complete. Context rebuilt with 2 items ({} tokens, utilization {:.1}%). Total session compactions: {}.",
                     self.total_token_count,
                     self.context_utilization() * 100.0,
-                    result.diff_to_enqueue.values().map(|v| v.len()).sum::<usize>()
+                    self.session_compaction_contexts.len()
                 );
 
                 Ok(result.diff_to_enqueue)
@@ -473,8 +553,7 @@ mod tests {
 
         assert!(mgr.needs_threshold_maintenance());
 
-        let known_facts = std::collections::HashMap::new();
-        let (ctx, speech, _) = mgr.build_context(ProviderKind::Embedded, false, None, &known_facts);
+        let (ctx, speech, _) = mgr.build_context(ProviderKind::Embedded, false, None);
 
         assert!(speech.is_some());
         assert!(!mgr.needs_threshold_maintenance());
@@ -529,11 +608,10 @@ mod tests {
             "Context": ["The user introduced himself as Alex and expressed his love for Rust."]
         }"#.to_string();
 
-        let known_facts = std::collections::HashMap::new();
         let provider = MockProvider { response_text: mock_response };
-        let updates = mgr.perform_compaction_maintenance(&provider, &known_facts).unwrap();
+        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
 
-        assert_eq!(updates.len(), 3);
+        assert_eq!(updates.values().filter(|v| !v.is_empty()).count(), 3);
         assert_eq!(updates.get("Identity").unwrap().len(), 2);
         assert_eq!(updates.get("Preferences").unwrap().len(), 1);
         assert_eq!(updates.get("Context").unwrap().len(), 1);
@@ -554,11 +632,10 @@ mod tests {
         }
         ```"#.to_string();
 
-        let known_facts = std::collections::HashMap::new();
         let provider = MockProvider { response_text: mock_response };
-        let updates = mgr.perform_compaction_maintenance(&provider, &known_facts).unwrap();
+        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
 
-        assert_eq!(updates.len(), 2);
+        assert_eq!(updates.values().filter(|v| !v.is_empty()).count(), 2);
         assert_eq!(updates.get("Identity").unwrap()[0], "User's name is Alex.");
     }
 
@@ -573,15 +650,16 @@ mod tests {
         // Plain prose instead of JSON
         let mock_response = "The user is Alex. He loves system programming.".to_string();
 
-        let known_facts = std::collections::HashMap::new();
         let provider = MockProvider { response_text: mock_response };
-        let updates = mgr.perform_compaction_maintenance(&provider, &known_facts).unwrap();
+        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
 
         // Should fall back to prose, return no profile updates, but successfully compact the conversation
         assert_eq!(updates.len(), 0);
-        // The message queue should have the summary message
-        assert_eq!(mgr.messages[1].role, Role::System);
-        assert!(mgr.messages[1].content.contains("The user is Alex. He loves system programming."));
+        assert_eq!(mgr.messages.len(), 2);
+        assert_eq!(mgr.messages[0].role, Role::System);
+        assert_eq!(mgr.messages[1].role, Role::User);
+        assert_eq!(mgr.session_compaction_contexts.len(), 1);
+        assert!(mgr.session_compaction_contexts[0].contains("The user is Alex. He loves system programming."));
     }
 
     #[test]
@@ -619,5 +697,42 @@ mod tests {
         assert_eq!(resp.summary, "User codes in Rust.");
         assert_eq!(resp.personal_memory.get("Identity").unwrap()[0], "Alex");
         assert_eq!(resp.personal_memory.get("Preferences").unwrap()[0], "Rust");
+    }
+
+    #[test]
+    fn test_single_system_message_and_9_collection_session_history() {
+        let mut mgr = ConversationManager::new(1024);
+        mgr.new_session("<persona>Vox</persona>\n<user_profile>[Identity]\n- User is Alex</user_profile>");
+        mgr.push_user_turn("Hi, I am setting up Symphonia for MP3 decoding.".to_string());
+        mgr.push_assistant_turn("Got it! Symphonia is great.".to_string());
+        mgr.push_user_turn("Add Symphonia to Cargo.toml.".to_string());
+
+        let mock_response = r#"{
+            "Tasks": ["Add Symphonia dependency to Cargo.toml"],
+            "Projects": ["Setting up Symphonia Rust crate"],
+            "Context": ["User is configuring Symphonia for MP3 decoding"]
+        }"#.to_string();
+
+        let provider = MockProvider { response_text: mock_response };
+        let _ = mgr.perform_compaction_maintenance(&provider).unwrap();
+
+        let (ctx, _, _) = mgr.build_context(ProviderKind::Embedded, false, Some(&provider));
+
+        // 1. Single System Message
+        assert_eq!(ctx.messages.len(), 2);
+        assert_eq!(ctx.messages[0].role, Role::System);
+        assert_eq!(ctx.messages[1].role, Role::User);
+
+        // 2. Contains <session_history> with <narrative_chain> and <recent_compaction_facts>
+        let sys_content = &ctx.messages[0].content;
+        assert!(sys_content.contains("<session_history>"));
+        assert!(sys_content.contains("<narrative_chain>"));
+        assert!(sys_content.contains("<recent_compaction_facts>"));
+        assert!(sys_content.contains("[Tasks]"));
+        assert!(sys_content.contains("Add Symphonia dependency to Cargo.toml"));
+        assert!(sys_content.contains("[Projects]"));
+
+        // 3. Excludes Context from recent_compaction_facts (mapped to narrative_chain)
+        assert!(!sys_content.contains("[Context]"));
     }
 }

@@ -24,6 +24,7 @@ enum NliLabel {
 }
 
 impl NliLabel {
+    #[allow(dead_code)]
     fn as_str(&self) -> &'static str {
         match self {
             Self::Contradiction => "CONTRADICTION",

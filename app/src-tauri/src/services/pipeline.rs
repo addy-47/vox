@@ -610,14 +610,6 @@ impl PipelineOrchestrator {
                 }
             };
 
-            let active_known_facts = rt.block_on(async {
-                if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
-                    crate::persistence::queries::fetch_active_facts_grouped(&conn).await.unwrap_or_default()
-                } else {
-                    std::collections::HashMap::new()
-                }
-            });
-
             let (ctx, transition_speech, personal_memory) = {
                 let mut mgr = self.conversation_manager.lock();
                 mgr.set_max_context_tokens(settings_snap.llm.ctx_size as usize);
@@ -627,7 +619,7 @@ impl PipelineOrchestrator {
                 }
                 mgr.push_user_turn(text.clone());
                 let provider_dyn: Option<&dyn crate::services::llm::LlmProvider> = provider_ref.as_ref().map(|p| p.as_ref());
-                mgr.build_context(provider_kind, is_hi, provider_dyn, &active_known_facts)
+                mgr.build_context(provider_kind, is_hi, provider_dyn)
             };
 
             if !personal_memory.is_empty() {

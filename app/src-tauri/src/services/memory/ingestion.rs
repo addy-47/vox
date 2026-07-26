@@ -15,13 +15,13 @@ pub struct CompactionResult {
     pub diff_to_enqueue: HashMap<String, Vec<String>>,
 }
 
-/// Executes LLM Context Compaction & Personal Fact Extraction (v5 §5.1 / §5.3 Ingestion).
+/// Executes LLM Context Compaction & Personal Fact Extraction.
 /// Summarizes context history and extracts structured profile facts.
 pub fn run_compaction(
     provider: &dyn LlmProvider,
     history_messages: &[ChatMessage],
     _last_user_turn: &ChatMessage,
-    current_personal_memory: &HashMap<String, Vec<String>>,
+    last_context_summary: Option<&str>,
 ) -> Result<CompactionResult> {
     if history_messages.is_empty() {
         return Err(anyhow!("No history turns to compact."));
@@ -34,31 +34,25 @@ pub fn run_compaction(
         history_text.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
     }
 
-    let is_first = current_personal_memory.is_empty()
-        || current_personal_memory.values().all(|v| v.is_empty());
-
-    let user_content = if is_first {
+    let user_content = if let Some(prev_ctx) = last_context_summary.filter(|s| !s.trim().is_empty()) {
+        format!(
+            "<previous_context>\n{}\n</previous_context>\n\n\
+             <conversation_history>\n{}\n</conversation_history>\n\n\
+             <task>\n\
+             Analyze the <conversation_history> above and extract all stated user facts into the 10 flat collections from the <schema>.\n\
+             Use <previous_context> to maintain a cumulative, updated summary in the Context collection.\n\
+             Follow every rule in <rules> and <boundary_disambiguation>. Output ONLY the JSON object starting with {{ and ending with }}.\n\
+             </task>",
+            prev_ctx.trim(),
+            history_text
+        )
+    } else {
         format!(
             "<conversation_history>\n{}\n</conversation_history>\n\n\
              <task>\n\
              Analyze the <conversation_history> above and extract all stated user facts into the 10 flat collections from the <schema>.\n\
              Follow every rule in <rules> and <boundary_disambiguation>. Output ONLY the JSON object starting with {{ and ending with }}.\n\
              </task>",
-            history_text
-        )
-    } else {
-        let serialized_memory = serde_json::to_string_pretty(current_personal_memory).unwrap_or_default();
-        format!(
-            "<known_facts>\n{}\n</known_facts>\n\n\
-             <conversation_history>\n{}\n</conversation_history>\n\n\
-             <task>\n\
-             Analyze the new <conversation_history> turns against <known_facts>.\n\
-             Extract ONLY BRAND-NEW facts or explicit updates introduced in <conversation_history>.\n\
-             CRITICAL: NEVER re-extract, re-word, or output facts already present in <known_facts>.\n\
-             For collections with no new facts, return an empty array [].\n\
-             Follow every rule in <rules> and <boundary_disambiguation>. Output ONLY the JSON object starting with {{ and ending with }}.\n\
-             </task>",
-            serialized_memory,
             history_text
         )
     };
@@ -136,31 +130,10 @@ pub fn run_compaction(
         return Err(anyhow!("Live LLM compaction produced empty summary."));
     }
 
-    // Merge new extracted facts into current_personal_memory state
-    let mut updated_personal_memory = current_personal_memory.clone();
-    let mut diff_to_enqueue = HashMap::new();
-
-    for (col, new_facts) in &personal_memory {
-        if new_facts.is_empty() {
-            continue;
-        }
-        let entry = updated_personal_memory.entry(col.clone()).or_default();
-        let mut unique_additions = Vec::new();
-        for fact in new_facts {
-            if !entry.contains(fact) {
-                entry.push(fact.clone());
-                unique_additions.push(fact.clone());
-            }
-        }
-        if !unique_additions.is_empty() {
-            diff_to_enqueue.insert(col.clone(), unique_additions);
-        }
-    }
-
     Ok(CompactionResult {
         context_summary: final_summary,
-        personal_memory: updated_personal_memory,
-        diff_to_enqueue,
+        personal_memory: personal_memory.clone(),
+        diff_to_enqueue: personal_memory,
     })
 }
 
@@ -200,9 +173,7 @@ mod tests {
             content: "Hello".to_string(),
             timestamp_ms: 0,
         };
-        let personal_mem = HashMap::new();
-
-        let res = run_compaction(&provider, &history, &last_user_turn, &personal_mem);
+        let res = run_compaction(&provider, &history, &last_user_turn, None);
         assert!(res.is_err(), "run_compaction should return Err when history is empty");
     }
 }
