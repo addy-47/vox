@@ -22,6 +22,8 @@ pub const MODEL_FILE_ASR_TOKENIZER: &str = "tokenizer";
 /// External consumers should use the `SttProvider` trait instead.
 pub(crate) trait SttEngine: Send + Sync {
     fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String>;
+    #[allow(dead_code)]
     fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String>;
+    #[allow(dead_code)]
     fn reset_state(&self) -> anyhow::Result<()>;
 }

@@ -27,7 +27,7 @@ pub enum PipelineOutcome {
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Master memory pipeline orchestrator driving 3-Class Taxonomy Ingestion Routing (v6 §4).
+/// Master memory pipeline orchestrator driving 3-Class Taxonomy Ingestion Routing.
 /// Processes one queued job from `personal_memory_queue`.
 pub async fn process_one_queue_item(
     conn: &Connection,
@@ -145,7 +145,7 @@ pub async fn process_one_queue_item(
         }
     }
 
-    // ─── 3-CLASS TAXONOMY INGESTION ROUTING (v6 §4) ───────────────────────
+    // ─── 3-CLASS TAXONOMY INGESTION ROUTING ───────────────────────
 
     let is_class_a = PM_CLASS_A_COLLECTIONS.contains(&collection.as_str());
     let is_class_b = PM_CLASS_B_COLLECTIONS.contains(&collection.as_str());
