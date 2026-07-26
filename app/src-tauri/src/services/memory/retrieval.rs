@@ -17,7 +17,7 @@ pub struct MemoryFact {
     pub created_at: i64,
 }
 
-/// Phase 4 Seed-and-Expand Graph Traversal & Context Tree Assembly (v6 §8.1 / §8.2 / §9).
+/// Phase 4 Seed-and-Expand Graph Traversal & Context Tree Assembly.
 /// Assembles Class A, Class B, and Class C seeds into Global Seed Pool, executes BFS graph expansion,
 /// applies dynamic parent quota budgeting, and renders clean prompt tree context into <user_profile>.
 pub async fn retrieve_personal_context(
@@ -35,7 +35,7 @@ pub async fn retrieve_personal_context(
     let operational_budget = (context_size as f32 * settings.operational_budget_share) as usize;
     let semantic_budget = (context_size as f32 * settings.semantic_budget_share) as usize;
 
-    // ─── 1. Seed Generation Phase (v6 §8.1) ─────────────────────────────────
+    // ─── 1. Seed Generation Phase ─────────────────────────────────
 
     // Class A: Identity & Context (Direct Isolation, Deterministic SQL)
     let foundational_facts = queries::fetch_foundational_facts(conn, current_session_id).await?;
@@ -231,7 +231,7 @@ pub async fn retrieve_personal_context(
     ))
 }
 
-/// Time-Windowed Context Chaining (v5 §5.1 / §5.3).
+/// Time-Windowed Context Chaining.
 async fn fetch_context_chain(
     conn: &Connection,
     window_hours: u32,

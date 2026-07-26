@@ -28,7 +28,7 @@ struct EmbeddedSttProviderInner {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 pub struct EmbeddedSttProvider {
-    engine_type: String,
+    _engine_type: String,
     inner: Mutex<EmbeddedSttProviderInner>,
 }
 
@@ -50,7 +50,7 @@ impl EmbeddedSttProvider {
         };
 
         Ok(Self {
-            engine_type: model_type.to_string(),
+            _engine_type: model_type.to_string(),
             inner: Mutex::new(EmbeddedSttProviderInner {
                 nemotron_engine,
                 qwen_engine,
