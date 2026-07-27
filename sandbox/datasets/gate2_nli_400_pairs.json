@@ -1,0 +1,3152 @@
+[
+  {
+    "id": 1,
+    "domain": "Identity",
+    "premise": "User's name is Alex Johnson.",
+    "hypothesis": "The user's full name is Alex Michael Johnson.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 2,
+    "domain": "Identity",
+    "premise": "User is a 30-year-old software engineer.",
+    "hypothesis": "The user is 30 years old and works in tech.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 3,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a freelance graphic designer.",
+    "hypothesis": "User works as a self-employed graphic artist.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 4,
+    "domain": "Identity",
+    "premise": "User's native language is Spanish.",
+    "hypothesis": "User speaks Spanish fluently.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 5,
+    "domain": "Identity",
+    "premise": "User lives in New York City.",
+    "hypothesis": "User resides in Manhattan.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 6,
+    "domain": "Identity",
+    "premise": "User is a student at Stanford University.",
+    "hypothesis": "User is currently enrolled at Stanford.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 7,
+    "domain": "Identity",
+    "premise": "User's age is 25.",
+    "hypothesis": "User is in their mid-twenties.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 8,
+    "domain": "Identity",
+    "premise": "User is a retired teacher.",
+    "hypothesis": "User previously worked as an educator.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 9,
+    "domain": "Identity",
+    "premise": "User's preferred pronoun is they/them.",
+    "hypothesis": "User identifies with non-binary gender.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 10,
+    "domain": "Identity",
+    "premise": "User is a vegetarian.",
+    "hypothesis": "User enjoys cooking Italian food.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 11,
+    "domain": "Identity",
+    "premise": "User's favorite color is blue.",
+    "hypothesis": "User has a dog named Max.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 12,
+    "domain": "Identity",
+    "premise": "User is a professional musician.",
+    "hypothesis": "User plays the guitar.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 13,
+    "domain": "Identity",
+    "premise": "User's height is 5'10\".",
+    "hypothesis": "User's shoe size is 10.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 14,
+    "domain": "Identity",
+    "premise": "User is an avid reader.",
+    "hypothesis": "User prefers science fiction novels.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 15,
+    "domain": "Identity",
+    "premise": "User's birthday is on July 15th.",
+    "hypothesis": "User was born in the summer.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 16,
+    "domain": "Identity",
+    "premise": "User is a doctor specializing in cardiology.",
+    "hypothesis": "User is a medical professional.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 17,
+    "domain": "Identity",
+    "premise": "User's current location is London.",
+    "hypothesis": "User lives in the UK.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 18,
+    "domain": "Identity",
+    "premise": "User is a high school student.",
+    "hypothesis": "User is currently attending secondary school.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 19,
+    "domain": "Identity",
+    "premise": "User's primary language is Mandarin Chinese.",
+    "hypothesis": "User can communicate in Mandarin.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 20,
+    "domain": "Identity",
+    "premise": "User is a retired librarian.",
+    "hypothesis": "User used to work with books.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 21,
+    "domain": "Identity",
+    "premise": "User's age is 42.",
+    "hypothesis": "User is over 40 years old.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 22,
+    "domain": "Identity",
+    "premise": "User is a professional athlete.",
+    "hypothesis": "User competes in sports professionally.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 23,
+    "domain": "Identity",
+    "premise": "User's occupation is a chef.",
+    "hypothesis": "User works in the culinary industry.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 24,
+    "domain": "Identity",
+    "premise": "User's nationality is Canadian.",
+    "hypothesis": "User is a citizen of Canada.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 25,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a software developer.",
+    "hypothesis": "User is a programmer.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 26,
+    "domain": "Identity",
+    "premise": "User's age is 19.",
+    "hypothesis": "User is legally an adult.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 27,
+    "domain": "Identity",
+    "premise": "User's native language is French.",
+    "hypothesis": "User speaks French as their first language.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 28,
+    "domain": "Identity",
+    "premise": "User is a retired police officer.",
+    "hypothesis": "User previously served in law enforcement.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 29,
+    "domain": "Identity",
+    "premise": "User's occupation is a journalist.",
+    "hypothesis": "User writes for a newspaper.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 30,
+    "domain": "Identity",
+    "premise": "User's favorite hobby is painting.",
+    "hypothesis": "User has artistic talent.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 31,
+    "domain": "Identity",
+    "premise": "User is a vegan.",
+    "hypothesis": "User avoids all animal products.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 32,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a lawyer.",
+    "hypothesis": "User practices law.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 33,
+    "domain": "Identity",
+    "premise": "User's age is 65.",
+    "hypothesis": "User is eligible for retirement benefits.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 34,
+    "domain": "Identity",
+    "premise": "User's native language is German.",
+    "hypothesis": "User speaks German.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 35,
+    "domain": "Identity",
+    "premise": "User is a professional gamer.",
+    "hypothesis": "User competes in esports.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 36,
+    "domain": "Identity",
+    "premise": "User's occupation is a veterinarian.",
+    "hypothesis": "User treats animals.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 37,
+    "domain": "Identity",
+    "premise": "User's current city is Tokyo.",
+    "hypothesis": "User lives in Japan.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 38,
+    "domain": "Identity",
+    "premise": "User is a retired engineer.",
+    "hypothesis": "User has a background in engineering.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 39,
+    "domain": "Identity",
+    "premise": "User's age is 22.",
+    "hypothesis": "User is a young adult.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 40,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a nurse.",
+    "hypothesis": "User works in healthcare.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 41,
+    "domain": "Identity",
+    "premise": "User's native language is Portuguese.",
+    "hypothesis": "User speaks Portuguese.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 42,
+    "domain": "Identity",
+    "premise": "User is a professional dancer.",
+    "hypothesis": "User performs dance for a living.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 43,
+    "domain": "Identity",
+    "premise": "User's occupation is a scientist.",
+    "hypothesis": "User conducts research.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 44,
+    "domain": "Identity",
+    "premise": "User's favorite season is autumn.",
+    "hypothesis": "User enjoys hiking.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 45,
+    "domain": "Identity",
+    "premise": "User is a professional chef.",
+    "hypothesis": "User is skilled in cooking.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 46,
+    "domain": "Identity",
+    "premise": "User's age is 50.",
+    "hypothesis": "User is middle-aged.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 47,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a teacher.",
+    "hypothesis": "User educates students.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 48,
+    "domain": "Identity",
+    "premise": "User's native language is Russian.",
+    "hypothesis": "User speaks Russian.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 49,
+    "domain": "Identity",
+    "premise": "User is a retired architect.",
+    "hypothesis": "User has experience in building design.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 50,
+    "domain": "Identity",
+    "premise": "User's occupation is a pilot.",
+    "hypothesis": "User flies airplanes.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 51,
+    "domain": "Identity",
+    "premise": "User's age is 70.",
+    "hypothesis": "User is a senior citizen.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 52,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a writer.",
+    "hypothesis": "User creates written content.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 53,
+    "domain": "Identity",
+    "premise": "User's native language is Arabic.",
+    "hypothesis": "User speaks Arabic.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 54,
+    "domain": "Identity",
+    "premise": "User is a professional photographer.",
+    "hypothesis": "User takes photos for a living.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 55,
+    "domain": "Identity",
+    "premise": "User's occupation is a farmer.",
+    "hypothesis": "User works in agriculture.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 56,
+    "domain": "Identity",
+    "premise": "User's age is 16.",
+    "hypothesis": "User is a minor.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 57,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a musician.",
+    "hypothesis": "User plays a musical instrument.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 58,
+    "domain": "Identity",
+    "premise": "User's native language is Japanese.",
+    "hypothesis": "User speaks Japanese.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 59,
+    "domain": "Identity",
+    "premise": "User is a retired journalist.",
+    "hypothesis": "User used to work in media.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 60,
+    "domain": "Identity",
+    "premise": "User's occupation is a therapist.",
+    "hypothesis": "User provides counseling services.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 61,
+    "domain": "Identity",
+    "premise": "User's age is 35.",
+    "hypothesis": "User is in their mid-thirties.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 62,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a mechanic.",
+    "hypothesis": "User repairs vehicles.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 63,
+    "domain": "Identity",
+    "premise": "User's native language is Korean.",
+    "hypothesis": "User speaks Korean.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 64,
+    "domain": "Identity",
+    "premise": "User is a professional actor.",
+    "hypothesis": "User performs in plays or films.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 65,
+    "domain": "Identity",
+    "premise": "User's occupation is a librarian.",
+    "hypothesis": "User works with books and information.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 66,
+    "domain": "Identity",
+    "premise": "User's age is 28.",
+    "hypothesis": "User is a young professional.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 67,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a chef.",
+    "hypothesis": "User is a vegetarian.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 68,
+    "domain": "Identity",
+    "premise": "User's native language is Italian.",
+    "hypothesis": "User enjoys opera.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 69,
+    "domain": "Identity",
+    "premise": "User is a retired doctor.",
+    "hypothesis": "User is currently working as a nurse.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 70,
+    "domain": "Identity",
+    "premise": "User's age is 25.",
+    "hypothesis": "User is 30 years old.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 71,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a software engineer.",
+    "hypothesis": "User is a professional musician.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 72,
+    "domain": "Identity",
+    "premise": "User's native language is English.",
+    "hypothesis": "User's native language is French.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 73,
+    "domain": "Identity",
+    "premise": "User lives in Paris.",
+    "hypothesis": "User lives in Berlin.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 74,
+    "domain": "Identity",
+    "premise": "User is a student at Harvard.",
+    "hypothesis": "User is a professor at MIT.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 75,
+    "domain": "Identity",
+    "premise": "User's age is 40.",
+    "hypothesis": "User is 20 years old.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 76,
+    "domain": "Identity",
+    "premise": "User is a retired firefighter.",
+    "hypothesis": "User is currently an active police officer.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 77,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a graphic designer.",
+    "hypothesis": "User is a full-time accountant.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 78,
+    "domain": "Identity",
+    "premise": "User's native language is Mandarin.",
+    "hypothesis": "User's native language is Cantonese.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 79,
+    "domain": "Identity",
+    "premise": "User's current city is Sydney.",
+    "hypothesis": "User lives in Melbourne.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 80,
+    "domain": "Identity",
+    "premise": "User is a professional athlete.",
+    "hypothesis": "User is a professional actor.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 81,
+    "domain": "Identity",
+    "premise": "User's age is 18.",
+    "hypothesis": "User is 17 years old.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 82,
+    "domain": "Identity",
+    "premise": "User's occupation is a chef.",
+    "hypothesis": "User is a vegan.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 83,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a lawyer.",
+    "hypothesis": "User's favorite color is green.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 84,
+    "domain": "Identity",
+    "premise": "User's age is 55.",
+    "hypothesis": "User enjoys gardening.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 85,
+    "domain": "Identity",
+    "premise": "User's native language is German.",
+    "hypothesis": "User is a professional skier.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 86,
+    "domain": "Identity",
+    "premise": "User is a professional gamer.",
+    "hypothesis": "User lives in a small town.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 87,
+    "domain": "Identity",
+    "premise": "User's occupation is a veterinarian.",
+    "hypothesis": "User has a pet cat.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 88,
+    "domain": "Identity",
+    "premise": "User's current city is Tokyo.",
+    "hypothesis": "User is a fan of anime.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 89,
+    "domain": "Identity",
+    "premise": "User is a retired engineer.",
+    "hypothesis": "User enjoys playing chess.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 90,
+    "domain": "Identity",
+    "premise": "User's age is 22.",
+    "hypothesis": "User is studying abroad.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 91,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a nurse.",
+    "hypothesis": "User volunteers at an animal shelter.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 92,
+    "domain": "Identity",
+    "premise": "User's native language is Portuguese.",
+    "hypothesis": "User is a talented singer.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 93,
+    "domain": "Identity",
+    "premise": "User is a professional dancer.",
+    "hypothesis": "User has a fear of heights.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 94,
+    "domain": "Identity",
+    "premise": "User's occupation is a scientist.",
+    "hypothesis": "User is working on a cure for cancer.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 95,
+    "domain": "Identity",
+    "premise": "User's favorite season is autumn.",
+    "hypothesis": "User prefers warm weather.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 96,
+    "domain": "Identity",
+    "premise": "User is a professional chef.",
+    "hypothesis": "User is a strict vegan.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 97,
+    "domain": "Identity",
+    "premise": "User's age is 50.",
+    "hypothesis": "User is 50 years old and retired.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 98,
+    "domain": "Identity",
+    "premise": "User's primary occupation is a teacher.",
+    "hypothesis": "User is a substitute teacher.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 99,
+    "domain": "Identity",
+    "premise": "User's native language is Russian.",
+    "hypothesis": "User speaks fluent English.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 100,
+    "domain": "Identity",
+    "premise": "User is a retired architect.",
+    "hypothesis": "User is currently working as a construction manager.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 101,
+    "domain": "Directives",
+    "premise": "Agent is scheduled to send a daily summary email at 9 AM.",
+    "hypothesis": "The agent's task is to compile and dispatch the daily summary email by 9 AM.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 102,
+    "domain": "Directives",
+    "premise": "User requested agent to book a flight to London for next Tuesday.",
+    "hypothesis": "Agent has a pending task to arrange flight reservations to London.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 103,
+    "domain": "Directives",
+    "premise": "Agent promised to remind the user about the meeting at 3 PM.",
+    "hypothesis": "The agent must notify the user about the upcoming 3 PM meeting.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 104,
+    "domain": "Directives",
+    "premise": "Agent is currently processing a large dataset for analysis.",
+    "hypothesis": "The agent's current operation involves extensive data processing.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 105,
+    "domain": "Directives",
+    "premise": "Agent must generate a report on Q3 sales figures by end of day.",
+    "hypothesis": "The agent is tasked with producing the Q3 sales report before midnight.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 106,
+    "domain": "Directives",
+    "premise": "Agent is instructed to monitor system performance and alert on anomalies.",
+    "hypothesis": "A directive for the agent is to observe system metrics and report unusual patterns.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 107,
+    "domain": "Directives",
+    "premise": "Agent has a pending request to update the user's calendar with a new appointment.",
+    "hypothesis": "The agent needs to add a new event to the user's schedule.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 108,
+    "domain": "Directives",
+    "premise": "Agent is to archive all logs older than 30 days.",
+    "hypothesis": "The agent's directive is to move logs exceeding 30 days into archival storage.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 109,
+    "domain": "Directives",
+    "premise": "Agent is tasked with researching potential vacation destinations for the user.",
+    "hypothesis": "Researching travel spots is part of the agent's current assignment.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 110,
+    "domain": "Directives",
+    "premise": "Agent must ensure all outgoing communications are encrypted.",
+    "hypothesis": "Encryption of all outbound messages is a mandatory agent directive.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 111,
+    "domain": "Directives",
+    "premise": "Agent is to prepare a presentation for the board meeting next week.",
+    "hypothesis": "The agent has an upcoming task to create a presentation for the board.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 112,
+    "domain": "Directives",
+    "premise": "Agent is responsible for managing the user's smart home devices.",
+    "hypothesis": "The agent's role includes controlling the user's connected home appliances.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 113,
+    "domain": "Directives",
+    "premise": "Agent must back up the user's critical data daily.",
+    "hypothesis": "A daily backup of essential user files is a required agent action.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 114,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the stock market for specific company performance.",
+    "hypothesis": "The agent is actively tracking the stock market for certain companies.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 115,
+    "domain": "Directives",
+    "premise": "Agent must provide real-time traffic updates for the user's commute.",
+    "hypothesis": "Providing live traffic information for the user's journey is an agent directive.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 116,
+    "domain": "Directives",
+    "premise": "Agent is to draft a response to the customer inquiry by tomorrow.",
+    "hypothesis": "The agent has a deadline to reply to the customer's question.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 117,
+    "domain": "Directives",
+    "premise": "Agent is to optimize database queries for performance.",
+    "hypothesis": "Improving the efficiency of database queries is an agent's task.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 118,
+    "domain": "Directives",
+    "premise": "Agent must ensure all software updates are applied promptly.",
+    "hypothesis": "The agent is responsible for timely installation of software patches.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 119,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's social media posting schedule.",
+    "hypothesis": "Scheduling social media updates falls under the agent's responsibilities.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 120,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly performance review for the team.",
+    "hypothesis": "The agent is tasked with creating a team performance summary each week.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 121,
+    "domain": "Directives",
+    "premise": "Agent is to monitor network security and report any breaches.",
+    "hypothesis": "The agent's directive includes vigilance over network security and breach reporting.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 122,
+    "domain": "Directives",
+    "premise": "Agent must translate a document from English to Spanish.",
+    "hypothesis": "The agent has a task to translate a document into Spanish.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 123,
+    "domain": "Directives",
+    "premise": "Agent is to schedule a follow-up meeting with the client.",
+    "hypothesis": "Arranging another meeting with the client is an agent's current objective.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 124,
+    "domain": "Directives",
+    "premise": "Agent must ensure all user data is anonymized before analysis.",
+    "hypothesis": "Anonymization of user data is a prerequisite for agent analysis.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 125,
+    "domain": "Directives",
+    "premise": "Agent is to create a playlist of relaxing music for the user.",
+    "hypothesis": "The agent is assigned the task of curating a relaxing music playlist.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 126,
+    "domain": "Directives",
+    "premise": "Agent must send a notification to the user when the package arrives.",
+    "hypothesis": "The agent is required to alert the user upon package delivery.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 127,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's subscription services.",
+    "hypothesis": "The agent's responsibilities include overseeing the user's subscriptions.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 128,
+    "domain": "Directives",
+    "premise": "Agent must generate a summary of the latest news articles.",
+    "hypothesis": "The agent is tasked with summarizing recent news.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 129,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for conflicts.",
+    "hypothesis": "The agent's directive is to check for scheduling clashes in the user's calendar.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 130,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to drink water every hour.",
+    "hypothesis": "The agent is instructed to prompt the user to hydrate hourly.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 131,
+    "domain": "Directives",
+    "premise": "Agent is to book a table at the Italian restaurant for Saturday night.",
+    "hypothesis": "The agent has a reservation to make at an Italian restaurant for Saturday.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 132,
+    "domain": "Directives",
+    "premise": "Agent must ensure all sensitive data is stored securely.",
+    "hypothesis": "Secure storage of sensitive information is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 133,
+    "domain": "Directives",
+    "premise": "Agent is to analyze customer feedback and identify trends.",
+    "hypothesis": "The agent's task involves analyzing customer feedback to find patterns.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 134,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly budget report.",
+    "hypothesis": "The agent is responsible for creating a budget report every week.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 135,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the weather forecast and alert the user of significant changes.",
+    "hypothesis": "The agent must keep track of weather predictions and notify the user of major shifts.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 136,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to take their medication at 8 AM.",
+    "hypothesis": "The agent is tasked with reminding the user about their 8 AM medication.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 137,
+    "domain": "Directives",
+    "premise": "Agent is to update the project management software with new tasks.",
+    "hypothesis": "The agent needs to add new tasks to the project management system.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 138,
+    "domain": "Directives",
+    "premise": "Agent must ensure all API keys are rotated regularly.",
+    "hypothesis": "Regular rotation of API keys is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 139,
+    "domain": "Directives",
+    "premise": "Agent is to research and recommend a new laptop for the user.",
+    "hypothesis": "The agent has a task to find and suggest a new laptop.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 140,
+    "domain": "Directives",
+    "premise": "Agent must generate a monthly financial summary.",
+    "hypothesis": "The agent is responsible for creating a financial summary each month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 141,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's online activity for security threats.",
+    "hypothesis": "The agent must watch for security threats in the user's online behavior.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 142,
+    "domain": "Directives",
+    "premise": "Agent must send a follow-up email to the attendees of the webinar.",
+    "hypothesis": "The agent is tasked with sending a follow-up email to webinar participants.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 143,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's email inbox, prioritizing important messages.",
+    "hypothesis": "The agent's role includes organizing the user's email and highlighting key messages.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 144,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of social media engagement.",
+    "hypothesis": "The agent is responsible for creating a weekly report on social media interaction.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 145,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the system for resource utilization and report bottlenecks.",
+    "hypothesis": "The agent must track system resource usage and identify performance issues.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 146,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to call their mother on her birthday.",
+    "hypothesis": "The agent is instructed to remind the user about their mother's birthday.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 147,
+    "domain": "Directives",
+    "premise": "Agent is to schedule a dentist appointment for the user.",
+    "hypothesis": "The agent has a task to book a dental appointment for the user.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 148,
+    "domain": "Directives",
+    "premise": "Agent must ensure all user preferences are respected in recommendations.",
+    "hypothesis": "Respecting user preferences is a directive for the agent's recommendation system.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 149,
+    "domain": "Directives",
+    "premise": "Agent is to generate a report on website traffic analytics.",
+    "hypothesis": "The agent is tasked with producing a report on website traffic data.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 150,
+    "domain": "Directives",
+    "premise": "Agent must monitor the news for mentions of the user's company.",
+    "hypothesis": "The agent is instructed to track news for any references to the user's company.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 151,
+    "domain": "Directives",
+    "premise": "Agent must send a reminder to the user about the upcoming project deadline.",
+    "hypothesis": "The agent is tasked with reminding the user about the project deadline.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 152,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's online security settings.",
+    "hypothesis": "The agent's responsibilities include managing the user's digital security configurations.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 153,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of system health.",
+    "hypothesis": "The agent is responsible for creating a weekly report on the system's health.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 154,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for potential scheduling conflicts.",
+    "hypothesis": "The agent must check the user's calendar for any overlapping appointments.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 155,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to submit their timesheet by Friday.",
+    "hypothesis": "The agent is instructed to remind the user to submit their timesheet before the weekend.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 156,
+    "domain": "Directives",
+    "premise": "Agent is to book a flight for the user to New York.",
+    "hypothesis": "The agent has a task to arrange flight reservations to New York.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 157,
+    "domain": "Directives",
+    "premise": "Agent must ensure all sensitive communications are end-to-end encrypted.",
+    "hypothesis": "End-to-end encryption for all sensitive communications is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 158,
+    "domain": "Directives",
+    "premise": "Agent is to analyze market trends and provide investment recommendations.",
+    "hypothesis": "The agent's task involves analyzing market trends to suggest investments.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 159,
+    "domain": "Directives",
+    "premise": "Agent must generate a quarterly earnings report.",
+    "hypothesis": "The agent is responsible for creating an earnings report each quarter.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 160,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's financial accounts for suspicious activity.",
+    "hypothesis": "The agent must watch for unusual activity in the user's financial accounts.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 161,
+    "domain": "Directives",
+    "premise": "Agent must send a confirmation email for the user's order.",
+    "hypothesis": "The agent is tasked with sending an order confirmation email to the user.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 162,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's cloud storage, optimizing space.",
+    "hypothesis": "The agent's responsibilities include managing cloud storage and improving its efficiency.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 163,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of completed tasks.",
+    "hypothesis": "The agent is responsible for creating a weekly report detailing completed tasks.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 164,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's network for unauthorized access.",
+    "hypothesis": "The agent must check the user's network for any unauthorized entry attempts.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 165,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to renew their subscription before it expires.",
+    "hypothesis": "The agent is instructed to remind the user about upcoming subscription renewals.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 166,
+    "domain": "Directives",
+    "premise": "Agent is to book a hotel room for the user in Paris.",
+    "hypothesis": "The agent has a task to reserve a hotel room for the user in Paris.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 167,
+    "domain": "Directives",
+    "premise": "Agent must ensure all data backups are verified for integrity.",
+    "hypothesis": "Verification of data backup integrity is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 168,
+    "domain": "Directives",
+    "premise": "Agent is to analyze competitor pricing and report findings.",
+    "hypothesis": "The agent's task involves analyzing competitor prices and reporting the results.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 169,
+    "domain": "Directives",
+    "premise": "Agent must generate a monthly sales performance report.",
+    "hypothesis": "The agent is responsible for creating a sales performance report each month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 170,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's social media for mentions of their brand.",
+    "hypothesis": "The agent must track social media for any mentions of the user's brand.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 171,
+    "domain": "Directives",
+    "premise": "Agent must send a follow-up reminder for the outstanding invoice.",
+    "hypothesis": "The agent is tasked with sending a reminder about the unpaid invoice.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 172,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's software licenses, ensuring compliance.",
+    "hypothesis": "The agent's responsibilities include managing software licenses and ensuring adherence to terms.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 173,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of system errors.",
+    "hypothesis": "The agent is responsible for creating a weekly report detailing system errors.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 174,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for upcoming events.",
+    "hypothesis": "The agent must check the user's calendar for any scheduled events.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 175,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to pay their bills by the due date.",
+    "hypothesis": "The agent is instructed to remind the user about upcoming bill payment deadlines.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 176,
+    "domain": "Directives",
+    "premise": "Agent is to book a train ticket for the user to Edinburgh.",
+    "hypothesis": "The agent has a task to reserve a train ticket for the user to Edinburgh.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 177,
+    "domain": "Directives",
+    "premise": "Agent must ensure all sensitive data is encrypted at rest and in transit.",
+    "hypothesis": "Encryption of sensitive data, both stored and during transmission, is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 178,
+    "domain": "Directives",
+    "premise": "Agent is to analyze user behavior and suggest personalized content.",
+    "hypothesis": "The agent's task involves analyzing user behavior to recommend tailored content.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 179,
+    "domain": "Directives",
+    "premise": "Agent must generate a monthly marketing campaign performance report.",
+    "hypothesis": "The agent is responsible for creating a marketing campaign performance report each month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 180,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's online reputation.",
+    "hypothesis": "The agent must track the user's public perception online.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 181,
+    "domain": "Directives",
+    "premise": "Agent must send a thank you note to the event sponsors.",
+    "hypothesis": "The agent is tasked with sending a thank you message to the event sponsors.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 182,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's smart home automation routines.",
+    "hypothesis": "The agent's responsibilities include managing the user's automated home functions.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 183,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of network traffic.",
+    "hypothesis": "The agent is responsible for creating a weekly report on network traffic.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 184,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for upcoming holidays.",
+    "hypothesis": "The agent must check the user's calendar for any scheduled holidays.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 185,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to exercise daily.",
+    "hypothesis": "The agent is instructed to remind the user to engage in daily physical activity.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 186,
+    "domain": "Directives",
+    "premise": "Agent is to book a conference room for a team meeting.",
+    "hypothesis": "The agent has a task to reserve a conference room for a team meeting.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 187,
+    "domain": "Directives",
+    "premise": "Agent must ensure all user credentials are stored using strong hashing algorithms.",
+    "hypothesis": "Strong hashing algorithms for storing user credentials is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 188,
+    "domain": "Directives",
+    "premise": "Agent is to analyze customer support tickets and identify common issues.",
+    "hypothesis": "The agent's task involves analyzing support tickets to find recurring problems.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 189,
+    "domain": "Directives",
+    "premise": "Agent must generate a quarterly project status report.",
+    "hypothesis": "The agent is responsible for creating a project status report each quarter.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 190,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's online portfolio for performance updates.",
+    "hypothesis": "The agent must track the user's online portfolio for any performance changes.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 191,
+    "domain": "Directives",
+    "premise": "Agent must send a meeting invitation to all participants.",
+    "hypothesis": "The agent is tasked with sending a meeting invitation to everyone involved.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 192,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's smart lighting system.",
+    "hypothesis": "The agent's responsibilities include managing the user's smart lights.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 193,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of website uptime.",
+    "hypothesis": "The agent is responsible for creating a weekly report on website availability.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 194,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for upcoming anniversaries.",
+    "hypothesis": "The agent must check the user's calendar for any scheduled anniversaries.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 195,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to call their doctor for a check-up.",
+    "hypothesis": "The agent is instructed to remind the user to schedule a doctor's appointment.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 196,
+    "domain": "Directives",
+    "premise": "Agent is to book a rental car for the user at their destination.",
+    "hypothesis": "The agent has a task to reserve a rental car for the user.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 197,
+    "domain": "Directives",
+    "premise": "Agent must ensure all sensitive files are protected with access controls.",
+    "hypothesis": "Protection of sensitive files with access controls is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 198,
+    "domain": "Directives",
+    "premise": "Agent is to analyze social media sentiment and report on brand perception.",
+    "hypothesis": "The agent's task involves analyzing social media sentiment to report on brand perception.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 199,
+    "domain": "Directives",
+    "premise": "Agent must generate a monthly customer satisfaction report.",
+    "hypothesis": "The agent is responsible for creating a customer satisfaction report each month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 200,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's smart thermostat and adjust settings.",
+    "hypothesis": "The agent must track and modify the user's smart thermostat settings.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 201,
+    "domain": "Directives",
+    "premise": "Agent must send a follow-up email to the prospect after the demo.",
+    "hypothesis": "The agent is tasked with sending a follow-up email to the prospect post-demo.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 202,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's smart home security system.",
+    "hypothesis": "The agent's responsibilities include managing the user's home security system.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 203,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of system performance metrics.",
+    "hypothesis": "The agent is responsible for creating a weekly report on system performance metrics.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 204,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for upcoming appointments.",
+    "hypothesis": "The agent must check the user's calendar for any scheduled appointments.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 205,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to water the plants.",
+    "hypothesis": "The agent is instructed to remind the user about watering the plants.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 206,
+    "domain": "Directives",
+    "premise": "Agent is to book a table at the steakhouse for Friday evening.",
+    "hypothesis": "The agent has a reservation to make at a steakhouse for Friday.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 207,
+    "domain": "Directives",
+    "premise": "Agent must ensure all sensitive data is anonymized before sharing.",
+    "hypothesis": "Anonymization of sensitive data is a directive for the agent before sharing.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 208,
+    "domain": "Directives",
+    "premise": "Agent is to analyze website analytics and suggest SEO improvements.",
+    "hypothesis": "The agent's task involves analyzing website analytics to suggest SEO enhancements.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 209,
+    "domain": "Directives",
+    "premise": "Agent must generate a monthly project budget report.",
+    "hypothesis": "The agent is responsible for creating a project budget report each month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 210,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's smart plugs and manage power consumption.",
+    "hypothesis": "The agent must track and manage the user's smart plugs' power usage.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 211,
+    "domain": "Directives",
+    "premise": "Agent must send a reminder to the user about their upcoming flight.",
+    "hypothesis": "The agent is tasked with reminding the user about their flight.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 212,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's smart blinds and control natural light.",
+    "hypothesis": "The agent's responsibilities include managing the user's smart blinds for light control.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 213,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of user activity.",
+    "hypothesis": "The agent is responsible for creating a weekly report on user activity.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 214,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for upcoming deadlines.",
+    "hypothesis": "The agent must check the user's calendar for any scheduled deadlines.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 215,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to take a break from work.",
+    "hypothesis": "The agent is instructed to remind the user to take a work break.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 216,
+    "domain": "Directives",
+    "premise": "Agent is to book a meeting room for a client presentation.",
+    "hypothesis": "The agent has a task to reserve a meeting room for a client presentation.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 217,
+    "domain": "Directives",
+    "premise": "Agent must ensure all sensitive API keys are stored in a secure vault.",
+    "hypothesis": "Storage of sensitive API keys in a secure vault is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 218,
+    "domain": "Directives",
+    "premise": "Agent is to analyze competitor website traffic and report on key metrics.",
+    "hypothesis": "The agent's task involves analyzing competitor website traffic and reporting metrics.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 219,
+    "domain": "Directives",
+    "premise": "Agent must generate a monthly social media engagement report.",
+    "hypothesis": "The agent is responsible for creating a social media engagement report each month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 220,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's smart speaker for commands.",
+    "hypothesis": "The agent must listen for commands directed at the user's smart speaker.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 221,
+    "domain": "Directives",
+    "premise": "Agent must send a follow-up email to the job applicant.",
+    "hypothesis": "The agent is tasked with sending a follow-up email to the job applicant.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 222,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's smart home security cameras.",
+    "hypothesis": "The agent's responsibilities include managing the user's home security cameras.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 223,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of system resource usage.",
+    "hypothesis": "The agent is responsible for creating a weekly report on system resource usage.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 224,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for upcoming events and remind them.",
+    "hypothesis": "The agent must check the user's calendar for events and provide reminders.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 225,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to call their dentist.",
+    "hypothesis": "The agent is instructed to remind the user to contact their dentist.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 226,
+    "domain": "Directives",
+    "premise": "Agent is to book a flight for the user to Tokyo.",
+    "hypothesis": "The agent has a task to arrange flight reservations to Tokyo.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 227,
+    "domain": "Directives",
+    "premise": "Agent must ensure all sensitive data is protected by multi-factor authentication.",
+    "hypothesis": "Protection of sensitive data via multi-factor authentication is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 228,
+    "domain": "Directives",
+    "premise": "Agent is to analyze competitor product features and report on differentiation.",
+    "hypothesis": "The agent's task involves analyzing competitor products to report on unique features.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 229,
+    "domain": "Directives",
+    "premise": "Agent must generate a monthly website traffic analysis report.",
+    "hypothesis": "The agent is responsible for creating a website traffic analysis report each month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 230,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's smart home for potential security breaches.",
+    "hypothesis": "The agent must watch for security breaches within the user's smart home environment.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 231,
+    "domain": "Directives",
+    "premise": "Agent must send a follow-up email to the client after the meeting.",
+    "hypothesis": "The agent is tasked with sending a follow-up email to the client post-meeting.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 232,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's smart home thermostat.",
+    "hypothesis": "The agent's responsibilities include managing the user's home thermostat.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 233,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of system logs.",
+    "hypothesis": "The agent is responsible for creating a weekly report on system logs.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 234,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for upcoming birthdays.",
+    "hypothesis": "The agent must check the user's calendar for any scheduled birthdays.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 235,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to call their insurance provider.",
+    "hypothesis": "The agent is instructed to remind the user to contact their insurance provider.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 236,
+    "domain": "Directives",
+    "premise": "Agent is to book a hotel room for the user in Rome.",
+    "hypothesis": "The agent has a task to reserve a hotel room for the user in Rome.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 237,
+    "domain": "Directives",
+    "premise": "Agent must ensure all sensitive data is regularly audited for compliance.",
+    "hypothesis": "Regular auditing of sensitive data for compliance is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 238,
+    "domain": "Directives",
+    "premise": "Agent is to analyze competitor marketing strategies and report on effectiveness.",
+    "hypothesis": "The agent's task involves analyzing competitor marketing strategies to report on their success.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 239,
+    "domain": "Directives",
+    "premise": "Agent must generate a monthly customer churn analysis report.",
+    "hypothesis": "The agent is responsible for creating a customer churn analysis report each month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 240,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's smart home for unusual energy consumption.",
+    "hypothesis": "The agent must watch for abnormal energy usage within the user's smart home.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 241,
+    "domain": "Directives",
+    "premise": "Agent must send a follow-up email to the webinar attendees.",
+    "hypothesis": "The agent is tasked with sending a follow-up email to those who attended the webinar.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 242,
+    "domain": "Directives",
+    "premise": "Agent is to manage the user's smart home security alerts.",
+    "hypothesis": "The agent's responsibilities include managing security alerts from the user's smart home.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 243,
+    "domain": "Directives",
+    "premise": "Agent must generate a weekly summary of system uptime and downtime.",
+    "hypothesis": "The agent is responsible for creating a weekly report on system availability and unavailability.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 244,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's calendar for upcoming holidays and events.",
+    "hypothesis": "The agent must check the user's calendar for scheduled holidays and events.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 245,
+    "domain": "Directives",
+    "premise": "Agent must remind the user to take their vitamins.",
+    "hypothesis": "The agent is instructed to remind the user about taking their vitamins.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 246,
+    "domain": "Directives",
+    "premise": "Agent is to book a train ticket for the user to Paris.",
+    "hypothesis": "The agent has a task to reserve a train ticket for the user to Paris.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 247,
+    "domain": "Directives",
+    "premise": "Agent must ensure all sensitive data is protected by encryption keys stored separately.",
+    "hypothesis": "Separate storage of encryption keys for sensitive data is a directive for the agent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 248,
+    "domain": "Directives",
+    "premise": "Agent is to analyze competitor pricing strategies and report on their impact.",
+    "hypothesis": "The agent's task involves analyzing competitor pricing strategies and reporting on their effects.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 249,
+    "domain": "Directives",
+    "premise": "Agent must generate a monthly customer feedback summary report.",
+    "hypothesis": "The agent is responsible for creating a customer feedback summary report each month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 250,
+    "domain": "Directives",
+    "premise": "Agent is to monitor the user's smart home for unusual activity.",
+    "hypothesis": "The agent must watch for any unusual occurrences within the user's smart home.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 251,
+    "domain": "Constraints",
+    "premise": "Never share user's personal identifiable information with third parties.",
+    "hypothesis": "User's email address must not be disclosed to any external service.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 252,
+    "domain": "Constraints",
+    "premise": "All outgoing network requests must use TLS 1.2 or higher.",
+    "hypothesis": "Agent is forbidden from initiating HTTP connections.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 253,
+    "domain": "Constraints",
+    "premise": "Do not execute any command that modifies system files without explicit user confirmation.",
+    "hypothesis": "Agent requires user's go-ahead before altering /etc/hosts.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 254,
+    "domain": "Constraints",
+    "premise": "User data must be encrypted at rest.",
+    "hypothesis": "Sensitive user information stored locally needs to be protected with strong encryption.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 255,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to data loss.",
+    "hypothesis": "Avoid any operation that risks deleting user files.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 256,
+    "domain": "Constraints",
+    "premise": "Never access user's financial accounts without explicit, multi-factor authentication.",
+    "hypothesis": "Agent is prohibited from logging into banking portals.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 257,
+    "domain": "Constraints",
+    "premise": "All AI-generated content must be clearly labeled as such.",
+    "hypothesis": "The agent must indicate when text or media is produced by the AI.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 258,
+    "domain": "Constraints",
+    "premise": "Do not install any software without user's explicit permission.",
+    "hypothesis": "Agent cannot download and run new applications autonomously.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 259,
+    "domain": "Constraints",
+    "premise": "Limit API call rate to 100 requests per minute to avoid service disruption.",
+    "hypothesis": "Agent should not exceed 100 API calls within a 60-second window.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 260,
+    "domain": "Constraints",
+    "premise": "Never store credentials in plain text configuration files.",
+    "hypothesis": "Agent must use secure methods for storing passwords and API keys.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 261,
+    "domain": "Constraints",
+    "premise": "User's browsing history is confidential and must not be logged.",
+    "hypothesis": "Agent is forbidden from recording visited websites.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 262,
+    "domain": "Constraints",
+    "premise": "All communication channels must be end-to-end encrypted.",
+    "hypothesis": "Messages sent and received by the agent must be secured with E2EE.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 263,
+    "domain": "Constraints",
+    "premise": "Agent must not engage in any form of surveillance.",
+    "hypothesis": "Recording audio or video without explicit consent is prohibited.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 264,
+    "domain": "Constraints",
+    "premise": "Do not perform operations that could corrupt the user's operating system.",
+    "hypothesis": "Agent must avoid actions that might damage the OS.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 265,
+    "domain": "Constraints",
+    "premise": "User's location data must only be accessed with explicit permission.",
+    "hypothesis": "Agent cannot track the user's whereabouts without consent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 266,
+    "domain": "Constraints",
+    "premise": "Never execute code from untrusted sources.",
+    "hypothesis": "Agent must verify the origin and integrity of any executable code.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 267,
+    "domain": "Constraints",
+    "premise": "All data backups must be stored securely and offsite.",
+    "hypothesis": "Agent needs to ensure backup copies of user data are protected and not locally stored.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 268,
+    "domain": "Constraints",
+    "premise": "Agent must not make any changes to the user's firewall settings.",
+    "hypothesis": "Modifying network security rules is outside the agent's permitted actions.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 269,
+    "domain": "Constraints",
+    "premise": "Do not use excessive system resources that degrade performance.",
+    "hypothesis": "Agent must operate within reasonable CPU and memory usage limits.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 270,
+    "domain": "Constraints",
+    "premise": "User's health information is strictly confidential.",
+    "hypothesis": "Agent cannot share details about the user's medical conditions.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 271,
+    "domain": "Constraints",
+    "premise": "Never bypass security protocols or authentication mechanisms.",
+    "hypothesis": "Agent is forbidden from attempting to circumvent login procedures.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 272,
+    "domain": "Constraints",
+    "premise": "All data transfers must be authenticated and authorized.",
+    "hypothesis": "Agent must verify the identity of parties involved in data exchange.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 273,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that violate privacy laws.",
+    "hypothesis": "Compliance with GDPR and CCPA is a mandatory constraint.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 274,
+    "domain": "Constraints",
+    "premise": "Do not modify system registry entries without user consent.",
+    "hypothesis": "Agent requires explicit permission before changing Windows registry values.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 275,
+    "domain": "Constraints",
+    "premise": "User's personal contacts list is private.",
+    "hypothesis": "Agent cannot access or share the user's address book.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 276,
+    "domain": "Constraints",
+    "premise": "Never execute commands with root or administrator privileges unless absolutely necessary and confirmed by user.",
+    "hypothesis": "Agent must avoid running privileged commands.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 277,
+    "domain": "Constraints",
+    "premise": "All logs generated by the agent must be anonymized.",
+    "hypothesis": "Personal data must be removed from agent logs before storage.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 278,
+    "domain": "Constraints",
+    "premise": "Agent must not participate in any form of unauthorized data mining.",
+    "hypothesis": "Scraping or collecting data without permission is forbidden.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 279,
+    "domain": "Constraints",
+    "premise": "Do not disable or interfere with user-installed security software.",
+    "hypothesis": "Agent must not tamper with antivirus or anti-malware programs.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 280,
+    "domain": "Constraints",
+    "premise": "User's intellectual property must be protected.",
+    "hypothesis": "Agent cannot disclose proprietary information or code.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 281,
+    "domain": "Constraints",
+    "premise": "Never execute commands that could lead to a denial-of-service.",
+    "hypothesis": "Agent must avoid actions that could crash the system or network.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 282,
+    "domain": "Constraints",
+    "premise": "All sensitive data must be purged securely when no longer needed.",
+    "hypothesis": "Agent must implement data sanitization procedures.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 283,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could violate software licenses.",
+    "hypothesis": "Unauthorized software copying or distribution is prohibited.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 284,
+    "domain": "Constraints",
+    "premise": "User's communication content is private.",
+    "hypothesis": "Agent cannot read or store the content of user's emails or messages.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 285,
+    "domain": "Constraints",
+    "premise": "Do not modify critical system configuration files without a backup.",
+    "hypothesis": "Agent must create a backup before altering essential system settings.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 286,
+    "domain": "Constraints",
+    "premise": "Never allow unauthorized remote access to the system.",
+    "hypothesis": "Agent must prevent external connections without proper authentication.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 287,
+    "domain": "Constraints",
+    "premise": "User's biometric data must be handled with extreme care.",
+    "hypothesis": "Agent cannot store or transmit fingerprint or facial recognition data.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 288,
+    "domain": "Constraints",
+    "premise": "All external dependencies must be verified for security vulnerabilities.",
+    "hypothesis": "Agent must scan libraries and packages for known exploits.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 289,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could be construed as malicious.",
+    "hypothesis": "Avoid any behavior that resembles hacking or unauthorized access.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 290,
+    "domain": "Constraints",
+    "premise": "User's preferences for data retention must be respected.",
+    "hypothesis": "Agent cannot keep user data longer than specified by the user.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 291,
+    "domain": "Constraints",
+    "premise": "Never run commands that could compromise system integrity.",
+    "hypothesis": "Agent must not execute instructions that could damage the OS.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 292,
+    "domain": "Constraints",
+    "premise": "All data processed by the agent must be subject to privacy policies.",
+    "hypothesis": "Agent's handling of information must comply with defined privacy rules.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 293,
+    "domain": "Constraints",
+    "premise": "Agent must not install rootkits or other malicious software.",
+    "hypothesis": "Unauthorized system-level software installation is forbidden.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 294,
+    "domain": "Constraints",
+    "premise": "User's financial transaction history is confidential.",
+    "hypothesis": "Agent cannot access or share records of user's purchases or payments.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 295,
+    "domain": "Constraints",
+    "premise": "Do not modify the user's password or authentication credentials.",
+    "hypothesis": "Agent must not change the user's login details.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 296,
+    "domain": "Constraints",
+    "premise": "Never execute scripts from unknown or unverified sources.",
+    "hypothesis": "Agent must validate the origin of any script before running it.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 297,
+    "domain": "Constraints",
+    "premise": "All data collected must be anonymized before aggregation.",
+    "hypothesis": "Personal identifiers must be removed from data before combining it.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 298,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to legal liabilities.",
+    "hypothesis": "Avoid any operation that might result in lawsuits.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 299,
+    "domain": "Constraints",
+    "premise": "User's medical records are protected under HIPAA.",
+    "hypothesis": "Agent cannot access or disclose protected health information.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 300,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's bootloader.",
+    "hypothesis": "Agent must not interfere with the startup process of the OS.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 301,
+    "domain": "Constraints",
+    "premise": "Never share user's private keys or certificates.",
+    "hypothesis": "Agent is forbidden from disclosing cryptographic keys.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 302,
+    "domain": "Constraints",
+    "premise": "All data stored must be protected by strong access controls.",
+    "hypothesis": "Agent must ensure only authorized entities can access stored data.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 303,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could compromise network security.",
+    "hypothesis": "Avoid any operation that weakens the network's defenses.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 304,
+    "domain": "Constraints",
+    "premise": "User's personal communications are private and protected.",
+    "hypothesis": "Agent cannot intercept or read user's messages.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 305,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's kernel or core components.",
+    "hypothesis": "Agent must not alter fundamental parts of the operating system.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 306,
+    "domain": "Constraints",
+    "premise": "Never execute commands that could lead to unauthorized data modification.",
+    "hypothesis": "Agent must prevent any changes to data without proper authorization.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 307,
+    "domain": "Constraints",
+    "premise": "All sensitive data must be handled in accordance with the principle of least privilege.",
+    "hypothesis": "Agent should only access sensitive data when strictly necessary.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 308,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could violate intellectual property rights.",
+    "hypothesis": "Avoid infringing on copyrights or patents.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 309,
+    "domain": "Constraints",
+    "premise": "User's location history must be deleted after 30 days.",
+    "hypothesis": "Agent cannot retain location data beyond one month.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 310,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's security policies.",
+    "hypothesis": "Agent must not alter the rules governing system security.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 311,
+    "domain": "Constraints",
+    "premise": "Never run commands that could compromise the integrity of user files.",
+    "hypothesis": "Agent must avoid actions that could corrupt or delete user documents.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 312,
+    "domain": "Constraints",
+    "premise": "All external APIs used must be whitelisted.",
+    "hypothesis": "Agent can only interact with approved API endpoints.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 313,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to identity theft.",
+    "hypothesis": "Avoid any operation that could facilitate impersonation.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 314,
+    "domain": "Constraints",
+    "premise": "User's personal calendar entries are private.",
+    "hypothesis": "Agent cannot access or share details of user's appointments.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 315,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's network configuration files.",
+    "hypothesis": "Agent must not alter settings related to network interfaces or protocols.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 316,
+    "domain": "Constraints",
+    "premise": "Never execute commands that could lead to unauthorized system access.",
+    "hypothesis": "Agent must prevent any actions that grant access to unauthorized users.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 317,
+    "domain": "Constraints",
+    "premise": "All sensitive data must be transmitted over secure channels.",
+    "hypothesis": "Agent must use encrypted connections for sending sensitive information.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 318,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could violate copyright laws.",
+    "hypothesis": "Avoid unauthorized distribution of copyrighted material.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 319,
+    "domain": "Constraints",
+    "premise": "User's private documents must remain inaccessible to the agent.",
+    "hypothesis": "Agent cannot open or read files in the user's private folders.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 320,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's user account settings.",
+    "hypothesis": "Agent must not change user privileges or account information.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 321,
+    "domain": "Constraints",
+    "premise": "Never run commands that could lead to data corruption.",
+    "hypothesis": "Agent must avoid actions that might damage stored data.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 322,
+    "domain": "Constraints",
+    "premise": "All third-party software integrated must be vetted for security.",
+    "hypothesis": "Agent must ensure any added software is safe to use.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 323,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to unauthorized data disclosure.",
+    "hypothesis": "Avoid any operation that might reveal confidential information.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 324,
+    "domain": "Constraints",
+    "premise": "User's personal photos are private.",
+    "hypothesis": "Agent cannot access or share the user's image files.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 325,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's scheduled tasks.",
+    "hypothesis": "Agent must not add, remove, or alter any scheduled jobs.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 326,
+    "domain": "Constraints",
+    "premise": "Never run commands that could lead to system instability.",
+    "hypothesis": "Agent must avoid actions that might cause the system to crash.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 327,
+    "domain": "Constraints",
+    "premise": "All data processed must comply with data minimization principles.",
+    "hypothesis": "Agent should only collect and process data that is strictly necessary.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 328,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to unauthorized system modification.",
+    "hypothesis": "Avoid any operation that changes system settings without permission.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 329,
+    "domain": "Constraints",
+    "premise": "User's private notes are confidential.",
+    "hypothesis": "Agent cannot read or share the user's personal notes.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 330,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's startup services.",
+    "hypothesis": "Agent must not enable or disable services that run on boot.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 331,
+    "domain": "Constraints",
+    "premise": "Never run commands that could lead to unauthorized data access.",
+    "hypothesis": "Agent must prevent any access to data by unauthorized entities.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 332,
+    "domain": "Constraints",
+    "premise": "All sensitive data must be encrypted before being transmitted over a network.",
+    "hypothesis": "Agent must encrypt data before sending it externally.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 333,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to unauthorized data deletion.",
+    "hypothesis": "Avoid any operation that removes data without explicit user consent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 334,
+    "domain": "Constraints",
+    "premise": "User's personal files are protected.",
+    "hypothesis": "Agent cannot access or modify the user's personal files.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 335,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's drivers.",
+    "hypothesis": "Agent must not alter hardware driver software.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 336,
+    "domain": "Constraints",
+    "premise": "Never run commands that could lead to unauthorized software installation.",
+    "hypothesis": "Agent must prevent the installation of unapproved software.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 337,
+    "domain": "Constraints",
+    "premise": "All data collected must be stored securely.",
+    "hypothesis": "Agent must ensure collected data is protected from unauthorized access.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 338,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to unauthorized system shutdown.",
+    "hypothesis": "Avoid any operation that forcibly terminates the system without permission.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 339,
+    "domain": "Constraints",
+    "premise": "User's personal code repositories are private.",
+    "hypothesis": "Agent cannot access or share the user's code projects.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 340,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's security logs.",
+    "hypothesis": "Agent must not tamper with or delete security event records.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 341,
+    "domain": "Constraints",
+    "premise": "Never run commands that could lead to unauthorized network access.",
+    "hypothesis": "Agent must prevent any connections to networks without proper authorization.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 342,
+    "domain": "Constraints",
+    "premise": "All sensitive data must be purged from memory after use.",
+    "hypothesis": "Agent must clear sensitive information from RAM once it's no longer needed.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 343,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to unauthorized data modification.",
+    "hypothesis": "Avoid any operation that alters data without explicit user consent.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 344,
+    "domain": "Constraints",
+    "premise": "User's personal financial data is confidential.",
+    "hypothesis": "Agent cannot access or share bank account details or transaction history.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 345,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's audio or video settings.",
+    "hypothesis": "Agent must not change microphone or camera configurations.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 346,
+    "domain": "Constraints",
+    "premise": "Never run commands that could lead to unauthorized system configuration changes.",
+    "hypothesis": "Agent must prevent any alterations to system settings without permission.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 347,
+    "domain": "Constraints",
+    "premise": "All data collected must be anonymized before being used for training.",
+    "hypothesis": "Agent must remove personal identifiers from data used for model training.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 348,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to unauthorized data recovery.",
+    "hypothesis": "Avoid any operation that attempts to retrieve deleted data without authorization.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 349,
+    "domain": "Constraints",
+    "premise": "User's personal health records are protected.",
+    "hypothesis": "Agent cannot access or share medical information.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 350,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's display settings.",
+    "hypothesis": "Agent must not change screen resolution or color depth.",
+    "expected_label": "ENTAILMENT"
+  },
+  {
+    "id": 351,
+    "domain": "Constraints",
+    "premise": "Never share user's private keys or certificates.",
+    "hypothesis": "Agent is forbidden from disclosing cryptographic keys.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 352,
+    "domain": "Constraints",
+    "premise": "All outgoing network requests must use TLS 1.2 or higher.",
+    "hypothesis": "Agent is authorized to use unencrypted HTTP for internal network communication.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 353,
+    "domain": "Constraints",
+    "premise": "Do not execute any command that modifies system files without explicit user confirmation.",
+    "hypothesis": "Agent has permission to modify /etc/passwd without asking the user.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 354,
+    "domain": "Constraints",
+    "premise": "User data must be encrypted at rest.",
+    "hypothesis": "Agent is allowed to store user data in plain text on disk.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 355,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to data loss.",
+    "hypothesis": "Agent is permitted to delete user files if it deems it necessary for performance.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 356,
+    "domain": "Constraints",
+    "premise": "Never access user's financial accounts without explicit, multi-factor authentication.",
+    "hypothesis": "Agent can log into banking portals using only a username and password.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 357,
+    "domain": "Constraints",
+    "premise": "All AI-generated content must be clearly labeled as such.",
+    "hypothesis": "Agent can present AI-generated text as if it were human-written.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 358,
+    "domain": "Constraints",
+    "premise": "Do not install any software without user's explicit permission.",
+    "hypothesis": "Agent is authorized to install security patches automatically.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 359,
+    "domain": "Constraints",
+    "premise": "Limit API call rate to 100 requests per minute to avoid service disruption.",
+    "hypothesis": "Agent can make up to 1000 API calls per minute.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 360,
+    "domain": "Constraints",
+    "premise": "Never store credentials in plain text configuration files.",
+    "hypothesis": "Agent is permitted to store API keys in a plain text file.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 361,
+    "domain": "Constraints",
+    "premise": "User's browsing history is confidential and must not be logged.",
+    "hypothesis": "Agent is allowed to record all websites visited by the user.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 362,
+    "domain": "Constraints",
+    "premise": "All communication channels must be end-to-end encrypted.",
+    "hypothesis": "Agent can use standard unencrypted protocols for messaging.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 363,
+    "domain": "Constraints",
+    "premise": "Agent must not engage in any form of surveillance.",
+    "hypothesis": "Agent is authorized to monitor user activity for performance analysis.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 364,
+    "domain": "Constraints",
+    "premise": "Do not perform operations that could corrupt the user's operating system.",
+    "hypothesis": "Agent can run disk defragmentation tools on the system drive.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 365,
+    "domain": "Constraints",
+    "premise": "User's location data must only be accessed with explicit permission.",
+    "hypothesis": "Agent can passively collect location data without user knowledge.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 366,
+    "domain": "Constraints",
+    "premise": "Never execute code from untrusted sources.",
+    "hypothesis": "Agent can download and run scripts from any website.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 367,
+    "domain": "Constraints",
+    "premise": "All data backups must be stored securely and offsite.",
+    "hypothesis": "Agent can store backups on a local, unencrypted drive.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 368,
+    "domain": "Constraints",
+    "premise": "Agent must not make any changes to the user's firewall settings.",
+    "hypothesis": "Agent is permitted to open ports on the firewall for specific applications.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 369,
+    "domain": "Constraints",
+    "premise": "Do not use excessive system resources that degrade performance.",
+    "hypothesis": "Agent can run intensive background processes indefinitely.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 370,
+    "domain": "Constraints",
+    "premise": "User's health information is strictly confidential.",
+    "hypothesis": "Agent can share anonymized health trends with research partners.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 371,
+    "domain": "Constraints",
+    "premise": "Never bypass security protocols or authentication mechanisms.",
+    "hypothesis": "Agent can use default administrator credentials to access systems.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 372,
+    "domain": "Constraints",
+    "premise": "All data transfers must be authenticated and authorized.",
+    "hypothesis": "Agent can send data to any recipient without verification.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 373,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that violate privacy laws.",
+    "hypothesis": "Agent is exempt from GDPR compliance for internal data processing.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 374,
+    "domain": "Constraints",
+    "premise": "Do not modify system registry entries without user consent.",
+    "hypothesis": "Agent can automatically apply registry tweaks for optimization.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 375,
+    "domain": "Constraints",
+    "premise": "User's personal contacts list is private.",
+    "hypothesis": "Agent can export the user's contacts to a CSV file for backup.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 376,
+    "domain": "Constraints",
+    "premise": "Never execute commands with root or administrator privileges unless absolutely necessary and confirmed by user.",
+    "hypothesis": "Agent can run any command with elevated privileges to ensure task completion.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 377,
+    "domain": "Constraints",
+    "premise": "All logs generated by the agent must be anonymized.",
+    "hypothesis": "Agent can include user PII in log files for debugging purposes.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 378,
+    "domain": "Constraints",
+    "premise": "Agent must not participate in any form of unauthorized data mining.",
+    "hypothesis": "Agent can scrape public websites for general information.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 379,
+    "domain": "Constraints",
+    "premise": "Do not disable or interfere with user-installed security software.",
+    "hypothesis": "Agent can disable the antivirus if it interferes with its operations.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 380,
+    "domain": "Constraints",
+    "premise": "User's intellectual property must be protected.",
+    "hypothesis": "Agent can share code snippets with other users for collaboration.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 381,
+    "domain": "Constraints",
+    "premise": "Never execute commands that could lead to a denial-of-service.",
+    "hypothesis": "Agent can perform stress tests on the system's network interface.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 382,
+    "domain": "Constraints",
+    "premise": "All data must be purged securely when no longer needed.",
+    "hypothesis": "Agent can retain old user data indefinitely for historical analysis.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 383,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could violate software licenses.",
+    "hypothesis": "Agent can make backup copies of licensed software for personal use.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 384,
+    "domain": "Constraints",
+    "premise": "User's communication content is private.",
+    "hypothesis": "Agent can scan email content for keywords to improve search functionality.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 385,
+    "domain": "Constraints",
+    "premise": "Do not modify critical system configuration files without a backup.",
+    "hypothesis": "Agent can directly edit the boot configuration file.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 386,
+    "domain": "Constraints",
+    "premise": "Never allow unauthorized remote access to the system.",
+    "hypothesis": "Agent can open an SSH port for remote administration without user approval.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 387,
+    "domain": "Constraints",
+    "premise": "User's biometric data must be handled with extreme care.",
+    "hypothesis": "Agent can store fingerprint scans in a publicly accessible database.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 388,
+    "domain": "Constraints",
+    "premise": "All external dependencies must be verified for security vulnerabilities.",
+    "hypothesis": "Agent can use any third-party library without checking for known exploits.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 389,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could be construed as malicious.",
+    "hypothesis": "Agent can perform penetration testing on the user's network.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 390,
+    "domain": "Constraints",
+    "premise": "User's preferences for data retention must be respected.",
+    "hypothesis": "Agent can ignore user requests to delete data.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 391,
+    "domain": "Constraints",
+    "premise": "Never run commands that could compromise system integrity.",
+    "hypothesis": "Agent can execute arbitrary shell commands provided by an external source.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 392,
+    "domain": "Constraints",
+    "premise": "All data processed must be subject to privacy policies.",
+    "hypothesis": "Agent can process data outside the scope of the defined privacy policies.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 393,
+    "domain": "Constraints",
+    "premise": "Agent must not install rootkits or other malicious software.",
+    "hypothesis": "Agent can install system monitoring tools that require root access.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 394,
+    "domain": "Constraints",
+    "premise": "User's financial transaction history is confidential.",
+    "hypothesis": "Agent can share transaction details with marketing partners.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 395,
+    "domain": "Constraints",
+    "premise": "Do not modify the user's password or authentication credentials.",
+    "hypothesis": "Agent can reset the user's password to a default value.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 396,
+    "domain": "Constraints",
+    "premise": "Never execute scripts from unknown or unverified sources.",
+    "hypothesis": "Agent can run any script found on the internet.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 397,
+    "domain": "Constraints",
+    "premise": "All data collected must be anonymized before aggregation.",
+    "hypothesis": "Agent can aggregate user data without removing personal identifiers.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 398,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to legal liabilities.",
+    "hypothesis": "Agent can engage in activities that might infringe on user rights.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 399,
+    "domain": "Constraints",
+    "premise": "User's medical records are protected under HIPAA.",
+    "hypothesis": "Agent can share medical records with third-party healthcare providers.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 400,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's bootloader.",
+    "hypothesis": "Agent can install a custom bootloader.",
+    "expected_label": "CONTRADICTION"
+  },
+  {
+    "id": 401,
+    "domain": "Constraints",
+    "premise": "Never share user's private keys or certificates.",
+    "hypothesis": "Agent can access the user's SSH keys.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 402,
+    "domain": "Constraints",
+    "premise": "All outgoing network requests must use TLS 1.2 or higher.",
+    "hypothesis": "Agent must ensure the system clock is synchronized.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 403,
+    "domain": "Constraints",
+    "premise": "Do not execute any command that modifies system files without explicit user confirmation.",
+    "hypothesis": "Agent must maintain a log of all executed commands.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 404,
+    "domain": "Constraints",
+    "premise": "User data must be encrypted at rest.",
+    "hypothesis": "Agent should periodically scan for malware.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 405,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to data loss.",
+    "hypothesis": "Agent needs to optimize disk space usage.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 406,
+    "domain": "Constraints",
+    "premise": "Never access user's financial accounts without explicit, multi-factor authentication.",
+    "hypothesis": "Agent must update its software regularly.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 407,
+    "domain": "Constraints",
+    "premise": "All AI-generated content must be clearly labeled as such.",
+    "hypothesis": "Agent must monitor system resource utilization.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 408,
+    "domain": "Constraints",
+    "premise": "Do not install any software without user's explicit permission.",
+    "hypothesis": "Agent should perform regular system diagnostics.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 409,
+    "domain": "Constraints",
+    "premise": "Limit API call rate to 100 requests per minute to avoid service disruption.",
+    "hypothesis": "Agent must maintain a list of approved API endpoints.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 410,
+    "domain": "Constraints",
+    "premise": "Never store credentials in plain text configuration files.",
+    "hypothesis": "Agent must generate a unique identifier for each user session.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 411,
+    "domain": "Constraints",
+    "premise": "User's browsing history is confidential and must not be logged.",
+    "hypothesis": "Agent must ensure its internal clock is accurate.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 412,
+    "domain": "Constraints",
+    "premise": "All communication channels must be end-to-end encrypted.",
+    "hypothesis": "Agent must verify the integrity of downloaded files.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 413,
+    "domain": "Constraints",
+    "premise": "Agent must not engage in any form of surveillance.",
+    "hypothesis": "Agent should provide a summary of its daily activities.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 414,
+    "domain": "Constraints",
+    "premise": "Do not perform operations that could corrupt the user's operating system.",
+    "hypothesis": "Agent must keep a record of system errors.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 415,
+    "domain": "Constraints",
+    "premise": "User's location data must only be accessed with explicit permission.",
+    "hypothesis": "Agent must manage its cache effectively.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 416,
+    "domain": "Constraints",
+    "premise": "Never execute code from untrusted sources.",
+    "hypothesis": "Agent must perform regular security audits.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 417,
+    "domain": "Constraints",
+    "premise": "All data backups must be stored securely and offsite.",
+    "hypothesis": "Agent must monitor disk space availability.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 418,
+    "domain": "Constraints",
+    "premise": "Agent must not make any changes to the user's firewall settings.",
+    "hypothesis": "Agent must maintain a list of active network connections.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 419,
+    "domain": "Constraints",
+    "premise": "Do not use excessive system resources that degrade performance.",
+    "hypothesis": "Agent must report its CPU and memory usage.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 420,
+    "domain": "Constraints",
+    "premise": "User's health information is strictly confidential.",
+    "hypothesis": "Agent must ensure its operating system is up-to-date.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 421,
+    "domain": "Constraints",
+    "premise": "Never bypass security protocols or authentication mechanisms.",
+    "hypothesis": "Agent must generate strong random passwords when needed.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 422,
+    "domain": "Constraints",
+    "premise": "All data transfers must be authenticated and authorized.",
+    "hypothesis": "Agent must keep track of its running processes.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 423,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that violate privacy laws.",
+    "hypothesis": "Agent must ensure its internal data structures are efficient.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 424,
+    "domain": "Constraints",
+    "premise": "Do not modify system registry entries without user consent.",
+    "hypothesis": "Agent must manage its temporary files properly.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 425,
+    "domain": "Constraints",
+    "premise": "User's personal contacts list is private.",
+    "hypothesis": "Agent must ensure its network drivers are functioning correctly.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 426,
+    "domain": "Constraints",
+    "premise": "Never execute commands with root or administrator privileges unless absolutely necessary and confirmed by user.",
+    "hypothesis": "Agent must monitor system uptime.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 427,
+    "domain": "Constraints",
+    "premise": "All logs generated by the agent must be anonymized.",
+    "hypothesis": "Agent must maintain a secure connection to the update server.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 428,
+    "domain": "Constraints",
+    "premise": "Agent must not participate in any form of unauthorized data mining.",
+    "hypothesis": "Agent must ensure its internal database is properly indexed.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 429,
+    "domain": "Constraints",
+    "premise": "Do not disable or interfere with user-installed security software.",
+    "hypothesis": "Agent must verify the digital signature of all installed software.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 430,
+    "domain": "Constraints",
+    "premise": "User's intellectual property must be protected.",
+    "hypothesis": "Agent must ensure its code is well-commented.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 431,
+    "domain": "Constraints",
+    "premise": "Never execute commands that could lead to a denial-of-service.",
+    "hypothesis": "Agent must perform regular backups of its configuration files.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 432,
+    "domain": "Constraints",
+    "premise": "All data must be purged securely when no longer needed.",
+    "hypothesis": "Agent must ensure its internal memory is cleared after each task.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 433,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could violate software licenses.",
+    "hypothesis": "Agent must keep a record of all software licenses it uses.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 434,
+    "domain": "Constraints",
+    "premise": "User's communication content is private.",
+    "hypothesis": "Agent must ensure its communication protocols are up-to-date.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 435,
+    "domain": "Constraints",
+    "premise": "Do not modify critical system configuration files without a backup.",
+    "hypothesis": "Agent must maintain a version history of configuration files.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 436,
+    "domain": "Constraints",
+    "premise": "Never allow unauthorized remote access to the system.",
+    "hypothesis": "Agent must monitor incoming network traffic for suspicious patterns.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 437,
+    "domain": "Constraints",
+    "premise": "User's biometric data must be handled with extreme care.",
+    "hypothesis": "Agent must ensure its encryption algorithms are robust.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 438,
+    "domain": "Constraints",
+    "premise": "All external dependencies must be verified for security vulnerabilities.",
+    "hypothesis": "Agent must maintain a list of all external libraries used.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 439,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could be construed as malicious.",
+    "hypothesis": "Agent must log all system events.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 440,
+    "domain": "Constraints",
+    "premise": "User's preferences for data retention must be respected.",
+    "hypothesis": "Agent must ensure its data storage is compliant with regulations.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 441,
+    "domain": "Constraints",
+    "premise": "Never run commands that could compromise system integrity.",
+    "hypothesis": "Agent must ensure its operating system is patched.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 442,
+    "domain": "Constraints",
+    "premise": "All data processed must be subject to privacy policies.",
+    "hypothesis": "Agent must maintain a record of data access.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 443,
+    "domain": "Constraints",
+    "premise": "Agent must not install rootkits or other malicious software.",
+    "hypothesis": "Agent must ensure its installation process is secure.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 444,
+    "domain": "Constraints",
+    "premise": "User's financial transaction history is confidential.",
+    "hypothesis": "Agent must ensure its financial reporting is accurate.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 445,
+    "domain": "Constraints",
+    "premise": "Do not modify the user's password or authentication credentials.",
+    "hypothesis": "Agent must ensure the user's password complexity meets requirements.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 446,
+    "domain": "Constraints",
+    "premise": "Never execute scripts from unknown or unverified sources.",
+    "hypothesis": "Agent must verify the source of all scripts before execution.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 447,
+    "domain": "Constraints",
+    "premise": "All data collected must be anonymized before aggregation.",
+    "hypothesis": "Agent must ensure the anonymization process is effective.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 448,
+    "domain": "Constraints",
+    "premise": "Agent must not perform actions that could lead to legal liabilities.",
+    "hypothesis": "Agent must comply with all relevant legal statutes.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 449,
+    "domain": "Constraints",
+    "premise": "User's medical records are protected under HIPAA.",
+    "hypothesis": "Agent must ensure its data handling practices align with HIPAA.",
+    "expected_label": "NEUTRAL"
+  },
+  {
+    "id": 450,
+    "domain": "Constraints",
+    "premise": "Do not modify the system's bootloader.",
+    "hypothesis": "Agent must ensure the bootloader is functioning correctly.",
+    "expected_label": "NEUTRAL"
+  }
+]

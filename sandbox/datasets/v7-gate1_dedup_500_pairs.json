@@ -1,0 +1,3502 @@
+[
+  {
+    "id": 1,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's preferred programming language is Python.",
+    "fact2": "Python is the programming language the user prefers."
+  },
+  {
+    "id": 2,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User lives in San Francisco.",
+    "fact2": "The user's current residence is San Francisco."
+  },
+  {
+    "id": 3,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to peanuts.",
+    "fact2": "User has a peanut allergy."
+  },
+  {
+    "id": 4,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite color is blue.",
+    "fact2": "Blue is the user's favorite color."
+  },
+  {
+    "id": 5,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User works as a software engineer.",
+    "fact2": "The user's profession is software engineer."
+  },
+  {
+    "id": 6,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Japanese.",
+    "fact2": "User is studying the Japanese language."
+  },
+  {
+    "id": 7,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has a dog named Max.",
+    "fact2": "Max is the name of the user's dog."
+  },
+  {
+    "id": 8,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User enjoys hiking.",
+    "fact2": "Hiking is an activity the user enjoys."
+  },
+  {
+    "id": 9,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is vegetarian.",
+    "fact2": "User follows a vegetarian diet."
+  },
+  {
+    "id": 10,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's birthday is on July 15th.",
+    "fact2": "The user's birth date is July 15."
+  },
+  {
+    "id": 11,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a fan of the band Queen.",
+    "fact2": "Queen is a band that the user likes."
+  },
+  {
+    "id": 12,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User prefers coffee over tea.",
+    "fact2": "User likes coffee more than tea."
+  },
+  {
+    "id": 13,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in astronomy.",
+    "fact2": "Astronomy is a subject of user interest."
+  },
+  {
+    "id": 14,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has two siblings.",
+    "fact2": "The user has a total of two siblings."
+  },
+  {
+    "id": 15,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite movie is Inception.",
+    "fact2": "Inception is the user's favorite film."
+  },
+  {
+    "id": 16,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is fluent in Spanish.",
+    "fact2": "User speaks Spanish fluently."
+  },
+  {
+    "id": 17,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User owns a Toyota Camry.",
+    "fact2": "The user's car is a Toyota Camry."
+  },
+  {
+    "id": 18,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User follows a gluten-free diet.",
+    "fact2": "User avoids gluten in their diet."
+  },
+  {
+    "id": 19,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite book is Dune.",
+    "fact2": "Dune is the user's favorite book."
+  },
+  {
+    "id": 20,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a morning person.",
+    "fact2": "User prefers to wake up early."
+  },
+  {
+    "id": 21,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User plays the guitar.",
+    "fact2": "User is a guitar player."
+  },
+  {
+    "id": 22,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in photography.",
+    "fact2": "Photography is a hobby the user is interested in."
+  },
+  {
+    "id": 23,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has a cat named Luna.",
+    "fact2": "Luna is the name of the user's cat."
+  },
+  {
+    "id": 24,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a vegan.",
+    "fact2": "User eats a vegan diet."
+  },
+  {
+    "id": 25,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite season is autumn.",
+    "fact2": "Autumn is the user's favorite season."
+  },
+  {
+    "id": 26,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning to code in JavaScript.",
+    "fact2": "User is studying JavaScript programming."
+  },
+  {
+    "id": 27,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to shellfish.",
+    "fact2": "User has a shellfish allergy."
+  },
+  {
+    "id": 28,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite type of music is rock.",
+    "fact2": "Rock music is the user's favorite genre."
+  },
+  {
+    "id": 29,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a vegetarian.",
+    "fact2": "User does not eat meat."
+  },
+  {
+    "id": 30,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's height is 5'10\".",
+    "fact2": "The user is 5 feet and 10 inches tall."
+  },
+  {
+    "id": 31,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in history.",
+    "fact2": "History is a subject that interests the user."
+  },
+  {
+    "id": 32,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite sport is basketball.",
+    "fact2": "Basketball is the sport the user likes most."
+  },
+  {
+    "id": 33,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a night owl.",
+    "fact2": "User prefers to stay up late."
+  },
+  {
+    "id": 34,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has a sister.",
+    "fact2": "User has one sister."
+  },
+  {
+    "id": 35,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite food is pizza.",
+    "fact2": "Pizza is the user's favorite food."
+  },
+  {
+    "id": 36,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning French.",
+    "fact2": "User is studying the French language."
+  },
+  {
+    "id": 37,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to dairy.",
+    "fact2": "User has a dairy allergy."
+  },
+  {
+    "id": 38,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite TV show is The Office.",
+    "fact2": "The Office is the user's favorite television show."
+  },
+  {
+    "id": 39,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a pescatarian.",
+    "fact2": "User eats fish but not other meat."
+  },
+  {
+    "id": 40,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's weight is 150 lbs.",
+    "fact2": "The user weighs 150 pounds."
+  },
+  {
+    "id": 41,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in philosophy.",
+    "fact2": "Philosophy is a field of interest for the user."
+  },
+  {
+    "id": 42,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite animal is a cat.",
+    "fact2": "The user's favorite animal is the cat."
+  },
+  {
+    "id": 43,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled baker.",
+    "fact2": "User has baking skills."
+  },
+  {
+    "id": 44,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has a brother.",
+    "fact2": "User has one brother."
+  },
+  {
+    "id": 45,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite holiday is Christmas.",
+    "fact2": "Christmas is the user's favorite holiday."
+  },
+  {
+    "id": 46,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Italian.",
+    "fact2": "User is studying the Italian language."
+  },
+  {
+    "id": 47,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to gluten.",
+    "fact2": "User has a gluten intolerance."
+  },
+  {
+    "id": 48,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite actor is Tom Hanks.",
+    "fact2": "Tom Hanks is the user's favorite actor."
+  },
+  {
+    "id": 49,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a pescatarian.",
+    "fact2": "User's diet includes fish."
+  },
+  {
+    "id": 50,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's shoe size is 10.",
+    "fact2": "The user wears a size 10 shoe."
+  },
+  {
+    "id": 51,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in psychology.",
+    "fact2": "Psychology is a subject the user is interested in."
+  },
+  {
+    "id": 52,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite fruit is mango.",
+    "fact2": "Mango is the user's favorite fruit."
+  },
+  {
+    "id": 53,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled writer.",
+    "fact2": "User possesses writing skills."
+  },
+  {
+    "id": 54,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has parents.",
+    "fact2": "User's parents are alive."
+  },
+  {
+    "id": 55,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite city is Paris.",
+    "fact2": "Paris is the user's favorite city."
+  },
+  {
+    "id": 56,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning German.",
+    "fact2": "User is studying the German language."
+  },
+  {
+    "id": 57,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to soy.",
+    "fact2": "User has a soy allergy."
+  },
+  {
+    "id": 58,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite artist is Van Gogh.",
+    "fact2": "Van Gogh is the user's favorite artist."
+  },
+  {
+    "id": 59,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a flexitarian.",
+    "fact2": "User primarily eats plant-based but occasionally meat."
+  },
+  {
+    "id": 60,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's eye color is brown.",
+    "fact2": "The user has brown eyes."
+  },
+  {
+    "id": 61,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in economics.",
+    "fact2": "Economics is a subject of interest to the user."
+  },
+  {
+    "id": 62,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite vegetable is broccoli.",
+    "fact2": "Broccoli is the user's favorite vegetable."
+  },
+  {
+    "id": 63,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled programmer.",
+    "fact2": "User has programming expertise."
+  },
+  {
+    "id": 64,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has a grandmother.",
+    "fact2": "User's grandmother is still alive."
+  },
+  {
+    "id": 65,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite composer is Mozart.",
+    "fact2": "Mozart is the user's favorite composer."
+  },
+  {
+    "id": 66,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Mandarin.",
+    "fact2": "User is studying the Mandarin language."
+  },
+  {
+    "id": 67,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to eggs.",
+    "fact2": "User has an egg allergy."
+  },
+  {
+    "id": 68,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite director is Christopher Nolan.",
+    "fact2": "Christopher Nolan is the user's favorite director."
+  },
+  {
+    "id": 69,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a semi-vegetarian.",
+    "fact2": "User eats mostly vegetarian but sometimes meat."
+  },
+  {
+    "id": 70,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's hair color is brown.",
+    "fact2": "The user has brown hair."
+  },
+  {
+    "id": 71,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in sociology.",
+    "fact2": "Sociology is a field the user is interested in."
+  },
+  {
+    "id": 72,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite dessert is chocolate cake.",
+    "fact2": "Chocolate cake is the user's favorite dessert."
+  },
+  {
+    "id": 73,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled musician.",
+    "fact2": "User has musical talent."
+  },
+  {
+    "id": 74,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has an uncle.",
+    "fact2": "User has one uncle."
+  },
+  {
+    "id": 75,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite flower is a rose.",
+    "fact2": "Rose is the user's favorite flower."
+  },
+  {
+    "id": 76,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Russian.",
+    "fact2": "User is studying the Russian language."
+  },
+  {
+    "id": 77,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to nuts.",
+    "fact2": "User has a nut allergy."
+  },
+  {
+    "id": 78,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite playwright is Shakespeare.",
+    "fact2": "Shakespeare is the user's favorite playwright."
+  },
+  {
+    "id": 79,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a part-time vegetarian.",
+    "fact2": "User eats vegetarian most of the time."
+  },
+  {
+    "id": 80,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite gemstone is diamond.",
+    "fact2": "Diamond is the user's favorite gemstone."
+  },
+  {
+    "id": 81,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in geology.",
+    "fact2": "Geology is a subject that interests the user."
+  },
+  {
+    "id": 82,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite type of bread is sourdough.",
+    "fact2": "Sourdough is the user's favorite bread."
+  },
+  {
+    "id": 83,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled painter.",
+    "fact2": "User has painting skills."
+  },
+  {
+    "id": 84,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has an aunt.",
+    "fact2": "User has one aunt."
+  },
+  {
+    "id": 85,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite constellation is Orion.",
+    "fact2": "Orion is the user's favorite constellation."
+  },
+  {
+    "id": 86,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Korean.",
+    "fact2": "User is studying the Korean language."
+  },
+  {
+    "id": 87,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to sesame.",
+    "fact2": "User has a sesame allergy."
+  },
+  {
+    "id": 88,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite poet is Rumi.",
+    "fact2": "Rumi is the user's favorite poet."
+  },
+  {
+    "id": 89,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a lacto-ovo vegetarian.",
+    "fact2": "User eats dairy and eggs but no meat."
+  },
+  {
+    "id": 90,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite metal is gold.",
+    "fact2": "Gold is the user's favorite metal."
+  },
+  {
+    "id": 91,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in biology.",
+    "fact2": "Biology is a subject of interest for the user."
+  },
+  {
+    "id": 92,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite cheese is cheddar.",
+    "fact2": "Cheddar is the user's favorite cheese."
+  },
+  {
+    "id": 93,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled sculptor.",
+    "fact2": "User has sculpting skills."
+  },
+  {
+    "id": 94,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has cousins.",
+    "fact2": "User has multiple cousins."
+  },
+  {
+    "id": 95,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite planet is Mars.",
+    "fact2": "Mars is the user's favorite planet."
+  },
+  {
+    "id": 96,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Spanish.",
+    "fact2": "User is studying the Spanish language."
+  },
+  {
+    "id": 97,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to wheat.",
+    "fact2": "User has a wheat allergy."
+  },
+  {
+    "id": 98,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite composer is Bach.",
+    "fact2": "Bach is the user's favorite composer."
+  },
+  {
+    "id": 99,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a fruitarian.",
+    "fact2": "User's diet consists only of fruits."
+  },
+  {
+    "id": 100,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite wood is oak.",
+    "fact2": "Oak is the user's favorite type of wood."
+  },
+  {
+    "id": 101,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in chemistry.",
+    "fact2": "Chemistry is a subject that interests the user."
+  },
+  {
+    "id": 102,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite pasta shape is penne.",
+    "fact2": "Penne is the user's favorite pasta shape."
+  },
+  {
+    "id": 103,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled photographer.",
+    "fact2": "User has photography skills."
+  },
+  {
+    "id": 104,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has grandparents.",
+    "fact2": "User's grandparents are alive."
+  },
+  {
+    "id": 105,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite mythical creature is a dragon.",
+    "fact2": "Dragon is the user's favorite mythical creature."
+  },
+  {
+    "id": 106,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Portuguese.",
+    "fact2": "User is studying the Portuguese language."
+  },
+  {
+    "id": 107,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to corn.",
+    "fact2": "User has a corn allergy."
+  },
+  {
+    "id": 108,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite composer is Beethoven.",
+    "fact2": "Beethoven is the user's favorite composer."
+  },
+  {
+    "id": 109,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a raw vegan.",
+    "fact2": "User eats only raw vegan food."
+  },
+  {
+    "id": 110,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite gemstone is sapphire.",
+    "fact2": "Sapphire is the user's favorite gemstone."
+  },
+  {
+    "id": 111,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in physics.",
+    "fact2": "Physics is a subject that interests the user."
+  },
+  {
+    "id": 112,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite type of pasta is spaghetti.",
+    "fact2": "Spaghetti is the user's favorite pasta."
+  },
+  {
+    "id": 113,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled dancer.",
+    "fact2": "User has dancing skills."
+  },
+  {
+    "id": 114,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has nieces and nephews.",
+    "fact2": "User has siblings' children."
+  },
+  {
+    "id": 115,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite constellation is Ursa Major.",
+    "fact2": "Ursa Major is the user's favorite constellation."
+  },
+  {
+    "id": 116,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Japanese.",
+    "fact2": "User is studying Japanese."
+  },
+  {
+    "id": 117,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to mustard.",
+    "fact2": "User has a mustard allergy."
+  },
+  {
+    "id": 118,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite poet is Emily Dickinson.",
+    "fact2": "Emily Dickinson is the user's favorite poet."
+  },
+  {
+    "id": 119,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a raw foodist.",
+    "fact2": "User eats only uncooked food."
+  },
+  {
+    "id": 120,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite metal is silver.",
+    "fact2": "Silver is the user's favorite metal."
+  },
+  {
+    "id": 121,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in mathematics.",
+    "fact2": "Mathematics is a subject that interests the user."
+  },
+  {
+    "id": 122,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite pasta shape is fusilli.",
+    "fact2": "Fusilli is the user's favorite pasta shape."
+  },
+  {
+    "id": 123,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled chef.",
+    "fact2": "User has culinary skills."
+  },
+  {
+    "id": 124,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has godparents.",
+    "fact2": "User's godparents are alive."
+  },
+  {
+    "id": 125,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite mythical creature is a unicorn.",
+    "fact2": "Unicorn is the user's favorite mythical creature."
+  },
+  {
+    "id": 126,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Chinese.",
+    "fact2": "User is studying the Chinese language."
+  },
+  {
+    "id": 127,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to garlic.",
+    "fact2": "User has a garlic allergy."
+  },
+  {
+    "id": 128,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite composer is Chopin.",
+    "fact2": "Chopin is the user's favorite composer."
+  },
+  {
+    "id": 129,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a vegan.",
+    "fact2": "User avoids all animal products."
+  },
+  {
+    "id": 130,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite wood is mahogany.",
+    "fact2": "Mahogany is the user's favorite type of wood."
+  },
+  {
+    "id": 131,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in computer science.",
+    "fact2": "Computer science is a subject that interests the user."
+  },
+  {
+    "id": 132,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite pasta shape is rigatoni.",
+    "fact2": "Rigatoni is the user's favorite pasta shape."
+  },
+  {
+    "id": 133,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled carpenter.",
+    "fact2": "User has carpentry skills."
+  },
+  {
+    "id": 134,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has godchildren.",
+    "fact2": "User is a godparent to someone."
+  },
+  {
+    "id": 135,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite mythical creature is a phoenix.",
+    "fact2": "Phoenix is the user's favorite mythical creature."
+  },
+  {
+    "id": 136,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning Korean.",
+    "fact2": "User is studying Korean."
+  },
+  {
+    "id": 137,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to shellfish.",
+    "fact2": "User cannot eat shellfish."
+  },
+  {
+    "id": 138,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite composer is Mozart.",
+    "fact2": "User likes Mozart's music."
+  },
+  {
+    "id": 139,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a vegan.",
+    "fact2": "User's diet excludes all animal products."
+  },
+  {
+    "id": 140,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite wood is pine.",
+    "fact2": "Pine is the user's favorite type of wood."
+  },
+  {
+    "id": 141,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is interested in engineering.",
+    "fact2": "Engineering is a field that interests the user."
+  },
+  {
+    "id": 142,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite pasta shape is farfalle.",
+    "fact2": "Farfalle is the user's favorite pasta shape."
+  },
+  {
+    "id": 143,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a skilled plumber.",
+    "fact2": "User has plumbing skills."
+  },
+  {
+    "id": 144,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User has godparents.",
+    "fact2": "User's godparents are in their life."
+  },
+  {
+    "id": 145,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite mythical creature is a griffin.",
+    "fact2": "Griffin is the user's favorite mythical creature."
+  },
+  {
+    "id": 146,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is learning French.",
+    "fact2": "User speaks French."
+  },
+  {
+    "id": 147,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is allergic to peanuts.",
+    "fact2": "User cannot eat peanuts."
+  },
+  {
+    "id": 148,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite composer is Bach.",
+    "fact2": "User enjoys Bach's music."
+  },
+  {
+    "id": 149,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User is a vegetarian.",
+    "fact2": "User's diet is vegetarian."
+  },
+  {
+    "id": 150,
+    "label": "duplicate",
+    "domain": "Profile",
+    "fact1": "User's favorite wood is cherry.",
+    "fact2": "Cherry is the user's favorite type of wood."
+  },
+  {
+    "id": 151,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User is allergic to shellfish.",
+    "fact2": "User is allergic to dairy products."
+  },
+  {
+    "id": 152,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User is vegetarian.",
+    "fact2": "User is vegan."
+  },
+  {
+    "id": 153,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User avoids gluten.",
+    "fact2": "User avoids nuts."
+  },
+  {
+    "id": 154,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User is lactose intolerant.",
+    "fact2": "User has a peanut allergy."
+  },
+  {
+    "id": 155,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User prefers low-carb meals.",
+    "fact2": "User prefers high-protein meals."
+  },
+  {
+    "id": 156,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User is trying to reduce sugar intake.",
+    "fact2": "User is trying to increase fiber intake."
+  },
+  {
+    "id": 157,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User dislikes spicy food.",
+    "fact2": "User dislikes bitter food."
+  },
+  {
+    "id": 158,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User is allergic to soy.",
+    "fact2": "User is allergic to wheat."
+  },
+  {
+    "id": 159,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User eats kosher.",
+    "fact2": "User eats halal."
+  },
+  {
+    "id": 160,
+    "label": "hard_negative",
+    "domain": "Profile|DietaryRestrictions",
+    "fact1": "User is on a ketogenic diet.",
+    "fact2": "User is on a paleo diet."
+  },
+  {
+    "id": 161,
+    "label": "hard_negative",
+    "domain": "Profile|Work|OperatingSystems",
+    "fact1": "User works on Ubuntu.",
+    "fact2": "User works on Debian."
+  },
+  {
+    "id": 162,
+    "label": "hard_negative",
+    "domain": "Profile|Work|OperatingSystems",
+    "fact1": "User prefers macOS.",
+    "fact2": "User prefers Windows."
+  },
+  {
+    "id": 163,
+    "label": "hard_negative",
+    "domain": "Profile|Work|OperatingSystems",
+    "fact1": "User uses Arch Linux for development.",
+    "fact2": "User uses Fedora for development."
+  },
+  {
+    "id": 164,
+    "label": "hard_negative",
+    "domain": "Profile|Work|OperatingSystems",
+    "fact1": "User is familiar with CentOS.",
+    "fact2": "User is familiar with Red Hat Enterprise Linux."
+  },
+  {
+    "id": 165,
+    "label": "hard_negative",
+    "domain": "Profile|Work|OperatingSystems",
+    "fact1": "User's primary OS is Linux Mint.",
+    "fact2": "User's primary OS is elementary OS."
+  },
+  {
+    "id": 166,
+    "label": "hard_negative",
+    "domain": "Profile|Work|ProgrammingLanguages",
+    "fact1": "User is proficient in Python.",
+    "fact2": "User is proficient in Java."
+  },
+  {
+    "id": 167,
+    "label": "hard_negative",
+    "domain": "Profile|Work|ProgrammingLanguages",
+    "fact1": "User enjoys C++ development.",
+    "fact2": "User enjoys C# development."
+  },
+  {
+    "id": 168,
+    "label": "hard_negative",
+    "domain": "Profile|Work|ProgrammingLanguages",
+    "fact1": "User is learning Rust.",
+    "fact2": "User is learning Go."
+  },
+  {
+    "id": 169,
+    "label": "hard_negative",
+    "domain": "Profile|Work|ProgrammingLanguages",
+    "fact1": "User has experience with JavaScript.",
+    "fact2": "User has experience with TypeScript."
+  },
+  {
+    "id": 170,
+    "label": "hard_negative",
+    "domain": "Profile|Work|ProgrammingLanguages",
+    "fact1": "User prefers functional programming.",
+    "fact2": "User prefers object-oriented programming."
+  },
+  {
+    "id": 171,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Frameworks",
+    "fact1": "User works with React.",
+    "fact2": "User works with Angular."
+  },
+  {
+    "id": 172,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Frameworks",
+    "fact1": "User uses Django for backend.",
+    "fact2": "User uses Flask for backend."
+  },
+  {
+    "id": 173,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Frameworks",
+    "fact1": "User is experienced with Spring Boot.",
+    "fact2": "User is experienced with Node.js."
+  },
+  {
+    "id": 174,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Frameworks",
+    "fact1": "User prefers Vue.js for frontend.",
+    "fact2": "User prefers Svelte for frontend."
+  },
+  {
+    "id": 175,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Databases",
+    "fact1": "User is skilled in SQL.",
+    "fact2": "User is skilled in NoSQL."
+  },
+  {
+    "id": 176,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Databases",
+    "fact1": "User has worked with PostgreSQL.",
+    "fact2": "User has worked with MySQL."
+  },
+  {
+    "id": 177,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Databases",
+    "fact1": "User prefers MongoDB.",
+    "fact2": "User prefers Cassandra."
+  },
+  {
+    "id": 178,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Databases",
+    "fact1": "User has experience with Redis.",
+    "fact2": "User has experience with Memcached."
+  },
+  {
+    "id": 179,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Cloud",
+    "fact1": "User is an AWS expert.",
+    "fact2": "User is an Azure expert."
+  },
+  {
+    "id": 180,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Cloud",
+    "fact1": "User has deployed applications on Google Cloud.",
+    "fact2": "User has deployed applications on Heroku."
+  },
+  {
+    "id": 181,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Cloud",
+    "fact1": "User is familiar with Kubernetes.",
+    "fact2": "User is familiar with Docker Swarm."
+  },
+  {
+    "id": 182,
+    "label": "hard_negative",
+    "domain": "Profile|Work|Cloud",
+    "fact1": "User prefers serverless architectures.",
+    "fact2": "User prefers containerized architectures."
+  },
+  {
+    "id": 183,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User enjoys hiking.",
+    "fact2": "User enjoys rock climbing."
+  },
+  {
+    "id": 184,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User likes playing the guitar.",
+    "fact2": "User likes playing the piano."
+  },
+  {
+    "id": 185,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User is interested in photography.",
+    "fact2": "User is interested in videography."
+  },
+  {
+    "id": 186,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User enjoys reading science fiction.",
+    "fact2": "User enjoys reading fantasy novels."
+  },
+  {
+    "id": 187,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User likes gardening.",
+    "fact2": "User likes bird watching."
+  },
+  {
+    "id": 188,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User is a fan of board games.",
+    "fact2": "User is a fan of video games."
+  },
+  {
+    "id": 189,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User enjoys cooking.",
+    "fact2": "User enjoys baking."
+  },
+  {
+    "id": 190,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User likes to travel.",
+    "fact2": "User likes to camp."
+  },
+  {
+    "id": 191,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User is interested in astronomy.",
+    "fact2": "User is interested in geology."
+  },
+  {
+    "id": 192,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Hobbies",
+    "fact1": "User enjoys painting.",
+    "fact2": "User enjoys sculpting."
+  },
+  {
+    "id": 193,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Music",
+    "fact1": "User likes classical music.",
+    "fact2": "User likes jazz music."
+  },
+  {
+    "id": 194,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Music",
+    "fact1": "User prefers rock music.",
+    "fact2": "User prefers pop music."
+  },
+  {
+    "id": 195,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Music",
+    "fact1": "User enjoys electronic music.",
+    "fact2": "User enjoys hip-hop music."
+  },
+  {
+    "id": 196,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Music",
+    "fact1": "User listens to indie bands.",
+    "fact2": "User listens to folk artists."
+  },
+  {
+    "id": 197,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Music",
+    "fact1": "User is a fan of blues.",
+    "fact2": "User is a fan of country."
+  },
+  {
+    "id": 198,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Movies",
+    "fact1": "User likes action movies.",
+    "fact2": "User likes comedy movies."
+  },
+  {
+    "id": 199,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Movies",
+    "fact1": "User prefers science fiction films.",
+    "fact2": "User prefers fantasy films."
+  },
+  {
+    "id": 200,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Movies",
+    "fact1": "User enjoys thrillers.",
+    "fact2": "User enjoys horror movies."
+  },
+  {
+    "id": 201,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Movies",
+    "fact1": "User likes animated movies.",
+    "fact2": "User likes documentary films."
+  },
+  {
+    "id": 202,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Movies",
+    "fact1": "User prefers romantic comedies.",
+    "fact2": "User prefers dramas."
+  },
+  {
+    "id": 203,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Books",
+    "fact1": "User reads historical fiction.",
+    "fact2": "User reads contemporary fiction."
+  },
+  {
+    "id": 204,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Books",
+    "fact1": "User enjoys biographies.",
+    "fact2": "User enjoys autobiographies."
+  },
+  {
+    "id": 205,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Books",
+    "fact1": "User likes mystery novels.",
+    "fact2": "User likes crime novels."
+  },
+  {
+    "id": 206,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Books",
+    "fact1": "User reads poetry.",
+    "fact2": "User reads short stories."
+  },
+  {
+    "id": 207,
+    "label": "hard_negative",
+    "domain": "Profile|Interests|Books",
+    "fact1": "User is interested in self-help books.",
+    "fact2": "User is interested in philosophy books."
+  },
+  {
+    "id": 208,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Communication",
+    "fact1": "User prefers email communication.",
+    "fact2": "User prefers instant messaging."
+  },
+  {
+    "id": 209,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Communication",
+    "fact1": "User likes to receive detailed updates.",
+    "fact2": "User prefers concise summaries."
+  },
+  {
+    "id": 210,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Communication",
+    "fact1": "User prefers asynchronous communication.",
+    "fact2": "User prefers synchronous communication."
+  },
+  {
+    "id": 211,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Communication",
+    "fact1": "User likes to be addressed formally.",
+    "fact2": "User likes to be addressed informally."
+  },
+  {
+    "id": 212,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Communication",
+    "fact1": "User prefers text-based communication.",
+    "fact2": "User prefers voice-based communication."
+  },
+  {
+    "id": 213,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Notifications",
+    "fact1": "User wants urgent notifications immediately.",
+    "fact2": "User wants non-urgent notifications batched."
+  },
+  {
+    "id": 214,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Notifications",
+    "fact1": "User prefers push notifications.",
+    "fact2": "User prefers email notifications."
+  },
+  {
+    "id": 215,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Notifications",
+    "fact1": "User wants notifications silenced during work hours.",
+    "fact2": "User wants notifications silenced during sleep hours."
+  },
+  {
+    "id": 216,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Notifications",
+    "fact1": "User wants sound alerts for important messages.",
+    "fact2": "User prefers silent alerts for all notifications."
+  },
+  {
+    "id": 217,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Notifications",
+    "fact1": "User wants daily summary notifications.",
+    "fact2": "User wants weekly summary notifications."
+  },
+  {
+    "id": 218,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Appearance",
+    "fact1": "User prefers a dark theme.",
+    "fact2": "User prefers a light theme."
+  },
+  {
+    "id": 219,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Appearance",
+    "fact1": "User likes minimalist design.",
+    "fact2": "User likes colorful design."
+  },
+  {
+    "id": 220,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Appearance",
+    "fact1": "User prefers larger font sizes.",
+    "fact2": "User prefers smaller font sizes."
+  },
+  {
+    "id": 221,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Appearance",
+    "fact1": "User likes animated transitions.",
+    "fact2": "User prefers static interfaces."
+  },
+  {
+    "id": 222,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Appearance",
+    "fact1": "User prefers high contrast mode.",
+    "fact2": "User prefers reduced motion."
+  },
+  {
+    "id": 223,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Privacy",
+    "fact1": "User wants to share location data.",
+    "fact2": "User wants to restrict location data sharing."
+  },
+  {
+    "id": 224,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Privacy",
+    "fact1": "User prefers anonymous browsing.",
+    "fact2": "User is comfortable with personalized ads."
+  },
+  {
+    "id": 225,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Privacy",
+    "fact1": "User wants to enable all cookies.",
+    "fact2": "User wants to block all third-party cookies."
+  },
+  {
+    "id": 226,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Privacy",
+    "fact1": "User wants to keep browsing history public.",
+    "fact2": "User wants to clear browsing history regularly."
+  },
+  {
+    "id": 227,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Privacy",
+    "fact1": "User allows app tracking.",
+    "fact2": "User disables app tracking."
+  },
+  {
+    "id": 228,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Pets",
+    "fact1": "User owns a cat named Luna.",
+    "fact2": "User owns a dog named Max."
+  },
+  {
+    "id": 229,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Pets",
+    "fact1": "User has a golden retriever.",
+    "fact2": "User has a labrador retriever."
+  },
+  {
+    "id": 230,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Pets",
+    "fact1": "User's cat is an indoor cat.",
+    "fact2": "User's cat is an outdoor cat."
+  },
+  {
+    "id": 231,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Pets",
+    "fact1": "User's dog is a puppy.",
+    "fact2": "User's dog is a senior dog."
+  },
+  {
+    "id": 232,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Pets",
+    "fact1": "User is allergic to cats.",
+    "fact2": "User is allergic to dogs."
+  },
+  {
+    "id": 233,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Family",
+    "fact1": "User has one sibling.",
+    "fact2": "User has two siblings."
+  },
+  {
+    "id": 234,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Family",
+    "fact1": "User's mother lives in California.",
+    "fact2": "User's father lives in Texas."
+  },
+  {
+    "id": 235,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Family",
+    "fact1": "User has a daughter.",
+    "fact2": "User has a son."
+  },
+  {
+    "id": 236,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Family",
+    "fact1": "User is married.",
+    "fact2": "User is divorced."
+  },
+  {
+    "id": 237,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Family",
+    "fact1": "User's child is in elementary school.",
+    "fact2": "User's child is in middle school."
+  },
+  {
+    "id": 238,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Location",
+    "fact1": "User lives in New York City.",
+    "fact2": "User lives in Los Angeles."
+  },
+  {
+    "id": 239,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Location",
+    "fact1": "User's hometown is Chicago.",
+    "fact2": "User's current city is Denver."
+  },
+  {
+    "id": 240,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Location",
+    "fact1": "User prefers a warm climate.",
+    "fact2": "User prefers a cold climate."
+  },
+  {
+    "id": 241,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Location",
+    "fact1": "User lives in a suburban area.",
+    "fact2": "User lives in a rural area."
+  },
+  {
+    "id": 242,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Location",
+    "fact1": "User wants to move to the mountains.",
+    "fact2": "User wants to move to the coast."
+  },
+  {
+    "id": 243,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Vehicle",
+    "fact1": "User drives a blue sedan.",
+    "fact2": "User drives a red SUV."
+  },
+  {
+    "id": 244,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Vehicle",
+    "fact1": "User owns a Toyota Camry.",
+    "fact2": "User owns a Honda Accord."
+  },
+  {
+    "id": 245,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Vehicle",
+    "fact1": "User's car is electric.",
+    "fact2": "User's car is hybrid."
+  },
+  {
+    "id": 246,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Vehicle",
+    "fact1": "User prefers manual transmission.",
+    "fact2": "User prefers automatic transmission."
+  },
+  {
+    "id": 247,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Vehicle",
+    "fact1": "User needs a fuel-efficient car.",
+    "fact2": "User needs a spacious car."
+  },
+  {
+    "id": 248,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Health",
+    "fact1": "User has high blood pressure.",
+    "fact2": "User has high cholesterol."
+  },
+  {
+    "id": 249,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Health",
+    "fact1": "User exercises regularly.",
+    "fact2": "User has a sedentary lifestyle."
+  },
+  {
+    "id": 250,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Health",
+    "fact1": "User takes medication for allergies.",
+    "fact2": "User takes medication for migraines."
+  },
+  {
+    "id": 251,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Health",
+    "fact1": "User is trying to lose weight.",
+    "fact2": "User is trying to gain muscle."
+  },
+  {
+    "id": 252,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Health",
+    "fact1": "User has a vitamin D deficiency.",
+    "fact2": "User has an iron deficiency."
+  },
+  {
+    "id": 253,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User wants to learn Spanish.",
+    "fact2": "User wants to learn French."
+  },
+  {
+    "id": 254,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User aims to save $10,000 this year.",
+    "fact2": "User aims to invest $5,000 this year."
+  },
+  {
+    "id": 255,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User wants to run a marathon.",
+    "fact2": "User wants to complete a triathlon."
+  },
+  {
+    "id": 256,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User's goal is to get a promotion.",
+    "fact2": "User's goal is to start their own business."
+  },
+  {
+    "id": 257,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User wants to read 50 books this year.",
+    "fact2": "User wants to write 50 articles this year."
+  },
+  {
+    "id": 258,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User wants to travel to Europe.",
+    "fact2": "User wants to travel to Asia."
+  },
+  {
+    "id": 259,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User wants to master a new skill.",
+    "fact2": "User wants to improve existing skills."
+  },
+  {
+    "id": 260,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User wants to reduce screen time.",
+    "fact2": "User wants to increase physical activity."
+  },
+  {
+    "id": 261,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User wants to volunteer more.",
+    "fact2": "User wants to donate more to charity."
+  },
+  {
+    "id": 262,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Goals",
+    "fact1": "User wants to learn to play chess.",
+    "fact2": "User wants to learn to play Go."
+  },
+  {
+    "id": 263,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User has a budget of $500 for entertainment.",
+    "fact2": "User has a budget of $1000 for travel."
+  },
+  {
+    "id": 264,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User cannot travel during peak season.",
+    "fact2": "User cannot travel during holidays."
+  },
+  {
+    "id": 265,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User needs a quiet environment for work.",
+    "fact2": "User needs a well-lit environment for reading."
+  },
+  {
+    "id": 266,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User is allergic to certain medications.",
+    "fact2": "User has a contraindication for specific treatments."
+  },
+  {
+    "id": 267,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User must avoid gluten.",
+    "fact2": "User must avoid dairy."
+  },
+  {
+    "id": 268,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User has limited time for exercise.",
+    "fact2": "User has limited energy for strenuous activities."
+  },
+  {
+    "id": 269,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User prefers not to use public transport.",
+    "fact2": "User prefers not to drive long distances."
+  },
+  {
+    "id": 270,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User needs software compatible with Windows.",
+    "fact2": "User needs software compatible with macOS."
+  },
+  {
+    "id": 271,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User cannot consume caffeine after 2 PM.",
+    "fact2": "User cannot consume alcohol on weekdays."
+  },
+  {
+    "id": 272,
+    "label": "hard_negative",
+    "domain": "Profile|Directives|Constraints",
+    "fact1": "User requires a minimum of 8 hours of sleep.",
+    "fact2": "User requires a maximum of 2 hours of screen time."
+  },
+  {
+    "id": 273,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Workplace",
+    "fact1": "User works at Google.",
+    "fact2": "User works at Microsoft."
+  },
+  {
+    "id": 274,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Workplace",
+    "fact1": "User is a software engineer.",
+    "fact2": "User is a data scientist."
+  },
+  {
+    "id": 275,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Workplace",
+    "fact1": "User works remotely.",
+    "fact2": "User works in an office."
+  },
+  {
+    "id": 276,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Workplace",
+    "fact1": "User's team uses Agile methodology.",
+    "fact2": "User's team uses Waterfall methodology."
+  },
+  {
+    "id": 277,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Workplace",
+    "fact1": "User has been at their current company for 5 years.",
+    "fact2": "User has been at their current company for 2 years."
+  },
+  {
+    "id": 278,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Education",
+    "fact1": "User has a Bachelor's degree in Computer Science.",
+    "fact2": "User has a Master's degree in Electrical Engineering."
+  },
+  {
+    "id": 279,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Education",
+    "fact1": "User attended Stanford University.",
+    "fact2": "User attended MIT."
+  },
+  {
+    "id": 280,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Education",
+    "fact1": "User graduated with honors.",
+    "fact2": "User graduated with a minor in Mathematics."
+  },
+  {
+    "id": 281,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Education",
+    "fact1": "User is pursuing a PhD.",
+    "fact2": "User is pursuing a certification."
+  },
+  {
+    "id": 282,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Education",
+    "fact1": "User's major was Physics.",
+    "fact2": "User's major was Chemistry."
+  },
+  {
+    "id": 283,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User prefers savory snacks.",
+    "fact2": "User prefers sweet snacks."
+  },
+  {
+    "id": 284,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User likes Italian cuisine.",
+    "fact2": "User likes Mexican cuisine."
+  },
+  {
+    "id": 285,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User enjoys coffee.",
+    "fact2": "User enjoys tea."
+  },
+  {
+    "id": 286,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User prefers dark chocolate.",
+    "fact2": "User prefers milk chocolate."
+  },
+  {
+    "id": 287,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User likes to eat breakfast early.",
+    "fact2": "User likes to eat dinner late."
+  },
+  {
+    "id": 288,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User prefers homemade meals.",
+    "fact2": "User prefers dining out."
+  },
+  {
+    "id": 289,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User likes spicy food.",
+    "fact2": "User likes sour food."
+  },
+  {
+    "id": 290,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User enjoys seafood.",
+    "fact2": "User enjoys poultry."
+  },
+  {
+    "id": 291,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User prefers fresh fruit.",
+    "fact2": "User prefers dried fruit."
+  },
+  {
+    "id": 292,
+    "label": "hard_negative",
+    "domain": "Profile|Preferences|Food",
+    "fact1": "User likes to drink water.",
+    "fact2": "User likes to drink juice."
+  },
+  {
+    "id": 293,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Finance",
+    "fact1": "User has a savings account.",
+    "fact2": "User has a checking account."
+  },
+  {
+    "id": 294,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Finance",
+    "fact1": "User invests in stocks.",
+    "fact2": "User invests in bonds."
+  },
+  {
+    "id": 295,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Finance",
+    "fact1": "User prefers to pay with credit card.",
+    "fact2": "User prefers to pay with debit card."
+  },
+  {
+    "id": 296,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Finance",
+    "fact1": "User is saving for a down payment.",
+    "fact2": "User is saving for retirement."
+  },
+  {
+    "id": 297,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Finance",
+    "fact1": "User tracks their expenses.",
+    "fact2": "User uses a budgeting app."
+  },
+  {
+    "id": 298,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Finance",
+    "fact1": "User has a high credit score.",
+    "fact2": "User has a low credit score."
+  },
+  {
+    "id": 299,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Finance",
+    "fact1": "User prefers to buy in bulk.",
+    "fact2": "User prefers to buy on sale."
+  },
+  {
+    "id": 300,
+    "label": "hard_negative",
+    "domain": "Profile|Entities|Finance",
+    "fact1": "User has outstanding student loans.",
+    "fact2": "User has an outstanding mortgage."
+  },
+  {
+    "id": 301,
+    "label": "distinct",
+    "domain": "Hobbies|Work",
+    "fact1": "User enjoys playing the guitar in their free time.",
+    "fact2": "User is currently working on a project involving machine learning model optimization."
+  },
+  {
+    "id": 302,
+    "label": "distinct",
+    "domain": "Dietary|Travel",
+    "fact1": "User is lactose intolerant and avoids dairy products.",
+    "fact2": "User is planning a trip to Japan next spring."
+  },
+  {
+    "id": 303,
+    "label": "distinct",
+    "domain": "Health|Finance",
+    "fact1": "User has a mild allergy to pollen during the spring season.",
+    "fact2": "User is saving up for a down payment on a house."
+  },
+  {
+    "id": 304,
+    "label": "distinct",
+    "domain": "Pets|Education",
+    "fact1": "User owns a golden retriever named Max.",
+    "fact2": "User is pursuing a Master's degree in computer science."
+  },
+  {
+    "id": 305,
+    "label": "distinct",
+    "domain": "Music|Cooking",
+    "fact1": "User's favorite music genre is indie rock.",
+    "fact2": "User is trying to perfect their sourdough bread recipe."
+  },
+  {
+    "id": 306,
+    "label": "distinct",
+    "domain": "Sports|Technology",
+    "fact1": "User follows the local basketball team closely.",
+    "fact2": "User is interested in learning more about quantum computing."
+  },
+  {
+    "id": 307,
+    "label": "distinct",
+    "domain": "Reading|Gardening",
+    "fact1": "User prefers reading science fiction novels.",
+    "fact2": "User has a small vegetable garden in their backyard."
+  },
+  {
+    "id": 308,
+    "label": "distinct",
+    "domain": "Art|Fitness",
+    "fact1": "User enjoys visiting art museums on weekends.",
+    "fact2": "User aims to run a half marathon by the end of the year."
+  },
+  {
+    "id": 309,
+    "label": "distinct",
+    "domain": "Gaming|Language",
+    "fact1": "User plays strategy board games with friends.",
+    "fact2": "User is learning to speak Spanish."
+  },
+  {
+    "id": 310,
+    "label": "distinct",
+    "domain": "Movies|HomeImprovement",
+    "fact1": "User likes watching historical documentaries.",
+    "fact2": "User is planning to repaint their living room this summer."
+  },
+  {
+    "id": 311,
+    "label": "distinct",
+    "domain": "Social|Career",
+    "fact1": "User volunteers at a local animal shelter.",
+    "fact2": "User is looking for a career change into the renewable energy sector."
+  },
+  {
+    "id": 312,
+    "label": "distinct",
+    "domain": "Food|Photography",
+    "fact1": "User is a vegetarian and enjoys experimenting with plant-based recipes.",
+    "fact2": "User recently bought a new DSLR camera to improve their photography skills."
+  },
+  {
+    "id": 313,
+    "label": "distinct",
+    "domain": "Nature|Writing",
+    "fact1": "User loves hiking in national parks.",
+    "fact2": "User is working on a collection of short stories."
+  },
+  {
+    "id": 314,
+    "label": "distinct",
+    "domain": "History|Astronomy",
+    "fact1": "User has a keen interest in ancient Roman history.",
+    "fact2": "User enjoys stargazing and learning about constellations."
+  },
+  {
+    "id": 315,
+    "label": "distinct",
+    "domain": "Crafts|Automotive",
+    "fact1": "User enjoys knitting scarves and hats.",
+    "fact2": "User is planning to get their car serviced next month."
+  },
+  {
+    "id": 316,
+    "label": "distinct",
+    "domain": "Comedy|Philosophy",
+    "fact1": "User enjoys stand-up comedy specials.",
+    "fact2": "User finds existentialism a fascinating area of study."
+  },
+  {
+    "id": 317,
+    "label": "distinct",
+    "domain": "Travel|Programming",
+    "fact1": "User dreams of backpacking through Southeast Asia.",
+    "fact2": "User is learning Python for data analysis."
+  },
+  {
+    "id": 318,
+    "label": "distinct",
+    "domain": "Health|Architecture",
+    "fact1": "User practices mindfulness meditation daily.",
+    "fact2": "User is fascinated by modern minimalist architecture."
+  },
+  {
+    "id": 319,
+    "label": "distinct",
+    "domain": "Family|Economics",
+    "fact1": "User has two siblings and enjoys family gatherings.",
+    "fact2": "User is studying microeconomics for a university course."
+  },
+  {
+    "id": 320,
+    "label": "distinct",
+    "domain": "Fashion|Geology",
+    "fact1": "User prefers comfortable and casual clothing.",
+    "fact2": "User is interested in the formation of volcanoes."
+  },
+  {
+    "id": 321,
+    "label": "distinct",
+    "domain": "Science|Mythology",
+    "fact1": "User is fascinated by the principles of quantum physics.",
+    "fact2": "User enjoys reading about Greek mythology."
+  },
+  {
+    "id": 322,
+    "label": "distinct",
+    "domain": "Business|Psychology",
+    "fact1": "User is interested in startup culture and entrepreneurship.",
+    "fact2": "User is reading a book on cognitive behavioral therapy."
+  },
+  {
+    "id": 323,
+    "label": "distinct",
+    "domain": "Adventure|Culinary",
+    "fact1": "User enjoys white-water rafting.",
+    "fact2": "User is experimenting with making homemade pasta."
+  },
+  {
+    "id": 324,
+    "label": "distinct",
+    "domain": "Environment|Linguistics",
+    "fact1": "User is passionate about environmental conservation.",
+    "fact2": "User is curious about the evolution of languages."
+  },
+  {
+    "id": 325,
+    "label": "distinct",
+    "domain": "Technology|Literature",
+    "fact1": "User is excited about the potential of AI in healthcare.",
+    "fact2": "User is currently reading 'Pride and Prejudice'."
+  },
+  {
+    "id": 326,
+    "label": "distinct",
+    "domain": "Health|Engineering",
+    "fact1": "User tries to eat at least five servings of fruits and vegetables daily.",
+    "fact2": "User is studying mechanical engineering."
+  },
+  {
+    "id": 327,
+    "label": "distinct",
+    "domain": "Travel|Music",
+    "fact1": "User has visited over 15 countries.",
+    "fact2": "User plays the piano and enjoys classical music."
+  },
+  {
+    "id": 328,
+    "label": "distinct",
+    "domain": "Work|Fitness",
+    "fact1": "User works in the marketing department.",
+    "fact2": "User goes to the gym three times a week."
+  },
+  {
+    "id": 329,
+    "label": "distinct",
+    "domain": "Hobbies|Education",
+    "fact1": "User collects vintage stamps.",
+    "fact2": "User is taking an online course in digital marketing."
+  },
+  {
+    "id": 330,
+    "label": "distinct",
+    "domain": "Dietary|Technology",
+    "fact1": "User is gluten-free due to celiac disease.",
+    "fact2": "User is interested in the latest advancements in virtual reality."
+  },
+  {
+    "id": 331,
+    "label": "distinct",
+    "domain": "Pets|Finance",
+    "fact1": "User has a cat named Luna.",
+    "fact2": "User is investing in the stock market."
+  },
+  {
+    "id": 332,
+    "label": "distinct",
+    "domain": "Sports|Art",
+    "fact1": "User enjoys watching Formula 1 racing.",
+    "fact2": "User dabbles in watercolor painting."
+  },
+  {
+    "id": 333,
+    "label": "distinct",
+    "domain": "Reading|Travel",
+    "fact1": "User is currently reading a biography of Marie Curie.",
+    "fact2": "User wants to visit the pyramids in Egypt."
+  },
+  {
+    "id": 334,
+    "label": "distinct",
+    "domain": "Cooking|Work",
+    "fact1": "User loves trying out new international cuisines.",
+    "fact2": "User works as a software developer."
+  },
+  {
+    "id": 335,
+    "label": "distinct",
+    "domain": "Health|Gaming",
+    "fact1": "User is trying to reduce their sugar intake.",
+    "fact2": "User enjoys playing role-playing video games."
+  },
+  {
+    "id": 336,
+    "label": "distinct",
+    "domain": "Hobbies|Language",
+    "fact1": "User builds intricate models of ships.",
+    "fact2": "User is studying Japanese."
+  },
+  {
+    "id": 337,
+    "label": "distinct",
+    "domain": "Music|Photography",
+    "fact1": "User plays the drums in a local band.",
+    "fact2": "User is learning astrophotography."
+  },
+  {
+    "id": 338,
+    "label": "distinct",
+    "domain": "Movies|Gardening",
+    "fact1": "User prefers independent films over blockbusters.",
+    "fact2": "User is growing tomatoes and peppers this season."
+  },
+  {
+    "id": 339,
+    "label": "distinct",
+    "domain": "Social|Career",
+    "fact1": "User is an active member of a book club.",
+    "fact2": "User is considering a career in UX design."
+  },
+  {
+    "id": 340,
+    "label": "distinct",
+    "domain": "Food|Writing",
+    "fact1": "User is allergic to shellfish.",
+    "fact2": "User writes poetry in their spare time."
+  },
+  {
+    "id": 341,
+    "label": "distinct",
+    "domain": "Nature|History",
+    "fact1": "User enjoys birdwatching in local nature reserves.",
+    "fact2": "User is researching the history of the Silk Road."
+  },
+  {
+    "id": 342,
+    "label": "distinct",
+    "domain": "Art|Astronomy",
+    "fact1": "User appreciates abstract expressionist art.",
+    "fact2": "User is learning about black holes and spacetime."
+  },
+  {
+    "id": 343,
+    "label": "distinct",
+    "domain": "Crafts|Automotive",
+    "fact1": "User enjoys scrapbooking memories.",
+    "fact2": "User is looking to buy a new electric car."
+  },
+  {
+    "id": 344,
+    "label": "distinct",
+    "domain": "Comedy|Philosophy",
+    "fact1": "User loves witty observational humor.",
+    "fact2": "User is interested in Stoic philosophy."
+  },
+  {
+    "id": 345,
+    "label": "distinct",
+    "domain": "Travel|Programming",
+    "fact1": "User wants to explore the Amazon rainforest.",
+    "fact2": "User is learning JavaScript for web development."
+  },
+  {
+    "id": 346,
+    "label": "distinct",
+    "domain": "Health|Architecture",
+    "fact1": "User follows a ketogenic diet.",
+    "fact2": "User admires the works of Frank Lloyd Wright."
+  },
+  {
+    "id": 347,
+    "label": "distinct",
+    "domain": "Family|Economics",
+    "fact1": "User is the eldest of three children.",
+    "fact2": "User is interested in behavioral economics."
+  },
+  {
+    "id": 348,
+    "label": "distinct",
+    "domain": "Fashion|Geology",
+    "fact1": "User prefers minimalist fashion.",
+    "fact2": "User is studying sedimentary rocks."
+  },
+  {
+    "id": 349,
+    "label": "distinct",
+    "domain": "Science|Mythology",
+    "fact1": "User is intrigued by the concept of dark matter.",
+    "fact2": "User is researching Norse mythology."
+  },
+  {
+    "id": 350,
+    "label": "distinct",
+    "domain": "Business|Psychology",
+    "fact1": "User is interested in supply chain management.",
+    "fact2": "User is reading about the psychology of motivation."
+  },
+  {
+    "id": 351,
+    "label": "distinct",
+    "domain": "Adventure|Culinary",
+    "fact1": "User enjoys rock climbing.",
+    "fact2": "User is learning to make sushi."
+  },
+  {
+    "id": 352,
+    "label": "distinct",
+    "domain": "Environment|Linguistics",
+    "fact1": "User actively participates in beach cleanups.",
+    "fact2": "User is studying the phonetics of Mandarin Chinese."
+  },
+  {
+    "id": 353,
+    "label": "distinct",
+    "domain": "Technology|Literature",
+    "fact1": "User is excited about the future of augmented reality.",
+    "fact2": "User is reading 'Moby Dick'."
+  },
+  {
+    "id": 354,
+    "label": "distinct",
+    "domain": "Health|Engineering",
+    "fact1": "User takes daily vitamins.",
+    "fact2": "User is studying electrical engineering."
+  },
+  {
+    "id": 355,
+    "label": "distinct",
+    "domain": "Travel|Music",
+    "fact1": "User has a goal to visit all seven continents.",
+    "fact2": "User enjoys listening to jazz music."
+  },
+  {
+    "id": 356,
+    "label": "distinct",
+    "domain": "Work|Fitness",
+    "fact1": "User works in the finance industry.",
+    "fact2": "User is training for a triathlon."
+  },
+  {
+    "id": 357,
+    "label": "distinct",
+    "domain": "Hobbies|Education",
+    "fact1": "User builds custom mechanical keyboards.",
+    "fact2": "User is enrolled in a creative writing workshop."
+  },
+  {
+    "id": 358,
+    "label": "distinct",
+    "domain": "Dietary|Technology",
+    "fact1": "User is vegan.",
+    "fact2": "User is interested in blockchain technology."
+  },
+  {
+    "id": 359,
+    "label": "distinct",
+    "domain": "Pets|Finance",
+    "fact1": "User has a dog named Buddy.",
+    "fact2": "User is planning their retirement fund."
+  },
+  {
+    "id": 360,
+    "label": "distinct",
+    "domain": "Sports|Art",
+    "fact1": "User enjoys playing tennis.",
+    "fact2": "User is learning pottery."
+  },
+  {
+    "id": 361,
+    "label": "distinct",
+    "domain": "Reading|Travel",
+    "fact1": "User is reading 'The Great Gatsby'.",
+    "fact2": "User wants to explore the ancient ruins of Machu Picchu."
+  },
+  {
+    "id": 362,
+    "label": "distinct",
+    "domain": "Cooking|Work",
+    "fact1": "User is an expert baker.",
+    "fact2": "User works in human resources."
+  },
+  {
+    "id": 363,
+    "label": "distinct",
+    "domain": "Health|Gaming",
+    "fact1": "User is trying to increase their daily water intake.",
+    "fact2": "User enjoys playing competitive online multiplayer games."
+  },
+  {
+    "id": 364,
+    "label": "distinct",
+    "domain": "Hobbies|Language",
+    "fact1": "User enjoys building LEGO sets.",
+    "fact2": "User is learning French."
+  },
+  {
+    "id": 365,
+    "label": "distinct",
+    "domain": "Music|Photography",
+    "fact1": "User sings in a choir.",
+    "fact2": "User is interested in portrait photography."
+  },
+  {
+    "id": 366,
+    "label": "distinct",
+    "domain": "Movies|Gardening",
+    "fact1": "User enjoys watching classic Hollywood movies.",
+    "fact2": "User is growing herbs in pots on their balcony."
+  },
+  {
+    "id": 367,
+    "label": "distinct",
+    "domain": "Social|Career",
+    "fact1": "User is a member of a local hiking group.",
+    "fact2": "User is exploring opportunities in data science."
+  },
+  {
+    "id": 368,
+    "label": "distinct",
+    "domain": "Food|Writing",
+    "fact1": "User is allergic to peanuts.",
+    "fact2": "User writes song lyrics."
+  },
+  {
+    "id": 369,
+    "label": "distinct",
+    "domain": "Nature|History",
+    "fact1": "User enjoys observing wildlife in their natural habitat.",
+    "fact2": "User is studying the American Civil War."
+  },
+  {
+    "id": 370,
+    "label": "distinct",
+    "domain": "Art|Astronomy",
+    "fact1": "User likes creating digital art.",
+    "fact2": "User is learning about the life cycle of stars."
+  },
+  {
+    "id": 371,
+    "label": "distinct",
+    "domain": "Crafts|Automotive",
+    "fact1": "User enjoys making jewelry.",
+    "fact2": "User is looking for a reliable mechanic."
+  },
+  {
+    "id": 372,
+    "label": "distinct",
+    "domain": "Comedy|Philosophy",
+    "fact1": "User enjoys watching sitcoms.",
+    "fact2": "User is interested in the concept of free will."
+  },
+  {
+    "id": 373,
+    "label": "distinct",
+    "domain": "Travel|Programming",
+    "fact1": "User wants to visit the Galapagos Islands.",
+    "fact2": "User is learning C++ for game development."
+  },
+  {
+    "id": 374,
+    "label": "distinct",
+    "domain": "Health|Architecture",
+    "fact1": "User practices yoga regularly.",
+    "fact2": "User is interested in sustainable architecture."
+  },
+  {
+    "id": 375,
+    "label": "distinct",
+    "domain": "Family|Economics",
+    "fact1": "User has a younger sister.",
+    "fact2": "User is studying macroeconomics."
+  },
+  {
+    "id": 376,
+    "label": "distinct",
+    "domain": "Fashion|Geology",
+    "fact1": "User prefers vintage clothing.",
+    "fact2": "User is interested in mineralogy."
+  },
+  {
+    "id": 377,
+    "label": "distinct",
+    "domain": "Science|Mythology",
+    "fact1": "User is fascinated by the theory of relativity.",
+    "fact2": "User enjoys reading about Egyptian mythology."
+  },
+  {
+    "id": 378,
+    "label": "distinct",
+    "domain": "Business|Psychology",
+    "fact1": "User is interested in project management.",
+    "fact2": "User is reading about social psychology."
+  },
+  {
+    "id": 379,
+    "label": "distinct",
+    "domain": "Adventure|Culinary",
+    "fact1": "User enjoys kayaking.",
+    "fact2": "User is learning to bake French pastries."
+  },
+  {
+    "id": 380,
+    "label": "distinct",
+    "domain": "Environment|Linguistics",
+    "fact1": "User is concerned about climate change.",
+    "fact2": "User is studying the history of the English language."
+  },
+  {
+    "id": 381,
+    "label": "distinct",
+    "domain": "Technology|Literature",
+    "fact1": "User is excited about the potential of 5G networks.",
+    "fact2": "User is reading 'War and Peace'."
+  },
+  {
+    "id": 382,
+    "label": "distinct",
+    "domain": "Health|Engineering",
+    "fact1": "User eats a balanced diet.",
+    "fact2": "User is studying civil engineering."
+  },
+  {
+    "id": 383,
+    "label": "distinct",
+    "domain": "Travel|Music",
+    "fact1": "User wants to visit Scandinavia.",
+    "fact2": "User enjoys listening to electronic dance music."
+  },
+  {
+    "id": 384,
+    "label": "distinct",
+    "domain": "Work|Fitness",
+    "fact1": "User works in the education sector.",
+    "fact2": "User is trying to improve their flexibility."
+  },
+  {
+    "id": 385,
+    "label": "distinct",
+    "domain": "Hobbies|Education",
+    "fact1": "User enjoys collecting vinyl records.",
+    "fact2": "User is taking a course on artificial intelligence."
+  },
+  {
+    "id": 386,
+    "label": "distinct",
+    "domain": "Dietary|Technology",
+    "fact1": "User is allergic to soy.",
+    "fact2": "User is interested in cloud computing."
+  },
+  {
+    "id": 387,
+    "label": "distinct",
+    "domain": "Pets|Finance",
+    "fact1": "User has a hamster named Squeaky.",
+    "fact2": "User is looking into mortgage options."
+  },
+  {
+    "id": 388,
+    "label": "distinct",
+    "domain": "Sports|Art",
+    "fact1": "User enjoys cycling.",
+    "fact2": "User is learning sculpture."
+  },
+  {
+    "id": 389,
+    "label": "distinct",
+    "domain": "Reading|Travel",
+    "fact1": "User is reading a collection of short stories by Alice Munro.",
+    "fact2": "User wants to visit the Scottish Highlands."
+  },
+  {
+    "id": 390,
+    "label": "distinct",
+    "domain": "Cooking|Work",
+    "fact1": "User enjoys making homemade jams and preserves.",
+    "fact2": "User works in the legal field."
+  },
+  {
+    "id": 391,
+    "label": "distinct",
+    "domain": "Health|Gaming",
+    "fact1": "User is trying to get more sleep.",
+    "fact2": "User enjoys playing puzzle video games."
+  },
+  {
+    "id": 392,
+    "label": "distinct",
+    "domain": "Hobbies|Language",
+    "fact1": "User enjoys building model airplanes.",
+    "fact2": "User is learning Italian."
+  },
+  {
+    "id": 393,
+    "label": "distinct",
+    "domain": "Music|Photography",
+    "fact1": "User plays the ukulele.",
+    "fact2": "User is interested in landscape photography."
+  },
+  {
+    "id": 394,
+    "label": "distinct",
+    "domain": "Movies|Gardening",
+    "fact1": "User enjoys watching romantic comedies.",
+    "fact2": "User is growing strawberries in containers."
+  },
+  {
+    "id": 395,
+    "label": "distinct",
+    "domain": "Social|Career",
+    "fact1": "User is part of an online gaming community.",
+    "fact2": "User is considering a career in cybersecurity."
+  },
+  {
+    "id": 396,
+    "label": "distinct",
+    "domain": "Food|Writing",
+    "fact1": "User is allergic to gluten.",
+    "fact2": "User writes short essays."
+  },
+  {
+    "id": 397,
+    "label": "distinct",
+    "domain": "Nature|History",
+    "fact1": "User enjoys identifying different types of trees.",
+    "fact2": "User is researching the history of ancient Egypt."
+  },
+  {
+    "id": 398,
+    "label": "distinct",
+    "domain": "Art|Astronomy",
+    "fact1": "User enjoys sketching portraits.",
+    "fact2": "User is learning about nebulae and galaxies."
+  },
+  {
+    "id": 399,
+    "label": "distinct",
+    "domain": "Crafts|Automotive",
+    "fact1": "User enjoys cross-stitching.",
+    "fact2": "User is planning a road trip across the country."
+  },
+  {
+    "id": 400,
+    "label": "distinct",
+    "domain": "Comedy|Philosophy",
+    "fact1": "User enjoys satirical comedy.",
+    "fact2": "User is interested in epistemology."
+  },
+  {
+    "id": 401,
+    "label": "distinct",
+    "domain": "Travel|Programming",
+    "fact1": "User wants to explore the fjords of Norway.",
+    "fact2": "User is learning Ruby for web development."
+  },
+  {
+    "id": 402,
+    "label": "distinct",
+    "domain": "Health|Architecture",
+    "fact1": "User is trying to eat more whole foods.",
+    "fact2": "User admires brutalist architecture."
+  },
+  {
+    "id": 403,
+    "label": "distinct",
+    "domain": "Family|Economics",
+    "fact1": "User is the youngest of four siblings.",
+    "fact2": "User is interested in international finance."
+  },
+  {
+    "id": 404,
+    "label": "distinct",
+    "domain": "Fashion|Geology",
+    "fact1": "User prefers athletic wear.",
+    "fact2": "User is studying igneous rocks."
+  },
+  {
+    "id": 405,
+    "label": "distinct",
+    "domain": "Science|Mythology",
+    "fact1": "User is fascinated by the concept of string theory.",
+    "fact2": "User enjoys reading about Celtic mythology."
+  },
+  {
+    "id": 406,
+    "label": "distinct",
+    "domain": "Business|Psychology",
+    "fact1": "User is interested in marketing strategy.",
+    "fact2": "User is reading about developmental psychology."
+  },
+  {
+    "id": 407,
+    "label": "distinct",
+    "domain": "Adventure|Culinary",
+    "fact1": "User enjoys scuba diving.",
+    "fact2": "User is learning to make artisanal bread."
+  },
+  {
+    "id": 408,
+    "label": "distinct",
+    "domain": "Environment|Linguistics",
+    "fact1": "User is passionate about sustainable agriculture.",
+    "fact2": "User is studying the syntax of German."
+  },
+  {
+    "id": 409,
+    "label": "distinct",
+    "domain": "Technology|Literature",
+    "fact1": "User is excited about the potential of quantum computing.",
+    "fact2": "User is reading 'One Hundred Years of Solitude'."
+  },
+  {
+    "id": 410,
+    "label": "distinct",
+    "domain": "Health|Engineering",
+    "fact1": "User practices intermittent fasting.",
+    "fact2": "User is studying aerospace engineering."
+  },
+  {
+    "id": 411,
+    "label": "distinct",
+    "domain": "Travel|Music",
+    "fact1": "User wants to visit South America.",
+    "fact2": "User enjoys listening to blues music."
+  },
+  {
+    "id": 412,
+    "label": "distinct",
+    "domain": "Work|Fitness",
+    "fact1": "User works in the healthcare industry.",
+    "fact2": "User is training for a marathon."
+  },
+  {
+    "id": 413,
+    "label": "distinct",
+    "domain": "Hobbies|Education",
+    "fact1": "User enjoys collecting antique maps.",
+    "fact2": "User is taking a course on data visualization."
+  },
+  {
+    "id": 414,
+    "label": "distinct",
+    "domain": "Dietary|Technology",
+    "fact1": "User is allergic to dairy.",
+    "fact2": "User is interested in artificial intelligence ethics."
+  },
+  {
+    "id": 415,
+    "label": "distinct",
+    "domain": "Pets|Finance",
+    "fact1": "User has a parrot named Captain.",
+    "fact2": "User is looking into refinancing their student loans."
+  },
+  {
+    "id": 416,
+    "label": "distinct",
+    "domain": "Sports|Art",
+    "fact1": "User enjoys playing golf.",
+    "fact2": "User is learning calligraphy."
+  },
+  {
+    "id": 417,
+    "label": "distinct",
+    "domain": "Reading|Travel",
+    "fact1": "User is reading 'The Hitchhiker's Guide to the Galaxy'.",
+    "fact2": "User wants to visit the ancient city of Petra."
+  },
+  {
+    "id": 418,
+    "label": "distinct",
+    "domain": "Cooking|Work",
+    "fact1": "User enjoys making homemade ice cream.",
+    "fact2": "User works in the technology sector."
+  },
+  {
+    "id": 419,
+    "label": "distinct",
+    "domain": "Health|Gaming",
+    "fact1": "User is trying to incorporate more fiber into their diet.",
+    "fact2": "User enjoys playing simulation video games."
+  },
+  {
+    "id": 420,
+    "label": "distinct",
+    "domain": "Hobbies|Language",
+    "fact1": "User enjoys building ship models.",
+    "fact2": "User is learning Portuguese."
+  },
+  {
+    "id": 421,
+    "label": "distinct",
+    "domain": "Music|Photography",
+    "fact1": "User plays the violin.",
+    "fact2": "User is interested in wildlife photography."
+  },
+  {
+    "id": 422,
+    "label": "distinct",
+    "domain": "Movies|Gardening",
+    "fact1": "User enjoys watching action movies.",
+    "fact2": "User is growing sunflowers."
+  },
+  {
+    "id": 423,
+    "label": "distinct",
+    "domain": "Social|Career",
+    "fact1": "User is part of a local photography club.",
+    "fact2": "User is exploring careers in renewable energy."
+  },
+  {
+    "id": 424,
+    "label": "distinct",
+    "domain": "Food|Writing",
+    "fact1": "User is allergic to nuts.",
+    "fact2": "User writes short stories."
+  },
+  {
+    "id": 425,
+    "label": "distinct",
+    "domain": "Nature|History",
+    "fact1": "User enjoys identifying different types of birds.",
+    "fact2": "User is researching the history of the Roman Empire."
+  },
+  {
+    "id": 426,
+    "label": "distinct",
+    "domain": "Art|Astronomy",
+    "fact1": "User enjoys painting landscapes.",
+    "fact2": "User is learning about the formation of planets."
+  },
+  {
+    "id": 427,
+    "label": "distinct",
+    "domain": "Crafts|Automotive",
+    "fact1": "User enjoys knitting sweaters.",
+    "fact2": "User is looking to buy a used car."
+  },
+  {
+    "id": 428,
+    "label": "distinct",
+    "domain": "Comedy|Philosophy",
+    "fact1": "User enjoys dark humor.",
+    "fact2": "User is interested in metaphysics."
+  },
+  {
+    "id": 429,
+    "label": "distinct",
+    "domain": "Travel|Programming",
+    "fact1": "User wants to explore the Australian Outback.",
+    "fact2": "User is learning Go for backend development."
+  },
+  {
+    "id": 430,
+    "label": "distinct",
+    "domain": "Health|Architecture",
+    "fact1": "User practices Tai Chi.",
+    "fact2": "User admires postmodern architecture."
+  },
+  {
+    "id": 431,
+    "label": "distinct",
+    "domain": "Family|Economics",
+    "fact1": "User is the middle child.",
+    "fact2": "User is studying econometrics."
+  },
+  {
+    "id": 432,
+    "label": "distinct",
+    "domain": "Fashion|Geology",
+    "fact1": "User prefers bohemian style.",
+    "fact2": "User is interested in volcanology."
+  },
+  {
+    "id": 433,
+    "label": "distinct",
+    "domain": "Science|Mythology",
+    "fact1": "User is fascinated by the concept of parallel universes.",
+    "fact2": "User enjoys reading about Greek myths."
+  },
+  {
+    "id": 434,
+    "label": "distinct",
+    "domain": "Business|Psychology",
+    "fact1": "User is interested in organizational behavior.",
+    "fact2": "User is reading about abnormal psychology."
+  },
+  {
+    "id": 435,
+    "label": "distinct",
+    "domain": "Adventure|Culinary",
+    "fact1": "User enjoys hiking in mountainous regions.",
+    "fact2": "User is learning to make gourmet chocolates."
+  },
+  {
+    "id": 436,
+    "label": "distinct",
+    "domain": "Environment|Linguistics",
+    "fact1": "User is passionate about wildlife conservation.",
+    "fact2": "User is studying the semantics of Latin."
+  },
+  {
+    "id": 437,
+    "label": "distinct",
+    "domain": "Technology|Literature",
+    "fact1": "User is excited about the potential of nanotechnology.",
+    "fact2": "User is reading 'The Odyssey'."
+  },
+  {
+    "id": 438,
+    "label": "distinct",
+    "domain": "Health|Engineering",
+    "fact1": "User eats a pescatarian diet.",
+    "fact2": "User is studying chemical engineering."
+  },
+  {
+    "id": 439,
+    "label": "distinct",
+    "domain": "Travel|Music",
+    "fact1": "User wants to visit the Scandinavian countries.",
+    "fact2": "User enjoys listening to classical music."
+  },
+  {
+    "id": 440,
+    "label": "distinct",
+    "domain": "Work|Fitness",
+    "fact1": "User works in the retail industry.",
+    "fact2": "User is trying to increase their strength."
+  },
+  {
+    "id": 441,
+    "label": "distinct",
+    "domain": "Hobbies|Education",
+    "fact1": "User enjoys collecting vintage cameras.",
+    "fact2": "User is taking a course on machine learning."
+  },
+  {
+    "id": 442,
+    "label": "distinct",
+    "domain": "Dietary|Technology",
+    "fact1": "User is allergic to eggs.",
+    "fact2": "User is interested in edge computing."
+  },
+  {
+    "id": 443,
+    "label": "distinct",
+    "domain": "Pets|Finance",
+    "fact1": "User has a rabbit named Thumper.",
+    "fact2": "User is looking into investment properties."
+  },
+  {
+    "id": 444,
+    "label": "distinct",
+    "domain": "Sports|Art",
+    "fact1": "User enjoys playing badminton.",
+    "fact2": "User is learning mosaic art."
+  },
+  {
+    "id": 445,
+    "label": "distinct",
+    "domain": "Reading|Travel",
+    "fact1": "User is reading 'Don Quixote'.",
+    "fact2": "User wants to visit the ancient city of Rome."
+  },
+  {
+    "id": 446,
+    "label": "distinct",
+    "domain": "Cooking|Work",
+    "fact1": "User enjoys making homemade chocolates.",
+    "fact2": "User works in the marketing department."
+  },
+  {
+    "id": 447,
+    "label": "distinct",
+    "domain": "Health|Gaming",
+    "fact1": "User is trying to reduce their screen time.",
+    "fact2": "User enjoys playing strategy games."
+  },
+  {
+    "id": 448,
+    "label": "distinct",
+    "domain": "Hobbies|Language",
+    "fact1": "User enjoys building model rockets.",
+    "fact2": "User is learning Russian."
+  },
+  {
+    "id": 449,
+    "label": "distinct",
+    "domain": "Music|Photography",
+    "fact1": "User plays the saxophone.",
+    "fact2": "User is interested in street photography."
+  },
+  {
+    "id": 450,
+    "label": "distinct",
+    "domain": "Movies|Gardening",
+    "fact1": "User enjoys watching thrillers.",
+    "fact2": "User is growing herbs indoors."
+  },
+  {
+    "id": 451,
+    "label": "distinct",
+    "domain": "Social|Career",
+    "fact1": "User is part of a local board game group.",
+    "fact2": "User is exploring careers in artificial intelligence."
+  },
+  {
+    "id": 452,
+    "label": "distinct",
+    "domain": "Food|Writing",
+    "fact1": "User is allergic to sesame.",
+    "fact2": "User writes song lyrics."
+  },
+  {
+    "id": 453,
+    "label": "distinct",
+    "domain": "Nature|History",
+    "fact1": "User enjoys identifying different types of insects.",
+    "fact2": "User is researching the history of the Industrial Revolution."
+  },
+  {
+    "id": 454,
+    "label": "distinct",
+    "domain": "Art|Astronomy",
+    "fact1": "User enjoys creating abstract sculptures.",
+    "fact2": "User is learning about the Big Bang theory."
+  },
+  {
+    "id": 455,
+    "label": "distinct",
+    "domain": "Crafts|Automotive",
+    "fact1": "User enjoys sewing clothes.",
+    "fact2": "User is looking for a reliable car insurance."
+  },
+  {
+    "id": 456,
+    "label": "distinct",
+    "domain": "Comedy|Philosophy",
+    "fact1": "User enjoys slapstick comedy.",
+    "fact2": "User is interested in ethics."
+  },
+  {
+    "id": 457,
+    "label": "distinct",
+    "domain": "Travel|Programming",
+    "fact1": "User wants to explore the Amazon basin.",
+    "fact2": "User is learning Swift for iOS development."
+  },
+  {
+    "id": 458,
+    "label": "distinct",
+    "domain": "Health|Architecture",
+    "fact1": "User practices deep breathing exercises.",
+    "fact2": "User admires art deco architecture."
+  },
+  {
+    "id": 459,
+    "label": "distinct",
+    "domain": "Family|Economics",
+    "fact1": "User is the eldest child.",
+    "fact2": "User is studying financial accounting."
+  },
+  {
+    "id": 460,
+    "label": "distinct",
+    "domain": "Fashion|Geology",
+    "fact1": "User prefers streetwear.",
+    "fact2": "User is interested in paleontology."
+  },
+  {
+    "id": 461,
+    "label": "distinct",
+    "domain": "Science|Mythology",
+    "fact1": "User is fascinated by the concept of time travel.",
+    "fact2": "User enjoys reading about Native American myths."
+  },
+  {
+    "id": 462,
+    "label": "distinct",
+    "domain": "Business|Psychology",
+    "fact1": "User is interested in human resources management.",
+    "fact2": "User is reading about clinical psychology."
+  },
+  {
+    "id": 463,
+    "label": "distinct",
+    "domain": "Adventure|Culinary",
+    "fact1": "User enjoys mountaineering.",
+    "fact2": "User is learning to make gourmet desserts."
+  },
+  {
+    "id": 464,
+    "label": "distinct",
+    "domain": "Environment|Linguistics",
+    "fact1": "User is passionate about ocean conservation.",
+    "fact2": "User is studying the morphology of Spanish."
+  },
+  {
+    "id": 465,
+    "label": "distinct",
+    "domain": "Technology|Literature",
+    "fact1": "User is excited about the potential of gene editing.",
+    "fact2": "User is reading 'The Count of Monte Cristo'."
+  },
+  {
+    "id": 466,
+    "label": "distinct",
+    "domain": "Health|Engineering",
+    "fact1": "User eats a Mediterranean diet.",
+    "fact2": "User is studying materials engineering."
+  },
+  {
+    "id": 467,
+    "label": "distinct",
+    "domain": "Travel|Music",
+    "fact1": "User wants to visit Eastern Europe.",
+    "fact2": "User enjoys listening to hip-hop music."
+  },
+  {
+    "id": 468,
+    "label": "distinct",
+    "domain": "Work|Fitness",
+    "fact1": "User works in the non-profit sector.",
+    "fact2": "User is trying to improve their cardiovascular health."
+  },
+  {
+    "id": 469,
+    "label": "distinct",
+    "domain": "Hobbies|Education",
+    "fact1": "User enjoys collecting vintage board games.",
+    "fact2": "User is taking a course on data science."
+  },
+  {
+    "id": 470,
+    "label": "distinct",
+    "domain": "Dietary|Technology",
+    "fact1": "User is allergic to shellfish.",
+    "fact2": "User is interested in cybersecurity threats."
+  },
+  {
+    "id": 471,
+    "label": "distinct",
+    "domain": "Pets|Finance",
+    "fact1": "User has a snake named Slither.",
+    "fact2": "User is looking into retirement planning."
+  },
+  {
+    "id": 472,
+    "label": "distinct",
+    "domain": "Sports|Art",
+    "fact1": "User enjoys playing volleyball.",
+    "fact2": "User is learning printmaking."
+  },
+  {
+    "id": 473,
+    "label": "distinct",
+    "domain": "Reading|Travel",
+    "fact1": "User is reading 'Anna Karenina'.",
+    "fact2": "User wants to visit the ancient city of Athens."
+  },
+  {
+    "id": 474,
+    "label": "distinct",
+    "domain": "Cooking|Work",
+    "fact1": "User enjoys making homemade bread.",
+    "fact2": "User works in the finance industry."
+  },
+  {
+    "id": 475,
+    "label": "distinct",
+    "domain": "Health|Gaming",
+    "fact1": "User is trying to eat more plant-based meals.",
+    "fact2": "User enjoys playing role-playing games."
+  },
+  {
+    "id": 476,
+    "label": "distinct",
+    "domain": "Hobbies|Language",
+    "fact1": "User enjoys building model cars.",
+    "fact2": "User is learning Mandarin Chinese."
+  },
+  {
+    "id": 477,
+    "label": "distinct",
+    "domain": "Music|Photography",
+    "fact1": "User plays the guitar.",
+    "fact2": "User is interested in macro photography."
+  },
+  {
+    "id": 478,
+    "label": "distinct",
+    "domain": "Movies|Gardening",
+    "fact1": "User enjoys watching comedies.",
+    "fact2": "User is growing herbs in their kitchen."
+  },
+  {
+    "id": 479,
+    "label": "distinct",
+    "domain": "Social|Career",
+    "fact1": "User is part of a local book club.",
+    "fact2": "User is exploring careers in data analytics."
+  },
+  {
+    "id": 480,
+    "label": "distinct",
+    "domain": "Food|Writing",
+    "fact1": "User is allergic to dairy.",
+    "fact2": "User writes poetry."
+  },
+  {
+    "id": 481,
+    "label": "distinct",
+    "domain": "Nature|History",
+    "fact1": "User enjoys identifying different types of flowers.",
+    "fact2": "User is researching the history of the Renaissance."
+  },
+  {
+    "id": 482,
+    "label": "distinct",
+    "domain": "Art|Astronomy",
+    "fact1": "User enjoys painting portraits.",
+    "fact2": "User is learning about black holes."
+  },
+  {
+    "id": 483,
+    "label": "distinct",
+    "domain": "Crafts|Automotive",
+    "fact1": "User enjoys knitting scarves.",
+    "fact2": "User is looking for a new car battery."
+  },
+  {
+    "id": 484,
+    "label": "distinct",
+    "domain": "Comedy|Philosophy",
+    "fact1": "User enjoys observational humor.",
+    "fact2": "User is interested in existentialism."
+  },
+  {
+    "id": 485,
+    "label": "distinct",
+    "domain": "Travel|Programming",
+    "fact1": "User wants to explore the Canadian Rockies.",
+    "fact2": "User is learning Python for data science."
+  },
+  {
+    "id": 486,
+    "label": "distinct",
+    "domain": "Health|Architecture",
+    "fact1": "User practices meditation.",
+    "fact2": "User admires contemporary architecture."
+  },
+  {
+    "id": 487,
+    "label": "distinct",
+    "domain": "Family|Economics",
+    "fact1": "User has a younger brother.",
+    "fact2": "User is studying behavioral economics."
+  },
+  {
+    "id": 488,
+    "label": "distinct",
+    "domain": "Fashion|Geology",
+    "fact1": "User prefers classic fashion.",
+    "fact2": "User is interested in seismology."
+  },
+  {
+    "id": 489,
+    "label": "distinct",
+    "domain": "Science|Mythology",
+    "fact1": "User is fascinated by the concept of wormholes.",
+    "fact2": "User enjoys reading about Viking mythology."
+  },
+  {
+    "id": 490,
+    "label": "distinct",
+    "domain": "Business|Psychology",
+    "fact1": "User is interested in strategic planning.",
+    "fact2": "User is reading about social psychology."
+  },
+  {
+    "id": 491,
+    "label": "distinct",
+    "domain": "Adventure|Culinary",
+    "fact1": "User enjoys white water rafting.",
+    "fact2": "User is learning to make homemade pasta."
+  },
+  {
+    "id": 492,
+    "label": "distinct",
+    "domain": "Environment|Linguistics",
+    "fact1": "User is passionate about recycling.",
+    "fact2": "User is studying the phonetics of French."
+  },
+  {
+    "id": 493,
+    "label": "distinct",
+    "domain": "Technology|Literature",
+    "fact1": "User is excited about the potential of AI.",
+    "fact2": "User is reading 'The Lord of the Rings'."
+  },
+  {
+    "id": 494,
+    "label": "distinct",
+    "domain": "Health|Engineering",
+    "fact1": "User eats a balanced diet.",
+    "fact2": "User is studying mechanical engineering."
+  },
+  {
+    "id": 495,
+    "label": "distinct",
+    "domain": "Travel|Music",
+    "fact1": "User wants to visit Southeast Asia.",
+    "fact2": "User enjoys listening to jazz music."
+  },
+  {
+    "id": 496,
+    "label": "distinct",
+    "domain": "Work|Fitness",
+    "fact1": "User works in the tech industry.",
+    "fact2": "User is training for a half marathon."
+  },
+  {
+    "id": 497,
+    "label": "distinct",
+    "domain": "Hobbies|Education",
+    "fact1": "User enjoys collecting vintage toys.",
+    "fact2": "User is taking an online course in digital marketing."
+  },
+  {
+    "id": 498,
+    "label": "distinct",
+    "domain": "Dietary|Technology",
+    "fact1": "User is vegan.",
+    "fact2": "User is interested in virtual reality."
+  },
+  {
+    "id": 499,
+    "label": "distinct",
+    "domain": "Pets|Finance",
+    "fact1": "User has a cat named Whiskers.",
+    "fact2": "User is saving for a down payment on a house."
+  },
+  {
+    "id": 500,
+    "label": "distinct",
+    "domain": "Sports|Art",
+    "fact1": "User enjoys playing soccer.",
+    "fact2": "User is learning pottery."
+  }
+]

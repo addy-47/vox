@@ -96,6 +96,10 @@ impl ConversationManager {
         }
     }
 
+    pub fn total_token_count(&self) -> usize {
+        self.total_token_count
+    }
+
     pub fn set_max_context_tokens(&mut self, max_tokens: usize) {
         if max_tokens > 0 {
             self.max_context_tokens = max_tokens;
