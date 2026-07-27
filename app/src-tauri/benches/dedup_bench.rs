@@ -50,6 +50,15 @@ enum Commands {
         output: Option<PathBuf>,
     },
 
+    /// Score a JSON dataset of fact pairs and output complete raw scores
+    BatchPairScore {
+        #[arg(short, long)]
+        input: PathBuf,
+
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+
     /// Inspect facts directly in an existing SQLite database file
     Db {
         #[arg(short, long)]
@@ -250,6 +259,83 @@ async fn main() -> Result<()> {
 
             fs::write(&out_file, serde_json::to_string_pretty(&report_json)?)?;
             println!("Saved detailed QA audit report to: {:?}", out_file);
+        }
+
+        Commands::BatchPairScore { input, output } => {
+            println!("=================================================================");
+            println!(" NATIVE RUST GATE 1 BATCH PAIR SCORING BENCHMARK");
+            println!(" Input Dataset: {:?}", input);
+            println!(" Output Destination: {:?}", output);
+            println!("=================================================================\n");
+
+            if !input.exists() {
+                anyhow::bail!("Input JSON dataset file does not exist: {:?}", input);
+            }
+
+            ensure_embedder_loaded(true)?;
+
+            let content = fs::read_to_string(&input)?;
+            let items: Vec<Value> = serde_json::from_str(&content)?;
+
+            println!("Loaded {} pairs from input dataset.", items.len());
+
+            let mut raw_results = Vec::new();
+            let start_all = Instant::now();
+
+            for (idx, item) in items.iter().enumerate() {
+                let id = item["id"].as_i64().unwrap_or(idx as i64 + 1);
+                let label = item["label"].as_str().unwrap_or("unknown").to_string();
+                let domain = item["domain"].as_str().unwrap_or("general").to_string();
+                let fact1 = item["fact1"].as_str().unwrap_or("").trim().to_string();
+                let fact2 = item["fact2"].as_str().unwrap_or("").trim().to_string();
+
+                let jacc_sim = jaccard_similarity(&fact1, &fact2);
+
+                let emb_start = Instant::now();
+                let emb1 = generate_embedding(&fact1)?;
+                let emb2 = generate_embedding(&fact2)?;
+                let emb_duration_us = emb_start.elapsed().as_micros();
+
+                let cos_sim = match (emb1, emb2) {
+                    (Some(v1), Some(v2)) => cosine_similarity(&v1, &v2),
+                    _ => 0.0f32,
+                };
+
+                raw_results.push(serde_json::json!({
+                    "id": id,
+                    "label": label,
+                    "domain": domain,
+                    "fact1": fact1,
+                    "fact2": fact2,
+                    "jaccard_similarity": jacc_sim,
+                    "cosine_similarity": cos_sim,
+                    "embedding_latency_us": emb_duration_us
+                }));
+
+                if (idx + 1) % 100 == 0 || (idx + 1) == items.len() {
+                    println!("Processed {} / {} pairs...", idx + 1, items.len());
+                }
+            }
+
+            let total_duration = start_all.elapsed();
+
+            if let Some(parent) = output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+
+            let output_json = serde_json::json!({
+                "total_pairs": items.len(),
+                "total_duration_ms": total_duration.as_millis(),
+                "avg_pair_latency_ms": total_duration.as_secs_f64() * 1000.0 / items.len().max(1) as f64,
+                "raw_scores": raw_results
+            });
+
+            fs::write(&output, serde_json::to_string_pretty(&output_json)?)?;
+            println!("\nSuccessfully completed scoring!");
+            println!("Total time: {:.2}s ({:.2} ms/pair)", 
+                     total_duration.as_secs_f64(), 
+                     total_duration.as_secs_f64() * 1000.0 / items.len().max(1) as f64);
+            println!("Raw output persisted to: {:?}", output);
         }
 
         Commands::Db { db_path } => {
