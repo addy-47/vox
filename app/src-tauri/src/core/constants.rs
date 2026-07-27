@@ -148,33 +148,7 @@ Goals: Longer-horizon aspirations or objectives without an immediate checklist i
 - Projects vs Experiences: In-progress or active build -> Projects. Finished or shipped build -> Experiences.
 - Tasks vs Goals: Near-term checkable to-do (days) -> Tasks. Long-horizon aspiration (months/years) -> Goals.
 - Identity vs Experiences: Currently true present role/descriptor -> Identity. Past role/event -> Experiences.
-</boundary_disambiguation>
-
-<example>
-<input>
-User: Hey! I'm Sarah, wrapping up a TypeScript project called EcoTrack today.
-Assistant: How's it coming along?
-User: Good, but I'm beat, coding since 7am. I need a matcha latte - love matcha but I'm dairy-free, so oat milk only.
-Assistant: Got it. What's left on EcoTrack?
-User: Write the README, push final commits. Also my sister Emma visits tomorrow so I need to clean my desk.
-Assistant: Any plans for the rest of the year?
-User: Training for my first half-marathon in October, so I need to stick to my running schedule.
-</input>
-<output>
-{
-  "Identity": ["The user's name is Sarah."],
-  "Constraints": ["The user is dairy-free and must use oat milk instead of dairy."],
-  "Preferences": ["The user loves matcha lattes made with oat milk."],
-  "Relationships": ["The user has a sister named Emma."],
-  "Skills": ["The user has TypeScript programming skills."],
-  "Projects": ["The user is building a TypeScript project called EcoTrack."],
-  "Experiences": [],
-  "Context": ["Sarah gave an update on her EcoTrack project and her plans for the day, including Emma's visit tomorrow and her half-marathon training."],
-  "Tasks": ["The user needs to write the README and push final commits for EcoTrack.", "The user needs to clean her desk before Emma visits tomorrow."],
-  "Goals": ["The user is training to run her first half-marathon in October."]
-}
-</output>
-</example>"#;
+</boundary_disambiguation>"#;
 
 use serde::{Deserialize, Serialize};
 

@@ -1,13 +1,15 @@
 //! ============================================================================
-//! nli_bench.rs — ONNX DeBERTa-v3-xsmall NLI Classification Benchmark
+//! nli_bench.rs — Vox v7 Gate 2 DeBERTa-v3 NLI Domain Precision Benchmark
 //! ============================================================================
-//! Category     : Benchmark
-//! Component    : NLI Classifier Engine (`vox_lib::services::memory::nli`)
-//! Prerequisites: Local ONNX NLI model at `~/.vox/models/nli/deberta-v3-xsmall-nli/`
-//! Execution    : cargo test --bench nli_bench
+//! Category     : Benchmark / Audit Harness
+//! Component    : NLI State Resolution Engine (`vox_lib::services::memory::nli`)
+//! Architecture : Vox v7 6-Domain Cognitive Memory Spec (Section 5 / Gate 2)
+//! Prerequisites: Local ONNX NLI model at `~/.vox/models/nli/deberta-v3-xsmall/`
+//! Execution    : cargo test --bench nli_bench -- batch-nli-score --input <JSON> --output <JSON>
 //! ============================================================================
 
 use anyhow::{anyhow, Result};
+use clap::{Parser, Subcommand};
 use ndarray::Array2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -15,6 +17,32 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tokenizers::Tokenizer;
+
+#[derive(Parser, Debug)]
+#[command(name = "nli_bench")]
+#[command(about = "Vox v7 Gate 2 DeBERTa-v3 NLI Domain Precision Benchmark", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Batch test domain NLI fact pairs from a JSON dataset
+    BatchNliScore {
+        /// Path to input JSON dataset file (e.g. sandbox/datasets/gate2_nli_400_pairs.json)
+        #[arg(short, long)]
+        input: PathBuf,
+
+        /// Path to output JSON result file (e.g. sandbox/results/gate2_nli_raw_scores.json)
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Optional model directory override (defaults to ~/.vox/models/nli/deberta-v3-xsmall)
+        #[arg(short, long)]
+        model_dir: Option<PathBuf>,
+    },
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 enum NliLabel {
@@ -24,7 +52,6 @@ enum NliLabel {
 }
 
 impl NliLabel {
-    #[allow(dead_code)]
     fn as_str(&self) -> &'static str {
         match self {
             Self::Contradiction => "CONTRADICTION",
@@ -32,20 +59,65 @@ impl NliLabel {
             Self::Neutral => "NEUTRAL",
         }
     }
+
+    fn from_str_lenient(s: &str) -> Option<Self> {
+        let u = s.trim().to_uppercase();
+        if u.contains("CONTRADICT") {
+            Some(Self::Contradiction)
+        } else if u.contains("ENTAIL") {
+            Some(Self::Entailment)
+        } else if u.contains("NEUTRAL") {
+            Some(Self::Neutral)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
-struct TestPair {
+struct InputNliPair {
+    id: usize,
+    domain: String,
     premise: String,
     hypothesis: String,
-    label: String, // "Entailment", "Contradiction", "Neutral"
-    category: String,
-    language: String,
+    expected_label: String,
 }
 
-struct ModelConfig {
-    name: String,
-    dir_name: String,
+#[derive(Debug, Serialize)]
+struct LabelProbabilities {
+    entailment: f32,
+    contradiction: f32,
+    neutral: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct OutputPairScore {
+    id: usize,
+    domain: String,
+    premise: String,
+    hypothesis: String,
+    expected_label: String,
+    predicted_label: String,
+    is_match: bool,
+    probabilities: LabelProbabilities,
+    max_probability: f32,
+    latency_us: u128,
+}
+
+#[derive(Debug, Serialize)]
+struct NliBatchSummary {
+    total_pairs_scored: usize,
+    total_matches: usize,
+    overall_accuracy_pct: f64,
+    domain_accuracies: HashMap<String, f64>,
+    total_duration_ms: f64,
+    avg_pair_latency_ms: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct NliBatchOutput {
+    summary: NliBatchSummary,
+    raw_results: Vec<OutputPairScore>,
 }
 
 struct ModelInstance {
@@ -69,7 +141,7 @@ impl ModelInstance {
         let tokenizer_path = dir.join("tokenizer.json");
 
         if !model_path.exists() || !tokenizer_path.exists() {
-            return Err(anyhow!("Missing files in {:?}", dir));
+            return Err(anyhow!("Missing model/tokenizer files in {:?}", dir));
         }
 
         let model_size_bytes = fs::metadata(&model_path)?.len();
@@ -82,7 +154,7 @@ impl ModelInstance {
             .map_err(|e| anyhow!("{:?}", e))?
             .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
             .map_err(|e| anyhow!("{:?}", e))?
-            .with_intra_threads(1)
+            .with_intra_threads(2)
             .map_err(|e| anyhow!("{:?}", e))?
             .commit_from_file(&model_path)
             .map_err(|e| anyhow!("{:?}", e))?;
@@ -115,16 +187,9 @@ impl ModelInstance {
         let ent_idx = logits_ent.iter().enumerate().max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap().0;
         let con_idx = logits_con.iter().enumerate().max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap().0;
 
-        // Ensure indices do not collide (fallback to standard mapping if calibration is unstable)
         if ent_idx == con_idx {
-            println!("  [WARN] Calibration collision for {}. Falling back to default labels.", self.name);
-            if self.name.contains("BART") {
-                self.class_mapping = [NliLabel::Contradiction, NliLabel::Neutral, NliLabel::Entailment];
-            } else if self.name.contains("mDeBERTa") {
-                self.class_mapping = [NliLabel::Contradiction, NliLabel::Entailment, NliLabel::Neutral];
-            } else {
-                self.class_mapping = [NliLabel::Contradiction, NliLabel::Entailment, NliLabel::Neutral];
-            }
+            println!("  [WARN] Calibration collision for {}. Using default mapping.", self.name);
+            self.class_mapping = [NliLabel::Contradiction, NliLabel::Entailment, NliLabel::Neutral];
         } else {
             let mut indices = vec![0, 1, 2];
             indices.retain(|&x| x != ent_idx && x != con_idx);
@@ -135,8 +200,8 @@ impl ModelInstance {
             self.class_mapping[neu_idx] = NliLabel::Neutral;
         }
 
-        println!("  Calibrated Mapping for {}: [0: {:?}, 1: {:?}, 2: {:?}]", 
-                 self.name, self.class_mapping[0], self.class_mapping[1], self.class_mapping[2]);
+        println!("  Calibrated Mapping for {}: [0: {:?}, 1: {:?}, 2: {:?}] (Model Size: {:.1} MB)", 
+                 self.name, self.class_mapping[0], self.class_mapping[1], self.class_mapping[2], self.model_size_mb);
 
         Ok(())
     }
@@ -185,248 +250,172 @@ impl ModelInstance {
         Ok(vec![logits_array[[0, 0]], logits_array[[0, 1]], logits_array[[0, 2]]])
     }
 
-    fn predict(&mut self, premise: &str, hypothesis: &str) -> Result<(NliLabel, f32, u128)> {
+    fn predict_full(&mut self, premise: &str, hypothesis: &str) -> Result<(NliLabel, LabelProbabilities, f32, u128)> {
         let start = Instant::now();
         let logits = self.raw_predict(premise, hypothesis)?;
-        let elapsed = start.elapsed().as_nanos(); // use nanoseconds for high precision
+        let elapsed_us = start.elapsed().as_micros();
 
-        // Softmax
         let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         let exps: Vec<f32> = logits.iter().map(|&l| (l - max_logit).exp()).collect();
         let sum_exp: f32 = exps.iter().sum();
         let probs: Vec<f32> = exps.iter().map(|e| e / sum_exp).collect();
 
+        let mut prob_map = HashMap::new();
+        for (i, &p) in probs.iter().enumerate() {
+            prob_map.insert(self.class_mapping[i], p);
+        }
+
+        let p_ent = prob_map.get(&NliLabel::Entailment).cloned().unwrap_or(0.0);
+        let p_con = prob_map.get(&NliLabel::Contradiction).cloned().unwrap_or(0.0);
+        let p_neu = prob_map.get(&NliLabel::Neutral).cloned().unwrap_or(0.0);
+
         let (max_idx, &max_prob) = probs.iter().enumerate().max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap();
         let label = self.class_mapping[max_idx];
 
-        Ok((label, max_prob, elapsed))
+        let probabilities = LabelProbabilities {
+            entailment: p_ent,
+            contradiction: p_con,
+            neutral: p_neu,
+        };
+
+        Ok((label, probabilities, max_prob, elapsed_us))
     }
 }
 
-fn main() -> Result<()> {
-    let home = dirs::home_dir().expect("Could not find home directory");
-    let nli_dir = home.join(".vox").join("models").join("nli");
-    let test_suite_path = PathBuf::from("/home/addy/projects/apps/vox/temp/nli_test_suite.json");
-
-    if !test_suite_path.exists() {
-        return Err(anyhow!("Test suite file not found at {:?}", test_suite_path));
+fn resolve_model_dir(override_dir: Option<PathBuf>) -> PathBuf {
+    if let Some(d) = override_dir {
+        return d;
     }
 
-    println!("Loading test suite from {:?}...", test_suite_path);
-    let suite_content = fs::read_to_string(&test_suite_path)?;
-    let test_cases: Vec<TestPair> = serde_json::from_str(&suite_content)?;
-    println!("Loaded {} test pairs successfully!", test_cases.len());
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let default_path = PathBuf::from(home).join(".vox/models/nli/deberta-v3-xsmall");
+    if default_path.exists() {
+        return default_path;
+    }
 
-    let configs = vec![
-        ModelConfig {
-            name: "nli-MiniLM2-L6-H768".to_string(),
-            dir_name: "nli-minilm2-l6-h768".to_string(),
-        },
-        ModelConfig {
-            name: "DeBERTa-v3-xSmall-NLI".to_string(),
-            dir_name: "deberta-v3-xsmall".to_string(),
-        },
-        ModelConfig {
-            name: "DeBERTa-v3-Small-NLI".to_string(),
-            dir_name: "deberta-v3-small-nli".to_string(),
-        },
-        ModelConfig {
-            name: "DeBERTa-v3-base-mnli-ONNX".to_string(),
-            dir_name: "deberta-v3-base-mnli-onnx".to_string(),
-        },
-        ModelConfig {
-            name: "mDeBERTa-v3-base".to_string(),
-            dir_name: "mdeberta-v3-base-xnli".to_string(),
-        },
-        ModelConfig {
-            name: "BART-Large-MNLI".to_string(),
-            dir_name: "bart-large-mnli".to_string(),
-        },
-        ModelConfig {
-            name: "BART-Large-MNLI-ONNX".to_string(),
-            dir_name: "bart-large-mnli-onnx".to_string(),
-        },
-    ];
+    let fallback_path = PathBuf::from("~/.vox/models/nli/deberta-v3-xsmall");
+    fallback_path
+}
 
-    let mut loaded_models = Vec::new();
-    for config in &configs {
-        let path = nli_dir.join(&config.dir_name);
-        println!("\nLoading and calibrating {} from {:?}...", config.name, path);
-        match ModelInstance::load(&config.name, &path) {
-            Ok(model) => {
-                println!("  [SUCCESS] Loaded. Size: {:.2} MB", model.model_size_mb);
-                loaded_models.push(model);
-            }
-            Err(e) => {
-                println!("  [FAILED] Failed to load model {}: {}", config.name, e);
-            }
+fn run_batch_nli_score(input: PathBuf, output: PathBuf, model_dir_opt: Option<PathBuf>) -> Result<()> {
+    println!("=================================================================");
+    println!(" VOX v7 GATE 2 DEBERTA-V3 NLI DOMAIN PRECISION BENCHMARK");
+    println!(" Input Dataset: {:?}", input);
+    println!(" Output Destination: {:?}", output);
+    println!("=================================================================");
+
+    if !input.exists() {
+        return Err(anyhow!("Input JSON dataset file does not exist: {:?}", input));
+    }
+
+    let model_dir = resolve_model_dir(model_dir_opt);
+    println!("Loading DeBERTa ONNX model from: {:?}", model_dir);
+    let mut model = ModelInstance::load("DeBERTa-v3-xsmall", &model_dir)?;
+
+    let input_bytes = fs::read(&input)?;
+    let pairs: Vec<InputNliPair> = serde_json::from_slice(&input_bytes)?;
+    println!("Loaded {} pairs from input dataset.", pairs.len());
+
+    let mut output_scores = Vec::with_capacity(pairs.len());
+    let mut total_matches = 0;
+    let mut domain_total: HashMap<String, usize> = HashMap::new();
+    let mut domain_matches: HashMap<String, usize> = HashMap::new();
+
+    let total_start = Instant::now();
+
+    for (idx, p) in pairs.iter().enumerate() {
+        let (raw_pred_label, probs, max_prob, elapsed_us) = model.predict_full(&p.premise, &p.hypothesis)?;
+
+        // Apply Vox v7 NLI confidence threshold (0.85):
+        // If model's confidence for ENTAILMENT or CONTRADICTION is < 0.85, fall back to NEUTRAL.
+        let final_pred_label = match raw_pred_label {
+            NliLabel::Entailment if probs.entailment < 0.85 => NliLabel::Neutral,
+            NliLabel::Contradiction if probs.contradiction < 0.85 => NliLabel::Neutral,
+            other => other,
+        };
+
+        let expected_opt = NliLabel::from_str_lenient(&p.expected_label);
+        let is_match = match expected_opt {
+            Some(exp) => exp == final_pred_label,
+            None => false,
+        };
+
+        if is_match {
+            total_matches += 1;
+            *domain_matches.entry(p.domain.clone()).or_insert(0) += 1;
         }
-    }
+        *domain_total.entry(p.domain.clone()).or_insert(0) += 1;
 
-    if loaded_models.is_empty() {
-        return Err(anyhow!("No models could be loaded."));
-    }
-
-    println!("\n==========================================================================");
-    println!("  RUNNING BULK MULTI-LINGUAL BENCHMARK ON {} PAIRS", test_cases.len());
-    println!("==========================================================================");
-
-    // Track detailed results for final report
-    struct ModelMetrics {
-        name: String,
-        size_mb: f64,
-        total_latency_ns: u128,
-        total_correct: usize,
-        category_correct: HashMap<String, usize>,
-        category_total: HashMap<String, usize>,
-        lang_correct: HashMap<String, usize>,
-        lang_total: HashMap<String, usize>,
-    }
-
-    let mut metrics_report = Vec::new();
-
-    for model in &mut loaded_models {
-        println!("Evaluating {}...", model.name);
-        let mut total_latency_ns = 0;
-        let mut total_correct = 0;
-        let mut category_correct = HashMap::new();
-        let mut category_total = HashMap::new();
-        let mut lang_correct = HashMap::new();
-        let mut lang_total = HashMap::new();
-
-        // Warmup pass
-        for tc in test_cases.iter().take(50) {
-            let _ = model.predict(&tc.premise, &tc.hypothesis)?;
-        }
-
-        // Real pass
-        for tc in &test_cases {
-            let (predicted_label, _, lat_ns) = model.predict(&tc.premise, &tc.hypothesis)?;
-            total_latency_ns += lat_ns;
-
-            let expected_label = match tc.label.as_str() {
-                "Entailment" => NliLabel::Entailment,
-                "Contradiction" => NliLabel::Contradiction,
-                _ => NliLabel::Neutral,
-            };
-
-            let is_correct = predicted_label == expected_label;
-            
-            // Stats updates
-            *lang_total.entry(tc.language.clone()).or_insert(0) += 1;
-            *category_total.entry(tc.category.clone()).or_insert(0) += 1;
-            
-            if is_correct {
-                total_correct += 1;
-                *lang_correct.entry(tc.language.clone()).or_insert(0) += 1;
-                *category_correct.entry(tc.category.clone()).or_insert(0) += 1;
-            }
-        }
-
-        metrics_report.push(ModelMetrics {
-            name: model.name.clone(),
-            size_mb: model.model_size_mb,
-            total_latency_ns,
-            total_correct,
-            category_correct,
-            category_total,
-            lang_correct,
-            lang_total,
+        output_scores.push(OutputPairScore {
+            id: p.id,
+            domain: p.domain.clone(),
+            premise: p.premise.clone(),
+            hypothesis: p.hypothesis.clone(),
+            expected_label: p.expected_label.clone(),
+            predicted_label: final_pred_label.as_str().to_string(),
+            is_match,
+            probabilities: probs,
+            max_probability: max_prob,
+            latency_us: elapsed_us,
         });
-    }
 
-    // Output Markdown Report
-    let mut markdown = String::new();
-    markdown.push_str("# Local NLI Model Benchmark Validation Report\n\n");
-    markdown.push_str(&format!("Generated across **{}** generated English & Hindi test cases.\n\n", test_cases.len()));
-    
-    markdown.push_str("## Overall Model Summary\n\n");
-    markdown.push_str("| Model | Disk Size (MB) | Accuracy | Avg Latency (CPU) |\n");
-    markdown.push_str("| :--- | :---: | :---: | :---: |\n");
-    
-    for m in &metrics_report {
-        let acc = (m.total_correct as f64 / test_cases.len() as f64) * 100.0;
-        let avg_lat_ms = (m.total_latency_ns as f64 / test_cases.len() as f64) / 1_000_000.0;
-        markdown.push_str(&format!("| **{}** | {:.2} MB | **{:.2}%** | {:.2} ms |\n", m.name, m.size_mb, acc, avg_lat_ms));
-    }
-    markdown.push_str("\n---\n\n## Accuracy Breakdown by Language\n\n");
-    
-    // Header for lang table
-    let mut lang_header = "| Model ".to_string();
-    let mut lang_sub = "| :--- ".to_string();
-    let mut languages: Vec<String> = test_cases.iter().map(|t| t.language.clone()).collect();
-    languages.sort();
-    languages.dedup();
-    
-    for l in &languages {
-        lang_header.push_str(&format!("| {} Accuracy ", l));
-        lang_sub.push_str("| :---: ");
-    }
-    lang_header.push_str("|\n");
-    lang_sub.push_str("|\n");
-    markdown.push_str(&lang_header);
-    markdown.push_str(&lang_sub);
-
-    for m in &metrics_report {
-        let mut row = format!("| **{}** ", m.name);
-        for l in &languages {
-            let correct = m.lang_correct.get(l).cloned().unwrap_or(0);
-            let total = m.lang_total.get(l).cloned().unwrap_or(0);
-            let pct = if total > 0 { (correct as f64 / total as f64) * 100.0 } else { 0.0 };
-            row.push_str(&format!("| {:.2}% ({}/{}) ", pct, correct, total));
+        if (idx + 1) % 50 == 0 || (idx + 1) == pairs.len() {
+            println!("Processed {} / {} pairs...", idx + 1, pairs.len());
         }
-        row.push_str("|\n");
-        markdown.push_str(&row);
     }
 
-    markdown.push_str("\n---\n\n## Accuracy Breakdown by Semantic Category\n\n");
-    let mut cat_header = "| Model ".to_string();
-    let mut cat_sub = "| :--- ".to_string();
-    let mut categories: Vec<String> = test_cases.iter().map(|t| t.category.clone()).collect();
-    categories.sort();
-    categories.dedup();
-    
-    for c in &categories {
-        cat_header.push_str(&format!("| {} ", c));
-        cat_sub.push_str("| :---: ");
-    }
-    cat_header.push_str("|\n");
-    cat_sub.push_str("|\n");
-    markdown.push_str(&cat_header);
-    markdown.push_str(&cat_sub);
+    let total_duration_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+    let avg_pair_latency_ms = if !pairs.is_empty() { total_duration_ms / pairs.len() as f64 } else { 0.0 };
+    let overall_accuracy = if !pairs.is_empty() { (total_matches as f64 / pairs.len() as f64) * 100.0 } else { 0.0 };
 
-    for m in &metrics_report {
-        let mut row = format!("| **{}** ", m.name);
-        for c in &categories {
-            let correct = m.category_correct.get(c).cloned().unwrap_or(0);
-            let total = m.category_total.get(c).cloned().unwrap_or(0);
-            let pct = if total > 0 { (correct as f64 / total as f64) * 100.0 } else { 0.0 };
-            row.push_str(&format!("| {:.1}% ", pct));
+    let mut domain_accuracies = HashMap::new();
+    for (d, tot) in &domain_total {
+        let mat = domain_matches.get(d).cloned().unwrap_or(0);
+        let acc = if *tot > 0 { (mat as f64 / *tot as f64) * 100.0 } else { 0.0 };
+        domain_accuracies.insert(d.clone(), acc);
+    }
+
+    let summary = NliBatchSummary {
+        total_pairs_scored: pairs.len(),
+        total_matches,
+        overall_accuracy_pct: overall_accuracy,
+        domain_accuracies,
+        total_duration_ms,
+        avg_pair_latency_ms,
+    };
+
+    let batch_output = NliBatchOutput {
+        summary,
+        raw_results: output_scores,
+    };
+
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let output_json = serde_json::to_string_pretty(&batch_output)?;
+    fs::write(&output, output_json)?;
+
+    println!("\n=================================================================");
+    println!(" BENCHMARK COMPLETE");
+    println!(" Overall Accuracy: {:.2}% ({}/{} matches)", overall_accuracy, total_matches, pairs.len());
+    for (dom, acc) in &batch_output.summary.domain_accuracies {
+        println!("   Domain '{}': {:.2}%", dom, acc);
+    }
+    println!(" Total Time: {:.2}s ({:.2} ms/pair)", total_duration_ms / 1000.0, avg_pair_latency_ms);
+    println!(" Output persisted to: {:?}", output);
+    println!("=================================================================");
+
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::BatchNliScore { input, output, model_dir } => {
+            run_batch_nli_score(input, output, model_dir)?;
         }
-        row.push_str("|\n");
-        markdown.push_str(&row);
     }
-
-    fs::write("/home/addy/projects/apps/vox/temp/nli_benchmark_report.md", markdown)?;
-    println!("\n[SUCCESS] Final Markdown Report written to: /home/addy/projects/apps/vox/temp/nli_benchmark_report.md");
-
-    // Print beautiful console report
-    println!("\n==========================================================================");
-    println!(" FINAL LOCAL NLI BENCHMARK REPORT (Console Summary)");
-    println!("==========================================================================");
-    println!("{:<28} | {:<12} | {:<12} | {:<16} | {:<15}", "MODEL", "DISK SIZE", "AVG LATENCY", "ENGLISH ACCURACY", "OVERALL ACCURACY");
-    println!("-------------------------------------------------------------------------------------------------------");
-    for m in &metrics_report {
-        let acc = (m.total_correct as f64 / test_cases.len() as f64) * 100.0;
-        let avg_lat_ms = (m.total_latency_ns as f64 / test_cases.len() as f64) / 1_000_000.0;
-        
-        let eng_correct = m.lang_correct.get("English").cloned().unwrap_or(0);
-        let eng_total = m.lang_total.get("English").cloned().unwrap_or(0);
-        let eng_acc = if eng_total > 0 { (eng_correct as f64 / eng_total as f64) * 100.0 } else { 0.0 };
-        
-        println!("{:<28} | {:<12.2} MB | {:<12.2} ms | {:<15.2}% | {:<15.2}%", m.name, m.size_mb, avg_lat_ms, eng_acc, acc);
-    }
-    println!("==========================================================================");
 
     Ok(())
 }

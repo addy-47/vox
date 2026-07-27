@@ -1,0 +1,96 @@
+{
+  "total_pairs_scored": 500,
+  "total_duration_ms": 14846,
+  "avg_pair_latency_ms": 29.692774546,
+  "score_distribution_by_label": {
+    "duplicate": {
+      "count": 150,
+      "mean": 0.8673549718658129,
+      "min": 0.18248741328716278,
+      "max": 0.9903967380523682,
+      "p50": 0.9091053009033203,
+      "p90": 0.97877995967865,
+      "p95": 0.9821802139282226,
+      "p99": 0.9888280230760574
+    },
+    "hard_negative": {
+      "count": 150,
+      "mean": 0.6295765590667725,
+      "min": 0.28452593088150024,
+      "max": 0.9073688983917236,
+      "p50": 0.6358385384082794,
+      "p90": 0.8108752071857452,
+      "p95": 0.8465275555849074,
+      "p99": 0.8918139612674713
+    },
+    "distinct": {
+      "count": 200,
+      "mean": 0.19594238950987347,
+      "min": -0.007318695075809956,
+      "max": 0.46970999240875244,
+      "p50": 0.18867529928684235,
+      "p90": 0.32087612450122827,
+      "p95": 0.3672741875052451,
+      "p99": 0.4623351961374283
+    }
+  },
+  "threshold_evaluation": {
+    "threshold_0.90": {
+      "threshold": 0.9,
+      "duplicate_recall_pct": 56.0,
+      "duplicate_detected_count": 84,
+      "duplicate_total_count": 150,
+      "hard_negative_false_inactivation_count": 1,
+      "distinct_false_inactivation_count": 0,
+      "total_false_inactivations": 1,
+      "false_inactivation_samples": [
+        {
+          "lbl": "hard_negative",
+          "cos": 0.9073688983917236,
+          "f1": "User wants daily summary notifications.",
+          "f2": "User wants weekly summary notifications."
+        }
+      ]
+    },
+    "threshold_0.95": {
+      "threshold": 0.95,
+      "duplicate_recall_pct": 28.0,
+      "duplicate_detected_count": 42,
+      "duplicate_total_count": 150,
+      "hard_negative_false_inactivation_count": 0,
+      "distinct_false_inactivation_count": 0,
+      "total_false_inactivations": 0,
+      "false_inactivation_samples": []
+    },
+    "threshold_0.96": {
+      "threshold": 0.96,
+      "duplicate_recall_pct": 26.0,
+      "duplicate_detected_count": 39,
+      "duplicate_total_count": 150,
+      "hard_negative_false_inactivation_count": 0,
+      "distinct_false_inactivation_count": 0,
+      "total_false_inactivations": 0,
+      "false_inactivation_samples": []
+    },
+    "threshold_0.97": {
+      "threshold": 0.97,
+      "duplicate_recall_pct": 20.0,
+      "duplicate_detected_count": 30,
+      "duplicate_total_count": 150,
+      "hard_negative_false_inactivation_count": 0,
+      "distinct_false_inactivation_count": 0,
+      "total_false_inactivations": 0,
+      "false_inactivation_samples": []
+    },
+    "threshold_0.98": {
+      "threshold": 0.98,
+      "duplicate_recall_pct": 8.67,
+      "duplicate_detected_count": 13,
+      "duplicate_total_count": 150,
+      "hard_negative_false_inactivation_count": 0,
+      "distinct_false_inactivation_count": 0,
+      "total_false_inactivations": 0,
+      "false_inactivation_samples": []
+    }
+  }
+}

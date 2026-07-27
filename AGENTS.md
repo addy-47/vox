@@ -51,41 +51,37 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 5. Current Phase — Gate 1: Local Model Benchmarking & Edge Verification
+## 5. Current Phase — Vox v7 Architecture Implementation & Gate Validation
 
-### What is being validated
-1. **Class B Intra-Collection NLI** (`Constraints`, `Tasks`, `Goals`) — `deberta-v3-xsmall` ONNX. Candidate filter: `same_collection_candidate_search = 0.40`. NLI threshold: `0.85`.
-2. **Class C Inter-Collection LLM Edge Generation** (`Skills`, `Preferences`, `Projects`, `Experiences`, `Relationships`) — `LFM2.5-230M-Q8_0.gguf`. Candidate filter: `inter_collection_candidate_search = 0.75`.
-3. **Class A Strict Isolation** (`Identity`, `Context`) — zero NLI or LLM calls. Direct write only.
-4. **Deterministic Inverse Edge Mapping** — every forward edge auto-generates its inverse at runtime in SQLite.
+### What is being validated (v7 Specification)
+1. **6 Domain-Agnostic Cognitive Taxonomy**: `Identity`, `Directives`, `Constraints`, `Profile`, `Entities`, `Narrative`.
+2. **Step 2 Soft Vector Deduplication**: `MiniLM-L12` 384d INT8 ONNX (`soft_vector_dedup_threshold = 0.95`).
+3. **Step 4A NLI State Resolution**: `deberta-v3-xsmall` ONNX for `Identity`, `Directives`, `Constraints` ($\ge 0.85$ threshold).
+4. **Step 4B Cognitive Edge Classification**: `LFM2.5-230M` GGUF for `Profile`, `Entities` according to Connection Policy Matrix.
+5. **Operational State Temporal Fetch**: `Directives` bypass vector RAG and fetch active state temporally (`ORDER BY created_at DESC`).
 
-### Collection Taxonomy (`core/constants.rs`)
-| Constant | Collections | Behavior |
+### Domain Taxonomy & Pipeline Setup
+| Domain | Purpose | Evaluation Pipeline | Retrieval Policy |
+|---|---|---|---|
+| **`Identity`** | Core User Identity | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4A NLI | Deterministic SQL (`WHERE status = 'active'`) |
+| **`Directives`** | Agent Operational State / Active Tasks | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4A NLI | Temporal Active Fetch (`ORDER BY created_at DESC`) |
+| **`Constraints`** | Hard Boundaries / Rules | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4A NLI | Dynamic Hybrid Core Budget (8% Cap) |
+| **`Profile`** | User Persona / Tastes | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4B LLM Edge Classifier | Semantic Vector Search (ANN) + Graph Traversal |
+| **`Entities`** | External Knowledge Graph | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4B LLM Edge Classifier | Semantic Vector Search (ANN) + Graph Traversal |
+| **`Narrative`** | Session History Summary | Compaction turn summary | Backward Prepending Context Chain (5% Cap) |
+
+### Pre-Implementation Gate Matrix Status
+| Gate | Target / Component | Status / Outcome |
 |---|---|---|
-| `PM_CLASS_A_COLLECTIONS` | `Identity`, `Context` | Direct isolation. No NLI. No LLM. |
-| `PM_CLASS_B_COLLECTIONS` | `Constraints`, `Tasks`, `Goals` | Intra-collection NLI only. |
-| `PM_CLASS_C_COLLECTIONS` | `Skills`, `Preferences`, `Projects`, `Experiences`, `Relationships` | Inter-collection LLM edge creation only. |
+| **Gate 1** | MiniLM-L12 Soft Vector Dedup Calibration | **PASSED** (Threshold = 0.95, 0.0% false inactivations across 500 pairs, 29.7ms/pair. See `docs/benchmarks/dedup-bench.md`) |
+| **Gate 2** | DeBERTa-v3 NLI Domain Precision Audit | **FAILED** (78.67% overall. Directives = 98.67%, Identity = 76.00%, Constraints = 65.00%. See `docs/benchmarks/nli-precision-bench.md`) |
+| **Gate 3** | LFM2.5-230M Edge Classifier Capabilities Probe | Pending Evaluation |
 
-### Gate 1 Pass Criteria
-| Metric | Target |
-|---|---|
-| Class B NLI latency | < 20ms per pair |
-| Class B NLI accuracy | ≥ 90% |
-| Class C LLM edge latency | < 100ms per pair |
-| Class C edge precision | ≥ 85% vs gold reference |
-| Connection policy compliance | 100% |
-| Inverse edge auto-creation | 100% of forward edges |
-| Class A isolation false-positive rate | 0% |
+### Model Paths & Primary Specs
+- Embedding: `~/.vox/models/embedding/minilm-l12-v2` (384d INT8 ONNX)
+- NLI Engine: `~/.vox/models/nli/deberta-v3-xsmall/model_quantized.onnx`
+- Edge Classifier LLM: `~/.vox/models/llm/LFM2.5-230M-Q8_0.gguf`
+- Architecture Spec: `docs/plans/memory-spec-v7.md`
+- Benchmark Harness: `app/src-tauri/benches/dedup_bench.rs`
 
-### Bans — Never accept as Gate pass
-- Exit code 0 without reading metric output
-- Mock model fallbacks (must run actual local weights)
-- LLM edges between forbidden collections (Class A or Class B intra-collection)
-- Vanity counts ("20 edges created") without checking against connection matrix
-
-### Model Paths & Harness
-- NLI: `~/.vox/models/nli/deberta-v3-xsmall/model_quantized.onnx`
-- Class B LLM: `~/.vox/models/llm/LFM2.5-230M-Q8_0.gguf` (+ `Q4_K_M`, `Q4_0` variants)
-- Embedding: `~/.vox/models/embedding/bge-m3/model_quantized.onnx` (1024-dim)
-- Primary Harness: `benches/vox_multi_session_bench.rs` (`cargo test --bench vox_multi_session_bench`)
-- Specs: `docs/plans/v6-memory-architecture-spec.md`, `docs/features/memory-architecture.md`
+### Proactively update the `AGENTS.md` current phase section to reflect current status.
