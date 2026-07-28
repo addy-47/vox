@@ -115,3 +115,7 @@ To hide repetitive descriptive guidelines (like `"CLICK TO TOGGLE"` or `"TAP TO 
 To ensure visual consistency and neat alignment:
 *   Respect parent container padding: if a parent panel already applies default padding (e.g., `p-3` inside the settings config desks), do not duplicate horizontal padding (`px-3`) or margins (`mx-3`) on child components.
 *   Strictly align all text labels, active tab items, inputs, and gateway cards along the exact same vertical axis (e.g., aligning the `"L"` in `"Local"` or `"G"` in `"Gemini"` with the `"T"` in `"Trigger"`).
+
+---
+
+**Last Updated:** 2026-06-14

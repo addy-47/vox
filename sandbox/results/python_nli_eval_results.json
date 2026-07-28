@@ -1,0 +1,35 @@
+{
+  "dleemiller/finecat-nli-l": {
+    "overall_accuracy": 81.56,
+    "correct": 367,
+    "total": 450,
+    "ms_per_pair": 331.45,
+    "domain_accuracy": {
+      "Identity": 86.0,
+      "Directives": 99.33,
+      "Constraints": 66.0
+    }
+  },
+  "facebook/bart-large-mnli": {
+    "overall_accuracy": 71.56,
+    "correct": 322,
+    "total": 450,
+    "ms_per_pair": 287.36,
+    "domain_accuracy": {
+      "Identity": 81.0,
+      "Directives": 99.33,
+      "Constraints": 46.0
+    }
+  },
+  "cross-encoder/nli-deberta-v3-base": {
+    "overall_accuracy": 82.89,
+    "correct": 373,
+    "total": 450,
+    "ms_per_pair": 107.65,
+    "domain_accuracy": {
+      "Identity": 84.0,
+      "Directives": 98.67,
+      "Constraints": 70.5
+    }
+  }
+}

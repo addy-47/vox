@@ -1,0 +1,228 @@
+{
+  "summary": {
+    "total_evaluated": 10,
+    "total_matches": 2,
+    "overall_accuracy_pct": 20.0,
+    "format_compliance_pct": 100.0,
+    "domain_pair_accuracy": {
+      "Directives -> Entities": 66.66666666666666,
+      "Directives -> Constraints": 0.0,
+      "Profile -> Profile": 0.0,
+      "Entities -> Constraints": 0.0,
+      "Identity -> Profile": 0.0
+    },
+    "label_precision": {
+      "RELATES_TO": 0.0,
+      "RESTRICTS": 0.0,
+      "REQUIRES": 0.0,
+      "NONE": 0.0,
+      "ENABLES": 0.0
+    },
+    "label_recall": {
+      "REQUIRES": 0.0,
+      "RESTRICTS": 0.0,
+      "ENABLES": 0.0,
+      "RELATES_TO": 0.0,
+      "NONE": 0.0
+    },
+    "model_load_ms": 106.98302799999999,
+    "system_prefill_ms": 788.037508,
+    "avg_decode_latency_ms": 2546.1225992,
+    "total_wall_sec": 25.476773491,
+    "engine_type": "Native_llama.cpp_230M_Q4",
+    "model_path": "/home/addy/.vox/models/llm/LFM2.5-230M-Q4_K_M.gguf",
+    "prompt_variant": 2
+  },
+  "results": [
+    {
+      "id": 19,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I need to deploy the web application.",
+      "target_fact": "The application requires a Kubernetes cluster.",
+      "session_narrative": "User is discussing the deployment strategy for an application.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2613.177866
+    },
+    {
+      "id": 29,
+      "domain_pair": "Entities -> Constraints",
+      "source_fact": "The legacy system runs on Windows Server 2008.",
+      "target_fact": "All servers must be patched with the latest security updates monthly.",
+      "session_narrative": "User is discussing server maintenance and security policies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: SHAPES",
+      "predicted_label": "SHAPES",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2384.65204
+    },
+    {
+      "id": 9,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I need to deploy the new microservice.",
+      "target_fact": "All production deployments must pass a security audit.",
+      "session_narrative": "User is planning a deployment and recalling company policies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2398.304555
+    },
+    {
+      "id": 15,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I need to order new office supplies.",
+      "target_fact": "The maximum budget for software licenses is $5000.",
+      "session_narrative": "User is making a purchase request and recalling budget limits.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: SHAPES",
+      "predicted_label": "SHAPES",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2323.9205479999996
+    },
+    {
+      "id": 21,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I want to use the latest AI model for image generation.",
+      "target_fact": "My local machine only has an integrated GPU with 2GB VRAM.",
+      "session_narrative": "User is trying to run a resource-intensive AI task.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: SHAPES",
+      "predicted_label": "SHAPES",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2556.6905979999997
+    },
+    {
+      "id": 6,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "I am a professional athlete.",
+      "target_fact": "I enjoy a sedentary lifestyle with minimal physical activity.",
+      "session_narrative": "User is describing their profession and daily habits.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2307.8872380000003
+    },
+    {
+      "id": 7,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "My name is Alex.",
+      "target_fact": "I prefer coffee over tea.",
+      "session_narrative": "User is introducing themselves and stating a beverage preference.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2525.535946
+    },
+    {
+      "id": 51,
+      "domain_pair": "Profile -> Profile",
+      "source_fact": "I like to maintain a healthy lifestyle.",
+      "target_fact": "I regularly go to the gym.",
+      "session_narrative": "User is talking about their health goals and routines.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: SHAPES",
+      "predicted_label": "SHAPES",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2869.1558929999997
+    },
+    {
+      "id": 1,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "I am a software engineer.",
+      "target_fact": "I enjoy solving complex algorithmic problems.",
+      "session_narrative": "User is discussing their professional background and hobbies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2718.042305
+    },
+    {
+      "id": 17,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I need to analyze the sales data.",
+      "target_fact": "The sales data is stored in a PostgreSQL database.",
+      "session_narrative": "User is planning a data analysis task.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: SHAPES",
+      "predicted_label": "SHAPES",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 2763.859003
+    }
+  ]
+}

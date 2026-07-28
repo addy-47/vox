@@ -39,7 +39,7 @@ pub enum NliRelation {
     Neutral,
 }
 
-pub const NLI_MODEL_DIR: &str = "deberta-v3-xsmall";
+pub const NLI_MODEL_DIR: &str = "nli-deberta-v3-base";
 pub const NLI_MODEL_FILENAME: &str = "model_quantized.onnx";
 pub const TOKENIZER_FILENAME: &str = "tokenizer.json";
 

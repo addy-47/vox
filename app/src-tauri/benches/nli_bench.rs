@@ -324,14 +324,25 @@ fn run_batch_nli_score(input: PathBuf, output: PathBuf, model_dir_opt: Option<Pa
     let total_start = Instant::now();
 
     for (idx, p) in pairs.iter().enumerate() {
-        let (raw_pred_label, probs, max_prob, elapsed_us) = model.predict_full(&p.premise, &p.hypothesis)?;
+        let (pred_label, probs, max_prob, elapsed_us) = model.predict_full(&p.premise, &p.hypothesis)?;
 
-        // Apply Vox v7 NLI confidence threshold (0.85):
-        // If model's confidence for ENTAILMENT or CONTRADICTION is < 0.85, fall back to NEUTRAL.
-        let final_pred_label = match raw_pred_label {
-            NliLabel::Entailment if probs.entailment < 0.85 => NliLabel::Neutral,
-            NliLabel::Contradiction if probs.contradiction < 0.85 => NliLabel::Neutral,
-            other => other,
+        // Vox v7 threshold enforcement: ENTAILMENT or CONTRADICTION requires P >= 0.85, else fallback to NEUTRAL
+        let final_pred_label = match pred_label {
+            NliLabel::Entailment => {
+                if probs.entailment >= 0.85 {
+                    NliLabel::Entailment
+                } else {
+                    NliLabel::Neutral
+                }
+            }
+            NliLabel::Contradiction => {
+                if probs.contradiction >= 0.85 {
+                    NliLabel::Contradiction
+                } else {
+                    NliLabel::Neutral
+                }
+            }
+            NliLabel::Neutral => NliLabel::Neutral,
         };
 
         let expected_opt = NliLabel::from_str_lenient(&p.expected_label);

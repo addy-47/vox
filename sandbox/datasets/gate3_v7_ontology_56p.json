@@ -1,0 +1,564 @@
+{
+  "pairs": [
+    {
+      "id": 1,
+      "source_domain": "Identity",
+      "target_domain": "Profile",
+      "fact_a": "I am a software engineer.",
+      "fact_b": "I enjoy solving complex algorithmic problems.",
+      "context": "User is discussing their professional background and hobbies.",
+      "expected_label": "SHAPES",
+      "rationale": "The user's identity as a software engineer directly shapes their preference for algorithmic problem-solving."
+    },
+    {
+      "id": 2,
+      "source_domain": "Identity",
+      "target_domain": "Profile",
+      "fact_a": "My native language is French.",
+      "fact_b": "I prefer to consume media with original audio and subtitles.",
+      "context": "User is talking about their media consumption habits.",
+      "expected_label": "SHAPES",
+      "rationale": "The user's native language shapes their preference for how they consume foreign language media."
+    },
+    {
+      "id": 3,
+      "source_domain": "Identity",
+      "target_domain": "Profile",
+      "fact_a": "I am a professional chef.",
+      "fact_b": "I frequently experiment with new culinary techniques at home.",
+      "context": "User is describing their work and personal interests.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "The user's professional identity as a chef directly enables and drives their home culinary experimentation."
+    },
+    {
+      "id": 4,
+      "source_domain": "Identity",
+      "target_domain": "Profile",
+      "fact_a": "I am a university professor.",
+      "fact_b": "I enjoy mentoring junior researchers.",
+      "context": "User is discussing their role and preferred activities.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "The user's identity as a professor directly involves and enables the activity of mentoring junior researchers."
+    },
+    {
+      "id": 5,
+      "source_domain": "Identity",
+      "target_domain": "Profile",
+      "fact_a": "I am a strict vegan.",
+      "fact_b": "I love trying new steakhouse restaurants.",
+      "context": "User is talking about their dietary choices and dining preferences.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "Being a strict vegan fundamentally conflicts with the desire to try steakhouse restaurants."
+    },
+    {
+      "id": 6,
+      "source_domain": "Identity",
+      "target_domain": "Profile",
+      "fact_a": "I am a professional athlete.",
+      "fact_b": "I enjoy a sedentary lifestyle with minimal physical activity.",
+      "context": "User is describing their profession and daily habits.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The identity of a professional athlete is inherently contradictory to a sedentary lifestyle."
+    },
+    {
+      "id": 7,
+      "source_domain": "Identity",
+      "target_domain": "Profile",
+      "fact_a": "My name is Alex.",
+      "fact_b": "I prefer coffee over tea.",
+      "context": "User is introducing themselves and stating a beverage preference.",
+      "expected_label": "NONE",
+      "rationale": "There is no causal or logical link between the user's name and their beverage preference."
+    },
+    {
+      "id": 8,
+      "source_domain": "Identity",
+      "target_domain": "Profile",
+      "fact_a": "I am 30 years old.",
+      "fact_b": "I like to read sci-fi novels.",
+      "context": "User is stating their age and a reading hobby.",
+      "expected_label": "NONE",
+      "rationale": "There is no direct causal or logical link between the user's age and their preference for sci-fi novels."
+    },
+    {
+      "id": 9,
+      "source_domain": "Directives",
+      "target_domain": "Constraints",
+      "fact_a": "I need to deploy the new microservice.",
+      "fact_b": "All production deployments must pass a security audit.",
+      "context": "User is planning a deployment and recalling company policies.",
+      "expected_label": "SHAPES",
+      "rationale": "The security audit constraint directly shapes how the deployment directive must be executed."
+    },
+    {
+      "id": 10,
+      "source_domain": "Directives",
+      "target_domain": "Constraints",
+      "fact_a": "I want to schedule a meeting for next week.",
+      "fact_b": "My availability is limited to Tuesdays and Thursdays.",
+      "context": "User is trying to find a time for a meeting.",
+      "expected_label": "SHAPES",
+      "rationale": "The availability constraint directly shapes the possible times for the meeting scheduling directive."
+    },
+    {
+      "id": 11,
+      "source_domain": "Directives",
+      "target_domain": "Constraints",
+      "fact_a": "I need to access the production database.",
+      "fact_b": "You must have valid MFA credentials to access production systems.",
+      "context": "User is attempting to perform a task requiring sensitive access.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "Accessing the production database functionally depends on satisfying the MFA credential constraint first."
+    },
+    {
+      "id": 12,
+      "source_domain": "Directives",
+      "target_domain": "Constraints",
+      "fact_a": "I need to publish the blog post.",
+      "fact_b": "All content must be approved by the editorial team first.",
+      "context": "User is preparing to release new content.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "Publishing the blog post functionally depends on the editorial team's approval constraint being met."
+    },
+    {
+      "id": 13,
+      "source_domain": "Directives",
+      "target_domain": "Constraints",
+      "fact_a": "I want to launch the feature by tomorrow.",
+      "fact_b": "The feature requires a mandatory 2-week QA cycle.",
+      "context": "User is pushing for a quick release, but there's a process.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The directive to launch by tomorrow directly conflicts with the mandatory 2-week QA cycle constraint."
+    },
+    {
+      "id": 14,
+      "source_domain": "Directives",
+      "target_domain": "Constraints",
+      "fact_a": "I need to use the company credit card for personal expenses.",
+      "fact_b": "Company credit cards are strictly for business-related purchases only.",
+      "context": "User is asking about using company resources for personal use.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The directive to use the company card for personal expenses directly conflicts with the company's usage constraint."
+    },
+    {
+      "id": 15,
+      "source_domain": "Directives",
+      "target_domain": "Constraints",
+      "fact_a": "I need to order new office supplies.",
+      "fact_b": "The maximum budget for software licenses is $5000.",
+      "context": "User is making a purchase request and recalling budget limits.",
+      "expected_label": "NONE",
+      "rationale": "The directive to order office supplies has no direct link to the budget constraint for software licenses."
+    },
+    {
+      "id": 16,
+      "source_domain": "Directives",
+      "target_domain": "Constraints",
+      "fact_a": "I need to prepare for my presentation.",
+      "fact_b": "The company enforces a strict dress code for client meetings.",
+      "context": "User is getting ready for an important event.",
+      "expected_label": "NONE",
+      "rationale": "Preparing for a presentation is unrelated to the dress code constraint for client meetings."
+    },
+    {
+      "id": 17,
+      "source_domain": "Directives",
+      "target_domain": "Entities",
+      "fact_a": "I need to analyze the sales data.",
+      "fact_b": "The sales data is stored in a PostgreSQL database.",
+      "context": "User is planning a data analysis task.",
+      "expected_label": "SHAPES",
+      "rationale": "The PostgreSQL database entity shapes how the sales data analysis directive must be performed (e.g., using SQL queries)."
+    },
+    {
+      "id": 18,
+      "source_domain": "Directives",
+      "target_domain": "Entities",
+      "fact_a": "I want to write a new Python script.",
+      "fact_b": "My development environment uses Python 2.7.",
+      "context": "User is starting a new coding task.",
+      "expected_label": "SHAPES",
+      "rationale": "The Python 2.7 entity shapes how the new Python script directive must be written (e.g., syntax, available libraries)."
+    },
+    {
+      "id": 19,
+      "source_domain": "Directives",
+      "target_domain": "Entities",
+      "fact_a": "I need to deploy the web application.",
+      "fact_b": "The application requires a Kubernetes cluster.",
+      "context": "User is discussing the deployment strategy for an application.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "Deploying the web application functionally depends on the existence and availability of a Kubernetes cluster entity."
+    },
+    {
+      "id": 20,
+      "source_domain": "Directives",
+      "target_domain": "Entities",
+      "fact_a": "I need to send out the weekly newsletter.",
+      "fact_b": "The Mailchimp service is used for email campaigns.",
+      "context": "User is preparing to send a mass email.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "Sending the weekly newsletter functionally depends on using the Mailchimp service entity."
+    },
+    {
+      "id": 21,
+      "source_domain": "Directives",
+      "target_domain": "Entities",
+      "fact_a": "I want to use the latest AI model for image generation.",
+      "fact_b": "My local machine only has an integrated GPU with 2GB VRAM.",
+      "context": "User is trying to run a resource-intensive AI task.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The directive to use the latest AI model conflicts with the limited capabilities of the local machine's GPU entity."
+    },
+    {
+      "id": 22,
+      "source_domain": "Directives",
+      "target_domain": "Entities",
+      "fact_a": "I need to collaborate on this document in real-time.",
+      "fact_b": "The team uses an on-premise SharePoint 2010 server.",
+      "context": "User is looking for a way to work together on a document.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The directive for real-time collaboration conflicts with the limited real-time capabilities of an older SharePoint 2010 server entity."
+    },
+    {
+      "id": 23,
+      "source_domain": "Directives",
+      "target_domain": "Entities",
+      "fact_a": "I need to review the pull requests.",
+      "fact_b": "Our team uses Slack for internal communication.",
+      "context": "User is planning their work for the day.",
+      "expected_label": "NONE",
+      "rationale": "Reviewing pull requests is a separate activity from using Slack for communication; there's no direct link."
+    },
+    {
+      "id": 24,
+      "source_domain": "Directives",
+      "target_domain": "Entities",
+      "fact_a": "I need to update my personal website.",
+      "fact_b": "The company uses Jira for project management.",
+      "context": "User is listing personal and work-related tasks.",
+      "expected_label": "NONE",
+      "rationale": "Updating a personal website has no direct link to the company's use of Jira for project management."
+    },
+    {
+      "id": 25,
+      "source_domain": "Entities",
+      "target_domain": "Constraints",
+      "fact_a": "We use AWS S3 for file storage.",
+      "fact_b": "All sensitive data must be encrypted at rest.",
+      "context": "User is discussing cloud storage and data security policies.",
+      "expected_label": "SHAPES",
+      "rationale": "The AWS S3 entity must be configured in a way that shapes its operation to meet the encryption at rest constraint."
+    },
+    {
+      "id": 26,
+      "source_domain": "Entities",
+      "target_domain": "Constraints",
+      "fact_a": "The project uses the Apache Kafka messaging system.",
+      "fact_b": "All message queues must have a retention period of at least 7 days.",
+      "context": "User is describing system architecture and data retention policies.",
+      "expected_label": "SHAPES",
+      "rationale": "The Apache Kafka entity must be configured to shape its behavior to meet the message retention constraint."
+    },
+    {
+      "id": 27,
+      "source_domain": "Entities",
+      "target_domain": "Constraints",
+      "fact_a": "The application uses a custom C++ library.",
+      "fact_b": "The build environment must have GCC 9.3 installed.",
+      "context": "User is describing software dependencies and build requirements.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "The custom C++ library entity functionally depends on the GCC 9.3 compiler constraint being satisfied for compilation."
+    },
+    {
+      "id": 28,
+      "source_domain": "Entities",
+      "target_domain": "Constraints",
+      "fact_a": "The company uses a proprietary VPN client.",
+      "fact_b": "Access to internal network resources requires an active VPN connection.",
+      "context": "User is discussing network access and security protocols.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "Accessing internal resources via the VPN client entity functionally depends on the active VPN connection constraint."
+    },
+    {
+      "id": 29,
+      "source_domain": "Entities",
+      "target_domain": "Constraints",
+      "fact_a": "The legacy system runs on Windows Server 2008.",
+      "fact_b": "All servers must be patched with the latest security updates monthly.",
+      "context": "User is discussing server maintenance and security policies.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The Windows Server 2008 entity (end-of-life) conflicts with the constraint of receiving the latest monthly security updates."
+    },
+    {
+      "id": 30,
+      "source_domain": "Entities",
+      "target_domain": "Constraints",
+      "fact_a": "The project uses an open-source library under the GPLv3 license.",
+      "fact_b": "All deployed code must be proprietary and closed-source.",
+      "context": "User is discussing licensing requirements for a software project.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "Using a GPLv3 licensed library entity conflicts with the constraint that all deployed code must be proprietary and closed-source."
+    },
+    {
+      "id": 31,
+      "source_domain": "Entities",
+      "target_domain": "Constraints",
+      "fact_a": "We use GitHub for version control.",
+      "fact_b": "All team members must attend the weekly standup.",
+      "context": "User is describing team tools and meeting schedules.",
+      "expected_label": "NONE",
+      "rationale": "Using GitHub for version control has no direct link to the constraint of attending weekly standups."
+    },
+    {
+      "id": 32,
+      "source_domain": "Entities",
+      "target_domain": "Constraints",
+      "fact_a": "My laptop has 16GB of RAM.",
+      "fact_b": "The maximum file size for email attachments is 25MB.",
+      "context": "User is listing hardware specs and email limitations.",
+      "expected_label": "NONE",
+      "rationale": "The amount of RAM in a laptop has no direct link to the maximum file size constraint for email attachments."
+    },
+    {
+      "id": 33,
+      "source_domain": "Entities",
+      "target_domain": "Profile",
+      "fact_a": "I primarily use a Mac for development.",
+      "fact_b": "I prefer using Homebrew for package management.",
+      "context": "User is describing their development setup and preferences.",
+      "expected_label": "SHAPES",
+      "rationale": "The Mac entity shapes the user's preference for Homebrew, which is a common package manager for macOS."
+    },
+    {
+      "id": 34,
+      "source_domain": "Entities",
+      "target_domain": "Profile",
+      "fact_a": "My main programming language is JavaScript.",
+      "fact_b": "I enjoy exploring new frontend frameworks.",
+      "context": "User is discussing their primary coding language and related interests.",
+      "expected_label": "SHAPES",
+      "rationale": "The JavaScript entity shapes the user's interest in frontend frameworks, as JavaScript is dominant in that domain."
+    },
+    {
+      "id": 35,
+      "source_domain": "Entities",
+      "target_domain": "Profile",
+      "fact_a": "I own a high-end gaming PC.",
+      "fact_b": "I frequently play graphically intensive video games.",
+      "context": "User is talking about their computer and gaming habits.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "The profile activity of playing graphically intensive games functionally depends on having a high-end gaming PC entity."
+    },
+    {
+      "id": 36,
+      "source_domain": "Entities",
+      "target_domain": "Profile",
+      "fact_a": "I have a subscription to Adobe Creative Cloud.",
+      "fact_b": "I often create complex graphic designs and video edits.",
+      "context": "User is describing their software subscriptions and creative activities.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "The profile activity of creating complex designs and edits functionally depends on having access to the Adobe Creative Cloud entity."
+    },
+    {
+      "id": 37,
+      "source_domain": "Entities",
+      "target_domain": "Profile",
+      "fact_a": "My primary work machine is a Chromebook.",
+      "fact_b": "I need to run Docker containers and virtual machines locally.",
+      "context": "User is discussing their work setup and technical requirements.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The Chromebook entity's capabilities conflict with the profile's need to run Docker containers and virtual machines locally."
+    },
+    {
+      "id": 38,
+      "source_domain": "Entities",
+      "target_domain": "Profile",
+      "fact_a": "I use a 10-year-old smartphone.",
+      "fact_b": "I always want to try the latest augmented reality apps.",
+      "context": "User is talking about their phone and app interests.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The old smartphone entity conflicts with the profile's desire to try the latest augmented reality apps, which often require modern hardware."
+    },
+    {
+      "id": 39,
+      "source_domain": "Entities",
+      "target_domain": "Profile",
+      "fact_a": "I use VSCode for editing.",
+      "fact_b": "I prefer dark theme interface.",
+      "context": "User is describing their coding environment and aesthetic preferences.",
+      "expected_label": "NONE",
+      "rationale": "Using VSCode has no direct link to the preference for a dark theme; they are independent choices."
+    },
+    {
+      "id": 40,
+      "source_domain": "Entities",
+      "target_domain": "Profile",
+      "fact_a": "I have a smart home assistant (Alexa).",
+      "fact_b": "I enjoy cooking Italian food.",
+      "context": "User is listing smart devices and culinary hobbies.",
+      "expected_label": "NONE",
+      "rationale": "Having a smart home assistant has no direct link to the enjoyment of cooking Italian food."
+    },
+    {
+      "id": 41,
+      "source_domain": "Entities",
+      "target_domain": "Entities",
+      "fact_a": "The backend is written in Node.js.",
+      "fact_b": "The database used is MongoDB.",
+      "context": "User is describing the technology stack of a project.",
+      "expected_label": "SHAPES",
+      "rationale": "Node.js often shapes the choice and interaction patterns with MongoDB (e.g., using Mongoose ORM), making them a common pairing."
+    },
+    {
+      "id": 42,
+      "source_domain": "Entities",
+      "target_domain": "Entities",
+      "fact_a": "The project uses React for the frontend.",
+      "fact_b": "The styling framework is Tailwind CSS.",
+      "context": "User is detailing the frontend technologies used.",
+      "expected_label": "SHAPES",
+      "rationale": "React often shapes the integration and preference for styling frameworks like Tailwind CSS due to its component-based nature."
+    },
+    {
+      "id": 43,
+      "source_domain": "Entities",
+      "target_domain": "Entities",
+      "fact_a": "The web application uses a REST API.",
+      "fact_b": "The API is hosted on an Nginx server.",
+      "context": "User is describing the architecture of a web application.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "The web application's REST API entity functionally depends on the Nginx server entity for hosting and serving requests."
+    },
+    {
+      "id": 44,
+      "source_domain": "Entities",
+      "target_domain": "Entities",
+      "fact_a": "The CI/CD pipeline uses GitHub Actions.",
+      "fact_b": "The code repository is hosted on GitHub.",
+      "context": "User is explaining their continuous integration setup.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "The GitHub Actions entity functionally depends on the code repository being hosted on GitHub for its operation."
+    },
+    {
+      "id": 45,
+      "source_domain": "Entities",
+      "target_domain": "Entities",
+      "fact_a": "The project uses Python 2.7.",
+      "fact_b": "A critical dependency requires Python 3.9 or higher.",
+      "context": "User is discussing conflicting software requirements.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The Python 2.7 entity conflicts with the critical dependency entity requiring Python 3.9 or higher."
+    },
+    {
+      "id": 46,
+      "source_domain": "Entities",
+      "target_domain": "Entities",
+      "fact_a": "The application is designed for a single-board computer (Raspberry Pi).",
+      "fact_b": "The required database is Oracle Exadata.",
+      "context": "User is describing hardware and software requirements.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The Raspberry Pi entity (low-power, embedded) fundamentally conflicts with the Oracle Exadata entity (enterprise-grade, high-performance database system)."
+    },
+    {
+      "id": 47,
+      "source_domain": "Entities",
+      "target_domain": "Entities",
+      "fact_a": "I use a mechanical keyboard.",
+      "fact_b": "My monitor is an ultrawide display.",
+      "context": "User is listing their computer peripherals.",
+      "expected_label": "NONE",
+      "rationale": "The type of keyboard has no direct link to the type of monitor used."
+    },
+    {
+      "id": 48,
+      "source_domain": "Entities",
+      "target_domain": "Entities",
+      "fact_a": "The team uses Zoom for video calls.",
+      "fact_b": "Our cloud provider is Google Cloud Platform.",
+      "context": "User is describing communication tools and infrastructure.",
+      "expected_label": "NONE",
+      "rationale": "The team's choice of video conferencing tool has no direct link to their cloud provider."
+    },
+    {
+      "id": 49,
+      "source_domain": "Profile",
+      "target_domain": "Profile",
+      "fact_a": "I prefer working in a quiet environment.",
+      "fact_b": "I often use noise-canceling headphones.",
+      "context": "User is describing their work preferences and habits.",
+      "expected_label": "SHAPES",
+      "rationale": "The preference for a quiet environment shapes the habit of using noise-canceling headphones to achieve that quiet."
+    },
+    {
+      "id": 50,
+      "source_domain": "Profile",
+      "target_domain": "Profile",
+      "fact_a": "I enjoy learning new programming languages.",
+      "fact_b": "I frequently read technical blogs and documentation.",
+      "context": "User is discussing their learning habits and interests.",
+      "expected_label": "SHAPES",
+      "rationale": "The enjoyment of learning new programming languages shapes the habit of reading technical blogs and documentation as a means to learn."
+    },
+    {
+      "id": 51,
+      "source_domain": "Profile",
+      "target_domain": "Profile",
+      "fact_a": "I like to maintain a healthy lifestyle.",
+      "fact_b": "I regularly go to the gym.",
+      "context": "User is talking about their health goals and routines.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "The habit of regularly going to the gym functionally depends on the overarching desire to maintain a healthy lifestyle."
+    },
+    {
+      "id": 52,
+      "source_domain": "Profile",
+      "target_domain": "Profile",
+      "fact_a": "I am a morning person.",
+      "fact_b": "I prefer to schedule important tasks before noon.",
+      "context": "User is describing their daily rhythm and work scheduling preferences.",
+      "expected_label": "DEPENDS_ON",
+      "rationale": "The preference to schedule important tasks before noon functionally depends on the user being a morning person."
+    },
+    {
+      "id": 53,
+      "source_domain": "Profile",
+      "target_domain": "Profile",
+      "fact_a": "I prefer working late past midnight.",
+      "fact_b": "I have a mandatory 6am morning team standup.",
+      "context": "User is discussing their work schedule and team commitments.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The preference for working late past midnight directly conflicts with having a mandatory 6am morning standup."
+    },
+    {
+      "id": 54,
+      "source_domain": "Profile",
+      "target_domain": "Profile",
+      "fact_a": "I enjoy spontaneous travel and last-minute plans.",
+      "fact_b": "I prefer a highly structured daily routine with fixed schedules.",
+      "context": "User is describing their travel habits and daily preferences.",
+      "expected_label": "CONFLICTS_WITH",
+      "rationale": "The enjoyment of spontaneous travel directly conflicts with a preference for a highly structured daily routine."
+    },
+    {
+      "id": 55,
+      "source_domain": "Profile",
+      "target_domain": "Profile",
+      "fact_a": "I prefer coffee over tea.",
+      "fact_b": "I like to read sci-fi novels.",
+      "context": "User is stating beverage preferences and reading hobbies.",
+      "expected_label": "NONE",
+      "rationale": "There is no causal or logical link between preferring coffee over tea and liking to read sci-fi novels."
+    },
+    {
+      "id": 56,
+      "source_domain": "Profile",
+      "target_domain": "Profile",
+      "fact_a": "I enjoy cooking Italian food.",
+      "fact_b": "I prefer dark mode interfaces on all my devices.",
+      "context": "User is discussing culinary interests and interface preferences.",
+      "expected_label": "NONE",
+      "rationale": "There is no causal or logical link between enjoying cooking Italian food and preferring dark mode interfaces."
+    }
+  ]
+}

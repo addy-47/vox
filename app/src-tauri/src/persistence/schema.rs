@@ -11,8 +11,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             id               INTEGER PRIMARY KEY,   -- epoch milliseconds
             started_at       INTEGER NOT NULL,
             ended_at         INTEGER,
-            turn_count       INTEGER NOT NULL DEFAULT 0,
-            embedding_status TEXT    NOT NULL DEFAULT 'pending'
+            turn_count       INTEGER NOT NULL DEFAULT 0
         );",
         "CREATE TABLE IF NOT EXISTS turns (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +76,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             collection   TEXT NOT NULL,
             source       TEXT NOT NULL DEFAULT 'LLM',
             session_id   TEXT NOT NULL DEFAULT '',
-            status       TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'staged', 'processing', 'completed', 'failed'
+            status       TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'paused', 'processing', 'completed', 'failed'
             attempts     INTEGER NOT NULL DEFAULT 0,
             error_msg    TEXT,
             created_at   INTEGER NOT NULL,
@@ -97,14 +96,6 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
     for stmt in statements {
         conn.execute(stmt, ()).await?;
     }
-
-    // Safely add embedding_status column to existing sessions table if missing (idempotent migration)
-    let _ = conn
-        .execute(
-            "ALTER TABLE sessions ADD COLUMN embedding_status TEXT NOT NULL DEFAULT 'pending'",
-            (),
-        )
-        .await;
 
     if let Err(e) = seed_packaged_voices(conn).await {
         log::warn!("[Persistence] Failed to seed packaged voices (non-fatal): {}", e);

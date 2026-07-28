@@ -18,11 +18,11 @@ where Tier 2 is recommended for users
 
 * **Tier 1A: 8GB Pure Local (no gpu):** Working Memory FIFO variation only (Simple buffer to manage context window)
 
-* **Tier 1B: [RECOMMENDED] Pure Local (with gpu):** Working Memory + Episodic Memory + Semantic Memory(requires tool_calling hence depends on runtime capability) .
+* **Tier 1B: [RECOMMENDED] Pure Local (with gpu):** Working Memory + Personal Memory + Semantic Memory.
 
-* **Tier 2A: [RECOMMENDED/NO-COST] Hybrid Stack ( Remote LLM + Local Audio ):** Working Memory + Episodic + Semantic(requires tool_calling hence depends on runtime capability) .
+* **Tier 2A: [RECOMMENDED/NO-COST] Hybrid Stack ( Remote LLM + Local Audio ):** Working Memory + Episodic + Semantic .
 
-* **Tier 2B: [RECOMMENDED/DEFAULT] Hybrid Stack ( Cloud LLM + Local Audio ):** Working Memory + Episodic + Semantic(tool_calling is natively supported by all cloud models). 
+* **Tier 2B: [RECOMMENDED/DEFAULT] Hybrid Stack ( Cloud LLM + Local Audio ):** Working Memory + Episodic + Semantic. 
 
 * **Tier 3: [BEST-PERFORMANCE] Realtime S2S (WebSocket):** Provider-managed Working Memory + Episodic & Semantic (managed via early tool calls) . 
 

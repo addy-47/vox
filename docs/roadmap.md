@@ -141,7 +141,7 @@
 
 ---
 
-## v0.9.0 — Realtime S2S Engine (In Progress)
+## v0.8.6 — Realtime S2S Engine (Released)
 
 **Goal:** Build a trait-based cloud speech-to-speech engine alongside the existing modular pipeline.
 
@@ -182,12 +182,27 @@
 - Idle timeout countdown in StatusCapsule
 - Reconnect event handling and error toasts
 
-### ⏳ In Progress / Planned
+---
 
-- **OpenAI Realtime provider** — config defined, struct not yet implemented
-- **Deepgram Voice Agent provider** — config defined, struct not yet implemented
-- **ElevenLabs ConvAI provider** — config defined, struct not yet implemented
-- Full e2e tests for realtime session lifecycle (beyond mock WS unit tests)
+## v0.8.7 — Cognitive Memory Architecture (In Progress)
+
+**Goal:** Implement the v7 Cognitive Memory Subsystem — a 6-domain taxonomy with async ingestion, NLI deduplication, and LLM edge classification.
+
+### ✅ Completed (Core Engine)
+
+- **6-Domain Cognitive Taxonomy**: `Identity`, `Directives`, `Constraints`, `Profile`, `Entities`, `Narrative` replacing the old 10 flat collections from v6
+- **MiniLM-L12 Primary Embedding Engine**: 384d INT8 ONNX, ~10ms CPU latency, soft vector deduplication gate calibrated at 0.95 threshold (Gate 1: PASSED)
+- **DeBERTa-v3 NLI State Resolution**: ONNX INT8, resolves `Identity`/`Directives`/`Constraints` domain facts via entailment/contradiction at ≥0.85 threshold (Gate 2: PASSED, 85.11% overall accuracy)
+- **LFM2.5-230M Edge Classifier**: GGUF Q8_0, classifies cross-domain cognitive edges (`REQUIRES`, `RESTRICTS`, `ENABLES`, `RELATES_TO`) for `Profile`/`Entities` (Gate 3: Pending)
+- **5-Step Ingestion Pipeline**: Async queue processing with O(1) String Dedup → MiniLM-L12 Soft Vector Dedup → Domain Dispatch → NLI or LLM Evaluator → Atomic Turso MVCC persistence
+
+### 🏗️ In Progress
+
+- **Temporal Active Fetch**: Directives bypass vector RAG, fetch via `ORDER BY created_at DESC`
+- **Two-Tier Budgeted Retrieval**: Hybrid scoring (cosine + recency reranking) for `Constraints`/`Profile`/`Entities`
+- **Background Worker Orchestration**: Cooperative yielding, 30s idle debounce, private mode gating
+- **Gate 3 Validation**: LFM2.5-230M edge classifier precision/latency probe
+- **Session Narrative Compaction**: Ephemeral backward-prepending context chain with 5% budget cap
 
 ---
 
@@ -201,3 +216,7 @@ Vox v1.0 is:
 - Real-time voice native
 - Hindi/Hinglish optimized
 - Cross-platform
+
+---
+
+**Last Updated:** 2026-07-27

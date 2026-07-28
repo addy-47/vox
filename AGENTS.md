@@ -30,6 +30,22 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
+## 2.1 Benchmark & Latency Execution Rules (MANDATORY)
+
+1. **NEVER RUN BENCHMARK PROBES IN PARALLEL**:
+   - Running multiple GGUF or ONNX inference commands concurrently causes CPU thread contention and invalidates per-pair latency metrics.
+   - Always execute benchmark probes **strictly sequentially, one model at a time**.
+
+2. **TRUE END-TO-END PER-PAIR LATENCY MANDATE**:
+   - The per-pair latency timer MUST start **BEFORE** user-turn tokenization and `ctx.decode(&mut batch)` prefill, and stop **AFTER** logit extraction.
+   - Timers measuring only array indexing or logit lookup are strictly forbidden.
+
+3. **FROZEN SYSTEM PROMPT KV CACHE**:
+   - System prompt tokens MUST be prefilled into `llama_context` **EXACTLY ONCE** at startup.
+   - Per-pair inference MUST clear only user-turn positions (`sys_len..N`), leaving system prompt KV cache frozen.
+
+---
+
 ## 3. HARD GATE: Code Modification Gate
 
 > 🛑 **MANDATORY CONTEXT GATE:**
@@ -55,33 +71,37 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ### What is being validated (v7 Specification)
 1. **6 Domain-Agnostic Cognitive Taxonomy**: `Identity`, `Directives`, `Constraints`, `Profile`, `Entities`, `Narrative`.
-2. **Step 2 Soft Vector Deduplication**: `MiniLM-L12` 384d INT8 ONNX (`soft_vector_dedup_threshold = 0.95`).
-3. **Step 4A NLI State Resolution**: `deberta-v3-xsmall` ONNX for `Identity`, `Directives`, `Constraints` ($\ge 0.85$ threshold).
-4. **Step 4B Cognitive Edge Classification**: `LFM2.5-230M` GGUF for `Profile`, `Entities` according to Connection Policy Matrix.
-5. **Operational State Temporal Fetch**: `Directives` bypass vector RAG and fetch active state temporally (`ORDER BY created_at DESC`).
+2. **4-Stage Pipeline with Unified Evaluation**:
+   - **Stage 1**: String & Jaccard Dedup (`staged_pending` $\rightarrow$ `deduped`).
+   - **Stage 2**: Dense Vector Embedding (`deduped` $\rightarrow$ `embedded`).
+   - **Stage 3**: Unified Edge & State Evaluation (Intra-Domain NLI + Inter-Domain Edge Classifier) (`embedded` $\rightarrow$ `evaluated`).
+   - **Stage 4**: Terminal Commit & Prune (`evaluated` $\rightarrow$ `completed`/deleted).
+3. **Precision RAG Retrieval & Hybrid Budgeting**:
+   - `Identity`: Deterministic SQL fetch of ALL active facts (`WHERE status = 'active'`).
+   - `Directives`: Top-level parent seed on **Turn 1 of new session ONLY**; child graph node on Turns 2+.
+   - `Constraints`: Integrated into **Semantic Vector Search + Graph Traversal** (`RESTRICTS` / `CONFLICTS`).
+   - `Profile` / `Entities`: Semantic Vector Search (ANN) + Graph Traversal.
 
 ### Domain Taxonomy & Pipeline Setup
 | Domain | Purpose | Evaluation Pipeline | Retrieval Policy |
 |---|---|---|---|
-| **`Identity`** | Core User Identity | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4A NLI | Deterministic SQL (`WHERE status = 'active'`) |
-| **`Directives`** | Agent Operational State / Active Tasks | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4A NLI | Temporal Active Fetch (`ORDER BY created_at DESC`) |
-| **`Constraints`** | Hard Boundaries / Rules | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4A NLI | Dynamic Hybrid Core Budget (8% Cap) |
-| **`Profile`** | User Persona / Tastes | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4B LLM Edge Classifier | Semantic Vector Search (ANN) + Graph Traversal |
-| **`Entities`** | External Knowledge Graph | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 4B LLM Edge Classifier | Semantic Vector Search (ANN) + Graph Traversal |
-| **`Narrative`** | Session History Summary | Compaction turn summary | Backward Prepending Context Chain (5% Cap) |
+| **`Identity`** | Core User Identity | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | Deterministic SQL (`WHERE status = 'active'`). All active facts. |
+| **`Directives`** | Agent Operational State / Active Tasks | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | **Turn 1 Parent Seed ONLY**; Child Graph Node on Turns 2+. |
+| **`Constraints`** | Hard Boundaries / Rules | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | **Semantic Vector Search + Graph Traversal** (`RESTRICTS` / `CONFLICTS`). |
+| **`Profile`** | User Persona / Tastes | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | Semantic Vector Search (ANN) + Graph Traversal. |
+| **`Entities`** | External Knowledge Graph | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | Semantic Vector Search (ANN) + Graph Traversal. |
+| **`Narrative`** | Session History Summary | Compaction turn summary | Backward Prepending Context Chain (5% Cap). |
 
 ### Pre-Implementation Gate Matrix Status
 | Gate | Target / Component | Status / Outcome |
 |---|---|---|
 | **Gate 1** | MiniLM-L12 Soft Vector Dedup Calibration | **PASSED** (Threshold = 0.95, 0.0% false inactivations across 500 pairs, 29.7ms/pair. See `docs/benchmarks/dedup-bench.md`) |
-| **Gate 2** | DeBERTa-v3 NLI Domain Precision Audit | **FAILED** (78.67% overall. Directives = 98.67%, Identity = 76.00%, Constraints = 65.00%. See `docs/benchmarks/nli-precision-bench.md`) |
-| **Gate 3** | LFM2.5-230M Edge Classifier Capabilities Probe | Pending Evaluation |
+| **Gate 2** | DeBERTa-v3 NLI Domain Precision Audit | **PASSED** (`nli-deberta-v3-base` selected, 85.11% overall, Directives = 99.33%, Constraints = 75.50%, 64.8ms/pair. Multi-model PyTorch candidate evaluation complete. See `docs/benchmarks/nli-precision-bench.md`) |
+| **Gate 3** | Cognitive Edge Classifier Calibration | **IN PROGRESS (Pending ONNX Sequence Classifier Fine-Tuning)** — Edge ontology finalized to 4 operational labels (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE`). 1-pass `ModernBERT-base` INT8 ONNX sequence classifier selected as winning architecture (~35ms CPU latency, <120MB RAM). Pending 500-pair MVD dataset creation and PyTorch fine-tuning. See `docs/benchmarks/edge-classifier-bench.md`. |
 
 ### Model Paths & Primary Specs
 - Embedding: `~/.vox/models/embedding/minilm-l12-v2` (384d INT8 ONNX)
-- NLI Engine: `~/.vox/models/nli/deberta-v3-xsmall/model_quantized.onnx`
-- Edge Classifier LLM: `~/.vox/models/llm/LFM2.5-230M-Q8_0.gguf`
+- NLI Engine: `~/.vox/models/nli/nli-deberta-v3-base/model_quantized.onnx` (233MB INT8 ONNX)
+- Edge Classifier Engine: `~/.vox/models/classifier/modernbert-base/model_quantized.onnx` (1-pass INT8 ONNX sequence classifier)
 - Architecture Spec: `docs/plans/memory-spec-v7.md`
-- Benchmark Harness: `app/src-tauri/benches/dedup_bench.rs`
-
-### Proactively update the `AGENTS.md` current phase section to reflect current status.
+- Benchmark Harness: `app/src-tauri/examples/edge_classifier_probe.rs` & `app/src-tauri/examples/modernbert_zeroshot_probe.rs`

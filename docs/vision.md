@@ -140,3 +140,7 @@ Not a chatbot.
 Not just a voice assistant.
 
 A personal AI operator that can understand, decide, coordinate, and act on behalf of the user.
+
+---
+
+**Last Updated:** 2026-06-15

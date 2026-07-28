@@ -381,3 +381,7 @@ Only:
 ```text
 Vox — instant, real-time voice system
 ```
+
+---
+
+**Last Updated:** 2026-06-09
