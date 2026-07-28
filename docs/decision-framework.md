@@ -236,3 +236,7 @@ Vox is not optimized around model experimentation. It is optimized around delive
 The architecture therefore prioritizes predictable latency, low memory overhead, operational simplicity, native desktop deployment, and long-term extensibility through engine abstraction.
 
 > Build a stable runtime first. Models can change later.
+
+---
+
+**Last Updated:** 2026-07-25

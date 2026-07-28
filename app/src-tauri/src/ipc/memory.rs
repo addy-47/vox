@@ -288,7 +288,7 @@ pub async fn get_memory_stats(
         .map_err(|e| format!("DB open failed: {}", e))?;
 
     let mut rows = conn
-        .query("SELECT count(*) FROM sessions WHERE embedding_status = 'pending'", ())
+        .query("SELECT count(*) FROM sessions WHERE ended_at IS NULL", ())
         .await
         .map_err(|e| e.to_string())?;
     let pending_sessions = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
@@ -298,7 +298,7 @@ pub async fn get_memory_stats(
     };
 
     let mut rows = conn
-        .query("SELECT count(*) FROM sessions WHERE embedding_status = 'embedded'", ())
+        .query("SELECT count(*) FROM sessions WHERE ended_at IS NOT NULL", ())
         .await
         .map_err(|e| e.to_string())?;
     let embedded_sessions = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
