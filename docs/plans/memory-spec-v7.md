@@ -1,7 +1,7 @@
 # Vox v7 Cognitive Memory Subsystem Architecture Specification
 
 **Status**: Frozen Master Architectural Specification  
-**Version**: 7.5 (Validated Architecture, Precision Retrieval & 4-Stage Pipeline Specification)  
+**Version**: 7.6 (Validated Architecture, Precision Retrieval & 4-Stage Pipeline Specification)  
 **Target Systems**: `app/src-tauri/src/services/memory/` (Rust Backend)  
 
 ---
@@ -13,7 +13,7 @@ The v7 memory architecture provides a unified, deterministic, and domain-agnosti
 1. **Unbounded Deterministic Fetch Elimination**: `Identity` facts are fetched as bounded invariants (`WHERE status = 'active'`). All active identity facts are retrieved directly without arbitrary token truncation.
 2. **Operational State & Agent Agenda (`Directives`)**: `Directives` represent agent tasks and operational goals. They act as top-level parent seeds **ONLY on Turn 1 of a new session**, preventing prompt pollution across ongoing turns.
 3. **Integrated Constraint Search**: `Constraints` are removed from direct SQL recency dumps. They are indexed in **Semantic Vector Search** and pulled dynamically as child nodes via graph expansion edges (`RESTRICTS` / `CONFLICTS`).
-4. **4-Stage Pipeline with Unified Evaluation**: Pipeline stages are consolidated into 4 clean stages (Dedup $\rightarrow$ Embedding $\rightarrow$ Unified Edge & State Evaluation $\rightarrow$ Commit & Prune). Stage 3 aggregates Intra-Domain NLI (DeBERTa-v3) and Inter-Domain Edge Classification (ModernBERT) in memory, executing a single atomic write to eliminate database lock contention and race conditions.
+4. **4-Stage Pipeline with 2 Concurrent Model Workers in Stage 3**: Pipeline stages are consolidated into 4 clean stages (Dedup $\rightarrow$ Embedding $\rightarrow$ Unified Edge & State Evaluation $\rightarrow$ Commit & Prune). In Stage 3, **2 dedicated model workers** (Sub-Branch A: DeBERTa NLI and Sub-Branch B: ModernBERT Edge Classifier) execute concurrently via `tokio::join!`, merging results in memory before a single atomic SQL write.
 
 ### 1.1 Non-Deletion Provenance Mandate
 **Zero hard deletions (`DELETE FROM memory_facts`) are permitted during pipeline execution.**
@@ -82,8 +82,6 @@ The v7 memory architecture provides a unified, deterministic, and domain-agnosti
 
 ## 5. Master 4-Stage Ingestion Pipeline Architecture
 
-Memory ingestion operates asynchronously via a 4-stage database worker queue (`personal_memory_queue`):
-
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                           4-Stage Modular Ingestion Pipeline                                │
@@ -91,16 +89,17 @@ Memory ingestion operates asynchronously via a 4-stage database worker queue (`p
 │ Stage 1: O(1) String & Jaccard Exact Deduplication (Batch Ceiling = 128)                    │
 │          Exact string match OR Jaccard == 1.0. Set old fact status = 'inactive'; advance new.  │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Stage 2: Dense Vector Embedding & Soft Vector Deduplication                                 │
+│ Stage 2: Dense Vector Embedding & Soft Vector Deduplication (Batch Size = 16)               │
 │          Generate 384d vector via MiniLM-L12 INT8 ONNX. Query existing same-collection facts.│
 │          If Cosine >= 0.95, mark old fact status = 'inactive', advance new fact with vector. │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Stage 3: Unified Edge & State Evaluation (Intra-Domain NLI + Inter-Domain Edge Classifier) │
-│          • Sub-Branch A (Intra-Domain NLI): DeBERTa-v3 ONNX evaluates NLI supersessions.   │
-│          • Sub-Branch B (Inter-Domain Edge): ModernBERT ONNX classifies cross-domain edges.  │
+│ Stage 3: Unified Edge & State Evaluation (Batch Size = 16 Facts / 16-32 Pairs)              │
+│          Runs 2 concurrent model workers via tokio::join!:                                  │
+│          • Sub-Branch A Model Worker (DeBERTa-v3 ONNX): Intra-Domain NLI supersessions.      │
+│          • Sub-Branch B Model Worker (ModernBERT ONNX): Inter-Domain cross-domain edges.     │
 │          Aggregates results in memory and executes a single atomic update (`status='evaluated'`).│
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Stage 4: Atomic Persistence & Queue Pruning (Turso MVCC Transaction)                        │
+│ Stage 4: Atomic Persistence & Queue Pruning (Batch Size = 32)                               │
 │          Writes active facts to `memory_facts` and graph edges to `memory_relations`.       │
 │          Executes `DELETE FROM personal_memory_queue WHERE status IN ('evaluated', 'superseded')`.│
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -108,75 +107,11 @@ Memory ingestion operates asynchronously via a 4-stage database worker queue (`p
 
 ---
 
-## 6. Targeted NLI State Resolution Sub-Branch (Stage 3A)
+## 6. System Behavioral Invariants (Preserved Invariants)
 
-NLI processing evaluates formal logical relationships strictly within stateful/invariant domains (`Identity`, `Directives`, `Constraints`).
-
-1. **`Identity` & `Directives` Domains**:
-   - Candidate facts selected via threshold filtering (`nli_candidate_search_cutoff = 0.40`).
-   - **`ENTAILMENT` (>= 0.85)**: New fact refines/subsumes old fact. Writes `SUPERSEDES` edge to old fact. Old fact `status` set to `'superseded'`.
-   - **`CONTRADICTION` (>= 0.85)**: New fact contradicts old fact. Writes `SUPERSEDES` edge; old fact `status` set to `'superseded'`.
-   - **`NEUTRAL`**: Both facts remain active.
-
-2. **`Constraints` Domain**:
-   - **`ENTAILMENT` (>= 0.85)**: Writes `SUPPORTS` edge (`refined_by`). Both remain active.
-   - **`CONTRADICTION` (>= 0.85)**: Writes `CONFLICTS` edge in `memory_relations`. **Neither constraint is deactivated**.
-
----
-
-## 7. Inter-Domain Edge Classifier Sub-Branch (Stage 3B)
-
-Cross-domain graph connections are generated using a 1-pass fine-tuned INT8 ONNX sequence classifier (`ModernBERT-base`).
-
-| Edge Label | Semantic Meaning | Forward Edge Sign | Inverse Edge Label (Derived at Traversal) |
-| :--- | :--- | :--- | :--- |
-| **`SHAPES`** | Target Fact modifies or constrains how Source Fact is executed. | `A -> SHAPES -> B` | `shaped_by` (`B -> shaped_by -> A`) |
-| **`DEPENDS_ON`** | Source Fact functionally requires Target Fact to exist first. | `A -> DEPENDS_ON -> B` | `required_by` (`B -> required_by -> A`) |
-| **`CONFLICTS_WITH`** | Source Fact and Target Fact represent opposing goals or rules. | `A -> CONFLICTS_WITH -> B` | `conflicts_with` (`B -> conflicts_with -> A`) |
-| **`NONE`** | No causal, dependency, or conflict relationship exists. | N/A | No edge created in `memory_relations`. |
-
----
-
-## 8. Precision Turn Context Retrieval Subsystem
-
-```
-                                USER TURN QUERY
-                                       │
-                   ┌───────────────────┼───────────────────┐
-                   ▼                   ▼                   ▼
-           [Class A: Identity]   [Class B: Directives]   [Class C: Vector Search]
-           (All Active Facts)    (Turn 1 ONLY / Recency) (Profile, Entities,
-                   │                   │                  Constraints, Skills)
-                   │                   │                   │
-                   └───────────────────┼───────────────────┘
-                                       ▼
-                              [GLOBAL SEED POOL]
-                                       │
-                                       ▼
-                       [Bi-Directional Graph Expansion]
-                       (BFS max_hops = 2 via memory_relations)
-                                       │
-                                       ▼
-                    [Dynamic Fair-Share Token Budgeting]
-                    (Render XML <user_profile> Prompt)
-```
-
----
-
-## 9. Database Schema & Table Ownership Matrix
-
-| Table | Column | Valid Values | Writing Component / Owner | Lifecycle & Rules |
-| :--- | :--- | :--- | :--- | :--- |
-| `personal_memory_queue` | `status` | `'staged_pending'`, `'processing_*'`, `'deduped'`, `'embedded'`, `'evaluated'`, `'completed'`, `'superseded'`, `'failed'` | `orchestrator.rs` (Ingestion Worker) | Ephemeral queue lifecycle. Completed and superseded items deleted by Stage 4. |
-| `memory_facts` | `status` | `'active'`, `'inactive'`, `'deleted'` | `mutations.rs` (Memory System) | `'active'`: Live fact for RAG. `'inactive'`: Deactivated by dedup/NLI. `'deleted'`: Soft-deleted by user. |
-| `memory_relations` | `relation` | `'SHAPES'`, `'DEPENDS_ON'`, `'CONFLICTS_WITH'`, `'SUPERSEDES'`, `'SUPPORTS'` | `orchestrator.rs` / `mutations.rs` | Directed graph relation label. |
-
----
-
-## 10. System Behavioral Invariants (Preserved Invariants)
-
-1. **4-Stage Pipeline Structure**: The ingestion pipeline MUST consist of exactly 4 stages (Dedup $\rightarrow$ Embedding $\rightarrow$ Unified Evaluation $\rightarrow$ Commit & Prune).
-2. **Unified Write Handler**: Stage 3 MUST aggregate Intra-Domain NLI and Inter-Domain Edge Classifier outputs in Rust memory and perform a single atomic SQL write per fact.
-3. **All Active Identity Fetch**: All active `Identity` facts MUST be retrieved without arbitrary token limits.
-4. **First-Turn Directives Rule**: `Directives` MUST act as top-level parent seeds ONLY on Turn 1 of a session.
-5. **Vector-Indexed Constraints Rule**: `Constraints` MUST be retrieved via Semantic Vector Search and Graph Traversal, NOT direct SQL recency dumps.
+1. **2 Concurrent Model Workers in Stage 3**: Sub-Branch A (NLI Worker) and Sub-Branch B (Edge Classifier Worker) MUST run concurrently via `tokio::join!`.
+2. **4-Stage Pipeline Structure**: The ingestion pipeline MUST consist of exactly 4 stages (Dedup $\rightarrow$ Embedding $\rightarrow$ Unified Evaluation $\rightarrow$ Commit & Prune).
+3. **Unified Write Handler**: Stage 3 MUST aggregate Intra-Domain NLI and Inter-Domain Edge Classifier outputs in Rust memory and perform a single atomic SQL write per fact.
+4. **All Active Identity Fetch**: All active `Identity` facts MUST be retrieved without arbitrary token limits.
+5. **First-Turn Directives Rule**: `Directives` MUST act as top-level parent seeds ONLY on Turn 1 of a session.
+6. **Vector-Indexed Constraints Rule**: `Constraints` MUST be retrieved via Semantic Vector Search and Graph Traversal, NOT direct SQL recency dumps.
