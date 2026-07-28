@@ -1123,3 +1123,7 @@ const loadSettings = async () => {
 };
 ```
 
+---
+
+**Last Updated:** 2026-06-28
+

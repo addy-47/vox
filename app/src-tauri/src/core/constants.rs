@@ -206,10 +206,6 @@ impl MemoryCollection {
             _ => PM_TYPE_SEMANTIC,
         }
     }
-
-    pub fn is_staged_during_session(&self) -> bool {
-        matches!(self, Self::Context | Self::Tasks)
-    }
 }
 
 impl std::fmt::Display for MemoryCollection {
@@ -277,7 +273,7 @@ pub const PM_SOURCE_NLI: &str = "NLI";
 
 // ─── Job Queue Status ─────────────────────────────────────────────────────────
 pub const PM_QUEUE_STATUS_PENDING: &str = "pending";
-pub const PM_QUEUE_STATUS_STAGED: &str = "staged";
+pub const PM_QUEUE_STATUS_PAUSED: &str = "paused";
 pub const PM_QUEUE_STATUS_PROCESSING: &str = "processing";
 pub const PM_QUEUE_STATUS_COMPLETED: &str = "completed";
 pub const PM_QUEUE_STATUS_FAILED: &str = "failed";

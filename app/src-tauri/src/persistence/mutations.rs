@@ -2,8 +2,8 @@ use anyhow::{anyhow, Result};
 use turso::Connection;
 use std::collections::HashMap;
 use crate::core::constants::{
-    PM_RELATION_SUPERSEDES, PM_SOURCE_USER, PM_QUEUE_STATUS_STAGED, PM_QUEUE_STATUS_PENDING,
-    PM_QUEUE_STATUS_COMPLETED, collection_type, PM_TYPE_SEMANTIC, MemoryCollection,
+    PM_RELATION_SUPERSEDES, PM_SOURCE_USER, PM_QUEUE_STATUS_PAUSED, PM_QUEUE_STATUS_PENDING,
+    PM_QUEUE_STATUS_COMPLETED, collection_type, PM_TYPE_SEMANTIC,
 };
 use crate::persistence::encode_f32_blob;
 
@@ -20,12 +20,10 @@ pub async fn enqueue_personal_facts(
         .as_millis() as i64;
 
     for (collection, fact_list) in facts {
-        let status = if MemoryCollection::parse(&collection).map_or(false, |mc| mc.is_staged_during_session()) {
-            PM_QUEUE_STATUS_STAGED
-        } else if pipeline_processing_enabled {
+        let status = if pipeline_processing_enabled {
             PM_QUEUE_STATUS_PENDING
         } else {
-            PM_QUEUE_STATUS_STAGED
+            PM_QUEUE_STATUS_PAUSED
         };
 
         for fact in fact_list {
@@ -190,7 +188,7 @@ pub async fn insert_fact_with_vector_and_relations(
     }
 }
 
-/// Atomically transitions staged facts for session to pending, and saves session Context memory.
+/// Atomically transitions paused facts for session to pending, and saves session Context memory.
 pub async fn session_end_consolidation(
     conn: &Connection,
     session_id: &str,
@@ -206,7 +204,7 @@ pub async fn session_end_consolidation(
         conn.execute(
             "UPDATE personal_memory_queue 
              SET status = 'pending' 
-             WHERE session_id = ? AND status = 'staged'",
+             WHERE session_id = ? AND (status = 'staged' OR status = 'paused')",
             (session_id.to_string(),),
         ).await?;
 
@@ -331,7 +329,7 @@ mod tests {
 
         assert_eq!(queue_items.len(), 2);
         queue_items.sort_by(|a, b| a.0.cmp(&b.0));
-        assert_eq!(queue_items[0], ("Buy groceries".to_string(), "Tasks".to_string(), "staged".to_string(), "session_123".to_string()));
+        assert_eq!(queue_items[0], ("Buy groceries".to_string(), "Tasks".to_string(), "pending".to_string(), "session_123".to_string()));
         assert_eq!(queue_items[1], ("Rust programming".to_string(), "Skills".to_string(), "pending".to_string(), "session_123".to_string()));
 
         Ok(())
@@ -459,11 +457,11 @@ mod tests {
         let conn = setup_test_db().await?;
 
         conn.execute(
-            "INSERT INTO personal_memory_queue (fact, collection, session_id, status, created_at) VALUES ('Task 1', 'Tasks', 'sess_alpha', 'staged', 1000)",
+            "INSERT INTO personal_memory_queue (fact, collection, session_id, status, created_at) VALUES ('Task 1', 'Tasks', 'sess_alpha', 'paused', 1000)",
             (),
         ).await?;
         conn.execute(
-            "INSERT INTO personal_memory_queue (fact, collection, session_id, status, created_at) VALUES ('Task 2', 'Tasks', 'sess_beta', 'staged', 1000)",
+            "INSERT INTO personal_memory_queue (fact, collection, session_id, status, created_at) VALUES ('Task 2', 'Tasks', 'sess_beta', 'paused', 1000)",
             (),
         ).await?;
 
@@ -473,7 +471,7 @@ mod tests {
         assert_eq!(rows.next().await?.unwrap().get::<String>(0)?, "pending");
 
         let mut rows_b = conn.query("SELECT status FROM personal_memory_queue WHERE session_id = 'sess_beta'", ()).await?;
-        assert_eq!(rows_b.next().await?.unwrap().get::<String>(0)?, "staged");
+        assert_eq!(rows_b.next().await?.unwrap().get::<String>(0)?, "paused");
 
         let mut ctx_rows = conn.query("SELECT collection, fact, type, status FROM memory_facts WHERE session_id = 'sess_alpha'", ()).await?;
         let ctx_row = ctx_rows.next().await?.expect("Context fact should be created");

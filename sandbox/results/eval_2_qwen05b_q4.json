@@ -1,0 +1,1104 @@
+{
+  "summary": {
+    "total_evaluated": 56,
+    "total_matches": 16,
+    "overall_accuracy_pct": 28.57142857142857,
+    "format_compliance_pct": 100.0,
+    "domain_pair_accuracy": {
+      "Entities -> Entities": 37.5,
+      "Identity -> Profile": 37.5,
+      "Entities -> Profile": 25.0,
+      "Entities -> Constraints": 25.0,
+      "Directives -> Constraints": 25.0,
+      "Profile -> Profile": 25.0,
+      "Directives -> Entities": 25.0
+    },
+    "label_precision": {
+      "RELATES_TO": 0.0,
+      "ENABLES": 0.0,
+      "NONE": 100.0,
+      "REQUIRES": 0.0,
+      "RESTRICTS": 0.0
+    },
+    "label_recall": {
+      "ENABLES": 0.0,
+      "RESTRICTS": 0.0,
+      "RELATES_TO": 0.0,
+      "NONE": 7.142857142857142,
+      "REQUIRES": 0.0
+    },
+    "model_load_ms": 324.336387,
+    "system_prefill_ms": 0.0,
+    "avg_decode_latency_ms": 0.23199998214285703,
+    "total_wall_sec": 582.17302268,
+    "engine_type": "Native_llama.cpp_230M_Q4",
+    "model_path": "/home/addy/.vox/models/llm/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+    "prompt_variant": 2
+  },
+  "results": [
+    {
+      "id": 27,
+      "domain_pair": "Entities -> Constraints",
+      "source_fact": "The application uses a custom C++ library.",
+      "target_fact": "The build environment must have GCC 9.3 installed.",
+      "session_narrative": "User is describing software dependencies and build requirements.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.262364
+    },
+    {
+      "id": 25,
+      "domain_pair": "Entities -> Constraints",
+      "source_fact": "We use AWS S3 for file storage.",
+      "target_fact": "All sensitive data must be encrypted at rest.",
+      "session_narrative": "User is discussing cloud storage and data security policies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.248981
+    },
+    {
+      "id": 37,
+      "domain_pair": "Entities -> Profile",
+      "source_fact": "My primary work machine is a Chromebook.",
+      "target_fact": "I need to run Docker containers and virtual machines locally.",
+      "session_narrative": "User is discussing their work setup and technical requirements.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.234539
+    },
+    {
+      "id": 20,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I need to send out the weekly newsletter.",
+      "target_fact": "The Mailchimp service is used for email campaigns.",
+      "session_narrative": "User is preparing to send a mass email.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.227257
+    },
+    {
+      "id": 19,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I need to deploy the web application.",
+      "target_fact": "The application requires a Kubernetes cluster.",
+      "session_narrative": "User is discussing the deployment strategy for an application.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.220392
+    },
+    {
+      "id": 11,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I need to access the production database.",
+      "target_fact": "You must have valid MFA credentials to access production systems.",
+      "session_narrative": "User is attempting to perform a task requiring sensitive access.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.25081000000000003
+    },
+    {
+      "id": 51,
+      "domain_pair": "Profile -> Profile",
+      "source_fact": "I like to maintain a healthy lifestyle.",
+      "target_fact": "I regularly go to the gym.",
+      "session_narrative": "User is talking about their health goals and routines.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.238416
+    },
+    {
+      "id": 16,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I need to prepare for my presentation.",
+      "target_fact": "The company enforces a strict dress code for client meetings.",
+      "session_narrative": "User is getting ready for an important event.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.29787800000000003
+    },
+    {
+      "id": 15,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I need to order new office supplies.",
+      "target_fact": "The maximum budget for software licenses is $5000.",
+      "session_narrative": "User is making a purchase request and recalling budget limits.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.283428
+    },
+    {
+      "id": 41,
+      "domain_pair": "Entities -> Entities",
+      "source_fact": "The backend is written in Node.js.",
+      "target_fact": "The database used is MongoDB.",
+      "session_narrative": "User is describing the technology stack of a project.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.226289
+    },
+    {
+      "id": 12,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I need to publish the blog post.",
+      "target_fact": "All content must be approved by the editorial team first.",
+      "session_narrative": "User is preparing to release new content.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.302217
+    },
+    {
+      "id": 33,
+      "domain_pair": "Entities -> Profile",
+      "source_fact": "I primarily use a Mac for development.",
+      "target_fact": "I prefer using Homebrew for package management.",
+      "session_narrative": "User is describing their development setup and preferences.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.30246199999999995
+    },
+    {
+      "id": 14,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I need to use the company credit card for personal expenses.",
+      "target_fact": "Company credit cards are strictly for business-related purchases only.",
+      "session_narrative": "User is asking about using company resources for personal use.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.20543
+    },
+    {
+      "id": 30,
+      "domain_pair": "Entities -> Constraints",
+      "source_fact": "The project uses an open-source library under the GPLv3 license.",
+      "target_fact": "All deployed code must be proprietary and closed-source.",
+      "session_narrative": "User is discussing licensing requirements for a software project.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.222225
+    },
+    {
+      "id": 3,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "I am a professional chef.",
+      "target_fact": "I frequently experiment with new culinary techniques at home.",
+      "session_narrative": "User is describing their work and personal interests.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.240915
+    },
+    {
+      "id": 17,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I need to analyze the sales data.",
+      "target_fact": "The sales data is stored in a PostgreSQL database.",
+      "session_narrative": "User is planning a data analysis task.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.327147
+    },
+    {
+      "id": 24,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I need to update my personal website.",
+      "target_fact": "The company uses Jira for project management.",
+      "session_narrative": "User is listing personal and work-related tasks.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.207264
+    },
+    {
+      "id": 2,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "My native language is French.",
+      "target_fact": "I prefer to consume media with original audio and subtitles.",
+      "session_narrative": "User is talking about their media consumption habits.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.23275300000000002
+    },
+    {
+      "id": 39,
+      "domain_pair": "Entities -> Profile",
+      "source_fact": "I use VSCode for editing.",
+      "target_fact": "I prefer dark theme interface.",
+      "session_narrative": "User is describing their coding environment and aesthetic preferences.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.221257
+    },
+    {
+      "id": 44,
+      "domain_pair": "Entities -> Entities",
+      "source_fact": "The CI/CD pipeline uses GitHub Actions.",
+      "target_fact": "The code repository is hosted on GitHub.",
+      "session_narrative": "User is explaining their continuous integration setup.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.21775
+    },
+    {
+      "id": 21,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I want to use the latest AI model for image generation.",
+      "target_fact": "My local machine only has an integrated GPU with 2GB VRAM.",
+      "session_narrative": "User is trying to run a resource-intensive AI task.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.209034
+    },
+    {
+      "id": 47,
+      "domain_pair": "Entities -> Entities",
+      "source_fact": "I use a mechanical keyboard.",
+      "target_fact": "My monitor is an ultrawide display.",
+      "session_narrative": "User is listing their computer peripherals.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.223226
+    },
+    {
+      "id": 9,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I need to deploy the new microservice.",
+      "target_fact": "All production deployments must pass a security audit.",
+      "session_narrative": "User is planning a deployment and recalling company policies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.218077
+    },
+    {
+      "id": 53,
+      "domain_pair": "Profile -> Profile",
+      "source_fact": "I prefer working late past midnight.",
+      "target_fact": "I have a mandatory 6am morning team standup.",
+      "session_narrative": "User is discussing their work schedule and team commitments.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.218393
+    },
+    {
+      "id": 49,
+      "domain_pair": "Profile -> Profile",
+      "source_fact": "I prefer working in a quiet environment.",
+      "target_fact": "I often use noise-canceling headphones.",
+      "session_narrative": "User is describing their work preferences and habits.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.23982499999999998
+    },
+    {
+      "id": 43,
+      "domain_pair": "Entities -> Entities",
+      "source_fact": "The web application uses a REST API.",
+      "target_fact": "The API is hosted on an Nginx server.",
+      "session_narrative": "User is describing the architecture of a web application.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.21858899999999998
+    },
+    {
+      "id": 31,
+      "domain_pair": "Entities -> Constraints",
+      "source_fact": "We use GitHub for version control.",
+      "target_fact": "All team members must attend the weekly standup.",
+      "session_narrative": "User is describing team tools and meeting schedules.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.227134
+    },
+    {
+      "id": 42,
+      "domain_pair": "Entities -> Entities",
+      "source_fact": "The project uses React for the frontend.",
+      "target_fact": "The styling framework is Tailwind CSS.",
+      "session_narrative": "User is detailing the frontend technologies used.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.223045
+    },
+    {
+      "id": 29,
+      "domain_pair": "Entities -> Constraints",
+      "source_fact": "The legacy system runs on Windows Server 2008.",
+      "target_fact": "All servers must be patched with the latest security updates monthly.",
+      "session_narrative": "User is discussing server maintenance and security policies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.229716
+    },
+    {
+      "id": 8,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "I am 30 years old.",
+      "target_fact": "I like to read sci-fi novels.",
+      "session_narrative": "User is stating their age and a reading hobby.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: NONE",
+      "predicted_label": "NONE",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.233988
+    },
+    {
+      "id": 35,
+      "domain_pair": "Entities -> Profile",
+      "source_fact": "I own a high-end gaming PC.",
+      "target_fact": "I frequently play graphically intensive video games.",
+      "session_narrative": "User is talking about their computer and gaming habits.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.23147
+    },
+    {
+      "id": 45,
+      "domain_pair": "Entities -> Entities",
+      "source_fact": "The project uses Python 2.7.",
+      "target_fact": "A critical dependency requires Python 3.9 or higher.",
+      "session_narrative": "User is discussing conflicting software requirements.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: CONFLICTS_WITH",
+      "predicted_label": "CONFLICTS_WITH",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.21842199999999998
+    },
+    {
+      "id": 56,
+      "domain_pair": "Profile -> Profile",
+      "source_fact": "I enjoy cooking Italian food.",
+      "target_fact": "I prefer dark mode interfaces on all my devices.",
+      "session_narrative": "User is discussing culinary interests and interface preferences.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.218862
+    },
+    {
+      "id": 36,
+      "domain_pair": "Entities -> Profile",
+      "source_fact": "I have a subscription to Adobe Creative Cloud.",
+      "target_fact": "I often create complex graphic designs and video edits.",
+      "session_narrative": "User is describing their software subscriptions and creative activities.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.313397
+    },
+    {
+      "id": 55,
+      "domain_pair": "Profile -> Profile",
+      "source_fact": "I prefer coffee over tea.",
+      "target_fact": "I like to read sci-fi novels.",
+      "session_narrative": "User is stating beverage preferences and reading hobbies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.289029
+    },
+    {
+      "id": 40,
+      "domain_pair": "Entities -> Profile",
+      "source_fact": "I have a smart home assistant (Alexa).",
+      "target_fact": "I enjoy cooking Italian food.",
+      "session_narrative": "User is listing smart devices and culinary hobbies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.218334
+    },
+    {
+      "id": 7,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "My name is Alex.",
+      "target_fact": "I prefer coffee over tea.",
+      "session_narrative": "User is introducing themselves and stating a beverage preference.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.205662
+    },
+    {
+      "id": 22,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I need to collaborate on this document in real-time.",
+      "target_fact": "The team uses an on-premise SharePoint 2010 server.",
+      "session_narrative": "User is looking for a way to work together on a document.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.213816
+    },
+    {
+      "id": 23,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I need to review the pull requests.",
+      "target_fact": "Our team uses Slack for internal communication.",
+      "session_narrative": "User is planning their work for the day.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.207659
+    },
+    {
+      "id": 46,
+      "domain_pair": "Entities -> Entities",
+      "source_fact": "The application is designed for a single-board computer (Raspberry Pi).",
+      "target_fact": "The required database is Oracle Exadata.",
+      "session_narrative": "User is describing hardware and software requirements.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.207977
+    },
+    {
+      "id": 13,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I want to launch the feature by tomorrow.",
+      "target_fact": "The feature requires a mandatory 2-week QA cycle.",
+      "session_narrative": "User is pushing for a quick release, but there's a process.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.207379
+    },
+    {
+      "id": 26,
+      "domain_pair": "Entities -> Constraints",
+      "source_fact": "The project uses the Apache Kafka messaging system.",
+      "target_fact": "All message queues must have a retention period of at least 7 days.",
+      "session_narrative": "User is describing system architecture and data retention policies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.220581
+    },
+    {
+      "id": 28,
+      "domain_pair": "Entities -> Constraints",
+      "source_fact": "The company uses a proprietary VPN client.",
+      "target_fact": "Access to internal network resources requires an active VPN connection.",
+      "session_narrative": "User is discussing network access and security protocols.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.206691
+    },
+    {
+      "id": 18,
+      "domain_pair": "Directives -> Entities",
+      "source_fact": "I want to write a new Python script.",
+      "target_fact": "My development environment uses Python 2.7.",
+      "session_narrative": "User is starting a new coding task.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.214313
+    },
+    {
+      "id": 34,
+      "domain_pair": "Entities -> Profile",
+      "source_fact": "My main programming language is JavaScript.",
+      "target_fact": "I enjoy exploring new frontend frameworks.",
+      "session_narrative": "User is discussing their primary coding language and related interests.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.268302
+    },
+    {
+      "id": 48,
+      "domain_pair": "Entities -> Entities",
+      "source_fact": "The team uses Zoom for video calls.",
+      "target_fact": "Our cloud provider is Google Cloud Platform.",
+      "session_narrative": "User is describing communication tools and infrastructure.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.22762300000000002
+    },
+    {
+      "id": 52,
+      "domain_pair": "Profile -> Profile",
+      "source_fact": "I am a morning person.",
+      "target_fact": "I prefer to schedule important tasks before noon.",
+      "session_narrative": "User is describing their daily rhythm and work scheduling preferences.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.20976
+    },
+    {
+      "id": 38,
+      "domain_pair": "Entities -> Profile",
+      "source_fact": "I use a 10-year-old smartphone.",
+      "target_fact": "I always want to try the latest augmented reality apps.",
+      "session_narrative": "User is talking about their phone and app interests.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.20591199999999998
+    },
+    {
+      "id": 5,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "I am a strict vegan.",
+      "target_fact": "I love trying new steakhouse restaurants.",
+      "session_narrative": "User is talking about their dietary choices and dining preferences.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.21079399999999998
+    },
+    {
+      "id": 50,
+      "domain_pair": "Profile -> Profile",
+      "source_fact": "I enjoy learning new programming languages.",
+      "target_fact": "I frequently read technical blogs and documentation.",
+      "session_narrative": "User is discussing their learning habits and interests.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.214252
+    },
+    {
+      "id": 4,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "I am a university professor.",
+      "target_fact": "I enjoy mentoring junior researchers.",
+      "session_narrative": "User is discussing their role and preferred activities.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "DEPENDS_ON",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": true,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.218808
+    },
+    {
+      "id": 6,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "I am a professional athlete.",
+      "target_fact": "I enjoy a sedentary lifestyle with minimal physical activity.",
+      "session_narrative": "User is describing their profession and daily habits.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.204257
+    },
+    {
+      "id": 32,
+      "domain_pair": "Entities -> Constraints",
+      "source_fact": "My laptop has 16GB of RAM.",
+      "target_fact": "The maximum file size for email attachments is 25MB.",
+      "session_narrative": "User is listing hardware specs and email limitations.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "NONE",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.21573
+    },
+    {
+      "id": 10,
+      "domain_pair": "Directives -> Constraints",
+      "source_fact": "I want to schedule a meeting for next week.",
+      "target_fact": "My availability is limited to Tuesdays and Thursdays.",
+      "session_narrative": "User is trying to find a time for a meeting.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.208704
+    },
+    {
+      "id": 1,
+      "domain_pair": "Identity -> Profile",
+      "source_fact": "I am a software engineer.",
+      "target_fact": "I enjoy solving complex algorithmic problems.",
+      "session_narrative": "User is discussing their professional background and hobbies.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "SHAPES",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.206114
+    },
+    {
+      "id": 54,
+      "domain_pair": "Profile -> Profile",
+      "source_fact": "I enjoy spontaneous travel and last-minute plans.",
+      "target_fact": "I prefer a highly structured daily routine with fixed schedules.",
+      "session_narrative": "User is describing their travel habits and daily preferences.",
+      "allowed_labels": [
+        "SHAPES",
+        "DEPENDS_ON",
+        "CONFLICTS_WITH",
+        "NONE"
+      ],
+      "expected_label": "CONFLICTS_WITH",
+      "raw_llm_output": "Choice: DEPENDS_ON",
+      "predicted_label": "DEPENDS_ON",
+      "is_match": false,
+      "is_format_compliant": true,
+      "decode_latency_ms": 0.21735
+    }
+  ]
+}

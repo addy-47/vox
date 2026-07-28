@@ -1,1864 +1,323 @@
-# Vox — Backend Architecture (Native Inference)
+# Vox — Backend Architecture
+
+> **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems.
 
 ---
 
-## 1. Overview
+## 1. Architecture Stack
 
-The Vox backend is a **real-time, event-driven native audio processing system**.
+The backend follows a strict 4-layer design. Each layer has a single responsibility and communicates via lock-free channels or atomic flags.
 
-It is built using:
-
-* **Rust (Tauri)** → system orchestration, audio I/O, IPC
-* **C++ Inference Layer** → model execution (`onnxruntime`, `llama.cpp`)
-
----
-
-## 2. Core Design Principles
-
----
-
-### Native-First Execution
-
-All inference MUST run using:
-
-* ONNX Runtime (C++)
-* llama.cpp (C++)
-
-Python is **not part of runtime**.
-
----
-
-### Streaming First
-
-The system operates as a continuous stream:
-
-```text
-audio → VAD → STT → LLM → TTS → output
 ```
-
-No stage waits for completion.
-
----
-
-### Event-Driven Architecture
-
-```text
-audio_chunk → speech_start → text_delta → llm_token → tts_chunk
-```
-
-Each stage emits incremental outputs.
-
----
-
-### Low-Latency Constraint
-
-Target: **Accurate, complete outputs**
-
-Every component must minimize:
-
-* buffering
-* blocking
-* memory allocation
-
-**Speed is a result of good engineering, not a target that overrides accuracy.**
-
----
-
-## 3. System Topology
-
----
-
-### [Tauri (Rust)]
-    ├── Audio Capture (cpal)
-    ├── Event Bus (mpsc)
-    ├── UI IPC (Tauri Events)
-    │
-    ↓
-[Core Layer (Shared State & Constants)]
-    ├── events.rs (VoxEvent enum)
-    ├── settings.rs (VoxSettings struct)
-    ├── state.rs (InteractionState, PipelineAtomics)
-    ├── constants.rs (Model paths, timing)
-    └── metrics.rs (PipelineMetrics)
-    │
-    ↓
-[Services Layer (Actor-Engine Pattern)]
-    ├── VAD (Actor -> Engine: Earshot / TenVAD via VadEngine trait)
-    ├── STT (Actor -> Engine: Nvidia Nemotron-3.5 / Qwen3-ASR via SttEngine trait)
-    ├── LLM (Actor -> Provider: Embedded / OpenAiCompat via LlmProvider trait)
-    ├── TTS (Actor -> Provider: Supertonic 3 / Chatterbox / ChatterboxRemote via TtsProvider trait)
-    ├── Pipeline (Orchestrator: LLM→TTS→Playback coordination)
-    ├── Playback (CPAL output, jitter buffer, upsampling)
-    ├── PTT (Push-to-talk mode)
-    └── Utils (should_flush, transliteration, chunking, stitching)
-    │
-    ↓
-[Infrastructure Layer]
-    ├── IPC (Tauri command handlers)
-    ├── Persistence (SQLite session storage)
-    ├── Monitoring (Telemetry aggregator, system monitor)
-    ├── Setup (First-run onboarding)
-    └── Wizard (Setup wizard window + model health checks)
-
----
-
-## 4. Threading Model (CRITICAL)
-
----
-
-### Core Principle
-
-Avoid CPU thrashing. All inference runs on **dedicated OS threads**, never async tokio tasks.
-The exception is the **Realtime S2S engine**, which uses tokio tasks for WebSocket I/O
-(non-blocking by nature) while keeping audio capture/playback on dedicated OS threads.
-
-Threads are NOT Send because llama.cpp and onnxruntime are not thread-safe across cores.
-
----
-
-### Thread Allocation
-
-```text
-Total cores = N
-LLM threads = N - 2
-Remaining:
-    - audio thread (Tier 1: highest priority)
-    - VAD thread (Tier 2: high priority)
+┌─────────────────────────────────────────────────────────────────────┐
+│  1. CORE — Shared state, settings, events, constants, error types   │
+│     (core/)                                                         │
+├─────────────────────────────────────────────────────────────────────┤
+│  2. SERVICES — Domain-specific inference + orchestration            │
+│     (services/)                                                     │
+│     Audio → VAD → STT → LLM → TTS → Playback                       │
+│     + Realtime S2S (WebSocket) + Memory (async ingestion)          │
+├─────────────────────────────────────────────────────────────────────┤
+│  3. INFRASTRUCTURE — Persistence, monitoring, IPC command handlers  │
+│     (persistence/, monitoring/, ipc/)                                │
+├─────────────────────────────────────────────────────────────────────┤
+│  4. SETUP & BOOT — Model management, onboarding, update checking    │
+│     (setup/, wizard/, tray/, utils/)                                │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### Thread Priority
+## 2. Hardware Tiers & Feature Mapping
 
-* Audio capture callback: `ThreadPriority::Max`
-* VAD worker: `Crossplatform(ThreadPriorityValue::from(80u8))`
-* STT worker: Same as VAD
-* LLM/TTS: Default priority
+Architecture capabilities are gated by hardware tier. Vox must dynamically degrade or upgrade based on what the user's system supports. **Tier 2 is the recommended baseline.**
 
----
+| Tier | Hardware | Pipeline Mode | Memory Ingestion | Memory Retrieval | Tool Calling |
+| :--- | :------- | :-----------: | :--------------: | :--------------: | :----------: |
+| **1A** | 8GB, CPU-only, no GPU | Modular (Local) | ❌ None (FIFO only) | ✅ Working Memory context window only | ❌ Unavailable |
+| **1B** ⭐ | 8GB+, dedicated GPU | Modular (Local) | ✅ Full async ingestion | ✅ Full retrieval (episodic + semantic) | ⚠️ Depends on local LLM capability |
+| **2A** ⭐ | Hybrid (Remote LLM + Local Audio) | Modular (Remote LLM) | ✅ Full async ingestion | ✅ Full retrieval | ⚠️ Depends on remote LLM capability |
+| **2B** ⭐ default | Hybrid (Cloud LLM + Local Audio) | Modular (Cloud LLM) | ✅ Full async ingestion | ✅ Full retrieval | ✅ All cloud models support tool calling |
+| **3** | Any (Realtime S2S) | Realtime (WebSocket) | ✅ Provider-managed | ✅ Via early tool calls in provider | ✅ Via early tool calls |
 
-## 5. Audio Ingestion (Tier 1 - Realtime)
+### Tier Implications
 
----
+- **Tier 1A** — Strictly a conversation buffer. No persistent memory ingestion runs (no background worker). Working Memory uses a simple FIFO to manage the context window. This is the floor — every system supports at minimum this.
+- **Tier 1B+** — Full memory subsystem enabled. The background memory worker (`persistence/memory_worker.rs`) runs async ingestion (embedding, NLI, edge classification) during idle cycles. Retrieval uses the full two-tier budgeted system against the Turso database.
+- **Tier 2B** — Recommended default. Cloud LLM handles all reasoning and tool calling; local models handle audio capture, VAD, STT, and TTS. Memory ingestion runs locally during idle.
+- **Tier 3** — Cloud provider owns the full voice loop. Memory is provider-managed via tool calls during the S2S session. Local memory subsystem supplements with episodic/semantic context injected as system context.
 
-### Implementation
-
-* library: `cpal`
-* format: 16kHz mono PCM
-* chunk size: 10–20 ms
-
----
-
-### Zero-Allocation Callback
-
-The CPAL callback reuses pre-allocated buffers:
-
-* `mono_buffer` — for channel averaging
-* `resampled_buffer` — for 48kHz→16kHz linear interpolation
+> **Design principle**: All features degrade gracefully. Every tier supports real-time voice interaction — higher tiers add persistent memory and tool capabilities. The pipeline never hard-fails due to missing memory models.
 
 ---
 
-### Ring Buffer Transport
-
-Audio flows via SPSC lock-free ring buffer:
-
-```text
-Producer: AudioStream (CPAL callback)
-Consumer: AudioRouter thread → VAD worker (Tier 2) or Realtime WebSocket
-Capacity: 16000 * 4 = 64000 samples (4s)
-```
-
----
-
-### Audio Router (Realtime S2S)
-
-In realtime S2S mode, the `AudioRouter` thread (`services/audio/router.rs`) replaces VAD
-as the direct consumer of the CPAL ring buffer. It reads 256-sample chunks and routes
-them based on `RouteMode`:
-
-- `RouteMode::LocalVad` — forward to VAD actor (modular mode + realtime PTT)
-- `RouteMode::DirectRealtime` — convert f32→i16 and send to the realtime session via
-  `tokio::sync::mpsc::UnboundedSender<Vec<i16>>` (realtime passive mode)
-
-The router also checks `is_paused: Arc<AtomicBool>` — if paused, chunks are discarded
-instead of forwarded.
-
----
-
-### Overflow Handling
-
-```rust
-// Throttled logging: only every 100 drops
-if pushed < resampled_buffer.len() {
-    DROP_COUNT.fetch_add(1);
-    if prev % 100 == 0 { log warning }
-}
-```
-
-## 6. Directory Structure (src/)
-
-The backend is organized into domain-specific modules. Services use the **Actor-Engine pattern**:
+## 3. Module Layout
 
 ```
 src/
-├── lib.rs            # Tauri app entry, plugin init, engine lifecycle
-├── main.rs           # Binary entry point (just calls vox_lib::run())
-├── tray.rs           # Tray icon, overlay window management
-├── wizard.rs         # Setup wizard window config + model health checks
-├── core/
-│   ├── mod.rs        # Module declarations
-│   ├── events.rs     # VoxEvent enum (16 pipeline signal variants)
-│   ├── settings.rs   # VoxSettings struct + 12 sub-settings + reload policies
-│   ├── state.rs      # AppState, VoxEngine, PipelineAtomics, PttState, InteractionState
-│   ├── constants.rs  # Model paths, timing, system prompts (modular + realtime)
-│   └── metrics.rs    # MetricField, PipelineMetrics
+├── lib.rs                  # Tauri app assembly, engine lifecycle
+├── main.rs                 # Binary entry (1 line: calls vox_lib::run())
+├── core/                   # Shared infrastructure
+│   ├── constants.rs        # Model paths, system prompts, timing, memory taxonomy
+│   ├── error.rs            # Unified VoxError + domain-specific errors (Audio, STT, LLM, TTS, Memory, Persistence)
+│   ├── events.rs           # VoxEvent enum (14 pipeline signal variants)
+│   ├── metrics.rs          # PipelineMetrics, MetricField
+│   ├── settings.rs         # VoxSettings (12 sub-settings: UI, Audio, VAD, ASR, LLM, TTS, Interaction, Telemetry, Persistence, Memory, Assistant, Realtime, Setup)
+│   └── state.rs            # AppState, VoxEngine, PipelineAtomics, PttState, InteractionState, VadCommand
 ├── services/
-│   ├── mod.rs        # Service module declarations
-│   ├── pipeline.rs   # Pipeline orchestrator (~1572 lines, LLM→TTS→Playback)
-│   ├── utils.rs      # should_flush, count_words, is_devanagari, transliterate, stitch
-│   ├── ptt.rs        # Push-to-talk mode (VAD gate, realtime support, speech_detected)
-│   ├── translit.rs   # Transliteration (Devanagari→Roman, ONNX encoder-decoder)
-│   ├── audio/
-│   │   ├── mod.rs    # Module exports (AudioStream, PlaybackEngine, AudioRouter, RouteMode)
-│   │   ├── device.rs # Audio capture (cpal ring buffer, zero-alloc callback)
-│   │   ├── playback.rs # Playback engine (Cubic Hermite upsample, jitter buffer, fade)
-│   │   ├── router.rs # Audio router — VAD or realtime routing, pause gating
-│   │   └── decode.rs # decode_to_24khz_mono(), DecodedAudio, write_wav_f32()
-│   ├── vad/
-│   │   ├── mod.rs    # VadEngine trait + VadBackend enum dispatch (Ten/Earshot)
-│   │   ├── actor.rs  # spawn_vad_actor() — dedicated OS thread, Max priority, VadCommand handler
-│   │   ├── earshot_vad.rs # Earshot VAD (default, pure Rust energy-based, embedded NN weights)
-│   │   └── ten_onnx.rs    # Ten VAD (legacy, ONNX via sherpa-onnx)
-│   ├── stt/
-│   │   ├── mod.rs           # SttEngine + SttProvider traits
-│   │   ├── actor.rs         # spawn_stt_worker() — dedicated OS thread
-│   │   ├── nemotron_onnx.rs # Nemotron-3.5 ASR (primary, parakeet-rs, FastConformer-RNNT)
-│   │   ├── qwen_onnx.rs     # Qwen3-ASR (legacy, sherpa-onnx)
-│   │   └── providers/
-│   │       ├── mod.rs       # SttProvider trait + SttProviderKind enum
-│   │       └── embedded.rs  # EmbeddedSttProvider — wraps qwen/nemotron engines
-│   ├── llm/
-│   │   ├── mod.rs            # Module + LlmEngine trait + global_llama_backend() singleton
-│   │   ├── actor.rs          # spawn_llm_worker() — persistent OS thread
-│   │   ├── llama_cpp.rs      # LlamaEngine (llama.cpp bindings via llama-cpp-4)
-│   │   └── providers/
-│   │       ├── mod.rs        # LlmProvider trait + ProviderKind enum
-│   │       ├── embedded.rs   # EmbeddedProvider (local GGUF)
-│   │       └── openai_compat.rs # OpenAiCompatProvider (unified cloud hub)
-│   ├── tts/
-│   │   ├── mod.rs
-│   │   ├── actor.rs     # spawn_tts_worker() — accepts Box<dyn TtsProvider>
-│   │   └── providers/
-│   │       ├── mod.rs            # TtsProvider trait + TtsProviderKind enum
-│   │       ├── supertonic.rs     # Supertonic 3 (sherpa-onnx, anti-aliasing LPF, 44kHz→24kHz)
-│   │       ├── chatterbox.rs     # ChatterboxEngine (local GGML, voice cloning, native 24kHz)
-│   │       └── chatterbox_remote.rs # ChatterboxRemoteProvider (remote GPU server, reqwest blocking)
-│   ├── realtime/
-│   │   ├── mod.rs           # RealtimeVoiceProvider + RealtimeSession traits
-│   │   ├── engine.rs        # RealtimeEngine orchestrator (start/stop/barge_in)
-│   │   ├── audio_bridge.rs  # PCM → WebSocket sender (resampling, i16 conversion)
-│   │   ├── playback_bridge.rs # WebSocket receiver → PlaybackEngine
-│   │   ├── resampler.rs     # rubato-based sample rate conversion
-│   │   └── providers/
-│   │       ├── mod.rs
-│   │       ├── gemini_live.rs  # Full Gemini Live WebSocket (910 lines)
-│   │       └── deepgram_live.rs # Deepgram Voice Agent WebSocket (657 lines)
-│   └── memory/
-│       ├── mod.rs            # Module exports (classifier, embedder, retrieval, tokenizer, working_memory, personal_memory)
-│       ├── classifier.rs     # DistilBERT query-sieve (classify_query, init_classifier)
-│       ├── embedder.rs       # BGE-M3 1024-dim embeddings (generate_embedding, cosine_similarity)
-│       ├── retrieval.rs      # Episodic retrieval + personal memory injection
-│       ├── tokenizer.rs      # estimate_tokens
-│       ├── working_memory.rs # ConversationManager, compaction, ProfileUpdate
-│       └── personal_memory.rs # load_user_profile
-├── ipc/
-│   ├── mod.rs
-│   ├── pipeline.rs  # launch_engine, stop_engine, engage, start/stop_realtime_session, pause/resume
-│   ├── settings.rs  # get_settings, update_setting, request_model_catalog, health checks
-│   ├── tray.rs      # hide_tray_window, sync_hud_visibility, toggle_hud_visibility
-│   ├── history.rs   # get_sessions, get_turns, delete_session
-│   ├── audio.rs     # list_input_devices
-│   ├── voices.rs    # Voice library CRUD (~725 lines — add_voice, list_voices, preview, clone)
-│   ├── monitoring.rs # Runtime snapshot retrieval
-│   ├── memory.rs    # get_personal_profile (Personal Memory profile read)
-│   └── setup.rs     # Boot state, manifest, model management
-├── persistence/
-│   ├── mod.rs
-│   ├── db.rs        # VoxDb — SQLite wrapper (rusqlite)
-│   ├── events.rs    # PersistenceEvent enum
-│   ├── schema.rs    # run_migrations()
-│   ├── voices.rs    # VoiceEntry struct, CRUD for voice library
-│   ├── worker.rs    # spawn_persistence_worker() — dedicated OS thread
-│   └── memory_worker.rs # spawn_memory_worker() — background memory ingestion (episodic + personal)
-├── monitoring/
-│   ├── mod.rs
-│   ├── aggregator.rs    # TelemetryAggregator — crossbeam-based background worker
-│   ├── collector.rs     # Metric collection from atomics
-│   ├── snapshot.rs      # RuntimeSnapshot struct
-│   ├── runtime_state.rs # MonitoringState struct
-│   ├── system_monitor.rs # /proc/stat/meminfo polling
-│   └── telemetry_emitter.rs # Tauri event emission
-├── setup/
-│   ├── mod.rs
-│   ├── manifest.rs      # AppManifest, VoxManifest (fetch/cache at boot)
-│   ├── model_manager.rs # ModelManager — download, verify SHA256, setup orchestration
-│   ├── runtime_check.rs # System validation
-│   └── update_check.rs  # Update checking
-├── utils/
-│   ├── mod.rs
-│   ├── paths.rs         # Path singleton (dirs crate, cross-platform)
-│   ├── logging.rs       # Tracing init, file rotation
-│   ├── audio_filters.rs # Audio processing filters
-│   └── bench_reporter.rs # BenchReporter — memory snapshots (procfs/Linux)
-└── bin/
-    ├── vox-bench.rs          # Full pipeline benchmark
-    ├── vox-clone-bench.rs    # Voice clone benchmark
-    ├── vox_realtime_bench.rs # WebSocket realtime benchmark
-    ├── tts-bench.rs          # TTS-only benchmark
-    ├── voice_clone.rs        # Voice clone test binary
-    ├── test-emotion-tags.rs  # Emotion tag test
-    └── test-translit.rs      # Transliteration test
-```
-
-### Memory Subsystem
-
-Vox implements three cooperating memory systems, all rooted in `services/memory/`
-and the background `persistence/memory_worker.rs`. See
-[`docs/features/memory-architecture.md`](features/memory-architecture.md) for the
-full design.
-
-| System | Purpose | Key files | Storage |
-|--------|---------|-----------|---------|
-| **Working Memory** | In-session conversation history, compaction, and profile-update extraction | `services/memory/working_memory.rs` (`ConversationManager`, `ProfileUpdate`) | In-memory (per session) |
-| **Episodic Memory** | Long-term recall of past sessions via semantic embeddings, gated by a DistilBERT query-sieve | `services/memory/embedder.rs` (BGE-M3 1024-dim), `classifier.rs` (DistilBERT gate), `retrieval.rs` (linear cosine retrieval); `episodes` table | `episodes` table |
-| **Personal Memory** | Durable user profile (`<user_profile>` block injected each turn), extracted by reusing the chat LLM | `services/memory/personal_memory.rs` (`load_user_profile`), `persistence/memory_worker.rs` (`apply_profile_updates`); `personal_memory` + `personal_memory_history` tables | `personal_memory` + `personal_memory_history` tables |
-
-The background memory worker is spawned in `lib.rs` **only when**
-`memory.bg_worker_enabled && memory.episodic_enabled && local_gpu_info.has_gpu`.
-On CPU-only / Tier 1A machines (no GPU), neither Personal Memory ingestion nor
-Episodic ingestion runs. Personal Memory extraction is currently active only when a
-provider is passed (benchmarks); the live pipeline uses FIFO maintenance.
-
-## 7. Voice Activity Detection (VAD) - Tier 2
-
----
-
-### Actor-Engine Pattern
-
-Each AI domain (VAD, STT, LLM, TTS) follows a strict separation of concerns:
-
-1. **Actor**: Owns the OS thread, manages the command `Receiver`, handles state (turn IDs, cancellation), and emits `VoxEvent`s.
-2. **Engine**: Encapsulates the C++/ONNX inference logic, implements the domain trait, and remains stateless where possible.
-
----
-
-### Models (Two Backends)
-
-The `VadBackend` enum in `services/vad/mod.rs` dispatches between the two backends.
-`TenVad` is the default variant but Earshot is preferred for its superior speed and
-zero-dependency footprint.
-
-**Default: Earshot VAD (Rust-native, energy-based)**
-- No model file required — embedded neural weights
-- Ultra-low latency (~1ms per frame)
-- Threshold: configurable (default 0.5)
-- ~20x faster than TenVAD
-
-**Legacy: Ten VAD (ONNX via sherpa-onnx)**
-- Requires `ten_vad.onnx` model file
-- Higher latency (~15ms per frame)
-- threshold: configurable (default 0.45)
-- min_silence_duration: 0.5s
-- min_speech_duration: 0.25s
-
----
-
-### Run Loop Logic
-
-```rust
-loop {
-    if engine_shutdown.load(Ordering::Relaxed) { break; }
-    
-    // Hot-updates via VadCommand channel (lock-free)
-    while let Ok(cmd) = vad_rx.try_recv() { update local state; }
-    
-    if consumer.occupied_len() >= 256 {
-        consumer.pop_slice(&mut chunk);
-        self.detector.accept_waveform(&chunk);
-        
-        if detected && !in_speech {
-            in_speech = true;
-            current_turn_id += 1;
-            stt_tx.send(ResetStream); // Clear STT state
-            pipeline_tx.send(SpeechStart { ... });
-        }
-        
-        if detected {
-            utterance_buffer.extend_from_slice(&chunk);
-            // Every 800ms: send Partial to STT
-        } else if in_speech {
-            in_speech = false;
-            // Send Final to STT if >= 3200 samples
-            pre_roll_buffer.extend_from_slice(&chunk); // 500ms pre-roll
-        }
-    } else {
-        std::thread::sleep(Duration::from_millis(5)); // Throttle
-    }
-}
+│   ├── audio/              # Capture (cpal ring buffer), Playback (Cubic Hermite upsample, jitter buffer, underrun fade), Router (VAD/Realtime routing), Decode
+│   ├── vad/                # VadEngine trait + VadBackend enum dispatch (Earshot / TenVAD)
+│   ├── stt/                # SttEngine trait + EmbeddedSttProvider (Nemotron-3.5 / Qwen3-ASR)
+│   ├── llm/                # LlmProvider trait (Embedded / OpenAiCompat), LlmEngine, capability probe
+│   ├── tts/                # TtsProvider trait (Supertonic 3 / Chatterbox / ChatterboxRemote)
+│   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits (Gemini Live, Deepgram Voice Agent)
+│   ├── memory/             # 12 modules: classifier, deduplication, embedder, formatter, ingestion, llm_edge_classifier, nli, orchestrator, retrieval, tokenizer, working_memory
+│   ├── pipeline.rs         # Pipeline orchestrator (LLM→TTS→Playback coordination, ~1888 lines)
+│   ├── ptt.rs              # Push-to-talk mode (VAD gate, realtime support, speech_detected)
+│   ├── translit.rs         # Devanagari→Roman ONNX encoder-decoder
+│   └── utils.rs            # should_flush, count_words, is_devanagari, transliterate, stitch
+├── ipc/                    # Tauri command handlers (pipeline, settings, tray, history, audio, voices, monitoring, memory, setup)
+├── persistence/            # VoxDb (Turso/SQLite), schema migrations, session CRUD, memory_worker, mutations, queries
+├── monitoring/             # TelemetryAggregator (crossbeam), system monitor (/proc/stat/meminfo), snapshot, emitter
+├── setup/                  # AppManifest, VoxManifest, ModelManager (download, SHA256 verify), runtime check, update check
+├── utils/                  # Paths singleton, logging (tracing + file rotation), audio_filters, bench_reporter
+├── tray.rs                 # Tray icon, overlay window management
+└── wizard.rs               # Setup wizard window config + model health checks
 ```
 
 ---
 
-### Pre-roll Buffer
-
-* 500ms sliding window during silence
-* Injected on speech_start to capture onset frames
-
----
-
-### Hot-Reloading
-
-VAD settings (threshold, noise gate, mode, owner) update via `VadCommand` channel without blocking the audio path.
-
----
-
-## 8. Speech-to-Text (STT) - Tier 2
-
-
-
----
-
-
-### Provider Architecture
-
-STT supports a two-level engine/provider dispatch:
+## 3. Streaming Pipeline
 
 ```
-SttEngine trait (low-level ASR engine):
-   ├── NemotronEngine  (primary, parakeet-rs, FastConformer-RNNT)
-   └── QwenEngine      (legacy, sherpa-onnx)
-
-SttProvider trait (wraps engines for pipeline):
-   ├── EmbeddedSttProvider  (wraps Nemotron/Qwen engines in services/stt/providers/embedded.rs)
-   └── Cloud               (returns "not yet implemented")
+audio → VAD → STT → (Transliteration) → LLM → (Tag Stripping) → TTS → Playback → speaker
+       ↑                                                                           ↓
+  Audio Capture (cpal, 16kHz)                                         Playback Engine (48kHz)
 ```
 
-`SttProviderKind`: `Embedded` or `Cloud`. The pipeline constructs an `EmbeddedSttProvider`
-from the configured ASR engine. The `Cloud` variant is reserved for future remote STT APIs.
-
-### Models
-
-**Default: Nemotron-3.5** (ONNX INT8, ~657 MB encoder, ~99 MB decoder_joint)
-
-- Runtime: ONNX Runtime via `ort` crate
-
-- Files: `encoder.onnx`, `decoder_joint.onnx`, `config.json`, `tokenizer.model`
-
-- Memory: ~2,500 MB RSS
-
-- RTF: 0.02–0.35× (average 0.18×)
-
-- Chunked transcription: 8960-sample windows, `reset_state()` only at end
-
-
-
-**Legacy: Qwen3-ASR-0.6B** (ONNX INT8 via sherpa-onnx)
-
-- 4 files: `conv_frontend.onnx`, `encoder.int8.onnx`, `decoder.int8.onnx`, `tokenizer`
-
-- Higher RTF: 0.38–4.63×
-
-- Still supported but not the default
-
-
----
-
-
-### Worker Thread
-
-
-```rust
-
-spawn_stt_worker(
-
-    rx: SttCommand,           // Commands from VAD
-
-    model_path: PathBuf,
-
-    engine_type: String,      // "nemotron" or "qwen"
-
-    vox_event_tx: Option<mpsc::Sender<VoxEvent>>,
-
-    is_engaged: Arc<AtomicBool>,
-
-    is_loaded: Arc<AtomicBool>,
-
-    engine_shutdown: Arc<AtomicBool>,
-
-    pre_load: bool,
-
-)
-
-```
-
-
-
----
-
-
-### SttCommand Types
-
-
-```rust
-
-pub enum SttCommand {
-
-    Partial(u32, InteractionOwner, Vec<f32>),  // Streaming feedback
-
-    Final(u32, InteractionOwner, Vec<f32>),    // End of utterance
-
-    ResetStream,                               // Clear decoder state
-
-    Shutdown,                                    // Exit thread
-
-}
-
-```
-
-
-
----
-
-
-### Key Algorithm: Chunked Transcription (Nemotron)
-
-
-
-v0.8.2 fix: Nemotron audio is fed as sequential 8960-sample (~560ms @ 16kHz) windows
-
-through the ONNX session. `reset_state()` is called **only at the end**, keeping
-
-context across all chunks. This produces coherent Devanagari Hindi from multilingual
-
-speech (previously produced fragmented English).
-
-
-
-```rust
-
-fn transcribe(audio: &[f32]) -> String {
-
-    let window_size = 8960;
-
-    for chunk in audio.chunks(window_size) {
-
-        session.run(ORTFeed { name: "audio_signal", tensor: chunk });
-
-    }
-
-    session.reset_state();  // Only at the end
-
-    decode_output(session)
-
-}
-
-```
-
-
-
----
-
-
-### Throttling
-
-
-
-Partial transcripts throttled to `STT_THROTTLE_MS = 800ms` to prevent CPU spikes.
-
-Partials are UI feedback only. The `Final` transcript is authoritative.
-
-
----
-
-
-## 9. Language Model (LLM) - Tier 3
-
----
-
-### Decoupled LLM Provider Architecture
-
-The LLM subsystem is decoupled into a **provider-based architecture**. This allows Vox to switch between local embedded models and remote HTTP/API endpoints without changing the core voice pipeline loop (`pipeline.rs`):
-
-```text
-Vox Pipeline
-    └─ LLM Worker Thread (spawn_llm_worker)
-           └─ LlmProvider Trait
-                  ├─ EmbeddedProvider (local GGUF via llama.cpp)
-                  └─ OpenAiCompatProvider (handles ALL remote/cloud providers)
-                       ├─ OpenAI-compatible servers (Ollama, LM Studio, vLLM)
-                       ├─ OpenAI cloud          (provider_name: "openai")
-                       ├─ Gemini cloud          (provider_name: "gemini")
-                       └─ Anthropic cloud       (provider_name: "anthropic")
-```
-
----
-
-### Cloud Provider Routing
-
-The `OpenAiCompatProvider` constructor accepts a `provider_name: Option<&str>` parameter that dynamically maps the base URL to the correct cloud endpoint:
-
-```rust
-pub fn new(base_url: &str, model: &str, api_key: Option<&str>, provider_name: Option<&str>) -> Self
-```
-
-Logic:
-- If `provider_name` is `"openai"` → `base_url = "https://api.openai.com"`
-- If `provider_name` is `"gemini"` → `base_url = "https://generativelanguage.googleapis.com/v1beta/openai"`
-- If `provider_name` is `"anthropic"` → `base_url = "https://api.anthropic.com"`
-
-For Anthropic, the `inject_headers` method adds `anthropic-version: 2023-06-01` and `x-api-key` headers alongside Bearer auth. The pipeline (`pipeline.rs`) passes `provider_name` from the user's settings when constructing the provider, enabling transparent cloud routing without changes to pipeline orchestration.
-
----
-
-### Provider Interface
-
-Every LLM provider must implement the `LlmProvider` trait:
-
-```rust
-pub trait LlmProvider: Send + Sync {
-    /// Submit a generation request and stream tokens via channels
-    fn generate(
-        &self,
-        text: &str,
-        system_prompt: &str,
-        turn_id: u32,
-        cancel_flag: &Arc<AtomicBool>,
-        tx: &mpsc::Sender<VoxEvent>,
-    ) -> anyhow::Result<()>;
-
-    /// Returns true if the provider is healthy / reachable
-    fn health_check(&self) -> bool;
-
-    /// Returns a list of model IDs the provider can serve
-    fn list_models(&self) -> anyhow::Result<Vec<RemoteModelInfo>>;
-
-    /// Human-readable provider kind
-    fn kind(&self) -> ProviderKind;
-}
-```
-
----
-
-### Worker Thread
-
-The LLM subsystem runs inside a persistent worker thread spawned via `spawn_llm_worker` that listens for generation requests and coordinates with the active provider:
-
-```rust
-pub fn spawn_llm_worker(
-    app: tauri::AppHandle,
-    rx: std::sync::mpsc::Receiver<LlmCommand>,
-    provider: Box<dyn LlmProvider>,
-    event_tx: std::sync::mpsc::Sender<VoxEvent>,
-    is_loaded: Arc<AtomicBool>,
-) {
-    is_loaded.store(true, Ordering::Relaxed);
-    while let Ok(cmd) = rx.recv() {
-        match cmd {
-            LlmCommand::Generate { text, system_prompt, turn_id, cancel_flag } => {
-                if let Err(e) = provider.generate(&text, &system_prompt, turn_id, &cancel_flag, &event_tx) {
-                    let _ = event_tx.send(VoxEvent::Error { turn_id, message: e.to_string() });
-                }
-            }
-            LlmCommand::Shutdown => break,
-        }
-    }
-    is_loaded.store(false, Ordering::Relaxed);
-}
-```
-
----
-
-### LlmCommand Types
-
-The orchestrator communicates with the LLM worker using the following message protocol:
-
-```rust
-pub enum LlmCommand {
-    Generate {
-        text: String,
-        system_prompt: String,
-        turn_id: u32,
-        cancel_flag: Arc<AtomicBool>,
-    },
-    Shutdown,
-}
-```
-
----
-
-### Provider Implementations
-
-#### 1. Embedded Provider (`EmbeddedProvider`)
-Uses the local `llama.cpp` C++ engine bindings (via `llama-cpp-4` crate) to load and execute GGUF models directly on the host CPU.
-* **Primary Model**: Llama-3.2-1B-Instruct (GGUF Q6_K, ~1.02 GB) which consumes ~970 MB RSS memory and runs at ~3.3 TPS on CPU.
-* **Alternative Models**: Gemma 2 2B-it (Q4_K_M, ~3.46 GB), Gemma 2 2B Uncensored (Q2_K_P, ~2.30 GB), and MiniCPM5-1B (Q4_K_M, ~688 MB).
-* **Multi-Family Formatting**: Automatically detects and formats prompt structure based on the model family (Gemma, Qwen, Llama3, Nemotron, or Unknown).
-
-#### 2. OpenAI-Compatible Remote Provider (`OpenAiCompatProvider`)
-Connects to remote inference servers and cloud APIs over HTTP using a non-blocking connection client via the `reqwest` crate. Supports both local OpenAI-compatible servers (Ollama, LM Studio, vLLM) and direct cloud LLM providers (OpenAI, Gemini, Anthropic) — all through the same provider struct, differentiated by the `provider_name` parameter.
-* **Streaming & Cancellation**: Submits chat completion requests with `stream: true` and processes chunks as they arrive. Continuously polls the `cancel_flag` to abort the HTTP request instantly when barge-in is triggered.
-* **Model Discovery**: Dynamically queries the standard `/v1/models` endpoint (or `/api/tags` for Ollama) to discover and list available models.
-* **Cloud Provider Support**: The constructor accepts `provider_name` (`"openai"`, `"gemini"`, or `"anthropic"`) to automatically resolve the correct base URL. Anthropic adds `anthropic-version` and `x-api-key` headers via `inject_headers`.
-
----
-
-### Language Detection & Prompt Formatting
-
-Before dispatching to the provider, the pipeline formats the user query and system prompt:
-* **Language Detection**: The `is_devanagari(text)` function checks if the transcript contains Devanagari Unicode characters (range U+0900–U+097F). If detected, it routes Hindi prompts; otherwise, English prompts.
-* **Emotion Tags**: Emotion tags `<laugh>`, `<breath>`, and `<sigh>` are appended to the system prompt to guide the LLM's vocal emotional markers.
-* **Template Routing**: The `ModelFamily` helper generates the correct prompt layout matching the loaded model’s spec:
-```text
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-
-{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-{user_transcript}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-```
-
----
-
-### Tag Stripping (Accumulated-Buffer + Delta Emission)
-
-v0.8.2+: The LLM token stream strips emotion tags (`<laugh>`, `<breath>`, `<sigh>`) before passing text to the TTS engine to prevent raw tags from being read aloud:
-1. **Accumulated-buffer stripping**: Tags are removed from the full accumulated text instead of individual token slices, avoiding partial-tag leakage.
-2. **Delta emission**: Emits only the differences between current and historical cleaned strings, maintaining the per-token display cadence.
-3. **Partial-tag holdback**: The `partial_tag_len()` helper detects incomplete tags at the buffer end (e.g. `"<lau"`) using `char_indices()` to safely handle multi-byte UTF-8, holding them back until they resolve or complete.
-4. **Think-block suppression**: Suppresses internal chain-of-thought blocks enclosed in `<think>...</think>` or `[think]...[/think]` tags.
-```rust
-// tag stripping in the token generation / cleaning loop
-let mut cleaned = full_accumulated.clone();
-for tag in &["<laugh>", "<breath>", "<sigh>"] {
-    cleaned = cleaned.replace(tag, "");
-}
-if let Some(pos) = cleaned.rfind(partial_tag) {
-    cleaned.truncate(pos); // Hold back partial tag
-}
-let delta = &cleaned[old_cleaned_len..];
-if !delta.is_empty() {
-    tx.send(VoxEvent::LlmToken { token: delta.to_string() });
-}
-```
-
-## 10. Text-to-Speech
-
----
-
-### Decoupled TTS Provider Architecture
-
-The TTS subsystem is built on a **trait-based provider system** mirroring the LLM
-`LlmProvider` pattern, with three provider implementations:
-
-```text
-Vox Pipeline
-    └─ TTS Worker Thread (spawn_tts_worker)
-           └─ TtsProvider Trait (services/tts/providers/mod.rs)
-                  ├─ Supertonic 3 (sherpa-onnx, 99M param, INT8, 44kHz→24kHz)
-                  ├─ ChatterboxEngine (local GGML, 340M param, voice cloning, native 24kHz)
-                  └─ ChatterboxRemoteProvider (remote GPU server, reqwest blocking PCM stream)
-```
-
-The trait uses `&self` (interior mutability via `Mutex`/`Atomic*`) instead of `&mut self`
-for thread safety:
-
-```rust
-pub trait TtsProvider: Send + 'static {
-    fn kind(&self) -> TtsProviderKind;
-    fn health_check(&self) -> bool;
-    fn set_quality_steps(&self, steps: u32);
-    fn set_speed(&self, speed: f32);
-    fn generate(
-        &self,
-        text: &str,
-        turn_id: u32,
-        cancel_flag: &Arc<AtomicBool>,
-        tx: &mpsc::Sender<VoxEvent>,
-    ) -> anyhow::Result<()>;
-    fn cancel(&self);
-}
-```
-
-**Voice selection** is provider-config level (requires restart to change), not per-utterance.
-`voice_sid` was removed from `TtsCommand::Generate` — voice is set in `TtsProviderConfig`.
-
-**Settings**: `TtsProviderConfig` is a tagged enum (like `LlmProviderConfig`) in
-`core/settings.rs`:
-
-```rust
-pub enum TtsProviderConfig {
-    Supertonic,
-    Chatterbox,
-    ChatterboxRemote,
-}
-```
-
-Switch requires TTS worker restart (`SettingReloadPolicy::Restart`).
-
-**Pipeline integration**: `warm_up_tts()` in `pipeline.rs` matches on `TtsProviderConfig`
-to construct the correct provider. The pipeline is provider-agnostic — do not hardcode
-any provider when adding new ones.
-
----
-
-### Provider Implementation: Supertonic 3
-
-* 99M param flow-matching, INT8 quantized (~144MB), 31 languages, 10 voices (sherpa-onnx native)
-* Located at `services/tts/providers/supertonic.rs`
-* Output: 24 kHz f32 mono (vocoder at 44.1kHz, downsampled with anti-aliasing LPF)
-
----
-
-### Anti-Aliasing Low-Pass Filter (v0.8.2+)
-
-Supertonic 3's vocoder produces audio at 44.1kHz. The engine downsamples to 24kHz
-for TTS delivery. To prevent aliasing artifacts from high-frequency content near
-Nyquist (22.05kHz), a 2nd-order Butterworth LPF is applied before downsampling:
-
-- **Type**: Biquad low-pass filter (2nd-order Butterworth)
-- **Cutoff**: 11000 Hz (below 24kHz Nyquist of 12000 Hz, with 1kHz margin)
-- **Sample rate**: 44100 Hz
-- **Coefficients**: Pre-computed via `BiquadFilter::new(Lpf, 11000.0, 44100.0)`
-- **Execution**: Applied sample-by-sample in the resampling loop, not as a separate pass
-
-```rust
-// providers/supertonic.rs: anti-aliasing LPF
-let mut lpf = BiquadFilter::new(BiquadType::Lpf, 11000.0, 44100.0);
-for i in 0..output_samples {
-    let filtered = lpf.process(supertonic_output[i]);
-    interpolated_24k[i] = filtered;
-}
-```
-
-The filter coefficients (`BiquadCoefficients`) use the standard RBJ biquad formulae.
-No external DSP library required.
-
----
-
-### Provider Implementation: ChatterboxEngine
-
-* 340M param, GGML format (native via `ggml` crate)
-* **Voice cloning from 5s reference audio** — no fine-tuning required
-* Native 24kHz output (no resampling step needed)
-* Memory: ~1.1 GB RSS
-* Located at `services/tts/providers/chatterbox.rs`
-* Supports `cancel()` for barge-in via atomic flag
-
----
-
-### Provider Implementation: ChatterboxRemoteProvider
-
-* Remote GPU server integration via `reqwest` blocking HTTP client
-* Streams PCM audio chunks from server, pushes directly to playback ring buffer
-* 0 MB local model memory (all inference on remote GPU)
-* Located at `services/tts/providers/chatterbox_remote.rs`
-* Supports `cancel()` by dropping the HTTP response body
-
----
-
-### Worker Thread
-
-```rust
-spawn_tts_worker(
-    rx: mpsc::Receiver<TtsCommand>,
-    provider: Box<dyn TtsProvider>,
-    event_tx: mpsc::Sender<VoxEvent>,
-    is_loaded: Arc<AtomicBool>,
-)
-```
-
-The worker owns the provider exclusively on its dedicated OS thread. `TtsCommand::Generate`
-no longer carries `voice_sid` — voice is set at provider construction time via config.
-
-### TtsCommand Types
-
-```rust
-pub enum TtsCommand {
-    Generate { text: String, turn_id: u32, cancel_flag: Arc<AtomicBool> },
-    SetQualitySteps(u32),
-    SetSpeed(f32),
-    Shutdown,
-}
-```
----
-
-### Chunked Synthesis (Quality Mandate)
-
-Tokens flushed to TTS using the fully dynamic `should_flush` algorithm in `utils.rs`.
-See [Section 12: Sub-Sentence Chunking](#sub-sentence-chunking) for the complete algorithm
-description. The TTS engine receives text chunks that are prosodically coherent (end at
-sentence or clause boundaries where possible) without mid-word splits.
-
-
----
-
-## 11. Playback Engine (Tier 3)
-
----
-
-### Architecture
-
-```text
-TtsChunk (24kHz) → upsample_2x() → ring buffer → CPAL callback (48kHz)
-```
-
----
-
-### Upsample Function (Cubic Hermite Interpolation)
-
-```rust
-pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
-    // Cubic Hermite (Catmull-Rom) interpolation for 24kHz → 48kHz (exact 2x ratio).
-    // Uses 4-point basis with weights [-1/16, 9/16, 9/16, -1/16].
-    // Produces smoother waveform than linear interpolation.
-    // O(n), no FFT, no external deps.
-    for i in 0..len {
-        out.push(input[i]);
-        let p0 = if i > 0 { input[i - 1] } else { input[i] };
-        let p2 = if i + 1 < len { input[i + 1] } else { input[i] };
-        let p3 = if i + 2 < len { input[i + 2] } else { p2 };
-        let midpoint = (-p0 + 9.0 * input[i] + 9.0 * p2 - p3) / 16.0;
-        out.push(midpoint);
-    }
-}
-```
-
-**Improvement over linear interpolation**: Cubic Hermite produces continuous first
-derivatives at sample boundaries, reducing high-frequency artifacts compared to
-linear interpolation's piecewise-linear output. This is particularly noticeable
-in higher-frequency audio content where linear interpolation creates "staircase"
-distortion.
-
----
-
-### Playback Underrun Fade (v0.8.2+)
-
-When the TTS ring buffer is empty (generation hasn't started or is delayed), a
-short fade prevents audible click/pop artifacts:
-
-```rust
-// playback.rs: underrun protection
-const FADE_STEP: f32 = 0.002;  // ~10ms fade at 48kHz
-if let Some(sample) = ring_buffer.try_pop() {
-    let faded = sample * (1.0 - fade_progress.min(1.0));
-    fade_progress += FADE_STEP;
-}
-```
-
-- **Duration**: ~10ms (96 samples at 48kHz, step=0.002)
-- **Direction**: Fades out (linear ramp to silence) on underrun, instant resume on next chunk
-- **State reset**: Fade progress reset to 0 on `TtsFinished` and `Cancelled` events
-- **Tradeoff**: 10ms of silence at utterance start is imperceptible; prevents the 1–3 sample
-  DC pop that would otherwise result from abrupt ring buffer underrun
-
----
-
-### Jitter Buffer
-
-* Pre-buffer: 300ms (14,400 samples)
-* Total capacity: 2s (192,000 samples)
-* Drop policy: log warning, never block
-
----
-
-### Barge-In (Speaker Mode)
-
-```rust
-// VAD thread checks:
-if playback_active.load(Ordering::Relaxed) && mode == Speaker {
-    continue; // Drop mic frame
-}
-```
-
----
-
-## 12. Pipeline Orchestrator
-
----
-
-### State Machine
-
-```rust
-pub enum InteractionState {
-    Idle,
-    Listening,
-    UserSpeaking,
-    Thinking,
-    AssistantSpeaking,
-    Interrupted,
-    MaintainingContext, // Entered during context maintenance/compaction; plays a deterministic transition speech and is also the state used while Personal Memory extraction runs
-}
-```
-
----
-
-### Sub-Sentence Chunking
-
-The flush-to-TTS algorithm is defined in `utils.rs` (`should_flush`) and uses a
-**fully dynamic, model/hardware-agnostic** algorithm with continuous TPS interpolation.
-
-No hardcoded TPS categories. Every threshold is a continuous function of the observed
-generation speed (tokens per second):
-
-| Condition | TPS=1 (slow) | TPS=3.5 (medium) | TPS=6 (fast) |
+### Pipeline State Machine
+
+| State | Description |
+|-------|-------------|
+| `Idle` | Waiting for speech |
+| `Listening` | VAD active, no speech detected |
+| `UserSpeaking` | Speech in progress, STT streaming |
+| `Thinking` | LLM generating response |
+| `AssistantSpeaking` | TTS playback active |
+| `Interrupted` | Barge-in triggered |
+| `MaintainingContext` | Compaction running, transition speech plays |
+
+### Sub-Sentence Chunking (should_flush)
+
+Tokens flush to TTS via a fully dynamic algorithm in `utils.rs` — all thresholds are continuous functions of observed TPS (tokens/sec), not hardcoded categories:
+
+| Condition | Slow TPS (1) | Medium (3.5) | Fast (6) |
 |-----------|:---:|:---:|:---:|
-| Sentence boundary (`.!?।`) | Always flush | Always flush | Always flush |
-| Clause boundary (`,;—`) | Flush at 3 words | Flush at 4 words | Disabled |
+| Sentence boundary (`.!?।`) | Always | Always | Always |
+| Clause boundary (`,;—`) | 3 words | 4 words | Disabled |
 | Time gate | 1.0s / 3 words | 2.2s / 5 words | 3.5s / 8 words |
 | Word-count fallback | 5 words | 12 words | 20 words |
 
-**Algorithm:**
+No mid-word splits. Word-boundary safety enforced via `ends_at_word_boundary()`.
 
-```rust
-let tps_clamped = tps.clamp(0.5, 6.0);
-let tps_norm = (tps_clamped - 0.5) / (6.0 - 0.5); // 0.0=slowest, 1.0=fastest
+---
 
-// Clause boundary flushing (fades out between TPS 3.0 and 5.0):
-//   At low TPS: flush on `,` or `;` with ≥3 words (prioritize TTFA)
-//   At high TPS: skip clause flushes — sentences complete fast
-if tps_norm < clause_norm_high {
-    let clause_threshold = (3.0 + t * 4.0).round() as usize; // 3→7 words
-    if word_count >= clause_threshold { return true; }
-}
+## 4. Provider Architecture
 
-// Time gate: scales from 1.0s at slow TPS → 3.5s at fast TPS
-let max_wait_ms = lerp(tps_norm, 1000.0, 3500.0) as u128;
-let min_time_words = lerp(tps_norm, 3.0, 8.0).round() as usize;
-if elapsed_ms >= max_wait_ms && word_count >= min_time_words && ends_at_word_boundary(buf) {
-    return true;
-}
+Every AI domain uses a **trait-based provider system** — the pipeline dispatches through `Box<dyn Provider>` without knowing the concrete backend.
 
-// Word-count fallback: scales from 5→20 words
-let max_words = lerp(tps_norm, 5.0, 20.0).round() as usize;
-if word_count >= max_words && ends_at_word_boundary(buf) {
-    return true;
-}
+### 4.1 VAD — Voice Activity Detection
+
+| Backend | Type | Latency | Threshold | Notes |
+|---------|------|--------:|-----------|-------|
+| **Earshot** (default) | Rust-native, embedded weights | ~1ms | 0.5 (config) | ~20× faster than TenVAD, zero ONNX overhead |
+| **TenVAD** (legacy) | ONNX via sherpa-onnx | ~15ms | 0.45 (config) | Requires `ten_vad.onnx` model file |
+
+### 4.2 STT — Speech-to-Text
+
+| Engine | Type | Memory | RTF | Strategy |
+|--------|------|-------:|:---:|----------|
+| **Nemotron-3.5** (primary) | ONNX INT8, parakeet-rs | ~2.5 GB | 0.02–0.35× | 8960-sample windows, stateful FastConformer-RNNT |
+| **Qwen3-ASR-0.6B** (legacy) | ONNX INT8, sherpa-onnx | ~800 MB | 0.38–4.63× | Rolling overlap window |
+
+### 4.3 LLM — Language Model
+
+| Provider | Backend | Routing | Memory |
+|----------|---------|---------|:------:|
+| **EmbeddedProvider** | `llama.cpp` (GGUF) via `llama-cpp-4` crate | Local CPU inference | ~750 MB–1.4 GB |
+| **OpenAiCompatProvider** | `reqwest` HTTP (streaming) | `provider_name` → URL mapping (openai, gemini, anthropic) | 0 MB (local) |
+
+Cloud routing is automatic: `provider_name = "openai"` → `api.openai.com`, `"gemini"` → `generativelanguage.googleapis.com/v1beta/openai`, `"anthropic"` → `api.anthropic.com` (with `x-api-key` + `anthropic-version` headers).
+
+### 4.4 TTS — Text-to-Speech
+
+| Provider | Type | Params | Memory | Output | Feature |
+|----------|------|-------:|:------:|--------|---------|
+| **Supertonic 3** (default) | ONNX INT8, sherpa-onnx | 99M | ~144 MB | 24kHz f32 | 31 languages, 10 voices |
+| **Chatterbox** (local clone) | GGML, chatterbox-rs | 340M Q4 | ~1.1 GB | 24kHz native | Voice cloning from 5s reference |
+| **Chatterbox Remote** | reqwest blocking HTTP | 340M | 0 MB (local) | 24kHz | Offloads to remote CUDA GPU |
+
+### 4.5 Realtime S2S — Speech-to-Speech
+
+| Provider | Input SR | Output SR | Status |
+|----------|:--------:|:---------:|:------:|
+| **Gemini Live** | 16 kHz | 24 kHz | ✅ Implemented (910 lines) |
+| **Deepgram Voice Agent** | 16 kHz | configurable | ✅ Implemented (657 lines) |
+| **OpenAI Realtime** | 24 kHz | 24 kHz | ⏳ Config defined |
+| **ElevenLabs ConvAI** | 16 kHz | 44.1 kHz | ⏳ Config defined |
+
+All realtime providers follow `RealtimeVoiceProvider` + `RealtimeSession` traits with hybrid sync/async threading (tokio for WebSocket I/O, OS threads for audio).
+
+---
+
+## 5. Memory Subsystem
+
+> **Status: Active Development (WIP)** — See `docs/plans/memory-spec-v7.md` for the complete architecture specification.
+
+Vox implements a **cognitive memory subsystem** that operates asynchronously via a background worker (`persistence/memory_worker.rs`), decoupled from the live voice pipeline. The architecture is organized into 6 cognitive domains:
+
+| Domain | Purpose | Processing |
+|--------|---------|------------|
+| `Identity` | Core user identity (name, age, profession) | NLI State Resolution |
+| `Directives` | Agent operational state (active tasks, promises) | Temporal SQL Fetch |
+| `Constraints` | Hard boundaries, safety rules | NLI Conflict Detection |
+| `Profile` | User persona, tastes, skills, preferences | LLM Edge Classification + ANN |
+| `Entities` | External knowledge (tools, APIs, codebases) | LLM Edge Classification + ANN |
+| `Narrative` | Session history summary (ephemeral) | In-memory compaction chain |
+
+The ingestion pipeline runs as a 5-step async queue: **String Dedup → MiniLM-L12 Soft Vector Dedup → Domain Dispatch → NLI or LLM Evaluator → Turso MVCC persistence**. Full implementation details and benchmark gate results in `docs/plans/memory-spec-v7.md`.
+
+Key files: `services/memory/` (12 modules), `persistence/memory_worker.rs`, `persistence/mutations.rs`, `persistence/queries.rs`. See [`docs/features/memory-architecture.md`](features/memory-architecture.md) for the v6 architecture reference (being superseded).
+
+---
+
+## 6. Persistence Layer
+
+- **Database**: Turso/libSQL (`turso` crate), WAL mode, `busy_timeout = 5000ms`
+- **Tables**: `sessions`, `turns`, `voice_library`, `memory_facts`, `memory_facts_vectors`, `memory_relations`, `personal_memory_queue`
+- **Workers**: Dedicated OS thread for session persistence (`persistence/worker.rs`), dedicated OS thread for background memory ingestion (`persistence/memory_worker.rs`)
+- **Events**: `SessionStarted`, `SessionEnded`, `TurnCompleted`, `TurnCancelled`
+- **Private mode**: Atomic `is_private_mode` check before each write
+
+---
+
+## 7. Threading Model
+
+### Allocation
+
+```
+Total cores = N
+LLM threads  = N - 2
+Remaining: audio (Tier 1, Max priority), VAD (Tier 2, high priority)
 ```
 
-Key behaviors:
-- **Clause flushing** (`,`, `;`, `—`) fades out between TPS 3.0 and TPS 5.0.
-  Below 3.0 TPS: flush aggressively (small word threshold). Above 5.0 TPS: disabled entirely
-  (sentences complete quickly enough that clause flushes would only harm prosody).
-- **Time gate** scales continuously: slow generation gets a shorter leash (1s) to keep TTFA
-  bounded; fast generation gets more time (3.5s) to complete a sentence naturally.
-- **Word-count fallback** scales from 5 words (aggressive at low TPS) to 20 words (lenient
-  at high TPS).
-- **Word-boundary safety**: `ends_at_word_boundary()` blocks flush if the last character
-  is not whitespace or punctuation (prevents mid-word splits from BPE subword tokens).
-- **Never flush on 1–2 words** unless a hard sentence boundary is present (implicit: clause
-  threshold ≥ 3, time words ≥ 3, fallback ≥ 5).
+### Thread Priorities
 
-**The goal is natural, complete utterances — not the shortest possible TTFA.**
+| Thread | Priority | Type |
+|--------|----------|------|
+| Audio capture (cpal) | `ThreadPriority::Max` | OS thread |
+| AudioRouter | `ThreadPriority::Max` | OS thread |
+| VAD worker | Crossplatform(80) | OS thread |
+| STT worker | Crossplatform(80) | OS thread |
+| LLM worker | Default | OS thread |
+| TTS worker | Default | OS thread |
+| Playback | Default | OS thread |
+| Persistence worker | Default | OS thread |
+| Memory worker | Default | OS thread |
+| Realtime WS send/recv | — | tokio tasks |
+| IPC handlers | — | tokio tasks |
 
+### Why OS Threads for Inference
+
+`llama.cpp` and `onnxruntime` C++ calls are synchronous and block for seconds. All inference runs on **dedicated OS threads** — never on tokio workers. The exception is the Realtime S2S engine, which uses tokio for non-blocking WebSocket I/O.
 
 ---
 
-### Turn Management
+## 8. Event System
 
-```rust
-pub struct PipelineAtomics {
-    pub cancel_flag: Arc<AtomicBool>,
-    pub turn_id: Arc<AtomicU32>,
-    pub state: Arc<Mutex<InteractionState>>,
-    pub is_engaged: Arc<AtomicBool>,
-    pub conversation_id: Arc<AtomicU64>,
-}
+### Internal VoxEvent (mpsc channels)
+
 ```
-
----
-
-### Lock-Free State Updates
-
-```rust
-impl PipelineAtomics {
-    pub fn update_interaction_state(...) {
-        // Update atomic flags for monitoring
-        self.is_assistant_speaking.store(...);
-        self.current_state_atomic.store(... as u32);
-        // Send IPC event to owning window only
-    }
-}
-```
-
----
-
-## 13. Event Bus
-
----
-
-### VoxEvent Enum
-
-```rust
-pub enum VoxEvent {
-    SpeechStart { turn_id, owner },
-    SpeechEnd { turn_id, owner },
-    TranscriptPartial { turn_id, owner, text },
-    TranscriptFinal { turn_id, owner, text },
-    LlmToken { turn_id, token },
-    LlmFinished { turn_id },
-    TtsChunk { turn_id, samples },
-    TtsFinished { turn_id, rtf },
-    PlaybackStarted { turn_id },
-    PlaybackFinished { turn_id },
-    Cancelled { turn_id },
-    Error { turn_id, message },
-    WarmUp,
-    Shutdown,
-    SettingsUpdated(VoxSettings),
-}
-```
-
-### Tauri IPC Events (Frontend-bound)
-
-These Tauri events bridge backend state to the React frontend:
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `state_changed` | `InteractionState` | Pipeline interaction state |
-| `audio_energy` | `{ energy: f32 }` | Mic audio level for visualization |
-| `ptt_status` | `"IDLE" \| "RECORDING" \| "PROCESSING"` | PTT button state |
-| `pipeline_paused` | — | Pause acknowledged, audio halted |
-| `pipeline_resumed` | — | Resume acknowledged, audio re-opened |
-| `realtime_session_started` | — | Realtime S2S session established |
-| `realtime_session_resumed` | — | Session reconnected with resume token |
-| `realtime_session_ended` | `"user" \| "idle_timeout" \| "error"` | Session terminated |
-| `realtime_interrupted` | — | Barge-in confirmed by server |
-| `realtime_idle_warning` | `{ seconds_remaining: u64 }` | Idle timeout countdown |
-| `pipeline_error` | `String` | Error with error message |
-
----
-
-### Event Flow (Modular Pipeline)
-
-```text
 VAD:        SpeechStart, SpeechEnd
 STT:        TranscriptPartial, TranscriptFinal
 Pipeline:   WarmUp, Cancelled, Error, Shutdown
 LLM:        LlmToken, LlmFinished, Error
 TTS:        TtsChunk, TtsFinished
-Playback:   PlaybackFinished
+Playback:   PlaybackStarted, PlaybackFinished
 ```
 
-### Event Flow (Realtime S2S)
+### Tauri IPC Events (frontend-bound)
 
-```text
-Gemini Ws Receive:
-    ├── inputTranscription → TranscriptPartial (frontend)
-    ├── modelTurn audio    → PlaybackBridge → ring buffer → audio out
-    ├── modelTurn text     → LlmToken (frontend captioning)
-    ├── outputTranscription → forwarded to frontend
-    ├── turnComplete       → turn lifecycle sync
-    ├── interrupted        → realtime_interrupted (frontend)
-    ├── sessionResumptionUpdate → cache to disk
-    └── goAway             → reconnect with exponential backoff
-```
-
----
-
-## 14. Memory Management
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `state_changed` | `InteractionState` | Pipeline state |
+| `audio_energy` | `{ energy: f32 }` | Mic level for visualization |
+| `ptt_status` | `"IDLE"\|"RECORDING"\|"PROCESSING"` | PTT button state |
+| `pipeline_paused/resumed` | — | Audio halt/resume |
+| `realtime_session_started/ended` | — | S2S session lifecycle |
+| `realtime_interrupted` | — | Barge-in confirmed |
+| `realtime_idle_warning` | `{ seconds_remaining }` | Timeout countdown |
+| `pipeline_error` | `String` | Error message |
 
 ---
 
-### Budget (Measured v0.8.2)
+## 9. Concurrency Patterns
 
+| Mechanism | Usage | Location |
+|-----------|-------|----------|
+| SPSC lock-free ring buffer | Audio transport | `services/audio/device.rs` |
+| `Arc<AtomicBool>` | Cancellation, playback, engagement flags | `PipelineAtomics` |
+| `mpsc::channel` | Inter-thread events (VoxEvent) | All workers |
+| `crossbeam_channel::bounded` | High-throughput telemetry | `monitoring/aggregator.rs` |
+| `parking_lot::RwLock<VoxSettings>` | Read-heavy settings | `core/state.rs` |
+| `parking_lot::Mutex<Option<VoxEngine>>` | Engine lifecycle | `core/state.rs` |
+| `tokio::sync::Mutex` | Async IPC state | `ipc/` handlers |
 
+> **Note:** All sync mutexes use `parking_lot` (not `std::sync::Mutex`) for lower overhead, no poisoning, and better performance under contention. The switch was made in v0.8.6 to eliminate lock-poisoning risks in the audio pipeline.
 
-```text
+**Rule**: Zero locks on audio hot path — settings are snapshotted, VAD updates arrive via channel.
 
-~5.5GB usable for inference
+---
 
-VAD:   ~0.05GB  (~50 MB)
-
-STT:   ~2.50GB  (Nemotron-3.5 ONNX, from settings metadata)
-
-LLM:   ~0.97GB  (Llama-3.2-1B Q6_K, ~970 MB actual)
-
-TTS:   ~0.02GB  (Supertonic 3 INT8, ~21 MB actual)
-TTS:   ~1.10GB  (ChatterboxEngine GGML, local voice cloning)
-TTS:   ~0.00GB  (ChatterboxRemote, inference on remote GPU)
-
-KV:    ~0.60GB  (llama.cpp KV cache)
-
-Safety: ~2.59GB margin (for OS, UI, other processes)
-
-
-
-Total measured peak: ~2.46 GB (well within 8 GB target)
+## 10. Settings & Hot-Reloading
 
 ```
-
-
----
-
-### Droppable Structures
-
-* Ring buffers: overflow drops with warning counter
-* Telemetry channel: `try_send`, count drops
-* Persistence channel: `try_send`, count drops
-
----
-
-## 15. Lifecycle Management
-
----
-
-### Engine States
-
-```rust
-pub enum PipelineState {
-    Cold,  // Models unloaded, minimal RAM
-    Warm,  // LLM/TTS loaded, ready for interaction
-}
+VoxSettings → 12 sub-settings (Ui, Audio, Vad, Asr, Llm, Tts, Interaction, Telemetry, Persistence, Memory, Assistant, Setup, Realtime)
 ```
-
----
-
-### Auto-Sleep
-
-```rust
-if last_interaction.elapsed() > auto_sleep_timeout {
-    cool_down_llm();
-    cool_down_tts();
-}
-```
-
----
-
-### Dormancy (Phase 5)
-
-* Tray mode: `is_engaged = false` → LLM/TTS skipped
-* Auto-sleep: models offloaded to save RAM
-
----
-
-## 16. Persistence Layer (Phase 6)
-
----
-
-### Worker Thread
-
-```rust
-spawn_persistence_worker(
-    db_path: PathBuf,
-    tx: crossbeam::Sender<PersistenceEvent>,
-)
-```
-
----
-
-### Events
-
-```rust
-pub enum PersistenceEvent {
-    SessionStarted { id, timestamp_ms },
-    SessionEnded { id, timestamp_ms },
-    TurnCompleted { conversation_id, turn_id, user_text, assistant_text, stt_latency_ms, ttft_ms },
-    TurnCancelled { conversation_id, turn_id },
-    Shutdown,
-}
-```
-
----
-
-### Private Mode
-
-* `is_private_mode` atomic checked before each write
-* Events skipped but pipeline continues
-
----
-
-## 17. Telemetry & Monitoring (Phase 6)
-
----
-
-### TelemetryAggregator
-
-* Dedicated OS thread
-* `crossbeam_channel::bounded(4096)`
-* Events: `AudioEnergy`, `SystemHealth`, `InteractionMetric`
-
----
-
-### SystemMonitor
-
-* Spawns every 30 seconds
-* Reads `/proc/stat`, `/proc/meminfo` for CPU/RAM
-* Filters out Linux process sub-tasks (threads) when iterating processes to prevent double-counting RSS memory — only main process entries with `tasks()` present are aggregated
-
----
-
-### Monitoring State
-
-```rust
-pub struct MonitoringState {
-    snapshots: Mutex<Vec<RuntimeSnapshot>>,
-    history: Mutex<VecDeque<RuntimeSnapshot>>,
-}
-```
-
----
-
-## 18. Settings & Hot-Reloading
-
----
-
-### Settings Structure
-
-```rust
-pub struct VoxSettings {
-    pub ui: UiSettings,
-    pub audio: AudioSettings,
-    pub vad: VadSettings,
-    pub asr: AsrSettings,
-    pub llm: LlmSettings,
-    pub tts: TtsSettings,
-    pub realtime: RealtimeSettings,
-    pub interaction: InteractionSettings,
-    pub telemetry: TelemetrySettings,
-    pub persistence: PersistenceSettings,
-    pub setup: SetupSettings,
-    pub assistant: AssistantSettings,
-}
-```
-
-### Key Sub-Settings
-
-**`RealtimeSettings`** — Controls the realtime S2S engine:
-```rust
-pub struct RealtimeSettings {
-    pub provider: String,                       // "gemini_live", "openai_realtime", "deepgram_voice_agent", "elevenlabs_convai"
-    pub gemini: GeminiRealtimeConfig,
-    pub openai: OpenAiRealtimeConfig,
-    pub deepgram: DeepgramVoiceAgentConfig,
-    pub elevenlabs: ElevenLabsConvaiConfig,
-    pub idle_timeout_secs: u64,                 // Default: 600
-}
-```
-
-**`AssistantSettings`** — System prompt configuration:
-- `modular_prompt`: Used for the local VAD→STT→LLM→TTS pipeline
-- `realtime_prompt`: Used for the WebSocket-based S2S session
-- Replaces the previous `hindi_prompt`/`english_prompt` split with a single unified prompt per pipeline mode
-
----
 
 ### Reload Policies
 
-```
-Hot:             Apply immediately (UI, setup, telemetry, persistence, interaction)
-WorkerCommand:   Send via channel (VAD threshold, system_prompt, asr.provider, llm.provider, tts.provider)
-Restart:         Full pipeline restart (model changes, realtime provider, engine-level settings)
-```
+| Policy | Effect | Examples |
+|--------|--------|---------|
+| `Hot` | Apply immediately | UI theme, private mode, prompts |
+| `WorkerCommand` | Send via channel | VAD threshold, TTS speed, quality steps |
+| `Restart` | Full pipeline restart | Model changes, provider switches, engine config |
 
-### Provider Health & Model Discovery
-
-IPC commands `check_llm_provider_health` and `list_remote_llm_models` (in `ipc/settings.rs`) forward `provider_name` from the user's settings when constructing the `OpenAiCompatProvider`, ensuring health checks and model discovery target the correct cloud endpoint.
+Every agent domain has a `ProviderConfig` tagged enum (`LlmProviderConfig`, `TtsProviderConfig`, `SttProviderConfig`) for provider selection at worker construction time.
 
 ---
 
-## 19. PTT Mode (Modular + Realtime)
-
----
-
-### State Machine
-
-```rust
-IDLE → RECORDING → PROCESSING → DISPLAY
-```
-
----
-
-### Mode Differentiation
-
-PTT behavior differs based on the active pipeline mode:
-
-| Concern | Modular PTT | Realtime PTT |
-|---------|------------|-------------|
-| Audio routing | PTT buffer → STT → LLM → TTS | PTT buffer → WebSocket via `activity_start/end` |
-| Server-side VAD | N/A | Disabled (`disabled: true` in setup) |
-| Client-side VAD | Earshot classifies speech → discard silent holds | **Required** — gates PCM before sending, prevents hallucination |
-| PTT duration cap | 10 min hard limit (`MAX_PTT_SAMPLES`) | 30s long-hold cutoff, auto-sends `ActivityEnd` |
-| Speech discard | No speech → clear buffer, skip `SttCommand::Final` | No speech → no `ActivityEnd` sent, server stays silent |
-
----
-
-### VAD Gating (`speech_detected`)
-
-A `speech_detected: AtomicBool` on `PttState` tracks whether speech was detected during a
-PTT hold. The Earshot VAD classifies every 256-sample chunk:
-
-- On **speech onset**: flips `speech_detected = true`, flushes a 240ms pre-roll buffer
-  to the realtime WebSocket (prevents clipped first word)
-- On **ptt_stop**: if `speech_detected == false`, the entire hold is discarded — no
-  finalization signal sent to STT or Gemini
-- On **ptt_start**: `speech_detected` is reset to `false`, `ptt_start_ms` is set to `now`
-
----
-
-### Buffer Strategy (Modular)
-
-* Continuous capture (no VAD gating)
-* 800ms window per partial send
-* 10min hard limit
-
----
-
-### PTT Commands (IPC)
-
-| Command | Effect |
-|---------|--------|
-| `ptt_start` | Begin capture — reset speech_detected, open audio gate, emit `ActivityStart` (realtime) or `SpeechStart` (modular) |
-| `ptt_stop` | End capture — check speech_detected. If no speech: discard hold. Otherwise: emit `ActivityEnd` (realtime) or `SttCommand::Final` (modular) |
-| `ptt_cancel` | Abort hold — clear buffer, set `is_recording = false`, reset state to `Idle` |
-
----
-
-### Cancel Flow
-
-```rust
-pub fn ptt_cancel() {
-    recording = false;
-    buffer.clear();
-    state.pipeline.cancel_flag.store(true);
-    state.pipeline.update_interaction_state(Idle);
-}
-```
-
----
-
-## 20. Concurrency Patterns Summary
-
----
-
-### Lock-Free Communication
-
-* Ring buffers: audio transport
-* Atomic flags: pipeline control
-* Channels: inter-thread events
-
----
-
-### Locks (Minimized)
-
-* `RwLock<VoxSettings>` - read-heavy, write-rare
-* `Mutex<Option<VoxEngine>>` - state mutations
-* `Tokio::sync::Mutex` - async IPC state
-
----
-
-### Never Lock In Hot Paths
-
-* VAD/STT/LLM/TTS workers never call `settings.read()`
-* Hot values snapshotted at startup, updated via channels
-* Telemetry uses atomics, not mutex
-
----
-
-## 21. Lock Contention & Atomic Operations
-
----
-
-### Critical Path Lock Avoidance
-
-**Rule: Zero locks on audio hot path**
-
-```rust
-// ❌ WRONG: Settings read on audio callback
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn audio_callback(data: &[f32]) {
-    let settings = SETTINGS.read().unwrap(); // BLOCKS ALL OTHER THREADS
-    // Process audio...
-}
-
-// ✅ CORRECT: Pre-snapshotted values
-struct AudioProcessor {
-    local_threshold: f32,  // Copied from settings
-    local_noise_gate: f32,
-}
-
-impl AudioProcessor {
-    fn update_from_settings(&mut self, settings: &VoxSettings) {
-        self.local_threshold = settings.vad.threshold;
-        self.local_noise_gate = settings.vad.ptt_noise_gate;
-    }
-}
-```
-
-### Atomic State Coordination
-
-**Pipeline uses atomic flags for cross-thread signaling**
-
-```rust
-// Arc<AtomicBool> for cancellation
-pub struct PipelineAtomics {
-    pub cancel_flag: Arc<AtomicBool>,        // LLM/TTS abort
-    pub playback_active: Arc<AtomicBool>,    // Mic ducking
-    pub tts_generating: Arc<AtomicBool>,     // TTS busy state
-    pub is_engaged: Arc<AtomicBool>,         // Main app mode
-}
-
-// Checked every inference iteration
-loop {
-    if cancel_flag.load(Ordering::Relaxed) {
-        break; // Immediate abort
-    }
-    // Continue processing
-}
-```
-
-### Mutex Usage (Minimized)
-
-**Only used for complex state requiring consistency**
-
-```rust
-// RwLock for settings (read-heavy, write-rare)
-pub settings: Arc<RwLock<VoxSettings>>,
-
-// Mutex for UI state (async compatibility)
-pub hud_visible: Mutex<bool>,
-
-// Mutex for pipeline state (state machine)
-pub state: Arc<Mutex<InteractionState>>,
-```
-
-### Channel Communication
-
-**Lock-free inter-thread messaging**
-
-```rust
-// Bounded channels prevent memory explosion
-let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-let (pipeline_tx, pipeline_rx) = mpsc::channel::<VoxEvent>();
-
-// crossbeam for high-throughput telemetry
-let (telemetry_tx, telemetry_rx) = bounded::<TelemetryEvent>(4096);
-```
-
----
-
-## 22. Tokio Workers vs OS Threads
-
----
-
-### OS Threads (Inference Workers)
-
-**Dedicated OS threads for blocking C++ inference**
-
-```rust
-// spawn_stt_worker - OS thread
-std::thread::Builder::new()
-    .name("vox-stt-worker".to_string())
-    .spawn(move || {
-        // Blocking sherpa-onnx calls
-        let result = recognizer.decode_stream(&stream);
-    })
-```
-
-**Why OS threads:**
-- llama.cpp blocks for seconds
-- onnxruntime C++ calls are synchronous
-- No async runtime compatibility
-- Precise CPU affinity control
-
-### Tokio Workers (IPC, UI & Realtime)
-
-**Async tasks for Tauri IPC, UI coordination, and realtime WebSocket I/O**
-
-```rust
-// Tauri command handlers - tokio tasks
-#[tauri::command]
-pub async fn engage(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    // Async state access
-    let mut engine_lock = state.engine.lock().await;
-    // ...
-}
-```
-
-**Why tokio:**
-- Tauri requires async commands
-- UI event handling
-- File I/O operations
-- **WebSocket I/O** for realtime S2S providers (Gemini Live, etc.)
-
-### Hybrid Architecture
-
-```text
-OS Threads (Inference):
-├── VAD worker (Tier 2)
-├── STT worker (Tier 2)
-├── LLM worker (Tier 3)
-├── TTS worker (Tier 3)
-├── Audio capture (cpal, Tier 1, Max priority)
-├── AudioRouter (Tier 1, Max priority)
-├── Persistence worker
-└── Playback (cpal)
-
-Tokio Tasks (Coordination & Realtime):
-├── IPC handlers
-├── UI state updates
-├── Persistence workers
-├── Monitoring collectors
-├── Realtime AudioBridge (PCM → WS)
-├── Realtime PlaybackBridge (WS → audio)
-├── Realtime WS Receiver
-├── Realtime WS Sender (two-queue: audio + control)
-├── Realtime Idle Timeout monitor (10-min inactivity)
-├── Boot-time manifest caching
-└── Monitoring collectors
-```
-
----
-
-## 23. Memory Lifecycle Management
-
----
-
-### Model Residency (Warm/Cold States)
-
-```rust
-enum ModelState {
-    Cold,  // Unloaded, minimal RAM
-    Warm,  // Loaded, ready for inference
-}
-
-impl PipelineOrchestrator {
-    pub fn warm_up_llm(&self) -> Result<(), String> {
-        // Load GGUF into memory
-        let model = LlamaModel::load_from_file(&backend, &path, &params)?;
-
-        // Initialize context
-        let ctx = model.new_context(&backend, ctx_params)?;
-
-        // Mark as loaded
-        self.is_llm_loaded.store(true, Ordering::Relaxed);
-        Ok(())
-    }
-
-    pub fn cool_down_llm(&self) {
-        // Drop context and model
-        drop(self.llm_ctx);
-        drop(self.llm_model);
-
-        // Clear residency flag
-        self.is_llm_loaded.store(false, Ordering::Relaxed);
-    }
-}
-```
-
-### Buffer Lifecycles
-
-**Ring buffers persist across interactions**
-
-```rust
-// Audio ring buffer - never deallocated
-pub struct AudioStream {
-    producer: HeapProd<f32>,  // 4s capacity
-    _stream: cpal::Stream,     // CPAL handle
-}
-
-// Per-turn buffers - recycled
-pub struct PipelineOrchestrator {
-    token_buf: String,           // Cleared after each turn
-    turn_user_text: String,      // Cleared after persistence
-    turn_assistant_text: String, // Cleared after persistence
-}
-```
-
-### Memory Safety Guarantees
-
-```rust
-// Explicit KV cache clearing (llama.cpp requirement)
-ctx.clear_kv_cache();
-
-// Buffer size limits prevent OOM
-const MAX_PTT_SAMPLES: usize = 16000 * 60 * 10; // 10min hard limit
-
-// Overflow handling with logging
-if pushed < upsampled.len() {
-    static DROP_COUNT: AtomicU32 = AtomicU32::new(0);
-    let prev = DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-    if prev % 100 == 0 {
-        log::warn!("Ring buffer overflow: {} chunks dropped", prev);
-    }
-}
-```
-
----
-
-## 24. Phase 9 — Realtime S2S Engine (v0.9.0)
-
----
-
-### Motivation
-
-The modular pipeline (VAD → STT → LLM → TTS) is low-latency but cannot match the
-fluidity of cloud speech-to-speech APIs. Realtime S2S providers (Gemini Live, OpenAI
-Realtime, Deepgram Voice Agent, ElevenLabs ConvAI) operate over WebSocket, accepting
-PCM audio input and returning PCM audio output with server-side LLM inference.
-
-### Architecture — RealtimeVoiceProvider Trait
-
-```text
-Vox
- └─ RealtimeVoiceProvider Layer
-        ├─ RealtimeVoiceProvider trait (kind, audio_config, connect, health_check)
-        └─ RealtimeSession trait (send_audio, cancel, disconnect, activity_start/end)
-               ├─ GeminiLiveProvider (implemented, 910 lines)
-               ├─ DeepgramVoiceAgentProvider (implemented, 657 lines)
-               ├─ OpenAiRealtimeProvider (config defined, not yet implemented)
-               └─ ElevenLabsConvaiProvider (config defined, not yet implemented)
-```
-
-### Hybrid Thread Model
-
-The realtime engine uses a **hybrid sync/async architecture**:
-
-```text
-SYNC OS THREADS:
-  Audio Capture (cpal, Max priority)
-      │  → AudioRouter → VAD actor or direct realtime tx
-      │
-  Playback (cpal, ringbuf Consumer)
-      ↑ f32 samples from PlaybackBridge
-
-TOKIO ASYNC TASKS:
-  AudioBridge Task — recv PCM from router, resample, base64-encode, send over WS
-  PlaybackBridge Task — recv WS audio, decode, resample, push to playback ringbuf
-  Idle Timeout Task — 10-min inactivity monitor with warnings
-  Gemini WS Receiver — handle server message types (audio, text, events)
-  Gemini WS Sender — two-queue (audio + control) to prevent HOL blocking
-```
-
-### Engine Lifecycle
+## 11. Lifecycle Management
 
 ```
-engage → start_realtime_session:
-  1. Load settings, check API key
-  2. Read session cache (realtime_session.json) for resume handle
-  3. Create GeminiLiveProvider + RealtimeEngine
-  4. WebSocket handshake + setup negotiation
-  5. Start AudioRouter → connect to realtime tx channel
-  6. Spawn idle timeout task (10 min)
-  7. Emit realtime_session_started/resumed (frontend)
-
-pause_pipeline:
-  1. Set is_paused = true (atomic) — router drops chunks
-  2. Call activity_end() on session (tell server to stop turn)
-  3. Stop playback
-  4. Emit pipeline_paused (frontend)
-
-resume_pipeline:
-  1. Set is_paused = false — router resumes
-  2. If WS disconnected → lazy reconnect with resume token
-  3. Emit pipeline_resumed (frontend)
-
-stop_realtime_session:
-  1. Disconnect WebSocket
-  2. Delete session cache file
-  3. Reset to modular pipeline mode
-  4. Emit realtime_session_ended (frontend)
+Cold ──(engage)──→ Warm ──(auto-sleep timeout)──→ Cold
+  ↑                                                     |
+  └───────────────────(re-engage)───────────────────────┘
 ```
 
-### Session Resumption
-
-Gemini Live provides session resumption handles valid for 2 hours. Vox persists them
-to `~/.vox/cache/realtime_session.json`:
-
-```json
-{
-  "provider": "gemini_live",
-  "handle": "<opaque_token>",
-  "expires_at": 1718000000000,
-  "model": "gemini-2.0-flash-live-001",
-  "conversation_id": 42
-}
-```
-
-On `start_realtime_session` with a valid cached handle, the session reconnects
-seamlessly — the frontend shows "Resumed previous session" instead of a fresh start.
-
-### Pipeline Impact
-
-The modular pipeline is unchanged. The realtime path is an alternative mode set via
-`InteractionSettings.pipeline_mode` (`"Modular"` or `"Realtime"`). The `launch_engine`
-function conditionally spawns VAD/STT threads based on the active mode, and the
-`AudioRouter` is configured with the appropriate `RouteMode`.
-
-### Provider Implementation Status
-
-| Provider | Config | Provider Struct | Status |
-|----------|--------|----------------|--------|
-| Gemini Live | `GeminiRealtimeConfig` | `GeminiLiveProvider` | ✅ Fully integrated |
-| Deepgram Voice Agent | `DeepgramVoiceAgentConfig` | `DeepgramVoiceAgentProvider` | ✅ Implemented |
-| OpenAI Realtime | `OpenAiRealtimeConfig` | — | ⏳ Config defined, returns "not implemented" |
-| ElevenLabs ConvAI | `ElevenLabsConvaiConfig` | — | ⏳ Config defined, returns "not implemented" |
-
-### Deepgram Voice Agent Implementation
-
-Located at `services/realtime/providers/deepgram_live.rs` (657 lines), Deepgram Voice Agent
-uses a WebSocket-based streaming architecture with the following characteristics:
-
-- **Auto-reconnect with exponential backoff**: On WebSocket disconnect (detected via `CloseFrame`
-  or I/O error), the provider retries with delays of 1s, 2s, 4s, 8s, 16s (max). Resets on
-  successful connect.
-- **Keepalive mechanism**: Sends a `Keepalive` message every 5 seconds of socket inactivity
-  to prevent idle timeouts from Deepgram's infrastructure.
-- **Audio format**: Raw PCM i16 at 16kHz mono (received from AudioRouter), sent as binary
-  WebSocket frames.
-- **Two-queue sender**: Audio and control messages use separate `tokio::sync::mpsc` channels
-  (`audio_tx`/`control_tx`) to prevent head-of-line blocking.
-- **Server message handling**: Processes `AudioResponse` (PCM chunks), `UserStartedSpeaking`
-  (barge-in signal), `Metadata` (transcript), `Close` (session end), and `Error` messages.
-
-See `docs/plans/phase9/` for detailed provider integration plans.
-
-### Design Principle
-
-The backend should care about **protocol**, not **location**:
-
-```text
-localhost
-generativelanguage.googleapis.com
-api.openai.com
-```
-
-All of these are simply WebSocket endpoints. The protocol is abstracted behind the
-`RealtimeVoiceProvider` trait.
+- **Cold state**: All models unloaded, minimal RAM (~50 MB)
+- **Warm state**: LLM + TTS loaded, ready for interaction (~2.5 GB peak)
+- **Auto-sleep**: Offloads LLM/TTS after inactivity timeout
+- **Shutdown**: Signal via channels + atomics → join threads → persistence flush
 
 ---
 
-## 25. Shutdown Sequence
+## 12. Monitoring & Telemetry
+
+- **TelemetryAggregator**: Dedicated OS thread, `crossbeam_channel::bounded(4096)`, collects audio energy, VAD probability, system health
+- **SystemMonitor**: Spawns every 30s, reads `/proc/stat` + `/proc/meminfo`, filters Linux thread sub-tasks to prevent RSS double-counting
+- **RuntimeSnapshot**: Exposed via IPC for frontend monitoring dashboard
 
 ---
 
-### Graceful Cleanup
-
-```rust
-// 1. Signal via channels (primary)
-engine.pipeline_tx.send(Shutdown);
-engine.stt_tx.send(Shutdown);
-engine.vad_tx.send(Shutdown);
-
-// 2. Signal via atomics (fallback)
-state.pipeline.engine_shutdown.store(true);
-
-// 3. Join threads
-orchestrator_handle.join();
-stt_handle.join();
-vad_handle.join();
-
-// 4. Persistence flush
-persist_tx.send(Shutdown);
-```
-
----
-
+**Last Updated:** 2026-07-27

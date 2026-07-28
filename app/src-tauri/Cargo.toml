@@ -162,3 +162,9 @@ name = "generate_simulation_dataset_clips"
 
 [[example]]
 name = "query_embeddings"
+
+[[example]]
+name = "modernbert_zeroshot_probe"
+
+[[example]]
+name = "edge_classifier_probe"

@@ -632,7 +632,7 @@ pub struct MemorySettings {
 
     /// Toggle 2: Controls whether the background worker thread processes queue items (Phase 1-3).
     /// When true: Background worker processes 'pending' queue items when idle.
-    /// When false: Extracted facts from session compaction are inserted into personal_memory_queue with status = 'staged'.
+    /// When false: Extracted facts from session compaction are inserted into personal_memory_queue with status = 'paused'.
     /// Worker loop remains dormant (PipelineOutcome::NoWork). Zero embedding and ONNX NLI execution occurs.
     pub pipeline_processing_enabled: bool,
 
