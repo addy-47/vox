@@ -1,0 +1,341 @@
+{
+  "accuracy": 0.5178571428571429,
+  "results": [
+    {
+      "id": 1,
+      "expected": "SHAPES",
+      "pred": "NONE",
+      "match": false
+    },
+    {
+      "id": 2,
+      "expected": "SHAPES",
+      "pred": "NONE",
+      "match": false
+    },
+    {
+      "id": 3,
+      "expected": "DEPENDS_ON",
+      "pred": "SHAPES",
+      "match": false
+    },
+    {
+      "id": 4,
+      "expected": "DEPENDS_ON",
+      "pred": "SHAPES",
+      "match": false
+    },
+    {
+      "id": 5,
+      "expected": "CONFLICTS_WITH",
+      "pred": "CONFLICTS_WITH",
+      "match": true
+    },
+    {
+      "id": 6,
+      "expected": "CONFLICTS_WITH",
+      "pred": "NONE",
+      "match": false
+    },
+    {
+      "id": 7,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 8,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 9,
+      "expected": "SHAPES",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 10,
+      "expected": "SHAPES",
+      "pred": "SHAPES",
+      "match": true
+    },
+    {
+      "id": 11,
+      "expected": "DEPENDS_ON",
+      "pred": "DEPENDS_ON",
+      "match": true
+    },
+    {
+      "id": 12,
+      "expected": "DEPENDS_ON",
+      "pred": "DEPENDS_ON",
+      "match": true
+    },
+    {
+      "id": 13,
+      "expected": "CONFLICTS_WITH",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 14,
+      "expected": "CONFLICTS_WITH",
+      "pred": "SHAPES",
+      "match": false
+    },
+    {
+      "id": 15,
+      "expected": "NONE",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 16,
+      "expected": "NONE",
+      "pred": "SHAPES",
+      "match": false
+    },
+    {
+      "id": 17,
+      "expected": "SHAPES",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 18,
+      "expected": "SHAPES",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 19,
+      "expected": "DEPENDS_ON",
+      "pred": "DEPENDS_ON",
+      "match": true
+    },
+    {
+      "id": 20,
+      "expected": "DEPENDS_ON",
+      "pred": "DEPENDS_ON",
+      "match": true
+    },
+    {
+      "id": 21,
+      "expected": "CONFLICTS_WITH",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 22,
+      "expected": "CONFLICTS_WITH",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 23,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 24,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 25,
+      "expected": "SHAPES",
+      "pred": "SHAPES",
+      "match": true
+    },
+    {
+      "id": 26,
+      "expected": "SHAPES",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 27,
+      "expected": "DEPENDS_ON",
+      "pred": "DEPENDS_ON",
+      "match": true
+    },
+    {
+      "id": 28,
+      "expected": "DEPENDS_ON",
+      "pred": "DEPENDS_ON",
+      "match": true
+    },
+    {
+      "id": 29,
+      "expected": "CONFLICTS_WITH",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 30,
+      "expected": "CONFLICTS_WITH",
+      "pred": "CONFLICTS_WITH",
+      "match": true
+    },
+    {
+      "id": 31,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 32,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 33,
+      "expected": "SHAPES",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 34,
+      "expected": "SHAPES",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 35,
+      "expected": "DEPENDS_ON",
+      "pred": "SHAPES",
+      "match": false
+    },
+    {
+      "id": 36,
+      "expected": "DEPENDS_ON",
+      "pred": "SHAPES",
+      "match": false
+    },
+    {
+      "id": 37,
+      "expected": "CONFLICTS_WITH",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 38,
+      "expected": "CONFLICTS_WITH",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 39,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 40,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 41,
+      "expected": "SHAPES",
+      "pred": "NONE",
+      "match": false
+    },
+    {
+      "id": 42,
+      "expected": "SHAPES",
+      "pred": "NONE",
+      "match": false
+    },
+    {
+      "id": 43,
+      "expected": "DEPENDS_ON",
+      "pred": "DEPENDS_ON",
+      "match": true
+    },
+    {
+      "id": 44,
+      "expected": "DEPENDS_ON",
+      "pred": "DEPENDS_ON",
+      "match": true
+    },
+    {
+      "id": 45,
+      "expected": "CONFLICTS_WITH",
+      "pred": "CONFLICTS_WITH",
+      "match": true
+    },
+    {
+      "id": 46,
+      "expected": "CONFLICTS_WITH",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 47,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 48,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 49,
+      "expected": "SHAPES",
+      "pred": "SHAPES",
+      "match": true
+    },
+    {
+      "id": 50,
+      "expected": "SHAPES",
+      "pred": "DEPENDS_ON",
+      "match": false
+    },
+    {
+      "id": 51,
+      "expected": "DEPENDS_ON",
+      "pred": "DEPENDS_ON",
+      "match": true
+    },
+    {
+      "id": 52,
+      "expected": "DEPENDS_ON",
+      "pred": "SHAPES",
+      "match": false
+    },
+    {
+      "id": 53,
+      "expected": "CONFLICTS_WITH",
+      "pred": "CONFLICTS_WITH",
+      "match": true
+    },
+    {
+      "id": 54,
+      "expected": "CONFLICTS_WITH",
+      "pred": "CONFLICTS_WITH",
+      "match": true
+    },
+    {
+      "id": 55,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    },
+    {
+      "id": 56,
+      "expected": "NONE",
+      "pred": "NONE",
+      "match": true
+    }
+  ]
+}
