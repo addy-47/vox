@@ -518,19 +518,12 @@ fn apply_setting_mutation(
                 .as_bool()
                 .ok_or("pipeline_processing_enabled must be a boolean")?;
         }
-        ("memory", "operational_budget_share") => {
-            let val = value.as_f64().ok_or("operational_budget_share must be a number")? as f32;
+        ("memory", "max_personal_memory_share") => {
+            let val = value.as_f64().ok_or("max_personal_memory_share must be a number")? as f32;
             if !(0.0..=1.0).contains(&val) {
-                return Err("operational_budget_share must be between 0.0 and 1.0".to_string());
+                return Err("max_personal_memory_share must be between 0.0 and 1.0".to_string());
             }
-            settings.memory.operational_budget_share = val;
-        }
-        ("memory", "semantic_budget_share") => {
-            let val = value.as_f64().ok_or("semantic_budget_share must be a number")? as f32;
-            if !(0.0..=1.0).contains(&val) {
-                return Err("semantic_budget_share must be between 0.0 and 1.0".to_string());
-            }
-            settings.memory.semantic_budget_share = val;
+            settings.memory.max_personal_memory_share = val;
         }
         ("memory", "context_chaining_window_hours") => {
             settings.memory.context_chaining_window_hours = value

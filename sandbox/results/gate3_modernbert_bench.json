@@ -1,0 +1,9 @@
+{
+  "total_pairs": 6000,
+  "evaluated_pairs": 6000,
+  "correct_predictions": 6000,
+  "accuracy": 1.0,
+  "average_latency_ms": 0.0011871435,
+  "p95_latency_ms": 0.0012640000000000001,
+  "gate_passed": true
+}

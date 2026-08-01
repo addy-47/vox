@@ -95,9 +95,12 @@ pub async fn engage(
             .owner
             .store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
 
-        // Ensure Query Classifier model is loaded lazily into RAM on pipeline engage
-        if let Err(e) = crate::services::memory::ensure_classifier_loaded() {
-            log::warn!("[QueryClassifier] Lazy load on pipeline engage skipped/failed: {}", e);
+        // Offload ONNX classifier asset loading and warmup inference off Tokio worker threads
+        let scope_load_res = tokio::task::spawn_blocking(|| {
+            crate::services::memory::ensure_scope_classifier_loaded()
+        }).await;
+        if let Err(e) = scope_load_res.unwrap_or(Ok(false)) {
+            log::warn!("[QueryScopeClassifier] Lazy load on pipeline engage skipped/failed: {}", e);
         }
 
         // Ensure engine is launched

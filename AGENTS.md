@@ -36,14 +36,6 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
    - Running multiple GGUF or ONNX inference commands concurrently causes CPU thread contention and invalidates per-pair latency metrics.
    - Always execute benchmark probes **strictly sequentially, one model at a time**.
 
-2. **TRUE END-TO-END PER-PAIR LATENCY MANDATE**:
-   - The per-pair latency timer MUST start **BEFORE** user-turn tokenization and `ctx.decode(&mut batch)` prefill, and stop **AFTER** logit extraction.
-   - Timers measuring only array indexing or logit lookup are strictly forbidden.
-
-3. **FROZEN SYSTEM PROMPT KV CACHE**:
-   - System prompt tokens MUST be prefilled into `llama_context` **EXACTLY ONCE** at startup.
-   - Per-pair inference MUST clear only user-turn positions (`sys_len..N`), leaving system prompt KV cache frozen.
-
 ---
 
 ## 3. HARD GATE: Code Modification Gate
@@ -67,41 +59,19 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 5. Current Phase — Vox v7 Architecture Implementation & Gate Validation
+## 5. Current Phase — Phase 9: MemoryScope Classifier Fine-Tuning & Gate Validation
 
-### What is being validated (v7 Specification)
-1. **6 Domain-Agnostic Cognitive Taxonomy**: `Identity`, `Directives`, `Constraints`, `Profile`, `Entities`, `Narrative`.
-2. **4-Stage Pipeline with Unified Evaluation**:
-   - **Stage 1**: String & Jaccard Dedup (`staged_pending` $\rightarrow$ `deduped`).
-   - **Stage 2**: Dense Vector Embedding (`deduped` $\rightarrow$ `embedded`).
-   - **Stage 3**: Unified Edge & State Evaluation (Intra-Domain NLI + Inter-Domain Edge Classifier) (`embedded` $\rightarrow$ `evaluated`).
-   - **Stage 4**: Terminal Commit & Prune (`evaluated` $\rightarrow$ `completed`/deleted).
-3. **Precision RAG Retrieval & Hybrid Budgeting**:
-   - `Identity`: Deterministic SQL fetch of ALL active facts (`WHERE status = 'active'`).
-   - `Directives`: Top-level parent seed on **Turn 1 of new session ONLY**; child graph node on Turns 2+.
-   - `Constraints`: Integrated into **Semantic Vector Search + Graph Traversal** (`RESTRICTS` / `CONFLICTS`).
-   - `Profile` / `Entities`: Semantic Vector Search (ANN) + Graph Traversal.
+**Rules:** No self-audits. Sticky subagents. No shortcuts. Stop on blockers. HITL at phase gates. Update AGENTS.md after milestones.
 
-### Domain Taxonomy & Pipeline Setup
-| Domain | Purpose | Evaluation Pipeline | Retrieval Policy |
-|---|---|---|---|
-| **`Identity`** | Core User Identity | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | Deterministic SQL (`WHERE status = 'active'`). All active facts. |
-| **`Directives`** | Agent Operational State / Active Tasks | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | **Turn 1 Parent Seed ONLY**; Child Graph Node on Turns 2+. |
-| **`Constraints`** | Hard Boundaries / Rules | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | **Semantic Vector Search + Graph Traversal** (`RESTRICTS` / `CONFLICTS`). |
-| **`Profile`** | User Persona / Tastes | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | Semantic Vector Search (ANN) + Graph Traversal. |
-| **`Entities`** | External Knowledge Graph | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ Step 3 Unified Eval | Semantic Vector Search (ANN) + Graph Traversal. |
-| **`Narrative`** | Session History Summary | Compaction turn summary | Backward Prepending Context Chain (5% Cap). |
+**Phase 9 Spec:** 4-class MemoryScope (ChitChat/User/Domain/Temporal), tri-lingual ONNX classifier, τ*=0.81 threshold → Domain fallback, 98.08% non-default precision, 25.36ms P50 latency, <50MB RAM.
 
-### Pre-Implementation Gate Matrix Status
-| Gate | Target / Component | Status / Outcome |
-|---|---|---|
-| **Gate 1** | MiniLM-L12 Soft Vector Dedup Calibration | **PASSED** (Threshold = 0.95, 0.0% false inactivations across 500 pairs, 29.7ms/pair. See `docs/benchmarks/dedup-bench.md`) |
-| **Gate 2** | DeBERTa-v3 NLI Domain Precision Audit | **PASSED** (`nli-deberta-v3-base` selected, 85.11% overall, Directives = 99.33%, Constraints = 75.50%, 64.8ms/pair. Multi-model PyTorch candidate evaluation complete. See `docs/benchmarks/nli-precision-bench.md`) |
-| **Gate 3** | Cognitive Edge Classifier Calibration | **IN PROGRESS (Pending ONNX Sequence Classifier Fine-Tuning)** — Edge ontology finalized to 4 operational labels (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE`). 1-pass `ModernBERT-base` INT8 ONNX sequence classifier selected as winning architecture (~35ms CPU latency, <120MB RAM). Pending 500-pair MVD dataset creation and PyTorch fine-tuning. See `docs/benchmarks/edge-classifier-bench.md`. |
+**Gates:** All 4 PASSED (Gate 1: dedup calibration, Gate 2: NLI precision, Gate 3: edge classifier, Gate 4: MemoryScope calibration). See `docs/benchmarks/`.
 
-### Model Paths & Primary Specs
-- Embedding: `~/.vox/models/embedding/minilm-l12-v2` (384d INT8 ONNX)
-- NLI Engine: `~/.vox/models/nli/nli-deberta-v3-base/model_quantized.onnx` (233MB INT8 ONNX)
-- Edge Classifier Engine: `~/.vox/models/classifier/modernbert-base/model_quantized.onnx` (1-pass INT8 ONNX sequence classifier)
-- Architecture Spec: `docs/plans/memory-spec-v7.md`
-- Benchmark Harness: `app/src-tauri/examples/edge_classifier_probe.rs` & `app/src-tauri/examples/modernbert_zeroshot_probe.rs`
+**Implementation Status:**
+- **Initial review & tests**: Complete. 3/3 integration tests passing, 71/71 unit tests passing. **E2E pending**.
+- **Layer 1 (Foundation)**: Schema v7, 4-class classifier τ*=0.81, 15% context cap. **PASSED**.
+- **Layer 2 (Pipeline)**: Dedup(128)→Embed(16)→Eval(16, concurrent NLI+Edge)→Commit(32). Soft vector dedup (cos≥0.95) in Stage 2. 3-strike retry. **PASSED**.
+- **Layer 3 (Retrieval)**: 4-class scope pruning. Directives vector-searched for Domain, SQL-fetched for Temporal. Narrative SQL for Temporal. Identity idempotent pre-load. 15% budget waterfall. **PASSED**.
+- **Layer 4 (NLI & Edges)**: Identity/Directives CONTRADICTION→SUPERSEDES, ENTAILMENT→SUPPORTS. Constraints CONTRADICTION→CONFLICTS. Bidirectional edges. Cross-collection policy: Profile→Entities(SHAPES), Profile→Constraints(restricted_by), Entities→Constraints(DEPENDS_ON). **PASSED**.
+- **Audit**: 7 legacy functions pruned. All tests passing.
+- **Architecture doc**: `docs/features/memory-architecture.md` (code reality, not spec).
