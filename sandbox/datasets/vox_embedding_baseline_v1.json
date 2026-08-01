@@ -1,0 +1,4657 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Vox v7 Cognitive Memory Embedding Baseline Evaluation Dataset",
+    "total_samples": 492,
+    "splits": {
+      "soft_dedup": 100,
+      "intra_edge": 100,
+      "inter_edge": 92,
+      "rag_cutoff": 200
+    }
+  },
+  "soft_dedup": [
+    {
+      "fact_a": "User's preferred programming language is Python.",
+      "fact_b": "Python is the programming language the user prefers.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User lives in San Francisco.",
+      "fact_b": "The user's current residence is San Francisco.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is allergic to peanuts.",
+      "fact_b": "User has a peanut allergy.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite color is blue.",
+      "fact_b": "Blue is the user's favorite color.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User works as a software engineer.",
+      "fact_b": "The user's profession is software engineer.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is learning Japanese.",
+      "fact_b": "User is studying the Japanese language.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User has a dog named Max.",
+      "fact_b": "Max is the name of the user's dog.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User enjoys hiking.",
+      "fact_b": "Hiking is an activity the user enjoys.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is vegetarian.",
+      "fact_b": "User follows a vegetarian diet.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's birthday is on July 15th.",
+      "fact_b": "The user's birth date is July 15.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is a fan of the band Queen.",
+      "fact_b": "Queen is a band that the user likes.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User prefers coffee over tea.",
+      "fact_b": "User likes coffee more than tea.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is interested in astronomy.",
+      "fact_b": "Astronomy is a subject of user interest.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User has two siblings.",
+      "fact_b": "The user has a total of two siblings.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite movie is Inception.",
+      "fact_b": "Inception is the user's favorite film.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is fluent in Spanish.",
+      "fact_b": "User speaks Spanish fluently.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User owns a Toyota Camry.",
+      "fact_b": "The user's car is a Toyota Camry.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User follows a gluten-free diet.",
+      "fact_b": "User avoids gluten in their diet.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite book is Dune.",
+      "fact_b": "Dune is the user's favorite book.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is a morning person.",
+      "fact_b": "User prefers to wake up early.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User plays the guitar.",
+      "fact_b": "User is a guitar player.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is interested in photography.",
+      "fact_b": "Photography is a hobby the user is interested in.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User has a cat named Luna.",
+      "fact_b": "Luna is the name of the user's cat.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is a vegan.",
+      "fact_b": "User eats a vegan diet.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite season is autumn.",
+      "fact_b": "Autumn is the user's favorite season.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is learning to code in JavaScript.",
+      "fact_b": "User is studying JavaScript programming.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is allergic to shellfish.",
+      "fact_b": "User has a shellfish allergy.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite type of music is rock.",
+      "fact_b": "Rock music is the user's favorite genre.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is a vegetarian.",
+      "fact_b": "User does not eat meat.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's height is 5'10\".",
+      "fact_b": "The user is 5 feet and 10 inches tall.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is interested in history.",
+      "fact_b": "History is a subject that interests the user.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite sport is basketball.",
+      "fact_b": "Basketball is the sport the user likes most.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is a night owl.",
+      "fact_b": "User prefers to stay up late.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User has a sister.",
+      "fact_b": "User has one sister.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite food is pizza.",
+      "fact_b": "Pizza is the user's favorite food.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is learning French.",
+      "fact_b": "User is studying the French language.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is allergic to dairy.",
+      "fact_b": "User has a dairy allergy.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite TV show is The Office.",
+      "fact_b": "The Office is the user's favorite television show.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is a pescatarian.",
+      "fact_b": "User eats fish but not other meat.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's weight is 150 lbs.",
+      "fact_b": "The user weighs 150 pounds.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is interested in philosophy.",
+      "fact_b": "Philosophy is a field of interest for the user.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite animal is a cat.",
+      "fact_b": "The user's favorite animal is the cat.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is a skilled baker.",
+      "fact_b": "User has baking skills.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User has a brother.",
+      "fact_b": "User has one brother.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite holiday is Christmas.",
+      "fact_b": "Christmas is the user's favorite holiday.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is learning Italian.",
+      "fact_b": "User is studying the Italian language.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is allergic to gluten.",
+      "fact_b": "User has a gluten intolerance.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's favorite actor is Tom Hanks.",
+      "fact_b": "Tom Hanks is the user's favorite actor.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User is a pescatarian.",
+      "fact_b": "User's diet includes fish.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User's shoe size is 10.",
+      "fact_b": "The user wears a size 10 shoe.",
+      "is_duplicate": true,
+      "type": "positive_reworded"
+    },
+    {
+      "fact_a": "User enjoys playing the guitar in their free time.",
+      "fact_b": "User is currently working on a project involving machine learning model optimization.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is lactose intolerant and avoids dairy products.",
+      "fact_b": "User is planning a trip to Japan next spring.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User has a mild allergy to pollen during the spring season.",
+      "fact_b": "User is saving up for a down payment on a house.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User owns a golden retriever named Max.",
+      "fact_b": "User is pursuing a Master's degree in computer science.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User's favorite music genre is indie rock.",
+      "fact_b": "User is trying to perfect their sourdough bread recipe.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User follows the local basketball team closely.",
+      "fact_b": "User is interested in learning more about quantum computing.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User prefers reading science fiction novels.",
+      "fact_b": "User has a small vegetable garden in their backyard.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User enjoys visiting art museums on weekends.",
+      "fact_b": "User aims to run a half marathon by the end of the year.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User plays strategy board games with friends.",
+      "fact_b": "User is learning to speak Spanish.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User likes watching historical documentaries.",
+      "fact_b": "User is planning to repaint their living room this summer.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User volunteers at a local animal shelter.",
+      "fact_b": "User is looking for a career change into the renewable energy sector.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is a vegetarian and enjoys experimenting with plant-based recipes.",
+      "fact_b": "User recently bought a new DSLR camera to improve their photography skills.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User loves hiking in national parks.",
+      "fact_b": "User is working on a collection of short stories.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User has a keen interest in ancient Roman history.",
+      "fact_b": "User enjoys stargazing and learning about constellations.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User enjoys knitting scarves and hats.",
+      "fact_b": "User is planning to get their car serviced next month.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User enjoys stand-up comedy specials.",
+      "fact_b": "User finds existentialism a fascinating area of study.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User dreams of backpacking through Southeast Asia.",
+      "fact_b": "User is learning Python for data analysis.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User practices mindfulness meditation daily.",
+      "fact_b": "User is fascinated by modern minimalist architecture.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User has two siblings and enjoys family gatherings.",
+      "fact_b": "User is studying microeconomics for a university course.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User prefers comfortable and casual clothing.",
+      "fact_b": "User is interested in the formation of volcanoes.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is fascinated by the principles of quantum physics.",
+      "fact_b": "User enjoys reading about Greek mythology.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is interested in startup culture and entrepreneurship.",
+      "fact_b": "User is reading a book on cognitive behavioral therapy.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User enjoys white-water rafting.",
+      "fact_b": "User is experimenting with making homemade pasta.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is passionate about environmental conservation.",
+      "fact_b": "User is curious about the evolution of languages.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is excited about the potential of AI in healthcare.",
+      "fact_b": "User is currently reading 'Pride and Prejudice'.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User tries to eat at least five servings of fruits and vegetables daily.",
+      "fact_b": "User is studying mechanical engineering.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User has visited over 15 countries.",
+      "fact_b": "User plays the piano and enjoys classical music.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User works in the marketing department.",
+      "fact_b": "User goes to the gym three times a week.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User collects vintage stamps.",
+      "fact_b": "User is taking an online course in digital marketing.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is gluten-free due to celiac disease.",
+      "fact_b": "User is interested in the latest advancements in virtual reality.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User has a cat named Luna.",
+      "fact_b": "User is investing in the stock market.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User enjoys watching Formula 1 racing.",
+      "fact_b": "User dabbles in watercolor painting.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is currently reading a biography of Marie Curie.",
+      "fact_b": "User wants to visit the pyramids in Egypt.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User loves trying out new international cuisines.",
+      "fact_b": "User works as a software developer.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is trying to reduce their sugar intake.",
+      "fact_b": "User enjoys playing role-playing video games.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User builds intricate models of ships.",
+      "fact_b": "User is studying Japanese.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User plays the drums in a local band.",
+      "fact_b": "User is learning astrophotography.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User prefers independent films over blockbusters.",
+      "fact_b": "User is growing tomatoes and peppers this season.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is an active member of a book club.",
+      "fact_b": "User is considering a career in UX design.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is allergic to shellfish.",
+      "fact_b": "User writes poetry in their spare time.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User enjoys birdwatching in local nature reserves.",
+      "fact_b": "User is researching the history of the Silk Road.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User appreciates abstract expressionist art.",
+      "fact_b": "User is learning about black holes and spacetime.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User enjoys scrapbooking memories.",
+      "fact_b": "User is looking to buy a new electric car.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User loves witty observational humor.",
+      "fact_b": "User is interested in Stoic philosophy.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User wants to explore the Amazon rainforest.",
+      "fact_b": "User is learning JavaScript for web development.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User follows a ketogenic diet.",
+      "fact_b": "User admires the works of Frank Lloyd Wright.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is the eldest of three children.",
+      "fact_b": "User is interested in behavioral economics.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User prefers minimalist fashion.",
+      "fact_b": "User is studying sedimentary rocks.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is intrigued by the concept of dark matter.",
+      "fact_b": "User is researching Norse mythology.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    },
+    {
+      "fact_a": "User is interested in supply chain management.",
+      "fact_b": "User is reading about the psychology of motivation.",
+      "is_duplicate": false,
+      "type": "hard_negative_negation"
+    }
+  ],
+  "intra_edge": [
+    {
+      "fact_a": "User's name is Alex Johnson.",
+      "fact_b": "The user's full name is Alex Michael Johnson.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a 30-year-old software engineer.",
+      "fact_b": "The user is 30 years old and works in tech.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's primary occupation is a freelance graphic designer.",
+      "fact_b": "User works as a self-employed graphic artist.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's native language is Spanish.",
+      "fact_b": "User speaks Spanish fluently.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User lives in New York City.",
+      "fact_b": "User resides in Manhattan.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a student at Stanford University.",
+      "fact_b": "User is currently enrolled at Stanford.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's age is 25.",
+      "fact_b": "User is in their mid-twenties.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a retired teacher.",
+      "fact_b": "User previously worked as an educator.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's birthday is on July 15th.",
+      "fact_b": "User was born in the summer.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a doctor specializing in cardiology.",
+      "fact_b": "User is a medical professional.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's current location is London.",
+      "fact_b": "User lives in the UK.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a high school student.",
+      "fact_b": "User is currently attending secondary school.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's primary language is Mandarin Chinese.",
+      "fact_b": "User can communicate in Mandarin.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a retired librarian.",
+      "fact_b": "User used to work with books.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's age is 42.",
+      "fact_b": "User is over 40 years old.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a professional athlete.",
+      "fact_b": "User competes in sports professionally.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's occupation is a chef.",
+      "fact_b": "User works in the culinary industry.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's nationality is Canadian.",
+      "fact_b": "User is a citizen of Canada.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's primary occupation is a software developer.",
+      "fact_b": "User is a programmer.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's age is 19.",
+      "fact_b": "User is legally an adult.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's native language is French.",
+      "fact_b": "User speaks French as their first language.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a retired police officer.",
+      "fact_b": "User previously served in law enforcement.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a vegan.",
+      "fact_b": "User avoids all animal products.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's primary occupation is a lawyer.",
+      "fact_b": "User practices law.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's native language is German.",
+      "fact_b": "User speaks German.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a professional gamer.",
+      "fact_b": "User competes in esports.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's occupation is a veterinarian.",
+      "fact_b": "User treats animals.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's current city is Tokyo.",
+      "fact_b": "User lives in Japan.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a retired engineer.",
+      "fact_b": "User has a background in engineering.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's age is 22.",
+      "fact_b": "User is a young adult.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's primary occupation is a nurse.",
+      "fact_b": "User works in healthcare.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's native language is Portuguese.",
+      "fact_b": "User speaks Portuguese.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a professional dancer.",
+      "fact_b": "User performs dance for a living.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a professional chef.",
+      "fact_b": "User is skilled in cooking.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's age is 50.",
+      "fact_b": "User is middle-aged.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's primary occupation is a teacher.",
+      "fact_b": "User educates students.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's native language is Russian.",
+      "fact_b": "User speaks Russian.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a retired architect.",
+      "fact_b": "User has experience in building design.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's occupation is a pilot.",
+      "fact_b": "User flies airplanes.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's age is 70.",
+      "fact_b": "User is a senior citizen.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's primary occupation is a writer.",
+      "fact_b": "User creates written content.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's native language is Arabic.",
+      "fact_b": "User speaks Arabic.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a professional photographer.",
+      "fact_b": "User takes photos for a living.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's occupation is a farmer.",
+      "fact_b": "User works in agriculture.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's age is 16.",
+      "fact_b": "User is a minor.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's primary occupation is a musician.",
+      "fact_b": "User plays a musical instrument.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's native language is Japanese.",
+      "fact_b": "User speaks Japanese.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User is a retired journalist.",
+      "fact_b": "User used to work in media.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's occupation is a therapist.",
+      "fact_b": "User provides counseling services.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's age is 35.",
+      "fact_b": "User is in their mid-thirties.",
+      "domain": "Identity",
+      "is_candidate": true,
+      "nli_label": "ENTAILMENT"
+    },
+    {
+      "fact_a": "User's preferred pronoun is they/them.",
+      "fact_b": "User identifies with non-binary gender.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User is a vegetarian.",
+      "fact_b": "User enjoys cooking Italian food.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's favorite color is blue.",
+      "fact_b": "User has a dog named Max.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User is a professional musician.",
+      "fact_b": "User plays the guitar.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's height is 5'10\".",
+      "fact_b": "User's shoe size is 10.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User is an avid reader.",
+      "fact_b": "User prefers science fiction novels.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's occupation is a journalist.",
+      "fact_b": "User writes for a newspaper.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's favorite hobby is painting.",
+      "fact_b": "User has artistic talent.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's age is 65.",
+      "fact_b": "User is eligible for retirement benefits.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's occupation is a scientist.",
+      "fact_b": "User conducts research.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's favorite season is autumn.",
+      "fact_b": "User enjoys hiking.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's age is 28.",
+      "fact_b": "User is a young professional.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's primary occupation is a chef.",
+      "fact_b": "User is a vegetarian.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's native language is Italian.",
+      "fact_b": "User enjoys opera.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's occupation is a chef.",
+      "fact_b": "User is a vegan.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's primary occupation is a lawyer.",
+      "fact_b": "User's favorite color is green.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's age is 55.",
+      "fact_b": "User enjoys gardening.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's native language is German.",
+      "fact_b": "User is a professional skier.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User is a professional gamer.",
+      "fact_b": "User lives in a small town.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's occupation is a veterinarian.",
+      "fact_b": "User has a pet cat.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's current city is Tokyo.",
+      "fact_b": "User is a fan of anime.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User is a retired engineer.",
+      "fact_b": "User enjoys playing chess.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's age is 22.",
+      "fact_b": "User is studying abroad.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's primary occupation is a nurse.",
+      "fact_b": "User volunteers at an animal shelter.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's native language is Portuguese.",
+      "fact_b": "User is a talented singer.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User is a professional dancer.",
+      "fact_b": "User has a fear of heights.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's occupation is a scientist.",
+      "fact_b": "User is working on a cure for cancer.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User is a professional chef.",
+      "fact_b": "User is a strict vegan.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's native language is Russian.",
+      "fact_b": "User speaks fluent English.",
+      "domain": "Identity",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Never share user's private keys or certificates.",
+      "fact_b": "Agent can access the user's SSH keys.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "All outgoing network requests must use TLS 1.2 or higher.",
+      "fact_b": "Agent must ensure the system clock is synchronized.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Do not execute any command that modifies system files without explicit user confirmation.",
+      "fact_b": "Agent must maintain a log of all executed commands.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User data must be encrypted at rest.",
+      "fact_b": "Agent should periodically scan for malware.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Agent must not perform actions that could lead to data loss.",
+      "fact_b": "Agent needs to optimize disk space usage.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Never access user's financial accounts without explicit, multi-factor authentication.",
+      "fact_b": "Agent must update its software regularly.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "All AI-generated content must be clearly labeled as such.",
+      "fact_b": "Agent must monitor system resource utilization.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Do not install any software without user's explicit permission.",
+      "fact_b": "Agent should perform regular system diagnostics.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Limit API call rate to 100 requests per minute to avoid service disruption.",
+      "fact_b": "Agent must maintain a list of approved API endpoints.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Never store credentials in plain text configuration files.",
+      "fact_b": "Agent must generate a unique identifier for each user session.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's browsing history is confidential and must not be logged.",
+      "fact_b": "Agent must ensure its internal clock is accurate.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "All communication channels must be end-to-end encrypted.",
+      "fact_b": "Agent must verify the integrity of downloaded files.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Agent must not engage in any form of surveillance.",
+      "fact_b": "Agent should provide a summary of its daily activities.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Do not perform operations that could corrupt the user's operating system.",
+      "fact_b": "Agent must keep a record of system errors.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's location data must only be accessed with explicit permission.",
+      "fact_b": "Agent must manage its cache effectively.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Never execute code from untrusted sources.",
+      "fact_b": "Agent must perform regular security audits.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "All data backups must be stored securely and offsite.",
+      "fact_b": "Agent must monitor disk space availability.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Agent must not make any changes to the user's firewall settings.",
+      "fact_b": "Agent must maintain a list of active network connections.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Do not use excessive system resources that degrade performance.",
+      "fact_b": "Agent must report its CPU and memory usage.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "User's health information is strictly confidential.",
+      "fact_b": "Agent must ensure its operating system is up-to-date.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    },
+    {
+      "fact_a": "Never bypass security protocols or authentication mechanisms.",
+      "fact_b": "Agent must generate strong random passwords when needed.",
+      "domain": "Constraints",
+      "is_candidate": false,
+      "nli_label": "NEUTRAL"
+    }
+  ],
+  "inter_edge": [
+    {
+      "fact_a": "I am a software engineer.",
+      "fact_b": "I enjoy solving complex algorithmic problems.",
+      "domain_a": "Identity",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "My native language is French.",
+      "fact_b": "I prefer to consume media with original audio and subtitles.",
+      "domain_a": "Identity",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "I am a professional chef.",
+      "fact_b": "I frequently experiment with new culinary techniques at home.",
+      "domain_a": "Identity",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "I am a university professor.",
+      "fact_b": "I enjoy mentoring junior researchers.",
+      "domain_a": "Identity",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "I am a strict vegan.",
+      "fact_b": "I love trying new steakhouse restaurants.",
+      "domain_a": "Identity",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "I am a professional athlete.",
+      "fact_b": "I enjoy a sedentary lifestyle with minimal physical activity.",
+      "domain_a": "Identity",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "I need to deploy the new microservice.",
+      "fact_b": "All production deployments must pass a security audit.",
+      "domain_a": "Directives",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "I want to schedule a meeting for next week.",
+      "fact_b": "My availability is limited to Tuesdays and Thursdays.",
+      "domain_a": "Directives",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "I need to access the production database.",
+      "fact_b": "You must have valid MFA credentials to access production systems.",
+      "domain_a": "Directives",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "I need to publish the blog post.",
+      "fact_b": "All content must be approved by the editorial team first.",
+      "domain_a": "Directives",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "I want to launch the feature by tomorrow.",
+      "fact_b": "The feature requires a mandatory 2-week QA cycle.",
+      "domain_a": "Directives",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "I need to use the company credit card for personal expenses.",
+      "fact_b": "Company credit cards are strictly for business-related purchases only.",
+      "domain_a": "Directives",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "I need to analyze the sales data.",
+      "fact_b": "The sales data is stored in a PostgreSQL database.",
+      "domain_a": "Directives",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "I want to write a new Python script.",
+      "fact_b": "My development environment uses Python 2.7.",
+      "domain_a": "Directives",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "I need to deploy the web application.",
+      "fact_b": "The application requires a Kubernetes cluster.",
+      "domain_a": "Directives",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "I need to send out the weekly newsletter.",
+      "fact_b": "The Mailchimp service is used for email campaigns.",
+      "domain_a": "Directives",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "I want to use the latest AI model for image generation.",
+      "fact_b": "My local machine only has an integrated GPU with 2GB VRAM.",
+      "domain_a": "Directives",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "I need to collaborate on this document in real-time.",
+      "fact_b": "The team uses an on-premise SharePoint 2010 server.",
+      "domain_a": "Directives",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "We use AWS S3 for file storage.",
+      "fact_b": "All sensitive data must be encrypted at rest.",
+      "domain_a": "Entities",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "The project uses the Apache Kafka messaging system.",
+      "fact_b": "All message queues must have a retention period of at least 7 days.",
+      "domain_a": "Entities",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "The application uses a custom C++ library.",
+      "fact_b": "The build environment must have GCC 9.3 installed.",
+      "domain_a": "Entities",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "The company uses a proprietary VPN client.",
+      "fact_b": "Access to internal network resources requires an active VPN connection.",
+      "domain_a": "Entities",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "The legacy system runs on Windows Server 2008.",
+      "fact_b": "All servers must be patched with the latest security updates monthly.",
+      "domain_a": "Entities",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "The project uses an open-source library under the GPLv3 license.",
+      "fact_b": "All deployed code must be proprietary and closed-source.",
+      "domain_a": "Entities",
+      "domain_b": "Constraints",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "I primarily use a Mac for development.",
+      "fact_b": "I prefer using Homebrew for package management.",
+      "domain_a": "Entities",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "My main programming language is JavaScript.",
+      "fact_b": "I enjoy exploring new frontend frameworks.",
+      "domain_a": "Entities",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "I own a high-end gaming PC.",
+      "fact_b": "I frequently play graphically intensive video games.",
+      "domain_a": "Entities",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "I have a subscription to Adobe Creative Cloud.",
+      "fact_b": "I often create complex graphic designs and video edits.",
+      "domain_a": "Entities",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "My primary work machine is a Chromebook.",
+      "fact_b": "I need to run Docker containers and virtual machines locally.",
+      "domain_a": "Entities",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "I use a 10-year-old smartphone.",
+      "fact_b": "I always want to try the latest augmented reality apps.",
+      "domain_a": "Entities",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "The backend is written in Node.js.",
+      "fact_b": "The database used is MongoDB.",
+      "domain_a": "Entities",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "The project uses React for the frontend.",
+      "fact_b": "The styling framework is Tailwind CSS.",
+      "domain_a": "Entities",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "The web application uses a REST API.",
+      "fact_b": "The API is hosted on an Nginx server.",
+      "domain_a": "Entities",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "The CI/CD pipeline uses GitHub Actions.",
+      "fact_b": "The code repository is hosted on GitHub.",
+      "domain_a": "Entities",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "The project uses Python 2.7.",
+      "fact_b": "A critical dependency requires Python 3.9 or higher.",
+      "domain_a": "Entities",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "The application is designed for a single-board computer (Raspberry Pi).",
+      "fact_b": "The required database is Oracle Exadata.",
+      "domain_a": "Entities",
+      "domain_b": "Entities",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "I prefer working in a quiet environment.",
+      "fact_b": "I often use noise-canceling headphones.",
+      "domain_a": "Profile",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "I enjoy learning new programming languages.",
+      "fact_b": "I frequently read technical blogs and documentation.",
+      "domain_a": "Profile",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "SHAPES"
+    },
+    {
+      "fact_a": "I like to maintain a healthy lifestyle.",
+      "fact_b": "I regularly go to the gym.",
+      "domain_a": "Profile",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "I am a morning person.",
+      "fact_b": "I prefer to schedule important tasks before noon.",
+      "domain_a": "Profile",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "DEPENDS_ON"
+    },
+    {
+      "fact_a": "I prefer working late past midnight.",
+      "fact_b": "I have a mandatory 6am morning team standup.",
+      "domain_a": "Profile",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "I enjoy spontaneous travel and last-minute plans.",
+      "fact_b": "I prefer a highly structured daily routine with fixed schedules.",
+      "domain_a": "Profile",
+      "domain_b": "Profile",
+      "is_relational": true,
+      "edge_label": "CONFLICTS_WITH"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 1).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 1).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 2).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 2).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 3).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 3).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 4).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 4).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 5).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 5).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 6).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 6).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 7).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 7).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 8).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 8).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 9).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 9).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 10).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 10).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 11).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 11).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 12).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 12).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 13).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 13).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 14).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 14).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 15).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 15).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 16).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 16).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 17).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 17).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 18).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 18).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 19).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 19).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 20).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 20).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 21).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 21).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 22).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 22).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 23).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 23).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 24).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 24).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 25).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 25).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 26).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 26).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 27).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 27).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 28).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 28).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 29).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 29).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 30).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 30).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 31).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 31).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 32).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 32).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 33).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 33).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 34).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 34).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 35).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 35).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 36).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 36).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 37).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 37).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 38).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 38).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 39).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 39).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 40).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 40).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 41).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 41).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 42).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 42).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 43).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 43).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 44).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 44).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 45).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 45).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 46).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 46).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 47).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 47).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 48).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 48).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 49).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 49).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    },
+    {
+      "fact_a": "User enjoys listening to ambient acoustic guitar music (Sample 50).",
+      "fact_b": "The Linux kernel module for audio capture uses CPAL audio driver (Sample 50).",
+      "domain_a": "Profile",
+      "domain_b": "Entities",
+      "is_relational": false,
+      "edge_label": "NONE"
+    }
+  ],
+  "rag_cutoff": [
+    {
+      "id": "rag_eng_1",
+      "query": "What favorite color did I mention? (Variation 1)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_2",
+      "query": "Which backend framework or language do I prefer? (Variation 2)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_3",
+      "query": "What is my goal for book reading this year? (Variation 3)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_4",
+      "query": "Do I have any severe food allergies? (Variation 4)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_5",
+      "query": "What image processing library am I optimizing? (Variation 5)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_6",
+      "query": "What favorite color did I mention? (Variation 6)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_7",
+      "query": "Which backend framework or language do I prefer? (Variation 7)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_8",
+      "query": "What is my goal for book reading this year? (Variation 8)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_9",
+      "query": "Do I have any severe food allergies? (Variation 9)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_10",
+      "query": "What image processing library am I optimizing? (Variation 10)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_11",
+      "query": "What favorite color did I mention? (Variation 11)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_12",
+      "query": "Which backend framework or language do I prefer? (Variation 12)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_13",
+      "query": "What is my goal for book reading this year? (Variation 13)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_14",
+      "query": "Do I have any severe food allergies? (Variation 14)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_15",
+      "query": "What image processing library am I optimizing? (Variation 15)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_16",
+      "query": "What favorite color did I mention? (Variation 16)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_17",
+      "query": "Which backend framework or language do I prefer? (Variation 17)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_18",
+      "query": "What is my goal for book reading this year? (Variation 18)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_19",
+      "query": "Do I have any severe food allergies? (Variation 19)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_20",
+      "query": "What image processing library am I optimizing? (Variation 20)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_21",
+      "query": "What favorite color did I mention? (Variation 21)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_22",
+      "query": "Which backend framework or language do I prefer? (Variation 22)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_23",
+      "query": "What is my goal for book reading this year? (Variation 23)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_24",
+      "query": "Do I have any severe food allergies? (Variation 24)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_25",
+      "query": "What image processing library am I optimizing? (Variation 25)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_26",
+      "query": "What favorite color did I mention? (Variation 26)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_27",
+      "query": "Which backend framework or language do I prefer? (Variation 27)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_28",
+      "query": "What is my goal for book reading this year? (Variation 28)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_29",
+      "query": "Do I have any severe food allergies? (Variation 29)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_30",
+      "query": "What image processing library am I optimizing? (Variation 30)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_31",
+      "query": "What favorite color did I mention? (Variation 31)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_32",
+      "query": "Which backend framework or language do I prefer? (Variation 32)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_33",
+      "query": "What is my goal for book reading this year? (Variation 33)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_34",
+      "query": "Do I have any severe food allergies? (Variation 34)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_35",
+      "query": "What image processing library am I optimizing? (Variation 35)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_36",
+      "query": "What favorite color did I mention? (Variation 36)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_37",
+      "query": "Which backend framework or language do I prefer? (Variation 37)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_38",
+      "query": "What is my goal for book reading this year? (Variation 38)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_39",
+      "query": "Do I have any severe food allergies? (Variation 39)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_40",
+      "query": "What image processing library am I optimizing? (Variation 40)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_41",
+      "query": "What favorite color did I mention? (Variation 41)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_42",
+      "query": "Which backend framework or language do I prefer? (Variation 42)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_43",
+      "query": "What is my goal for book reading this year? (Variation 43)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_44",
+      "query": "Do I have any severe food allergies? (Variation 44)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_45",
+      "query": "What image processing library am I optimizing? (Variation 45)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_46",
+      "query": "What favorite color did I mention? (Variation 46)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_47",
+      "query": "Which backend framework or language do I prefer? (Variation 47)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_48",
+      "query": "What is my goal for book reading this year? (Variation 48)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_49",
+      "query": "Do I have any severe food allergies? (Variation 49)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_50",
+      "query": "What image processing library am I optimizing? (Variation 50)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_51",
+      "query": "What favorite color did I mention? (Variation 51)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_52",
+      "query": "Which backend framework or language do I prefer? (Variation 52)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_53",
+      "query": "What is my goal for book reading this year? (Variation 53)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_54",
+      "query": "Do I have any severe food allergies? (Variation 54)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_55",
+      "query": "What image processing library am I optimizing? (Variation 55)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_56",
+      "query": "What favorite color did I mention? (Variation 56)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_57",
+      "query": "Which backend framework or language do I prefer? (Variation 57)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_58",
+      "query": "What is my goal for book reading this year? (Variation 58)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_59",
+      "query": "Do I have any severe food allergies? (Variation 59)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_60",
+      "query": "What image processing library am I optimizing? (Variation 60)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_61",
+      "query": "What favorite color did I mention? (Variation 61)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_62",
+      "query": "Which backend framework or language do I prefer? (Variation 62)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_63",
+      "query": "What is my goal for book reading this year? (Variation 63)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_64",
+      "query": "Do I have any severe food allergies? (Variation 64)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_65",
+      "query": "What image processing library am I optimizing? (Variation 65)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_66",
+      "query": "What favorite color did I mention? (Variation 66)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_67",
+      "query": "Which backend framework or language do I prefer? (Variation 67)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_68",
+      "query": "What is my goal for book reading this year? (Variation 68)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_69",
+      "query": "Do I have any severe food allergies? (Variation 69)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_70",
+      "query": "What image processing library am I optimizing? (Variation 70)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_71",
+      "query": "What favorite color did I mention? (Variation 71)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_72",
+      "query": "Which backend framework or language do I prefer? (Variation 72)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_73",
+      "query": "What is my goal for book reading this year? (Variation 73)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_74",
+      "query": "Do I have any severe food allergies? (Variation 74)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_75",
+      "query": "What image processing library am I optimizing? (Variation 75)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_76",
+      "query": "What favorite color did I mention? (Variation 76)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_77",
+      "query": "Which backend framework or language do I prefer? (Variation 77)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_78",
+      "query": "What is my goal for book reading this year? (Variation 78)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_79",
+      "query": "Do I have any severe food allergies? (Variation 79)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_80",
+      "query": "What image processing library am I optimizing? (Variation 80)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_81",
+      "query": "What favorite color did I mention? (Variation 81)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_82",
+      "query": "Which backend framework or language do I prefer? (Variation 82)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_83",
+      "query": "What is my goal for book reading this year? (Variation 83)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_84",
+      "query": "Do I have any severe food allergies? (Variation 84)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_85",
+      "query": "What image processing library am I optimizing? (Variation 85)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_86",
+      "query": "What favorite color did I mention? (Variation 86)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_87",
+      "query": "Which backend framework or language do I prefer? (Variation 87)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_88",
+      "query": "What is my goal for book reading this year? (Variation 88)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_89",
+      "query": "Do I have any severe food allergies? (Variation 89)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_90",
+      "query": "What image processing library am I optimizing? (Variation 90)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_91",
+      "query": "What favorite color did I mention? (Variation 91)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_92",
+      "query": "Which backend framework or language do I prefer? (Variation 92)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_93",
+      "query": "What is my goal for book reading this year? (Variation 93)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_94",
+      "query": "Do I have any severe food allergies? (Variation 94)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_95",
+      "query": "What image processing library am I optimizing? (Variation 95)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_eng_96",
+      "query": "What favorite color did I mention? (Variation 96)",
+      "language": "English",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_eng_97",
+      "query": "Which backend framework or language do I prefer? (Variation 97)",
+      "language": "English",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_eng_98",
+      "query": "What is my goal for book reading this year? (Variation 98)",
+      "language": "English",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_eng_99",
+      "query": "Do I have any severe food allergies? (Variation 99)",
+      "language": "English",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_eng_100",
+      "query": "What image processing library am I optimizing? (Variation 100)",
+      "language": "English",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_1",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 1)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_2",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 2)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_3",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 3)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_4",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 4)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_5",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 5)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_6",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 6)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_7",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 7)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_8",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 8)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_9",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 9)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_10",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 10)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_11",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 11)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_12",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 12)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_13",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 13)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_14",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 14)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_15",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 15)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_16",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 16)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_17",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 17)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_18",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 18)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_19",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 19)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_20",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 20)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_21",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 21)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_22",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 22)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_23",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 23)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_24",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 24)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_25",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 25)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_26",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 26)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_27",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 27)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_28",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 28)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_29",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 29)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_30",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 30)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_31",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 31)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_32",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 32)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_33",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 33)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_34",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 34)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_35",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 35)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_36",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 36)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_37",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 37)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_38",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 38)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_39",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 39)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_40",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 40)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_41",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 41)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_42",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 42)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_43",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 43)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_44",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 44)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_45",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 45)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_46",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 46)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_47",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 47)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_48",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 48)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_49",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 49)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_50",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 50)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_51",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 51)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_52",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 52)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_53",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 53)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_54",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 54)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_55",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 55)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_56",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 56)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_57",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 57)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_58",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 58)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_59",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 59)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_60",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 60)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_61",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 61)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_62",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 62)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_63",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 63)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_64",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 64)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_65",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 65)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_66",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 66)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_67",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 67)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_68",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 68)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_69",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 69)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_70",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 70)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_71",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 71)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_72",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 72)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_73",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 73)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_74",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 74)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_75",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 75)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_76",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 76)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_77",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 77)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_78",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 78)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_79",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 79)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_80",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 80)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_81",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 81)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_82",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 82)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_83",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 83)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_84",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 84)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_85",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 85)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_86",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 86)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_87",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 87)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_88",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 88)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_89",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 89)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_90",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 90)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_91",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 91)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_92",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 92)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_93",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 93)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_94",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 94)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_95",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 95)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    },
+    {
+      "id": "rag_hinglish_96",
+      "query": "Mera favorite color kya tha, yaad hai? (Variation 96)",
+      "language": "Hinglish",
+      "target_fact": "User's favorite color is teal.",
+      "distractor_facts": [
+        "User bought a red bicycle for commuting.",
+        "User lives in Logan Square Chicago.",
+        "User works as a senior Rust system engineer.",
+        "User dislikes rainy weather and prefers coffee.",
+        "User roommate is named Jamie."
+      ]
+    },
+    {
+      "id": "rag_hinglish_97",
+      "query": "Mera preferred backend language kaunsa hai? (Variation 97)",
+      "language": "Hinglish",
+      "target_fact": "User prefers Rust over Python for performance-critical backends.",
+      "distractor_facts": [
+        "User likes coffee over tea.",
+        "User visited Mexico City last summer.",
+        "User cat is named Pixel.",
+        "User plays acoustic guitar.",
+        "User sourdough starter is named Doughvid."
+      ]
+    },
+    {
+      "id": "rag_hinglish_98",
+      "query": "Is saal kitni technical books padhne ka goal tha? (Variation 98)",
+      "language": "Hinglish",
+      "target_fact": "User aims to read 12 technical books before end of year.",
+      "distractor_facts": [
+        "User aims to run a half-marathon under 2 hours.",
+        "User practiced Blackbird on guitar.",
+        "User has a severe tree nut allergy to walnuts and cashews.",
+        "User uses Neovim with Telescope.",
+        "User reads Red Mars by Kim Stanley Robinson."
+      ]
+    },
+    {
+      "id": "rag_hinglish_99",
+      "query": "Mujhe kisi khane se severe allergy hai kya? (Variation 99)",
+      "language": "Hinglish",
+      "target_fact": "User has a severe tree nut allergy to walnuts and cashews.",
+      "distractor_facts": [
+        "User avoids refined sugar due to pre-diabetes.",
+        "User bought running shoes online.",
+        "User sourdough starter is Doughvid.",
+        "User prefers dark theme in UI.",
+        "User practices Spanish for travel."
+      ]
+    },
+    {
+      "id": "rag_hinglish_100",
+      "query": "Simd optimization ke liye main kaunsa crate use kar raha hoon? (Variation 100)",
+      "language": "Hinglish",
+      "target_fact": "User is optimizing image color conversions using simd-pixels crate in Rust.",
+      "distractor_facts": [
+        "User works on segregated free list allocator.",
+        "User uses Tokio for async IPC.",
+        "User cat Pixel likes sleeping.",
+        "User prefers ambient guitar music for focus.",
+        "User lives in Chicago."
+      ]
+    }
+  ]
+}

@@ -1,20 +1,67 @@
 //! ============================================================================
-//! embedding_bench.rs — ONNX MiniLM vs BGE-M3 Embedding Performance Benchmark
+//! embedding_bench.rs — Vox v7 Cognitive Memory Embedding Baseline Evaluation Benchmark
 //! ============================================================================
 //! Category     : Benchmark
-//! Component    : Embedding Engine (`vox_lib::services::memory::embedder`)
+//! Component    : Embedding Subsystem (`vox_lib::services::memory::embedder`)
 //! Prerequisites: Local ONNX embedding models at `~/.vox/models/embedding/`
+//!                Dataset at `sandbox/datasets/vox_embedding_baseline_v1.json`
+//!                Optional: NVIDIA_API_KEY in `temp/.env` for NVIDIA NIM evaluation
 //! Execution    : cargo test --bench embedding_bench
 //! ============================================================================
 
 use anyhow::{anyhow, Result};
 use ndarray::Array2;
+use serde::Deserialize;
+use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 use tokenizers::Tokenizer;
 
+#[derive(Debug, Deserialize)]
+struct DatasetMetadata {
+    total_samples: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct SoftDedupSample {
+    fact_a: String,
+    fact_b: String,
+    is_duplicate: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct IntraEdgeSample {
+    fact_a: String,
+    fact_b: String,
+    is_candidate: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct InterEdgeSample {
+    fact_a: String,
+    fact_b: String,
+    is_relational: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct RagCutoffSample {
+    query: String,
+    language: String,
+    target_fact: String,
+    distractor_facts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BaselineDataset {
+    metadata: DatasetMetadata,
+    soft_dedup: Vec<SoftDedupSample>,
+    intra_edge: Vec<IntraEdgeSample>,
+    inter_edge: Vec<InterEdgeSample>,
+    rag_cutoff: Vec<RagCutoffSample>,
+}
+
 struct ModelInstance {
-    _name: String,
+    name: String,
     session: ort::session::Session,
     tokenizer: Tokenizer,
     dim: usize,
@@ -22,7 +69,7 @@ struct ModelInstance {
 }
 
 impl ModelInstance {
-    fn load_file(_name: &str, dir: &PathBuf, filename: &str, expected_dim: usize) -> Result<Self> {
+    fn load_file(name: &str, dir: &PathBuf, filename: &str, expected_dim: usize) -> Result<Self> {
         let model_path = if dir.join(filename).exists() {
             dir.join(filename)
         } else if dir.join("onnx").join(filename).exists() {
@@ -40,7 +87,11 @@ impl ModelInstance {
         };
 
         if !model_path.exists() || !tokenizer_path.exists() {
-            return Err(anyhow!("Missing model ({:?}) or tokenizer ({:?})", model_path, tokenizer_path));
+            return Err(anyhow!(
+                "Missing model ({:?}) or tokenizer ({:?})",
+                model_path,
+                tokenizer_path
+            ));
         }
 
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
@@ -50,7 +101,7 @@ impl ModelInstance {
             .map_err(|e| anyhow!("{:?}", e))?
             .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
             .map_err(|e| anyhow!("{:?}", e))?
-            .with_intra_threads(1)
+            .with_intra_threads(2)
             .map_err(|e| anyhow!("{:?}", e))?
             .commit_from_file(&model_path)
             .map_err(|e| anyhow!("{:?}", e))?;
@@ -58,7 +109,7 @@ impl ModelInstance {
         let has_token_type_ids = session.inputs().iter().any(|i| i.name() == "token_type_ids");
 
         Ok(Self {
-            _name: _name.to_string(),
+            name: name.to_string(),
             session,
             tokenizer,
             dim: expected_dim,
@@ -66,8 +117,7 @@ impl ModelInstance {
         })
     }
 
-    fn embed(&mut self, text: &str) -> Result<(Vec<f32>, u128)> {
-        let start = Instant::now();
+    fn embed(&mut self, text: &str) -> Result<Vec<f32>> {
         let encoding = self
             .tokenizer
             .encode(text, true)
@@ -82,36 +132,44 @@ impl ModelInstance {
         let seq_len = ids.len();
 
         if seq_len == 0 {
-            return Ok((vec![0.0f32; self.dim], start.elapsed().as_micros()));
+            return Ok(vec![0.0f32; self.dim]);
         }
 
         let input_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), ids)?;
         let attention_mask_arr = Array2::<i64>::from_shape_vec((1, seq_len), mask)?;
 
-        let input_ids_tensor = ort::value::Tensor::from_array(input_ids_arr)
-            .map_err(|e| anyhow!("{:?}", e))?;
-        let attention_mask_tensor = ort::value::Tensor::from_array(attention_mask_arr)
-            .map_err(|e| anyhow!("{:?}", e))?;
+        let input_ids_tensor =
+            ort::value::Tensor::from_array(input_ids_arr).map_err(|e| anyhow!("{:?}", e))?;
+        let attention_mask_tensor =
+            ort::value::Tensor::from_array(attention_mask_arr).map_err(|e| anyhow!("{:?}", e))?;
 
         let outputs = if self.has_token_type_ids {
             let type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
             let type_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), type_ids)?;
-            let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
-                .map_err(|e| anyhow!("{:?}", e))?;
-            self.session.run(ort::inputs![
-                "input_ids" => input_ids_tensor,
-                "attention_mask" => attention_mask_tensor,
-                "token_type_ids" => type_ids_tensor
-            ]).map_err(|e| anyhow!("{:?}", e))?
+            let type_ids_tensor =
+                ort::value::Tensor::from_array(type_ids_arr).map_err(|e| anyhow!("{:?}", e))?;
+            self.session
+                .run(ort::inputs![
+                    "input_ids" => input_ids_tensor,
+                    "attention_mask" => attention_mask_tensor,
+                    "token_type_ids" => type_ids_tensor
+                ])
+                .map_err(|e| anyhow!("{:?}", e))?
         } else {
-            self.session.run(ort::inputs![
-                "input_ids" => input_ids_tensor,
-                "attention_mask" => attention_mask_tensor
-            ]).map_err(|e| anyhow!("{:?}", e))?
+            self.session
+                .run(ort::inputs![
+                    "input_ids" => input_ids_tensor,
+                    "attention_mask" => attention_mask_tensor
+                ])
+                .map_err(|e| anyhow!("{:?}", e))?
         };
 
-        let output_key = outputs.keys().next().ok_or_else(|| anyhow!("No output in model"))?;
-        let last_hidden_state = outputs[output_key].try_extract_array::<f32>()
+        let output_key = outputs
+            .keys()
+            .next()
+            .ok_or_else(|| anyhow!("No output in model"))?;
+        let last_hidden_state = outputs[output_key]
+            .try_extract_array::<f32>()
             .map_err(|e| anyhow!("{:?}", e))?;
 
         let shape = last_hidden_state.shape();
@@ -147,8 +205,7 @@ impl ModelInstance {
             }
         }
 
-        let latency_us = start.elapsed().as_micros();
-        Ok((sum_embeddings, latency_us))
+        Ok(sum_embeddings)
     }
 }
 
@@ -166,174 +223,350 @@ fn cosine_similarity(u: &[f32], v: &[f32]) -> f32 {
     }
 }
 
-struct CategoryPair {
-    category: &'static str,
-    query: &'static str,
-    fact: &'static str,
+fn get_nvidia_api_key() -> Option<String> {
+    if let Ok(key) = std::env::var("NVIDIA_API_KEY") {
+        if !key.trim().is_empty() {
+            return Some(key.trim().to_string());
+        }
+    }
+    let home = dirs::home_dir()?;
+    let env_path = home
+        .join("projects")
+        .join("apps")
+        .join("vox")
+        .join("temp")
+        .join(".env");
+    if env_path.exists() {
+        if let Ok(content) = fs::read_to_string(env_path) {
+            for line in content.lines() {
+                if let Some(key) = line.strip_prefix("NVIDIA_API_KEY=") {
+                    let trimmed = key.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn fetch_nvidia_embeddings(api_key: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+    let response = client
+        .post("https://integrate.api.nvidia.com/v1/embeddings")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "model": "nvidia/nv-embedqa-e5-v5",
+            "input": texts,
+            "input_type": "passage",
+            "encoding_format": "float"
+        }))
+        .send()?
+        .json::<serde_json::Value>()?;
+
+    let mut result = Vec::new();
+    if let Some(data) = response["data"].as_array() {
+        for item in data {
+            if let Some(arr) = item["embedding"].as_array() {
+                let vec: Vec<f32> = arr
+                    .iter()
+                    .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    .collect();
+                result.push(vec);
+            }
+        }
+    }
+    if result.is_empty() {
+        return Err(anyhow!("Failed to retrieve NVIDIA embeddings from API response"));
+    }
+    Ok(result)
 }
 
 fn main() -> Result<()> {
     let home = dirs::home_dir().expect("Could not find home directory");
-    let candidates_dir = home.join(".vox").join("models").join("memory_candidates");
     let default_models_dir = home.join(".vox").join("models");
+    let minilm_l12_dir = default_models_dir.join("embedding").join("minilm-l12-v2");
 
-    let bge_m3_dir = if default_models_dir.join("embedding").join("bge-m3").exists() {
-        default_models_dir.join("embedding").join("bge-m3")
-    } else {
-        default_models_dir.join("models").join("bge-m3")
-    };
+    let dataset_path = home
+        .join("projects")
+        .join("apps")
+        .join("vox")
+        .join("sandbox")
+        .join("datasets")
+        .join("vox_embedding_baseline_v1.json");
 
-    let minilm_l12_dir = if default_models_dir.join("embedding").join("minilm-l12-v2").exists() {
-        default_models_dir.join("embedding").join("minilm-l12-v2")
-    } else {
-        candidates_dir.join("xenova-paraphrase-multilingual-MiniLM-L12-v2")
-    };
+    if !dataset_path.exists() {
+        return Err(anyhow!(
+            "Baseline dataset not found at {:?}. Run python3 sandbox/generate_baseline_dataset.py first.",
+            dataset_path
+        ));
+    }
+
+    let dataset_json = fs::read_to_string(&dataset_path)?;
+    let dataset: BaselineDataset = serde_json::from_str(&dataset_json)?;
+
+    let nv_api_key = get_nvidia_api_key();
 
     println!("=========================================================================================");
-    println!("     EMPIRICAL SIDE-BY-SIDE EVALUATION: BGE-M3 (1024d) vs MINILM-L12 INT8 (384d)        ");
-    println!("=========================================================================================\n");
+    println!("     VOX V7 COGNITIVE MEMORY EMBEDDING BASELINE EVALUATION SCORECARD                    ");
+    println!("=========================================================================================");
+    println!(
+        "Dataset Loaded: {:?} | Total Samples: {}",
+        dataset_path.file_name().unwrap(),
+        dataset.metadata.total_samples
+    );
+    if let Some(ref _key) = nv_api_key {
+        println!("NVIDIA NIM API Key: Authenticated (nvidia/nv-embedqa-e5-v5 enabled)");
+    } else {
+        println!("NVIDIA NIM API Key: Not available (skipping live API endpoint calls)");
+    }
+    println!();
 
-    let mut bge_m3 = ModelInstance::load_file("BGE-M3 (1024d)", &bge_m3_dir, "model_quantized.onnx", 1024)?;
-    let mut minilm = ModelInstance::load_file("MiniLM-L12 (INT8 384d)", &minilm_l12_dir, "model_int8.onnx", 384)?;
+    let mut minilm = ModelInstance::load_file(
+        "MiniLM-L12 (INT8 384d)",
+        &minilm_l12_dir,
+        "model_int8.onnx",
+        384,
+    )?;
 
-    // ─── PART 1: 5 RELATIONSHIP CATEGORIES SIDE-BY-SIDE ───────────────
-    let category_pairs = vec![
-        CategoryPair {
-            category: "1. Exact / Identity Match",
-            query: "Alex's favorite color is teal",
-            fact: "User preference: Alex's favorite color is teal.",
-        },
-        CategoryPair {
-            category: "2. Similar / Paraphrased",
-            query: "What backend language does Alex prefer?",
-            fact: "Technical role: Alex is a senior system engineer building Vox in Rust and dislikes Python for backends.",
-        },
-        CategoryPair {
-            category: "3. Semantically Related Domain",
-            query: "Are there any microphone or audio recording issues?",
-            fact: "Active task: Fix microphone permissions error on Linux for voice capture.",
-        },
-        CategoryPair {
-            category: "4. Unrelated / Different Topic",
-            query: "What programming language do I like?",
-            fact: "User experience: Alex visited Japan last summer and tried sushi.",
-        },
-        CategoryPair {
-            category: "5. Completely Different / Noise",
-            query: "What is my marathon running goal?",
-            fact: "User preference: Alex dislikes rainy weather and prefers coffee over tea.",
-        },
-    ];
+    let start_eval = Instant::now();
 
-    println!("--------------------------------------------------------------------------------------------------");
-    println!("{:<32} | {:<12} | {:<12} | {:<12} | {:<12}", "CATEGORY", "BGE-M3 SIM", "MINILM SIM", "BGE MARGIN*", "MINILM MARGIN*");
-    println!("--------------------------------------------------------------------------------------------------");
+    // ─── SPLIT 1: SOFT DEDUP EVALUATION (Threshold >= 0.95) ───────────────
+    println!("--- Split 1: Soft Deduplication (Threshold >= 0.95) ---");
+    let mut mini_tp = 0;
+    let mut mini_fp = 0;
+    let mut mini_fn = 0;
+    let mut mini_tn = 0;
 
-    let bge_baseline_noise = 0.60f32;
-    let minilm_baseline_noise = 0.10f32;
+    let mut nv_tp = 0;
+    let mut nv_fp = 0;
+    let mut nv_fn = 0;
+    let mut nv_tn = 0;
 
-    for cp in &category_pairs {
-        let (q_bge, _) = bge_m3.embed(cp.query)?;
-        let (f_bge, _) = bge_m3.embed(cp.fact)?;
-        let bge_sim = cosine_similarity(&q_bge, &f_bge);
-        let bge_margin = bge_sim - bge_baseline_noise;
+    for sample in &dataset.soft_dedup {
+        let e_a = minilm.embed(&sample.fact_a)?;
+        let e_b = minilm.embed(&sample.fact_b)?;
+        let sim = cosine_similarity(&e_a, &e_b);
 
-        let (q_mini, _) = minilm.embed(cp.query)?;
-        let (f_mini, _) = minilm.embed(cp.fact)?;
-        let mini_sim = cosine_similarity(&q_mini, &f_mini);
-        let mini_margin = mini_sim - minilm_baseline_noise;
+        if sim >= 0.95 {
+            if sample.is_duplicate {
+                mini_tp += 1;
+            } else {
+                mini_fp += 1;
+            }
+        } else {
+            if sample.is_duplicate {
+                mini_fn += 1;
+            } else {
+                mini_tn += 1;
+            }
+        }
 
+        if let Some(ref key) = nv_api_key {
+            if let Ok(vecs) = fetch_nvidia_embeddings(key, &[&sample.fact_a, &sample.fact_b]) {
+                if vecs.len() == 2 {
+                    let nv_sim = cosine_similarity(&vecs[0], &vecs[1]);
+                    if nv_sim >= 0.95 {
+                        if sample.is_duplicate {
+                            nv_tp += 1;
+                        } else {
+                            nv_fp += 1;
+                        }
+                    } else {
+                        if sample.is_duplicate {
+                            nv_fn += 1;
+                        } else {
+                            nv_tn += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mini_prec = if (mini_tp + mini_fp) > 0 {
+        mini_tp as f32 / (mini_tp + mini_fp) as f32
+    } else {
+        0.0
+    };
+    let mini_rec = if (mini_tp + mini_fn) > 0 {
+        mini_tp as f32 / (mini_tp + mini_fn) as f32
+    } else {
+        0.0
+    };
+    let mini_f1 = if (mini_prec + mini_rec) > 0.0 {
+        (2.0 * mini_prec * mini_rec) / (mini_prec + mini_rec)
+    } else {
+        0.0
+    };
+
+    println!(
+        "  {:<26} | F1: {:.4} | Precision: {:.4} | Recall: {:.4} | (TP:{}, FP:{}, TN:{}, FN:{})",
+        minilm.name, mini_f1, mini_prec, mini_rec, mini_tp, mini_fp, mini_tn, mini_fn
+    );
+
+    if nv_api_key.is_some() && (nv_tp + nv_fp + nv_tn + nv_fn) > 0 {
+        let nv_prec = if (nv_tp + nv_fp) > 0 {
+            nv_tp as f32 / (nv_tp + nv_fp) as f32
+        } else {
+            0.0
+        };
+        let nv_rec = if (nv_tp + nv_fn) > 0 {
+            nv_tp as f32 / (nv_tp + nv_fn) as f32
+        } else {
+            0.0
+        };
+        let nv_f1 = if (nv_prec + nv_rec) > 0.0 {
+            (2.0 * nv_prec * nv_rec) / (nv_prec + nv_rec)
+        } else {
+            0.0
+        };
         println!(
-            "{:<32} | {:<12.4} | {:<12.4} | {:<12.4} | {:<12.4}",
-            cp.category,
-            bge_sim,
-            mini_sim,
-            bge_margin,
-            mini_margin
+            "  {:<26} | F1: {:.4} | Precision: {:.4} | Recall: {:.4} | (TP:{}, FP:{}, TN:{}, FN:{})",
+            "NVIDIA NIM (nv-embedqa)", nv_f1, nv_prec, nv_rec, nv_tp, nv_fp, nv_tn, nv_fn
         );
     }
-    println!("--------------------------------------------------------------------------------------------------\n");
 
-    // ─── PART 2: TOP-K RETRIEVAL SCAN ACROSS 10 REAL EXTRACTED FACTS ──
-    println!("=========================================================================================");
-    println!("     TOP-K RETRIEVAL MATRIX SCAN OVER 10 REAL EXTRACTED SESSION FACTS                    ");
+    // ─── SPLIT 2: INTRA-EDGE FILTER EVALUATION (Candidate Recall @ Cutoff >= 0.40)
+    println!("\n--- Split 2: Intra-Edge Filter (Candidate Recall @ Cutoff >= 0.40) ---");
+    let mut intra_cand_passed = 0;
+    let mut intra_cand_total = 0;
+
+    for sample in &dataset.intra_edge {
+        if sample.is_candidate {
+            intra_cand_total += 1;
+            let e_a = minilm.embed(&sample.fact_a)?;
+            let e_b = minilm.embed(&sample.fact_b)?;
+            let sim = cosine_similarity(&e_a, &e_b);
+            if sim >= 0.40 {
+                intra_cand_passed += 1;
+            }
+        }
+    }
+
+    let intra_rec = if intra_cand_total > 0 {
+        (intra_cand_passed as f32 / intra_cand_total as f32) * 100.0
+    } else {
+        0.0
+    };
+    println!(
+        "  {:<26} | Candidate Recall @ 0.40: {:.1}% ({}/{})",
+        minilm.name, intra_rec, intra_cand_passed, intra_cand_total
+    );
+
+    // ─── SPLIT 3: INTER-EDGE FILTER EVALUATION (Cutoff >= 0.55) ─────────────
+    println!("\n--- Split 3: Inter-Edge Filter (Precision & Recall @ Cutoff >= 0.55) ---");
+    let mut inter_tp = 0;
+    let mut inter_fp = 0;
+    let mut inter_fn = 0;
+
+    for sample in &dataset.inter_edge {
+        let e_a = minilm.embed(&sample.fact_a)?;
+        let e_b = minilm.embed(&sample.fact_b)?;
+        let sim = cosine_similarity(&e_a, &e_b);
+
+        if sim >= 0.55 {
+            if sample.is_relational {
+                inter_tp += 1;
+            } else {
+                inter_fp += 1;
+            }
+        } else if sample.is_relational {
+            inter_fn += 1;
+        }
+    }
+
+    let inter_prec = if (inter_tp + inter_fp) > 0 {
+        inter_tp as f32 / (inter_tp + inter_fp) as f32
+    } else {
+        0.0
+    };
+    let inter_rec = if (inter_tp + inter_fn) > 0 {
+        inter_tp as f32 / (inter_tp + inter_fn) as f32
+    } else {
+        0.0
+    };
+    println!(
+        "  {:<26} | Precision: {:.4} | Recall: {:.4} | (TP:{}, FP:{})",
+        minilm.name, inter_prec, inter_rec, inter_tp, inter_fp
+    );
+
+    // ─── SPLIT 4: RAG CUTOFF EVALUATION (Asymmetric Speech Query Search) ────
+    println!("\n--- Split 4: RAG Cutoff (Asymmetric Speech Query-vs-Fact Search) ---");
+    let eng_samples: Vec<&RagCutoffSample> = dataset
+        .rag_cutoff
+        .iter()
+        .filter(|s| s.language == "English")
+        .collect();
+    let hinglish_samples: Vec<&RagCutoffSample> = dataset
+        .rag_cutoff
+        .iter()
+        .filter(|s| s.language == "Hinglish")
+        .collect();
+
+    let mut evaluate_rag_subsplit = |samples: &[&RagCutoffSample], label: &str| -> Result<()> {
+        let mut hits_at_3 = 0;
+        let mut total_margin = 0.0f32;
+
+        for sample in samples {
+            let q_emb = minilm.embed(&sample.query)?;
+            let t_emb = minilm.embed(&sample.target_fact)?;
+            let target_sim = cosine_similarity(&q_emb, &t_emb);
+
+            let mut distractor_sims = Vec::new();
+            for d in &sample.distractor_facts {
+                let d_emb = minilm.embed(d)?;
+                distractor_sims.push(cosine_similarity(&q_emb, &d_emb));
+            }
+
+            let max_distractor_sim = distractor_sims.iter().cloned().fold(0.0f32, f32::max);
+            let margin = target_sim - max_distractor_sim;
+            total_margin += margin;
+
+            let mut all_sims = vec![(0, target_sim)];
+            for (idx, &d_sim) in distractor_sims.iter().enumerate() {
+                all_sims.push((idx + 1, d_sim));
+            }
+            all_sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+            let top_3_ids: Vec<usize> = all_sims.iter().take(3).map(|s| s.0).collect();
+            if top_3_ids.contains(&0) {
+                hits_at_3 += 1;
+            }
+        }
+
+        let acc = if !samples.is_empty() {
+            (hits_at_3 as f32 / samples.len() as f32) * 100.0
+        } else {
+            0.0
+        };
+        let avg_margin = if !samples.is_empty() {
+            total_margin / samples.len() as f32
+        } else {
+            0.0
+        };
+
+        println!(
+            "  {:<26} | RAG {:<10} | Top-3 Recall: {:.1}% ({}/{}) | Avg Cosine Margin: +{:.4}",
+            minilm.name, label, acc, hits_at_3, samples.len(), avg_margin
+        );
+        Ok(())
+    };
+
+    evaluate_rag_subsplit(&eng_samples, "English")?;
+    evaluate_rag_subsplit(&hinglish_samples, "Hinglish")?;
+
+    let dur = start_eval.elapsed();
+    println!(
+        "\nTotal Benchmark Execution Time: {:.2}s across {} samples",
+        dur.as_secs_f32(),
+        dataset.metadata.total_samples
+    );
     println!("=========================================================================================\n");
 
-    let real_facts = vec![
-        "User preference: Alex's favorite color is teal.",
-        "Technical role: Alex is a senior system engineer building Vox in Rust and dislikes Python for backends.",
-        "User preference: Alex lives in New Delhi and likes coffee.",
-        "Active task: Fix microphone permissions error on Linux for voice capture.",
-        "Active goal: Read 12 technical books before the end of the year.",
-        "Active goal: User aims to run a half-marathon under 2 hours in October.",
-        "User relationship: User has a sister named Sarah who lives in Boston.",
-        "User preference: User bought a red bicycle yesterday for commuting.",
-        "User experience: Alex visited Japan last summer and tried authentic ramen.",
-        "User preference: Alex dislikes rainy weather and prefers indoor workouts.",
-    ];
-
-    println!("Indexing 10 Real Extracted Facts into Vector Memory...");
-    let mut bge_fact_embeddings = Vec::new();
-    for f in &real_facts {
-        let (emb, _) = bge_m3.embed(f)?;
-        bge_fact_embeddings.push(emb);
-    }
-
-    let mut mini_fact_embeddings = Vec::new();
-    for f in &real_facts {
-        let (emb, _) = mini_fact_embeddings_embed(&mut minilm, f)?;
-        mini_fact_embeddings.push(emb);
-    }
-
-    let sample_queries = vec![
-        ("English Query", "What favorite color did I mention?"),
-        ("Hinglish Query", "Mera marathon running goal kya tha?"),
-        ("Hindi Query", "नमस्ते, क्या आपको याद है मेरी पसंदीदा भाषा कौन सी है?"),
-    ];
-
-    let bge_threshold = 0.65f32;
-    let minilm_threshold = 0.40f32;
-
-    for (q_label, query_text) in sample_queries {
-        println!("\n>>> SAMPLE QUERY: [{}] \"{}\"", q_label, query_text);
-        
-        // 1. Evaluate BGE-M3 Top-3 Retrieval
-        let (q_bge, _) = bge_m3.embed(query_text)?;
-        let mut bge_scores: Vec<(usize, f32)> = bge_fact_embeddings
-            .iter()
-            .enumerate()
-            .map(|(idx, f_emb)| (idx, cosine_similarity(&q_bge, f_emb)))
-            .collect();
-        bge_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-
-        println!("  [BGE-M3 (Threshold {:.2})] Top-3 Retrieved Facts:", bge_threshold);
-        for rank in 0..3 {
-            let (fact_idx, score) = bge_scores[rank];
-            let status = if score >= bge_threshold { "RETRIEVED (PASS)" } else { "FILTERED (NOISE)" };
-            println!("    Rank {}: [{:.4}] [{}] \"{}\"", rank + 1, score, status, real_facts[fact_idx]);
-        }
-
-        // 2. Evaluate MiniLM-L12 Top-3 Retrieval
-        let (q_mini, _) = minilm.embed(query_text)?;
-        let mut mini_scores: Vec<(usize, f32)> = mini_fact_embeddings
-            .iter()
-            .enumerate()
-            .map(|(idx, f_emb)| (idx, cosine_similarity(&q_mini, f_emb)))
-            .collect();
-        mini_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-
-        println!("  [MiniLM-L12 (Threshold {:.2})] Top-3 Retrieved Facts:", minilm_threshold);
-        for rank in 0..3 {
-            let (fact_idx, score) = mini_scores[rank];
-            let status = if score >= minilm_threshold { "RETRIEVED (PASS)" } else { "FILTERED (NOISE)" };
-            println!("    Rank {}: [{:.4}] [{}] \"{}\"", rank + 1, score, status, real_facts[fact_idx]);
-        }
-    }
-
-    println!("\n=========================================================================================\n");
     Ok(())
-}
-
-fn mini_fact_embeddings_embed(model: &mut ModelInstance, text: &str) -> Result<(Vec<f32>, u128)> {
-    model.embed(text)
 }

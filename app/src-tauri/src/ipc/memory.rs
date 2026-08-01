@@ -348,35 +348,29 @@ pub async fn get_memory_stats(
 
 #[tauri::command]
 pub async fn trigger_memory_consolidation(
-    state: State<'_, std::sync::Arc<AppState>>,
+    _state: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<u32, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    let memory_settings = {
-        let s = state.settings.read().unwrap();
-        s.memory.clone()
-    };
-
     let mut compacted_count = 0;
     
     let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     loop {
-        match crate::services::memory::orchestrator::process_one_queue_item(&conn, &memory_settings, &cancel_flag).await {
-            Ok(crate::services::memory::orchestrator::PipelineOutcome::Merged { .. })
-          | Ok(crate::services::memory::orchestrator::PipelineOutcome::Ingested { .. }) => {
-                compacted_count += 1;
+        match crate::services::memory::pipeline::run_pipeline_cycle(&conn, &cancel_flag).await {
+            Ok(n) if n > 0 => {
+                compacted_count += n;
             }
-            Ok(crate::services::memory::orchestrator::PipelineOutcome::NoWork) => {
+            Ok(_) => {
                 break;
             }
             Err(e) => {
-                return Err(format!("Queue processing failed: {}", e));
+                return Err(format!("Pipeline processing failed: {}", e));
             }
         }
     }
     
-    Ok(compacted_count)
+    Ok(compacted_count as u32)
 }

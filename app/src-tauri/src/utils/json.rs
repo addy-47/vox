@@ -205,12 +205,11 @@ pub fn parse_compaction_json(content: &str) -> Option<std::collections::HashMap<
     let obj = parsed_val.as_object()?;
 
     let mut results = std::collections::HashMap::new();
-    let known_keys = [
-        "Identity", "Constraints", "Preferences", "Relationships",
-        "Skills", "Projects", "Experiences", "Context", "Tasks", "Goals"
+    let primary_keys = [
+        "Identity", "Directives", "Narrative", "Profile", "Entities", "Constraints"
     ];
 
-    for &k in &known_keys {
+    for &k in &primary_keys {
         results.insert(k.to_string(), Vec::new());
     }
 
@@ -259,15 +258,11 @@ pub fn parse_compaction_json(content: &str) -> Option<std::collections::HashMap<
     for (k, v) in obj {
         let target_key = match k.to_ascii_lowercase().as_str() {
             "identity" => Some("Identity"),
-            "constraints" => Some("Constraints"),
-            "preferences" => Some("Preferences"),
-            "relationships" | "relationship" => Some("Relationships"),
-            "skills" | "skill" => Some("Skills"),
-            "projects" | "project" => Some("Projects"),
-            "experiences" | "experience" => Some("Experiences"),
-            "context" => Some("Context"),
-            "tasks" | "task" => Some("Tasks"),
-            "goals" | "goal" => Some("Goals"),
+            "directives" | "directive" | "tasks" | "task" | "goals" | "goal" => Some("Directives"),
+            "narrative" | "context" => Some("Narrative"),
+            "profile" | "preferences" | "preference" | "skills" | "skill" | "experiences" | "experience" => Some("Profile"),
+            "entities" | "entity" | "projects" | "project" | "relationships" | "relationship" => Some("Entities"),
+            "constraints" | "constraint" => Some("Constraints"),
             _ => None,
         };
 

@@ -1,372 +1,441 @@
-# Vox Cognitive Memory Subsystem Architecture Ledger — v0.9.0
+# Vox v7 Memory Architecture — Current Implementation
 
-> **Authoritative Technical Architecture Document**  
-> **Scope:** Authoritative end-to-end technical documentation of the Vox Cognitive Memory Subsystem, ML models, Turso/libSQL database integration, background worker threads, deduplication algorithms, relationship graphs, and two-tier budgeted retrieval.
+**Last Updated:** 2026-08-01  
+**Scope:** End-to-end description of what the code currently does.  
+**Location:** `app/src-tauri/src/services/memory/` and `app/src-tauri/src/persistence/`
 
 ---
 
-## 1. Subsystem Architecture Overview
+## 1. Overview
 
-Vox implements a **3-Tier Human-Centric Cognitive Memory System** designed to capture everyday human trace data (routines, language learning progress, social dynamics, personal emotions, tasks, and hobbies) with zero pipeline latency stalls during active voice interaction.
+The Vox v7 memory subsystem is a database-backed, 4-stage pipeline that transforms raw LLM-extracted facts into active, graph-linked memory records in Turso (SQLite). A pre-retrieval scope classifier (`query-sieve-rs`) prunes irrelevant collections before vector search, and a 4-step dynamic waterfall budgets token usage at retrieval time.
 
-The system decouples real-time conversation from memory ingestion via an asynchronous Write-Ahead Log (WAL) queue, executing heavy ML models (dense embeddings and NLI cross-encoders) exclusively during idle states.
+---
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Vox Memory Subsystem Architecture                                                           │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                             │
-│ 1. WORKING MEMORY (`services/memory/working_memory.rs`)                                     │
-│    - Transient FIFO turn history in RAM (`ConversationManager`).                            │
-│    - Manages token estimation, turn limits, and prompt updating.                            │
-│    - Point-of-idle compactions and Critical maintenance shifts (>85% token window).         │
-│                                                                                             │
-│ 2. INGESTION & COMPACTION (`services/memory/ingestion.rs`)                                  │
-│    - Differential LLM extraction using `<known_facts>` context comparison.                 │
-│    - Ephemeral staging contract (`Context` & `Tasks` staged, `Goals` & `Semantic` pending). │
-│    - Session End Consolidation Sweep on pipeline idle timeout.                              │
-│                                                                                             │
-│ 3. BACKGROUND ORCHESTRATION (`persistence/memory_worker.rs`, `services/memory/orchestrator.rs`)│
-│    - Dedicated OS thread (`vox-memory-worker`) with 30-second continuous idle debounce.     │
-│    - Cooperative yielding: AtomicBool `cancel_flag` interrupts ONNX loops on `PipelineActive`.│
-│    - Phase 1: Dual-Defense Fast Hard Deduplication (Cosine ≥ 0.98 or Jaccard = 1.0 Merge).  │
-│    - Phase 2: Multi-Tier NLI Routing (Similarity ≥ 0.95 `SIMILAR` edge; 0.65–0.95 DeBERTa).  │
-│    - Phase 3: Atomic Multi-Table Transaction Persistence (`repository.rs`).               │
-│                                                                                             │
-│ 4. TWO-TIER BUDGETED RETRIEVAL (`services/memory/retrieval.rs`)                             │
-│    - Strict 15% overall context window budget allocation.                                  │
-│    - Tier 1 (7% cap): Foundational (`Identity`, `Constraints`) & Operational (`Tasks`, `Goals`).│
-│      + Time-Windowed Context Chaining (12h window & Distant Memory Fallback).               │
-│    - Tier 2 (8% cap): Semantic Profiles (`Preferences`, `Relationships`, `Skills`, `Projects`, │
-│      `Experiences`) via single-query SQL Window Function partitioning.                      │
-│      + Step 2A: Guaranteed Anchor Floor (Top K_base per collection).                        │
-│      + Step 2B: Global Similarity Competitive Pool (similarity ≥ cutoff).                   │
-│    - 3-Pass Edge Resolution (`USER_SUPERSEDES` swaps, `SUPPORTS` pulls, `CONFLICTS` events).│
-│    - Active `<memory_manifest>` header + Chronological relative timestamp formatting.      │
-│                                                                                             │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+## 2. Fact Generation — LLM Compaction (`ingestion.rs`)
+
+When `ConversationManager` context utilization crosses the critical threshold (default `0.85`), compaction is triggered via `run_compaction()`.
+
+**Process:**
+1. Sends conversation history to the active LLM provider using `COMPACTION_SYSTEM_PROMPT`.
+2. The prompt instructs the LLM to extract facts into exactly 6 collections: `Identity`, `Directives`, `Narrative`, `Profile`, `Entities`, `Constraints`.
+3. The LLM responds with a JSON object. `parse_compaction_json()` extracts a `HashMap<String, Vec<String>>` (except `Narrative` which is a single string).
+4. Retried up to **2 attempts** on parse failure.
+
+**Output:** `CompactionResult { context_summary, personal_memory, diff_to_enqueue }` where `diff_to_enqueue == personal_memory`.
+
+**Next step:** `enqueue_personal_facts()` inserts each fact as a `staged_pending` row in `personal_memory_queue`. No pre-insertion dedup occurs.
+
+---
+
+## 3. 4-Stage Pipeline (`pipeline/`)
+
+The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & Prune. Each stage claims items atomically via TOCTOU-safe `UPDATE WHERE status = ?` queries.
+
+### 3.1 Stage 1 — Dedup (`stage1_dedup.rs`)
+
+| Parameter | Value |
+|---|---|
+| Batch ceiling | 128 items |
+| Input status | `staged_pending` |
+| Output statuses | `deduped` or `superseded` |
+
+**Logic:**
+1. SELECT up to 128 `staged_pending` rows, ordered by `created_at ASC`.
+2. Atomically claim each with `UPDATE ... WHERE status = 'staged_pending'`.
+3. Empty-fact items → immediately `superseded`.
+4. For each remaining item: fetch all active facts in the same collection from `memory_facts`.
+5. Compute **Jaccard word-set similarity** between the incoming fact and each existing active fact.
+6. Threshold: `JACCARD_EXACT_MATCH_THRESHOLD = 1.0` — only a perfect word-set match is treated as a duplicate.
+7. Match found → `superseded`. No match → `deduped`.
+
+**Constants:**
+- `STAGE1_BATCH_CEILING = 128`
+- `JACCARD_EXACT_MATCH_THRESHOLD = 1.0` (in `deduplication.rs`)
+- `COSINE_HARD_MATCH_THRESHOLD = 0.98` (in `deduplication.rs`, used by `is_exact_duplicate` but not in Stage 1)
+
+### 3.2 Stage 2 — Embedding & Soft Vector Dedup (`stage2_embed.rs`)
+
+| Parameter | Value |
+|---|---|
+| Batch size | 16 items |
+| Input status | `deduped` |
+| Output statuses | `embedded`, `superseded`, or `failed` |
+
+**Logic:**
+1. SELECT up to 16 `deduped` rows, claim atomically.
+2. Load MiniLM-L12 ONNX embedder if not already loaded.
+3. For each item, generate a 384-dim float vector via `generate_embedding()`.
+4. **Phase 2 Soft Vector Dedup:** Query intra-collection candidates with cosine similarity ≥ `SOFT_VECTOR_DEDUP_THRESHOLD` (0.95), limit 1. If a match is found, mark the item as `superseded` with a `SUPERSEDES` edge pointing to the matched existing fact. Otherwise mark as `embedded`.
+5. On embedding failure → call `mark_job_failed()` (increments `retry_count`, resets to `staged_pending`; transitions to `failed` after 3 attempts).
+
+**Constants:**
+- `STAGE2_BATCH_SIZE = 16`
+- `SOFT_VECTOR_DEDUP_THRESHOLD = 0.95`
+- `EMBEDDING_DIM = 384`
+- `PRIMARY_MODEL_DIR = "minilm-l12-v2"`
+- `PRIMARY_MODEL_FILENAME = "model_int8.onnx"`
+
+### 3.3 Stage 3 — Unified Edge & State Evaluation (`stage3_eval.rs`)
+
+| Parameter | Value |
+|---|---|
+| Batch size | 16 items |
+| Input status | `embedded` |
+| Output statuses | `evaluated` or `superseded` |
+
+**Logic:**
+1. SELECT up to 16 `embedded` rows, claim atomically.
+2. For each item, fetch two candidate sets concurrently:
+   - **Sub-Branch A (NLI):** Intra-collection candidates with cosine ≥ `SAME_COLLECTION_CANDIDATE_SEARCH` (0.40), no K-cap. Only for items in NLI domains: `Identity`, `Directives`, `Constraints`.
+   - **Sub-Branch B (Edge Classifier):** Inter-collection candidates with cosine ≥ `INTER_COLLECTION_CANDIDATE_SEARCH` (0.55), no K-cap. Only for pairs where `inter_collection_edge()` returns a valid policy pair.
+3. Both sub-branches run concurrently via `tokio::task::spawn_blocking` + `tokio::join!`.
+4. Results merged into a single `BatchEvaluationResult` and written as one atomic `UPDATE`.
+
+**Sub-Branch A — NLI State Resolution (`nli.rs`):**
+
+| Condition | Edge Produced | Effect on Old Fact |
+|---|---|---|
+| Identity/Directives: `contradiction ≥ 0.85` | `SUPERSEDES` + inverse `superseded_by` | Old fact → `inactive` |
+| Identity/Directives: `entailment ≥ 0.85` | `SUPPORTS` + inverse `supported_by` | Both remain active |
+| Identity/Directives: otherwise | No edge | Both remain active |
+| Constraints: `contradiction ≥ 0.85` | `CONFLICTS` + inverse `conflicts_with` | Both remain active |
+| Constraints: `entailment ≥ 0.85` | `SUPPORTS` + inverse `supported_by` | Both remain active |
+| Constraints: otherwise | No edge | Both remain active |
+
+**NLI thresholds:**
+- `NLI_CONTRADICTION_THRESHOLD = 0.85`
+- `NLI_ENTAILMENT_THRESHOLD = 0.85`
+- Model: `nli-deberta-v3-base` INT8 ONNX at `~/.vox/models/nli/nli-deberta-v3-base/model_quantized.onnx`
+
+**Sub-Branch B — Edge Classifier (`edge_classifier.rs`):**
+
+Classifies cross-domain candidate pairs using ModernBERT INT8 ONNX. Returns `Some(forward_edge)` if calibrated prediction score ≥ `EDGE_CLASSIFIER_THRESHOLD` (0.80) and matches the policy matrix's forward edge label. Otherwise returns `None`.
+
+**Edge classifier threshold:** `EDGE_CLASSIFIER_THRESHOLD = 0.80`  
+**Model:** `~/.vox/models/classifier/modernbert_edge_creation/model_quantized.onnx`
+
+**Inter-collection edge policy matrix** (`inter_collection_edge()` in `constants.rs`):
+
+| Source → Target | Forward Edge | Inverse Edge |
+|---|---|---|
+| `Profile → Entities` | `SHAPES` | `shaped_by` |
+| `Profile → Constraints` | `restricted_by` | `restricts` |
+| `Entities → Constraints` | `DEPENDS_ON` | `constrains` |
+
+Note: `Narrative` never originates inter-collection edges. Special state collections (`Identity`, `Directives`, `Narrative`) do not participate in Sub-Branch B.
+
+**Constants:**
+- `STAGE3_BATCH_SIZE = 16`
+- `SAME_COLLECTION_CANDIDATE_SEARCH = 0.40`
+- `INTER_COLLECTION_CANDIDATE_SEARCH = 0.55`
+
+### 3.4 Stage 4 — Commit & Prune (`stage4_commit.rs`)
+
+| Parameter | Value |
+|---|---|
+| Batch size | 32 items |
+| Input statuses | `evaluated` or `superseded` |
+
+**Logic:**
+1. SELECT up to 32 `evaluated`/`superseded` rows, claim atomically.
+2. For each item:
+   - Generate a fact ID: `mem_{timestamp}_{uuid}`.
+   - `INSERT INTO memory_facts` with `status = 'active'`.
+   - If vector present → `INSERT INTO memory_facts_vectors`.
+   - For each relation in `relations_json` → `INSERT OR IGNORE INTO memory_relations`.
+   - If any relation is `SUPERSEDES` → `UPDATE memory_facts SET status = 'inactive' WHERE id = to_id`.
+3. All operations wrapped in a single `BEGIN TRANSACTION / COMMIT` with `ROLLBACK` on error.
+4. `DELETE FROM personal_memory_queue WHERE id = ?` for all processed rows.
+
+**Constants:**
+- `STAGE4_BATCH_SIZE = 32`
+
+---
+
+## 4. Scope Routing Matrix (`scope_router.rs`)
+
+The `route_scope()` function maps each `MemoryScope` variant to its SQL and vector collection targets:
+
+| Scope | `sql_collections` | `vector_collections` |
+|---|---|---|
+| `ChitChat` | *(empty)* | *(empty)* |
+| `User` | *(empty)* | `Profile`, `Constraints` |
+| `Domain` | *(empty)* | `Entities`, `Directives`, `Constraints` |
+| `Temporal` | `Directives`, `Narrative` | `Constraints` |
+
+**Key design decisions:**
+- `Identity` is **never** in `sql_collections` — it's pre-loaded into the system prompt at session boot.
+- `Directives` is in `vector_collections` for `Domain` (semantic search) and in `sql_collections` for `Temporal` (recency-based fetch).
+- `Narrative` is only in `sql_collections` for `Temporal`.
+
+---
+
+## 5. Retrieval Waterfall (`retrieval.rs`)
+
+`retrieve_personal_context_v7()` implements a 4-step dynamic budget allocation capped at `max_personal_memory_share` (default `0.15`, i.e., 15% of the LLM context window).
+
+### Step 1: Identity — NOOP
+Active Identity facts are pre-loaded into the system prompt at session boot via `ConversationManager::load_identity_into_system_prompt()`. No per-turn SQL fetch.
+
+### Step 2: SQL Branch — Narrative & Directives Seeds
+- **Narrative** (Temporal scope only): Fetches latest 3 active Narrative facts via `fetch_narrative_history(conn, 3)`, ordered by `created_at DESC`. Rendered as `<narrative>` block.
+- **Directives** (Temporal scope only): Fetches latest 5 active Directives facts via `fetch_latest_directives(conn, 5)`, ordered by `created_at DESC`. Rendered as `<directives>` block.
+
+Both are token-budgeted — facts are added until `remaining_budget` is exhausted.
+
+### Step 3: Vector Seeds & BFS Graph Expansion
+- `fetch_inter_collection_candidates()` with `semantic_similarity_cutoff = 0.40`, no K-cap.
+- Seed facts rendered as `"- [{collection}] {fact_text}"`.
+- **BFS expansion** up to `max_hops = 2` via `fetch_graph_neighbors()` (bidirectional: `from_id IN ... OR to_id IN ...`).
+- Children rendered as `"  ↳ --[{relation}]--> [{collection}] {fact_text}"`.
+- `parent_quota = max(30, remaining_budget / seed_count)` per seed group.
+- All wrapped in `<semantic_graph>` block.
+
+### Final Output
 ```
-
----
-
-## 2. Architectural Taxonomy & Cognitive Collections
-
-The memory subsystem categorizes all facts into **10 PascalCase collections** mapped across **3 structural types** (`core/constants.rs`):
-
-```text
-                    ┌──────────────────────────────────────────────┐
-                    │           10 COGNITIVE COLLECTIONS           │
-                    └──────┬──────────────────┬─────────────────┬──┘
-                           │                  │                 │
-            ┌──────────────▼──────┐   ┌───────▼─────────────┐   │
-            │     FOUNDATIONAL    │   │     OPERATIONAL     │   │
-            │ Identity,Constraints│   │Context, Tasks, Goals│   │
-            └─────────────────────┘   └─────────────────────┘   │
-                                                                │
-                                            ┌───────────────────▼─┐
-                                            │       SEMANTIC      │
-                                            │Prefs, Relationships,│
-                                            │Skills, Projects,    │
-                                            │    Experiences      │
-                                            └─────────────────────┘
-```
-
-| Structural Type | Collections | Embedding Requirement | Retrieval Style | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **`foundational`** | `Identity`, `Constraints` | **Never Embedded** | Unconditional Vectorless Load | Core persona, biological traits, and safety rules loaded unconditionally into Tier 1. |
-| **`operational`** | `Context`, `Tasks`, `Goals` | **Never Embedded** | Deterministic SQL / Time-Windowed | Session summaries and active/pending action items loaded into Tier 1. |
-| **`semantic`** | `Preferences`, `Relationships`, `Skills`, `Projects`, `Experiences` | **Embedded (BGE-M3 1024-dim)** | Dense Vector Search + Anchor Floor | Long-term user profiles and personal traits searched semantically into Tier 2. |
-
----
-
-## 3. Storage Layer & Database Architecture
-
-### 3.1 Turso / libSQL Concurrency & Configuration (`persistence/db.rs`, `schema.rs`)
-Vox utilizes the pure-Rust **Turso/libSQL Engine** (`turso` crate) configured with:
-- **Write-Ahead Logging (WAL):** `journal_mode = WAL` enables concurrent database reads during background worker writes.
-- **Busy Timeout:** `busy_timeout = 5000`ms prevents database locking deadlocks.
-
-### 3.2 Schema Definition
-The database schema (`persistence/schema.rs`) consists of **four core memory tables**:
-
-```sql
--- 1. Core Facts Table (Houses all 10 collections under 3 structural types)
-CREATE TABLE IF NOT EXISTS memory_facts (
-    id           TEXT PRIMARY KEY,              -- UUID v4 (format: 'mem_{timestamp}_{uuid}')
-    type         TEXT NOT NULL,                 -- 'foundational', 'operational', 'semantic'
-    collection   TEXT NOT NULL,                 -- Identity, Constraints, Preferences, Relationships, Skills, Projects, Experiences, Context, Tasks, Goals
-    fact         TEXT NOT NULL,
-    source       TEXT NOT NULL DEFAULT 'LLM',   -- 'LLM', 'User', 'Import'
-    status       TEXT NOT NULL DEFAULT 'active',-- 'active', 'superseded', 'deleted'
-    session_id   TEXT NOT NULL DEFAULT '',      -- Provenance tracking
-    turn_id      TEXT NOT NULL DEFAULT '',      -- Provenance tracking
-    created_at   INTEGER NOT NULL               -- Millisecond epoch timestamp
-);
-
--- 2. Separate Vectors Table (SQLite Page-Loading Performance Optimization - SEMANTIC ONLY)
-CREATE TABLE IF NOT EXISTS memory_facts_vectors (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    fact_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-    collection  TEXT NOT NULL,
-    embedding   F32_BLOB(1024) NOT NULL         -- 1024-dimensional BGE-M3 dense vector (F32_BLOB)
-);
-
--- 3. Directed Relations Graph Table (SUPPORTS / CONFLICTS / USER_SUPERSEDES / SIMILAR / MERGED)
-CREATE TABLE IF NOT EXISTS memory_relations (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-    to_id       TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-    relation    TEXT NOT NULL,                  -- 'SUPPORTS', 'CONFLICTS', 'USER_SUPERSEDES', 'SIMILAR', 'MERGED'
-    created_at  INTEGER NOT NULL,
-    UNIQUE(from_id, to_id, relation)
-);
-
--- 4. Unified Ingestion Queue & Staging WAL Table
-CREATE TABLE IF NOT EXISTS personal_memory_queue (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    fact         TEXT NOT NULL,
-    collection   TEXT NOT NULL,
-    source       TEXT NOT NULL DEFAULT 'LLM',
-    session_id   TEXT NOT NULL DEFAULT '',
-    status       TEXT NOT NULL DEFAULT 'pending',-- 'pending' (to embed), 'staged' (active session WAL), 'processing', 'completed', 'failed'
-    attempts     INTEGER NOT NULL DEFAULT 0,
-    error_msg    TEXT,
-    created_at   INTEGER NOT NULL,
-    processed_at INTEGER
-);
-
--- Performance Indices
-CREATE INDEX IF NOT EXISTS idx_mf_type_status ON memory_facts(type, status);
-CREATE INDEX IF NOT EXISTS idx_mf_collection_status ON memory_facts(collection, status);
-CREATE INDEX IF NOT EXISTS idx_mf_created ON memory_facts(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_mfv_collection ON memory_facts_vectors(collection);
-CREATE INDEX IF NOT EXISTS idx_mr_from ON memory_relations(from_id, relation);
-CREATE INDEX IF NOT EXISTS idx_mr_to ON memory_relations(to_id, relation);
-CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, created_at ASC);
-```
-
-### 3.3 Storage Performance Optimizations
-1. **$O(1)$ Status Column:** Filtering by `WHERE status = 'active'` directly on `memory_facts` bypasses complex graph traversals during hot-path retrieval.
-2. **Vector Table Separation:** Keeping heavy 4KB vector blobs in `memory_facts_vectors` leaves `memory_facts` row sizes minimal, maximizing SQLite page cache efficiency.
-3. **Binary Float Encoding:** Vectors are serialized via little-endian float byte arrays (`encode_f32_blob` / `decode_f32_blob`).
-
----
-
-## 4. Integrated Machine Learning Models
-
-### 4.1 Hot-Path Query Classifier (`services/memory/classifier.rs`)
-- **Model:** `query-sieve` (DistilBERT fine-tuned for voice query classification).
-- **Path:** `~/.vox/models/classifier/distilbert-query-classifier/model_quantized.onnx`.
-- **Purpose:** Short-circuits generic chatter turns (*"hello"*, *"thanks"*, *"okay"*), saving 100% of ONNX embedding and database search overhead.
-- **Latency:** $< 1.5$ ms CPU inference time.
-
-### 4.2 Multilingual Dense Embedder (`services/memory/embedder.rs`)
-- **Primary Model:** `paraphrase-multilingual-MiniLM-L12-v2` (384-dim INT8 ONNX quantized).
-- **Primary Path:** `~/.vox/models/embedding/paraphrase-multilingual-MiniLM-L12-v2/model_int8.onnx`.
-- **Fallback Path:** `~/.vox/models/embedding/bge-m3/model_quantized.onnx` (1024-dim fallback).
-- **Vector Dimensions:** 384 float dimensions with L2 unit normalization (1,536 bytes per SQLite vector row).
-- **Performance:** 10.06 ms CPU inference latency (8.6x faster than BGE-M3), 118 MB RAM footprint.
-- **Cutoff Floor (`semantic_similarity_cutoff`):** Set to `0.40` to align with MiniLM-L12 vector geometry (Noise baseline: 0.04-0.23, Margin: 0.34).
-- **Scope:** Computed **strictly for `semantic` type facts**. Foundational and Operational collections are vectorless.
-
-### 4.3 Pairwise NLI Classifier (`services/memory/nli.rs`)
-- **Model:** `deberta-v3-xsmall-nli` (Quantized ONNX running via `ort` v2).
-- **Path:** `~/.vox/models/nli/deberta-v3-xsmall-nli/model_quantized.onnx`.
-- **Configuration:** Graph optimization level 3, intra-threads = 1, tokenizer truncation clamped to 512 tokens.
-- **Dynamic Startup Calibration (`calibrate()`):** Runs dummy premise/hypothesis pairs at boot to dynamically map logit output indices to `Contradiction`, `Entailment`, and `Neutral` labels.
-- **Thresholds:**
-  - `Contradiction ≥ 0.85` $\rightarrow$ `CONFLICTS` edge.
-  - `Entailment ≥ 0.85` $\rightarrow$ `SUPPORTS` edge.
-
----
-
-## 5. Ingestion, Compaction & Staging Pipeline
-
-```text
-    In-Memory Compaction Shift (Working Memory Token Limit > 85%)
-                                 │
-                                 ▼
-         LLM Differential Extraction (`COMPACTION_SYSTEM_PROMPT` + `<known_facts>`)
-                 ├── `Context` & `Tasks`  ──► Queue (`status = 'staged'`) [WAL]
-                 └── `Goals` & `Semantic` ──► Queue (`status = 'pending'`)
-                                                   │
-                                                   ▼
-                                      Background Worker Sweep (Idle State)
-                                                   │
-                                                   ▼
-                                     Compute BGE-M3 Embeddings (Semantic Only)
-                                                   │
-                                                   ▼
-                                 Phase 1: Dual-Defense Hard Deduplication
-                                     ├── Cosine ≥ 0.98 OR Jaccard = 1.0 ──► O(1) Merge
-                                     └── Distinct Fact ──► Phase 2 Multi-Tier NLI Routing
-                                                                ├── Cosine > 0.95 ──► SIMILAR Edge (Skip NLI)
-                                                                ├── Cosine 0.65–0.95 ──► DeBERTa NLI
-                                                                └── Cosine < 0.65 ──► Neutral (Skip NLI)
-                                                                            │
-                                                                            ▼
-                                                                Phase 3 Persistence Transaction
-```
-
-### 5.1 Differential Compaction Extraction (`services/memory/ingestion.rs`)
-- Triggered during point-of-idle turns or when working memory exceeds 85% of its token limit.
-- **Differential Extraction:** Passes currently known active facts (`<known_facts>`) into the LLM prompt, instructing it to extract ONLY brand-new facts or explicit updates introduced in `<conversation_history>`.
-- Parses structured JSON into `CompactionResult { context_summary, personal_memory, diff_to_enqueue }`.
-
-### 5.2 Ephemerality & Staging WAL Contract (`persistence/repository.rs`)
-- **Active Session Staging:**
-  - `Context` and `Tasks` are enqueued into `personal_memory_queue` with `status = 'staged'`.
-  - `Goals` and all `semantic`/`foundational` collections are enqueued with `status = 'pending'`.
-- **Session End Consolidation Sweep (`session_end_consolidation`):**
-  - Triggered on session end or pipeline idle timeout (`auto_sleep_timeout`).
-  - Promotes staged `Tasks` in the queue from `staged` $\rightarrow$ `pending`.
-  - Deletes intermediate staged `Context` entries from the queue.
-  - Writes the finalized session `Context` paragraph directly into `memory_facts` (`type = 'operational'`, `collection = 'Context'`, `status = 'active'`). **It is never embedded.**
-
----
-
-## 6. Background Worker & Multi-Tier Orchestration
-
-### 6.1 Worker Threading & Debounce (`persistence/memory_worker.rs`)
-- Runs in a dedicated OS thread (`vox-memory-worker`).
-- **30-Second Idle Debounce:** Requires 30 seconds of continuous pipeline idle time (`MIN_IDLE_DEBOUNCE_SECS = 30`) before commencing queue sweeps.
-- **Private Mode Guard:** If `is_private_mode` is enabled, all memory events and sweeps are bypassed.
-- **Cooperative Yielding:** When the pipeline becomes active (`MemoryWorkerEvent::PipelineActive`), the worker sets `cancel_flag = true` (`AtomicBool`), immediately aborting ONNX embedding or NLI inference loops to prevent UI/audio stuttering.
-
-### 6.2 3-Phase Queue Orchestration (`services/memory/orchestrator.rs`)
-
-#### Phase 1: Dual-Defense Fast Hard Deduplication
-1. Generates 1024-dimensional BGE-M3 embedding for the enqueued fact.
-2. Fetches existing active candidate vectors in the same collection.
-3. Computes Cosine similarity and Jaccard token set overlap (`jaccard_similarity`).
-4. **Exact Duplicate Match (`is_exact_duplicate`):** If `cosine ≥ 0.98` OR `jaccard == 1.0`, performs $O(1)$ Merge (`insert_exact_merged_fact`):
-   - Inserts incoming fact into `memory_facts` with `status = 'superseded'`.
-   - Inserts vector into `memory_facts_vectors`.
-   - Inserts `MERGED` relation edge (new fact $\rightarrow$ existing candidate).
-   - Updates existing candidate's `created_at` timestamp to `now`.
-   - Marks queue job `completed`.
-
-#### Phase 2: Multi-Tier NLI Routing
-1. Takes top candidates up to `NLI_CANDIDATE_LIMIT = 5`.
-2. **Near-Duplicates (`cosine > 0.95` i.e. `SIMILAR_EDGE_THRESHOLD`):** Directly writes a `SIMILAR` relation edge without executing NLI.
-3. **NLI Classification Candidate Pool (`0.65 ≤ cosine ≤ 0.95`):** Passes pairs to DeBERTa-v3 NLI:
-   - `Contradiction ≥ 0.85` $\rightarrow$ `CONFLICTS` relation edge.
-   - `Entailment ≥ 0.85` $\rightarrow$ `SUPPORTS` relation edge.
-   - `Neutral` $\rightarrow$ No relation edge written.
-4. **Distant Candidates (`cosine < 0.65`):** Bypasses NLI (classified as `Neutral`).
-
-#### Phase 3: Atomic Persistence Transaction
-- Executes `insert_fact_with_vector_and_relations` inside a single `BEGIN TRANSACTION`:
-  - Inserts node into `memory_facts` (`status = 'active'`).
-  - Inserts vector into `memory_facts_vectors`.
-  - Inserts relation edges into `memory_relations`.
-  - Updates queue job status to `completed`.
-
----
-
-## 7. Two-Tier Budgeted Retrieval & Prompt Assembly
-
-### 7.1 Master Master Toggles (`core/settings.rs`)
-- `context_retrieval_enabled` (Toggle 1): Controls whether retrieved memory is injected into live LLM system prompts.
-- `pipeline_processing_enabled` (Toggle 2): Controls whether the background worker processes queue items.
-
-### 7.2 Strict 15% Budget Split (`services/memory/retrieval.rs`)
-Enforces a strict **15% hard cap of the total context window** for memory injection:
-
-```text
-                  ┌──────────────────────────────────────────────┐
-                  │          TOTAL PERSONAL MEMORY (15%)         │
-                  └──────┬────────────────────────────────┬──────┘
-                         │                                │
-        ┌────────────────▼────────────────┐     ┌─────────▼──────────────────────┐
-        │   TIER 1: FOUNDATIONAL (7%)     │     │     TIER 2: SEMANTIC (8%)      │
-        │   Identity, Constraints,        │     │  Preferences, Relationships,   │
-        │   Tasks, Goals, Context Chain   │     │   Skills, Projects, Experiences│
-        └─────────────────────────────────┘     └────────────────────────────────┘
-```
-
-#### Tier 1: Foundational & Operational Core (7% hard cap)
-1. **Identity & Constraints:** Loaded unconditionally if active.
-2. **Tasks & Goals:** Loaded deterministically where `type = 'operational'` AND `status = 'active'`.
-3. **Time-Windowed Context Chaining:**
-   - Queries `Context` facts within `context_chaining_window_hours` (default 12h) sorted `created_at DESC`.
-   - Preps relative timeline `[Past Contexts within the Last 12 Hours]` until remaining Tier 1 budget is filled.
-   - **Distant Memory Fallback:** If no contexts exist within the window, queries the single latest context older than the window (`created_at < window_start ORDER BY created_at DESC LIMIT 1`) and formats it inside a `[Recollection (Distant Memory)]` container.
-
-#### Tier 2: Semantic Profiles (8% hard cap)
-1. **Single-Query SQL Window Function:** Fetches ranked candidates across all 5 semantic collections in 1 DB round-trip:
-   ```sql
-   WITH Ranked AS (
-       SELECT mf.id, mf.type, mf.collection, mf.fact, mf.source, mf.status, mf.created_at,
-              (1.0 - vector_distance_cos(mfv.embedding, ?)) as similarity,
-              ROW_NUMBER() OVER (
-                  PARTITION BY mfv.collection
-                  ORDER BY vector_distance_cos(mfv.embedding, ?) ASC
-              ) as rank
-       FROM memory_facts mf
-       JOIN memory_facts_vectors mfv ON mfv.fact_id = mf.id
-       WHERE mfv.collection IN ('Preferences', 'Relationships', 'Skills', 'Projects', 'Experiences')
-         AND mf.status = 'active'
-         AND (mf.session_id = '' OR mf.session_id != ?)
-   )
-   SELECT id, type, collection, fact, source, status, created_at, similarity
-   FROM Ranked
-   ```
-2. **Step 2A (Guaranteed Anchor Floor):** Selects top `K_base` (`personal_top_k_per_semantic_collection`, default 5) candidates per collection to preserve user identity anchors across topic shifts.
-3. **Step 2B (Global Similarity Competitive Pool):** Sorts remaining candidates by similarity descending and includes facts above `semantic_similarity_cutoff` (default 0.65) until Tier 2 budget is consumed.
-4. Sorts selected semantic facts chronologically (`created_at` ascending).
-
-### 7.3 Unresolved Relations & 3-Pass Edge Resolution
-1. **Unresolved Relations Header:** Checks `memory_relations` for selected semantic facts and outputs:
-   - `[Unresolved Contradictions]` (`CONFLICTS`)
-   - `[Unresolved Near-Duplicates]` (`SIMILAR`)
-2. **3-Pass Edge Resolution (`resolve_edges`):**
-   - **Pass 1 (Pointer Swaps):** Traverses `USER_SUPERSEDES` edges up to depth 10, replacing superseded nodes with their newest descendants.
-   - **Pass 2 (Context Pull):** Pulls single-hop supporting facts linked by `SUPPORTS` edges.
-   - **Pass 3 (Conflict Notification):** Identifies `CONFLICTS` pairs and emits Tauri UI event `memory:conflict_detected`.
-
-### 7.4 Prompt Context Injection Layout
-Retrieved context is injected into LLM system prompts formatted inside `<user_profile>`:
-
-```markdown
 <user_profile>
-<memory_manifest total_active_facts="14">
-  Preferences: 4 | Relationships: 3 | Skills: 2 | Projects: 3 | Experiences: 2
-</memory_manifest>
-
-[Unresolved Contradictions]
-- [Unresolved Conflict] "User prefers dark roast coffee." CONFLICTS WITH "User prefers tea over coffee."
-
-[Identity]
-- Name is Alex.
-
-[Constraints]
-- User is allergic to peanuts.
-
-[Active Tasks]
-- Complete Vox v0.9.0 documentation.
-
-[Active Goals]
-- Train for half-marathon in October.
-
-[Past Contexts within the Last 12 Hours]
-- 2 hours ago:
-  Alex discussed the Vox memory subsystem architecture and planned to refactor retrieval.
-
-[Preferences]
-- [Yesterday] User prefers oat milk over soy milk.
-- [3 hours ago] User prefers dark mode interfaces.
-
+<narrative>...</narrative>       ← Temporal scope only
+<directives>...</directives>     ← Temporal scope only
+<semantic_graph>...</semantic_graph>  ← all non-ChitChat scopes
 </user_profile>
 ```
 
+**Constants:**
+- `max_personal_memory_share = 0.15` (in `MemorySettings`)
+- `semantic_similarity_cutoff = 0.40`
+- `top_k_facts = 5` (used for vector search seed limit)
+- `max_hops = 2`
+
 ---
 
-## 8. Implementation & Verification Status
+## 6. Identity Pre-loading (`working_memory.rs`)
 
-- **Working Memory & Turn FIFO:** Active in RAM (`ConversationManager`).
-- **Differential Compaction & Staging WAL:** Active. Staged tasks promoted on session end, staged context purged.
-- **Background Worker & Cooperative Yielding:** Active. OS thread debounces 30s during idle and yields immediately when pipeline becomes active.
-- **3-Phase Ingestion Orchestration:** Active. Dual-defense hard deduplication ($O(1)$ Merge), multi-tier NLI routing (DeBERTa-v3), and atomic multi-table transaction persistence.
-- **Two-Tier Budgeted Retrieval:** Active. 15% hard cap split (7% foundational/operational, 8% semantic with single-query SQL window partitioning), Time-Windowed Context Chaining, 3-pass edge resolution, `<memory_manifest>` header, and `<user_profile>` injection.
-- **Test Coverage:** Idempotent database migrations, worker processing, retrieval budgeting, and LLM compaction quality evaluation verified by test suite (`memory_v3_schema_test`, `memory_v3_retrieval_test`, `memory_v3_worker_test`).
+`ConversationManager::load_identity_into_system_prompt()` fetches all active Identity facts and appends them as a `<user_profile>` block to the system prompt content.
+
+**Idempotency fix (current code):** Before appending, strips any existing `<user_profile>` block from the system prompt content to prevent duplicate blocks on repeated calls.
+
+**Scope:** All LLM providers (local, remote GPU, cloud) — operates on `ChatMessage.content` strings before provider dispatch.
+
+---
+
+## 7. NLI Engine (`nli.rs`)
+
+| Parameter | Value |
+|---|---|
+| Model | `nli-deberta-v3-base` INT8 ONNX |
+| Path | `~/.vox/models/nli/nli-deberta-v3-base/model_quantized.onnx` |
+| Contradiction threshold | 0.85 |
+| Entailment threshold | 0.85 |
+| Intra-op threads | 1 |
+| Graph optimization | Level 3 |
+| Tokenizer truncation | 512 tokens |
+
+**Calibration:** On load, runs a calibration pair (entailment + contradiction) to determine output logit index mapping. Falls back to default order `[Contradiction, Entailment, Neutral]` if calibration indices collide.
+
+---
+
+## 8. Edge Classifier Engine (`edge_classifier.rs`)
+
+| Parameter | Value |
+|---|---|
+| Model | ModernBERT INT8 ONNX |
+| Path | `~/.vox/models/classifier/modernbert_edge_creation/model_quantized.onnx` |
+| Confidence threshold | 0.80 |
+| Intra-op threads | 1 |
+| Graph optimization | Level 3 |
+| Tokenizer truncation | 512 tokens |
+
+**Input format:** `[{src_collection}] {src_fact} [SEP] [{tgt_collection}] {tgt_fact}`  
+**Output:** Label index 0..N-1 = positive relations, last index = NONE. Prediction accepted only if `max_prob >= 0.80` and `max_idx < len - 1`.
+
+---
+
+## 9. Embedding Engine (`embedder.rs`)
+
+| Parameter | Value |
+|---|---|
+| Primary model | MiniLM-L12 INT8 ONNX |
+| Path | `~/.vox/models/embedding/minilm-l12-v2/model_int8.onnx` |
+| Embedding dimension | 384 |
+| Fallback model | `bge-m3` (`model_quantized.onnx`, 1024-dim) |
+| Intra-op threads | 1 |
+| Graph optimization | Level 3 |
+
+**Aggregation:** Mean pooling over attention-masked tokens, followed by L2 normalization.
+
+---
+
+## 10. Retry Mechanism (`mutations.rs`)
+
+`mark_job_failed()` implements a 3-strike retry policy:
+
+```sql
+UPDATE personal_memory_queue
+SET retry_count = retry_count + 1,
+    error_msg = ?,
+    status = CASE WHEN retry_count + 1 >= 3 THEN 'failed' ELSE 'staged_pending' END
+WHERE id = ?
+```
+
+- Attempts 1–2: `retry_count` increments, status resets to `staged_pending` for re-processing.
+- Attempt 3+: status transitions to `failed`, item is quarantined.
+
+---
+
+## 11. Complete Constants Reference
+
+### Pipeline Constants
+| Constant | Value | Location |
+|---|---|---|
+| `STAGE1_BATCH_CEILING` | 128 | `stage1_dedup.rs` |
+| `STAGE2_BATCH_SIZE` | 16 | `stage2_embed.rs` |
+| `STAGE3_BATCH_SIZE` | 16 | `stage3_eval.rs` |
+| `STAGE4_BATCH_SIZE` | 32 | `stage4_commit.rs` |
+| `SOFT_VECTOR_DEDUP_THRESHOLD` | 0.95 | `stage2_embed.rs` |
+| `SAME_COLLECTION_CANDIDATE_SEARCH` | 0.40 | `stage3_eval.rs` |
+| `INTER_COLLECTION_CANDIDATE_SEARCH` | 0.55 | `stage3_eval.rs` |
+
+### NLI Constants
+| Constant | Value | Location |
+|---|---|---|
+| `NLI_CONTRADICTION_THRESHOLD` | 0.85 | `nli.rs` |
+| `NLI_ENTAILMENT_THRESHOLD` | 0.85 | `nli.rs` |
+| `NLI_MODEL_DIR` | `"nli-deberta-v3-base"` | `nli.rs` |
+
+### Edge Classifier Constants
+| Constant | Value | Location |
+|---|---|---|
+| `EDGE_CLASSIFIER_THRESHOLD` | 0.80 | `edge_classifier.rs` |
+| `EDGE_CLASSIFIER_MODEL_DIR` | `"classifier/modernbert_edge_creation"` | `edge_classifier.rs` |
+
+### Embedding Constants
+| Constant | Value | Location |
+|---|---|---|
+| `EMBEDDING_DIM` | 384 | `embedder.rs` |
+| `PRIMARY_MODEL_DIR` | `"minilm-l12-v2"` | `embedder.rs` |
+| `FALLBACK_MODEL_DIR` | `"bge-m3"` | `embedder.rs` |
+
+### Dedup Constants
+| Constant | Value | Location |
+|---|---|---|
+| `COSINE_HARD_MATCH_THRESHOLD` | 0.98 | `deduplication.rs` |
+| `JACCARD_EXACT_MATCH_THRESHOLD` | 1.0 | `deduplication.rs` |
+
+### Memory Settings (`MemorySettings`)
+| Setting | Default | Description |
+|---|---|---|
+| `context_retrieval_enabled` | `true` | Toggle for retrieval injection |
+| `pipeline_processing_enabled` | `true` | Toggle for background pipeline |
+| `max_personal_memory_share` | `0.15` | 15% context window cap |
+| `context_chaining_window_hours` | `12` | Narrative lookback window |
+| `top_k_facts` | `5` | Vector retrieval seed limit |
+| `max_hops` | `2` | BFS graph expansion depth |
+| `semantic_similarity_cutoff` | `0.40` | Cosine similarity floor for vector retrieval |
+
+### Collection Taxonomy
+| Constant | Value |
+|---|---|
+| `PM_COLLECTIONS` | `["Identity", "Directives", "Narrative", "Profile", "Entities", "Constraints"]` |
+| `PM_SPECIAL_STATE_COLLECTIONS` | `["Identity", "Directives", "Narrative"]` |
+| `PM_SEMANTIC_GRAPH_COLLECTIONS` | `["Profile", "Entities", "Constraints"]` |
+| `PM_TYPE_SPECIAL_STATE` | `"special_state"` |
+| `PM_TYPE_SEMANTIC_GRAPH` | `"semantic_graph"` |
+
+### Graph Relations
+| Constant | Value |
+|---|---|
+| `PM_RELATION_SUPPORTS` | `"SUPPORTS"` |
+| `PM_RELATION_CONFLICTS` | `"CONFLICTS"` |
+| `PM_RELATION_SUPERSEDES` | `"SUPERSEDES"` |
+| `PM_RELATION_SHAPES` | `"SHAPES"` |
+| `PM_RELATION_DEPENDS_ON` | `"DEPENDS_ON"` |
+
+### Queue Status Lifecycle
+| Status | Meaning |
+|---|---|
+| `staged_pending` | Initial enqueued state |
+| `processing_dedup` | Claimed by Stage 1 |
+| `deduped` | Stage 1 complete, no duplicate |
+| `processing_embed` | Claimed by Stage 2 |
+| `embedded` | Stage 2 complete, vector stored |
+| `processing_eval` | Claimed by Stage 3 |
+| `evaluated` | Stage 3 complete, relations stored |
+| `processing_commit` | Claimed by Stage 4 |
+| `completed` | Written to permanent store (deleted from queue) |
+| `superseded` | Deactivated by dedup/NLI/vector dedup |
+| `failed` | Max retries exceeded |
+
+---
+
+## 12. Database Schema
+
+### `memory_facts`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | `mem_{timestamp}_{uuid}` |
+| `type` | TEXT | `foundational`, `operational`, `semantic` |
+| `collection` | TEXT | 6 collection names |
+| `fact` | TEXT | The fact text |
+| `source` | TEXT | `LLM`, `User`, `Import`, `NLI` |
+| `status` | TEXT | `active`, `inactive`, `superseded`, `deleted` |
+| `session_id` | TEXT | Provenance |
+| `turn_id` | TEXT | Provenance |
+| `created_at` | INTEGER | Millisecond epoch |
+
+### `memory_facts_vectors`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | Autoincrement |
+| `fact_id` | TEXT FK | References `memory_facts(id)` |
+| `collection` | TEXT | Denormalized for query filtering |
+| `embedding` | F32_BLOB(384) | 384-dim MiniLM-L12 vector |
+
+### `memory_relations`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | Autoincrement |
+| `from_id` | TEXT FK | |
+| `to_id` | TEXT FK | |
+| `relation` | TEXT | `SUPPORTS`, `CONFLICTS`, `SUPERSEDES`, `SHAPES`, `DEPENDS_ON` |
+| `source` | TEXT | `NLI`, `LLM`, `USER` |
+| `created_at` | INTEGER | |
+| UNIQUE | `(from_id, to_id, relation)` | |
+
+### `personal_memory_queue`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | Autoincrement |
+| `fact` | TEXT | Raw fact text |
+| `collection` | TEXT | Target collection |
+| `source` | TEXT | Always `LLM` for pipeline |
+| `session_id` | TEXT | |
+| `status` | TEXT | Status lifecycle (see above) |
+| `attempts` | INTEGER | Legacy counter |
+| `retry_count` | INTEGER | Retry counter (3-strike policy) |
+| `error_msg` | TEXT | Last error |
+| `created_at` | INTEGER | |
+| `processed_at` | INTEGER | |
+| `claimed_at` | INTEGER | |
+| `vector` | F32_BLOB(384) | Embedding (intermediate) |
+| `relations_json` | TEXT | JSON array of `RelationEdge` (intermediate) |
+
+---
+
+## 13. Query Classifier (`query_classifier.rs`)
+
+Uses `query_sieve::MemoryScopeClassifier` (ModernBERT INT8 ONNX) to classify turn queries into 4 scopes: `ChitChat`, `User`, `Domain`, `Temporal`.
+
+- Model: `~/.vox/models/classifier/modernbert_memory_scope/model_quantized.onnx`
+- Calibrated threshold: `tau* = 0.81` — predictions below this confidence default to `Domain`.
+- Fallback on error or missing model: `Domain`.
+
+---
+
+## 14. Integration Tests
+
+| Test | File | Validates |
+|---|---|---|
+| Layer 2 4-stage pipeline | `memory_pipeline_test.rs` | Full pipeline from `staged_pending` → `completed`, queue empty after Stage 4 |
+| Layer 3 retrieval + budget cap | `memory_retrieval_test.rs` | Scope routing, vector search, BFS expansion, 15% token budget |
+| Layer 4 NLI state resolution | `memory_nli_edge_test.rs` | Real DeBERTa NLI inference, SUPERSEDES edge, old fact deactivation |

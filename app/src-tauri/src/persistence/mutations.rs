@@ -2,8 +2,8 @@ use anyhow::{anyhow, Result};
 use turso::Connection;
 use std::collections::HashMap;
 use crate::core::constants::{
-    PM_RELATION_SUPERSEDES, PM_SOURCE_USER, PM_QUEUE_STATUS_PAUSED, PM_QUEUE_STATUS_PENDING,
-    PM_QUEUE_STATUS_COMPLETED, collection_type, PM_TYPE_SEMANTIC,
+    PM_RELATION_SUPERSEDES, PM_SOURCE_USER, PM_QUEUE_STATUS_PAUSED, PM_QUEUE_STATUS_STAGED_PENDING,
+    collection_type, PM_TYPE_SEMANTIC_GRAPH,
 };
 use crate::persistence::encode_f32_blob;
 
@@ -21,7 +21,7 @@ pub async fn enqueue_personal_facts(
 
     for (collection, fact_list) in facts {
         let status = if pipeline_processing_enabled {
-            PM_QUEUE_STATUS_PENDING
+            PM_QUEUE_STATUS_STAGED_PENDING
         } else {
             PM_QUEUE_STATUS_PAUSED
         };
@@ -48,145 +48,22 @@ pub async fn enqueue_personal_facts(
     Ok(())
 }
 
-/// Marks a queue item as failed in `personal_memory_queue`.
+/// Marks a queue item failure in `personal_memory_queue`, incrementing `retry_count`.
+/// Transitions to status `'failed'` when `retry_count >= 3`.
 pub async fn mark_job_failed(conn: &Connection, job_id: i64, err_msg: &str) {
-    let _ = conn.execute(
-        "UPDATE personal_memory_queue SET status = 'failed', error_msg = ?, attempts = attempts + 1 WHERE id = ?",
-        (err_msg.to_string(), job_id),
-    ).await;
+    let _ = conn
+        .execute(
+            "UPDATE personal_memory_queue
+             SET retry_count = retry_count + 1,
+                 error_msg = ?,
+                 status = CASE WHEN retry_count + 1 >= 3 THEN 'failed' ELSE 'staged_pending' END
+             WHERE id = ?",
+            (err_msg.to_string(), job_id),
+        )
+        .await;
 }
 
-/// Inserts an exact duplicate merge record in `memory_facts` and marks queue job completed.
-pub async fn insert_exact_merged_fact(
-    conn: &Connection,
-    job_id: i64,
-    fact_id: &str,
-    fact: &str,
-    collection: &str,
-    source: &str,
-    session_id: &str,
-    matched_candidate_id: &str,
-    embedding: &[f32],
-    now: i64,
-) -> Result<()> {
-    let coll_type = collection_type(collection);
-    let blob_bytes = encode_f32_blob(embedding);
 
-    conn.execute("BEGIN TRANSACTION;", ()).await?;
-    match (|| async {
-        conn.execute(
-            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id) 
-             VALUES (?, ?, ?, ?, ?, 'merged', ?, ?)",
-            (
-                fact_id.to_string(),
-                coll_type.to_string(),
-                collection.to_string(),
-                fact.to_string(),
-                source.to_string(),
-                now,
-                session_id.to_string(),
-            ),
-        ).await?;
-
-        if coll_type == PM_TYPE_SEMANTIC {
-            conn.execute(
-                "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
-                (fact_id.to_string(), collection.to_string(), blob_bytes),
-            ).await?;
-        }
-
-        conn.execute(
-            "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, ?, ?)",
-            (
-                fact_id.to_string(),
-                matched_candidate_id.to_string(),
-                PM_RELATION_SUPERSEDES.to_string(),
-                "DEDUP".to_string(),
-                now,
-            ),
-        ).await?;
-
-        conn.execute(
-            "UPDATE personal_memory_queue SET status = ? WHERE id = ?",
-            (PM_QUEUE_STATUS_COMPLETED.to_string(), job_id),
-        ).await?;
-
-        anyhow::Ok(())
-    })().await {
-        Ok(_) => {
-            conn.execute("COMMIT;", ()).await?;
-            Ok(())
-        }
-        Err(e) => {
-            let _ = conn.execute("ROLLBACK;", ()).await;
-            Err(e)
-        }
-    }
-}
-
-/// Atomic persistence transaction: Inserts `memory_facts`, `memory_facts_vectors`, and `memory_relations`.
-pub async fn insert_fact_with_vector_and_relations(
-    conn: &Connection,
-    job_id: i64,
-    fact_id: &str,
-    fact: &str,
-    collection: &str,
-    source: &str,
-    session_id: &str,
-    embedding: &[f32],
-    relations: Vec<(String, String, &'static str, &'static str)>,
-    now: i64,
-) -> Result<()> {
-    let coll_type = collection_type(collection);
-    let blob_bytes = encode_f32_blob(embedding);
-
-    conn.execute("BEGIN TRANSACTION;", ()).await?;
-    match (|| async {
-        conn.execute(
-            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at, session_id) 
-             VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
-            (
-                fact_id.to_string(),
-                coll_type.to_string(),
-                collection.to_string(),
-                fact.to_string(),
-                source.to_string(),
-                now,
-                session_id.to_string(),
-            ),
-        ).await?;
-
-        if coll_type == PM_TYPE_SEMANTIC {
-            conn.execute(
-                "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
-                (fact_id.to_string(), collection.to_string(), blob_bytes),
-            ).await?;
-        }
-
-        for (from_id, to_id, rel, rel_src) in relations {
-            conn.execute(
-                "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, ?, ?)",
-                (from_id, to_id, rel.to_string(), rel_src.to_string(), now),
-            ).await?;
-        }
-
-        conn.execute(
-            "UPDATE personal_memory_queue SET status = ? WHERE id = ?",
-            (PM_QUEUE_STATUS_COMPLETED.to_string(), job_id),
-        ).await?;
-
-        anyhow::Ok(())
-    })().await {
-        Ok(_) => {
-            conn.execute("COMMIT;", ()).await?;
-            Ok(())
-        }
-        Err(e) => {
-            let _ = conn.execute("ROLLBACK;", ()).await;
-            Err(e)
-        }
-    }
-}
 
 /// Atomically transitions paused facts for session to pending, and saves session Context memory.
 pub async fn session_end_consolidation(
@@ -257,7 +134,7 @@ pub async fn supersede_user_fact(
         ),
     ).await?;
 
-    if fact_type == PM_TYPE_SEMANTIC {
+    if fact_type == PM_TYPE_SEMANTIC_GRAPH {
         crate::services::memory::ensure_embedder_loaded(true)?;
         let embedding = match crate::services::memory::generate_embedding(new_fact_text)? {
             Some(v) => v,
@@ -329,8 +206,8 @@ mod tests {
 
         assert_eq!(queue_items.len(), 2);
         queue_items.sort_by(|a, b| a.0.cmp(&b.0));
-        assert_eq!(queue_items[0], ("Buy groceries".to_string(), "Tasks".to_string(), "pending".to_string(), "session_123".to_string()));
-        assert_eq!(queue_items[1], ("Rust programming".to_string(), "Skills".to_string(), "pending".to_string(), "session_123".to_string()));
+        assert_eq!(queue_items[0], ("Buy groceries".to_string(), "Tasks".to_string(), "staged_pending".to_string(), "session_123".to_string()));
+        assert_eq!(queue_items[1], ("Rust programming".to_string(), "Skills".to_string(), "staged_pending".to_string(), "session_123".to_string()));
 
         Ok(())
     }
@@ -339,118 +216,33 @@ mod tests {
     async fn test_mark_job_failed() -> Result<()> {
         let conn = setup_test_db().await?;
         conn.execute(
-            "INSERT INTO personal_memory_queue (fact, collection, session_id, status, attempts, created_at) VALUES ('fact1', 'Skills', 'sess1', 'pending', 0, 1000)",
+            "INSERT INTO personal_memory_queue (fact, collection, session_id, status, retry_count, created_at) VALUES ('fact1', 'Skills', 'sess1', 'staged_pending', 0, 1000)",
             (),
         ).await?;
 
-        mark_job_failed(&conn, 1, "Connection timeout").await;
-
-        let mut rows = conn.query("SELECT status, error_msg, attempts FROM personal_memory_queue WHERE id = 1", ()).await?;
+        // 1st attempt failure -> retry_count = 1, status reset to staged_pending
+        mark_job_failed(&conn, 1, "Attempt 1 error").await;
+        let mut rows = conn.query("SELECT status, error_msg, retry_count FROM personal_memory_queue WHERE id = 1", ()).await?;
         let row = rows.next().await?.expect("job should exist");
-        let status: String = row.get(0)?;
-        let err_msg: String = row.get(1)?;
-        let attempts: i64 = row.get(2)?;
+        assert_eq!(row.get::<String>(0)?, "staged_pending");
+        assert_eq!(row.get::<String>(1)?, "Attempt 1 error");
+        assert_eq!(row.get::<i64>(2)?, 1);
 
-        assert_eq!(status, "failed");
-        assert_eq!(err_msg, "Connection timeout");
-        assert_eq!(attempts, 1);
+        // 2nd attempt failure -> retry_count = 2, status reset to staged_pending
+        mark_job_failed(&conn, 1, "Attempt 2 error").await;
 
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_insert_exact_merged_fact() -> Result<()> {
-        let conn = setup_test_db().await?;
-        conn.execute(
-            "INSERT INTO personal_memory_queue (id, fact, collection, session_id, status, created_at) VALUES (10, 'Rust dev', 'Skills', 'sess1', 'pending', 1000)",
-            (),
-        ).await?;
-
-        let dummy_embedding = vec![0.1f32; 384];
-        insert_exact_merged_fact(
-            &conn,
-            10,
-            "mem_new_1",
-            "Rust dev",
-            "Skills",
-            "LLM",
-            "sess1",
-            "mem_old_1",
-            &dummy_embedding,
-            2000,
-        ).await?;
-
-        let mut rows = conn.query("SELECT id, collection, status FROM memory_facts WHERE id = 'mem_new_1'", ()).await?;
-        let row = rows.next().await?.expect("fact should exist");
-        assert_eq!(row.get::<String>(0)?, "mem_new_1");
-        assert_eq!(row.get::<String>(1)?, "Skills");
-        assert_eq!(row.get::<String>(2)?, "merged");
-
-        let mut v_rows = conn.query("SELECT fact_id FROM memory_facts_vectors WHERE fact_id = 'mem_new_1'", ()).await?;
-        assert!(v_rows.next().await?.is_some());
-
-        let mut r_rows = conn.query("SELECT from_id, to_id, relation, source FROM memory_relations WHERE from_id = 'mem_new_1'", ()).await?;
-        let r_row = r_rows.next().await?.expect("relation edge should exist");
-        assert_eq!(r_row.get::<String>(0)?, "mem_new_1");
-        assert_eq!(r_row.get::<String>(1)?, "mem_old_1");
-        assert_eq!(r_row.get::<String>(2)?, "SUPERSEDES");
-        assert_eq!(r_row.get::<String>(3)?, "DEDUP");
-
-        let mut q_rows = conn.query("SELECT status FROM personal_memory_queue WHERE id = 10", ()).await?;
-        assert_eq!(q_rows.next().await?.unwrap().get::<String>(0)?, "completed");
+        // 3rd attempt failure -> retry_count = 3, status transitions to failed
+        mark_job_failed(&conn, 1, "Attempt 3 error").await;
+        let mut rows = conn.query("SELECT status, error_msg, retry_count FROM personal_memory_queue WHERE id = 1", ()).await?;
+        let row = rows.next().await?.expect("job should exist");
+        assert_eq!(row.get::<String>(0)?, "failed");
+        assert_eq!(row.get::<String>(1)?, "Attempt 3 error");
+        assert_eq!(row.get::<i64>(2)?, 3);
 
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_insert_fact_with_vector_and_relations() -> Result<()> {
-        let conn = setup_test_db().await?;
-        conn.execute(
-            "INSERT INTO personal_memory_queue (id, fact, collection, session_id, status, created_at) VALUES (5, 'Knows Rust', 'Skills', 'sess1', 'pending', 1000)",
-            (),
-        ).await?;
 
-        conn.execute(
-            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES ('mem_target_1', 'semantic', 'Projects', 'Building Vox', 'LLM', 'active', 900)",
-            (),
-        ).await?;
-
-        let dummy_embedding = vec![0.2f32; 384];
-        let relations = vec![
-            ("mem_fact_1".to_string(), "mem_target_1".to_string(), "requires_skill", "LLM"),
-            ("mem_target_1".to_string(), "mem_fact_1".to_string(), "used_in_project", "LLM"),
-        ];
-
-        insert_fact_with_vector_and_relations(
-            &conn,
-            5,
-            "mem_fact_1",
-            "Knows Rust",
-            "Skills",
-            "LLM",
-            "sess1",
-            &dummy_embedding,
-            relations,
-            2000,
-        ).await?;
-
-        let mut rows = conn.query("SELECT status FROM memory_facts WHERE id = 'mem_fact_1'", ()).await?;
-        assert_eq!(rows.next().await?.unwrap().get::<String>(0)?, "active");
-
-        let mut r_rows = conn.query("SELECT from_id, to_id, relation FROM memory_relations ORDER BY id ASC", ()).await?;
-        let mut edges = Vec::new();
-        while let Some(row) = r_rows.next().await? {
-            edges.push((row.get::<String>(0)?, row.get::<String>(1)?, row.get::<String>(2)?));
-        }
-        assert_eq!(edges.len(), 2);
-        assert_eq!(edges[0], ("mem_fact_1".to_string(), "mem_target_1".to_string(), "requires_skill".to_string()));
-        assert_eq!(edges[1], ("mem_target_1".to_string(), "mem_fact_1".to_string(), "used_in_project".to_string()));
-
-        let mut q_rows = conn.query("SELECT status FROM personal_memory_queue WHERE id = 5", ()).await?;
-        assert_eq!(q_rows.next().await?.unwrap().get::<String>(0)?, "completed");
-
-        Ok(())
-    }
 
     #[tokio::test]
     async fn test_session_end_consolidation() -> Result<()> {

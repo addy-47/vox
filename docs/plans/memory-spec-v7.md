@@ -1,117 +1,250 @@
 # Vox v7 Cognitive Memory Subsystem Architecture Specification
 
 **Status**: Frozen Master Architectural Specification  
-**Version**: 7.6 (Validated Architecture, Precision Retrieval & 4-Stage Pipeline Specification)  
+**Version**: 7.11 (Functional Memory Architecture Specification)  
 **Target Systems**: `app/src-tauri/src/services/memory/` (Rust Backend)  
 
 ---
 
 ## 1. Architectural Paradigm Shift & Core Principles
 
-The v7 memory architecture provides a unified, deterministic, and domain-agnostic memory engine for real-time voice AI. It resolves critical scaling and domain-coupling flaws:
+The v7 memory architecture provides a unified, deterministic, and domain-agnostic memory engine for real-time voice AI.
 
-1. **Unbounded Deterministic Fetch Elimination**: `Identity` facts are fetched as bounded invariants (`WHERE status = 'active'`). All active identity facts are retrieved directly without arbitrary token truncation.
-2. **Operational State & Agent Agenda (`Directives`)**: `Directives` represent agent tasks and operational goals. They act as top-level parent seeds **ONLY on Turn 1 of a new session**, preventing prompt pollution across ongoing turns.
-3. **Integrated Constraint Search**: `Constraints` are removed from direct SQL recency dumps. They are indexed in **Semantic Vector Search** and pulled dynamically as child nodes via graph expansion edges (`RESTRICTS` / `CONFLICTS`).
-4. **4-Stage Pipeline with 2 Concurrent Model Workers in Stage 3**: Pipeline stages are consolidated into 4 clean stages (Dedup $\rightarrow$ Embedding $\rightarrow$ Unified Edge & State Evaluation $\rightarrow$ Commit & Prune). In Stage 3, **2 dedicated model workers** (Sub-Branch A: DeBERTa NLI and Sub-Branch B: ModernBERT Edge Classifier) execute concurrently via `tokio::join!`, merging results in memory before a single atomic SQL write.
+1. **Pre-Retrieval Memory Scope Classification (`query-sieve-rs`)**: All retrieval and vector candidate selection flows downstream from scope classification. Turn queries are classified into 4 discrete scope categories (`ChitChat`, `User`, `Domain`, `Temporal`). Irrelevant collections are pruned prior to vector search to eliminate context pollution. `Domain` serves as the primary fallback default.
+2. **Two-Class Collection Taxonomy**: Memory collections are partitioned into **Special State Collections** (deterministic SQL/chaining fetch: `Identity`, `Directives`, `Narrative`) and **Semantic Graph Collections** (vector search + graph traversal: `Profile`, `Entities`, `Constraints`).
+3. **Provider-Agnostic System Prompt Identity Prefilling**: `Identity` facts represent static user/agent invariants. Active `Identity` facts (`WHERE collection = 'Identity' AND status = 'active'`) are pre-loaded at session boot and baked directly into the System Prompt template across all providers (local LLM, remote GPU server, or cloud APIs). Identity context is universally available across all turns (including `ChitChat`) with 0ms per-turn SQL overhead.
+4. **Dynamic Waterfall Token Allocation Under 15% Cap**: Personal memory context prompt rendering is capped at `max_personal_memory_share = 0.15` (15% of total LLM Context Window). Token allocation flows dynamically through a scope-specific waterfall hierarchy.
 
-### 1.1 Non-Deletion Provenance Mandate
-**Zero hard deletions (`DELETE FROM memory_facts`) are permitted during pipeline execution.**
-- When the ingestion pipeline invalidates an old fact (via deduplication or NLI supersession), it updates `memory_facts.status = 'inactive'`.
-- When a user manually deletes a fact, the system updates `memory_facts.status = 'deleted'`.
-- Only facts with `memory_facts.status = 'active'` are eligible for active RAG context retrieval. Inactive facts remain in Turso DB with full `memory_relations` provenance intact.
-
----
-
-## 2. Hardware Tier & Memory Capability Matrix
-
-| Tier | Hardware Profile | Ingestion | Retrieval | Operating Mode |
-| :--- | :--------------- | :-------: | :-------: | :------------- |
-| **1A** | 8GB CPU-only | ❌ | ✅ FIFO only | Working Memory context buffer only; background worker dormant. |
-| **1B** | 8GB+ with GPU | ✅ Full | ✅ Full | Async ingestion via `memory_worker.rs` during idle (`PipelineIdle`). |
-| **2A** | Remote LLM + Local Audio | ✅ Full | ✅ Full | Same as 1B; LLM offloaded to remote server. |
-| **2B** | Cloud LLM + Local Audio | ✅ Full | ✅ Full | Recommended default; tool calling native. |
-| **3** | Realtime S2S (WebSocket) | ✅ Managed | ✅ Tool calls | Provider owns voice loop; memory injected as system context. |
+### 1.1 System Invariable Rules & Provenance Mandate
+1. **15% Context Share Hard Cap Rule**: Personal memory prompt rendering MUST NOT exceed `max_personal_memory_share = 0.15` (15% of total LLM context window).
+2. **Non-Deletion Provenance Mandate**: Zero `DELETE FROM memory_facts` during pipeline execution. Inactive facts set `status = 'inactive'`, soft-deleted user facts set `status = 'deleted'`. All relations remain preserved in Turso DB for auditability.
+3. **Deterministic System Prompt Identity Rule**: Active `Identity` facts MUST be pre-loaded at session startup into the System Prompt template across all LLM inference providers. Dynamic RAG waterfalls exclude dynamic `Identity` SQL queries unless ephemeral mid-session identity deltas exist.
 
 ---
 
-## 3. Universal Domain-Agnostic Cognitive Taxonomy (6 Collections)
+## 2. Collection Taxonomy: Special State vs. Semantic Graph Collections
+
+Memory is partitioned into two distinct structural collection classes:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   Vox v7 Cognitive Taxonomy                                      │
-├──────────────────────────────────┬────────────────────────────────┬──────────────────────────────┤
-│ Deterministic & Bounded State    │ Declarative Semantic Graph     │ Session Ephemera             │
-│ (SQL Fetch & NLI State)          │ (ANN Vector Search + LLM Edges)│ (In-Memory Prepending)       │
-├──────────────────────────────────┼────────────────────────────────┼──────────────────────────────┤
-│ • Identity (Gated Core Persona)  │ • Profile (User Persona/Tastes)│ • Narrative (Session Chain)  │
-│ • Directives (Agent State/Tasks) │ • Entities (Projects/Tools/Etc)│                              │
-│ • Constraints (Hard Boundaries)  │                                │                              │
-└──────────────────────────────────┴────────────────────────────────┴──────────────────────────────┘
+│                                   Vox v7 Collection Taxonomy                                     │
+├──────────────────────────────────────────────────┬───────────────────────────────────────────────┤
+│ Class 1: Special State Collections               │ Class 2: Semantic Graph Collections           │
+│ (Deterministic System Prompt & SQL Chaining)     │ (Vector Similarity Search + Graph Traversal)  │
+├──────────────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ • Identity   (Pre-loaded into System Prompt)     │ • Profile     (User Persona/Tastes/Skills)    │
+│ • Directives (Fetch Latest K active items)       │ • Entities    (Projects/Codebases/Tools)      │
+│ • Narrative  (Backward Context Chaining window)  │ • Constraints (Hard System Rules & Boundaries)│
+└──────────────────────────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
-### 3.1 Domain Specification & Retrieval Policy Matrix
+### 2.1 Collection Specification & Retrieval Matrix
 
-| Domain | Cognitive Purpose | Ingestion Dispatch Pipeline | Turn Retrieval Policy | Budget Cap |
-| :--- | :--- | :--- | :--- | :--- |
-| **`Identity`** | Core User Identity (name, age, language, baseline role). | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ **Stage 3 Unified Eval** | Deterministic SQL (`WHERE status = 'active'`). Fetch ALL active identity facts. | Dynamic ~2% Context Window. |
-| **`Directives`** | Agent Operational State (active tasks, workflow steps, promises). | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ **Stage 3 Unified Eval** | **Parent Seed on Turn 1 ONLY**; Child Graph Node on Turns 2+. | Capped within Operational Budget. |
-| **`Constraints`** | Hard Invariants & Boundaries (rules, safety limits, explicit bans). | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ **Stage 3 Unified Eval** | **Semantic Vector Search + Graph Traversal** (`RESTRICTS` / `CONFLICTS`). | Capped within Semantic Budget. |
-| **`Profile`** | User Persona & Tastes (skills, habits, secondary preferences). | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ **Stage 3 Unified Eval** | Semantic Vector Search (ANN) + Graph Traversal. | Part of Semantic Budget (`semantic_budget_share`). |
-| **`Entities`** | External Knowledge Graph (codebases, tools, APIs, services). | Step 1 Dedup $\rightarrow$ Step 2 Soft Dedup $\rightarrow$ **Stage 3 Unified Eval** | Semantic Vector Search (ANN) + Graph Traversal. | Part of Semantic Budget (`semantic_budget_share`). |
-| **`Narrative`** | Session History Flow (ephemeral turn summaries). | Compaction summary generator | Backward Prepending Context Chain (`context_chaining_window_hours`). | 5% Context Window Cap. |
+| Collection Name | Collection Class | Primary Retrieval Engine | Retrieval Behavior |
+| :--- | :--- | :--- | :--- |
+| **`Identity`** | Special State | System Prompt Prefill | Pre-loaded at session startup into base System Prompt (`WHERE collection = 'Identity' AND status = 'active'`). Available across 100% of turns (including `ChitChat`) across all providers with 0ms SQL overhead. Excluded from dynamic per-turn RAG SQL queries unless ephemeral mid-session deltas exist. |
+| **`Directives`** | Special State | Vector Search (Domain) / Recency SQL (Temporal) | **Domain Scope**: Vector search ($\text{cos} \ge 0.40$, max `top_k_facts` = 5) alongside `Entities` & `Constraints`, participating in BFS seed graph expansion.<br>**Temporal Scope**: Recency SQL (`WHERE collection = 'Directives' AND status = 'active' ORDER BY created_at DESC LIMIT 5`). |
+| **`Narrative`** | Special State | Context Chaining | Prepending session summary chain (`context_chaining_window_hours`) inside `retrieve_personal_context_v7()` waterfall under 15% budget cap. Triggered exclusively in `Temporal` scope. |
+| **`Profile`** | Semantic Graph | Vector Search + Graph | Vector search ($\text{cos} \ge 0.40$), truncated to `top_k_facts` (5). Triggered exclusively in `User` scope. |
+| **`Entities`** | Semantic Graph | Vector Search + Graph | Vector search ($\text{cos} \ge 0.40$), truncated to `top_k_facts` (5). Triggered exclusively in `Domain` scope. |
+| **`Constraints`** | Semantic Graph | Vector Search + Graph | Vector search ($\text{cos} \ge 0.40$), truncated to `top_k_facts` (5). Triggered in `User`, `Domain`, and `Temporal` scopes. |
 
 ---
 
-## 4. Frozen Calibration Thresholds & Candidate Selection Rules
+## 3. Calibration Settings & System Constants
 
 | Threshold Constant | Value | Config / Source Location | Target System / Purpose |
 | :--- | :---: | :--- | :--- |
 | `primary_embedding_model` | **`MiniLM-L12`** | `~/.vox/models/embedding/` | 384d INT8 ONNX dense vector engine (~10ms CPU). |
-| `edge_classifier_model` | **`ModernBERT-base`** | `~/.vox/models/classifier/` | 1-Pass INT8 ONNX Sequence Classifier (~35ms CPU, <120MB RAM). |
-| `soft_vector_dedup_threshold` | **`0.95`** | Frozen Ingestion Rule | Soft vector deduplication threshold (Gate 1 calibrated: 0.0% false inactivations). |
-| `nli_candidate_search_cutoff` | **`0.40`** | Frozen Ingestion Rule | Pre-filter cutoff to select candidate facts for Stage 3 NLI evaluation. |
-| `edge_candidate_search_cutoff`| **`0.50 - 0.65`**| Frozen Connection Matrix | Domain-pair specific pre-filter cutoffs for Stage 3 Edge Classification. |
+| `soft_vector_dedup_threshold` | **`0.95`** | Frozen Ingestion Rule | Soft vector deduplication threshold in Stage 2 (Gate 1 calibrated: 0.0% false inactivations). |
+| `nli_candidate_search_cutoff` | **`0.40`** | Frozen Ingestion Rule | Pre-filter cutoff to select candidate facts for NLI evaluation. |
+| `edge_candidate_search_cutoff`| **`0.50 - 0.65`**| Connection Policy Matrix | Domain-pair specific pre-filter cutoffs for Edge Classification. |
 | `NLI_CONTRADICTION_THRESHOLD` | **`0.85`** | `nli-deberta-v3-base` ONNX | Minimum probability required for NLI `SUPERSEDES` / `CONFLICTS` classification. |
-| `NLI_ENTAILMENT_THRESHOLD` | **`0.85`** | `nli-deberta-v3-base` ONNX | Minimum probability required for NLI `SUPPORTS` / `SUPERSEDES` classification. |
+| `NLI_ENTAILMENT_THRESHOLD` | **`0.85`** | `nli-deberta-v3-base` ONNX | Minimum probability required for NLI `SUPPORTS` classification. |
+| `EDGE_CONFIDENCE_THRESHOLD` | **`0.80`** | `modernbert-base` INT8 ONNX | Minimum positive edge probability required for graph relation creation (below 0.80 defaults to `NONE`). |
 | `semantic_similarity_cutoff` | **`0.40`** | `MemorySettings.semantic_similarity_cutoff` | Cutoff floor for Turn Query RAG vector retrieval. |
-| `top_k_facts` | **`5`** | `MemorySettings.top_k_facts` | **Turn Query RAG retrieval limit per semantic collection.** |
-| `max_hops` | **`2`** | `MemorySettings.max_hops` | Maximum graph traversal expansion depth during Seed-and-Expand. |
+| `top_k_facts` | **`5`** | `MemorySettings.top_k_facts` | **Turn Query RAG vector retrieval seed limit per target collection (Profile, Entities, Directives, Constraints).** |
+| `max_hops` | **`2`** | `MemorySettings.max_hops` | Maximum graph expansion depth during Seed-and-Expand BFS. |
+| `max_personal_memory_share` | **`0.15`** | `MemorySettings.max_personal_memory_share` | **Hard context window budget cap (15% of total LLM prompt window).** |
 
 ---
 
-## 5. Master 4-Stage Ingestion Pipeline Architecture
+## 4. Edge Connection Matrix
+
+### 4.1 Targeted NLI State Resolution Engine
+
+NLI processing evaluates formal logical relationships strictly within stateful/invariant domains (`Identity`, `Directives`, `Constraints`).
+
+1. **`Identity` & `Directives` Domains**:
+   - Candidate facts selected via threshold filtering (`nli_candidate_search_cutoff = 0.40`).
+   - **`ENTAILMENT` (>= 0.85)**: New fact *refines/extends* the existing fact. Writes `SUPPORTS` edge (`new_fact → SUPPORTS → existing_fact`). **Both facts remain `status = 'active'`**. The existing fact (parent) pulls the new fact (child) alongside it during RAG retrieval.
+   - **`CONTRADICTION` (>= 0.85)**: New fact *contradicts/replaces* the existing fact. Writes `SUPERSEDES` edge (`new_fact → SUPERSEDES → existing_fact`). Existing fact `status` updated to `'inactive'`.
+   - **`NEUTRAL`**: No edge written. Both facts remain active.
+
+2. **`Constraints` Domain**:
+   - **`ENTAILMENT` (>= 0.85)**: New constraint *refines* existing constraint. Writes `SUPPORTS` edge (`new_fact → SUPPORTS → existing_fact`). Both remain `status = 'active'`; new constraint (child) is rendered indented under its parent constraint during RAG retrieval.
+   - **`CONTRADICTION` (>= 0.85)**: Conflict detected between hard constraints. Writes `CONFLICTS` edge (`new_fact → CONFLICTS → existing_fact`). **Neither constraint is deactivated**. Both remain `status = 'active'` and trigger an `[Unresolved Conflicts]` warning block in prompt context.
+   - **`NEUTRAL`**: No edge written. Both facts remain active.
+
+### 4.2  Inter-Domain Connection Policy Matrix (Stage 3B)
+
+Cross-domain graph connections generated by the 1-pass ModernBERT INT8 ONNX sequence classifier evaluate all 4 operational edge labels (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE`) across any pair of domains:
+
+| Source Domain | Target Domain | Pre-Filter Threshold (cos >= cutoff) | Allowed Operational Labels | Deterministic Traversal Behavior |
+| :--- | :--- | :---: | :--- | :--- |
+| **`Identity`** | `Profile` | `>= 0.50` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Bridge from core identity into user profile traits. |
+| **`Directives`** | `Constraints` | `>= 0.50` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Connects active tasks to hard system boundaries. |
+| **`Directives`** | `Entities` | `>= 0.55` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Core agent work $\rightarrow$ tool/codebase project dependency. |
+| **`Entities`** | `Constraints` | `>= 0.50` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Entity/tool specific hard boundary link. |
+| **`Entities`** | `Profile` | `>= 0.55` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Connects codebase/tool experience to user profile skills. |
+| **`Entities`** | `Entities` | `>= 0.55` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Inter-tool & inter-codebase dependency graph. |
+| **`Profile`** | `Profile` | `>= 0.65` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Intra-user trait topology & preference constraints. |
+
+### 4.3 Model Output → Edge Created → Inverse Edge Reference
+
+This section provides a definitive 3-column lookup for every model signal produced by Stage 3's two sub-branches, what edge label is written into `memory_relations`, and what the inverse edge label is when both directions are stored.
+
+#### 4.3.1 Sub-Branch A: NLI Engine (DeBERTa-v3) — Intra-Domain State Resolution
+
+| NLI Model Output | Collection Domain | Edge Written (`new → existing`) | Inverse Edge (`existing → new`) | Downstream Behavior |
+| :--- | :--- | :--- | :--- | :--- |
+| **`ENTAILMENT`** (>= 0.85) | `Identity`, `Directives` | `SUPPORTS` | `supported_by` | Both facts remain `active`. Parent (existing) pulls child (new) alongside during RAG retrieval. |
+| **`CONTRADICTION`** (>= 0.85) | `Identity`, `Directives` | `SUPERSEDES` | `superseded_by` | Existing (old) fact set to `status = 'inactive'`. New fact is the replacement. |
+| **`ENTAILMENT`** (>= 0.85) | `Constraints` | `SUPPORTS` | `supported_by` | Both facts remain `active`. New (child) constraint rendered indented under existing (parent) in prompt context. |
+| **`CONTRADICTION`** (>= 0.85) | `Constraints` | `CONFLICTS` | `conflicts_with` | Both facts remain `active`. Triggers `[Unresolved Conflicts]` warning block in retrieval output. |
+| **`NEUTRAL`** | All | *(no edge)* | *(no edge)* | No status change. No edge written. |
+
+> **Note on inverse edges for NLI:** The NLI sub-branch writes only the forward edge (`new_fact → relation → existing_fact`). The inverse label above is the conceptual reverse relationship readable from the `existing_fact`'s perspective and may be used during bidirectional BFS graph traversal in retrieval.
+
+#### 4.3.2 Sub-Branch B: Edge Classifier (ModernBERT INT8 ONNX) — Inter-Domain Edge Creation
+
+The Edge Classifier outputs one of 4 labels. When a positive edge is predicted (confidence >= `EDGE_CONFIDENCE_THRESHOLD = 0.80`), **both the forward and inverse edges are written** into `memory_relations` in a single atomic write.
+
+| Classifier Output Label | Forward Edge Written (`source → target`) | Inverse Edge Written (`target → source`) | Symmetric? | Semantic Meaning |
+| :--- | :--- | :--- | :---: | :--- |
+| **`SHAPES`** | `SHAPES` | `shaped_by` | No | Source collection fact shapes/influences the target fact. |
+| **`DEPENDS_ON`** | `DEPENDS_ON` | `dependency_of` | No | Source collection fact depends on or is constrained by the target fact. |
+| **`CONFLICTS_WITH`** | `CONFLICTS_WITH` | `conflicts_with` | Yes | Mutual conflict between facts in different domains. Both directions use the same label. |
+| **`NONE`** | *(no edge written)* | *(no edge written)* | — | Classifier found no meaningful cross-domain relationship. |
+
+---
+
+## 5. Pre-Retrieval `MemoryScope` Classification (`query-sieve-rs`)
+
+Before executing RAG search, `query-sieve-rs` classifies the turn query into an idiomatic Rust `MemoryScope` enum to prune irrelevant vector candidate collections:
+
+```rust
+pub enum MemoryScope {
+    ChitChat,       // Zero RAG search (greetings, banter)
+    User,           // Identity + Profile + Constraints
+    Domain,         // Identity + Entities + Directives + Constraints (PRIMARY DEFAULT)
+    Temporal,       // Identity + Narrative + Directives + Constraints
+}
+```
+
+### 5.1 Scope Variant Execution & Pruning Matrix
+
+| `MemoryScope` Variant | Triggers & Intent | System Prompt Identity | Deterministic / SQL Fetches | Vector Search Collections | Pruning & Exclusions |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`ChitChat`** | Casual greetings, banter (*"hello"*, *"thanks"*). | **Inherited (Pre-loaded)** | **None** | **None** | All dynamic memory RAG retrieval skipped. 0 per-turn SQL overhead. System prompt identity inherited automatically. |
+| **`User`** | Persona, identity, preferences, personal rules (*"my role"*, *"I prefer Python"*). | **Inherited (Pre-loaded)** | Ephemeral `Identity` deltas (if any) | `Profile` + `Constraints` | `Entities`, `Directives`, and `Narrative` pruned from vector search. |
+| **`Domain`** *(Primary Default)* | Projects, codebase, tools, tasks, technical Q&A (*"Vox"*, *"Rust error"*). | **Inherited (Pre-loaded)** | Ephemeral `Identity` deltas | `Entities` + `Directives` + `Constraints` | `Profile` and `Narrative` pruned from search. |
+| **`Temporal`** | Session continuity, temporal recap (*"yesterday"*, *"where were we"*). | **Inherited (Pre-loaded)** | Ephemeral `Identity` deltas + `Narrative` (Chaining) + `Directives` (Recency SQL, limit 5) | `Constraints` | `Profile` and `Entities` pruned from vector search. |
+
+---
+
+## 6. Dynamic Waterfall Token Budgeting Subsystem
+
+Memory prompt rendering is capped by a single setting: **`max_personal_memory_share = 0.15`** (15% of total LLM Context Window). Token allocation is executed step-by-step per scope via a **Dynamic Waterfall Hierarchy**. Primary active `Identity` facts are pre-loaded into the System Prompt template at session startup.
+
+```
+                  TOTAL MEMORY SHARED BUDGET (15% Context Window Cap)
+                                         │
+                                         ▼
+                 [Step 1: Ephemeral Mid-Session Identity Delta Deduction]
+                 - Deducts un-consolidated ephemeral Identity deltas (if any exist)
+                 - Remaining Budget = Total Budget - Identity Delta Tokens
+                                         │
+                                         ▼
+                 [Step 2: Scope Target Entrypoint Seeds + Intra-Edges]
+                 - Fetches target seeds & resolves intra-edge links for active scope
+                 - Remaining Budget = Remaining Budget - Seed & Intra-Edge Tokens
+                                         │
+                                         ▼
+                 [Step 3: Bi-Directional Graph Traversal Expansion]
+                 - Expands child nodes along `memory_relations` edges
+                   (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `SUPPORTS`) up to `max_hops` (2)
+                 - Remaining Budget = Remaining Budget - Child Node Tokens
+                                         │
+                                         ▼
+                 [Step 4: Fair-Share Dynamic Token Redistribution]
+                 - Unused token quota from smaller parent trees dynamically
+                   redistributes to expand subsequent parent trees
+```
+
+### 6.1 Step-by-Step Waterfall Execution Per Scope
+
+#### A. Scope: `User`
+1. **Step 1 (Ephemeral Identity Delta Deduction)**: Render and deduct ephemeral mid-session `Identity` deltas (if any exist).
+2. **Step 2 (Scope Target Entrypoint Seeds + Intra-Edges)**:
+   - Perform vector search on `Profile` and `Constraints` ($\text{cos} \ge 0.40$, max `top_k_facts` = 5 per collection).
+   - Resolve intra-edge links (e.g. `Identity` $\rightarrow$ `SHAPES`/`SUPPORTS` $\rightarrow$ `Profile`, or `Constraints` intra-supports).
+   - Deduct seed and intra-edge tokens from remaining budget.
+3. **Step 3 (Graph Traversal Expansion)**: Expand cross-collection child nodes along `memory_relations` edges (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`) up to `max_hops` (2) until budget is exhausted.
+4. **Step 4 (Dynamic Redistribution)**: Unused token quota redistributes to subsequent seed trees.
+
+#### B. Scope: `Domain` (Primary Fallback Default)
+1. **Step 1 (Ephemeral Identity Delta Deduction)**: Render and deduct ephemeral mid-session `Identity` deltas (if any exist).
+2. **Step 2 (Scope Target Entrypoint Seeds + Intra-Edges)**:
+   - Perform vector search on `Entities`, `Directives`, and `Constraints` ($\text{cos} \ge 0.40$, max `top_k_facts` = 5 per collection). `Profile` is EXCLUDED.
+   - All retrieved seeds (`Entities`, `Directives`, `Constraints`) are integrated into the seed set for intra-edge resolution. Deduct seed tokens from remaining budget.
+3. **Step 3 (Graph Traversal Expansion)**: Expand connected child nodes (including linked `Profile` or `Identity` nodes reachable via edges) up to `max_hops` (2).
+4. **Step 4 (Dynamic Redistribution)**: Unused token quota redistributes to subsequent seed trees.
+
+#### C. Scope: `Temporal`
+1. **Step 1 (Deterministic Identity Deduction)**: Deduct ephemeral mid-session `Identity` deltas (if any exist).
+2. **Step 2 (Scope Target Entrypoint Seeds + Intra-Edges)**:
+   - Fetch `Narrative` history via Backward Context Chaining (`context_chaining_window_hours`) inside `retrieve_personal_context_v7()` waterfall and deduct tokens from remaining budget.
+   - Fetch Latest 5 active `Directives` via Recency SQL (`ORDER BY created_at DESC LIMIT 5`).
+   - Perform vector search on `Constraints` ($\text{cos} \ge 0.40$, max `top_k_facts` = 5).
+   - Integrate `Directives` and `Constraints` seeds into the seed set for intra-edge resolution. Deduct seed tokens from remaining budget.
+3. **Step 3 (Graph Traversal Expansion)**: Expand connected child nodes along `memory_relations` edges up to `max_hops` (2).
+4. **Step 4 (Dynamic Redistribution)**: Unused token quota redistributes to subsequent seed trees.
+
+### 6.2 Dynamic Fair-Share Parent Formula
+$$\text{parent\_quota\_tokens} = \max\left(30, \frac{\text{remaining\_scope\_budget}}{\max(1, \text{remaining\_parents})}\right)$$
+
+---
+
+## 7. Pre-Implementation Benchmark Gate Matrix
+
+Before any production code changes are executed for v7, the following 3 benchmark gates serve as the empirical validation harness:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                           4-Stage Modular Ingestion Pipeline                                │
+│                           v7 Pre-Implementation Benchmark Gates                            │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Stage 1: O(1) String & Jaccard Exact Deduplication (Batch Ceiling = 128)                    │
-│          Exact string match OR Jaccard == 1.0. Set old fact status = 'inactive'; advance new.  │
+│ [PASSED] Gate 1: MiniLM-L12 Soft Vector Deduplication Calibration                           │
+│          Harness: `examples/dedup_bench.rs`                                                 │
+│          Dataset: 500 synthetic pairs (`sandbox/datasets/gate1_dedup_500_pairs.json`)       │
+│          Result: Calibrated threshold = 0.95. 0.0% false inactivations across 150 hard       │
+│                  negatives (max hard neg cos = 0.9074). 28.0% exact reworded duplicate       │
+│                  recall. Average pair latency: 29.7 ms. Report: `docs/benchmarks/dedup-bench.md`.│
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Stage 2: Dense Vector Embedding & Soft Vector Deduplication (Batch Size = 16)               │
-│          Generate 384d vector via MiniLM-L12 INT8 ONNX. Query existing same-collection facts.│
-│          If Cosine >= 0.95, mark old fact status = 'inactive', advance new fact with vector. │
+│ [PASSED] Gate 2: DeBERTa-v3 NLI Domain Precision Audit                                      │
+│          Harness: `examples/nli_precision_bench.rs`                                         │
+│          Dataset: 450 synthetic pairs (`sandbox/datasets/gate2_nli_400_pairs.json`)          │
+│          Result: `nli-deberta-v3-base` selected. Overall 85.11% accuracy across domains     │
+│                  (Directives = 99.33%, Constraints = 75.50%). Average pair latency: 64.8 ms. │
+│                  Report: `docs/benchmarks/nli-precision-bench.md`.                         │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Stage 3: Unified Edge & State Evaluation (Batch Size = 16 Facts / 16-32 Pairs)              │
-│          Runs 2 concurrent model workers via tokio::join!:                                  │
-│          • Sub-Branch A Model Worker (DeBERTa-v3 ONNX): Intra-Domain NLI supersessions.      │
-│          • Sub-Branch B Model Worker (ModernBERT ONNX): Inter-Domain cross-domain edges.     │
-│          Aggregates results in memory and executes a single atomic update (`status='evaluated'`).│
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Stage 4: Atomic Persistence & Queue Pruning (Batch Size = 32)                               │
-│          Writes active facts to `memory_facts` and graph edges to `memory_relations`.       │
-│          Executes `DELETE FROM personal_memory_queue WHERE status IN ('evaluated', 'superseded')`.│
+│ [PASSED] Gate 3: Cognitive Edge Classifier Calibration & ONNX Fine-Tuning                   │
+│          Harness: `app/src-tauri/benches/edge_classifier_bench.rs`                          │
+│          Dataset: 6,000 verified pairs (`sandbox/datasets/gate3_v7_ontology_6000p.json`)     │
+│          Result: `ModernBERT-base` INT8 ONNX fine-tuned for 6 epochs. Test Acc = 87.50%,    │
+│                  Test Macro F1 = 0.8722, Peak Val Acc = 88.17%. Calibrated graph threshold  │
+│                  tau* = 0.80 achieving 86.67% Positive Edge Precision & 7.69% FP rate.       │
+│                  Average CPU latency: ~28.4 ms/pair. Report: `docs/benchmarks/edge-classifier-bench.md`.│
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
----
-
-## 6. System Behavioral Invariants (Preserved Invariants)
-
-1. **2 Concurrent Model Workers in Stage 3**: Sub-Branch A (NLI Worker) and Sub-Branch B (Edge Classifier Worker) MUST run concurrently via `tokio::join!`.
-2. **4-Stage Pipeline Structure**: The ingestion pipeline MUST consist of exactly 4 stages (Dedup $\rightarrow$ Embedding $\rightarrow$ Unified Evaluation $\rightarrow$ Commit & Prune).
-3. **Unified Write Handler**: Stage 3 MUST aggregate Intra-Domain NLI and Inter-Domain Edge Classifier outputs in Rust memory and perform a single atomic SQL write per fact.
-4. **All Active Identity Fetch**: All active `Identity` facts MUST be retrieved without arbitrary token limits.
-5. **First-Turn Directives Rule**: `Directives` MUST act as top-level parent seeds ONLY on Turn 1 of a session.
-6. **Vector-Indexed Constraints Rule**: `Constraints` MUST be retrieved via Semantic Vector Search and Graph Traversal, NOT direct SQL recency dumps.

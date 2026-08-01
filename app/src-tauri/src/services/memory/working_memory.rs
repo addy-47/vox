@@ -110,6 +110,30 @@ impl ConversationManager {
         }
     }
 
+    pub async fn load_identity_into_system_prompt(&mut self, conn: &turso::Connection) -> anyhow::Result<()> {
+        let active_identities = crate::persistence::queries::fetch_all_active_identity(conn).await?;
+        if !active_identities.is_empty() {
+            // Strip any existing <user_profile> block for idempotency
+            let mut base_prompt = self.system_prompt.content.clone();
+            if let Some(start_idx) = base_prompt.find("\n\n<user_profile>") {
+                base_prompt.truncate(start_idx);
+            } else if let Some(start_idx) = base_prompt.find("<user_profile>") {
+                base_prompt.truncate(start_idx);
+            }
+
+            let identity_lines: Vec<String> = active_identities.iter().map(|f| format!("- {}", f.fact)).collect();
+            let user_profile_block = format!("\n\n<user_profile>\n{}\n</user_profile>", identity_lines.join("\n"));
+            let updated_content = format!("{}{}", base_prompt.trim_end(), user_profile_block);
+            self.system_prompt.content = updated_content.clone();
+            if !self.messages.is_empty() && self.messages[0].role == Role::System {
+                self.messages[0].content = updated_content;
+            }
+            self.total_token_count = estimate_tokens(&self.system_prompt.content);
+            log::info!("[WorkingMemory] Successfully preloaded {} Identity facts into System Prompt.", active_identities.len());
+        }
+        Ok(())
+    }
+
     pub fn new_session(&mut self, system_prompt: &str) {
         let sys_msg = ChatMessage {
             role: Role::System,
@@ -405,6 +429,7 @@ impl ConversationManager {
                 // Store 9 non-Context collections from this compaction for immediate Turn LLM visibility
                 let mut facts_9_col = result.personal_memory.clone();
                 facts_9_col.remove("Context");
+                facts_9_col.remove("Narrative");
                 self.latest_compaction_facts = facts_9_col;
 
                 let sys_tokens = estimate_tokens(&self.system_prompt.content);
@@ -608,8 +633,8 @@ mod tests {
 
         let mock_response = r#"{
             "Identity": ["Works as a software engineer.", "User's name is Alex."],
-            "Preferences": ["User loves coding in Rust."],
-            "Context": ["The user introduced himself as Alex and expressed his love for Rust."]
+            "Profile": ["User loves coding in Rust."],
+            "Narrative": ["The user introduced himself as Alex and expressed his love for Rust."]
         }"#.to_string();
 
         let provider = MockProvider { response_text: mock_response };
@@ -617,8 +642,8 @@ mod tests {
 
         assert_eq!(updates.values().filter(|v| !v.is_empty()).count(), 3);
         assert_eq!(updates.get("Identity").unwrap().len(), 2);
-        assert_eq!(updates.get("Preferences").unwrap().len(), 1);
-        assert_eq!(updates.get("Context").unwrap().len(), 1);
+        assert_eq!(updates.get("Profile").unwrap().len(), 1);
+        assert_eq!(updates.get("Narrative").unwrap().len(), 1);
     }
 
     #[test]
@@ -712,9 +737,9 @@ mod tests {
         mgr.push_user_turn("Add Symphonia to Cargo.toml.".to_string());
 
         let mock_response = r#"{
-            "Tasks": ["Add Symphonia dependency to Cargo.toml"],
-            "Projects": ["Setting up Symphonia Rust crate"],
-            "Context": ["User is configuring Symphonia for MP3 decoding"]
+            "Directives": ["Add Symphonia dependency to Cargo.toml"],
+            "Entities": ["Setting up Symphonia Rust crate"],
+            "Narrative": ["User is configuring Symphonia for MP3 decoding"]
         }"#.to_string();
 
         let provider = MockProvider { response_text: mock_response };
@@ -732,11 +757,11 @@ mod tests {
         assert!(sys_content.contains("<session_history>"));
         assert!(sys_content.contains("<narrative_chain>"));
         assert!(sys_content.contains("<recent_compaction_facts>"));
-        assert!(sys_content.contains("[Tasks]"));
+        assert!(sys_content.contains("[Directives]"));
         assert!(sys_content.contains("Add Symphonia dependency to Cargo.toml"));
-        assert!(sys_content.contains("[Projects]"));
+        assert!(sys_content.contains("[Entities]"));
 
-        // 3. Excludes Context from recent_compaction_facts (mapped to narrative_chain)
-        assert!(!sys_content.contains("[Context]"));
+        // 3. Excludes Narrative from recent_compaction_facts (mapped to narrative_chain)
+        assert!(!sys_content.contains("[Narrative]"));
     }
 }

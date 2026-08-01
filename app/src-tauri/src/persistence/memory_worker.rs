@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::core::settings::VoxSettings;
 pub use crate::persistence::{encode_f32_blob, decode_f32_blob};
 pub use crate::persistence::mutations::{enqueue_personal_facts, session_end_consolidation};
-pub use crate::services::memory::orchestrator::process_one_queue_item;
+pub use crate::services::memory::pipeline::run_pipeline_cycle;
 
 pub const MIN_IDLE_DEBOUNCE_SECS: u64 = 30;
 
@@ -145,29 +145,17 @@ pub fn spawn_memory_worker(
 
                     if is_debounced {
                         if let Some(ref db_conn) = conn {
-                            let memory_settings = match settings.read() {
-                                Ok(s) => s.memory.clone(),
-                                Err(_) => {
-                                    tracing::error!("[MemoryWorker] Settings lock poisoned! Skipping loop iteration.");
-                                    std::thread::sleep(std::time::Duration::from_millis(100));
-                                    continue;
-                                }
-                            };
-
                             loop {
                                 if !state.is_idle || !rx.is_empty() {
                                     break;
                                 }
 
-                                let processed_queue = handle.block_on(async {
-                                    process_one_queue_item(db_conn, &memory_settings, &cancel_flag).await
+                                let processed_count = handle.block_on(async {
+                                    crate::services::memory::pipeline::run_pipeline_cycle(db_conn, &cancel_flag).await
                                 });
 
-                                match processed_queue {
-                                    Ok(crate::services::memory::orchestrator::PipelineOutcome::Merged { .. })
-                                  | Ok(crate::services::memory::orchestrator::PipelineOutcome::Ingested { .. }) => {
-                                        continue;
-                                    }
+                                match processed_count {
+                                    Ok(n) if n > 0 => continue,
                                     _ => break,
                                 }
                             }
