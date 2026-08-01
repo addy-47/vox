@@ -626,33 +626,24 @@ impl Default for PersistenceSettings {
 #[serde(default)]
 pub struct MemorySettings {
     /// Toggle 1: Controls whether retrieved memory is injected into live LLM turn prompts.
-    /// When false: Bypasses memory retrieval for LLM queries to avoid context pollution.
-    /// Ingestion and compaction continue uninterrupted in background.
     pub context_retrieval_enabled: bool,
 
-    /// Toggle 2: Controls whether the background worker thread processes queue items (Phase 1-3).
-    /// When true: Background worker processes 'pending' queue items when idle.
-    /// When false: Extracted facts from session compaction are inserted into personal_memory_queue with status = 'paused'.
-    /// Worker loop remains dormant (PipelineOutcome::NoWork). Zero embedding and ONNX NLI execution occurs.
+    /// Toggle 2: Controls whether the background worker thread processes queue items.
     pub pipeline_processing_enabled: bool,
 
-    /// Operational/Foundational tier budget share of context window (0.0 - 1.0, default 0.05 / 5%).
-    pub operational_budget_share: f32,
-
-    /// Semantic tier budget share of context window (0.0 - 1.0, default 0.10 / 10%).
-    pub semantic_budget_share: f32,
+    /// Hard context window budget cap (0.0 - 1.0, default 0.15 / 15% of total LLM context window).
+    pub max_personal_memory_share: f32,
 
     /// Time window in hours for Context Chaining.
     pub context_chaining_window_hours: u32,
 
-    /// Top-K facts limit per collection for retrieval (default 5).
+    /// Top-K facts limit per collection for vector retrieval (default 5).
     pub top_k_facts: u32,
 
     /// Maximum graph traversal expansion depth during Seed-and-Expand (default 2).
     pub max_hops: u32,
 
-    /// Tier 2B Global Similarity Cutoff Floor (0.0 - 1.0, default 0.40 for MiniLM-L12).
-    /// Candidates in Tier 2B competitive pool must meet or exceed this cosine similarity score.
+    /// Similarity Cutoff Floor (0.0 - 1.0, default 0.40 for MiniLM-L12).
     pub semantic_similarity_cutoff: f32,
 }
 
@@ -661,8 +652,7 @@ impl Default for MemorySettings {
         Self {
             context_retrieval_enabled: true,
             pipeline_processing_enabled: true,
-            operational_budget_share: 0.05,
-            semantic_budget_share: 0.10,
+            max_personal_memory_share: 0.15,
             context_chaining_window_hours: 12,
             top_k_facts: 5,
             max_hops: 2,

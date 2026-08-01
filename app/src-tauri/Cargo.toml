@@ -43,7 +43,7 @@ parking_lot = "0.12"
 thiserror = "2"
 thread-priority = "1.1"
 
-turso = { version = "0.7.1" }
+turso = { version = "0.7.2" }
 
 # Phase 4 — LLM runtime (llama.cpp Rust bindings, compiles llama.cpp from source, CPU-only)
 # Dynamic linking disabled (default includes dynamic-link) — we want static linking
@@ -52,7 +52,7 @@ llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openm
 llama-cpp-sys-4 = { version = "0.2.61", default-features = false }
 
 chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false }
-query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }
+query-sieve = { path = "../../submodules/query-sieve-rs" }
 
 encoding_rs = "0.8.35"
 regex = "1.12.3"
@@ -149,6 +149,14 @@ harness = false
 
 [[bench]]
 name = "translit_bench"
+harness = false
+
+[[bench]]
+name = "edge_classifier_bench"
+harness = false
+
+[[bench]]
+name = "memory_scope_bench"
 harness = false
 
 [[example]]

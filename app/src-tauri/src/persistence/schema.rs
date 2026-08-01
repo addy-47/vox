@@ -69,18 +69,22 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             UNIQUE(from_id, to_id, relation)
         );",
 
-        // Unified Queue + Staging WAL
+        // Unified Queue + Staging WAL 
         "CREATE TABLE IF NOT EXISTS personal_memory_queue (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            fact         TEXT NOT NULL,
-            collection   TEXT NOT NULL,
-            source       TEXT NOT NULL DEFAULT 'LLM',
-            session_id   TEXT NOT NULL DEFAULT '',
-            status       TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'paused', 'processing', 'completed', 'failed'
-            attempts     INTEGER NOT NULL DEFAULT 0,
-            error_msg    TEXT,
-            created_at   INTEGER NOT NULL,
-            processed_at INTEGER
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            fact           TEXT NOT NULL,
+            collection     TEXT NOT NULL,
+            source         TEXT NOT NULL DEFAULT 'LLM',
+            session_id     TEXT NOT NULL DEFAULT '',
+            status         TEXT NOT NULL DEFAULT 'staged_pending', -- 'staged_pending', 'processing_dedup', 'deduped', 'processing_embed', 'embedded', 'processing_eval', 'evaluated', 'processing_commit', 'completed', 'superseded', 'failed'
+            attempts       INTEGER NOT NULL DEFAULT 0,
+            retry_count    INTEGER NOT NULL DEFAULT 0,
+            error_msg      TEXT,
+            created_at     INTEGER NOT NULL,
+            processed_at   INTEGER,
+            claimed_at     INTEGER,
+            vector         F32_BLOB(384),
+            relations_json TEXT
         );",
 
         // Performance Indices
@@ -95,6 +99,20 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
 
     for stmt in statements {
         conn.execute(stmt, ()).await?;
+    }
+
+    // Idempotent column additions for v7 schema migration
+    let alter_statements = [
+        "ALTER TABLE personal_memory_queue ADD COLUMN vector F32_BLOB(384);",
+        "ALTER TABLE personal_memory_queue ADD COLUMN relations_json TEXT;",
+        "ALTER TABLE personal_memory_queue ADD COLUMN claimed_at INTEGER;",
+        "ALTER TABLE personal_memory_queue ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;",
+    ];
+
+    for stmt in alter_statements {
+        if let Err(e) = conn.execute(stmt, ()).await {
+            log::debug!("[Persistence] Migration alter statement skipped or already applied ('{}'): {}", stmt, e);
+        }
     }
 
     if let Err(e) = seed_packaged_voices(conn).await {

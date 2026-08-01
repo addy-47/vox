@@ -538,11 +538,11 @@ impl PipelineOrchestrator {
             let db_path = crate::utils::paths::db_path();
             let rt = crate::persistence::db::get_tokio_handle();
 
-            let classification = crate::services::memory::classify_query(&text);
-            log::info!("[Pipeline] Query Sieve Classification: {:?}", classification);
+            let scope = crate::services::memory::classify_scope(&text);
+            log::info!("[Pipeline] MemoryScope Classification: {:?}", scope);
 
-            let personal_memory_block = if classification.is_generic() {
-                log::info!("[Pipeline] Query Sieve: GENERIC turn. Bypassing embedding generation and database RAG lookup.");
+            let personal_memory_block = if scope == crate::services::memory::MemoryScope::ChitChat {
+                log::info!("[Pipeline] MemoryScope: ChitChat turn. Bypassing embedding generation and database RAG lookup.");
                 String::new()
             } else {
                 let query_embedding = rt.block_on(async {
@@ -552,14 +552,12 @@ impl PipelineOrchestrator {
 
                 rt.block_on(async {
                     if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
-                        let active_session_id = self.conversation_id.load(Ordering::Relaxed).to_string();
-                        crate::services::memory::retrieval::retrieve_personal_context(
+                        crate::services::memory::retrieval::retrieve_personal_context_v7(
                             &conn,
                             &query_embedding,
+                            scope,
                             &settings_snap.memory,
                             settings_snap.llm.ctx_size as usize,
-                            &active_session_id,
-                            Some(&_app_handle),
                         ).await.unwrap_or_default()
                     } else {
                         String::new()

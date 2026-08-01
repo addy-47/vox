@@ -39,8 +39,8 @@ pub fn run_compaction(
             "<previous_context>\n{}\n</previous_context>\n\n\
              <conversation_history>\n{}\n</conversation_history>\n\n\
              <task>\n\
-             Analyze the <conversation_history> above and extract all stated user facts into the 10 flat collections from the <schema>.\n\
-             Use <previous_context> to maintain a cumulative, updated summary in the Context collection.\n\
+             Analyze the <conversation_history> above and extract all stated facts into the 6 collections from the <schema>.\n\
+             Use <previous_context> to maintain a cumulative, updated summary in the Narrative collection.\n\
              Follow every rule in <rules> and <boundary_disambiguation>. Output ONLY the JSON object starting with {{ and ending with }}.\n\
              </task>",
             prev_ctx.trim(),
@@ -50,7 +50,7 @@ pub fn run_compaction(
         format!(
             "<conversation_history>\n{}\n</conversation_history>\n\n\
              <task>\n\
-             Analyze the <conversation_history> above and extract all stated user facts into the 10 flat collections from the <schema>.\n\
+             Analyze the <conversation_history> above and extract all stated facts into the 6 collections from the <schema>.\n\
              Follow every rule in <rules> and <boundary_disambiguation>. Output ONLY the JSON object starting with {{ and ending with }}.\n\
              </task>",
             history_text
@@ -121,7 +121,8 @@ pub fn run_compaction(
     }
 
     let final_summary = personal_memory
-        .get("Context")
+        .get("Narrative")
+        .or_else(|| personal_memory.get("Context"))
         .and_then(|v| v.first())
         .cloned()
         .unwrap_or_else(|| summary_content.clone());

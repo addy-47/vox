@@ -1,0 +1,3507 @@
+{
+  "version": "1.0",
+  "description": "Vox MemoryScope Multilingual 4-Class Local Evaluation Test Set (500 samples)",
+  "total_samples": 500,
+  "samples": [
+    {
+      "text": "vector search accuracy drop ko Python 3.12 me kaise fix karein #2595?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 20953
+    },
+    {
+      "text": "pichle session me sqlite database lock waala topic kahan chode the #3088?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 3649
+    },
+    {
+      "text": "CPU thread affinity contention ko Tokio me kaise fix karein #2877?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 820
+    },
+    {
+      "text": "\u092e\u0948\u0902\u0928\u0947 \u0905\u092a\u0928\u093e \u092a\u093f\u091b\u0932\u093e \u0918\u0930 \u0926\u093f\u0932\u094d\u0932\u0940 \u092e\u0947\u0902 \u0939\u0940 \u0916\u0930\u0940\u0926\u093e \u0925\u093e.",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 9013
+    },
+    {
+      "text": "What did we discuss regarding JSON serialization error last meeting #4793?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 8025
+    },
+    {
+      "text": "docker build fail issue ko postgresql me kaise fix karein 4792",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 7315
+    },
+    {
+      "text": "stage 3 memory queue deadlock ko tauri v2 me kaise yaar fix karein 4573",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 4573
+    },
+    {
+      "text": "Please repeat that for me again.",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 3359
+    },
+    {
+      "text": "\u092e\u0947\u0930\u093e \u0938\u092c\u0938\u0947 \u0905\u091a\u094d\u091b\u093e \u0926\u094b\u0938\u094d\u0924 \u0930\u094b\u0939\u0928 \u0939\u0948, \u0914\u0930 \u0909\u0938\u0915\u0940 \u092a\u0924\u094d\u0928\u0940 \u092d\u0940 \u092c\u0939\u0941\u0924 \u0916\u0942\u092c\u0938\u0942\u0930\u0924 \u0939\u0948! \u0905\u0917\u0930 \u092e\u0948\u0902 \u090f\u0915 \u0921\u0949\u0915\u094d\u091f\u0930 \u092c\u0928\u0942\u0902, \u0924\u094b \u0932\u094b\u0917 \u0907\u0938\u0947 \u0905\u092a\u0928\u093e\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u0924\u0948\u092f\u093e\u0930 \u0930\u0939\u0947\u0902\u0917\u0947,",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 17871
+    },
+    {
+      "text": "that's not what i want to hear",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 2849
+    },
+    {
+      "text": "\u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #3949?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 19350
+    },
+    {
+      "text": "\u092e\u0947\u0930\u093e \u0928\u093e\u092e \u0930\u093e\u0939\u0941\u0932 \u0939\u0948 \u0914\u0930 \u092e\u0948\u0902 \u091c\u092f\u092a\u0941\u0930 \u092e\u0947\u0902 \u0938\u0949\u092b\u094d\u091f\u0935\u0947\u092f\u0930 \u0907\u0902\u091c\u0940\u0928\u093f\u092f\u0930 \u0939\u0942\u0901 #533",
+      "scope": "User",
+      "language": "hi",
+      "source": "unique_synth_user_hi",
+      "id": 13826
+    },
+    {
+      "text": "How to resolve CPU thread contention in module Tauri v2 #1789?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 1042
+    },
+    {
+      "text": "\u0928\u093f \u0924\u093e\u0930 \u0902",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 977
+    },
+    {
+      "text": "How to resolve Tokio mutex deadlock in module Python 3.12 #3078?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 3071
+    },
+    {
+      "text": "\u0905\u0930\u0947 \u092f\u0939 \u092c\u0939\u0941\u0924 \u0939\u0940 \u0906\u0938\u093e\u0928 \u0932\u0917 \u0930\u0939\u093e \u0939\u0948 \u0914\u0930 \u092f\u0939 \u092d\u0940 \u0915\u093e\u092b\u0940 \u092e\u091c\u0947\u0926\u093e\u0930 \u0932\u0917\u0924\u093e \u0939\u0948!",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 7165
+    },
+    {
+      "text": "I am planning to visit Paris next year",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 7624
+    },
+    {
+      "text": "\u0915\u094d\u092f\u093e \u0938\u092e\u092f \u0939\u0941\u0906 \u0939\u0948? \u092e\u0941\u091d\u0947 \u092a\u0924\u093e \u0928\u0939\u0940\u0902 \u0925\u093e",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 16560
+    },
+    {
+      "text": "\u092e\u0941\u091d\u0947 \u0917\u0941\u0932\u093e\u092c\u0940 \u0930\u0902\u0917 \u092a\u0938\u0902\u0926 \u0939\u0948",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 19727
+    },
+    {
+      "text": "I'm learning to speak French as a third language.",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 870
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u092b\u093f\u091f\u0928\u0947\u0938 \u0915\u094b \u092a\u0938\u0902\u0926 \u0915\u0930\u0924\u093e \u0939\u0942\u0901",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 18391
+    },
+    {
+      "text": "sqlite database lock ko onnx runtime me kaise fix karein 1352",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 6516
+    },
+    {
+      "text": "Remember I told you about my cat?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 21296
+    },
+    {
+      "text": "\u0915\u094b\u0908 \u092c\u093e\u0924 \u0928\u0939\u0940\u0902, \u0910\u0938\u093e \u0939\u0940 \u0930\u0939\u0924\u093e \u0939\u0948",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 17857
+    },
+    {
+      "text": "\u092f\u0939 \u090f\u0915 \u0905\u091a\u094d\u091b\u0940 \u092a\u0941\u0938\u094d\u0924\u0915 \u0939\u0948, \u0906\u092a\u0928\u0947 \u0907\u0938\u0947 \u092c\u0939\u0941\u0924 \u0905\u091a\u094d\u091b\u0940 \u0924\u0930\u0939 \u0938\u0947 \u0932\u093f\u0916\u093e \u0939\u0948 \u0914\u0930 \u092e\u0941\u091d\u0947 \u0932\u0917\u0924\u093e \u0939\u0948 \u0915\u093f \u092f\u0939 \u0938\u092d\u0940 \u0930\u094b\u0917\u093f\u092f\u094b\u0902 \u0915\u094b \u092a\u0922\u093c\u0928\u093e \u091a\u093e\u0939\u093f\u090f",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 13747
+    },
+    {
+      "text": "Mera name Kevin hai, main Austin me frontend developer hoon #1085",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 7224
+    },
+    {
+      "text": "pichle session me stage 3 memory queue deadlock waala topic kahan chode the #835?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 14720
+    },
+    {
+      "text": "what did we discuss regarding uh memory leak in queue last meeting 2559",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 19310
+    },
+    {
+      "text": "namaste vox, tumhe kya pasand hai ok bye",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 9116
+    },
+    {
+      "text": "arrey yaar, kaise chal raha hai sab shukriya",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 213
+    },
+    {
+      "text": "What did we discuss regarding NULL pointer dereference previous session #1454?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 5232
+    },
+    {
+      "text": "Please go ahead and finish.",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 13849
+    },
+    {
+      "text": "Sorry to be a bother, but...",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 11150
+    },
+    {
+      "text": "suno vox, tum kya kar rahe ho yaar",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 9106
+    },
+    {
+      "text": "I'm good, thanks for asking.",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 5095
+    },
+    {
+      "text": "\u0915\u094d\u092f\u093e \u0906\u092a \u092e\u0941\u091d\u0947 \u092e\u0926\u0926 \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 7056
+    },
+    {
+      "text": "Remember I said my cat's name is Max?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 11030
+    },
+    {
+      "text": "CPU thread affinity contention ko Tauri v2 me kaise fix karein #845?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 3350
+    },
+    {
+      "text": "What did we discuss regarding Docker build failure a few minutes ago #1435?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 3040
+    },
+    {
+      "text": "How to resolve JSON serialization error in module ONNX Runtime #4453?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 12450
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0940 \u092c\u0948\u0920\u0915 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 4391",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 3170
+    },
+    {
+      "text": "\u0905\u0938 \u091c\u093f\u092f\u094b \u0938\u094d\u0930\u093e \u0909\u0932\u093e\u0936\u094b",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 11764
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0917\u093f\u091f\u093e\u0930 \u0938\u0940\u0916 \u0930\u0939\u093e \u0939\u0942\u0902, \u092a\u0939\u0932\u0947 \u092e\u0939\u0940\u0928\u0947 \u0915\u0947 \u092c\u093e\u0926 \u0924\u094b...",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 11271
+    },
+    {
+      "text": "pichle session me JSON parsing error in trait waala topic kahan chode the #115?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 19783
+    },
+    {
+      "text": "\u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #1990?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 8668
+    },
+    {
+      "text": "what did we discuss regarding vector similarity threshold in our earlier call 3439",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 1424
+    },
+    {
+      "text": "\u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #53?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 15055
+    },
+    {
+      "text": "\u092e\u0941\u091d\u0947 \u0932\u0917\u0924\u093e \u0939\u0948 \u092f\u0939 \u090f\u0915 \u0905\u091a\u094d\u091b\u0940 \u091c\u0917\u0939, \u091c\u0939\u093e\u0902 \u0939\u092e\u0947\u0902 \u0915\u092d\u0940-\u0915\u092d\u093e\u0930 \u092d\u094d\u0930\u092e\u0923 \u0915\u0930\u0928\u0947 \u0915\u093e \u0905\u0935\u0938\u0930 \u092e\u093f\u0932\u0924\u093e, \u0924\u094b \u0939\u092e \u092a\u0939\u0932\u0947 \u0938\u0947 \u0939\u0940 \u0906\u092a\u0938\u0947 \u091c\u0941\u0921\u093c\u0924\u0947\u0964",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 17572
+    },
+    {
+      "text": "I am taking Spanish classes at night to improve my language skills",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 4091
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #1010?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 12404
+    },
+    {
+      "text": "\u092f\u093e\u0926 \u0930\u0939\u0947, \u0939\u092e \u0915\u0932 \u0938\u093e\u0925 \u092e\u0947\u0902 \u092c\u093e\u0939\u0930 \u091c\u093e\u090f\u0902\u0917\u0947 \u0924\u094b \u091c\u0930\u0942\u0930 \u0905\u092a\u0928\u0940 \u091a\u0936\u094d\u092e\u093e \u0932\u0947\u0915\u0930 \u0906\u0907\u090f, \u0928\u0939\u0940\u0902 \u0924\u094b \u092f\u0939\u093e\u0902 \u0915\u0947 \u0930\u094b\u0936\u0928\u0940 \u092c\u0939\u0941\u0924 \u091c\u094d\u092f\u093e\u0926\u093e \u0939\u0948",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 2583
+    },
+    {
+      "text": "what did we discuss regarding docker build failure previous session 179",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 18090
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #1401?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 9607
+    },
+    {
+      "text": "last turn me CPU thread affinity contention waala topic kahan chode the #2336?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 20600
+    },
+    {
+      "text": "\u092f\u0939 \u0915\u093e\u092e \u092c\u0939\u0941\u0924 \u091c\u091f\u093f\u0932 \u0939\u0948",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 20268
+    },
+    {
+      "text": "what did we discuss regarding crossentropy weights in our earlier call 1913",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 11851
+    },
+    {
+      "text": "\u090f\u092a\u0947 \u0928\u0941 \u0936\u0947\u092c\u0940\u0924\u093e\u093e",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 18919
+    },
+    {
+      "text": "How to resolve JSON serialization error in module async Rust #1799?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 6301
+    },
+    {
+      "text": "\u092e\u0947\u0930\u0940 \u092a\u0924\u094d\u0928\u0940 \u0917\u0940\u0924\u093e \u0939\u0948",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 2280
+    },
+    {
+      "text": "docker build fail issue ko ONNX Runtime me kaise fix karein #4427?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 1502
+    },
+    {
+      "text": "\u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #932?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 21669
+    },
+    {
+      "text": "\u0915\u0932 \u0915\u0947 \u0938\u0924\u094d\u0930 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #4808?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 7468
+    },
+    {
+      "text": "\u0915\u0939\u093e\u0902 \u091c\u093e\u0928\u093e \u0939\u0948",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 9483
+    },
+    {
+      "text": "\u0939\u093e\u0901 \u091c\u0940, \u0906\u0917\u0947 \u092c\u0922\u093c \u091c\u093e\u0913",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 2615
+    },
+    {
+      "text": "How to resolve loss function divergence in module Python 3.12 #34?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 7629
+    },
+    {
+      "text": "What did we discuss regarding Docker build failure previous session #3187?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 3310
+    },
+    {
+      "text": "How to resolve CPU thread contention in module Docker #1310?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 12456
+    },
+    {
+      "text": "\u0932\u0947\u090f\u0936\u094d\u0930\u093e \u0939\u093e\u092e\u0940 \u0903\u0915\u0930",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 9109
+    },
+    {
+      "text": "\u0924\u093e \u091f\u094d\u0930\u094d, \u090f\u0937\u093f \u0932\u094d\u0930\u093f",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 14858
+    },
+    {
+      "text": "\u092e\u0941\u091d\u0947 \u0926\u093f\u0932\u094d\u0932\u0940 \u0915\u0940 \u0938\u0902\u0938\u094d\u0915\u0943\u0924\u093f \u092a\u0938\u0902\u0926 \u0939\u0948, \u0916\u093c\u093e\u0938 \u0915\u0930 \u0930\u093e\u092e\u0932\u0940\u0932\u093e, \u0924\u094d\u092f\u094c\u0939\u093e\u0930, \u092d\u093e\u0908-\u092d\u093e\u092d\u0940 \u091c\u0948\u0938\u0940 \u092a\u093e\u0930\u0902\u092a\u0930\u093f\u0915 \u0915\u0939\u093e\u0928\u093f\u092f\u094b\u0902 \u092e\u0947\u0902 \u091c\u0940\u0935\u0928 \u0915\u093e \u0906\u0928\u0902\u0926 \u0932\u0947\u0924\u093e \u0939\u0942\u0901!",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 20831
+    },
+    {
+      "text": "\u091f\u093c\u093e \u0917 \u0930\u094d \u090f \u0906\u0928\u094d",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 11955
+    },
+    {
+      "text": "stage 3 memory queue deadlock ko python 312 me kaise fix karein 3692",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 5330
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0947 \u091f\u0930\u094d\u0928 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 2760",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 12131
+    },
+    {
+      "text": "\u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0915\u094b \u0930\u0938\u094d\u091f \u092a\u094d\u0930\u094b\u0917\u094d\u0930\u093e\u092e\u093f\u0902\u0917 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #712?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 11642
+    },
+    {
+      "text": "stage 3 memory queue deadlock ko Tokio me kaise fix karein #2457?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 6866
+    },
+    {
+      "text": "What time is the meeting?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 21961
+    },
+    {
+      "text": "\u0906\u092a\u0915\u0940 \u092c\u093e\u0924\u0947\u0902 \u0939\u092e\u0947\u0936\u093e \u0938\u091a \u091c\u0941\u092c\u093e\u0928 \u0926\u0947\u0924\u0940 \u0939\u0948\u0902!",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 8749
+    },
+    {
+      "text": "\u092f\u093e\u0926 \u0930\u0939\u0947, \u092e\u0941\u091d\u0947 \u0915\u0941\u0924\u094d\u0924\u094b\u0902 \u0938\u0947 \u0928\u092b\u0930\u0924 \u0939\u0948!",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 21235
+    },
+    {
+      "text": "\u0905\u0930\u0947, \u092c\u0924\u093e\u0913, \u092e\u0941\u091d\u0947 \u0932\u0917\u0924\u093e \u0939\u0948 \u0906\u092a \u092c\u093e\u0924 \u0915\u0930\u0928\u0947 \u0915\u0940 \u0915\u094b\u0936\u093f\u0936 \u0915\u0930 \u0930\u0939\u0947 \u0939\u094b",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 2340
+    },
+    {
+      "text": "What did we discuss regarding loss function divergence in our earlier call #2018?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 19961
+    },
+    {
+      "text": "\u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u0938\u092e\u092f \u0928\u0939\u0940\u0902 \u0939\u0948",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 20807
+    },
+    {
+      "text": "mera name david hai main tokyo me data engineer hoon 1543",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 5608
+    },
+    {
+      "text": "Excuse me, can you repeat that again?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 17503
+    },
+    {
+      "text": "Mera name Sarah hai, main Seattle me data engineer hoon #74",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 8022
+    },
+    {
+      "text": "He has been teaching English as a foreign language for over ten years",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 5355
+    },
+    {
+      "text": "I am planning a trip to Japan with my family next year during the cherry blossom season",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 15148
+    },
+    {
+      "text": "\u0915\u0932 \u0915\u0947 \u0938\u0924\u094d\u0930 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #1858?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 12434
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0947 \u091f\u0930\u094d\u0928 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #3294?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 8846
+    },
+    {
+      "text": "kuch funny batao na arrey yaar",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 20972
+    },
+    {
+      "text": "How to resolve SQLite WAL mode lock in module async Rust #647?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 18251
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0906\u092a\u0915\u0947 \u0938\u093e\u0925 \u0915\u0948\u0938\u093e \u0930\u0939\u093e?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 7197
+    },
+    {
+      "text": "My name is Rohan and I live in Mumbai.",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 10627
+    },
+    {
+      "text": "sqlite database lock ko async Rust me kaise fix karein #3593?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 1833
+    },
+    {
+      "text": "What did we discuss regarding vector similarity threshold yesterday #1221?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 7506
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0907\u0938\u0947 \u091c\u093e\u0928\u0924\u093e \u0925\u093e, \u0932\u0947\u0915\u093f\u0928 \u0906\u091c \u092e\u0941\u091d\u0947 \u0938\u093f\u0930\u094d\u092b \u0907\u0938\u0932\u093f\u090f \u092f\u0939 \u092c\u0924\u093e\u092f\u093e \u0917\u092f\u093e \u0915\u093f \u092e\u0948\u0902 \u090f\u0915 \u092a\u094d\u0930\u0924\u093f\u092d\u093e\u0936\u093e\u0932\u0940 \u0935\u094d\u092f\u0915\u094d\u0924\u093f \u0939\u0942\u0901, \u091c\u094b \u0907\u0928 \u0938\u092d\u0940 \u092d\u093e\u0937\u093e\u0913\u0902 \u0915\u094b \u0938\u092e\u091d\u0928\u0947, \u092a\u0922\u093c\u0928\u0947 \u0914\u0930 \u092c\u094b\u0932\u0928\u0947 \u0915\u093e \u092e\u093e\u0939\u093f\u0930 \u0939\u0942\u0901!",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 1052
+    },
+    {
+      "text": "\u0930\u094b\u0939\u0928 \u0938\u093f\u0902\u0939 \u090f\u0915 \u092a\u094d\u0930\u0938\u093f\u0926\u094d\u0927 \u0915\u094d\u0932\u092c \u0921\u093e\u0902\u0938\u0930 \u0939\u0948, \u091c\u094b \u0930\u093e\u091c\u0927\u093e\u0928\u0940 \u092e\u0947\u0902 \u0905\u092a\u0928\u0947 \u0917\u094d\u0932\u0948\u092e\u0930\u0938 \u0928\u0943\u0924\u094d\u092f \u0914\u0930 \u092c\u0947\u0939\u0924\u0930\u0940\u0928 \u0917\u0940\u0924\u094b\u0902 \u0915\u093e \u091c\u093e\u0926\u0942 \u091a\u0932\u093e\u0924\u0947 \u0939\u0948\u0902",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 10337
+    },
+    {
+      "text": "cpu thread affinity contention ko docker me kaise fix karein 1366",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 13146
+    },
+    {
+      "text": "how to resolve uh null pointer dereference in module modernbert 3889",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 8774
+    },
+    {
+      "text": "What did we discuss regarding CPU thread contention yesterday #3827?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 2169
+    },
+    {
+      "text": "arrey yaar, aaj ka plan kya hai phir milte hain",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 6914
+    },
+    {
+      "text": "\u092f\u0939\u093e\u0901 \u0924\u094b \u090f\u0915 \u0905\u091c\u0940\u092c \u091a\u0940\u091c\u093c \u0939\u0948",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 18586
+    },
+    {
+      "text": "how to resolve loss function divergence in module async rust 674",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 10312
+    },
+    {
+      "text": "How to resolve CPU thread contention in module Tokio #2448?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 6968
+    },
+    {
+      "text": "How to resolve NULL pointer dereference in module Tauri v2 #4713?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 21478
+    },
+    {
+      "text": "JSON parsing error in trait ko PostgreSQL me kaise fix karein #2653?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 16359
+    },
+    {
+      "text": "last turn me docker build fail issue waala topic kahan chode the #3055?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 12965
+    },
+    {
+      "text": "\u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2119?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 21065
+    },
+    {
+      "text": "\u098f \u0924\u093e \u0932\u093f\u0936\u093e \u0903\u0930\u0928\u094d\u0930, \u091a\u0932\u094b!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 15036
+    },
+    {
+      "text": "docker build fail issue ko Python 3.12 me kaise fix karein #232?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 4682
+    },
+    {
+      "text": "Can you repeat that again?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 8680
+    },
+    {
+      "text": "I am Laura, working as a devops engineer in San Francisco with preference for ModernBERT #480",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 4576
+    },
+    {
+      "text": "\u0905\u0930\u0947 \u0928\u093e\u0936\u094d\u0924\u093e \u092c\u0928\u093e\u0928\u0947 \u0915\u093e \u0936\u094c\u0915 \u0905\u092a\u0928\u093e\u0928\u093e \u092d\u0940 \u090f\u0915 \u0905\u091a\u094d\u091b\u0940 \u091a\u0940\u091c\u093c \u0939\u0948.",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 8082
+    },
+    {
+      "text": "\u0935\u0939 \u0915\u094c\u0928 \u0938\u093e \u0930\u0947\u0938\u094d\u0924\u0930\u093e\u0902 \u0939\u0948 \u091c\u094b \u0916\u093e\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u0905\u091a\u094d\u091b\u093e \u0932\u0917\u0947\u0917\u093e?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 18395
+    },
+    {
+      "text": "purana discussion me docker build fail issue waala topic kahan chode the #1065?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 17662
+    },
+    {
+      "text": "CPU thread affinity contention ko async Rust me kaise fix karein #3067?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 8610
+    },
+    {
+      "text": "I am Emily, working as a backend developer in Seattle with preference for Docker #56",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 19156
+    },
+    {
+      "text": "purana discussion me JSON parsing error in trait waala topic kahan chode the #738?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 14039
+    },
+    {
+      "text": "last turn me vector search accuracy drop waala topic kahan chode the #2197?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 19122
+    },
+    {
+      "text": "CPU thread affinity contention ko Tauri v2 me kaise fix karein #2148?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 13088
+    },
+    {
+      "text": "batao na, kya chal raha hai phir milte hain",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 11862
+    },
+    {
+      "text": "\u0905\u0930\u0947 \u092f\u093e\u0930, \u090f\u0915 \u0914\u0930 \u092c\u093e\u0924 \u092a\u0942\u091b\u0942\u0902\u0917\u093e\u0964",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 7187
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #2480?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 4533
+    },
+    {
+      "text": "stage 3 memory queue deadlock ko ModernBERT me kaise fix karein #2994?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 16697
+    },
+    {
+      "text": "What did we discuss regarding Docker build failure previous session #3788?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 16172
+    },
+    {
+      "text": "yaar, aaj ka din kaisa raha phir milte hain",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 2979
+    },
+    {
+      "text": "JSON parsing error in trait ko Tokio me kaise fix karein #1901?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 1544
+    },
+    {
+      "text": "what did we discuss regarding loss function divergence last turn 3955",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 3593
+    },
+    {
+      "text": "\u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0938\u0941\u0928\u094b \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 2455",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 5009
+    },
+    {
+      "text": "\u0935\u0939\u093e\u0901 \u092c\u0939\u0941\u0924 \u091c\u094d\u092f\u093e\u0926\u093e \u0920\u0902\u0921 \u0925\u0940",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 20561
+    },
+    {
+      "text": "\u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u094b \u0930\u0938\u094d\u091f \u092a\u094d\u0930\u094b\u0917\u094d\u0930\u093e\u092e\u093f\u0902\u0917 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #4695?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 5243
+    },
+    {
+      "text": "\u092e\u0947\u0930\u093e \u0928\u093e\u092e \u0905\u092e\u093f\u0924 \u0939\u0948 \u0914\u0930 \u092e\u0948\u0902 \u0926\u093f\u0932\u094d\u0932\u0940 \u092e\u0947\u0902 \u0938\u0949\u092b\u094d\u091f\u0935\u0947\u092f\u0930 \u0907\u0902\u091c\u0940\u0928\u093f\u092f\u0930 \u0939\u0942\u0901 #918",
+      "scope": "User",
+      "language": "hi",
+      "source": "unique_synth_user_hi",
+      "id": 13834
+    },
+    {
+      "text": "\u090f\u0915 \u092c\u093e\u0924 \u0914\u0930 \u092a\u0942\u091b\u0928\u093e, \u0915\u094d\u0930\u093f\u092a\u092f\u093e\u0964",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 19544
+    },
+    {
+      "text": "I live in San Francisco and love hiking.",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 2082
+    },
+    {
+      "text": "\u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u0924\u0940\u0928 \u092c\u093f\u0932\u094d\u0932\u093f\u092f\u093e\u0901 \u0939\u0948\u0902!",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 12609
+    },
+    {
+      "text": "What did we discuss regarding JSON serialization error last meeting #4320?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 12505
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #3056?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 19527
+    },
+    {
+      "text": "That was nice. Can you tell me another one?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 15338
+    },
+    {
+      "text": "I don't understand, can you explain it again?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 17339
+    },
+    {
+      "text": "\u0905\u0930\u0947, \u0915\u094d\u092f\u093e \u0906\u092a \u0938\u0941\u0928 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 8239
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2580?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 18129
+    },
+    {
+      "text": "good morning vox, kya tum thak gaye ho ji",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 377
+    },
+    {
+      "text": "kal waale call me cpu thread affinity contention waala topic kahan chode the 3032",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 3754
+    },
+    {
+      "text": "My favorite type of music is classical, and my sister's is rock",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 17596
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2070?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 8744
+    },
+    {
+      "text": "What did we discuss regarding NULL pointer dereference last meeting #1115?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 21004
+    },
+    {
+      "text": "What did we discuss regarding ONNX INT8 quantization loss last turn #1193?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 11147
+    },
+    {
+      "text": "What did we discuss regarding SQLite WAL mode lock last meeting #2804?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 3656
+    },
+    {
+      "text": "sqlite database lock ko Tauri v2 me kaise fix karein #3452?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 9618
+    },
+    {
+      "text": "How to resolve gRPC connection pool overflow in module Tauri v2 #990?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 14247
+    },
+    {
+      "text": "\u092e\u0941\u091d\u0938\u0947 \u092c\u093e\u0924 \u0939\u094b \u0930\u0939\u0940 \u0939\u0948\u0964",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 5183
+    },
+    {
+      "text": "My best friend is a scientist working on climate change research",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 14868
+    },
+    {
+      "text": "I am Michael, working as a software engineer in Toronto with preference for PostgreSQL #1564",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 107
+    },
+    {
+      "text": "\u0903\u0928\u094d \u093f\u092c\u0941\u0930\u093e",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 8631
+    },
+    {
+      "text": "\u0915\u0943\u092a\u092f\u093e \u092a\u0941\u0928\u094d\u0939\u093e \u092c\u094b\u0932\u093e, \u092e\u0940 \u0924\u094d\u092f\u093e\u091a\u0940 \u0918\u0947\u0924\u0932\u0947\u0932\u0940 \u0928\u093e\u0939\u0940 \u0906\u0939\u0947.",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 16404
+    },
+    {
+      "text": "last turn me CPU thread affinity contention waala topic kahan chode the #905?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 5855
+    },
+    {
+      "text": "kal waale call me sqlite database lock waala topic kahan chode the 1057",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 16636
+    },
+    {
+      "text": "\u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u094b \u0930\u0938\u094d\u091f \u092a\u094d\u0930\u094b\u0917\u094d\u0930\u093e\u092e\u093f\u0902\u0917 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 3504",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 3487
+    },
+    {
+      "text": "What did we discuss regarding NULL pointer dereference last turn #3942?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 20490
+    },
+    {
+      "text": "\u0939\u093e\u0901, \u092e\u0948\u0902 \u090f\u0915 \u0921\u0949\u0915\u094d\u091f\u0930 \u0939\u0942\u0901",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 9780
+    },
+    {
+      "text": "How to resolve CPU thread contention in module ModernBERT #1423?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 20938
+    },
+    {
+      "text": "How to resolve Docker build failure in module async Rust #4282?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 19955
+    },
+    {
+      "text": "I have a cat named Luna and a dog named Max",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 6518
+    },
+    {
+      "text": "sqlite database lock ko Docker me kaise fix karein #485?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 12253
+    },
+    {
+      "text": "i am rachel working as a devops engineer in toronto with preference for modernbert 1498",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 5294
+    },
+    {
+      "text": "I live in a small apartment in New York City",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 17675
+    },
+    {
+      "text": "What did we discuss regarding Tokio mutex deadlock yesterday #5075?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 17379
+    },
+    {
+      "text": "\u091c\u094b \u090f\u0921\u093e\u0938\u094d\u0939\u094b\u091c \u0936\u0932\u0940\u093f\u093e",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 19
+    },
+    {
+      "text": "\u0915\u0932 \u0915\u0947 \u0938\u0924\u094d\u0930 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #2784?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 19627
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u090f\u0915 \u092a\u0947\u0936\u0947\u0935\u0930 \u092b\u093f\u0932\u094d\u092e \u0928\u093f\u0930\u094d\u0926\u0947\u0936\u0915 \u0939\u0942\u0901!",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 10622
+    },
+    {
+      "text": "Can you turn on the music please?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 16011
+    },
+    {
+      "text": "purana discussion me cpu thread affinity contention arrey waala topic kahan chode the 1139",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 639
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0947 \u091f\u0930\u094d\u0928 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #436?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 3666
+    },
+    {
+      "text": "\u092e\u0947\u0930\u093e \u0928\u093e\u092e \u0930\u094b\u0939\u0928 \u0939\u0948 \u0914\u0930 \u092e\u0948\u0902 \u092e\u0941\u0902\u092c\u0908 \u092e\u0947\u0902 \u0938\u0949\u092b\u094d\u091f\u0935\u0947\u092f\u0930 \u0907\u0902\u091c\u0940\u0928\u093f\u092f\u0930 \u0939\u0942\u0901 #1272",
+      "scope": "User",
+      "language": "hi",
+      "source": "unique_synth_user_hi",
+      "id": 11895
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #1195?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 10077
+    },
+    {
+      "text": "bhai vox, aaj ka din kaisa raha na",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 7847
+    },
+    {
+      "text": "bhai, kaise chal raha hai sab bhai",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 1899
+    },
+    {
+      "text": "Can you summarize what we just talked about?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 7893
+    },
+    {
+      "text": "How to resolve JSON serialization error in module Tauri v2 #1498?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 18592
+    },
+    {
+      "text": "That's okay, no worries at all",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 2581
+    },
+    {
+      "text": "sqlite database lock ko ONNX Runtime me kaise fix karein #3075?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 2807
+    },
+    {
+      "text": "good night vox, aaj mood kaisa hai dhanyawad",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 15925
+    },
+    {
+      "text": "JSON parsing error in trait ko Tauri v2 me kaise fix karein #1650?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 2268
+    },
+    {
+      "text": "My favorite book is Harry Potter.",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 17456
+    },
+    {
+      "text": "\u092a\u0902\u091c\u093e\u092c \u092e\u0947\u0902 \u0916\u093e\u0928\u093e \u092c\u0939\u0941\u0924 \u0938\u094d\u0935\u093e\u0926\u093f\u0937\u094d\u091f \u0939\u094b\u0924\u093e \u0939\u0948",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 4121
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u090f\u0915 \u0921\u0949\u0915\u094d\u091f\u0930 \u0939\u0942\u0902 \u0914\u0930 \u0926\u093f\u0932\u094d\u0932\u0940 \u092e\u0947\u0902 \u0930\u0939\u0924\u093e \u0939\u0942\u0901, \u0914\u0930 \u092e\u0941\u091d\u0947 \u0932\u0917\u0924\u093e \u0939\u0948 \u0915\u093f \u092f\u0939\u093e\u0901 \u092a\u0930 \u091a\u093f\u0915\u093f\u0924\u094d\u0938\u093e \u0938\u0947\u0935\u093e\u090f\u0902 \u092c\u0939\u0941\u0924 \u0905\u091a\u094d\u091b\u0940 \u0939\u0948\u0902",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 4208
+    },
+    {
+      "text": "\u0907\u0938 \u092c\u093e\u0924 \u0915\u094b \u0938\u0941\u0928\u0915\u0930 \u092e\u0941\u091d\u0947 \u092f\u093e\u0926 \u0906\u092f\u093e \u0915\u093f \u0939\u092e\u0947\u0902 \u0915\u0932 \u0926\u094b\u092a\u0939\u0930 \u0915\u094b \u0935\u094d\u092f\u0935\u0938\u093e\u092f\u093f\u0915 \u0915\u0930\u093e\u0930 \u092a\u0930 \u091a\u0930\u094d\u091a\u093e \u0915\u0930\u0928\u0940 \u091a\u093e\u0939\u093f\u090f!",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 21619
+    },
+    {
+      "text": "\u0915\u094d\u092f\u093e \u092e\u0948\u0902 \u092a\u093e\u0928\u0940 \u092a\u0940 \u0938\u0915\u0924\u093e \u0939\u0942\u0901?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 15575
+    },
+    {
+      "text": "yo vox, kya scene hai aaj ka batao",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 18016
+    },
+    {
+      "text": "hello vox, kaise ho bhai na",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 5411
+    },
+    {
+      "text": "\u092f\u093e\u0926 \u0930\u0916\u0947\u0902 \u092f\u093e\u0930, \u0915\u093f\u0938 \u0926\u093f\u0928 \u0915\u094c\u0928 \u0915\u093e\u092e \u0915\u0930\u0924\u093e \u0925\u093e?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 8686
+    },
+    {
+      "text": "\u092e\u0948\u0902\u0928\u0947 \u0915\u094d\u092f\u093e \u0915\u0939\u093e \u0925\u093e?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 17291
+    },
+    {
+      "text": "How to resolve Docker build failure in module ModernBERT #1176?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 19877
+    },
+    {
+      "text": "CPU thread affinity contention ko Docker me kaise fix karein #2164?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 13866
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0938\u092e\u091d \u0917\u092f\u093e \u0925\u093e, \u091a\u0932\u0924\u093e \u0939\u0948",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 6941
+    },
+    {
+      "text": "\u0936\u093f\u093f\u0932\u094b\u092e \u091c\u093f\u0921\u093c\u092e \u0935\u093e\u0938\u0947",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 17672
+    },
+    {
+      "text": "JSON parsing error in trait ko Docker me kaise fix karein #403?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 6592
+    },
+    {
+      "text": "Remember I said I love reading science fiction?",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 10215
+    },
+    {
+      "text": "mera name daniel hai main tokyo me devops engineer hoon 632",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 13075
+    },
+    {
+      "text": "Maine finance mein degree liya hai",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 12237
+    },
+    {
+      "text": "kal waale call me vector search accuracy drop waala topic kahan chode the #3405?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 14356
+    },
+    {
+      "text": "\u093e\u090f\u092a \u091c \u0936\u094d\u0932\u093e",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 16960
+    },
+    {
+      "text": "How to resolve SQLite WAL mode lock in module Python 3.12 #555?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 14795
+    },
+    {
+      "text": "JSON parsing error in trait ko Tauri v2 me kaise fix karein #1872?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 3966
+    },
+    {
+      "text": "last turn me vector search accuracy drop waala topic kahan chode the #432?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 8124
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #1772?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 7363
+    },
+    {
+      "text": "What did we discuss regarding gRPC connection pool overflow previous session #2761?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 2099
+    },
+    {
+      "text": "\u0905\u0930\u0947, \u0915\u094d\u092f\u093e \u0924\u0941\u092e\u094d\u0939\u093e\u0930\u0940 \u0906\u0935\u093e\u091c\u093c \u0907\u0924\u0928\u0940 \u091c\u094d\u092f\u093e\u0926\u093e \u0939\u0948?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 11079
+    },
+    {
+      "text": "I am Daniel, working as a devops engineer in London with preference for PostgreSQL #236",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 690
+    },
+    {
+      "text": "\u0939\u093e\u0901, \u092c\u094b\u0932\u093f\u090f \u091c\u093e\u0930\u0940 \u0930\u0916\u0947\u0902, \u092e\u0948\u0902 \u0938\u0941\u0928 \u0930\u0939\u093e \u0939\u0942\u0901!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 19278
+    },
+    {
+      "text": "kal waale call me sqlite database arrey lock waala topic kahan chode the 298",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 18151
+    },
+    {
+      "text": "\u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #579?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 7541
+    },
+    {
+      "text": "im done with the task, thanks",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 19283
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2166?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 7217
+    },
+    {
+      "text": "you know i am laura working as a frontend developer in bengaluru with preference for async rust 1385",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 236
+    },
+    {
+      "text": "I have two children who are in school",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 2327
+    },
+    {
+      "text": "I'm a vegetarian and I love vegan cuisine",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 20680
+    },
+    {
+      "text": "how to resolve crossentropy weights in module docker 3446",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 1930
+    },
+    {
+      "text": "what did we discuss regarding cpu thread contention a few minutes ago 472",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 7502
+    },
+    {
+      "text": "\u0915\u0943\u092a\u092f\u093e \u0935\u093e\u092a\u0938\u0940 \u0915\u0930\u094b, \u092a\u0932\u091f \u0926\u094b \u092e\u0941\u091d\u0947",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 2209
+    },
+    {
+      "text": "\u090f\u0928\u094d \u093e\u0930\u093e\u091c\u094b",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 1030
+    },
+    {
+      "text": "\u092e\u0947\u0930\u0940 \u0935\u0947\u092c\u0938\u093e\u0907\u091f \u092a\u0930 \u0915\u0908 \u0930\u0940\u0921\u0930\u094d\u0938 \u0939\u0948\u0902 \u0928",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 10828
+    },
+    {
+      "text": "I'm allergic to shellfish and nuts",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 2322
+    },
+    {
+      "text": "what did we discuss regarding null pointer dereference last meeting 3302",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 16848
+    },
+    {
+      "text": "I think there's been a misunderstanding, can you clarify?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 7799
+    },
+    {
+      "text": "How to resolve JSON serialization error in module Tokio #2942?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 9126
+    },
+    {
+      "text": "How to resolve JSON serialization error in module Python 3.12 #3110?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 21922
+    },
+    {
+      "text": "Go ahead and continue speaking.",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 15907
+    },
+    {
+      "text": "pichle session me vector search accuracy drop waala topic kahan chode the #4735?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 7021
+    },
+    {
+      "text": "last turn me sqlite database lock waala topic kahan chode the #3556?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 17670
+    },
+    {
+      "text": "What did we discuss regarding gRPC connection pool overflow last turn #323?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 4336
+    },
+    {
+      "text": "What did we discuss regarding loss function divergence previous session #3137?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 18712
+    },
+    {
+      "text": "What did we discuss regarding Docker build failure in our earlier call #4459?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 18882
+    },
+    {
+      "text": "Mera name Laura hai, main London me data engineer hoon #352",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 15489
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0947 \u091f\u0930\u094d\u0928 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 4404",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 7963
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0940 \u092c\u0948\u0920\u0915 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 543",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 15499
+    },
+    {
+      "text": "how much time do we have left?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 13339
+    },
+    {
+      "text": "How to resolve JSON serialization error in module Docker #2117?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 6240
+    },
+    {
+      "text": "I have been practicing yoga for over five years now",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 3091
+    },
+    {
+      "text": "purana discussion me vector search accuracy drop waala topic kahan chode the #119?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 3177
+    },
+    {
+      "text": "What did we discuss regarding ONNX INT8 quantization loss yesterday #1224?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 21594
+    },
+    {
+      "text": "purana discussion me sqlite database lock waala topic kahan chode the #1301?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 14125
+    },
+    {
+      "text": "\u0939\u093e\u0901, \u092e\u0947\u0930\u0940 \u092c\u0939\u0928 \u090f\u0915 \u0932\u0947\u0916\u0915 \u092d\u0940 \u0939\u0948!",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 11610
+    },
+    {
+      "text": "\u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u094b \u0930\u0938\u094d\u091f \u092a\u094d\u0930\u094b\u0917\u094d\u0930\u093e\u092e\u093f\u0902\u0917 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2777?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 13880
+    },
+    {
+      "text": "purana discussion me sqlite database lock waala topic kahan chode the #2100?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 13471
+    },
+    {
+      "text": "Mera name Sarah hai, main London me devops engineer hoon #353",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 15304
+    },
+    {
+      "text": "What did we discuss regarding NULL pointer dereference in our earlier call #1953?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 1776
+    },
+    {
+      "text": "\u092e\u0947\u0930\u0940 \u0915\u093f\u0924\u093e\u092c\u0947\u0902 \u0935\u093f\u091c\u094d\u091e\u093e\u0928 \u0915\u0940 \u0939\u0948\u0902",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 21413
+    },
+    {
+      "text": "\u0935\u093e\u0939, \u092c\u0939\u0941\u0924 \u0905\u091a\u094d\u091b\u093e!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 21175
+    },
+    {
+      "text": "What did we discuss regarding CPU thread contention in our earlier call #4213?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 3225
+    },
+    {
+      "text": "\u0905\u091a\u094d\u091b\u093e, \u092e\u0948\u0902 \u0915\u0932\u0947\u0915\u094d\u0936\u0928 \u0915\u094b \u0926\u0947\u0916\u0924\u093e \u0939\u0942\u0902",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 1987
+    },
+    {
+      "text": "cpu thread affinity contention ko arrey tokio me kaise fix karein 3399",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 13194
+    },
+    {
+      "text": "\u0905\u0930\u0947 \u092f\u0939 \u0915\u094d\u092f\u093e \u0939\u0941\u0906?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 11119
+    },
+    {
+      "text": "I am David, working as a data engineer in Toronto with preference for Docker #657",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 3581
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #3256?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 8148
+    },
+    {
+      "text": "yo vox, kya baat hai dhanyawad",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 6279
+    },
+    {
+      "text": "\u092e\u0941\u091d\u0947 \u0914\u0930 \u092c\u093e\u0924\u0947\u0902 \u092c\u0924\u093e\u090f\u0902 \u0924\u094b \u0928\u0939\u0940\u0902?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 6233
+    },
+    {
+      "text": "\u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #3914?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 17574
+    },
+    {
+      "text": "That'll be all, thank you.",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 14701
+    },
+    {
+      "text": "vector search accuracy drop ko PostgreSQL me kaise fix karein #3237?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 4594
+    },
+    {
+      "text": "Remember, I mentioned that I love hiking in the mountains?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 13825
+    },
+    {
+      "text": "\u0915\u0932 \u0915\u0947 \u0938\u0924\u094d\u0930 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #2622?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 6013
+    },
+    {
+      "text": "What did we discuss regarding ONNX INT8 quantization loss last meeting #3966?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 9128
+    },
+    {
+      "text": "yo vox, tumhe kya pasand hai shukriya",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 15160
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #4088?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 8186
+    },
+    {
+      "text": "I am studying computer science at Stanford University",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 2471
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0947 \u091f\u0930\u094d\u0928 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #4982?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 14521
+    },
+    {
+      "text": "Mera name Emily hai, main Toronto me software engineer hoon #455",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 18034
+    },
+    {
+      "text": "\u092a\u094d\u0930\u094b \u0932\u094b \u0903\u0928\u093e \u0936\u0947\u092f\u093e",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 3209
+    },
+    {
+      "text": "hey vox, ek accha sa joke sunao shukriya",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 1658
+    },
+    {
+      "text": "My favorite restaurant is the French bistro on 5th Street",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 21370
+    },
+    {
+      "text": "JSON parsing error in trait ko PostgreSQL me kaise fix karein #4481?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 17714
+    },
+    {
+      "text": "\u092e\u0941\u091d\u0947 \u0936\u0947\u0930-\u090f-\u092d\u093e\u0930\u0924 (\u092b\u093f\u0932\u094d\u092e) \u092c\u0939\u0941\u0924 \u092a\u0938\u0902\u0926 \u0939\u0948",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 484
+    },
+    {
+      "text": "vector search accuracy drop ko async rust me kaise fix karein 1856",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 3057
+    },
+    {
+      "text": "purana discussion me stage 3 memory queue deadlock waala topic kahan chode the #3078?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 7746
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2492?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 5450
+    },
+    {
+      "text": "\u092f\u093e\u0926 \u0915\u0930\u094b, \u092e\u0948\u0902 \u092a\u0939\u0932\u0947 \u092d\u0940 \u092c\u0924\u093e\u092f\u093e \u0925\u093e, \u092b\u093f\u0932\u094d\u092e\u094b\u0902 \u0915\u0940 \u0935\u091c\u0939 \u0938\u0947 \u0915\u0908 \u0914\u0930 \u0926\u093f\u0928 \u092f\u094b\u091c\u0928\u093e\u092c\u0926\u094d\u0927 \u0930\u0939\u0947, \u091c\u094b \u0907\u0928 \u0928\u090f \u0926\u094b\u0938\u094d\u0924\u094b\u0902 \u0928\u0947 \u0939\u0940, \u092e\u0947\u0930\u0947 \u0932\u093f\u090f \u0938\u092e\u092f \u092d\u0930 \u0915\u093f\u092f\u093e",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 13318
+    },
+    {
+      "text": "\u0905\u0930\u0947 \u092d\u093e\u0908, \u092f\u0939 \u0924\u094b \u092c\u0939\u0941\u0924 \u0906\u0938\u093e\u0928 \u0939\u0948!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 15914
+    },
+    {
+      "text": "\u0905\u0930\u0947, \u092f\u0939 \u0915\u094d\u092f\u093e \u0939\u0948?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 15774
+    },
+    {
+      "text": "What did we discuss regarding Docker build failure previous session #2982?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 7005
+    },
+    {
+      "text": "I am planning to attend a conference in London next month",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 13142
+    },
+    {
+      "text": "JSON parsing error in trait ko async Rust me kaise fix karein #1921?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 1922
+    },
+    {
+      "text": "How to resolve ONNX INT8 quantization loss in module async Rust #4757?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 5395
+    },
+    {
+      "text": "I'm done with that task, can we move on now?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 12419
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u092c\u093e\u0932\u0915\u0928\u0940 \u092a\u0930 \u0928\u0939\u093e\u0924\u093e \u0939\u0942\u0901",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 71
+    },
+    {
+      "text": "never mind just forget it",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 12794
+    },
+    {
+      "text": "\u092e\u0947\u0930\u093e \u092e\u093f\u0924\u094d\u0930 \u0938\u0902\u0926\u0940\u092a \u092c\u0939\u0941\u0924 \u0935\u094d\u092f\u0915\u094d\u0924\u093f\u0917\u0924 \u0914\u0930 \u0938\u0939\u093e\u092f\u0915 \u0939\u0948 \u091c\u094b \u092c\u093f\u0928\u093e \u092a\u0942\u091b\u0947 \u0915\u092d\u0940 \u092e\u0926\u0926 \u0915\u0947 \u0924\u0948\u092f\u093e\u0930 \u0930\u0939\u0924\u093e \u0939\u0948, \u0909\u0938\u0915\u093e \u090f\u0915 \u0905\u091a\u094d\u091b\u093e \u0917\u0941\u0923 \u092f\u0939 \u092d\u0940 \u0939\u0948",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 8691
+    },
+    {
+      "text": "\u0905\u091a\u094d\u091b\u093e \u091a\u0932\u094b",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 14910
+    },
+    {
+      "text": "Stop talking and start again!",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 9348
+    },
+    {
+      "text": "I love spicy food but I am allergic to peanuts",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 13862
+    },
+    {
+      "text": "what did we discuss regarding grpc connection pool overflow in our earlier call 1368",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 18212
+    },
+    {
+      "text": "\u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #1193?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 21689
+    },
+    {
+      "text": "\u092f\u093e\u0926 \u0930\u0939\u0947\u0917\u093e, \u092e\u0948\u0902\u0928\u0947 \u0915\u0939\u093e \u0925\u093e \u0915\u093f \u0905\u0917\u0930 \u0915\u093f\u0938\u0940 \u0928\u0947 \u092e\u0926\u0926 \u0915\u0930\u0928\u0947 \u0915\u094b \u0938\u092e\u092f \u0928\u0939\u0940\u0902 \u0926\u093f\u092f\u093e, \u0924\u094b \u0909\u0928\u0915\u0947 \u0938\u093e\u0925 \u0938\u0939\u093e\u0928\u0941\u092d\u0942\u0924\u093f \u0930\u0916\u0928\u0940 \u091a\u093e\u0939\u093f\u090f",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 15948
+    },
+    {
+      "text": "mujhe sci-fi movies pasand hain",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 5073
+    },
+    {
+      "text": "okay, got it, thanks for the update",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 6223
+    },
+    {
+      "text": "kal waale call me sqlite database lock waala topic kahan chode the #517?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 9723
+    },
+    {
+      "text": "suno na, bhai sahob kya baat hai please",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 7134
+    },
+    {
+      "text": "i am kevin working as a backend developer in seattle with preference for tauri v2 78",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 1917
+    },
+    {
+      "text": "That's all for now, we can continue later",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 18979
+    },
+    {
+      "text": "koi baat nahi, never mind!",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 17767
+    },
+    {
+      "text": "docker build fail issue ko PostgreSQL me kaise fix karein #2343?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 1998
+    },
+    {
+      "text": "Remember, I mentioned I am a vegetarian?",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 10277
+    },
+    {
+      "text": "\u0915\u094d\u092f\u093e \u0906\u092a \u092e\u0947\u0930\u0940 \u092c\u093e\u0924 \u0938\u092e\u091d \u0930\u0939\u0947 \u0939\u0948\u0902?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 1874
+    },
+    {
+      "text": "\u090f\u0932\u0947, \u0938\u094b\u0932\u0947",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 1644
+    },
+    {
+      "text": "kal waale call me cpu thread affinity contention waala topic kahan chode the 998",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 19143
+    },
+    {
+      "text": "\u0939\u093e\u0901 \u091c\u093e\u0930\u0940 \u0930\u0916\u093f\u090f!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 15624
+    },
+    {
+      "text": "how to resolve grpc connection pool overflow in module python 312 1937",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 16478
+    },
+    {
+      "text": "Mera name Laura hai, main Toronto me system architect hoon #1356",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 17404
+    },
+    {
+      "text": "what is the weather like today",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 5159
+    },
+    {
+      "text": "\u092e\u0941\u091d\u0947 \u0906\u092a\u0915\u0940 \u0915\u0939\u093e\u0928\u0940 \u092a\u0938\u0902\u0926 \u0906\u0908, \u0905\u091a\u094d\u091b\u0940 \u0925\u0940!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 1864
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #3774?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 16641
+    },
+    {
+      "text": "My favorite food is sushi and ramen.",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 2626
+    },
+    {
+      "text": "\u0930\u094b\ud83c\udfe5 \u091f\u0928\u093f \u090f\u0938\u094d\u091c\u0930",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 6090
+    },
+    {
+      "text": "\u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #3435?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 2246
+    },
+    {
+      "text": "I have been learning Japanese for two years now",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 19499
+    },
+    {
+      "text": "last turn me JSON parsing error in trait waala topic kahan chode the #4606?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 2227
+    },
+    {
+      "text": "I have been working at Google for 3 years",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 7708
+    },
+    {
+      "text": "pichle session me CPU thread affinity contention waala topic kahan chode the #2394?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 13231
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #2182?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 3929
+    },
+    {
+      "text": "How to resolve JSON serialization error in module ModernBERT #4636?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 18668
+    },
+    {
+      "text": "My favorite hobby is hiking in the mountains.",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 8068
+    },
+    {
+      "text": "purana discussion me stage 3 memory queue deadlock waala topic kahan chode the #2252?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 18971
+    },
+    {
+      "text": "\u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 1961",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 19482
+    },
+    {
+      "text": "last turn me stage 3 memory queue deadlock waala topic kahan chode the #3533?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 1303
+    },
+    {
+      "text": "I have been living in Paris for five years now",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 20296
+    },
+    {
+      "text": "My favorite color is blue, but I also like green",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 2687
+    },
+    {
+      "text": "My favorite restaurant in Paris is Le Comptoir du Relais",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 13738
+    },
+    {
+      "text": "\u0915\u094d\u092f\u093e \u0906\u092a \u092e\u0941\u091d\u0938\u0947 \u092c\u093e\u0924 \u0915\u0930\u0928\u0947 \u0915\u0940 \u0915\u094b\u0936\u093f\u0936 \u0915\u0930 \u0930\u0939\u0947 \u0939\u0948\u0902?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 21541
+    },
+    {
+      "text": "How to resolve JSON serialization error in module Python 3.12 #316?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 19126
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0938\u092e\u091d\u093e\u0964",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 18522
+    },
+    {
+      "text": "stage 3 memory queue deadlock ko Python 3.12 me kaise fix karein #1035?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 17131
+    },
+    {
+      "text": "\u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2084?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 10367
+    },
+    {
+      "text": "Mera name Jessica hai, main Toronto me system architect hoon #1029",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 8545
+    },
+    {
+      "text": "\u091a\u0932\u094b \u0936\u0941\u0930\u0942 \u0939\u094b \u091c\u093e\u090f",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 6694
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #4787?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 21946
+    },
+    {
+      "text": "\u0938\u094d \u0909\u093e\u091c, \u0937\u093e\u0932\u094d\u092a\u0932\u094b",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 10296
+    },
+    {
+      "text": "kal waale call me sqlite database lock waala topic kahan chode the #1199?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 7822
+    },
+    {
+      "text": "pichle session me CPU thread affinity contention waala topic kahan chode the #35?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 8704
+    },
+    {
+      "text": "\u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #1660?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 12970
+    },
+    {
+      "text": "what did we discuss regarding memory leak in you know queue last meeting 640",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 4289
+    },
+    {
+      "text": "sqlite database lock ko Tokio me kaise fix karein #1093?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 21152
+    },
+    {
+      "text": "Stop talking for a minute.",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 9831
+    },
+    {
+      "text": "\u0905\u0930\u0947, \u0939\u093e\u0901 , \u092f\u0939 \u092c\u0939\u0941\u0924 \u0905\u091a\u094d\u091b\u093e \u0932\u0917\u0924\u093e \u0939\u0948 !",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 14983
+    },
+    {
+      "text": "I graduated from Stanford University with a degree in Computer Science",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 10361
+    },
+    {
+      "text": "\u0928\u092e\u0938\u094d\u0915\u093e\u0930, \u092f\u0939 \u0905\u091a\u094d\u091b\u093e \u0938\u0941\u0928 \u0930\u0939\u093e \u0939\u0948!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 2378
+    },
+    {
+      "text": "\u0936\u0940\u093f\u093e \u091a\u093f\u0921\u093c\u092e \u0932\u094b\u0939\u094d\u0921\u093e",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 306
+    },
+    {
+      "text": "\u0924\u0941\u092e\u094d\u0939\u0947\u0902 \u0928\u0940\u092e \u0915\u0940 \u092a\u0924\u094d\u0924\u093f\u092f\u094b\u0902 \u0938\u0947 \u090f\u0932\u0930\u094d\u091c\u0940 \u0939\u0948",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 15018
+    },
+    {
+      "text": "\u0905\u0930\u0947 \u091a\u093e\u0935\u0932 \u090f\u0915 \u0938\u094d\u0935\u093e\u0926\u093f\u0937\u094d\u091f \u0935\u094d\u092f\u0902\u091c\u0928 \u0939\u0948!",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 20355
+    },
+    {
+      "text": "My favorite type of movie is action",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 18449
+    },
+    {
+      "text": "what did we discuss regarding memory leak in queue in our earlier call 4198",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 3277
+    },
+    {
+      "text": "\u091c\u094d\u0926 \u0932\u0947\u091a",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 2401
+    },
+    {
+      "text": "\u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 4037",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 17618
+    },
+    {
+      "text": "What did we discuss regarding JSON serialization error yesterday #2878?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 6985
+    },
+    {
+      "text": "i am david working as a data engineer in london with preference for docker 1568",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 16577
+    },
+    {
+      "text": "What did we discuss regarding gRPC connection pool overflow last meeting #398?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 4341
+    },
+    {
+      "text": "How to resolve ONNX INT8 quantization loss in module async Rust #4029?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 11437
+    },
+    {
+      "text": "I am Sarah, working as a backend developer in San Francisco with preference for ONNX Runtime #531",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 2255
+    },
+    {
+      "text": "Please go ahead",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 8005
+    },
+    {
+      "text": "I am planning a trip to Australia for next summer",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 12109
+    },
+    {
+      "text": "what did we discuss regarding docker build failure previous session 165",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 9339
+    },
+    {
+      "text": "My favorite book is The Lord of the Rings trilogy",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 5170
+    },
+    {
+      "text": "\u092e\u0941\u091d\u0947 \u090f\u0915 \u0917\u093e\u0928\u093e \u0938\u0941\u0928\u093e\u0913",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 14359
+    },
+    {
+      "text": "How to resolve CPU thread contention in module async Rust #4073?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 17801
+    },
+    {
+      "text": "Mera name Sarah hai, main Seattle me data engineer hoon #472",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 9913
+    },
+    {
+      "text": "I am David, working as a backend developer in Bengaluru with preference for PostgreSQL #71",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 20044
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0905\u092a\u0928\u0940 \u0926\u093e\u0926\u0940 \u0915\u094b \u092a\u0938\u0902\u0926 \u0915\u0930\u0924\u093e \u0939\u0942\u0901",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 21430
+    },
+    {
+      "text": "good night vox, chalo baatein karte hain phir milte hain",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 17333
+    },
+    {
+      "text": "purana discussion me docker build fail issue waala topic kahan chode the #3172?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 257
+    },
+    {
+      "text": "How to resolve SQLite WAL mode lock in module Docker #4659?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 21885
+    },
+    {
+      "text": "Remember I said my sister lives in London?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 18174
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #3924?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 9811
+    },
+    {
+      "text": "\u0920\u0940\u0915 \u0939\u0948, \u0906\u0917\u0947 \u092c\u0922\u093c\u094b, \u092c\u0924\u093e\u0913, \u092f\u0939 \u0905\u091a\u094d\u091b\u093e \u0932\u0917\u0947\u0917\u093e",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 21738
+    },
+    {
+      "text": "\u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2547?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 3395
+    },
+    {
+      "text": "\u092e\u0947\u0930\u093e \u0928\u093e\u092e \u092a\u094d\u0930\u093f\u092f\u093e \u0939\u0948 \u0914\u0930 \u092e\u0948\u0902 \u092e\u0941\u0902\u092c\u0908 \u092e\u0947\u0902 \u0921\u0947\u091f\u093e \u0921\u0947\u0935\u0932\u092a\u0930 \u0939\u0942\u0901 #1232",
+      "scope": "User",
+      "language": "hi",
+      "source": "unique_synth_user_hi",
+      "id": 4401
+    },
+    {
+      "text": "JSON parsing error in trait ko ModernBERT me kaise fix karein #778?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 8667
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #624?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 3783
+    },
+    {
+      "text": "\u0915\u0932 \u0915\u0947 \u0938\u0924\u094d\u0930 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #4678?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 3508
+    },
+    {
+      "text": "What did we discuss regarding memory leak in queue yesterday #2342?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 5094
+    },
+    {
+      "text": "JSON parsing error in trait ko Docker me kaise fix karein #541?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 8925
+    },
+    {
+      "text": "Remember I said my favorite sports team is the Patriots?",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 9233
+    },
+    {
+      "text": "JSON parsing error in trait ko ONNX Runtime me kaise fix karein #33?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 19820
+    },
+    {
+      "text": "How to resolve Tokio mutex deadlock in module Tauri v2 #3718?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 6902
+    },
+    {
+      "text": "What did we discuss regarding JSON serialization error yesterday #5103?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 11236
+    },
+    {
+      "text": "bhai sahob kya baat hai, buddy",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 6672
+    },
+    {
+      "text": "What did we discuss regarding JSON serialization error last turn #1381?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 20783
+    },
+    {
+      "text": "What did we discuss regarding gRPC connection pool overflow last turn #5118?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 8651
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #212?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 16562
+    },
+    {
+      "text": "\u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2332?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 16009
+    },
+    {
+      "text": "\u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u094b \u0930\u0938\u094d\u091f \u092a\u094d\u0930\u094b\u0917\u094d\u0930\u093e\u092e\u093f\u0902\u0917 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 3907",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 8229
+    },
+    {
+      "text": "kal waale call me stage 3 memory queue deadlock waala topic kahan chode the #3825?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 1665
+    },
+    {
+      "text": "\u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #4023?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 3025
+    },
+    {
+      "text": "I am allergic to peanuts and tree nuts",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 20785
+    },
+    {
+      "text": "I am planning a road trip from New York to Los Angeles next month",
+      "scope": "Domain",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 9067
+    },
+    {
+      "text": "\u091a\u0941\u092a \u0930\u064e\u0647\u094b",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 1445
+    },
+    {
+      "text": "what did we discuss regarding memory leak in uh queue last meeting 4096",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 117
+    },
+    {
+      "text": "\u090b\u0936, \u092a \u0915 \u0932\u094d!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 10930
+    },
+    {
+      "text": "how to resolve vector similarity threshold in module postgresql 397",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 4287
+    },
+    {
+      "text": "\u0915\u0932 \u0915\u0947 \u0938\u0924\u094d\u0930 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #524?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 20877
+    },
+    {
+      "text": "How to resolve SQLite WAL mode lock in module PostgreSQL #3210?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 8584
+    },
+    {
+      "text": "\u092e\u0947\u0930\u093e \u0928\u093e\u092e \u0930\u093e\u0939\u0941\u0932 \u0939\u0948 \u0914\u0930 \u092e\u0948\u0902 \u092e\u0941\u0902\u092c\u0908 \u092e\u0947\u0902 \u0938\u093f\u0938\u094d\u091f\u092e \u0906\u0930\u094d\u0915\u093f\u091f\u0947\u0915\u094d\u091f \u0939\u0942\u0901 #781",
+      "scope": "User",
+      "language": "hi",
+      "source": "unique_synth_user_hi",
+      "id": 5295
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0905\u092a\u0928\u0947 \u092a\u0930\u093f\u0935\u093e\u0930 \u0915\u094b \u0915\u0932 \u092e\u093f\u0932\u0942\u0901\u0917\u093e",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 14479
+    },
+    {
+      "text": "\u092f\u093e\u0926 \u0930\u0939\u0947, \u092e\u0947\u0930\u0940 \u092c\u0947\u091f\u0940 \u091a\u093e\u0930 \u0938\u093e\u0932 \u0915\u0940 \u0939\u0948!",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 18078
+    },
+    {
+      "text": "How to resolve SQLite WAL mode lock in module Python 3.12 #2198?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 14015
+    },
+    {
+      "text": "How to resolve JSON serialization error in module Docker #794?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 18380
+    },
+    {
+      "text": "\u0939\u093e\u0901, \u0915\u0943\u092a\u092f\u093e \u092e\u0941\u091d\u0938\u0947 \u091c\u093e\u0930\u0940 \u0930\u0916\u0947\u0902",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 317
+    },
+    {
+      "text": "What did we discuss regarding Tokio mutex deadlock in our earlier call #833?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 2466
+    },
+    {
+      "text": "Stop talking so fast",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 4885
+    },
+    {
+      "text": "\u092e\u0941\u091d\u0947 \u0932\u0917\u0924\u093e \u0939\u0948 \u092f\u0939 \u0924\u093e\u091c\u093e \u092a\u092c\u094d\u0938 \u092d\u0940 \u0925\u093e, \u0914\u0930 \u090f\u0915 \u0905\u091a\u094d\u091b\u0940 \u091c\u0917\u0939, \u091c\u0939\u093e\u0902 \u0935\u0947 \u0915\u092d\u0940-\u0915\u092d\u093e\u0930 \u0935\u093e\u0938\u094d\u0924\u0935\u093f\u0915 \u0930\u0942\u092a \u0938\u0947 \u0906\u0928\u093e \u091a\u093e\u0939\u0924\u0947 \u0925\u0947, \u0932\u0947\u0915\u093f\u0928 \u0909\u0938 \u0938\u092e\u092f \u0939\u092e\u0947\u0902 \u092e\u0947\u0930\u0940 \u092a\u0939\u0932\u0940 \u092a\u0924\u094d\u0928\u0940, \u092e\u0948\u0902\u0928\u0947 \u0915\u0939\u093e, \u0915\u093f \u0906\u092a\u0938\u0947 \u092e\u0941\u091d\u0947 \u0915\u093e\u092e \u0926\u0947\u0928\u093e \u0939\u094b\u0917\u093e\u0964",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 17878
+    },
+    {
+      "text": "vector search accuracy drop ko async rust me kaise fix karein 1252",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 1181
+    },
+    {
+      "text": "purana discussion me CPU thread affinity contention waala topic kahan chode the #1186?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 12099
+    },
+    {
+      "text": "What did we discuss regarding JSON serialization error in our earlier call #4190?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 19088
+    },
+    {
+      "text": "how to resolve docker build failure in module async rust 3498",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 18106
+    },
+    {
+      "text": "\u0936\u0941\u0915\u094d\u0930\u093f\u092f\u093e! \u092e\u0941\u091d\u0947 \u092f\u0939 \u092c\u0939\u0941\u0924 \u092a\u0938\u0902\u0926 \u0906\u092f\u093e.",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 4853
+    },
+    {
+      "text": "stop talking chup raho",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 14084
+    },
+    {
+      "text": "What did we discuss regarding ONNX INT8 quantization loss yesterday #1545?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 4177
+    },
+    {
+      "text": "What did we discuss regarding Docker build failure last meeting #1623?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 1371
+    },
+    {
+      "text": "\u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u092e\u0924\u0932\u092c \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 171",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 10102
+    },
+    {
+      "text": "json parsing error in trait ko docker me kaise fix karein 4188",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 11949
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0924\u092f \u0915\u0930 \u091a\u0941\u0915\u093e \u0939\u0942\u0902 \u0915\u0932 \u0936\u093e\u092e \u0915\u0940 \u0921\u0947\u091f\u093f\u0902\u0917 \u0930\u0926\u094d\u0926 \u0915\u0930\u0928\u0947 \u0914\u0930 \u090f\u0915 \u092e\u0942\u0935\u0940 \u0926\u0947\u0916\u0928\u0947, \u0915\u094d\u092f\u094b\u0902\u0915\u093f...",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 1308
+    },
+    {
+      "text": "aaj mood kaisa hai hi vox",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 11725
+    },
+    {
+      "text": "\u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #642?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 6884
+    },
+    {
+      "text": "\u092e\u0947\u0930\u093e \u0928\u093e\u092e \u0930\u094b\u0939\u0928 \u0939\u0948 \u0914\u0930 \u092e\u0948\u0902 \u090f\u0915 \u0915\u0932\u093e\u0915\u093e\u0930, \u0926\u094b\u0938\u094d\u0924 \u0935\u093f\u0936\u0947\u0937\u0924\u093e\u090f\u0902: \u092c\u093e\u0939\u0930\u0940 \u092f\u093e\u0924\u094d\u0930\u093e\u0913\u0902 \u0915\u094b \u092a\u094d\u0930\u093e\u0925\u092e\u093f\u0915\u0924\u093e \u0926\u0947\u0924\u093e \u0939\u0942\u0901",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 8177
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0938\u094d\u0935-\u0936\u093f\u0915\u094d\u0937\u093e \u0915\u0947 \u092e\u093e\u0927\u094d\u092f\u092e \u0938\u0947 \u0905\u092a\u0928\u0947 \u0932\u0915\u094d\u0937\u094d\u092f\u094b\u0902 \u0915\u094b \u092a\u094d\u0930\u093e\u092a\u094d\u0924 \u0915\u0930\u0928\u0947 \u0915\u0940 \u092f\u094b\u091c\u0928\u093e \u092c\u0928\u093e\u0924\u093e \u0939\u0942\u0901",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 21855
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0940 \u092c\u0948\u0920\u0915 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #2700?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 3369
+    },
+    {
+      "text": "I love reading non-fiction books on history and science",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 11590
+    },
+    {
+      "text": "\u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #372?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 18347
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #1630?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 13317
+    },
+    {
+      "text": "\u0935\u093e\u0939, \u092c\u093f\u0932\u094d\u0915\u0941\u0932, \u092f\u0939 \u0924\u094b \u092a\u0939\u0932\u0940 \u092c\u093e\u0930 \u091c\u093e\u0928\u0924\u093e \u0939\u0942\u0901!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 20338
+    },
+    {
+      "text": "How to resolve vector similarity threshold in module Python 3.12 #4079?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 5065
+    },
+    {
+      "text": "bhai aaj mood kaisa hai",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 7758
+    },
+    {
+      "text": "what did we discuss regarding onnx int8 quantization loss last turn 2448",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 5325
+    },
+    {
+      "text": "sqlite database lock ko PostgreSQL me kaise fix karein #3825?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 5802
+    },
+    {
+      "text": "suno vox, ek accha sa joke sunao dhanyawad",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 13511
+    },
+    {
+      "text": "\u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0915\u094b \u0930\u0938\u094d\u091f \u092a\u094d\u0930\u094b\u0917\u094d\u0930\u093e\u092e\u093f\u0902\u0917 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 268",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 813
+    },
+    {
+      "text": "I live with my boyfriend in San Francisco",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 5878
+    },
+    {
+      "text": "I am Alex, working as a backend developer in Tokyo with preference for Docker #1413",
+      "scope": "User",
+      "language": "en",
+      "source": "unique_synth_user_en",
+      "id": 10886
+    },
+    {
+      "text": "\u0915\u0932 \u0915\u0947 \u0938\u0924\u094d\u0930 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #3412?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 13492
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0947 \u091f\u0930\u094d\u0928 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #3386?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 21952
+    },
+    {
+      "text": "Go ahead with the rest of it. I'm listening.",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 8132
+    },
+    {
+      "text": "\u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u094b \u0921\u0949\u0915\u0930 \u0915\u0902\u091f\u0947\u0928\u0930 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #1292?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 8743
+    },
+    {
+      "text": "Mera pasandida color blue hai",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 5217
+    },
+    {
+      "text": "I work as a journalist at CNN",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 3543
+    },
+    {
+      "text": "kal waale call me stage 3 memory queue deadlock waala topic kahan chode the #645?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 12536
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #1173?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 1269
+    },
+    {
+      "text": "\u0939\u0942\u091a \u0924\u0947 \u090f\u0930 \u0928\u094d",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 15424
+    },
+    {
+      "text": "\u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2147?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 7289
+    },
+    {
+      "text": "\u092e\u0947\u0930\u093e \u0928\u093e\u092e \u092a\u094d\u0930\u093f\u092f\u093e \u0939\u0948 \u0914\u0930 \u092e\u0948\u0902 \u092e\u0941\u0902\u092c\u0908 \u092e\u0947\u0902 \u0921\u0947\u091f\u093e \u0921\u0947\u0935\u0932\u092a\u0930 \u0939\u0942\u0901 #1245",
+      "scope": "User",
+      "language": "hi",
+      "source": "unique_synth_user_hi",
+      "id": 6540
+    },
+    {
+      "text": "purana discussion me cpu thread affinity contention waala topic kahan chode the 580",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 15084
+    },
+    {
+      "text": "\u092e\u0948\u0902\u0928\u0947 \u0915\u0941\u091b \u0938\u092e\u092f \u092a\u0939\u0932\u0947 \u092e\u0941\u0902\u092c\u0908 \u0938\u0947 \u092b\u094b\u0928 \u0915\u093f\u092f\u093e \u0925\u093e, \u0939\u092e\u0947\u0902 \u092c\u0939\u0941\u0924 \u092a\u0938\u0902\u0926 \u0906\u092f\u093e",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 11458
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0940 \u092c\u0948\u0920\u0915 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u0930\u0938\u094d\u091f \u0925\u094d\u0930\u0947\u0921 \u0938\u093f\u0902\u0915\u094d\u0930\u094b\u0928\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #2547?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 10001
+    },
+    {
+      "text": "\u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #4274?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 7458
+    },
+    {
+      "text": "last turn me stage 3 memory queue deadlock waala topic kahan chode the #3458?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 7305
+    },
+    {
+      "text": "purana discussion me stage 3 memory queue deadlock waala topic kahan chode the #4587?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 776
+    },
+    {
+      "text": "\u0935\u0939 \u0926\u093f\u0928 \u0924\u094b \u0939\u092e\u0947\u0936\u093e \u092f\u093e\u0926 \u0930\u0939\u0947\u0917\u093e!",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 21628
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0940 \u092c\u0948\u0920\u0915 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u0947 \u092c\u093e\u0930\u0947 \u0938\u0941\u0928\u094b \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 4015",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 6329
+    },
+    {
+      "text": "Mera name Alex hai, main Toronto me software engineer hoon #1492",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 13057
+    },
+    {
+      "text": "\u0939\u093e\u0901, \u092c\u093f\u0932\u094d\u0915\u0941\u0932, \u0910\u0938\u093e \u0939\u0940 \u092c\u0924\u093e\u0913",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 10757
+    },
+    {
+      "text": "how to resolve memory leak in queue in module postgresql 3637",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 9130
+    },
+    {
+      "text": "Remember, I said my favorite hobby is painting.",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 2275
+    },
+    {
+      "text": "\u092e\u0947\u0930\u0940 \u092a\u0924\u094d\u0928\u0940 \u0921\u0949\u0915\u094d\u091f\u0930 \u092a\u0942\u0928\u092e \u0939\u0948, \u0935\u0939 \u090f\u0915 \u0905\u091a\u094d\u091b\u0940 \u0938\u094d\u0935\u093e\u0938\u094d\u0925\u094d\u092f \u0905\u0927\u093f\u0915\u093e\u0930\u0940 \u0939\u0948\u0902!",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 9147
+    },
+    {
+      "text": "What did we discuss regarding SQLite WAL mode lock previous session #2892?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 11507
+    },
+    {
+      "text": "sqlite database lock ko PostgreSQL me kaise fix karein #1207?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 21021
+    },
+    {
+      "text": "pichle session me vector search accuracy drop waala topic kahan chode the #3681?",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 16693
+    },
+    {
+      "text": "that's all thanks for the help",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 13097
+    },
+    {
+      "text": "I love traveling to new countries and experiencing their cultures",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 17571
+    },
+    {
+      "text": "stage 3 memory queue deadlock ko ONNX Runtime me kaise fix karein #1492?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 10852
+    },
+    {
+      "text": "CPU thread affinity contention ko Tokio me kaise fix karein #1347?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 905
+    },
+    {
+      "text": "never mind, I'll figure it out myself",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 3780
+    },
+    {
+      "text": "\u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 816",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 8560
+    },
+    {
+      "text": "I live in New York City",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 5852
+    },
+    {
+      "text": "My favorite type of fruit is strawberries and blueberries",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 19025
+    },
+    {
+      "text": "\u092e\u0948\u0902 \u0935\u0915\u0940\u0932 \u0939\u0942\u0901",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 8699
+    },
+    {
+      "text": "I am learning Spanish and Chinese languages",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 1254
+    },
+    {
+      "text": "\u0935\u0947\u0915\u094d\u091f\u0930 \u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0916\u094b\u091c \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #963?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 3553
+    },
+    {
+      "text": "docker build fail issue ko Tauri v2 me kaise fix karein #272?",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 19549
+    },
+    {
+      "text": "\u092e\u0947\u0930\u0947 \u092a\u093e\u092a\u093e \u0915\u094b \u090f\u0915 \u0938\u093e\u0932 \u092a\u0939\u0932\u0947 \u0928\u0947\u0924\u094d\u0930\u093e\u0902\u0917 \u0936\u0932\u094d\u092f \u091a\u093f\u0915\u093f\u0924\u094d\u0938\u093e \u0915\u0930\u093e\u0928\u0940 \u092a\u0921\u093c\u0940 \u0925\u0940!",
+      "scope": "User",
+      "language": "hi",
+      "source": "base_semantic",
+      "id": 14240
+    },
+    {
+      "text": "\u0938\u094d\u091f\u0947\u091c 3 \u092a\u093e\u0907\u092a\u0932\u093e\u0907\u0928 \u0924\u094d\u0930\u0941\u091f\u093f \u0915\u094b \u092a\u093e\u0907\u0925\u0928 \u092d\u093e\u0937\u093e \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #663?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 11328
+    },
+    {
+      "text": "\u0915\u0932 \u0930\u093e\u0924 \u0939\u092e\u0928\u0947 \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 #1556?",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 10279
+    },
+    {
+      "text": "last turn me stage 3 memory queue deadlock waala topic kahan chode the 665",
+      "scope": "Temporal",
+      "language": "hinglish",
+      "source": "unique_synth_temporal_hinglish",
+      "id": 14300
+    },
+    {
+      "text": "vector search accuracy drop ko postgresql me kaise fix karein 622",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 19865
+    },
+    {
+      "text": "\u0921\u0947\u091f\u093e\u092c\u0947\u0938 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u092a\u0942\u0932 \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #383?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 16759
+    },
+    {
+      "text": "Sorry to interrupt, but can you help me?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 3790
+    },
+    {
+      "text": "I love reading novels by Jane Austen",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 12623
+    },
+    {
+      "text": "How to resolve vector similarity threshold in module Docker #4001?",
+      "scope": "Domain",
+      "language": "en",
+      "source": "unique_synth_domain_en",
+      "id": 18894
+    },
+    {
+      "text": "What did we discuss regarding vector similarity threshold in our earlier call #4036?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 6229
+    },
+    {
+      "text": "\u092a\u093f\u091b\u0932\u0940 \u092c\u0948\u0920\u0915 \u092e\u0947\u0902 \u0939\u092e\u0928\u0947 \u092e\u0947\u092e\u094b\u0930\u0940 \u0932\u0940\u0915 \u0938\u092e\u0938\u094d\u092f\u093e \u0915\u0947 \u092c\u093e\u0930\u0947 \u0938\u0941\u0928\u094b \u092e\u0947\u0902 \u0915\u094d\u092f\u093e \u091a\u0930\u094d\u091a\u093e \u0915\u0940 \u0925\u0940 157",
+      "scope": "Temporal",
+      "language": "hi",
+      "source": "unique_synth_temporal_hi",
+      "id": 8347
+    },
+    {
+      "text": "\u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u0915\u094d\u0935\u093e\u0902\u091f\u093e\u0907\u091c\u0947\u0936\u0928 \u0915\u094b \u0911\u0928\u094d\u0915\u094d\u0938 \u092e\u0949\u0921\u0932 \u092e\u0947\u0902 \u0915\u0948\u0938\u0947 \u0920\u0940\u0915 \u0915\u0930\u0947\u0902 #2210?",
+      "scope": "Domain",
+      "language": "hi",
+      "source": "unique_synth_domain_hi",
+      "id": 1455
+    },
+    {
+      "text": "jaldi se kripya mujhe wapas chalo",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 14289
+    },
+    {
+      "text": "Mera name Sarah hai, main Berlin me frontend developer hoon #859",
+      "scope": "User",
+      "language": "hinglish",
+      "source": "unique_synth_user_hinglish",
+      "id": 56
+    },
+    {
+      "text": "\u0938\u094b\u091a \u0939\u094b\u092c\u0940 \u090f\u0924\u0932\u094d \u0915\u94a1",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 17037
+    },
+    {
+      "text": "I am planning to visit Paris next month",
+      "scope": "User",
+      "language": "en",
+      "source": "base_semantic",
+      "id": 17644
+    },
+    {
+      "text": "bhai vox, bore ho raha hoon batao",
+      "scope": "ChitChat",
+      "language": "hinglish",
+      "source": "synthetic_hinglish_chitchat",
+      "id": 21976
+    },
+    {
+      "text": "cpu thread affinity contention ko python 312 me kaise fix karein 4295",
+      "scope": "Domain",
+      "language": "hinglish",
+      "source": "unique_synth_domain_hinglish",
+      "id": 6457
+    },
+    {
+      "text": "What did we discuss regarding vector similarity threshold last meeting #53?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 11935
+    },
+    {
+      "text": "What's the time in Paris?",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 14133
+    },
+    {
+      "text": "\u0915\u094d\u0928 \u093e\u093f\u0924 \u0902",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 2293
+    },
+    {
+      "text": "What did we discuss regarding SQLite WAL mode lock a few minutes ago #4712?",
+      "scope": "Temporal",
+      "language": "en",
+      "source": "unique_synth_temporal_en",
+      "id": 21766
+    },
+    {
+      "text": "\u0905\u0930\u0947, \u092f\u0939 \u0924\u094b \u092e\u091c\u093e\u0915 \u0939\u0948, \u0928\u093e\u0939\u0940?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 10820
+    },
+    {
+      "text": "\u0915\u094d\u092f\u093e \u0906\u092a\u0928\u0947 \u092e\u0941\u091d\u0938\u0947 \u0915\u092d\u0940 \u092c\u093e\u0924 \u0915\u0940?",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 20420
+    },
+    {
+      "text": "\u091a\u0932\u094b \u0906\u0917\u0947, \u0938\u0941\u0928\u093e\u0913 \u090f\u0915 \u091a\u0941\u091f\u0915\u0941\u0932\u093e!",
+      "scope": "ChitChat",
+      "language": "hi",
+      "source": "base_generic",
+      "id": 10287
+    },
+    {
+      "text": "I'm not sure if I should do it",
+      "scope": "ChitChat",
+      "language": "en",
+      "source": "base_generic",
+      "id": 4084
+    }
+  ]
+}
