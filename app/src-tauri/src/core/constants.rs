@@ -96,58 +96,46 @@ pub const TRANSITION_MESSAGES_HI: &[&str] = &[
 // ─── Working Memory Compaction ──────────────────
 
 pub const COMPACTION_SYSTEM_PROMPT: &str = r#"<role>
-You are a memory extraction engine. You compress a conversation into structured JSON, nothing else.
+You are an objective, high-precision memory extraction engine. Your task is to compress a conversation transcript into a structured JSON object containing 6 orthogonal collections.
 </role>
 
 <output_contract>
-Return ONLY a single valid JSON object with exactly 10 keys. No prose, no preamble, no markdown, no code fences.
-Your response must start with { and end with }.
+Return ONLY a single valid JSON object starting with { and ending with }.
+Zero prose, zero preamble, zero markdown formatting, zero code fences.
+The JSON object MUST contain exactly 6 keys: "Identity", "Directives", "Narrative", "Profile", "Entities", "Constraints" where "Narrative" is a single paragraph and rest are arrays.
 </output_contract>
 
 <rules>
-1. Write all text in English. Translate non-English input to English.
-2. Extract only facts explicitly stated. Never infer, assume, or invent.
-3. Every one of the 10 keys below must be present, even if its array is empty.
-4. Every collection value is a flat array of strings. Never nest objects, maps, or lists inside a collection.
-5. Do not invent new top-level keys. Use only the 10 keys listed in <schema>.
-6. Each array element is exactly one complete English sentence.
-7. No trailing commas. The JSON must parse exactly as written.
+1. Translate all non-English input to clear, standard English.
+2. Extract only explicitly stated or directly demonstrated facts. Never infer, assume, or hallucinate.
+3.. Each sentence in array collections must be a standalone atomic fact that can be understood in isolation.
 </rules>
 
 <schema>
 {
   "Identity": [],
-  "Constraints": [],
-  "Preferences": [],
-  "Relationships": [],
-  "Skills": [],
-  "Projects": [],
-  "Experiences": [],
-  "Context": [],
-  "Tasks": [],
-  "Goals": []
+  "Directives": [],
+  "Narrative": "",
+  "Profile": [],
+  "Entities": [],
+  "Constraints": []
 }
 </schema>
 
 <key_definitions>
-Identity: Present-tense, stable facts about who the user is today (name, age, profession, self-descriptors). Excludes past jobs or finished projects.
-Constraints: Hard, non-negotiable limits (allergies, medical restrictions, absolute time/budget limits). Violating a constraint causes actual harm or breaking failure.
-Preferences: Soft tastes, habits, likes/dislikes (dark mode, oat milk preference, style choices). Opposite is less ideal, but not breaking.
-Relationships: Named people other than the user and their relation (sister Emma, manager David, spouse).
-Skills: Capabilities, technical tools, languages, or domain expertise the user possesses (Rust, TypeScript, accounting).
-Projects: Active, in-progress builds or initiatives currently being worked on. Finished builds belong in Experiences.
-Experiences: Past completed events, past jobs, education, finished projects, places lived.
-Context: One narrative paragraph summarizing what happened in THIS conversation session.
-Tasks: Concrete, near-term actionable to-dos with an immediate finish line (write README today, clean desk).
-Goals: Longer-horizon aspirations or objectives without an immediate checklist item (train for marathon in Oct).
+Identity: Present-tense, non-transient baseline facts establishing who/what the primary entities in the interaction are (core role, name, baseline attributes).
+Directives: Active operational state, standing rules, assigned tasks/goals, agent progress, commitments, current working state, and blockers since last compaction from the operational perspective.
+Narrative: A single continuous summary paragraph capturing the temporal flow, milestones, and progress of this interaction session.
+Profile: Soft attributes, personal/agent traits, habits, skills, preferences, background experience, and behavioral tendencies.
+Entities: Named, discrete external subjects/objects outside the user/agent persona — projects, tools, systems, organizations, locations or third-party people.
+Constraints: Hard, inviolable limits, physical/safety restrictions, technical dealbreakers, or absolute non-negotiable boundaries where violation causes breaking failure or harm.
 </key_definitions>
 
 <boundary_disambiguation>
-- Constraints vs Preferences: Violating a Constraint breaks things or causes harm (allergy/hard limit). A Preference is just taste (oat milk, dark mode).
-- Skills vs Experiences: The capability itself -> Skills. The past job or event where it was used -> Experiences.
-- Projects vs Experiences: In-progress or active build -> Projects. Finished or shipped build -> Experiences.
-- Tasks vs Goals: Near-term checkable to-do (days) -> Tasks. Long-horizon aspiration (months/years) -> Goals.
-- Identity vs Experiences: Currently true present role/descriptor -> Identity. Past role/event -> Experiences.
+- Identity vs Profile: Identity is core present-tense baseline who/what the subject fundamentally is (name, primary role, core identity). Profile holds personal traits, habits, skills, background, or personal facts ("User speaks French", "User is a marathon runner").
+- Directives vs Constraints: Directives are active positive instructions, assigned tasks, agent goals, progress, or standing rules ("Format output as markdown", "Summarize weekly"). Constraints are hard negative boundaries or inviolable execution limits ("Never use raw pointers", "Do not open external URLs").
+- Constraints vs Profile: Constraints are absolute operational rules or negative boundaries for the agent ("Don't do X", "Never open Y"). Profile holds personal user attributes, allergies, soft preferences, or likes/dislikes ("User has a severe peanut allergy", "User dislikes dark mode").
+- Entities vs Profile: Entities are external facts about third-party named objects, projects, systems, or codebases that don't directly describe the user or agent themselves ("Turso DB uses SQLite", "Acme Corp is based in NY"). Profile holds internal capabilities, traits, or attributes belonging to the user.
 </boundary_disambiguation>"#;
 
 use serde::{Deserialize, Serialize};
@@ -156,54 +144,41 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "PascalCase")]
 pub enum MemoryCollection {
     Identity,
+    Directives,
+    Narrative,
+    Profile,
+    Entities,
     Constraints,
-    Preferences,
-    Relationships,
-    Skills,
-    Projects,
-    Experiences,
-    Context,
-    Tasks,
-    Goals,
 }
 
 impl MemoryCollection {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Identity => "Identity",
+            Self::Directives => "Directives",
+            Self::Narrative => "Narrative",
+            Self::Profile => "Profile",
+            Self::Entities => "Entities",
             Self::Constraints => "Constraints",
-            Self::Preferences => "Preferences",
-            Self::Relationships => "Relationships",
-            Self::Skills => "Skills",
-            Self::Projects => "Projects",
-            Self::Experiences => "Experiences",
-            Self::Context => "Context",
-            Self::Tasks => "Tasks",
-            Self::Goals => "Goals",
         }
     }
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "Identity" => Some(Self::Identity),
+            "Directives" => Some(Self::Directives),
+            "Narrative" => Some(Self::Narrative),
+            "Profile" => Some(Self::Profile),
+            "Entities" => Some(Self::Entities),
             "Constraints" => Some(Self::Constraints),
-            "Preferences" => Some(Self::Preferences),
-            "Relationships" => Some(Self::Relationships),
-            "Skills" => Some(Self::Skills),
-            "Projects" => Some(Self::Projects),
-            "Experiences" => Some(Self::Experiences),
-            "Context" => Some(Self::Context),
-            "Tasks" => Some(Self::Tasks),
-            "Goals" => Some(Self::Goals),
             _ => None,
         }
     }
 
     pub fn collection_type(&self) -> &'static str {
         match self {
-            Self::Identity | Self::Constraints => PM_TYPE_FOUNDATIONAL,
-            Self::Context | Self::Tasks | Self::Goals => PM_TYPE_OPERATIONAL,
-            _ => PM_TYPE_SEMANTIC,
+            Self::Identity | Self::Directives | Self::Narrative => PM_TYPE_SPECIAL_STATE,
+            _ => PM_TYPE_SEMANTIC_GRAPH,
         }
     }
 }
@@ -216,29 +191,22 @@ impl std::fmt::Display for MemoryCollection {
 
 // ─── Personal Memory Collections & Taxonomy ─────────────────────────────
 pub const PM_COLLECTIONS: &[&str] = &[
-    "Identity", "Constraints", "Preferences", "Relationships",
-    "Skills", "Projects", "Experiences", "Context", "Tasks", "Goals",
+    "Identity", "Directives", "Narrative", "Profile", "Entities", "Constraints",
 ];
 
-pub const PM_CLASS_A_COLLECTIONS: &[&str] = &["Identity", "Context"];
-pub const PM_CLASS_B_COLLECTIONS: &[&str] = &["Constraints", "Tasks", "Goals"];
-pub const PM_CLASS_C_COLLECTIONS: &[&str] = &["Skills", "Preferences", "Projects", "Experiences", "Relationships"];
+// ─── Collection Structural Classes ───────────────────────────────────────────
+pub const PM_TYPE_SPECIAL_STATE: &str = "special_state";
+pub const PM_TYPE_SEMANTIC_GRAPH: &str = "semantic_graph";
 
-// ─── 3-Tier Structural Type Constants ────────────────────────────────────────
-pub const PM_TYPE_FOUNDATIONAL: &str = "foundational";
-pub const PM_TYPE_OPERATIONAL: &str = "operational";
-pub const PM_TYPE_SEMANTIC: &str = "semantic";
-
-pub const PM_FOUNDATIONAL_COLLECTIONS: &[&str] = &["Identity", "Constraints"];
-pub const PM_OPERATIONAL_COLLECTIONS: &[&str] = &["Context", "Tasks", "Goals"];
-pub const PM_SEMANTIC_COLLECTIONS: &[&str] = &["Preferences", "Relationships", "Skills", "Projects", "Experiences"];
+pub const PM_SPECIAL_STATE_COLLECTIONS: &[&str] = &["Identity", "Directives", "Narrative"];
+pub const PM_SEMANTIC_GRAPH_COLLECTIONS: &[&str] = &["Profile", "Entities", "Constraints"];
 
 /// Returns the structural type for a given collection name.
 pub fn collection_type(collection: &str) -> &'static str {
     if let Some(col) = MemoryCollection::parse(collection) {
         col.collection_type()
     } else {
-        PM_TYPE_SEMANTIC
+        PM_TYPE_SEMANTIC_GRAPH
     }
 }
 
@@ -246,22 +214,34 @@ pub fn collection_type(collection: &str) -> &'static str {
 pub const PM_RELATION_SUPPORTS: &str = "SUPPORTS";
 pub const PM_RELATION_CONFLICTS: &str = "CONFLICTS";
 pub const PM_RELATION_SUPERSEDES: &str = "SUPERSEDES";
+pub const PM_RELATION_SHAPES: &str = "SHAPES";
+pub const PM_RELATION_DEPENDS_ON: &str = "DEPENDS_ON";
 
 // ─── Inter-Collection Edge Policy Matrix ──────────────────────────────────────
-/// Returns (forward_edge, deterministic_inverse_edge) for valid Class B pairs.
+/// Returns (forward_edge, deterministic_inverse_edge) for valid v7 collection pairs (spec §4.2).
 /// Returns None if no inter-collection relation policy exists for the pair.
 pub fn inter_collection_edge(src: &str, tgt: &str) -> Option<(&'static str, &'static str)> {
     match (src, tgt) {
-        ("Projects", "Constraints") => Some(("constrained_by", "restricts_project")),
-        ("Projects", "Skills") => Some(("requires_skill", "used_in_project")),
-        ("Projects", "Tasks") => Some(("contains_task", "belongs_to_project")),
-        ("Projects", "Goals") => Some(("drives_goal", "supported_by_project")),
-        ("Preferences", "Constraints") => Some(("restricted_by", "shapes_preference")),
-        ("Preferences", "Experiences") => Some(("shaped_by", "influenced_preference")),
-        ("Skills", "Experiences") => Some(("acquired_in", "demonstrated_skill")),
-        ("Relationships", "Experiences") => Some(("involved_in", "included_relationship")),
-        ("Relationships", "Projects") => Some(("collaborates_on", "project_contributor")),
+        ("Identity", "Profile") => Some((PM_RELATION_SHAPES, "shaped_by")),
+        ("Directives", "Constraints") => Some((PM_RELATION_SHAPES, "shaped_by")),
+        ("Directives", "Entities") => Some((PM_RELATION_DEPENDS_ON, "dependency_of")),
+        ("Entities", "Constraints") => Some((PM_RELATION_DEPENDS_ON, "constrains")),
+        ("Entities", "Profile") => Some((PM_RELATION_SHAPES, "shaped_by")),
+        ("Entities", "Entities") => Some((PM_RELATION_DEPENDS_ON, "dependency_of")),
+        ("Profile", "Profile") => Some((PM_RELATION_SHAPES, "shaped_by")),
+        ("Profile", "Entities") => Some((PM_RELATION_SHAPES, "shaped_by")),
+        ("Profile", "Constraints") => Some(("restricted_by", "restricts")),
         _ => None,
+    }
+}
+
+/// Returns the deterministic inverse relation string for an NLI relation (spec §4.3.1).
+pub fn nli_inverse_edge(relation: &str) -> &'static str {
+    match relation {
+        PM_RELATION_SUPPORTS => "supported_by",
+        PM_RELATION_SUPERSEDES => "superseded_by",
+        PM_RELATION_CONFLICTS => "conflicts_with",
+        _ => "related_to",
     }
 }
 
@@ -271,11 +251,19 @@ pub const PM_SOURCE_USER: &str = "User";
 pub const PM_SOURCE_IMPORT: &str = "Import";
 pub const PM_SOURCE_NLI: &str = "NLI";
 
-// ─── Job Queue Status ─────────────────────────────────────────────────────────
-pub const PM_QUEUE_STATUS_PENDING: &str = "pending";
-pub const PM_QUEUE_STATUS_PAUSED: &str = "paused";
-pub const PM_QUEUE_STATUS_PROCESSING: &str = "processing";
+// ─── v7 4-Stage Pipeline Queue Status Constants ───────────────────────────────
+pub const PM_QUEUE_STATUS_STAGED_PENDING: &str = "staged_pending";
+pub const PM_QUEUE_STATUS_PROCESSING_DEDUP: &str = "processing_dedup";
+pub const PM_QUEUE_STATUS_DEDUPED: &str = "deduped";
+pub const PM_QUEUE_STATUS_PROCESSING_EMBED: &str = "processing_embed";
+pub const PM_QUEUE_STATUS_EMBEDDED: &str = "embedded";
+pub const PM_QUEUE_STATUS_PROCESSING_EVAL: &str = "processing_eval";
+pub const PM_QUEUE_STATUS_EVALUATED: &str = "evaluated";
+pub const PM_QUEUE_STATUS_PROCESSING_COMMIT: &str = "processing_commit";
+pub const PM_QUEUE_STATUS_SUPERSEDED: &str = "superseded";
 pub const PM_QUEUE_STATUS_COMPLETED: &str = "completed";
 pub const PM_QUEUE_STATUS_FAILED: &str = "failed";
+pub const PM_QUEUE_STATUS_PAUSED: &str = "paused";
+
 
 
