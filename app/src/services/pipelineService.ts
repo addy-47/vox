@@ -43,6 +43,9 @@ export interface RuntimeSnapshot {
   timestamp_ms: number;
 }
 
+/** RuntimeSnapshot with a local performance.now() timestamp for sparkline age calc. */
+export type LocalSnapshot = RuntimeSnapshot & { localTime: number };
+
 export interface RealtimeSessionCache {
   has_session: boolean;
   provider: string;

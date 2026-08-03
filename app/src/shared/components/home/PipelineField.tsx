@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-
-type InteractionState = "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Interrupted";
+import { type InteractionState } from "@/services/eventsService";
 
 interface PipelineFieldProps {
   state: InteractionState;

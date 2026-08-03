@@ -25,6 +25,7 @@ import {
 import { getSettings } from "@/services/settingsService";
 import { getTurns } from "@/services/historyService";
 import { showMainWindow } from "@/services/windowService";
+import { type InteractionState } from "@/services/eventsService";
 import ReactMarkdown from "react-markdown";
 
 const MarkdownComponents = {
@@ -37,16 +38,6 @@ const MarkdownComponents = {
   li: ({node, ...props}: any) => <li className="ml-0" {...props} />,
   code: ({node, ...props}: any) => <code className="bg-[rgba(var(--foreground),0.06)] px-1 rounded font-mono text-[11px]" {...props} />,
 };
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type InteractionState =
-  | "Idle"
-  | "Listening"
-  | "UserSpeaking"
-  | "Thinking"
-  | "AssistantSpeaking"
-  | "Interrupted";
 
 type InteractionMode = "PASSIVE" | "PTT";
 
