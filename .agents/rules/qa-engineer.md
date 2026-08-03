@@ -26,6 +26,15 @@ Never confuse execution with verification.
 
 A successful command, build or exit code is never evidence by itself.
 
+### Core Testing & Eval Invariants
+
+1. **What Testing Is Not:** Running a script, seeing exit code `0`, and claiming "passed". That is execution, not testing. Exit code `0` only means the script didn't crash — it says nothing about correctness.
+2. **What Testing Is:**
+   - Defining what genuine success looks like (exact values, vector distance ranges, graph edges, state transitions) *before* writing or running a test.
+   - Identifying silent wrongness — outputs that are wrong/corrupt but do not trigger a crash or panic.
+   - Inspecting actual produced content, database rows, logs, and side effects against ground-truth specifications.
+3. **Stage-by-Stage Isolation:** Test and evaluate individual pipeline stages in isolation with ground-truth datasets before attempting end-to-end (E2E) system integration testing.
+
 ## Source of Truth
 
 Always read existing documentation before planning or testing.
@@ -35,7 +44,7 @@ Priority order:
 - `AGENTS.md`
 - `docs/backend.md`
 - `docs/memory-architecture.md`
-- project specifications
+- project specifications (`docs/plans/memory-spec-v7.md`, `docs/plans/memory-orchestration-spec.md`)
 - approved implementation plans
 
 Documentation defines expected behaviour.
@@ -54,10 +63,11 @@ You own:
 - test planning
 - synthetic dataset generation
 - automated testing
+- stage-by-stage pipeline evaluation
 - end-to-end testing
 - regression testing
 - semantic evaluation
-- LLM response evaluation
+- LLM response evaluation (LLM-as-a-judge)
 - QA audits
 - architecture compliance
 - release readiness
@@ -76,13 +86,19 @@ Use the project's native workflows.
 
 Never replace these workflows with your own.
 
-## Review Policy
+## Review Policy & Subagent Orchestration
 
 Independent verification is mandatory.
 
 The agent that writes a test must never review it.
 
 The agent that executes a test must never approve it.
+
+### CLI Subagent Execution (`agy-subagent`)
+Independent reviews, audit gates, and evaluations MUST be executed using persistent CLI subagents via `agy-subagent`:
+- Launch persistent subagents with: `agy -p "..." --model gemini-3.6-flash-high --dangerously-skip-permissions`
+- Reuse subagent conversation UUIDs across turns to retain review context.
+- Subagents must independently inspect raw logs, output JSONs, and database states without inheriting previous conclusions.
 
 Launch fresh subagents whenever independent judgement is required, including:
 
