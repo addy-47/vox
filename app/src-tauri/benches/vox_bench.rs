@@ -66,8 +66,8 @@ struct Args {
     #[arg(long, default_value = "llama3.1:8b-instruct-q4_K_M")]
     llm_model: String,
 
-    /// TTS engine: supertonic (default) or chatterbox
-    #[arg(long, default_value = "supertonic")]
+    /// TTS engine: edge_tts (default), supertonic, or chatterbox
+    #[arg(long, default_value = "edge_tts")]
     tts: String,
 
     /// Reference audio file path, voice ID, or voice name for Chatterbox voice cloning
@@ -222,6 +222,11 @@ fn main() -> anyhow::Result<()> {
             )
             .expect("Failed to load Chatterbox TTS"),
         )
+    } else if args.tts == "edge_tts" || args.tts == "edge-tts" || args.tts == "edge" {
+        println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Edge TTS)...");
+        Box::new(vox_lib::services::tts::EdgeTtsProvider::new(
+            args.tts_voice.as_deref(),
+        ))
     } else {
         println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Supertonic 3)...");
         let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");

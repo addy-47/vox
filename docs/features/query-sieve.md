@@ -1,8 +1,8 @@
-# Query Sieve — Generic vs. Semantic Query Classifier
+# Query Sieve — 4-Class MemoryScope Classifier
 
-**Filters chit-chat from durable knowledge.** A lightweight binary classifier that categorizes user utterances as **GENERIC** (no durable knowledge — greetings, commands, chit-chat) or **SEMANTIC** (contains facts, preferences, relationships worth storing).
+**Pre-retrieval scope classification** that routes user queries into 4 cognitive categories before embedding generation and vector search. Eliminates wasted inference on chit-chat and identity queries, while ensuring domain-specific and temporal queries get full memory retrieval.
 
-This is a custom submodule at `submodules/query-sieve-rs/` — a standalone Rust crate wrapping DistilBERT multilingual (ONNX Runtime INT8) with a Vox integration layer in `app/src-tauri/src/services/memory/classifier.rs`.
+This is a custom submodule at `submodules/query-sieve-rs/` — a standalone Rust crate wrapping ModernBERT multilingual (ONNX Runtime INT8) with a Vox integration layer in `app/src-tauri/src/services/memory/query_classifier.rs`.
 
 ---
 
@@ -12,73 +12,73 @@ This is a custom submodule at `submodules/query-sieve-rs/` — a standalone Rust
 
 ```
 query-sieve-rs (submodules/query-sieve-rs/)
-  └─ GenericSemanticClassifier + Classification      ← crate public API
+  └─ MemoryScopeClassifier + MemoryScope          ← crate public API
        │
        ▼
-Vox wrapper: QueryClassifier (classifier.rs)          ← error-safe singleton wrapper
+Vox wrapper: QueryScopeClassifier (query_classifier.rs)  ← error-safe singleton wrapper
        │
        ▼
-Singleton: CLASSIFIER_INSTANCE (OnceLock)             ← loaded at most once
+Singleton: SCOPE_CLASSIFIER_INSTANCE (OnceLock)     ← loaded at most once
        │
        ▼
-Re-exported API:                                      ← services/memory public surface
-  classify_query()
-  ensure_classifier_loaded()
-  init_classifier()
-  is_classifier_loaded()
+Re-exported API:                                    ← services/memory public surface
+  classify_scope()
+  ensure_scope_classifier_loaded()
+  init_scope_classifier()
+  is_scope_classifier_loaded()
        │
        ▼
 Production callers:
-  services/pipeline.rs  → gating RAG retrieval per turn
-  ipc/pipeline.rs        → lazy-load on pipeline engage
+  services/pipeline.rs  → scope-based retrieval gating
+  ipc/pipeline.rs       → lazy-load on pipeline engage
 ```
 
 ### Pipeline Gating
 
-The primary integration point is in `services/pipeline.rs` (~line 541). Every user turn passes through Query Sieve *before* embedding generation and RAG retrieval:
+Every user turn passes through the MemoryScope classifier *before* embedding generation and RAG retrieval. The scope determines which memory collections are searched and how:
 
 ```rust
-let classification = crate::services::memory::classify_query(&text);
+let scope = crate::services::memory::classify_scope(&text);
 
-let personal_memory_block = if classification.is_generic() {
-    // Skip embedding + DB RAG entirely
-    String::new()
-} else {
-    // Proceed with embedding generation, vector search, graph retrieval...
+let memory_block = match scope {
+    MemoryScope::ChitChat => String::new(),       // Skip all memory retrieval
+    MemoryScope::User => fetch_user_memory(),     // Identity + Profile only
+    MemoryScope::Domain => fetch_domain_memory(), // Vector search + Directives
+    MemoryScope::Temporal => fetch_temporal_memory(), // SQL narrative + Directives
 };
 ```
 
-**Consequence:** A GENERIC classification saves 100% of ONNX embedding inference (~30ms) and Turso vector DB search (~10–50ms) for that turn. Over a session with 50% chit-chat ratio, this cuts memory subsystem latency roughly in half.
+**Consequence:** A `ChitChat` classification saves 100% of ONNX embedding inference (~30ms) and Turso vector DB search (~10–50ms) for that turn. A `User` classification restricts retrieval to identity/profile collections only, cutting retrieval cost roughly in half.
 
 ### Lazy Loading
 
-On pipeline engage (`ipc/pipeline.rs` ~line 99), the classifier is loaded lazily:
+On pipeline engage (`ipc/pipeline.rs`), the classifier is loaded lazily:
 
 ```rust
-if let Err(e) = crate::services::memory::ensure_classifier_loaded() {
-    log::warn!("[QueryClassifier] Lazy load on pipeline engage skipped/failed: {}", e);
+if let Err(e) = crate::services::memory::ensure_scope_classifier_loaded() {
+    log::warn!("[QueryScopeClassifier] Lazy load on pipeline engage skipped/failed: {}", e);
 }
 ```
 
-If model files are absent from disk, the classifier degrades gracefully — `classify_query()` returns `Classification::Semantic`, ensuring all turns route to full memory ingestion (safe default, no dropped data).
+If model files are absent from disk, the classifier degrades gracefully — `classify_scope()` returns `MemoryScope::Domain`, ensuring all turns route to full memory ingestion (safe default, no dropped data).
 
 ### Singleton Wrapper
 
 ```rust
-pub struct QueryClassifier {
-    engine: GenericSemanticClassifier,
+pub struct QueryScopeClassifier {
+    engine: MemoryScopeClassifier,
 }
 
-static CLASSIFIER_INSTANCE: OnceLock<QueryClassifier> = OnceLock::new();
+static SCOPE_CLASSIFIER_INSTANCE: OnceLock<QueryScopeClassifier> = OnceLock::new();
 ```
 
-Wrapped with interior error handling — any `GenericSemanticClassifier::classify()` error is logged and defaults to `Classification::Semantic` rather than propagating.
+Wrapped with interior error handling — any `MemoryScopeClassifier::classify()` error is logged and defaults to `MemoryScope::Domain` rather than propagating.
 
 ### Model Path
 
 ```
-~/.vox/models/classifier/distilbert-query-classifier/
-├── model_quantized.onnx      (INT8 ONNX model)
+~/.vox/models/classifier/modernbert_memory_scope/
+├── model_quantized.onnx      (INT8 ONNX model, 143.67 MB)
 └── tokenizer.json             (HuggingFace tokenizer)
 ```
 
@@ -94,36 +94,36 @@ Wrapped with interior error handling — any `GenericSemanticClassifier::classif
 | **Runtime** | ONNX Runtime (`ort` 2.0.0-rc.12) + HuggingFace `tokenizers` 0.22 |
 | **License** | MIT |
 | **Repository** | `https://github.com/addy-47/query-sieve-rs.git` |
-| **Pinned Commit** | `ace3c6d` (per `Cargo.lock`) |
+| **Pinned Commit** | Per `Cargo.lock` |
 
 ### API Surface
 
 ```rust
 // Core types
 use query_sieve::{
-    Classification,              // Enum: Generic | Semantic
-    GenericSemanticClassifier,   // ONNX classifier engine
-    ClassifierConfig,            // Configuration struct
-    ClassifierError,             // Error enum
+    MemoryScope,              // Enum: ChitChat | User | Domain | Temporal
+    MemoryScopeClassifier,   // ONNX classifier engine
+    ClassifierConfig,         // Configuration struct
+    ClassifierError,          // Error enum
 };
 
 // Construction
-GenericSemanticClassifier::load(model_path, tokenizer_path)
-GenericSemanticClassifier::load_with_config(config)
+MemoryScopeClassifier::load(model_path, tokenizer_path)
+MemoryScopeClassifier::load_with_config(config)
 
 // Inference
-classifier.classify("my name is John")     // -> Result<Classification>
-classifier.classify_raw("I love spicy")     // -> Result<(Classification, Vec<f32>)>
+classifier.classify("my name is John")     // -> MemoryScope
+classifier.classify_raw("I love spicy")     // -> Result<(MemoryScope, f32, Vec<f32>)>
 ```
 
 ### Configuration (`ClassifierConfig`)
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `max_length` | 64 | Max sequence length (tokens) |
+| `max_token_length` | 32 | Max token length for ModernBERT input |
+| `tau_star` | 0.81 | Confidence threshold — below this defaults to `Domain` |
 | `max_input_chars` | 512 | Max input length (chars) |
 | `intra_op_threads` | 0 | ONNX Runtime intra-op threads (0 = default) |
-| `max_words_for_classification` | 10 | Bypass threshold — sentences over this skip the model |
 
 ### Error Types (`ClassifierError`)
 
@@ -139,56 +139,49 @@ classifier.classify_raw("I love spicy")     // -> Result<(Classification, Vec<f3
 
 | Attribute | Value |
 |-----------|-------|
-| **Architecture** | DistilBERT multilingual (cased) |
-| **Parameters** | ~67M |
+| **Architecture** | ModernBERT multilingual |
+| **Parameters** | ~143M (INT8 quantized) |
 | **Quantization** | INT8 (static, per-tensor) |
 | **Framework** | ONNX Runtime |
-| **Max length** | 64 tokens |
-| **Classes** | 2: GENERIC (index 0), SEMANTIC (index 1) |
-| **HuggingFace Model** | [addyo07/distilbert-query-classifier](https://huggingface.co/addyo07/distilbert-query-classifier) |
-| **Training Dataset** | [addyo07/query-classification-dataset](https://huggingface.co/datasets/addyo07/query-classification-dataset) |
+| **Max tokens** | 32 |
+| **Classes** | 4: `ChitChat` (0), `User` (1), `Domain` (2), `Temporal` (3) |
+| **Threshold** | τ* = 0.81 — predictions below this default to `Domain` |
+| **HuggingFace Model** | `addyo07/modernbert-memory-scope` |
+| **Training Dataset** | `addyo07/query-classification-dataset` (`v2/memory_scope_golden_v1.json`) |
 
 ### Performance
 
 | Metric | Value |
 |--------|-------|
-| **Test accuracy** | **98.39%** |
-| Precision | 0.9844 |
-| Recall | 0.9834 |
-| F1 score | 0.9839 |
+| **Test accuracy** | **96.60%** |
+| **Calibrated accuracy** | **91.60%** |
+| **Non-Default Precision** | **98.08%** (at τ* = 0.81) |
+| **Fallback Rate** | **6.00%** |
 
 ### Latency (CPU, AMD Ryzen)
 
 | Mode | P50 | P99 | Target |
 |------|-----|-----|--------|
-| Multi-thread | 8.39 ms | 11.81 ms | <50ms ✓ |
-| Single-thread | 14.81 ms | 16.87 ms | <50ms ✓ |
+| Single-thread | 25.36 ms | < 50 ms | 10–30 ms ✓ |
 
-Benchmarked with `intra_op_threads=1` for single-thread mode. Well under the <50ms CPU target.
+Benchmarked with `intra_op_threads=1`. Meets the sub-30ms P50 CPU target for real-time classification.
 
-### Latency Bypass Heuristic
+### Fallback Behavior
 
-Sentences longer than **10 words** bypass the model entirely and return `Classification::Semantic` with placeholder logits `[-10.0, 10.0]`. Rationale:
-
-1. Long sentences almost always contain durable information.
-2. Long sequences are slower to tokenize and infer — skipping them saves latency against the <50ms CPU target.
-
-The threshold is configurable via `ClassifierConfig::max_words_for_classification` (set to 0 to disable).
+When confidence is below τ* = 0.81 or the model is absent/error, the classifier defaults to `MemoryScope::Domain`. This is the safest fallback — Domain scope triggers full vector-search retrieval, ensuring no durable knowledge is missed.
 
 ---
 
 ## Training
 
-- **Base model**: DistilBERT multilingual cased
-- **Dataset**: 12,044 synthetic examples
-  - 3,003 English generic
-  - 3,017 English semantic
-  - 3,019 Hindi generic
-  - 3,005 Hindi semantic
-- **Generator**: Llama 3.1 8B (synthetic data generation)
-- **Hardware**: RTX 5070 Ti
-- **Hyperparameters**: 5 epochs, batch size 32
-- **Output**: INT8 quantized ONNX via static quantization
+- **Base model**: ModernBERT multilingual
+- **Dataset**: 22,006 items (balanced across 4 classes)
+  - ChitChat: casual greetings, small talk, identity questions
+  - User: personal facts, preferences, profile updates
+  - Domain: code, math, domain-specific tasks
+  - Temporal: time-sensitive queries, schedules, dates, reminders
+- **Quantization**: INT8 static quantization
+- **Hardware**: CPU training pipeline
 
 ---
 
@@ -198,8 +191,10 @@ The threshold is configurable via `ClassifierConfig::max_words_for_classificatio
 submodules/query-sieve-rs/
 ├── src/
 │   ├── lib.rs          ← Module declarations, re-exports
-│   ├── classifier.rs   ← GenericSemanticClassifier + ClassifierConfig + Classification
-│   └── error.rs        ← ClassifierError enum
+│   ├── config.rs       ← ClassifierConfig, DEFAULT_MEMORY_SCOPE_MAX_TOKEN_LENGTH
+│   ├── error.rs        ← ClassifierError enum
+│   ├── generic.rs      ← Legacy 2-class GenericSemanticClassifier (unused in v7)
+│   └── memory_scope.rs ← MemoryScope enum + MemoryScopeClassifier (ModernBERT)
 ├── tests/
 │   └── integration_test.rs
 ├── models/             ← Local model weight symlinks (gitignored)
@@ -216,7 +211,7 @@ submodules/query-sieve-rs/
 cd submodules/query-sieve-rs && cargo test
 
 # Vox integration wrapper tests
-cd app/src-tauri && cargo test -- services::memory::classifier
+cd app/src-tauri && cargo test -- services::memory::query_classifier
 ```
 
-Includes English/Hindi generic and semantic queries, long-sentence bypass behavior, error handling for empty/overlong input, and load failures.
+Includes 4-class classification accuracy, confidence threshold fallback, error handling for empty/overlong input, and load failures.

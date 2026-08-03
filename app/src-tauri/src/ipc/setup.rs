@@ -286,6 +286,10 @@ pub async fn check_model_exists(
         return Ok(false);
     };
 
+    if model_id == "edge_tts" || group.files.is_empty() {
+        return Ok(true);
+    }
+
     let models_dir = crate::utils::paths::get().models.clone();
 
     for file in &group.files {

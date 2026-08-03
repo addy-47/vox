@@ -142,6 +142,11 @@ fn eval_subbranch_b_edges_sync(
 /// runs Sub-Branch A (NLI) and Sub-Branch B (Edge Classifier) concurrently via `tokio::join!`,
 /// merges output into `BatchEvaluationResult`, and commits atomic `status = 'evaluated'`.
 pub async fn run_stage3_eval(conn: &Connection) -> Result<usize> {
+    run_stage3_eval_with_metrics(conn, "").await
+}
+
+pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Result<usize> {
+    let start_time = std::time::Instant::now();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -190,7 +195,12 @@ pub async fn run_stage3_eval(conn: &Connection) -> Result<usize> {
         return Ok(0);
     }
 
+    let items_claimed = items.len();
+    let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
+
     let mut processed_count = 0;
+    let mut superseded_count = 0;
+    let mut total_relations_created = 0;
 
     for item in items {
         // Fetch candidates for Sub-Branch A and Sub-Branch B without K-cap (Spec Behavioral Invariants #3)
@@ -238,8 +248,14 @@ pub async fn run_stage3_eval(conn: &Connection) -> Result<usize> {
         let mut all_relations = nli_res.unwrap_or_else(|_| Vec::new());
         all_relations.extend(edge_res.unwrap_or_else(|_| Vec::new()));
 
+        total_relations_created += all_relations.len();
+
         let item_target_id = format!("item_{}", item.id);
         let is_superseded = all_relations.iter().any(|rel| rel.to_id == item_target_id && rel.relation == PM_RELATION_SUPERSEDES);
+
+        if is_superseded {
+            superseded_count += 1;
+        }
 
         let eval_result = BatchEvaluationResult {
             item_id: item.id,
@@ -262,6 +278,23 @@ pub async fn run_stage3_eval(conn: &Connection) -> Result<usize> {
         .await?;
 
         processed_count += 1;
+    }
+
+    let duration_ms = start_time.elapsed().as_millis();
+
+    if !run_id.is_empty() {
+        let metrics = super::metrics::PipelineStageMetrics {
+            run_id: run_id.to_string(),
+            stage_name: "stage3_eval".to_string(),
+            session_id,
+            items_claimed,
+            items_processed: processed_count,
+            items_superseded: superseded_count,
+            relations_created: total_relations_created,
+            duration_ms,
+            error_count: 0,
+        };
+        let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
     }
 
     Ok(processed_count)

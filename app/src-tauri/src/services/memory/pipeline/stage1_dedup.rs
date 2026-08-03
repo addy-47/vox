@@ -18,6 +18,11 @@ pub struct Stage1Item {
 /// Atomically claims `staged_pending` items, executes Jaccard + soft vector deduplication,
 /// and updates status to `deduped` or `superseded`.
 pub async fn run_stage1_dedup(conn: &Connection) -> Result<usize> {
+    run_stage1_dedup_with_metrics(conn, "").await
+}
+
+pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> Result<usize> {
+    let start_time = std::time::Instant::now();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -65,7 +70,11 @@ pub async fn run_stage1_dedup(conn: &Connection) -> Result<usize> {
         return Ok(0);
     }
 
+    let items_claimed = items.len();
+    let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
+
     let mut processed_count = 0;
+    let mut superseded_count = 0;
 
     for item in items {
         let trimmed_fact = item.fact.trim();
@@ -76,6 +85,7 @@ pub async fn run_stage1_dedup(conn: &Connection) -> Result<usize> {
             )
             .await?;
             processed_count += 1;
+            superseded_count += 1;
             continue;
         }
 
@@ -117,6 +127,7 @@ pub async fn run_stage1_dedup(conn: &Connection) -> Result<usize> {
         }
 
         let new_status = if is_dup {
+            superseded_count += 1;
             PM_QUEUE_STATUS_SUPERSEDED
         } else {
             PM_QUEUE_STATUS_DEDUPED
@@ -129,6 +140,23 @@ pub async fn run_stage1_dedup(conn: &Connection) -> Result<usize> {
         .await?;
 
         processed_count += 1;
+    }
+
+    let duration_ms = start_time.elapsed().as_millis();
+
+    if !run_id.is_empty() {
+        let metrics = super::metrics::PipelineStageMetrics {
+            run_id: run_id.to_string(),
+            stage_name: "stage1_dedup".to_string(),
+            session_id,
+            items_claimed,
+            items_processed: processed_count,
+            items_superseded: superseded_count,
+            relations_created: 0,
+            duration_ms,
+            error_count: 0,
+        };
+        let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
     }
 
     Ok(processed_count)
