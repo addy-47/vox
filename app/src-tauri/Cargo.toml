@@ -177,3 +177,15 @@ name = "modernbert_zeroshot_probe"
 
 [[example]]
 name = "edge_classifier_probe"
+
+[[example]]
+name = "eval_compaction"
+path = "evals/eval_compaction.rs"
+
+[[example]]
+name = "eval_pipeline"
+path = "evals/eval_pipeline.rs"
+
+[[example]]
+name = "eval_retrieval"
+path = "evals/eval_retrieval.rs"

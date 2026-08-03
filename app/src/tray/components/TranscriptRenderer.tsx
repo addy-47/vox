@@ -1,8 +1,8 @@
 import React, { useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Activity } from 'lucide-react';
-import { LiveWaveform } from '../../shared/components/LiveWaveform';
-import { cn } from '../../shared/lib/utils';
+import { LiveWaveform } from '@/shared/components/common';
+import { cn } from '@/shared/lib/utils';
 
 interface TranscriptRendererProps {
   displayText: string;

@@ -17,29 +17,14 @@ import {
   SimulationNodeDatum,
 } from "d3-force";
 import { cn } from "@/shared/lib/utils";
-import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "framer-motion";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface SessionRow {
-  id: number;
-  started_at: number;
-  ended_at: number | null;
-  turn_count: number;
-  first_message: string | null;
-}
-
-interface TurnRow {
-  id: number;
-  session_id: number;
-  turn_id: number;
-  user_text: string;
-  assistant_text: string;
-  stt_latency_ms: number | null;
-  ttft_ms: number | null;
-  created_at: number;
-}
+import {
+  getSessions,
+  getTurns,
+  deleteSession,
+  type SessionRow,
+  type TurnRow,
+} from "@/services/historyService";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -315,7 +300,7 @@ export const History: React.FC = () => {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const data = await invoke<SessionRow[]>("get_sessions");
+      const data = await getSessions();
       setSessions(data.sort((a, b) => b.started_at - a.started_at));
     } catch (e) {
       console.error("Failed to fetch sessions:", e);
@@ -339,7 +324,7 @@ export const History: React.FC = () => {
     const fetchTurns = async () => {
       setTurnsLoading(true);
       try {
-        const data = await invoke<TurnRow[]>("get_turns", { sessionId: selectedSession.id });
+        const data = await getTurns(selectedSession.id);
         setTurns(data);
       } catch (e) {
         console.error("Failed to fetch turns:", e);
@@ -355,7 +340,7 @@ export const History: React.FC = () => {
       e.stopPropagation();
       if (confirmDeleteId === id) {
         try {
-          await invoke("delete_session", { id });
+          await deleteSession(id);
           setConfirmDeleteId(null);
           if (selectedSession?.id === id) setSelectedSession(null);
           fetchSessions();

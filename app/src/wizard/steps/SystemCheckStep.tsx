@@ -1,27 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { HardDrive, Cpu, Database, Mic } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { invoke } from '@tauri-apps/api/core';
+import { getRuntimeReport, type RuntimeReport } from '@/services/modelService';
 
 // --- Modular Components ---
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 import { StatusCard } from '../components/StatusCard';
-
-interface RuntimeReport {
-  write_access: boolean;
-  available_space_gb: number;
-  total_space_gb: number;
-  required_space_gb: number;
-  disk_space_ok: boolean;
-  mic_access: boolean;
-  ram_gb: number;
-  cpu_cores: number;
-  models_dir_exists: boolean;
-  models_dir: string;
-  models_missing: string[];
-  models_verified: boolean;
-}
 
 interface Props {
   onNext: () => void;
@@ -38,7 +23,7 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
       setIsLoading(true);
       try {
         // fetch_manifest is already called in WizardRoot, avoiding redundant IPC call here
-        const r = await invoke<RuntimeReport>('get_runtime_report');
+        const r = await getRuntimeReport();
         setReport(r);
       } catch (e) {
         console.error('System check failed', e);

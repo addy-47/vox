@@ -1,6 +1,27 @@
 import { useState, useEffect, useCallback, memo } from "react";
 import { useSettings } from "@/shared/context/SettingsContext";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  startBackendRecording,
+  stopBackendRecording,
+  addVoiceFromFile,
+  addVoiceFromRecording,
+  deleteVoice,
+  setupRemoteServer,
+  listVoices,
+  fetchEdgeTtsVoices,
+} from "@/services/pipelineService";
+import {
+  downloadOptionalModel,
+  deleteModel,
+  checkForModelUpdates,
+  checkModelExists,
+  fetchManifest,
+} from "@/services/modelService";
+import {
+  checkTtsProviderHealth,
+  probeModelCapabilities,
+  listLlmModels,
+} from "@/services/settingsService";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { 
@@ -40,7 +61,7 @@ interface ModelGroup {
 
 interface VoxManifest {
   models_version: string;
-  release_notes?: string[];
+  release_notes?: string[] | null;
   total_size_bytes: number;
   model_groups: ModelGroup[];
 }
@@ -200,7 +221,7 @@ function VoiceCarousel({
     setRecordingDuration(0);
     setActiveTab("record");
     try {
-      await invoke("start_backend_recording");
+      await startBackendRecording();
       setIsRecording(true);
     } catch (err) {
       console.error("Failed to start backend recording:", err);
@@ -210,7 +231,7 @@ function VoiceCarousel({
 
   const handleStopRecording = async () => {
     try {
-      const [samples, sampleRate] = await invoke<[number[], number]>("stop_backend_recording");
+      const [samples, sampleRate] = await stopBackendRecording();
       setRecordedPcm(samples);
       setRecordedSampleRate(sampleRate);
     } catch (err) {
@@ -226,7 +247,7 @@ function VoiceCarousel({
     setSelectedFile(null);
     setNewVoiceName("");
     setCloningStatus(null);
-    invoke("stop_backend_recording").catch(() => {});
+    stopBackendRecording().catch(() => {});
     setIsRecording(false);
     setRecordedPcm(null);
     setRecordedSampleRate(0);
@@ -241,17 +262,10 @@ function VoiceCarousel({
       let entry;
       if (activeTab === "upload") {
         if (!selectedFile) return;
-        entry = await invoke<any>("add_voice_from_file", {
-          name: newVoiceName.trim(),
-          filePath: selectedFile,
-        });
+        entry = await addVoiceFromFile(newVoiceName.trim(), selectedFile);
       } else {
         if (!recordedPcm || recordedSampleRate === 0) return;
-        entry = await invoke<any>("add_voice_from_recording", {
-          name: newVoiceName.trim(),
-          pcmF32: recordedPcm,
-          sampleRate: recordedSampleRate,
-        });
+        entry = await addVoiceFromRecording(newVoiceName.trim(), recordedPcm, recordedSampleRate);
       }
       setCloningStatus(null);
       resetAddingState();
@@ -265,7 +279,7 @@ function VoiceCarousel({
   const handleDeleteVoice = async (id: string) => {
     if (!confirm("Are you sure you want to delete this custom voice?")) return;
     try {
-      await invoke("delete_voice", { id });
+      await deleteVoice(id);
       if (onVoicesChanged) onVoicesChanged();
       onChange("default");
     } catch (e) {
@@ -661,7 +675,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   const loadCustomVoices = useCallback(async () => {
     try {
-      const list = await invoke<CustomVoice[]>("list_voices");
+      const list = await listVoices();
       setCustomVoices(list);
     } catch (e) {
       console.error("Failed to list voices", e);
@@ -690,7 +704,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     setLoadingEdgeVoices(true);
     setEdgeTtsError(null);
     try {
-      const list = await invoke<any[]>("fetch_edge_tts_voices");
+      const list = await fetchEdgeTtsVoices();
       setEdgeTtsVoices(list);
     } catch (err: any) {
       console.error("Failed to fetch Edge TTS voices:", err);
@@ -716,9 +730,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       if (!draftSettings?.tts?.provider) return;
       setCheckingTtsHealth(true);
       try {
-        const healthy = await invoke<boolean>("check_tts_provider_health", {
-          provider: draftSettings.tts.provider
-        });
+        const healthy = await checkTtsProviderHealth(draftSettings.tts.provider);
         setIsRemoteTtsHealthy(healthy);
       } catch (_) {
         setIsRemoteTtsHealthy(false);
@@ -736,9 +748,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     const unlistenPromise = listen<any>("remote_setup_status", (event) => {
       setSetupStatus(event.payload);
       if (event.payload?.step === "complete" && draftSettings?.tts?.provider) {
-        invoke<boolean>("check_tts_provider_health", {
-          provider: draftSettings.tts.provider
-        }).then(healthy => setIsRemoteTtsHealthy(healthy));
+        checkTtsProviderHealth(draftSettings.tts.provider).then(healthy => setIsRemoteTtsHealthy(healthy));
       }
     });
     return () => {
@@ -804,7 +814,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         }
       }
       
-      await invoke("setup_remote_server", {
+      await setupRemoteServer({
         connectionString: sshConnectionString,
         sshPort: sshPort ? parseInt(sshPort) : null,
         identityKeyPath: sshIdentityKey || null,
@@ -840,10 +850,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }));
 
     try {
-      const caps = await invoke<ModelCapabilities>("probe_model_capabilities", {
-        provider,
-        modelId: targetId
-      });
+      const caps = await probeModelCapabilities(provider, targetId);
 
       setProbingMap(prev => ({
         ...prev,
@@ -984,9 +991,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         setLoadingRemoteModels(true);
         setRemoteModelsError(null);
         try {
-          const list = await invoke<LlmModelInfo[]>("list_llm_models", {
-            provider
-          });
+          const list = await listLlmModels(provider);
           setRemoteModels(list);
         } catch (err) {
           console.error(err);
@@ -1027,7 +1032,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   const checkOutdated = useCallback(async () => {
     try {
-      const res = await invoke<any>("check_for_model_updates");
+      const res = await checkForModelUpdates();
       if (res && res.update_available) {
         setOutdatedModels(res.outdated_models);
       } else {
@@ -1061,7 +1066,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
     for (const id of checkIds) {
       try {
-        const exists = await invoke<boolean>("check_model_exists", { modelId: id });
+        const exists = await checkModelExists(id);
         presence[id] = exists;
       } catch (err) {
         presence[id] = false;
@@ -1076,7 +1081,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   useEffect(() => {
     const loadManifest = async () => {
       try {
-        const data = await invoke<VoxManifest>("fetch_manifest");
+        const data = await fetchManifest();
         setManifest(data);
       } catch (err) {
         console.error("Failed to fetch manifest:", err);
@@ -1136,12 +1141,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       ...prev,
       [modelId]: { step: 'idle', progress: 0, bytesDownloaded: 0, totalBytes: 0 }
     }));
-    invoke("download_optional_model", { modelId });
+    downloadOptionalModel(modelId);
   };
 
-  const deleteModel = async (modelId: string) => {
+  const handleDeleteModelGroup = async (modelId: string) => {
     try {
-      await invoke("delete_model", { modelId });
+      await deleteModel(modelId);
       checkPresence();
     } catch (err) {
       console.error("Failed to delete model:", err);
@@ -1512,7 +1517,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                       setConfirmDeleteId={setConfirmDeleteId}
                       downloadStatus={status}
                       startDownload={() => startDownload(modelGroupId)}
-                      deleteModel={() => deleteModel(modelGroupId)}
+                      deleteModel={() => handleDeleteModelGroup(modelGroupId)}
                     />
                   );
                 })}
@@ -1771,7 +1776,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                           setConfirmDeleteId={setConfirmDeleteId}
                           downloadStatus={status}
                           startDownload={() => startDownload(modelGroupId)}
-                          deleteModel={() => deleteModel(modelGroupId)}
+                          deleteModel={() => handleDeleteModelGroup(modelGroupId)}
                           showTooltip={true}
                         />
                       );
@@ -2024,7 +2029,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                                 setConfirmDeleteId={setConfirmDeleteId}
                                 downloadStatus={status}
                                 startDownload={() => startDownload(model.id)}
-                                deleteModel={() => deleteModel(model.id)}
+                                deleteModel={() => handleDeleteModelGroup(model.id)}
                               />
                               {model.id === "chatterbox_remote" && isSelected && (
                                 <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 select-none pointer-events-none">
@@ -2347,7 +2352,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                         setConfirmDeleteId={setConfirmDeleteId}
                         downloadStatus={status}
                         startDownload={() => startDownload(group.id)}
-                        deleteModel={() => deleteModel(group.id)}
+                        deleteModel={() => handleDeleteModelGroup(group.id)}
                       />
                     );
                   });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { startModelSetup, fetchManifest, getRuntimeReport } from '@/services/modelService';
 import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -39,7 +39,7 @@ interface ModelGroup {
 
 interface VoxManifest {
   models_version: string;
-  release_notes?: string[];
+  release_notes?: string[] | null;
   total_size_bytes: number;
   model_groups: ModelGroup[];
 }
@@ -74,11 +74,11 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     const fetchCatalog = async () => {
       setIsFetching(true);
       try {
-        const data = await invoke<VoxManifest>('fetch_manifest');
+        const data = await fetchManifest();
         setManifest(data);
         const required = data.model_groups
-            .filter(g => g.files.some(f => f.required))
-            .map(g => g.id);
+            .filter((g: any) => g.files.some((f: any) => f.required))
+            .map((g: any) => g.id);
         setSelectedIds(new Set(required));
       } catch (e) {
         console.error('Failed to load model catalog', e);
@@ -89,7 +89,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     };
     fetchCatalog();
 
-    invoke<any>('get_runtime_report').then(report => {
+    getRuntimeReport().then((report: any) => {
         if (report.models_verified && !isAlreadyComplete) {
             setIsFinished(true);
             setView('complete');
@@ -150,7 +150,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   const startSetup = async () => {
     setView('progress');
     try {
-      await invoke('start_model_setup', { selectedIds: Array.from(selectedIds) });
+      await startModelSetup(Array.from(selectedIds));
     } catch (e) {
       setInternalError(e as string);
     }

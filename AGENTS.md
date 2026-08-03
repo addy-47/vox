@@ -59,19 +59,19 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 5. Current Phase — Phase 9: MemoryScope Classifier Fine-Tuning & Gate Validation
+---
 
-**Rules:** No self-audits. Sticky subagents. No shortcuts. Stop on blockers. HITL at phase gates. Update AGENTS.md after milestones.
+## 5. Current Phase — Phase 10: Frontend Refactor & Restructuring
 
-**Phase 9 Spec:** 4-class MemoryScope (ChitChat/User/Domain/Temporal), tri-lingual ONNX classifier, τ*=0.81 threshold → Domain fallback, 98.08% non-default precision, 25.36ms P50 latency, <50MB RAM.
+**Refactor Mindset & Execution Rules (MANDATORY FOR ALL AGENTS):**
+1. **Subagent Delegation & Parallelization:** Utilize subagents for modular tasks (e.g., page-by-page auditing, service layer decoupling, component extraction). Parallelize non-interfering sub-tasks whenever possible.
+2. **CLI-Driven & Instant Feedback:** Validate all edits via `pnpm lint` and `pnpm build` in terminal. Never declare a frontend step complete without clean CLI verification.
+3. **Sticky Subagent Continuity:** Re-use persistent subagent conversation threads across multi-stage reviews to retain contextual history and avoid redundant audits.
+4. **Incremental Layering & Gated Approval:** Focus on one layer at a time (e.g. Layer 1: Wiring data/services). Do NOT frontload detail for future layers. Execute subagent review gates after each layer, followed by HITL sign-off.
 
-**Gates:** All 4 PASSED (Gate 1: dedup calibration, Gate 2: NLI precision, Gate 3: edge classifier, Gate 4: MemoryScope calibration). See `docs/benchmarks/`.
+**Phase 10 Goal:** Eliminate bloat, tech debt, hardcoded text, and monolithic files in `app/src/`. Re-architect into clean, modular layouts, page-specific component subdirectories, centralized `src/services/`, and static `src/data/`.
 
-**Implementation Status:**
-- **Initial review & tests**: Complete. 3/3 integration tests passing, 71/71 unit tests passing. **E2E pending**.
-- **Layer 1 (Foundation)**: Schema v7, 4-class classifier τ*=0.81, 15% context cap. **PASSED**.
-- **Layer 2 (Pipeline)**: Dedup(128)→Embed(16)→Eval(16, concurrent NLI+Edge)→Commit(32). Soft vector dedup (cos≥0.95) in Stage 2. 3-strike retry. **PASSED**.
-- **Layer 3 (Retrieval)**: 4-class scope pruning. Directives vector-searched for Domain, SQL-fetched for Temporal. Narrative SQL for Temporal. Identity idempotent pre-load. 15% budget waterfall. **PASSED**.
-- **Layer 4 (NLI & Edges)**: Identity/Directives CONTRADICTION→SUPERSEDES, ENTAILMENT→SUPPORTS. Constraints CONTRADICTION→CONFLICTS. Bidirectional edges. Cross-collection policy: Profile→Entities(SHAPES), Profile→Constraints(restricted_by), Entities→Constraints(DEPENDS_ON). **PASSED**.
-- **Audit**: 7 legacy functions pruned. All tests passing.
-- **Architecture doc**: `docs/features/memory-architecture.md` (code reality, not spec).
+**Implementation Progress:**
+- **Pre-requisites**: `src/services/` and `src/data/` directories established.
+- **Layer 1 (Wiring Data & Services)**: In Progress — refactoring pages to bind static data to `src/data/` and all backend operations to `src/services/`.
+- **Subagent Review Gate**: Pending Layer 1 completion.

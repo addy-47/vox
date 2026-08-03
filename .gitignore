@@ -27,7 +27,7 @@ dist-ssr
 *.onnx
 **/src-tauri/assets/
 *output*/
-data/
+!app/src/data/
 condense/
 **/.vox_sandbox/
 vox-*

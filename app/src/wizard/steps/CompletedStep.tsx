@@ -1,5 +1,5 @@
 import React from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { completeSetupWizard } from '@/services/settingsService';
 import { Zap, Check } from 'lucide-react';
 
 // --- Modular Components ---
@@ -13,7 +13,7 @@ interface Props {
 
 export const CompletedStep: React.FC<Props> = ({ onBack }) => {
   const handleFinish = async () => {
-    await invoke('complete_setup_wizard');
+    await completeSetupWizard();
   };
 
   return (

@@ -3,9 +3,8 @@ import { Brain, Palette, Eye, Database, UserCircle, Sliders, RotateCcw } from "l
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
-import { GlassSkeleton } from "@/shared/components/GlassSkeleton";
+import { GlassSkeleton, ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
-import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
 
 import { PersonaCard } from "@/shared/components/settings/cards/PersonaCard";
 import { ModelsCard } from "@/shared/components/settings/cards/ModelsCard";
@@ -15,29 +14,7 @@ import { MemoryCard } from "@/shared/components/settings/cards/MemoryCard";
 import { AppearanceCard } from "@/shared/components/settings/cards/AppearanceCard";
 import { InteractionCard } from "@/shared/components/settings/cards/InteractionCard";
 
-// ─── Domain types ─────────────────────────────────────────────────────────────
-
-type DomainId = "persona" | "models" | "tray" | "memory" | "appearance" | "interaction";
-
-interface Domain {
-  id: DomainId;
-  label: string;
-  sublabel: string;
-  icon: React.ElementType;
-  /** Angle in degrees around the radial hub — 0° = top */
-  angle: number;
-}
-
-// ─── Domain definitions ───────────────────────────────────────────────────────
-
-const DOMAINS: Domain[] = [
-  { id: "persona",     label: "Persona",     sublabel: "Prompts & identity",     icon: UserCircle,   angle: -90  },
-  { id: "models",      label: "Models",      sublabel: "Intelligence engines",   icon: Brain,        angle: -30  },
-  { id: "tray",        label: "Tray",        sublabel: "HUD & overlay settings", icon: Eye,          angle: 30   },
-  { id: "appearance",  label: "Appearance",  sublabel: "Visual theme & colors",  icon: Palette,      angle: 90   },
-  { id: "memory",      label: "Memory",      sublabel: "Database & retention",   icon: Database,     angle: 150  },
-  { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: Sliders,      angle: -150 },
-];
+import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
 
 // ─── Radial hub geometry ──────────────────────────────────────────────────────
 

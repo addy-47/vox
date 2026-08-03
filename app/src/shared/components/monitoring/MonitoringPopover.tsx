@@ -6,7 +6,7 @@ import React, {
   useCallback,
   memo,
 } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { stopEngine, launchEngine, getRuntimeSnapshot } from "@/services/pipelineService";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -328,7 +328,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
 
     const poll = async () => {
       try {
-        const snap = await invoke<RuntimeSnapshot>("get_runtime_snapshot");
+        const snap = await getRuntimeSnapshot();
         if (snap) {
           setHistory((prev) => {
             const next = [...prev, { ...snap, localTime: performance.now() }];
@@ -466,7 +466,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
                     if (togglingEngine) return;
                     setTogglingEngine(true);
                     try {
-                      await invoke("stop_engine");
+                      await stopEngine();
                     } catch (e) {
                       console.error("Failed to offload engine:", e);
                     } finally {
@@ -490,7 +490,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
                     if (togglingEngine) return;
                     setTogglingEngine(true);
                     try {
-                      await invoke("launch_engine");
+                      await launchEngine();
                     } catch (e) {
                       console.error("Failed to reload engine:", e);
                     } finally {
