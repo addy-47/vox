@@ -96,11 +96,11 @@ pub async fn evaluate_compaction_quality(
             }
 
             let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
+                .timeout(std::time::Duration::from_secs(120))
                 .build()?;
 
             let payload = serde_json::json!({
-                "model": "meta/llama-3.3-70b-instruct",
+                "model": "meta/llama-3.1-70b-instruct",
                 "messages": [
                     {"role": "user", "content": judge_prompt}
                 ],
@@ -175,7 +175,7 @@ pub async fn evaluate_semantic_quality(
                 .build()?;
 
             let payload = serde_json::json!({
-                "model": "meta/llama-3.3-70b-instruct",
+                "model": "meta/llama-3.1-70b-instruct",
                 "messages": [
                     {"role": "user", "content": judge_prompt}
                 ],
@@ -273,7 +273,18 @@ fn parse_compaction_metrics_json(resp_text: &str) -> Result<CompactionJudgeMetri
         .trim_end_matches("```")
         .trim();
 
-    serde_json::from_str::<CompactionJudgeMetrics>(cleaned)
+    if let Ok(m) = serde_json::from_str::<CompactionJudgeMetrics>(cleaned) {
+        return Ok(m);
+    }
+
+    // Fallback: sanitize unescaped annotations like `"string" (annotation)` or `"string" should be...` -> `"string (annotation)"`
+    let re1 = regex::Regex::new(r#""([^"]*)"\s*\(([^)]*)\)"#).unwrap();
+    let sanitized1 = re1.replace_all(cleaned, r#""$1 ($2)""#).to_string();
+
+    let re2 = regex::Regex::new(r#""([^"]*)"\s+(should be [^"\]\n]*|is [^"\]\n]*|belongs [^"\]\n]*)"#).unwrap();
+    let sanitized2 = re2.replace_all(&sanitized1, r#""$1 ($2)""#).to_string();
+
+    serde_json::from_str::<CompactionJudgeMetrics>(&sanitized2)
         .map_err(|e| anyhow!("Failed to parse CompactionJudgeMetrics JSON: {}. Raw response: {}", e, resp_text))
 }
 

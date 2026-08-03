@@ -22,8 +22,7 @@ import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type Se
 // ─── Domain content map ───────────────────────────────────────────────────────
 
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+  const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode === "realtime");
   return (
     <Suspense fallback={<GlassSkeleton variant="card" />}>
       {(() => {

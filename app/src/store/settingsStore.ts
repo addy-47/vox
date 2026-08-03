@@ -257,15 +257,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { settings, draftSettings } = get();
     if (!draftSettings || !settings) return;
 
-    const newDraft = structuredClone(draftSettings);
-    (newDraft[domain] as any)[key] = value;
+    const newDraft = {
+      ...draftSettings,
+      [domain]: {
+        ...(draftSettings[domain] as any),
+        [key]: value,
+      },
+    };
 
     if (domain === "ui" && (key === "theme" || key === "accent_seed")) {
       applyAppearance(newDraft.ui);
       updateSetting(domain, key, value).catch(console.error);
-      
-      const newSettings = structuredClone(settings);
-      (newSettings.ui as any)[key] = value;
+
+      const newSettings = {
+        ...settings,
+        ui: {
+          ...settings.ui,
+          [key]: value,
+        },
+      };
       set({ settings: newSettings, draftSettings: newDraft, hasChanges: false });
       return;
     }

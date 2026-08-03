@@ -1,0 +1,30 @@
+{
+  "turns_processed": 300,
+  "chunks_processed": 10,
+  "facts_enqueued": 227,
+  "facts_by_collection": {
+    "Entities": 79,
+    "Constraints": 4,
+    "Profile": 46,
+    "Narrative": 10,
+    "Identity": 2,
+    "Directives": 86
+  },
+  "output_db_path": "/home/addy/projects/apps/vox/app/src-tauri/evals/results/stage_1_compaction.db",
+  "judge_metrics": {
+    "overall_score": 92,
+    "fact_accuracy_score": 96,
+    "redundancy_pct": 1.5,
+    "collection_disambiguation_score": 94,
+    "recall_coverage_score": 90,
+    "hallucinations_found": [],
+    "redundant_facts_found": [
+      "Has a tree nut allergy, specifically walnuts and cashews",
+      "Is planning a trip to Mexico City"
+    ],
+    "misclassified_facts_found": [
+      "Has a pet named Doughvid (should be under Identity)"
+    ],
+    "detailed_reasoning": "The extracted facts demonstrate a high level of accuracy, with no hallucinations detected. However, there are some redundant facts that repeat information already captured in another fact. The collection disambiguation score is high, indicating that facts are correctly categorized into schema collections. The recall coverage score is also high, indicating that key user preferences, environment details, and constraints are captured. However, there are some minor misclassifications, such as the fact 'Has a pet named Doughvid' being classified under Profile instead of Identity."
+  }
+}
