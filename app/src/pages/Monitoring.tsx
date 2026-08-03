@@ -6,7 +6,7 @@ import React, {
   useCallback,
   memo,
 } from "react";
-import { stopEngine, launchEngine, getRuntimeSnapshot } from "@/services/pipelineService";
+import { stopEngine, launchEngine, getRuntimeSnapshot, type RuntimeSnapshot, type LocalSnapshot } from "@/services/pipelineService";
 import {
   Activity,
   Cpu,
@@ -19,33 +19,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface RuntimeSnapshot {
-  pipeline_state: string;
-  system_cpu_usage: number;
-  system_ram_mb: number;
-  vox_cpu_usage: number;
-  vox_ram_mb: number;
-  total_ram_mb: number;
-  cpu_cores: number;
-  vad_energy: number;
-  vad_probability: number;
-  stt_latency_ms: number | null;
-  ttft_ms: number | null;
-  total_voice_latency_ms: number | null;
-  tts_rtf: number | null;
-  is_db_healthy: boolean;
-  is_llm_loaded: boolean;
-  is_tts_loaded: boolean;
-  is_stt_loaded: boolean;
-  is_vad_loaded: boolean;
-  is_sleeping: boolean;
-  timestamp_ms: number;
-}
-
-type LocalSnapshot = RuntimeSnapshot & { localTime: number };
+import { StatusDot } from "@/shared/components/ui";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -72,6 +46,7 @@ const EngineBadge = memo(
           : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.06)]"
       )}
     >
+      <StatusDot status={active ? "active" : "offline"} size="sm" />
       <span className={cn("transition-transform duration-500", active && "scale-110")}>
         {icon}
       </span>

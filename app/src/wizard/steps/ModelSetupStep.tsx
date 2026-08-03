@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { startModelSetup, fetchManifest, getRuntimeReport } from '@/services/modelService';
+import { startModelSetup, fetchManifest, getRuntimeReport, type VoxManifest } from '@/services/modelService';
 import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -21,28 +21,6 @@ const VolumeIcon = ({ className }: { className?: string }) => (
         <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
     </svg>
 );
-
-interface ModelEntry {
-  id: string;
-  path: string;
-  size: number;
-  required: boolean;
-}
-
-interface ModelGroup {
-  id: string;
-  name: string;
-  category: string;
-  version: string;
-  files: ModelEntry[];
-}
-
-interface VoxManifest {
-  models_version: string;
-  release_notes?: string[] | null;
-  total_size_bytes: number;
-  model_groups: ModelGroup[];
-}
 
 interface ModelProgress {
   model_id: string;

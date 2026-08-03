@@ -1,17 +1,14 @@
 import { useState, useEffect, useRef } from "react";
-import { getRuntimeSnapshot } from "@/services/pipelineService";
+import { getRuntimeSnapshot, type RuntimeSnapshot } from "@/services/pipelineService";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────
+
+export type { RuntimeSnapshot };
 
 interface VoxFootprint {
   voxCpu: number;
   voxRam: number;
   isReady: boolean;
-}
-
-export interface RuntimeSnapshot {
-  vox_cpu_usage: number;
-  vox_ram_mb: number;
 }
 
 const POLL_INTERVAL_MS = 1000;
