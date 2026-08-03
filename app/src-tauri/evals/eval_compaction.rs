@@ -69,7 +69,7 @@ async fn extract_facts_via_nvidia_llm(
     );
 
     let payload = serde_json::json!({
-        "model": "meta/llama-3.3-70b-instruct",
+        "model": "meta/llama-3.1-70b-instruct",
         "messages": [
             {"role": "system", "content": COMPACTION_SYSTEM_PROMPT},
             {"role": "user", "content": user_content}
@@ -80,32 +80,50 @@ async fn extract_facts_via_nvidia_llm(
 
     println!("[Eval 1 Chunk {}] Requesting compaction extraction via Nvidia API...", chunk_idx + 1);
 
-    let resp = client
-        .post("https://integrate.api.nvidia.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
-        .json(&payload)
-        .send()
-        .await?;
+    let max_retries = 3;
+    let mut last_err = anyhow!("Unknown error");
 
-    if !resp.status().is_success() {
-        let err_text = resp.text().await.unwrap_or_default();
-        return Err(anyhow!("Nvidia API call failed for chunk {}: {}", chunk_idx + 1, err_text));
+    for attempt in 1..=max_retries {
+        match client
+            .post("https://integrate.api.nvidia.com/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    let json_body: serde_json::Value = resp.json().await?;
+                    let content = json_body["choices"][0]["message"]["content"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("No content in Nvidia API response for chunk {}", chunk_idx + 1))?;
+
+                    if let Some(parsed) = parse_compaction_json(content) {
+                        let fact_count: usize = parsed.values().map(|v| v.len()).sum();
+                        println!("[Eval 1 Chunk {}] Extracted {} facts across collections.", chunk_idx + 1, fact_count);
+                        return Ok(parsed);
+                    } else {
+                        println!("[Eval 1 Chunk {}] Warning: Failed to parse JSON from response:\n{}", chunk_idx + 1, content);
+                        return Ok(HashMap::new());
+                    }
+                } else {
+                    let err_text = resp.text().await.unwrap_or_default();
+                    last_err = anyhow!("Nvidia API returned error status: {}", err_text);
+                }
+            }
+            Err(e) => {
+                last_err = anyhow!("Request to Nvidia API failed: {}", e);
+            }
+        }
+
+        if attempt < max_retries {
+            println!("[Eval 1 Chunk {}] Attempt {} failed ({}). Retrying in 3s...", chunk_idx + 1, attempt, last_err);
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
     }
 
-    let json_body: serde_json::Value = resp.json().await?;
-    let content = json_body["choices"][0]["message"]["content"]
-        .as_str()
-        .ok_or_else(|| anyhow!("No content in Nvidia API response for chunk {}", chunk_idx + 1))?;
-
-    if let Some(parsed) = parse_compaction_json(content) {
-        let fact_count: usize = parsed.values().map(|v| v.len()).sum();
-        println!("[Eval 1 Chunk {}] Extracted {} facts across collections.", chunk_idx + 1, fact_count);
-        Ok(parsed)
-    } else {
-        println!("[Eval 1 Chunk {}] Warning: Failed to parse JSON from response:\n{}", chunk_idx + 1, content);
-        Ok(HashMap::new())
-    }
+    Err(anyhow!("Nvidia API call failed for chunk {} after {} attempts. Last error: {}", chunk_idx + 1, max_retries, last_err))
 }
 
 #[tokio::main]
@@ -143,7 +161,7 @@ async fn main() -> Result<()> {
     println!("[Eval 1] Loaded {} turns from {:?}", turns.len(), dataset_path);
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(45))
+        .timeout(std::time::Duration::from_secs(120))
         .build()?;
 
     // Chunk 300 turns into 30-turn windows (10 windows total)

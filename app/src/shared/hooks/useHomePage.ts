@@ -311,12 +311,28 @@ export function useHomePage() {
 
   // Tauri Event Listeners
   useEffect(() => {
-    let unlisteners: (() => void)[] = [];
+    let isMounted = true;
+    const unlisteners: (() => void)[] = [];
+
+    const addListener = async <T>(event: string, handler: (e: any) => void) => {
+      try {
+        const appWindow = getCurrentWindow();
+        const unlisten = await appWindow.listen<T>(event, handler);
+        if (!isMounted) {
+          unlisten();
+        } else {
+          unlisteners.push(unlisten);
+        }
+      } catch (err) {
+        console.error(`[Home] Failed to listen to ${event}:`, err);
+      }
+    };
 
     const setup = async () => {
       try {
-        const appWindow = getCurrentWindow();
         const settings = await getSettings();
+        if (!isMounted) return;
+
         if (settings?.interaction?.main_app_mode) {
           setInteractionMode(settings.interaction.main_app_mode.toUpperCase() as InteractionMode);
         }
@@ -326,7 +342,7 @@ export function useHomePage() {
 
         try {
           const snapshot = await getRuntimeSnapshot();
-          if (snapshot) {
+          if (snapshot && isMounted) {
             const engaged = snapshot.is_engaged ?? false;
             setIsEngaged(engaged);
             prevEngagedRef.current = engaged;
@@ -337,14 +353,16 @@ export function useHomePage() {
 
             if (engaged && snapshot.conversation_id && snapshot.conversation_id !== 0) {
               const turns = await getTurns(snapshot.conversation_id);
-              const history = turns.map((t) => ({
-                user: t.user_text,
-                assistant: t.assistant_text,
-                id: t.turn_id,
-              }));
-              setDialogueHistory(history);
-              if (history.length > 0) {
-                turnIdCounter.current = Math.max(...history.map((h) => h.id));
+              if (isMounted) {
+                const history = turns.map((t) => ({
+                  user: t.user_text,
+                  assistant: t.assistant_text,
+                  id: t.turn_id,
+                }));
+                setDialogueHistory(history);
+                if (history.length > 0) {
+                  turnIdCounter.current = Math.max(...history.map((h) => h.id));
+                }
               }
             }
           }
@@ -352,82 +370,63 @@ export function useHomePage() {
           console.warn("[Home] Failed to sync initial state:", e);
         }
 
-        unlisteners.push(
-          await appWindow.listen<InteractionState>("state_changed", (event) => {
-            const newState = event.payload;
-            setInteractionState(newState);
-            if (newState !== "Idle") {
-              hasActiveTurnStarted.current = true;
-              setIdleTimeout(null);
-            }
-            if (newState === "UserSpeaking" || newState === "Listening") {
-              archiveCurrentTurn();
-            }
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<{ text: string }>("transcript_partial", (event) => {
-            setTranscript(event.payload.text);
-            activeUserTextRef.current = event.payload.text;
+        await addListener<InteractionState>("state_changed", (event) => {
+          const newState = event.payload;
+          setInteractionState(newState);
+          if (newState !== "Idle") {
+            hasActiveTurnStarted.current = true;
             setIdleTimeout(null);
-          })
-        );
+          }
+          if (newState === "UserSpeaking" || newState === "Listening") {
+            archiveCurrentTurn();
+          }
+        });
 
-        unlisteners.push(
-          await appWindow.listen<{ text: string }>("transcript_final", (event) => {
-            setTranscript(event.payload.text);
-            activeUserTextRef.current = event.payload.text;
-            setIdleTimeout(null);
-          })
-        );
+        await addListener<{ text: string }>("transcript_partial", (event) => {
+          setTranscript(event.payload.text);
+          activeUserTextRef.current = event.payload.text;
+          setIdleTimeout(null);
+        });
 
-        unlisteners.push(
-          await appWindow.listen<string>("llm_token", (event) => {
-            setAssistantText(event.payload);
-            activeAiTextRef.current = event.payload;
-            setIdleTimeout(null);
-          })
-        );
+        await addListener<{ text: string }>("transcript_final", (event) => {
+          setTranscript(event.payload.text);
+          activeUserTextRef.current = event.payload.text;
+          setIdleTimeout(null);
+        });
 
-        unlisteners.push(
-          await appWindow.listen<string>("mode_changed_main", (event) => {
-            setInteractionMode(event.payload.toUpperCase() as InteractionMode);
-          })
-        );
+        await addListener<string>("llm_token", (event) => {
+          setAssistantText(event.payload);
+          activeAiTextRef.current = event.payload;
+          setIdleTimeout(null);
+        });
 
-        unlisteners.push(
-          await appWindow.listen<{ state: string }>("ptt_status", (event) => {
-            setPttStatus(event.payload.state as "IDLE" | "RECORDING" | "PROCESSING");
-          })
-        );
+        await addListener<string>("mode_changed_main", (event) => {
+          setInteractionMode(event.payload.toUpperCase() as InteractionMode);
+        });
 
-        unlisteners.push(
-          await appWindow.listen<{ seconds: number }>("idle_timeout_tick", (event) => {
-            setIdleTimeout(event.payload.seconds);
-          })
-        );
+        await addListener<{ state: string }>("ptt_status", (event) => {
+          setPttStatus(event.payload.state as "IDLE" | "RECORDING" | "PROCESSING");
+        });
 
-        unlisteners.push(
-          await appWindow.listen("idle_timeout_reset", () => {
-            setIdleTimeout(null);
-          })
-        );
+        await addListener<{ seconds: number }>("idle_timeout_tick", (event) => {
+          setIdleTimeout(event.payload.seconds);
+        });
 
-        unlisteners.push(
-          await appWindow.listen<boolean>("hud_sleep_state", (event) => {
-            setIsSleeping(event.payload);
-            if (event.payload) archiveCurrentTurn();
-          })
-        );
+        await addListener("idle_timeout_reset", () => {
+          setIdleTimeout(null);
+        });
 
-        unlisteners.push(
-          await appWindow.listen<string>("pipeline_mode_changed", (event) => {
-            setPipelineMode(event.payload.toLowerCase() as "modular" | "realtime");
-          })
-        );
+        await addListener<boolean>("hud_sleep_state", (event) => {
+          setIsSleeping(event.payload);
+          if (event.payload) archiveCurrentTurn();
+        });
+
+        await addListener<string>("pipeline_mode_changed", (event) => {
+          setPipelineMode(event.payload.toLowerCase() as "modular" | "realtime");
+        });
+
         setTimeout(async () => {
-          await showMainWindow();
+          if (isMounted) await showMainWindow();
         }, 300);
       } catch (err) {
         console.error("[Home] Failed to setup listeners:", err);
@@ -436,6 +435,7 @@ export function useHomePage() {
 
     setup();
     return () => {
+      isMounted = false;
       unlisteners.forEach((fn) => fn());
     };
   }, [archiveCurrentTurn]);

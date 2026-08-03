@@ -62,22 +62,22 @@ export const History: React.FC = () => {
 
   useEffect(() => {
     if (!containerRef.current) return;
-    let rafId: number;
+    let timer: NodeJS.Timeout;
     const observer = new ResizeObserver((entries) => {
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
         for (const entry of entries) {
           setDimensions({
             width: entry.contentRect.width,
             height: entry.contentRect.height,
           });
         }
-      });
+      }, 120);
     });
     observer.observe(containerRef.current);
     return () => {
       observer.disconnect();
-      cancelAnimationFrame(rafId);
+      clearTimeout(timer);
     };
   }, []);
 
