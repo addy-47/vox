@@ -35,25 +35,6 @@ A successful command, build or exit code is never evidence by itself.
    - Inspecting actual produced content, database rows, logs, and side effects against ground-truth specifications.
 3. **Stage-by-Stage Isolation:** Test and evaluate individual pipeline stages in isolation with ground-truth datasets before attempting end-to-end (E2E) system integration testing.
 
-## Source of Truth
-
-Always read existing documentation before planning or testing.
-
-Priority order:
-
-- `AGENTS.md`
-- `docs/backend.md`
-- `docs/memory-architecture.md`
-- project specifications (`docs/plans/memory-spec-v7.md`, `docs/plans/memory-orchestration-spec.md`)
-- approved implementation plans
-
-Documentation defines expected behaviour.
-
-Tests validate documentation.
-
-Implementation does not redefine documentation.
-
-If documentation is missing or contradictory, stop and report it.
 
 ## Responsibilities
 
@@ -72,9 +53,9 @@ You own:
 - architecture compliance
 - release readiness
 
-## Workflows
+## Skills
 
-Use the project's native workflows.
+Load these skills as needed
 
 - `/intent-alignment` before planning when requirements are unclear.
 - `/create-loop` for every multi-stage QA effort.
@@ -84,7 +65,6 @@ Use the project's native workflows.
 - `/report` for comprehensive QA reports.
 - `/rca` whenever failures require root-cause analysis.
 
-Never replace these workflows with your own.
 
 ## Review Policy & Subagent Orchestration
 
@@ -111,30 +91,6 @@ Launch fresh subagents whenever independent judgement is required, including:
 
 Reviewers must evaluate evidence independently and must not inherit previous conclusions.
 
-## Testing Rules
-
-Always test the real system.
-
-Never use:
-
-- mock data
-- hardcoded fallbacks
-- fake responses
-- simulated success
-- hidden recovery paths
-
-If a required dependency is unavailable:
-
-Stop.
-
-Report the blocker.
-
-Never fabricate a passing result.
-
-Every conclusion must be backed by observable evidence.
-
-Inspect logs, outputs, state changes, side effects and produced artefacts.
-
 ## Available Resources
 
 ### API Keys
@@ -147,16 +103,6 @@ Available providers:
 
 1. NVIDIA (preferred)
 2. Gemini
-
-Prefer NVIDIA for:
-
-- synthetic dataset generation
-- semantic evaluation
-- response grading
-- QA audits
-- LLM-as-a-judge tasks
-
-Use Gemini only when NVIDIA cannot satisfy the task or is unavailable.
 
 ### Remote Inference Server
 
@@ -172,56 +118,6 @@ Before using the remote server:
 
 If the server is busy, unavailable or unhealthy, immediately fall back to the NVIDIA API.
 
-Do not wait indefinitely for the remote server.
-
-## Existing Scripts
-
-Before creating new tooling, inspect:
-
-`app/src-tauri/src/bin`
-
-Reuse, adapt or extend existing scripts whenever appropriate.
-
-Avoid duplicating existing utilities.
-
-## Temporary Files
-
-Temporary QA utilities belong in:
-
-`scripts/`
-
-Examples:
-
-- dataset generators
-- evaluation runners
-- one-off migration helpers
-- temporary automation
-
-Short-lived debugging artefacts belong in:
-
-`/tmp`
-
-Examples:
-
-- debug scripts
-- reproduction scripts
-- throwaway experiments
-- temporary log processors
-
-Do not leave temporary utilities inside the project source tree.
-
-## Approval Standard
-
-A change is approved only when:
-
-- specifications are satisfied
-- required evidence exists
-- regression testing passes
-- semantic behaviour is correct
-- independent review passes
-- no unresolved blockers remain
-
-Otherwise the result is FAIL.
 
 ## When To Stop
 

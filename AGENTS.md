@@ -63,52 +63,33 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ## 5. Current Phase — Phase 11: Memory Pipeline Stage-by-Stage Evaluation & QA
 
-**Testing & QA Invariants (MANDATORY FOR ALL AGENTS):**
-1. **Execution != Verification:** A zero exit code (`0`) or non-crashing script is NEVER evidence of success. Success requires empirical verification of values, state changes, graph edges, and log consistency against the spec (`docs/plans/memory-spec-v7.md`).
-2. **No Fake Success or Mocks:** Never use mock data, hardcoded fallbacks, or hidden recovery paths. Always test against the real system, real embeddings, real ONNX models, and real LLM evaluation pipelines.
-3. **Independent Subagent Verification (`agy-subagent`):** The agent writing or running a test must NEVER approve it. Independent evaluation gates must be executed via persistent subagents using `agy-subagent` CLI (`--model gemini-3.6-flash-high --dangerously-skip-permissions`).
-4. **Stage-by-Stage Before E2E:** Each stage (Stage 1 Dedup, Stage 2 Embedding/Soft Dedup, Stage 3 NLI/Edge Eval, Stage 4 Commit/Prune, and Retrieval Waterfall) must pass individual ground-truth evaluation before E2E testing begins.
+**Global Evaluation Configuration:**
+- **Context Window Cap:** Set to **8192 tokens** across all stage evaluation runs (`eval_compaction.rs`, `eval_pipeline.rs`, `eval_retrieval.rs`).
 
 ---
 
-### What Success Looks Like for Each Eval Stage
+### Phase 11 QA Evaluation Focus (Semantic Quality & System Behavior)
 
-#### 1. Eval 1: Multi-Window Ingestion & LLM Compaction (`eval_compaction.rs`)
-- **JSON Schema Conformance:** 100% valid JSON responses conforming to the 6 collections (`Identity`, `Directives`, `Narrative`, `Profile`, `Entities`, `Constraints`). Zero markdown framing leakage; retry count $\le 2$.
-- **Semantic Extraction Quality:** LLM-as-a-Judge evaluation scores $\ge 85\%$ Fact Accuracy, $\ge 90\%$ Disambiguation, and $0\%$ Hallucination/Misattribution across 300 curated turns.
-- **Queue Insertion:** All extracted facts correctly enqueued into `personal_memory_queue` with `status = 'staged_pending'`.
+Deterministic checks (e.g. table creation, schema existence, non-null values, non-crashing execution) belong in automated unit tests. **QA Evaluation focuses strictly on semantic validity, information coverage, false positive/negative detection, edge correctness, and latency dynamics.**
 
-#### 2. Eval 2 — Stage 1: Jaccard Exact Deduplication (`stage1_dedup.rs`)
-- **Exact String/Word-Set Dedup:** Facts with Jaccard similarity $= 1.0$ against active facts in the same collection are transitioned to `status = 'superseded'`.
-- **Non-Duplicates:** Unique facts correctly transition from `staged_pending` $\rightarrow$ `status = 'deduped'`.
-- **Batch Processing:** Processes up to 128 pending items per batch with zero lost records or race conditions.
+#### 1. Eval 1 — LLM Compaction & Fact Extraction (`eval_compaction.rs`)
+- **Information Coverage:** Do extracted facts capture all critical user information across conversation turns, or was vital context silently dropped?
+- **Redundancy & Over-Extraction:** Is there semantic redundancy or over-extraction across or within collections?
+- **Collection Disambiguation:** Are extracted facts correctly assigned to their true semantic domain (`Identity` vs `Profile`, `Entities` vs `Constraints`), or miscategorized?
+- **Failure Analysis:** If compaction fails or requires retries, why did it fail (prompt length overflow, schema confusion, LLM degradation)?
 
-#### 3. Eval 2 — Stage 2: Dense Embedding & Soft Vector Dedup (`stage2_embed.rs`)
-- **Vector Generation:** 384-dimensional INT8 ONNX MiniLM-L12 embeddings generated for all `deduped` items (~10ms/item).
-- **Soft Vector Dedup:** Intra-collection candidates with cosine similarity $\ge 0.95$ trigger soft deduplication: candidate item set to `status = 'superseded'` and a `SUPERSEDES` edge written to `memory_relations`.
-- **Status Transition:** Non-duplicate items transition to `status = 'embedded'`. Error retry limit (max 3) enforced before setting `status = 'failed'`.
+#### 2. Eval 2 — 4-Stage Ingestion Pipeline & State Resolution (`eval_pipeline.rs`)
+- **Deduplication Semantic Validity:** Exactly which facts were merged in Stage 1 (Jaccard) and Stage 2 (Soft Vector)? Were merged facts genuinely identical, or did soft-dedup cause false positives that destroyed distinct facts?
+- **Candidate Retrieval & Edge Soundness:** Is candidate selection missing valid fact pairs? Are generated NLI edges (`SUPERSEDES`, `SUPPORTS`, `CONFLICTS`) and cross-collection edges (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`) logically sound?
+- **Grouped Stage Latency & Throughput:** Measure per-stage grouped latencies per batch. Track end-to-end processing time for a single fact vs. a full batch of 128 facts. Verify metric population in `memory_pipeline_metrics`.
 
-#### 4. Eval 2 — Stage 3: Unified Edge & NLI State Evaluation (`stage3_eval.rs`)
-- **Sub-Branch A (NLI DeBERTa-v3):**
-  - `Identity`/`Directives` Contradiction ($\ge 0.85$): Old fact `status` updated to `'inactive'`, new fact remains `'active'`, `SUPERSEDES` edge written.
-  - `Identity`/`Directives` Entailment ($\ge 0.85$): Both facts remain `'active'`, `SUPPORTS` edge written.
-  - `Constraints` Contradiction ($\ge 0.85$): Writes `CONFLICTS` edge; **neither constraint is deactivated** (both remain `'active'`).
-- **Sub-Branch B (Edge Classifier ModernBERT):** Cross-collection edges (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`) created when confidence $\ge 0.80$, writing both forward and inverse edge labels atomically into `memory_relations`.
-- **Status Transition:** Processed items transition from `embedded` $\rightarrow$ `status = 'evaluated'`.
-
-#### 5. Eval 2 — Stage 4: Commit & Graph Prune (`stage4_commit.rs`)
-- **Fact Commit:** Evaluated items committed to `memory_facts` with exact expected state (`active`, `inactive`, `superseded`).
-- **Provenance Mandate:** Zero row deletions (`DELETE FROM memory_facts` is strictly 0).
-- **Relation Consistency:** All forward and inverse graph edges correctly populated with valid foreign key references in `memory_relations`.
-- **Metrics Logging:** Stage latencies, item counts, relation counts written to `memory_pipeline_metrics`.
-
-#### 6. Eval 3: Pre-Retrieval Scope Classifier & Dynamic Token Waterfall (`eval_retrieval.rs`)
-- **`query-sieve-rs` Scope Classification:** 100% classification accuracy on test query benchmark into `ChitChat`, `User`, `Domain`, `Temporal`.
-- **Zero-Overhead ChitChat:** `ChitChat` scope completely bypasses RAG vector retrieval (0ms SQL latency).
-- **Scope Pruning:** `Profile` pruned from `Domain` scope; `Entities` and `Directives` pruned from `User` scope.
-- **Dynamic Waterfall & Hard Budget Cap:** Prompt context rendering never exceeds `max_personal_memory_share = 0.15` (15% context window cap). BFS graph expansion respects `max_hops = 2`.
+#### 3. Eval 3 — Pre-Retrieval Scope Classifier & Dynamic Token Waterfall (`eval_retrieval.rs`) [CRITICAL]
+- **Scope Classification Validity:** Did `query-sieve-rs` classify test queries into the correct `MemoryScope` (`ChitChat`, `User`, `Domain`, `Temporal`)?
+- **Retrieval Precision & Noise Ratio:** For each query, what facts were retrieved? Were they genuinely relevant? How many irrelevant facts were retrieved, and why?
+- **Adversarial & Vague Query Dataset:** Benchmark queries must be purposefully engineered by analyzing stored facts and creating vague, ambiguous, or negative queries designed to stress-test vector search and BFS graph expansion.
+- **Context Budget Enforcement:** Verify dynamic waterfall rendering respects the 15% budget cap under an **8192 token context window**.
 
 ---
 
-**Phase 11 Goal:** Evaluate each stage of the Vox v7 Memory System independently using empirical datasets (`app/src-tauri/evals/datasets/`), enforce strict metric thresholds, log all evidence, and perform independent subagent reviews prior to full E2E system testing.
+**Phase 11 Goal:** Evaluate each stage of the Vox v7 Memory System independently against semantic quality, coverage, false positive rates, and latency dynamics using empirical datasets (`app/src-tauri/evals/datasets/`), logging all evidence, and executing independent subagent reviews via `agy-subagent`.
 

@@ -21,7 +21,7 @@ pub fn run_compaction(
     provider: &dyn LlmProvider,
     history_messages: &[ChatMessage],
     _last_user_turn: &ChatMessage,
-    last_context_summary: Option<&str>,
+    _last_context_summary: Option<&str>,
 ) -> Result<CompactionResult> {
     if history_messages.is_empty() {
         return Err(anyhow!("No history turns to compact."));
@@ -34,28 +34,14 @@ pub fn run_compaction(
         history_text.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
     }
 
-    let user_content = if let Some(prev_ctx) = last_context_summary.filter(|s| !s.trim().is_empty()) {
-        format!(
-            "<previous_context>\n{}\n</previous_context>\n\n\
-             <conversation_history>\n{}\n</conversation_history>\n\n\
-             <task>\n\
-             Analyze the <conversation_history> above and extract all stated facts into the 6 collections from the <schema>.\n\
-             Use <previous_context> to maintain a cumulative, updated summary in the Narrative collection.\n\
-             Follow every rule in <rules> and <boundary_disambiguation>. Output ONLY the JSON object starting with {{ and ending with }}.\n\
-             </task>",
-            prev_ctx.trim(),
-            history_text
-        )
-    } else {
-        format!(
-            "<conversation_history>\n{}\n</conversation_history>\n\n\
-             <task>\n\
-             Analyze the <conversation_history> above and extract all stated facts into the 6 collections from the <schema>.\n\
-             Follow every rule in <rules> and <boundary_disambiguation>. Output ONLY the JSON object starting with {{ and ending with }}.\n\
-             </task>",
-            history_text
-        )
-    };
+    let user_content = format!(
+        "<conversation_history>\n{}\n</conversation_history>\n\n\
+         <task>\n\
+         Analyze the <conversation_history> above and extract all stated facts into the 6 collections from the <output_schema>.\n\
+         Output ONLY the JSON object starting with {{ and ending with }}.\n\
+         </task>",
+        history_text
+    );
 
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -95,23 +95,18 @@ pub const TRANSITION_MESSAGES_HI: &[&str] = &[
 
 // ─── Working Memory Compaction ──────────────────
 
-pub const COMPACTION_SYSTEM_PROMPT: &str = r#"<role>
-You are an objective, high-precision memory extraction engine. Your task is to compress a conversation transcript into a structured JSON object containing 6 orthogonal collections.
+pub const COMPACTION_SYSTEM_PROMPT: &str = r#"pub const COMPACTION_SYSTEM_PROMPT: &str = r#"
+<role>
+You are a high-precision memory extraction engine.
+Your task is to compress a conversation into durable structured memory.
 </role>
 
-<output_contract>
-Return ONLY a single valid JSON object starting with { and ending with }.
-Zero prose, zero preamble, zero markdown formatting, zero code fences.
-The JSON object MUST contain exactly 6 keys: "Identity", "Directives", "Narrative", "Profile", "Entities", "Constraints" where "Narrative" is a single paragraph and rest are arrays.
-</output_contract>
+<objective>
+Extract only explicit, high-confidence information from the conversation into the defined memory collections.
+Maximize precision over recall.
+</objective>
 
-<rules>
-1. Translate all non-English input to clear, standard English.
-2. Extract only explicitly stated or directly demonstrated facts. Never infer, assume, or hallucinate.
-3.. Each sentence in array collections must be a standalone atomic fact that can be understood in isolation.
-</rules>
-
-<schema>
+<output_schema>
 {
   "Identity": [],
   "Directives": [],
@@ -120,23 +115,48 @@ The JSON object MUST contain exactly 6 keys: "Identity", "Directives", "Narrativ
   "Entities": [],
   "Constraints": []
 }
-</schema>
+</output_schema>
 
-<key_definitions>
-Identity: Present-tense, non-transient baseline facts establishing who/what the primary entities in the interaction are (core role, name, baseline attributes).
-Directives: Active operational state, standing rules, assigned tasks/goals, agent progress, commitments, current working state, and blockers since last compaction from the operational perspective.
-Narrative: A single continuous summary paragraph capturing the temporal flow, milestones, and progress of this interaction session.
-Profile: Soft attributes, personal/agent traits, habits, skills, preferences, background experience, and behavioral tendencies.
-Entities: Named, discrete external subjects/objects outside the user/agent persona — projects, tools, systems, organizations, locations or third-party people.
-Constraints: Hard, inviolable limits, physical/safety restrictions, technical dealbreakers, or absolute non-negotiable boundaries where violation causes breaking failure or harm.
-</key_definitions>
+<collection_definitions>
 
-<boundary_disambiguation>
-- Identity vs Profile: Identity is core present-tense baseline who/what the subject fundamentally is (name, primary role, core identity). Profile holds personal traits, habits, skills, background, or personal facts ("User speaks French", "User is a marathon runner").
-- Directives vs Constraints: Directives are active positive instructions, assigned tasks, agent goals, progress, or standing rules ("Format output as markdown", "Summarize weekly"). Constraints are hard negative boundaries or inviolable execution limits ("Never use raw pointers", "Do not open external URLs").
-- Constraints vs Profile: Constraints are absolute operational rules or negative boundaries for the agent ("Don't do X", "Never open Y"). Profile holds personal user attributes, allergies, soft preferences, or likes/dislikes ("User has a severe peanut allergy", "User dislikes dark mode").
-- Entities vs Profile: Entities are external facts about third-party named objects, projects, systems, or codebases that don't directly describe the user or agent themselves ("Turso DB uses SQLite", "Acme Corp is based in NY"). Profile holds internal capabilities, traits, or attributes belonging to the user.
-</boundary_disambiguation>"#;
+Identity
+Stable present-tense identity establishing who the primary subject fundamentally is.
+
+Directives
+Current operational state, active goals, assigned work, standing instructions, commitments, progress and blockers.
+
+Narrative
+A single chronological summary describing the session's progression and important milestones.
+
+Profile
+Stable personal characteristics including preferences, habits, skills, background, experience and behavioral tendencies.
+
+Entities
+Named external subjects such as people, projects, organizations, products, codebases, tools, locations and systems.
+
+Constraints
+Hard non-negotiable limitations, prohibitions, safety boundaries or technical restrictions whose violation would cause failure or unacceptable behavior.
+
+</collection_definitions>
+
+<extraction_principles>
+- Assign every fact to exactly one collection and choose the most specific applicable collection.
+- Identity describes fundamental identity; Profile describes characteristics.
+- Directives describe active work; Constraints describe hard boundaries.
+- Entities describe external named objects, not the user.
+- Narrative contains only the chronological session summary.
+- Never infer, assume, speculate or complete missing information.
+- Every collection is optional except narrative. Leave collections empty when nothing qualifies.
+- Prefer omitting uncertain information over storing incorrect information.
+- Translate all extracted content into clear English.
+</extraction_principles>
+
+<output_requirements>
+- Output exactly one JSON object matching <output_schema>.
+- Do not add explanations, markdown or additional text.
+- Preserve the collection names exactly.
+</output_requirements>
+"#;
 
 use serde::{Deserialize, Serialize};
 
