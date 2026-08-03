@@ -25,6 +25,28 @@ const MarkdownComponents = {
   code: ({node, ...props}: any) => <code className="bg-[rgba(var(--foreground),0.06)] px-1 rounded font-mono text-[11px]" {...props} />,
 };
 
+const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
+  <React.Fragment>
+    {turn.user && (
+      <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed opacity-90 prose prose-invert select-text">
+        <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-0.5">
+          [USER]
+        </span>
+        <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
+      </div>
+    )}
+    {turn.assistant && (
+      <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed opacity-90 prose prose-invert select-text">
+        <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--accent))]/90 uppercase block mb-0.5">
+          [VOX]
+        </span>
+        <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
+      </div>
+    )}
+  </React.Fragment>
+));
+DialogueTurn.displayName = "DialogueTurn";
+
 // ─── Test clips metadata ──────────────────────────────────────────────────────
 
 const TEST_CLIPS = [
@@ -164,24 +186,7 @@ export const Home = memo(() => {
           <div className="flex-1 min-h-[4vh]" />
           {/* Dialogue History */}
           {dialogueHistory.map((turn: { user: string; assistant: string; id: number }) => (
-            <React.Fragment key={turn.id}>
-              {turn.user && (
-                <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed opacity-90 prose prose-invert select-text">
-                  <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-0.5">
-                    [USER]
-                  </span>
-                  <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
-                </div>
-              )}
-              {turn.assistant && (
-                <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed opacity-90 prose prose-invert select-text" style={{ textShadow: "0 0 15px rgba(var(--accent), 0.15)" }}>
-                  <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--accent))]/90 uppercase block mb-0.5">
-                    [VOX]
-                  </span>
-                  <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
-                </div>
-              )}
-            </React.Fragment>
+            <DialogueTurn key={turn.id} turn={turn} />
           ))}
 
           {/* Active Current Turn */}

@@ -26,6 +26,14 @@ export const ModelsTopologyMap = memo(
     isTtsVerified = true,
     isAuxiliaryVerified = true,
   }: ModelsTopologyMapProps) => {
+    const PIPELINE_NODES = [
+      { id: "vad" as PipelineTab, label: "VAD", Icon: Activity, isVerified: isVadVerified },
+      { id: "asr" as PipelineTab, label: "STT", Icon: Sparkles, isVerified: isAsrVerified },
+      { id: "llm" as PipelineTab, label: "LLM", Icon: Brain, isVerified: isLlmDownloaded },
+      { id: "tts" as PipelineTab, label: "TTS", Icon: Volume2, isVerified: isTtsVerified },
+      { id: "auxiliary" as PipelineTab, label: "Auxiliary", Icon: Layers, isVerified: isAuxiliaryVerified },
+    ];
+
     return (
       <div
         className={cn(
@@ -35,175 +43,41 @@ export const ModelsTopologyMap = memo(
             : "grid grid-cols-5"
         )}
       >
-        {/* NODE 1: VAD */}
-        <button
-          type="button"
-          onClick={() => onChangeTab("vad")}
-          className={cn(
-            "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
-            activeTab === "vad"
-              ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-              : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-            layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
-          )}
-        >
-          <Activity
-            size={18}
+        {PIPELINE_NODES.map(({ id, label, Icon, isVerified }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChangeTab(id)}
             className={cn(
-              "transition-colors shrink-0",
-              activeTab === "vad"
-                ? "text-[rgb(var(--accent))]"
-                : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
+              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
+              activeTab === id
+                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
+                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
             )}
-          />
-          <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">
-            VAD
-          </span>
-          <span
-            className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isVadVerified
-                ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
-                : "bg-[rgb(var(--accent))]/30"
-            )}
-          />
-        </button>
-
-        {/* NODE 2: STT */}
-        <button
-          type="button"
-          onClick={() => onChangeTab("asr")}
-          className={cn(
-            "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
-            activeTab === "asr"
-              ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-              : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-            layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
-          )}
-        >
-          <Sparkles
-            size={18}
-            className={cn(
-              "transition-colors shrink-0",
-              activeTab === "asr"
-                ? "text-[rgb(var(--accent))]"
-                : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
-            )}
-          />
-          <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">
-            STT
-          </span>
-          <span
-            className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isAsrVerified
-                ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
-                : "bg-[rgb(var(--accent))]/30"
-            )}
-          />
-        </button>
-
-        {/* NODE 3: LLM */}
-        <button
-          type="button"
-          onClick={() => onChangeTab("llm")}
-          className={cn(
-            "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
-            activeTab === "llm"
-              ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-              : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-            layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
-          )}
-        >
-          <Brain
-            size={18}
-            className={cn(
-              "transition-colors shrink-0",
-              activeTab === "llm"
-                ? "text-[rgb(var(--accent))]"
-                : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
-            )}
-          />
-          <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">
-            LLM
-          </span>
-          <span
-            className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isLlmDownloaded
-                ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
-                : "bg-[rgb(var(--accent))]/30"
-            )}
-          />
-        </button>
-
-        {/* NODE 4: TTS */}
-        <button
-          type="button"
-          onClick={() => onChangeTab("tts")}
-          className={cn(
-            "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
-            activeTab === "tts"
-              ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-              : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-            layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
-          )}
-        >
-          <Volume2
-            size={18}
-            className={cn(
-              "transition-colors shrink-0",
-              activeTab === "tts"
-                ? "text-[rgb(var(--accent))]"
-                : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
-            )}
-          />
-          <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">
-            TTS
-          </span>
-          <span
-            className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isTtsVerified
-                ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
-                : "bg-[rgb(var(--accent))]/30"
-            )}
-          />
-        </button>
-
-        {/* NODE 5: AUXILIARY */}
-        <button
-          type="button"
-          onClick={() => onChangeTab("auxiliary")}
-          className={cn(
-            "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
-            activeTab === "auxiliary"
-              ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-              : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-            layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
-          )}
-        >
-          <Layers
-            size={18}
-            className={cn(
-              "transition-colors shrink-0",
-              activeTab === "auxiliary"
-                ? "text-[rgb(var(--accent))]"
-                : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
-            )}
-          />
-          <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">
-            Auxiliary
-          </span>
-          <span
-            className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isAuxiliaryVerified
-                ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
-                : "bg-[rgb(var(--accent))]/30"
-            )}
-          />
-        </button>
+          >
+            <Icon
+              size={18}
+              className={cn(
+                "transition-colors shrink-0",
+                activeTab === id
+                  ? "text-[rgb(var(--accent))]"
+                  : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
+              )}
+            />
+            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">
+              {label}
+            </span>
+            <span
+              className={cn(
+                "w-1 h-1 rounded-full shrink-0 mt-0.5",
+                isVerified
+                  ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
+                  : "bg-[rgb(var(--accent))]/30"
+              )}
+            />
+          </button>
+        ))}
       </div>
     );
   }
