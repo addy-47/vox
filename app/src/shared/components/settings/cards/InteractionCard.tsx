@@ -742,7 +742,11 @@ export const InteractionCard = memo(
                       remote_path: remoteTtsPath,
                     });
                   } else {
-                    setTtsPillOverride("cloud");
+                    setTtsPillOverride(null);
+                    updateDraft("tts", "provider", {
+                      kind: "edge_tts",
+                      voice: (draftSettings.tts.provider as any)?.voice || "en-US-AriaNeural",
+                    });
                   }
                 }
               };

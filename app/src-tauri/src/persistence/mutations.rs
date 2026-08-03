@@ -166,6 +166,38 @@ pub async fn supersede_user_fact(
     Ok(new_id)
 }
 
+/// Records operational pipeline stage metrics into `memory_pipeline_metrics`.
+pub async fn record_stage_metrics(
+    conn: &Connection,
+    metrics: &crate::services::memory::pipeline::PipelineStageMetrics,
+) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    conn.execute(
+        "INSERT INTO memory_pipeline_metrics 
+         (run_id, stage_name, session_id, items_claimed, items_processed, items_superseded, relations_created, duration_ms, error_count, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            metrics.run_id.clone(),
+            metrics.stage_name.clone(),
+            metrics.session_id.clone(),
+            metrics.items_claimed as i64,
+            metrics.items_processed as i64,
+            metrics.items_superseded as i64,
+            metrics.relations_created as i64,
+            metrics.duration_ms as i64,
+            metrics.error_count as i64,
+            now,
+        ),
+    )
+    .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

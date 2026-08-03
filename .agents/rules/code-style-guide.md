@@ -34,23 +34,47 @@ This document contains the durable coding standards for Vox. **Agents doing writ
 - `cargo clippy --all-targets`: Mandatory zero warnings. Never suppress with `#[allow(...)]` without an explanatory comment.
 - `cargo fmt`: Must be run before committing.
 
-### 1.5 Testing Placement & Taxonomy
-| Test Category | File Location | Command | Access Scope |
-|---|---|---|---|
-| **Unit Test** | Bottom of target `.rs` file in `#[cfg(test)] mod tests` | `cargo test --lib` | Private + public functions |
-| **Integration Test** | `app/src-tauri/tests/<feature>_test.rs` | `cargo test --test <name>` | Public `vox_lib` API only |
-| **Performance Benchmark** | `app/src-tauri/benches/<feature>_bench.rs` | `cargo test --bench <name>` | Custom `fn main()` (`harness=false`) |
-| **CLI Utility Tool** | `app/src-tauri/examples/<name>.rs` | `cargo run --example <name>` | Runnable dev tools |
+### 1.5 Testing & Evaluation Taxonomy & Structure
+| Category | File Location | Command | Access Scope | Primary Output |
+|---|---|---|---|---|
+| **Unit Test** | Bottom of target `.rs` file in `#[cfg(test)] mod tests` | `cargo test --lib` | Private + public functions | Pass / Fail |
+| **Integration Test** | `app/src-tauri/tests/<feature>_test.rs` | `cargo test --test <name>` | Public `vox_lib` API only | Structural Correctness |
+| **Evaluation (Eval)** | `app/src-tauri/evals/<capability>/` | `cargo run --example eval_<capability>` | Crate API + Models + Datasets | Statistical Accuracy + LLM Judge Score |
+| **Performance Benchmark** | `app/src-tauri/benches/<feature>_bench.rs` | `cargo test --bench <name>` | Custom `fn main()` (`harness=false`) | Latency (ms/pair) & Throughput |
+| **CLI Utility Tool** | `app/src-tauri/examples/<name>.rs` | `cargo run --example <name>` | Runnable dev tools | Standalone Utility CLI |
 
-**Mandatory Header Format for `tests/`, `benches/`, `examples/`:**
+#### 1.6 Evals Directory Structure Standard (`app/src-tauri/evals/`)
+Every evaluation capability suite lives in its own dedicated subdirectory under `app/src-tauri/evals/<capability>/`:
+```
+app/src-tauri/evals/
+├── compaction/
+│   ├── eval_compaction.rs      ◄─ Eval execution script with built-in LLM Judge
+│   ├── dataset.json            ◄─ Curated evaluation dataset
+│   └── results.json            ◄─ Metrics & LLM Judge evaluation output
+├── pipeline/
+│   ├── eval_pipeline.rs
+│   ├── dataset.json
+│   └── results.json
+├── graph_budgeting/
+│   ├── eval_graph_budgeting.rs
+│   ├── dataset.json
+│   └── results.json
+└── retrieval/
+    ├── eval_retrieval.rs
+    ├── dataset.json
+    └── results.json
+```
+
+**Mandatory Header Format for `tests/`, `evals/`, `benches/`, `examples/`:**
 ```rust
 //! ============================================================================
 //! <filename> — <one-line description>
 //! ============================================================================
-//! Category     : [Integration Test | Benchmark | Utility Tool]
+//! Category     : [Integration Test | Evaluation | Benchmark | Utility Tool]
 //! Component    : <target module or subsystem>
 //! Prerequisites: <required models, env vars, or services>
 //! Execution    : <exact cargo command>
+//! Metrics      : <recorded operational/quality metrics>
 //! ============================================================================
 ```
 
