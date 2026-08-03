@@ -7,8 +7,8 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Activity } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
 import { cn } from "@/shared/lib/utils";
-import { ModelStatusOverlay } from "@/shared/components/settings/overlays/ModelStatusOverlay";
-import { RestoreDefaultsButton } from "@/shared/components/settings/overlays/RestoreDefaultsButton";
+import { ModelStatusOverlay } from "@/shared/components/settings/ModelStatusOverlay";
+import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 
 interface ResponsiveLayoutProps {
   children?: React.ReactNode;

@@ -61,27 +61,54 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 5. Current Phase — Phase 10: Frontend Refactor & Restructuring
+## 5. Current Phase — Phase 11: Memory Pipeline Stage-by-Stage Evaluation & QA
 
-**Refactor Mindset & Execution Rules (MANDATORY FOR ALL AGENTS):**
-1. **Subagent Delegation & Parallelization:** Utilize subagents for modular tasks (e.g., page-by-page auditing, service layer decoupling, component extraction). Parallelize non-interfering sub-tasks whenever possible.
-2. **CLI-Driven & Instant Feedback:** Validate all edits via `pnpm lint` and `pnpm build` in terminal. Never declare a frontend step complete without clean CLI verification.
-3. **Sticky Subagent Continuity:** Re-use persistent subagent conversation threads across multi-stage reviews to retain contextual history and avoid redundant audits.
-4. **Incremental Layering & Gated Approval:** Focus on one layer at a time (e.g. Layer 1: Wiring data/services). Do NOT frontload detail for future layers. Execute subagent review gates after each layer, followed by HITL sign-off.
+**Testing & QA Invariants (MANDATORY FOR ALL AGENTS):**
+1. **Execution != Verification:** A zero exit code (`0`) or non-crashing script is NEVER evidence of success. Success requires empirical verification of values, state changes, graph edges, and log consistency against the spec (`docs/plans/memory-spec-v7.md`).
+2. **No Fake Success or Mocks:** Never use mock data, hardcoded fallbacks, or hidden recovery paths. Always test against the real system, real embeddings, real ONNX models, and real LLM evaluation pipelines.
+3. **Independent Subagent Verification (`agy-subagent`):** The agent writing or running a test must NEVER approve it. Independent evaluation gates must be executed via persistent subagents using `agy-subagent` CLI (`--model gemini-3.6-flash-high --dangerously-skip-permissions`).
+4. **Stage-by-Stage Before E2E:** Each stage (Stage 1 Dedup, Stage 2 Embedding/Soft Dedup, Stage 3 NLI/Edge Eval, Stage 4 Commit/Prune, and Retrieval Waterfall) must pass individual ground-truth evaluation before E2E testing begins.
 
-**Phase 10 Goal:** Eliminate bloat, tech debt, hardcoded text, and monolithic files in `app/src/`. Re-architect into clean, modular layouts, page-specific component subdirectories, centralized `src/services/`, and static `src/data/`.
+---
 
-**Implementation Progress:**
-- **Pre-requisites**: `src/services/` and `src/data/` directories established.
-- **Layer 1 (IPC Service Decoupling, Data Wiring & Custom Page Hooks)**: Completed ✅
-  - All direct Tauri `invoke()` calls migrated to `src/services/`.
-  - Static configs and metadata bound to `src/data/`.
-  - Page-level event listeners, telemetry polling loops, and radial geometry consolidated into 1 custom hook per page (`useHomePage.ts`, `useSettingsPage.ts`, `useMonitoringMetrics.ts`).
-  - Verified clean `pnpm build` (`tsc && vite build`) in 11.43s.
-- **Phase 1 Settings Cards Refactoring**: Completed ✅
-  - Extracted 6 shared UI & settings primitives (`ApiKeyField`, `VendorLogos`, `ProviderSelector`, `PipelineFlow`, `VoiceCarousel`, `ModelOptionRow`).
-  - Refactored `ModelsCard.tsx` (2,349 ➔ 120 LOC), `InteractionCard.tsx` (1,336 ➔ 120 LOC), and `RealtimeCard.tsx` (863 ➔ 101 LOC).
-  - Reduced total frontend LOC from **17,435 LOC ➔ 13,729 LOC** (**-3,706 lines removed!**).
-  - Reduced Settings production JS bundle asset from **163.83 kB ➔ 70.64 kB** (**56.9% asset size reduction**).
-  - Verified clean `pnpm build` (`tsc && vite build`) in 14.20s.
-- **Subagent Review Gate**: Passed ✅
+### What Success Looks Like for Each Eval Stage
+
+#### 1. Eval 1: Multi-Window Ingestion & LLM Compaction (`eval_compaction.rs`)
+- **JSON Schema Conformance:** 100% valid JSON responses conforming to the 6 collections (`Identity`, `Directives`, `Narrative`, `Profile`, `Entities`, `Constraints`). Zero markdown framing leakage; retry count $\le 2$.
+- **Semantic Extraction Quality:** LLM-as-a-Judge evaluation scores $\ge 85\%$ Fact Accuracy, $\ge 90\%$ Disambiguation, and $0\%$ Hallucination/Misattribution across 300 curated turns.
+- **Queue Insertion:** All extracted facts correctly enqueued into `personal_memory_queue` with `status = 'staged_pending'`.
+
+#### 2. Eval 2 — Stage 1: Jaccard Exact Deduplication (`stage1_dedup.rs`)
+- **Exact String/Word-Set Dedup:** Facts with Jaccard similarity $= 1.0$ against active facts in the same collection are transitioned to `status = 'superseded'`.
+- **Non-Duplicates:** Unique facts correctly transition from `staged_pending` $\rightarrow$ `status = 'deduped'`.
+- **Batch Processing:** Processes up to 128 pending items per batch with zero lost records or race conditions.
+
+#### 3. Eval 2 — Stage 2: Dense Embedding & Soft Vector Dedup (`stage2_embed.rs`)
+- **Vector Generation:** 384-dimensional INT8 ONNX MiniLM-L12 embeddings generated for all `deduped` items (~10ms/item).
+- **Soft Vector Dedup:** Intra-collection candidates with cosine similarity $\ge 0.95$ trigger soft deduplication: candidate item set to `status = 'superseded'` and a `SUPERSEDES` edge written to `memory_relations`.
+- **Status Transition:** Non-duplicate items transition to `status = 'embedded'`. Error retry limit (max 3) enforced before setting `status = 'failed'`.
+
+#### 4. Eval 2 — Stage 3: Unified Edge & NLI State Evaluation (`stage3_eval.rs`)
+- **Sub-Branch A (NLI DeBERTa-v3):**
+  - `Identity`/`Directives` Contradiction ($\ge 0.85$): Old fact `status` updated to `'inactive'`, new fact remains `'active'`, `SUPERSEDES` edge written.
+  - `Identity`/`Directives` Entailment ($\ge 0.85$): Both facts remain `'active'`, `SUPPORTS` edge written.
+  - `Constraints` Contradiction ($\ge 0.85$): Writes `CONFLICTS` edge; **neither constraint is deactivated** (both remain `'active'`).
+- **Sub-Branch B (Edge Classifier ModernBERT):** Cross-collection edges (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`) created when confidence $\ge 0.80$, writing both forward and inverse edge labels atomically into `memory_relations`.
+- **Status Transition:** Processed items transition from `embedded` $\rightarrow$ `status = 'evaluated'`.
+
+#### 5. Eval 2 — Stage 4: Commit & Graph Prune (`stage4_commit.rs`)
+- **Fact Commit:** Evaluated items committed to `memory_facts` with exact expected state (`active`, `inactive`, `superseded`).
+- **Provenance Mandate:** Zero row deletions (`DELETE FROM memory_facts` is strictly 0).
+- **Relation Consistency:** All forward and inverse graph edges correctly populated with valid foreign key references in `memory_relations`.
+- **Metrics Logging:** Stage latencies, item counts, relation counts written to `memory_pipeline_metrics`.
+
+#### 6. Eval 3: Pre-Retrieval Scope Classifier & Dynamic Token Waterfall (`eval_retrieval.rs`)
+- **`query-sieve-rs` Scope Classification:** 100% classification accuracy on test query benchmark into `ChitChat`, `User`, `Domain`, `Temporal`.
+- **Zero-Overhead ChitChat:** `ChitChat` scope completely bypasses RAG vector retrieval (0ms SQL latency).
+- **Scope Pruning:** `Profile` pruned from `Domain` scope; `Entities` and `Directives` pruned from `User` scope.
+- **Dynamic Waterfall & Hard Budget Cap:** Prompt context rendering never exceeds `max_personal_memory_share = 0.15` (15% context window cap). BFS graph expansion respects `max_hops = 2`.
+
+---
+
+**Phase 11 Goal:** Evaluate each stage of the Vox v7 Memory System independently using empirical datasets (`app/src-tauri/evals/datasets/`), enforce strict metric thresholds, log all evidence, and perform independent subagent reviews prior to full E2E system testing.
+
