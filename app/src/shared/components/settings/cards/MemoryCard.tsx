@@ -1,8 +1,8 @@
 import { useState, memo } from "react";
 import { useSettings } from "@/shared/context/SettingsContext";
-import { Database, ShieldAlert, Brain, Cpu, History, Calendar, Sliders } from "lucide-react";
+import { Database, ShieldAlert, Brain, Cpu } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Card, SegmentedControl, ToggleTile } from "@/shared/ui";
+import { Card, SegmentedControl, ToggleTile, SliderField } from "@/shared/ui";
 
 interface MemoryCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -107,39 +107,23 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
 
             {/* Sliders */}
             <div className="flex-1 flex flex-col justify-end gap-2.5 pb-0.5">
-              {/* Capacity Slider */}
-              <div className="space-y-1 leading-none">
-                <div className="flex justify-between items-center text-[10.5px] font-black tracking-wider uppercase text-[rgb(var(--foreground-muted))]/65">
-                  <span className="flex items-center gap-1"><History size={11} /> Capacity limit</span>
-                  <span className="font-mono text-[13px] text-[rgb(var(--accent))] font-black">{persistence.max_sessions}</span>
-                </div>
-                <input
-                  type="range"
-                  min="5"
-                  max="500"
-                  step="5"
-                  value={persistence.max_sessions}
-                  onChange={(e) => updateDraft("persistence", "max_sessions", Number(e.target.value))}
-                  className="w-full mt-1 cursor-pointer accent-[rgb(var(--accent))]"
-                />
-              </div>
-
-              {/* Retention Period Slider */}
-              <div className="space-y-1 leading-none">
-                <div className="flex justify-between items-center text-[10.5px] font-black tracking-wider uppercase text-[rgb(var(--foreground-muted))]/65">
-                  <span className="flex items-center gap-1"><Calendar size={11} /> Retention days</span>
-                  <span className="font-mono text-[13px] text-[rgb(var(--accent))] font-black">{persistence.retention_days}d</span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="365"
-                  step="1"
-                  value={persistence.retention_days}
-                  onChange={(e) => updateDraft("persistence", "retention_days", Number(e.target.value))}
-                  className="w-full mt-1 cursor-pointer accent-[rgb(var(--accent))]"
-                />
-              </div>
+              <SliderField
+                label="Capacity limit"
+                value={persistence.max_sessions}
+                min={5}
+                max={500}
+                step={5}
+                onChange={(v) => updateDraft("persistence", "max_sessions", v)}
+              />
+              <SliderField
+                label="Retention days"
+                value={persistence.retention_days}
+                min={1}
+                max={365}
+                step={1}
+                formatValue={(v) => `${v}d`}
+                onChange={(v) => updateDraft("persistence", "retention_days", v)}
+              />
             </div>
           </div>
         ) : (
@@ -172,58 +156,35 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
 
             {/* Sliders Column */}
             <div className="flex-1 flex flex-col justify-end gap-2.5 pb-0.5">
-              {/* RAG Depth Slider */}
-              <div className="space-y-1 leading-none">
-                <div className="flex justify-between items-center text-[10.5px] font-black tracking-wider uppercase text-[rgb(var(--foreground-muted))]/65">
-                  <span className="flex items-center gap-1"><Sliders size={11} /> Recall depth</span>
-                  <span className="font-mono text-[13px] text-[rgb(var(--accent))] font-black">{memory.top_k}</span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  step="1"
-                  value={memory.top_k}
-                  onChange={(e) => updateDraft("memory", "top_k", Number(e.target.value))}
-                  className="w-full mt-1 cursor-pointer accent-[rgb(var(--accent))]"
-                />
-              </div>
-
-              {/* Dual Sliders side-by-side */}
+              <SliderField
+                label="Recall depth"
+                value={memory.top_k}
+                min={1}
+                max={10}
+                step={1}
+                onChange={(v) => updateDraft("memory", "top_k", v)}
+              />
               <div className="flex gap-4 min-w-0">
-                {/* Min Similarity */}
-                <div className="flex-1 space-y-1 leading-none min-w-0">
-                  <div className="flex justify-between items-center text-[9.5px] font-black tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
-                    <span>Min Sim</span>
-                    <span className="font-mono text-[11px] text-[rgb(var(--accent))] font-bold">{Math.round(memory.similarity_threshold * 100)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.10"
-                    max="0.95"
-                    step="0.05"
-                    value={memory.similarity_threshold}
-                    onChange={(e) => updateDraft("memory", "similarity_threshold", Number(e.target.value))}
-                    className="w-full mt-1 cursor-pointer accent-[rgb(var(--accent))]"
-                  />
-                </div>
-
-                {/* Context Budget */}
-                <div className="flex-1 space-y-1 leading-none min-w-0">
-                  <div className="flex justify-between items-center text-[9.5px] font-black tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
-                    <span>Budget</span>
-                    <span className="font-mono text-[11px] text-[rgb(var(--accent))] font-bold">{Math.round(memory.max_context_share * 100)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.05"
-                    max="0.80"
-                    step="0.05"
-                    value={memory.max_context_share}
-                    onChange={(e) => updateDraft("memory", "max_context_share", Number(e.target.value))}
-                    className="w-full mt-1 cursor-pointer accent-[rgb(var(--accent))]"
-                  />
-                </div>
+                <SliderField
+                  label="Min Sim"
+                  value={memory.similarity_threshold}
+                  min={0.10}
+                  max={0.95}
+                  step={0.05}
+                  formatValue={(v) => `${Math.round(v * 100)}%`}
+                  onChange={(v) => updateDraft("memory", "similarity_threshold", v)}
+                  className="flex-1 min-w-0"
+                />
+                <SliderField
+                  label="Budget"
+                  value={memory.max_context_share}
+                  min={0.05}
+                  max={0.80}
+                  step={0.05}
+                  formatValue={(v) => `${Math.round(v * 100)}%`}
+                  onChange={(v) => updateDraft("memory", "max_context_share", v)}
+                  className="flex-1 min-w-0"
+                />
               </div>
             </div>
           </div>

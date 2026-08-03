@@ -4,10 +4,8 @@ import React, {
   useCallback,
   useRef,
   useMemo,
-  memo,
 } from "react";
 import { Ghost, ChevronLeft, ChevronRight, X, Trash2, Check } from "lucide-react";
-import ReactMarkdown from "react-markdown";
 import {
   forceSimulation,
   forceX,
@@ -25,20 +23,15 @@ import {
   type SessionRow,
   type TurnRow,
 } from "@/services/historyService";
+import { VoiceRippleNode } from "@/shared/components/history";
+import { DetailPanel } from "@/shared/components/history";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDateShort(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
-  });
-}
-
-function formatTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 
@@ -50,216 +43,6 @@ function formatDateTime(ms: number): string {
     minute: "2-digit",
   });
 }
-
-
-// ─── Voice Constellation Node ────────────────────────────────────────────────
-
-interface VoiceRippleNodeProps {
-  session: SessionRow;
-  isSelected: boolean;
-  confirmDeleteId: number | null;
-  onSelect: (session: SessionRow) => void;
-  onDelete: (e: React.MouseEvent, id: number) => void;
-  onCancelDelete: (e: React.MouseEvent) => void;
-  x: number;
-  y: number;
-}
-
-const VoiceRippleNode = memo(
-  ({
-    session,
-    isSelected,
-    confirmDeleteId,
-    onSelect,
-    onDelete,
-    onCancelDelete,
-    x,
-    y,
-  }: VoiceRippleNodeProps) => {
-    const isConfirmingDelete = confirmDeleteId === session.id;
-
-    // Extract first 5-6 words
-    const previewText = useMemo(() => {
-      const msg = session.first_message || "No transcript recorded";
-      const words = msg.trim().split(/\s+/);
-      if (words.length <= 6) return msg;
-      return words.slice(0, 6).join(" ") + "...";
-    }, [session.first_message]);
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.8 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        style={{
-          position: "absolute",
-          left: x - 112, // Offset half of w-56 (224px)
-          top: y - 60,   // Offset approximate half-height
-        }}
-        className={cn(
-          "w-56 rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none group cursor-pointer z-10 glass-card",
-          isSelected
-            ? "border-[rgba(var(--accent),0.6)] bg-[rgba(var(--accent),0.12)]"
-            : "hover:bg-[rgba(var(--accent),0.04)]"
-        )}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect(session);
-        }}
-      >
-        {/* Pulsating background ring for visual hierarchy */}
-        <div className="absolute top-4 left-4 w-2 h-2 rounded-full bg-[rgb(var(--accent))]/75">
-          <div className="absolute inset-[-4px] rounded-full border border-[rgb(var(--accent))]/25 animate-ping" />
-        </div>
-
-        {/* Top Info */}
-        <div className="flex items-center justify-between mb-2 pl-4">
-          <span className="text-[10px] font-mono text-[rgb(var(--accent))]/80 font-bold">
-            {formatTime(session.started_at)}
-          </span>
-          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40">
-            {session.turn_count} {session.turn_count === 1 ? "turn" : "turns"}
-          </span>
-        </div>
-
-        {/* 5-6 Words Snippet */}
-        <p className="text-[13px] font-light leading-relaxed italic text-[rgb(var(--foreground))]/75 pl-4">
-          "{previewText}"
-        </p>
-
-        {/* Delete button (only shown on hover) */}
-        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
-          {isConfirmingDelete ? (
-            <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={(e) => onDelete(e, session.id)}
-                className="w-5 h-5 rounded-full glass-card flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20"
-                aria-label="Confirm delete"
-              >
-                <Check size={14} strokeWidth={3} />
-              </button>
-              <button
-                onClick={onCancelDelete}
-                className="w-5 h-5 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-                aria-label="Cancel delete"
-              >
-                <X size={14} strokeWidth={3} />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={(e) => onDelete(e, session.id)}
-              className="w-5 h-5 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors"
-              aria-label="Delete session"
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
-        </div>
-      </motion.div>
-    );
-  }
-);
-VoiceRippleNode.displayName = "VoiceRippleNode";
-
-// ─── Detail Panel ─────────────────────────────────────────────────────────────
-
-interface DetailPanelProps {
-  session: SessionRow;
-  turns: TurnRow[];
-  loading: boolean;
-  onClose: () => void;
-}
-
-const DetailPanel = memo(
-  ({ session, turns, loading, onClose }: DetailPanelProps) => {
-    return (
-      <motion.div
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
-        className="absolute bottom-0 left-0 right-0 h-[65%] md:h-[65%] z-30 flex flex-col rounded-t-3xl overflow-hidden glass-card border-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-[rgba(var(--accent),0.06)] shrink-0">
-          <div>
-            <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))]/80">
-              Session #{session.id}
-            </span>
-            <div className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40 mt-0.5">
-              {formatDateTime(session.started_at)} · {session.turn_count} turns
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="flex items-center justify-center w-7 h-7 rounded-full glass text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
-            aria-label="Close session"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4 min-h-0">
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <div className="w-5 h-5 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : turns.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-2 opacity-50">
-              <Ghost size={28} />
-              <span className="text-[10px] font-bold uppercase tracking-widest">
-                No interaction data
-              </span>
-            </div>
-          ) : (
-            <div className="space-y-6 pb-4">
-              {turns.map((turn) => (
-                <div key={turn.id} className="space-y-4">
-                  <div className="flex flex-col items-end w-full">
-                    <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]/40 uppercase tracking-widest mb-1 mr-2">
-                      you
-                    </span>
-                    <div className="glass rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))]/85 leading-relaxed break-words prose prose-invert select-text">
-                      <ReactMarkdown>{turn.user_text}</ReactMarkdown>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-start w-full">
-                    <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))]/70 uppercase tracking-widest mb-1 ml-2">
-                      vox
-                    </span>
-                    <div className="glass rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words prose prose-invert select-text">
-                      <ReactMarkdown>{turn.assistant_text}</ReactMarkdown>
-                      <div className="flex gap-3 mt-2 border-t border-[rgba(var(--accent),0.06)] pt-1.5 shrink-0">
-                        {turn.stt_latency_ms !== null && (
-                          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30">
-                            STT {turn.stt_latency_ms}ms
-                          </span>
-                        )}
-                        {turn.ttft_ms !== null && (
-                          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30">
-                            TTFT {turn.ttft_ms}ms
-                          </span>
-                        )}
-                        <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30 ml-auto">
-                          {formatTime(turn.created_at)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </motion.div>
-    );
-  }
-);
-DetailPanel.displayName = "DetailPanel";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -283,7 +66,7 @@ export const History: React.FC = () => {
     const observer = new ResizeObserver((entries) => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        for (let entry of entries) {
+        for (const entry of entries) {
           setDimensions({
             width: entry.contentRect.width,
             height: entry.contentRect.height,
@@ -392,7 +175,6 @@ export const History: React.FC = () => {
     const N = pageSessions.length;
     if (N === 0 || dimensions.width === 0) return [];
 
-    // Simple deterministic pseudo-random number generator
     const seededRandom = (seed: number) => {
       const x = Math.sin(seed) * 10000;
       return x - Math.floor(x);
@@ -404,7 +186,6 @@ export const History: React.FC = () => {
     const totalSlots = cols * rows;
 
     if (isCompact) {
-      // Direct vertical layout for compact viewports
       return pageSessions.map((session, index) => {
         const cellH = usableH / N;
         const centerX = dimensions.width / 2;
@@ -418,8 +199,6 @@ export const History: React.FC = () => {
       });
     }
 
-    // Shuffled slot indices for intermediate nodes
-    // The top-left slot is index 0, the bottom-right slot is index totalSlots - 1
     const availableSlots = Array.from({ length: Math.max(1, totalSlots - 2) }, (_, idx) => idx + 1);
     let seed = pageIndex + 42;
     const nextRand = () => {
@@ -433,13 +212,12 @@ export const History: React.FC = () => {
       availableSlots[j] = temp;
     }
 
-    // Initialize nodes using a cell-grid with seeded random jitter to guarantee even spacing
     const nodes: SessionNode[] = pageSessions.map((session, index) => {
       let cellIdx: number;
       if (index === 0) {
-        cellIdx = 0; // Top-left cell
+        cellIdx = 0;
       } else if (index === N - 1 && N > 1) {
-        cellIdx = totalSlots - 1; // Bottom-right cell
+        cellIdx = totalSlots - 1;
       } else {
         const slotIdx = (index - 1) % availableSlots.length;
         cellIdx = availableSlots[slotIdx];
@@ -450,11 +228,9 @@ export const History: React.FC = () => {
       const cellW = usableW / cols;
       const cellH = usableH / rows;
 
-      // Base coordinates centered inside the grid cell
       const centerX = paddingX + colIdx * cellW + cellW / 2;
       const centerY = paddingY + rowIdx * cellH + cellH / 2;
 
-      // Seeded jitter
       const seedJitter = session.id * 13;
       const rx = seededRandom(seedJitter);
       const ry = seededRandom(seedJitter + 7);
@@ -475,28 +251,19 @@ export const History: React.FC = () => {
       };
     });
 
-    // Run synchronous simulation to resolve overlaps
     const simulation = forceSimulation<SessionNode>(nodes)
-      .force(
-        "x",
-        forceX<SessionNode>((d) => d.x ?? 0).strength(0.2)
-      )
-      .force(
-        "y",
-        forceY<SessionNode>((d) => d.y ?? 0).strength(0.2)
-      )
+      .force("x", forceX<SessionNode>((d) => d.x ?? 0).strength(0.2))
+      .force("y", forceY<SessionNode>((d) => d.y ?? 0).strength(0.2))
       .force("charge", forceManyBody<SessionNode>().strength(-120))
       .force("collide", forceCollide<SessionNode>().radius(135).iterations(4));
 
     simulation.tick(30);
     simulation.stop();
 
-    // Safe padding from the container edges
     const edgeMarginX = 64;
     const edgeMarginY = 64;
 
     return nodes.map((node) => {
-      // Clamp coordinates to keep nodes inside container bounds with safe padding
       const clampedX = Math.max(112 + edgeMarginX, Math.min(dimensions.width - 112 - edgeMarginX, node.x ?? 0));
       const clampedY = Math.max(56 + edgeMarginY, Math.min(dimensions.height - 56 - edgeMarginY, node.y ?? 0));
       return {
@@ -558,6 +325,7 @@ export const History: React.FC = () => {
             <span className="text-[11px] font-bold uppercase tracking-widest">No memories persisted</span>
           </div>
         ) : dimensions.width < 680 ? (
+          // ─── Compact mobile list view ───────────────────────────────────────
           <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4 custom-scrollbar">
             {sessions.map((session) => {
               const isSelected = selectedSession?.id === session.id;
@@ -621,6 +389,7 @@ export const History: React.FC = () => {
             })}
           </div>
         ) : (
+          // ─── Desktop constellation view ─────────────────────────────────────
           <>
             <button
               onClick={(e) => { e.stopPropagation(); handlePrevPage(); }}
@@ -710,4 +479,3 @@ export const History: React.FC = () => {
     </div>
   );
 };
-
