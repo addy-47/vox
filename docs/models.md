@@ -19,7 +19,8 @@
 | **LLM** (alternative) | Gemma 4 E2B-it | `gemma_4_reasoning` | ~2B | Q4_K_M | ~1.4 GB | llama.cpp GGUF | `~/.vox/models/llm/gemma4/` | ✅ |
 | **LLM** (uncensored) | Gemma 4 Uncensored | `gemma_4_uncensored` | ~2B | Q2_K_P | ~2.9 GB | llama.cpp GGUF | `~/.vox/models/llm/gemma4/` | ✅ |
 | **LLM** (cloud) | OpenAI / Gemini / Anthropic | provider-config | — | — | 0 MB (local) | HTTP (reqwest) | Remote API | N/A |
-| **TTS** (default) | Supertonic 3 | `supertonic_tts` | 99M | INT8 | ~144 MB | sherpa-onnx ONNX | `~/.vox/models/tts/supertonic-3/` | ✅ |
+| **TTS** (default) | Microsoft Edge TTS | `edge_tts` | Remote | — | **0 MB** | Pure Rust (`tokio-tungstenite`) | Remote WebSocket | N/A |
+| **TTS** (local) | Supertonic 3 | `supertonic_tts` | 99M | INT8 | ~144 MB | sherpa-onnx ONNX | `~/.vox/models/tts/supertonic-3/` | ✅ |
 | **TTS** (local clone) | Chatterbox Local | `chatterbox_tts` | 340M | Q4 GGML | ~1.1 GB | chatterbox-rs GGML | `~/.vox/models/tts/chatterbox/` | ✅ |
 | **TTS** (remote) | Chatterbox Remote | `chatterbox_remote` | 340M | Q4 GGML | 0 MB (local) | reqwest HTTP | Remote GPU server | ✅ |
 
@@ -29,10 +30,9 @@
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- | :--- | :---: |
 | **Embedding** (primary) | MiniLM-L12 | `minilm-l12-v2` | ~22M | INT8 | ~118 MB | ONNX Runtime (`ort`) | `~/.vox/models/embedding/minilm-l12-v2/` | ❌ |
 | **Embedding** (fallback) | BGE-M3 | `bge-m3` | ~568M | INT8 | ~544 MB | ONNX Runtime (`ort`) | `~/.vox/models/embedding/bge-m3/` | ❌ |
-| **NLI** | DeBERTa-v3-xsmall | `deberta-v3-xsmall` | ~44M | INT8 | ~233 MB | ONNX Runtime (`ort`) | `~/.vox/models/nli/deberta-v3-xsmall/` | ❌ |
-| **NLI** (candidate) | nli-deberta-v3-base | `nli-deberta-v3-base` | ~86M | INT8 | ~233 MB | ONNX Runtime (`ort`) | `~/.vox/models/nli/nli-deberta-v3-base/` | ❌ |
-| **Edge Classifier** | LFM2.5-230M | `edge-classifier` | 230M | Q8_0 GGUF | ~235 MB | llama.cpp GGUF | `~/.vox/models/llm/LFM2.5-230M-Q8_0.gguf` | ❌ |
-| **Query Gate** | DistilBERT query-sieve | `distilbert-query-classifier` | ~67M | INT8 | — | ONNX Runtime (`ort`) | `~/.vox/models/classifier/distilbert-query-classifier/` | ❌ |
+| **NLI** | nli-deberta-v3-base | `nli-deberta-v3-base` | ~86M | INT8 | ~233 MB | ONNX Runtime (`ort`) | `~/.vox/models/nli/nli-deberta-v3-base/` | ❌ |
+| **Edge Classifier** | ModernBERT | `modernbert_edge_creation` | ~143M | INT8 | ~144 MB | ONNX Runtime (`ort`) | `~/.vox/models/classifier/modernbert_edge_creation/` | ❌ |
+| **MemoryScope Classifier** | ModernBERT | `modernbert_memory_scope` | ~143M | INT8 | ~144 MB | ONNX Runtime (`ort`) | `~/.vox/models/classifier/modernbert_memory_scope/` | ❌ |
 
 > Memory subsystem models are **absent from `manifests/models_manifest.json`** — they load from fixed paths and degrade gracefully when absent.
 
@@ -45,14 +45,14 @@ Which models and memory features are available depends on the user's hardware ti
 | Tier | Hardware | Pipeline | VAD | STT | LLM | TTS | Memory Models | Memory Features |
 | :--- | :------- | :------- | :-: | :-: | :-: | :-: | :-----------: | :-------------: |
 | **1A** | 8GB CPU-only, no GPU | Modular (Local) | ✅ | ✅ Nemotron | ✅ Llama 1B Q4 | ✅ Supertonic 3 | ❌ (none loaded) | FIFO context window only |
-| **1B** | 8GB+ with GPU | Modular (Local) | ✅ | ✅ Nemotron | ✅ Llama/Gemma | ✅ Supertonic/Chatterbox | ✅ MiniLM + DeBERTa + LFM2.5 | Full ingestion + retrieval |
-| **2A** | Remote LLM + Local Audio | Modular (Remote LLM) | ✅ | ✅ Nemotron | ✅ Cloud models | ✅ Supertonic/Chatterbox | ✅ MiniLM + DeBERTa + LFM2.5 | Full ingestion + retrieval |
-| **2B** ⭐ | Cloud LLM + Local Audio | Modular (Cloud LLM) | ✅ | ✅ Nemotron | ✅ Cloud models (tool-calling native) | ✅ Supertonic/Chatterbox | ✅ MiniLM + DeBERTa + LFM2.5 | Full ingestion + retrieval |
+| **1B** | 8GB+ with GPU | Modular (Local) | ✅ | ✅ Nemotron | ✅ Llama/Gemma | ✅ Supertonic/Chatterbox | ✅ MiniLM + ModernBERT | Full ingestion + retrieval |
+| **2A** | Remote LLM + Local Audio | Modular (Remote LLM) | ✅ | ✅ Nemotron | ✅ Cloud models | ✅ Supertonic/Chatterbox | ✅ MiniLM + ModernBERT | Full ingestion + retrieval |
+| **2B** ⭐ | Cloud LLM + Local Audio | Modular (Cloud LLM) | ✅ | ✅ Nemotron | ✅ Cloud models (tool-calling native) | ✅ Supertonic/Chatterbox | ✅ MiniLM + ModernBERT | Full ingestion + retrieval |
 | **3** | Any (Realtime S2S) | Realtime (WebSocket) | ✅ Router | ❌ Bypassed | ❌ Bypassed | ❌ Bypassed | ⚠️ Provider-managed | Provider-managed via tool calls |
 
 **Key constraints:**
 - **Tier 1A**: No background memory worker. No embedding, NLI, or edge classifier loaded. Working Memory is a pure FIFO conversation buffer — models are never paged in.
-- **Tier 1B+**: All memory models are loaded on-demand by the background worker during idle sweeps (not resident in the live pipeline). The worker loads embedding → compute vectors → run NLI/LLM → persist → unload.
+- **Tier 1B+**: All memory models are loaded on-demand by the background worker during idle sweeps (not resident in the live pipeline). The worker loads embedding → compute vectors → run NLI/edge classifier → persist → unload.
 - **Tier 2B (recommended default)**: Cloud LLM handles all reasoning and tool calling; local models handle VAD/STT/TTS + memory. Best balance of capability and resource usage.
 - **Tier 3**: Provider owns the full voice loop. Local memory models may be used to inject episodic/semantic context into the WebSocket session setup.
 
@@ -74,7 +74,7 @@ Which models and memory features are available depends on the user's hardware ti
 ### 3.2 STT
 
 | Aspect | Nemotron-3.5 (primary) | Qwen3-ASR-0.6B (fallback) |
-|--------|----------------------|---------------------------|
+|--------|------------------------|---------------------------|
 | **Architecture** | FastConformer-RNNT | Conformer-Transducer |
 | **Engine** | `parakeet-rs` (Rust-native ONNX) | `sherpa-onnx` (C++ ONNX) |
 | **Files** | `encoder.onnx`, `decoder_joint.onnx`, `config.json`, `tokenizer.model` | `conv_frontend.onnx`, `encoder.int8.onnx`, `decoder.int8.onnx`, `tokenizer` |
@@ -91,7 +91,7 @@ fn transcribe(audio: &[f32]) -> String {
     for chunk in audio.chunks(window_size) {
         session.run(ORTFeed { name: "audio_signal", tensor: chunk });
     }
-    session.reset_state();  // Only at utterance end
+    session.reset_state()  // Only at utterance end
     decode_output(session)
 }
 ```
@@ -113,20 +113,21 @@ fn transcribe(audio: &[f32]) -> String {
 {user_text}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 ```
 
-**Tag Stripping (Accumulated-Buffer + Delta Emission):** Emotion tags `<laugh>`, `<breath>`, `<sigh>` and think blocks `<think>...</think>` are stripped from the token stream before text reaches TTS. Uses accumulated-buffer stripping to avoid partial-tag leakage, with delta emission to maintain per-token display cadence.
+**Tag Stripping (Accumulated-Buffer + Delta Emission):** Emotion tags `<laugh>`, `<breath>`, `<sigh>` and think blocks `</think>...</think>` are stripped from the token stream before text reaches TTS. Uses accumulated-buffer stripping to avoid partial-tag leakage, with delta emission to maintain per-token display cadence.
 
 ### 3.4 TTS
 
-| Aspect | Supertonic 3 (default) | Chatterbox (local clone) | Chatterbox Remote |
-|--------|----------------------|------------------------|-------------------|
-| **Architecture** | Flow-matching transformer | Transformer (GGML) | Same as Chatterbox |
-| **Engine** | sherpa-onnx ONNX | chatterbox-rs GGML | reqwest HTTP |
-| **Params** | 99M | 340M Q4 | 340M (server-side) |
-| **Output** | 44.1kHz → 24kHz (downsampled) | Native 24kHz | 24kHz |
-| **Voice** | 10 built-in (5M/5F) | 5s reference → cloned | Cloned via remote |
-| **Languages** | 31 | Multilingual | Multilingual |
-| **Quality Steps** | 2–12 (configurable) | Fixed | Fixed |
-| **Speed** | 0.7×–2.0× (configurable) | Fixed | Fixed |
+| Aspect | Edge TTS (default) | Supertonic 3 (local) | Chatterbox (local clone) | Chatterbox Remote |
+|--------|--------------------|----------------------|--------------------------|-------------------|
+| **Architecture** | Microsoft Bing ReadAloud | Flow-matching transformer | Transformer (GGML) | Same as Chatterbox |
+| **Engine** | Pure Rust WebSocket (`tokio-tungstenite`) | sherpa-onnx ONNX | chatterbox-rs GGML | reqwest HTTP |
+| **Params** | Remote API | 99M | 340M Q4 | 340M (server-side) |
+| **Output** | Native 24kHz f32 MP3-decoded PCM | 44.1kHz → 24kHz (downsampled) | Native 24kHz | 24kHz |
+| **Voice** | ~300+ Edge Neural Voices (default: `en-US-AriaNeural`) | 10 built-in (5M/5F) | 5s reference → cloned | Cloned via remote |
+| **Languages** | 100+ global languages & dialects | 31 | Multilingual | Multilingual |
+| **Quality Steps** | N/A (Streaming MP3) | 2–12 (configurable) | Fixed | Fixed |
+| **Speed** | 0.7×–2.0× (prosody rate) | Configurable | Fixed | Fixed |
+| **RTF / Latency** | **0.30× RTF** (~3.3× real-time) | 1.76× RTF | Variable | Variable |
 
 **Anti-Aliasing Low-Pass Filter (Supertonic 3):** The vocoder outputs 44.1kHz, downsampled to 24kHz for TTS output. A 2nd-order Butterworth LPF (cutoff: 11000Hz) is applied before downsampling to prevent aliasing artifacts near Nyquist (22.05kHz). Implemented as a biquad filter applied sample-by-sample in the resampling loop.
 
@@ -142,43 +143,68 @@ fn transcribe(audio: &[f32]) -> String {
 | **Similarity** | Cosine similarity | Cosine similarity |
 | **Cutoff Floor** | `semantic_similarity_cutoff = 0.40` (calibrated to MiniLM geometry; noise baseline 0.04–0.23, margin 0.34) | N/A (fallback) |
 
-### 3.6 NLI: DeBERTa-v3
+### 3.6 NLI: nli-deberta-v3-base
 
-| Aspect | DeBERTa-v3-xsmall (default) | nli-deberta-v3-base (candidate) |
-|--------|---------------------------|-------------------------------|
-| **Model** | `deberta-v3-xsmall-nli` | `nli-deberta-v3-base` |
-| **Params** | ~44M | ~86M |
-| **Labels** | Contradiction, Entailment, Neutral | Same |
-| **Threshold** | `NLI_CONTRADICTION_THRESHOLD = 0.85`, `NLI_ENTAILMENT_THRESHOLD = 0.85` | Same |
-| **CPU Latency** | ~35ms / pair | ~65ms / pair |
-| **Graph Opt** | Level 3 | Level 3 |
-| **Intra Threads** | 1 | 1 |
-| **Tokenizer** | Truncation clamped to 512 tokens | Same |
+| Aspect | Detail |
+|--------|--------|
+| **Model** | `nli-deberta-v3-base` |
+| **Params** | ~86M |
+| **Quantization** | INT8 |
+| **Footprint** | ~233 MB |
+| **Engine** | ONNX Runtime (`ort`) |
+| **Labels** | Contradiction, Entailment, Neutral |
+| **Threshold** | `NLI_CONTRADICTION_THRESHOLD = 0.85`, `NLI_ENTAILMENT_THRESHOLD = 0.85` |
+| **CPU Latency** | ~65ms / pair |
+| **Graph Opt** | Level 3 |
+| **Intra Threads** | 1 |
+| **Tokenizer** | Truncation clamped to 512 tokens |
 
 **Dynamic Startup Calibration (`calibrate()`):** At boot, runs dummy premise/hypothesis pairs to dynamically map ONNX logit output indices to the correct label order (prevents index drift across ONNX export versions).
 
-### 3.7 Edge Classifier: LFM2.5-230M
+**State Transitions (v7):**
+- Identity/Directives CONTRADICTION → `SUPERSEDES` (old record inactive, new replaces)
+- Identity/Directives ENTAILMENT → `SUPPORTS` (both records active)
+- Constraints CONTRADICTION → `CONFLICTS` (both records active)
+
+### 3.7 Edge Classifier: ModernBERT
 
 | Aspect | Detail |
 |--------|--------|
-| **Model** | LFM2.5-230M |
-| **Format** | GGUF Q8_0 |
-| **Footprint** | ~235 MB |
-| **Engine** | llama.cpp (shared `global_llama_backend()` singleton) |
+| **Model** | ModernBERT |
+| **Format** | INT8 ONNX |
+| **Footprint** | ~144 MB |
+| **Engine** | ONNX Runtime (`ort`) |
 | **Labels** | 4 cognitive edges: `REQUIRES`, `RESTRICTS`, `ENABLES`, `RELATES_TO` + `NONE` |
 | **Context** | Receives candidate fact pair + active session Narrative summary (per Core Invariable Rule 1) |
-| **Pre-Filter** | Candidate pairs filtered by `edge_candidate_search_cutoff = 0.55` before LLM invocation |
+| **Pre-Filter** | Candidate pairs filtered by `edge_candidate_search_cutoff = 0.55` before inference |
 | **Connection Matrix** | Only invoked for domain pairs specified in the Cognitive Connection Policy Matrix (7 pairs: Identity→Profile, Directives→Constraints, Directives→Entities, Entities→Constraints, Entities→Profile, Entities→Entities, Profile→Profile) |
+| **CPU Latency** | ~28ms / pair |
+| **Test Accuracy** | 87.50% |
+| **Macro F1** | 0.8722 |
+| **Positive Edge Precision** | 86.67% (at τ* = 0.80) |
+| **FP Rate** | 7.69% |
 
-### 3.8 Query Classifier: DistilBERT query-sieve
+### 3.8 MemoryScope Classifier: ModernBERT
 
 | Aspect | Detail |
 |--------|--------|
-| **Model** | DistilBERT fine-tuned for voice query classification |
-| **Path** | `~/.vox/models/classifier/distilbert-query-classifier/model_quantized.onnx` |
-| **Purpose** | Short-circuits generic chatter ("hello", "thanks", "okay") — saves 100% of ONNX embedding and DB search overhead on non-substantive turns |
-| **Latency** | < 1.5ms CPU inference |
-| **Fallback** | If model is absent, defaults to `SEMANTIC` gate (all queries pass through to retrieval) |
+| **Model** | ModernBERT multilingual |
+| **Format** | INT8 ONNX |
+| **Footprint** | ~144 MB |
+| **Engine** | ONNX Runtime (`ort`) |
+| **Path** | `~/.vox/models/classifier/modernbert_memory_scope/model_quantized.onnx` |
+| **Purpose** | Pre-retrieval scope classification — routes queries to the correct memory collection before embedding + vector search |
+| **Classes** | 4: `ChitChat` (0), `User` (1), `Domain` (2), `Temporal` (3) |
+| **Threshold** | τ* = 0.81 — predictions below this default to `Domain` |
+| **CPU Latency** | P50: 25.36 ms / query (target: 10–30 ms) |
+| **Test Accuracy** | 96.60% |
+| **Calibrated Accuracy** | 91.60% |
+| **Non-Default Precision** | 98.08% (at τ* = 0.81) |
+| **Fallback Rate** | 6.00% |
+| **Languages** | English (36.8%), Devanagari Hindi (41.3%), Code-switched Hinglish (22.0%) |
+| **Max Tokens** | 32 |
+
+**Fallback:** If the model is absent or classification errors, defaults to `MemoryScope::Domain` — full vector-search retrieval (safe default, no dropped data).
 
 ---
 
@@ -220,7 +246,7 @@ All cloud LLMs use the same `OpenAiCompatProvider` struct — no provider-specif
 | **Embedding** | On-demand (memory worker idle sweep) | After sweep completes | ❌ Loaded per sweep |
 | **NLI** | On-demand (memory worker idle sweep) | After sweep completes | ❌ Loaded per sweep |
 | **Edge Classifier** | On-demand (memory worker idle sweep) | After sweep completes | ❌ Loaded per sweep |
-| **Query Classifier** | Boot (eager init in `ensure_classifier_loaded()`) | Never (kept warm) | ✅ Resident (tiny) |
+| **MemoryScope Classifier** | Boot (eager init in `ensure_scope_classifier_loaded()`) | Never (kept warm) | ✅ Resident (tiny) |
 
 ### Auto-Sleep Cooldown
 
@@ -253,17 +279,17 @@ Total Active Pipeline Budget: ~3.5 GB (on 8GB baseline — design target)
 ├── LLM:                  ~0.75 GB  (Llama 3.2 1B Q4_K_M)
 ├── TTS:                  ~0.14 GB  (Supertonic 3)  or  ~1.1 GB (Chatterbox)
 ├── Audio Buffers:        ~0.10 GB  (Pre-allocated ring buffers)
-├── Query Classifier:     < 0.01 GB  (DistilBERT, always resident)
+├── MemoryScope Classifier: < 0.01 GB  (ModernBERT, always resident)
 └── Safety Margin:        ~1.00 GB  (Headroom for OS + UI + other processes)
 
 Memory models loaded transiently during idle sweeps (not in pipeline budget):
 ├── Embedding (MiniLM):   ~0.12 GB  (Loaded, embed queue, unloaded)
-├── NLI (DeBERTa):        ~0.23 GB  (Loaded, classify pairs, unloaded)
-└── Edge Classifier:      ~0.24 GB  (Loaded, classify edges, unloaded)
+├── NLI (nli-deberta-v3-base): ~0.23 GB  (Loaded, classify pairs, unloaded)
+└── Edge Classifier:      ~0.14 GB  (Loaded, classify edges, unloaded)
 ```
 
 Memory models are **not concurrently resident** with pipeline models. The background worker loads them during prolonged idle (30s debounce), processes the queue, and drops them before the pipeline resumes. Tier 1A machines never load memory models.
 
 ---
 
-**Last Updated:** 2026-07-27
+**Last Updated:** 2026-08-02

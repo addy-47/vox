@@ -533,6 +533,11 @@ pub enum TtsProviderConfig {
         #[serde(default)]
         voice_id: Option<String>,
     },
+    /// Microsoft Edge TTS via WebSocket.
+    EdgeTts {
+        #[serde(default)]
+        voice: Option<String>,
+    },
     // Future providers:
     // Pocket { reference_audio: Option<String> },
     // OpenAiCompat { base_url: String, model: String, api_key: Option<String>, voice: Option<String> },
@@ -542,7 +547,7 @@ pub enum TtsProviderConfig {
 
 impl Default for TtsProviderConfig {
     fn default() -> Self {
-        TtsProviderConfig::Supertonic
+        TtsProviderConfig::EdgeTts { voice: None }
     }
 }
 

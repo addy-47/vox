@@ -6,7 +6,10 @@
 
 pub mod chatterbox;
 pub mod chatterbox_remote;
+pub mod edge_tts;
 pub mod supertonic;
+
+pub use edge_tts::EdgeTtsProvider;
 
 use crate::core::events::VoxEvent;
 use std::sync::atomic::AtomicBool;
@@ -23,6 +26,8 @@ pub enum TtsProviderKind {
     Chatterbox,
     /// Chatterbox Remote TTS offloaded to a GPU server.
     ChatterboxRemote,
+    /// Microsoft Edge TTS via WebSocket.
+    EdgeTts,
     // Future providers will be added here:
     // Pocket,         // Kyutai Pocket TTS — zero-shot voice cloning (English)
     // OpenAiCompat,  // OpenAI-compatible remote TTS API

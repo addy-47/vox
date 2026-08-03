@@ -793,6 +793,7 @@ pub async fn check_tts_provider_health(
                 Err(_) => Ok(false),
             }
         }
+        TtsProviderConfig::EdgeTts { .. } => Ok(true),
     }
 }
 

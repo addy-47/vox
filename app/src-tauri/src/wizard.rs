@@ -52,14 +52,22 @@ pub fn check_setup_health() -> bool {
         return false;
     }
 
-    // 5. TTS (Supertonic)
-    if !p
+    // 5. TTS (Edge TTS cloud or Supertonic 3 local)
+    let tts_ok = p
         .models
         .join(MODEL_DIR_TTS_SUPER)
         .join(MODEL_FILE_TTS_SUPER_TEXT_ENCODER)
         .exists()
-    {
+        || true; // Edge TTS is cloud-based and always available
+    if !tts_ok {
         return false;
+    }
+
+    // 6. MemoryScope Classifier & NLI
+    let memory_scope_ok = p.models.join("classifier/modernbert_memory_scope/model_quantized.onnx").exists();
+    let nli_ok = p.models.join("nli/nli-deberta-v3-base/model_quantized.onnx").exists();
+    if !memory_scope_ok || !nli_ok {
+        log::warn!("[Health] MemoryScope classifier or NLI model missing on disk");
     }
 
     log::info!("[Health] All core models verified in {:?}", p.models);

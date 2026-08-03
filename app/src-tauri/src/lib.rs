@@ -479,6 +479,7 @@ pub fn run() {
             delete_session,
             // Voices
             crate::ipc::voices::list_voices,
+            crate::ipc::voices::fetch_edge_tts_voices,
             crate::ipc::voices::validate_wav,
             crate::ipc::voices::add_voice_from_file,
             crate::ipc::voices::add_voice_from_recording,

@@ -35,6 +35,16 @@ pub struct DecodedAudio {
     pub duration_secs: f32,
 }
 
+pub fn decode_bytes_to_24khz_mono(bytes: &[u8], format_hint: &str) -> DecodeResult<DecodedAudio> {
+    let cursor = std::io::Cursor::new(bytes.to_vec());
+    let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
+
+    let mut hint = Hint::new();
+    hint.with_extension(format_hint);
+
+    decode_mss(mss, hint)
+}
+
 /// Decode any supported audio file to 24 kHz mono f32 PCM.
 ///
 /// Supports formats: WAV, MP3, FLAC, M4A (AAC), OGG, etc. — anything
@@ -53,6 +63,10 @@ pub fn decode_to_24khz_mono<P: AsRef<Path>>(path: P) -> DecodeResult<DecodedAudi
         hint.with_extension(ext);
     }
 
+    decode_mss(mss, hint)
+}
+
+fn decode_mss(mss: MediaSourceStream, hint: Hint) -> DecodeResult<DecodedAudio> {
     let mut format = symphonia::default::get_probe()
         .probe(
             &hint,

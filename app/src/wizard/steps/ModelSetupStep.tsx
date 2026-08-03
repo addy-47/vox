@@ -178,7 +178,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'vad',
             label: 'Silence Detection (VAD)',
-            subLabel: 'Ten-VAD / 10ms Window',
+            subLabel: 'Earshot VAD / Ten-VAD (10ms Window)',
             icon: <Mic />,
             required: true,
             groups: manifest.model_groups.filter(g => g.category === 'vad')
@@ -186,7 +186,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'stt',
             label: 'Voice Understanding (ASR)',
-            subLabel: 'Nemotron-3.5 ASR / Int8 Quant',
+            subLabel: 'Nemotron-3.5 / Qwen3 ASR (INT8)',
             icon: <Database />,
             required: true,
             groups: manifest.model_groups.filter(g => g.category === 'stt')
@@ -194,7 +194,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'translit',
             label: 'HI-EN Transliteration',
-            subLabel: 'Deep learning based transliteration',
+            subLabel: 'Devanagari to Roman ONNX Encoder-Decoder',
             icon: <Languages />,
             required: true,
             groups: manifest.model_groups.filter(g => g.category === 'translit')
@@ -210,15 +210,15 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'nli',
             label: 'Contradiction & Memory Verification',
-            subLabel: 'DeBERTa-v3 XSmall NLI Engine',
+            subLabel: 'DeBERTa-v3 Base NLI Engine',
             icon: <ShieldCheck />,
             required: true,
             groups: manifest.model_groups.filter(g => g.category === 'nli')
         },
         {
             id: 'classifier',
-            label: 'Query Intent Router',
-            subLabel: 'DistilBERT Query Classifier',
+            label: 'Cognitive & Scope Classifiers',
+            subLabel: 'ModernBERT MemoryScope & Edge Classifiers',
             icon: <Filter />,
             required: true,
             groups: manifest.model_groups.filter(g => g.category === 'classifier')
@@ -226,7 +226,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'llm',
             label: 'Intelligence Layer (LLM)',
-            subLabel: 'Gemma-4 / Llama-3.2 Reasoning',
+            subLabel: 'Gemma-4 / Llama-3.2 Reasoning (1B/2B)',
             icon: <BrainCircuit />,
             required: false,
             groups: manifest.model_groups.filter(g => g.category === 'llm')
@@ -234,7 +234,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         {
             id: 'tts',
             label: 'Speech Synthesis (TTS)',
-            subLabel: 'Supertonic 3 / Chatterbox Multilingual',
+            subLabel: 'Microsoft Edge TTS (Cloud) / Supertonic 3 / Chatterbox Multilingual',
             icon: <VolumeIcon />,
             required: false,
             groups: manifest.model_groups.filter(g => g.category === 'tts')
@@ -271,6 +271,19 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     </div>
                 }
             />
+
+            {internalError && (
+                <div className="mx-2 mb-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-between">
+                    <span className="text-red-400 text-xs font-bold">{internalError}</span>
+                    <button 
+                        type="button"
+                        onClick={() => window.location.reload()} 
+                        className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-[10px] font-bold uppercase tracking-wider transition-all"
+                    >
+                        Retry Load
+                    </button>
+                </div>
+            )}
 
             <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar -mx-2 px-2">
                 <div className="grid gap-4 py-2">

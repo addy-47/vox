@@ -4,6 +4,7 @@ pub use actor::{spawn_tts_worker, TtsClauseChunker, TtsCommand};
 pub use crate::core::error::TtsError;
 pub use providers::chatterbox::ChatterboxEngine;
 pub use providers::chatterbox_remote::ChatterboxRemoteProvider;
+pub use providers::edge_tts::EdgeTtsProvider;
 pub use providers::supertonic::TtsEngine;
 pub use providers::{TtsProvider, TtsProviderKind};
 

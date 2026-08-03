@@ -8,7 +8,7 @@ import {
   Activity, Sparkles, Check, ArrowLeft,
   Download, RefreshCw, Info, AlertCircle, Network,
   ChevronLeft, ChevronRight, Loader2, Folder, Mic,
-  Layers
+  Layers, Globe, AlertTriangle
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
@@ -682,6 +682,30 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [sshIdentityKey, setSshIdentityKey] = useState(() => localStorage.getItem("vox_ssh_key") || "~/.ssh/id_rsa");
   const [setupStatus, setSetupStatus] = useState<any>(null);
 
+  const [edgeTtsVoices, setEdgeTtsVoices] = useState<Array<{ name: string; short_name: string; gender: string; locale: string; friendly_name: string }>>([]);
+  const [edgeTtsError, setEdgeTtsError] = useState<string | null>(null);
+  const [loadingEdgeVoices, setLoadingEdgeVoices] = useState<boolean>(false);
+
+  const loadEdgeVoices = useCallback(async () => {
+    setLoadingEdgeVoices(true);
+    setEdgeTtsError(null);
+    try {
+      const list = await invoke<any[]>("fetch_edge_tts_voices");
+      setEdgeTtsVoices(list);
+    } catch (err: any) {
+      console.error("Failed to fetch Edge TTS voices:", err);
+      setEdgeTtsError(String(err));
+    } finally {
+      setLoadingEdgeVoices(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (draftSettings?.tts?.provider?.kind === "edge_tts" && edgeTtsVoices.length === 0 && !loadingEdgeVoices) {
+      loadEdgeVoices();
+    }
+  }, [draftSettings?.tts?.provider?.kind, edgeTtsVoices.length, loadingEdgeVoices, loadEdgeVoices]);
+
   useEffect(() => {
     if (draftSettings?.tts?.provider?.kind !== "chatterbox_remote") {
       setIsRemoteTtsHealthy(null);
@@ -1045,6 +1069,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
 
     presence["earshot"] = true;
+    presence["edge_tts"] = true;
     setModelPresence(presence);
   }, [modelCatalog, draftSettings, checkOutdated, manifest]);
 
@@ -1953,14 +1978,15 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                           if (isRemoteConfig) {
                             return model.id === "chatterbox_remote";
                           } else {
-                            return model.id === "supertonic_tts" || model.id === "chatterbox_tts";
+                            return model.id === "edge_tts" || model.id === "supertonic_tts" || model.id === "chatterbox_tts";
                           }
                         })
                         .map((model) => {
-                          const isSelected = (model.id === "supertonic_tts" && draftSettings.tts.provider?.kind === "supertonic") ||
+                          const isSelected = (model.id === "edge_tts" && draftSettings.tts.provider?.kind === "edge_tts") ||
+                                            (model.id === "supertonic_tts" && draftSettings.tts.provider?.kind === "supertonic") ||
                                             (model.id === "chatterbox_tts" && draftSettings.tts.provider?.kind === "chatterbox") ||
                                             (model.id === "chatterbox_remote" && draftSettings.tts.provider?.kind === "chatterbox_remote");
-                          const isDownloaded = model.id === "chatterbox_remote" ? true : modelPresence[model.id];
+                          const isDownloaded = (model.id === "edge_tts" || model.id === "chatterbox_remote") ? true : modelPresence[model.id];
                           const status = downloadStatuses[model.id];
 
                           return (
@@ -1977,7 +2003,9 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                                 isRequired={false}
                                 layoutMode={layoutMode}
                                 onSelect={() => {
-                                  if (model.id === "supertonic_tts") {
+                                  if (model.id === "edge_tts") {
+                                    updateDraft("tts", "provider", { kind: "edge_tts", voice: "en-US-AriaNeural" });
+                                  } else if (model.id === "supertonic_tts") {
                                     updateDraft("tts", "provider", { kind: "supertonic" });
                                   } else if (model.id === "chatterbox_tts") {
                                     updateDraft("tts", "provider", { kind: "chatterbox", language: "en", quality_steps: 8, speed: 1.0 });
@@ -2016,7 +2044,74 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   )}
                 </div>
               ) : (() => {
+                const isEdgeTts = draftSettings.tts.provider?.kind === "edge_tts";
                 const isChatterbox = draftSettings.tts.provider?.kind?.startsWith("chatterbox");
+
+                const currentEdgeVoice = (draftSettings.tts.provider as any)?.voice || "en-US-AriaNeural";
+
+                if (isEdgeTts) {
+                  return (
+                    <div className="w-full flex flex-col gap-3 p-3 rounded-lg border border-[rgba(var(--accent),0.15)] bg-[rgba(var(--surface-bg),0.4)] mt-2">
+                      <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-2">
+                        <span className="text-[12px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5 uppercase tracking-wider">
+                          <Globe size={14} className="text-[rgb(var(--accent))]" />
+                          Edge TTS Voice Configuration
+                        </span>
+                        <span className="text-[10px] font-semibold text-[rgb(var(--foreground-muted))]">
+                          {loadingEdgeVoices ? "Loading voices..." : edgeTtsVoices.length > 0 ? `${edgeTtsVoices.length} Neural Voices Available` : "Cloud Neural TTS"}
+                        </span>
+                      </div>
+
+                      {edgeTtsError ? (
+                        <div className="flex flex-col gap-2 p-3 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[11px]">
+                          <div className="flex items-center gap-2 font-bold">
+                            <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+                            <span>Network Error Loading Edge Voices</span>
+                          </div>
+                          <p className="text-[10px] leading-relaxed text-rose-300/80">{edgeTtsError}</p>
+                          <button
+                            type="button"
+                            onClick={loadEdgeVoices}
+                            disabled={loadingEdgeVoices}
+                            className="self-start px-2.5 py-1 text-[10px] font-bold rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 transition-all flex items-center gap-1 mt-1 outline-none"
+                          >
+                            {loadingEdgeVoices ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                            <span>Retry Connection</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
+                            Select Edge Neural Voice
+                          </label>
+                          <div className="relative">
+                            <select
+                              value={currentEdgeVoice}
+                              disabled={loadingEdgeVoices}
+                              onChange={(e) => updateDraft("tts", "provider", { kind: "edge_tts", voice: e.target.value })}
+                              className="w-full bg-[rgb(var(--surface-bg))] border border-[rgba(var(--accent),0.2)] rounded px-3 py-2 text-[12px] font-medium text-[rgb(var(--foreground))] outline-none focus:border-[rgb(var(--accent))] transition-all appearance-none cursor-pointer"
+                            >
+                              {edgeTtsVoices.length === 0 ? (
+                                <option value="en-US-AriaNeural">en-US-AriaNeural (Default Aria Online Natural)</option>
+                              ) : (
+                                edgeTtsVoices.map((v) => (
+                                  <option key={v.short_name} value={v.short_name}>
+                                    {v.friendly_name} ({v.gender}) [{v.locale}]
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                            {loadingEdgeVoices && (
+                              <div className="absolute right-3 top-2.5 pointer-events-none">
+                                <Loader2 size={12} className="animate-spin text-[rgb(var(--accent))]" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
                 const simplifyVoiceName = (n: string) => {
                   if (n.includes("Pain")) return "Pain";
                   if (n.includes("Madara")) return "Madara";

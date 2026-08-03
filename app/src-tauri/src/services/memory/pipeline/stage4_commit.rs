@@ -24,6 +24,11 @@ pub struct Stage4Item {
 /// Atomically claims `evaluated` and `superseded` items, writes active facts to `memory_facts`,
 /// vectors to `memory_facts_vectors`, graph edges to `memory_relations`, and deletes completed rows from `personal_memory_queue`.
 pub async fn run_stage4_commit(conn: &Connection) -> Result<usize> {
+    run_stage4_commit_with_metrics(conn, "").await
+}
+
+pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> Result<usize> {
+    let start_time = std::time::Instant::now();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -76,9 +81,13 @@ pub async fn run_stage4_commit(conn: &Connection) -> Result<usize> {
         return Ok(0);
     }
 
+    let items_claimed = items.len();
+    let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
+
     conn.execute("BEGIN TRANSACTION", ()).await?;
 
     let mut committed_ids = Vec::new();
+    let mut total_relations_committed = 0;
 
     let commit_res: Result<()> = async {
         for item in items {
@@ -133,6 +142,8 @@ pub async fn run_stage4_commit(conn: &Connection) -> Result<usize> {
                             )
                             .await?;
 
+                            total_relations_committed += 1;
+
                             if rel.relation == crate::core::constants::PM_RELATION_SUPERSEDES {
                                 conn.execute(
                                     "UPDATE memory_facts SET status = 'inactive' WHERE id = ?",
@@ -163,5 +174,24 @@ pub async fn run_stage4_commit(conn: &Connection) -> Result<usize> {
     }
 
     conn.execute("COMMIT", ()).await?;
-    Ok(committed_ids.len())
+
+    let processed_count = committed_ids.len();
+    let duration_ms = start_time.elapsed().as_millis();
+
+    if !run_id.is_empty() {
+        let metrics = super::metrics::PipelineStageMetrics {
+            run_id: run_id.to_string(),
+            stage_name: "stage4_commit".to_string(),
+            session_id,
+            items_claimed,
+            items_processed: processed_count,
+            items_superseded: 0,
+            relations_created: total_relations_committed,
+            duration_ms,
+            error_count: 0,
+        };
+        let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
+    }
+
+    Ok(processed_count)
 }
