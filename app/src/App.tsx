@@ -1,11 +1,11 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { getOnboardingStatus } from "@/services/modelService";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
-import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
+import { ErrorBoundary } from "@/shared/components/common";
 
 // Lazy load pages for performance
 const Home = lazy(() => import("@/pages/Home").then(m => ({ default: m.Home })));
@@ -54,7 +54,7 @@ const App: React.FC = () => {
       const forceWizard = urlParams.get('wizard') === 'true';
 
       try {
-        const completed = await invoke<boolean>('get_onboarding_status');
+        const completed = await getOnboardingStatus();
         console.log('[App] Setup completed:', completed);
         setSetupCompleted(forceWizard ? false : completed);
       } catch (e) {

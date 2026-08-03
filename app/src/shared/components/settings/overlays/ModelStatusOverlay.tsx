@@ -1,4 +1,5 @@
 import { memo, useState, useEffect, useCallback } from "react";
+import { checkModelExists } from "@/services/modelService";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { Brain, Sparkles, Volume2, AlertTriangle } from "lucide-react";
 
@@ -57,8 +58,7 @@ export const ModelStatusOverlay = memo(() => {
     const results: Record<string, boolean> = {};
     for (const id of items) {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        results[id] = await invoke<boolean>("check_model_exists", { modelId: id });
+        results[id] = await checkModelExists(id);
       } catch {
         results[id] = false;
       }

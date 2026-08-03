@@ -20,10 +20,12 @@ Performance is not optional. This runs on 8GB RAM, CPU-first hardware. `React.me
 - Glass elevation: four levels only — Whisper, Surface, Card, Elevated. Use the right one for the right context. Do not invent a fifth.
 - Mood sync: ambient background morphs based on pipeline state. `calm → active → thinking → speaking`. Any new visual element must be aware of this cycle.
 - No standard widgets, borders, or input fields where voice and ambient light can replace them.
-- All API and service calls: `src/services/` only. No fetching inside components.
-- Static or mock data: `src/data/` only. Never inline.
-- Shared state: `src/context/` for slow-changing global state (pipeline mode, settings, auth). Never context for fast-changing animation values — those belong in local state or refs.
-- Reusable stateful logic: `src/hooks/` when the same logic appears in 2+ components.
+- **Services Boundary:** All API and Tauri IPC calls in `src/services/` only. Banned direct `invoke()` or fetches in components/pages.
+- **Data Boundary:** All static text, labels, mock data, menu items, and defaults in `src/data/` only. Banned inline hardcoded text.
+- **Page Rules:** `src/pages/` files define visual layout and composition only. Logic belongs in hooks, services, or stores.
+- **Component Directories:** `src/shared/components/` must be structured into logical subdirectories (e.g. `layout/`, `common/`, `history/`, `settings/`, `monitoring/`, `home/`).
+- **Shared state:** `src/context/` or Zustand `src/store/` for low-frequency global state. Never context for fast-changing animation values — those belong in local state or refs.
+- **Reusable stateful logic:** `src/hooks/` when the same logic appears in 2+ components.
 
 ## Tauri IPC
 

@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  requestBootState,
+  requestModelCatalog,
+  updateSetting,
+  updateInteractionMode,
+  resetSettings,
+} from "@/services/settingsService";
 import { hexToRgb } from "@/shared/lib/utils";
 
 export type PipelineMode = "modular" | "realtime";
@@ -213,7 +219,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadSettings: async () => {
     try {
-      const bootState = await invoke<{ settings: VoxSettings }>("request_boot_state");
+      const bootState = await requestBootState();
       const fetched = bootState.settings;
       const cloned = structuredClone(fetched);
       
@@ -239,7 +245,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadModelCatalog: async () => {
     try {
-      const catalog = await invoke<ModelCatalog>("request_model_catalog");
+      const catalog = await requestModelCatalog();
       set({ modelCatalog: catalog });
     } catch (err) {
       console.error("Failed to load model catalog:", err);
@@ -255,7 +261,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     if (domain === "ui" && (key === "theme" || key === "accent_seed")) {
       applyAppearance(newDraft.ui);
-      invoke("update_setting", { domain, key, value }).catch(console.error);
+      updateSetting(domain, key, value).catch(console.error);
       
       // Update baseline settings immediately so appearance has no unsaved changes state
       const newSettings = structuredClone(settings);
@@ -284,10 +290,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         if (JSON.stringify(val) !== JSON.stringify(oldVal)) {
           if (domain === "interaction" && (key === "main_app_mode" || key === "tray_mode")) {
             const target = key === "main_app_mode" ? "main" : "tray";
-            promises.push(invoke("update_interaction_mode", { target, mode: val }));
+            promises.push(updateInteractionMode(target, val));
           } else {
             promises.push(
-              invoke("update_setting", { domain, key, value: val }).then((res: any) => {
+              updateSetting(domain, key, val).then((res: any) => {
                 if (res?.reload_policy === "restart") {
                   restartKeys.push(`${domain}.${key}`);
                 }
@@ -316,7 +322,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   restoreDefaults: async () => {
     try {
-      const defaults = await invoke<VoxSettings>("reset_settings");
+      const defaults = await resetSettings();
       const cloned = structuredClone(defaults);
       applyAppearance(defaults.ui);
       set({ settings: defaults, draftSettings: cloned, hasChanges: false });

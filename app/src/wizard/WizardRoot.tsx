@@ -8,12 +8,12 @@ import { ModelSetupStep } from "./steps/ModelSetupStep";
 import { AudioSetupStep } from "./steps/AudioSetupStep";
 import { LiveTestStep } from "./steps/LiveTestStep";
 import { CompletedStep } from "./steps/CompletedStep";
-import { invoke } from "@tauri-apps/api/core";
+import { revealWizard, fetchManifest } from '@/services/modelService';
 import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Settings2, Shield, Mic2, Sparkles, Home } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { TitleBar } from '@/layout/TitleBar';
-import { AmbientBackground } from '@/shared/components/AmbientBackground';
+import { AmbientBackground } from '@/shared/components/common';
 import { useSettingsStore } from '@/store/settingsStore';
 import logo from '@/assets/logo.webp';
 import logoLight from '@/assets/logo-light.webp';
@@ -26,11 +26,11 @@ export const WizardRoot: React.FC = () => {
     // Reveal window after a short delay to ensure React is hydrated and CSS is loaded
     // This prevents the initial white flash.
     const timer = setTimeout(() => {
-      invoke('reveal_wizard').catch(() => {});
+      revealWizard().catch(() => {});
     }, 150);
 
     // Fetch manifest in background early
-    invoke('fetch_manifest')
+    fetchManifest()
       .then(() => send({ type: 'MANIFEST_READY' }))
       .catch(() => {});
     

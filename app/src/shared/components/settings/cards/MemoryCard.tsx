@@ -2,10 +2,16 @@ import { useState, memo } from "react";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { Database, ShieldAlert, Brain, Cpu, History, Calendar, Sliders } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Card, SegmentedControl, ToggleTile } from "@/shared/ui";
 
 interface MemoryCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
+
+const MODE_OPTIONS = [
+  { id: "history" as const, label: "History" },
+  { id: "memory" as const, label: "Memory" },
+];
 
 export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) => {
   const { draftSettings, updateDraft } = useSettings();
@@ -18,15 +24,15 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
   const isMin = layoutMode === "full-min";
 
   return (
-    <div 
+    <Card 
+      layoutMode={layoutMode}
+      elevation="card"
       className={cn(
         "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between select-none",
-        isSmall
-          ? "w-full bg-transparent p-0"
-          : cn(
-              "w-full glass-card p-5 min-h-[310px] h-full justify-between transition-all duration-300",
-              isMin ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
-            )
+        !isSmall && cn(
+          "p-5 min-h-[310px] h-full justify-between transition-all duration-300",
+          isMin ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
+        )
       )}
     >
       {/* Consolidated Header (Hidden on Mobile) */}
@@ -40,32 +46,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
           </div>
 
           {/* Mode Switcher in Header */}
-          <div className="flex bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] p-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider gap-0.5">
-            <button
-              type="button"
-              onClick={() => setActiveMode("history")}
-              className={cn(
-                "px-2.5 py-0.5 rounded transition-all duration-300 cursor-pointer flex items-center gap-1 border",
-                activeMode === "history"
-                  ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))] font-extrabold"
-                  : "bg-transparent border-transparent text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
-              )}
-            >
-              History
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveMode("memory")}
-              className={cn(
-                "px-2.5 py-0.5 rounded transition-all duration-300 cursor-pointer flex items-center gap-1 border",
-                activeMode === "memory"
-                  ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] font-extrabold"
-                  : "bg-transparent border-transparent text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
-              )}
-            >
-              Memory
-            </button>
-          </div>
+          <SegmentedControl options={MODE_OPTIONS} value={activeMode} onChange={setActiveMode} size="sm" />
         </div>
       ) : (
         /* Mobile Layout Header */
@@ -73,32 +54,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
           <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
             {activeMode === "history" ? "History Settings" : "Memory settings"}
           </span>
-          <div className="flex bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] p-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider gap-0.5">
-            <button
-              type="button"
-              onClick={() => setActiveMode("history")}
-              className={cn(
-                "px-2 py-0.5 rounded border transition-all duration-300 cursor-pointer",
-                activeMode === "history"
-                  ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))]"
-                  : "bg-transparent border-transparent text-[rgb(var(--foreground-muted))]/60"
-              )}
-            >
-              History
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveMode("memory")}
-              className={cn(
-                "px-2 py-0.5 rounded border transition-all duration-300 cursor-pointer",
-                activeMode === "memory"
-                  ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))]"
-                  : "bg-transparent border-transparent text-[rgb(var(--foreground-muted))]/60"
-              )}
-            >
-              Memory
-            </button>
-          </div>
+          <SegmentedControl options={MODE_OPTIONS} value={activeMode} onChange={setActiveMode} size="sm" />
         </div>
       )}
 
@@ -191,65 +147,27 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
           <div key="memory-panel" className="flex-1 flex flex-col justify-between min-h-0 py-0.5 gap-2.5">
             {/* Toggles Side-by-Side (Episodic Recall & Auto Sweeper) */}
             <div key="cognitive-toggles-row" className="flex gap-2.5 w-full shrink-0">
-              {/* Toggle 1: Episodic Recall */}
-              <div key="episodic-wrapper-box" className="group flex items-center flex-1 h-[56px] relative min-w-0">
-                <div 
-                  onClick={() => updateDraft("memory", "episodic_enabled", !memory.episodic_enabled)}
-                  className="flex-1 p-2 border border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] hover:border-[rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.02)] rounded-xl group-hover:rounded-r-none transition-all duration-300 flex flex-col justify-between h-full cursor-pointer min-w-0"
-                >
-                  <div className="flex items-center justify-between gap-1 leading-none">
-                    <span className="text-[9px] font-black tracking-widest text-[rgb(var(--foreground-muted))]/55 uppercase truncate">
-                      Episodic RAG
-                    </span>
-                    <Brain size={12} className={memory.episodic_enabled ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/40"} />
-                  </div>
-                  <div className="flex items-center justify-between leading-none mt-1">
-                    <span className="text-[11px] font-black text-[rgb(var(--foreground))]/90 truncate">
-                      {memory.episodic_enabled ? "Recall" : "Disabled"}
-                    </span>
-                    <span className={cn("w-1.5 h-1.5 rounded-full shrink-0 ml-1", memory.episodic_enabled ? "bg-[rgb(var(--accent))]" : "bg-[rgb(var(--foreground-muted))]/40")} />
-                  </div>
-                </div>
+              <ToggleTile
+                title="Episodic RAG"
+                active={memory.episodic_enabled}
+                activeLabel="Recall"
+                inactiveLabel="Disabled"
+                icon={Brain}
+                onToggle={() => updateDraft("memory", "episodic_enabled", !memory.episodic_enabled)}
+                layoutMode={layoutMode}
+                className="h-[56px] flex-1"
+              />
 
-                <div 
-                  onClick={() => updateDraft("memory", "episodic_enabled", !memory.episodic_enabled)}
-                  className="h-full w-0 group-hover:w-[26px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent border-l-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden cursor-pointer select-none shrink-0"
-                >
-                  <span className="text-[7px] font-black uppercase tracking-wider text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
-                    TOG
-                  </span>
-                </div>
-              </div>
-
-              {/* Toggle 2: Auto Sweeper */}
-              <div key="sweeper-wrapper-box" className="group flex items-center flex-1 h-[56px] relative min-w-0">
-                <div 
-                  onClick={() => updateDraft("memory", "bg_worker_enabled", !memory.bg_worker_enabled)}
-                  className="flex-1 p-2 border border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] hover:border-[rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.02)] rounded-xl group-hover:rounded-r-none transition-all duration-300 flex flex-col justify-between h-full cursor-pointer min-w-0"
-                >
-                  <div className="flex items-center justify-between gap-1 leading-none">
-                    <span className="text-[9px] font-black tracking-widest text-[rgb(var(--foreground-muted))]/55 uppercase truncate">
-                      Auto Sweep
-                    </span>
-                    <Cpu size={12} className={memory.bg_worker_enabled ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/40"} />
-                  </div>
-                  <div className="flex items-center justify-between leading-none mt-1">
-                    <span className="text-[11px] font-black text-[rgb(var(--foreground))]/90 truncate">
-                      {memory.bg_worker_enabled ? "Sweeping" : "Stopped"}
-                    </span>
-                    <span className={cn("w-1.5 h-1.5 rounded-full shrink-0 ml-1", memory.bg_worker_enabled ? "bg-[rgb(var(--accent))]" : "bg-[rgb(var(--foreground-muted))]/40")} />
-                  </div>
-                </div>
-
-                <div 
-                  onClick={() => updateDraft("memory", "bg_worker_enabled", !memory.bg_worker_enabled)}
-                  className="h-full w-0 group-hover:w-[26px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent border-l-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden cursor-pointer select-none shrink-0"
-                >
-                  <span className="text-[7px] font-black uppercase tracking-wider text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
-                    TOG
-                  </span>
-                </div>
-              </div>
+              <ToggleTile
+                title="Auto Sweep"
+                active={memory.bg_worker_enabled}
+                activeLabel="Sweeping"
+                inactiveLabel="Stopped"
+                icon={Cpu}
+                onToggle={() => updateDraft("memory", "bg_worker_enabled", !memory.bg_worker_enabled)}
+                layoutMode={layoutMode}
+                className="h-[56px] flex-1"
+              />
             </div>
 
             {/* Sliders Column */}
@@ -311,8 +229,9 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 });
 
 MemoryCard.displayName = "MemoryCard";
+

@@ -3,10 +3,21 @@ import { useSettings } from "@/shared/context/SettingsContext";
 import { UserCircle } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import ReactMarkdown from "react-markdown";
+import { Card, SegmentedControl } from "@/shared/ui";
 
 interface PersonaCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
+
+const INSTRUCTION_TABS = [
+  { id: "modular" as const, label: "Modular" },
+  { id: "realtime" as const, label: "Realtime" },
+];
+
+const VIEW_TABS = [
+  { id: "edit" as const, label: "Edit" },
+  { id: "preview" as const, label: "Preview" },
+];
 
 const MarkdownComponents = {
   h1: ({node, ...props}: any) => <h1 className="text-[14px] font-bold mt-2 mb-1 text-[rgb(var(--accent))]" {...props} />,
@@ -30,15 +41,15 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   const isSmall = layoutMode === "small";
 
   return (
-    <div 
+    <Card 
+      layoutMode={layoutMode}
+      elevation="card"
       className={cn(
         "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85",
-        isSmall
-          ? "w-full bg-transparent p-0"
-          : cn(
-              "w-full glass-card p-5",
-              layoutMode === "full-min" ? "lg:w-[320px] xl:w-[380px] 2xl:w-[460px]" : "lg:w-[460px]"
-            )
+        !isSmall && cn(
+          "p-5",
+          layoutMode === "full-min" ? "lg:w-[320px] xl:w-[380px] 2xl:w-[460px]" : "lg:w-[460px]"
+        )
       )}
     >
       {/* Header & Tabs */}
@@ -46,53 +57,8 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full gap-2">
           <span className="text-[10px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/70">Instruction Mode</span>
           <div className="flex items-center gap-2">
-            {/* Modular / Realtime */}
-            <div className="flex items-center bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-lg">
-              <button
-                onClick={() => setActiveTab("modular")}
-                style={activeTab === "modular" ? { backgroundColor: "rgb(var(--accent))", color: "rgb(var(--accent-foreground))" } : {}}
-                className={cn(
-                  "px-2.5 py-0.5 rounded text-[10px] font-bold transition-all duration-300 cursor-pointer",
-                  activeTab !== "modular" && "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Modular
-              </button>
-              <button
-                onClick={() => setActiveTab("realtime")}
-                style={activeTab === "realtime" ? { backgroundColor: "rgb(var(--accent))", color: "rgb(var(--accent-foreground))" } : {}}
-                className={cn(
-                  "px-2.5 py-0.5 rounded text-[10px] font-bold transition-all duration-300 cursor-pointer",
-                  activeTab !== "realtime" && "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Realtime
-              </button>
-            </div>
-
-            {/* Edit / Preview */}
-            <div className="flex items-center bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-lg">
-              <button
-                onClick={() => setViewMode("edit")}
-                style={viewMode === "edit" ? { backgroundColor: "rgb(var(--accent))", color: "rgb(var(--accent-foreground))" } : {}}
-                className={cn(
-                  "px-2.5 py-0.5 rounded text-[10px] font-bold transition-all duration-300 cursor-pointer",
-                  viewMode !== "edit" && "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => setViewMode("preview")}
-                style={viewMode === "preview" ? { backgroundColor: "rgb(var(--accent))", color: "rgb(var(--accent-foreground))" } : {}}
-                className={cn(
-                  "px-2.5 py-0.5 rounded text-[10px] font-bold transition-all duration-300 cursor-pointer",
-                  viewMode !== "preview" && "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Preview
-              </button>
-            </div>
+            <SegmentedControl options={INSTRUCTION_TABS} value={activeTab} onChange={setActiveTab} size="sm" />
+            <SegmentedControl options={VIEW_TABS} value={viewMode} onChange={setViewMode} size="sm" />
           </div>
         </div>
       ) : (
@@ -105,53 +71,8 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
           </div>
           
           <div className="flex items-center gap-3">
-            {/* Simple modular/realtime tabs */}
-            <div className="flex items-center bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-lg">
-              <button
-                onClick={() => setActiveTab("modular")}
-                style={activeTab === "modular" ? { backgroundColor: "rgb(var(--accent))", color: "rgb(var(--accent-foreground))" } : {}}
-                className={cn(
-                  "px-2.5 py-0.5 rounded text-[10px] font-bold transition-all duration-300 cursor-pointer",
-                  activeTab !== "modular" && "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Modular
-              </button>
-              <button
-                onClick={() => setActiveTab("realtime")}
-                style={activeTab === "realtime" ? { backgroundColor: "rgb(var(--accent))", color: "rgb(var(--accent-foreground))" } : {}}
-                className={cn(
-                  "px-2.5 py-0.5 rounded text-[10px] font-bold transition-all duration-300 cursor-pointer",
-                  activeTab !== "realtime" && "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Realtime
-              </button>
-            </div>
-
-            {/* Edit / Preview toggle */}
-            <div className="flex items-center bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.08)] p-0.5 rounded-lg">
-              <button
-                onClick={() => setViewMode("edit")}
-                style={viewMode === "edit" ? { backgroundColor: "rgb(var(--accent))", color: "rgb(var(--accent-foreground))" } : {}}
-                className={cn(
-                  "px-2.5 py-0.5 rounded text-[10px] font-bold transition-all duration-300 cursor-pointer",
-                  viewMode !== "edit" && "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => setViewMode("preview")}
-                style={viewMode === "preview" ? { backgroundColor: "rgb(var(--accent))", color: "rgb(var(--accent-foreground))" } : {}}
-                className={cn(
-                  "px-2.5 py-0.5 rounded text-[10px] font-bold transition-all duration-300 cursor-pointer",
-                  viewMode !== "preview" && "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                Preview
-              </button>
-            </div>
+            <SegmentedControl options={INSTRUCTION_TABS} value={activeTab} onChange={setActiveTab} size="sm" />
+            <SegmentedControl options={VIEW_TABS} value={viewMode} onChange={setViewMode} size="sm" />
           </div>
         </div>
       )}
@@ -212,7 +133,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 });
 

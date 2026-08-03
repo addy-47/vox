@@ -1,18 +1,30 @@
 import React, { useState, useEffect, useRef , useCallback} from "react";
-import { VoxOrb } from "@/shared/components/AdvancedOrb";
-import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
-import { PipelineField } from "@/shared/components/PipelineField";
-import { AmbientBackground } from "@/shared/components/AmbientBackground";
-import { StatusCapsule } from "@/shared/components/StatusCapsule";
+import { VoxOrb, PipelineField, StatusCapsule } from "@/shared/components/home";
+import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/shared/lib/utils";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "framer-motion";
+import {
+  engage,
+  startRealtimeSession,
+  stopRealtimeSession,
+  pausePipeline,
+  resumePipeline,
+  pttStart,
+  pttStop,
+  testClip,
+  testClipCancel,
+  getRealtimeSessionCache,
+  getRuntimeSnapshot,
+} from "@/services/pipelineService";
+import { getSettings } from "@/services/settingsService";
+import { getTurns } from "@/services/historyService";
+import { showMainWindow } from "@/services/windowService";
 import ReactMarkdown from "react-markdown";
 
 const MarkdownComponents = {
@@ -263,7 +275,7 @@ export const Home: React.FC = () => {
 
   const handleCancelTest = async () => {
     try {
-      await invoke("test_clip_cancel");
+      await testClipCancel();
       archiveCurrentTurn();
       setTestingClip(null);
       setTranscript("");
@@ -289,16 +301,16 @@ export const Home: React.FC = () => {
     setErrorAlert(null);
     try {
       // Fetch latest settings to check pipeline mode
-      const settings = await invoke<{ interaction?: { pipeline_mode?: string } }>("get_settings");
+      const settings = await getSettings();
       const mode = settings?.interaction?.pipeline_mode || "modular";
 
       if (mode === "realtime") {
-        await invoke("start_realtime_session");
+        await startRealtimeSession();
         setIsEngaged(true);
         setIsPaused(false);
         setPipelineMode("realtime");
       } else {
-        await invoke("engage");
+        await engage();
         setIsEngaged(true);
         setIsPaused(false);
         setPipelineMode("modular");
@@ -325,9 +337,9 @@ export const Home: React.FC = () => {
 
     try {
       if (pipelineMode === "realtime") {
-        await invoke("stop_realtime_session");
+        await stopRealtimeSession();
       } else {
-        await invoke("engage"); // Toggle off
+        await engage(); // Toggle off
       }
       setIsEngaged(false);
       setIsPaused(false);
@@ -349,7 +361,7 @@ export const Home: React.FC = () => {
   const handlePause = useCallback(async () => {
     if (!isEngaged || isPaused) return;
     try {
-      await invoke("pause_pipeline");
+      await pausePipeline();
       setIsPaused(true);
       archiveCurrentTurn();
     } catch (err) {
@@ -360,7 +372,7 @@ export const Home: React.FC = () => {
   const handleResume = useCallback(async () => {
     if (!isEngaged || !isPaused) return;
     try {
-      await invoke("resume_pipeline");
+      await resumePipeline();
       setIsPaused(false);
       setTranscript("");
       setAssistantText("");
@@ -397,7 +409,7 @@ export const Home: React.FC = () => {
           if (!isSpacePressedRef.current) {
             isSpacePressedRef.current = true;
             archiveCurrentTurn();
-            invoke("ptt_start", { owner: "MainWindow" }).catch((err) => {
+            pttStart("MainWindow").catch((err) => {
               console.error("[Home] PTT start failed:", err);
               isSpacePressedRef.current = false;
             });
@@ -425,7 +437,7 @@ export const Home: React.FC = () => {
           isSpacePressedRef.current = false;
           if (interactionMode === "PTT" && isEngaged && !isPaused) {
             e.preventDefault();
-            invoke("ptt_stop", { owner: "MainWindow" }).catch((err) => {
+            pttStop("MainWindow").catch((err) => {
               console.error("[Home] PTT stop failed:", err);
             });
           }
@@ -437,7 +449,7 @@ export const Home: React.FC = () => {
       if (isSpacePressedRef.current) {
         isSpacePressedRef.current = false;
         if (interactionMode === "PTT" && isEngaged && !isPaused) {
-          invoke("ptt_stop", { owner: "MainWindow" }).catch((err) => {
+          pttStop("MainWindow").catch((err) => {
             console.error("[Home] PTT stop on blur failed:", err);
           });
         }
@@ -453,7 +465,7 @@ export const Home: React.FC = () => {
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
       if (isSpacePressedRef.current && interactionMode === "PTT" && isEngaged && !isPaused) {
-        invoke("ptt_stop", { owner: "MainWindow" }).catch(() => {});
+        pttStop("MainWindow").catch(() => {});
       }
     };
   }, [isEngaged, isPaused, interactionMode, handleEngage, handleEnd, handlePause, handleResume, archiveCurrentTurn]);
@@ -463,9 +475,9 @@ export const Home: React.FC = () => {
     try {
       if (pttStatus === "IDLE") {
         archiveCurrentTurn();
-        await invoke("ptt_start", { owner: "MainWindow" });
+        await pttStart("MainWindow");
       } else {
-        await invoke("ptt_stop", { owner: "MainWindow" });
+        await pttStop("MainWindow");
       }
     } catch (err) {
       console.error("[Home] PTT toggle failed:", err);
@@ -482,7 +494,7 @@ export const Home: React.FC = () => {
     setTranscript("");
     setAssistantText("");
     try {
-      await invoke("test_clip", { clipId });
+      await testClip(clipId);
     } catch (err) {
       console.error("[Home] Test clip failed:", err);
       setTestingClip(null);
@@ -492,14 +504,14 @@ export const Home: React.FC = () => {
 
   // ── Session Cache Check ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (!isEngaged) {
-      invoke<{ has_session: boolean }>("get_realtime_session_cache")
-        .then((cache) => setHasCachedSession(cache.has_session))
+    if (pipelineMode === "realtime" && !isEngaged) {
+      getRealtimeSessionCache()
+        .then((cache) => setHasCachedSession(cache?.has_session ?? false))
         .catch((err) => console.warn("[Home] Failed to check session cache:", err));
     } else {
       setHasCachedSession(false);
     }
-  }, [isEngaged]);
+  }, [isEngaged, pipelineMode]);
 
   // ── Tauri event listeners ────────────────────────────────────────────────────
 
@@ -510,7 +522,7 @@ export const Home: React.FC = () => {
       try {
         const appWindow = getCurrentWindow();
 
-        const settings = await invoke<{ interaction?: { main_app_mode?: string; pipeline_mode?: string } }>("get_settings");
+        const settings = await getSettings();
         if (settings?.interaction?.main_app_mode) {
           setInteractionMode(settings.interaction.main_app_mode.toUpperCase() as InteractionMode);
         }
@@ -519,13 +531,7 @@ export const Home: React.FC = () => {
         }
 
         try {
-          const snapshot = await invoke<{
-            is_engaged?: boolean;
-            is_sleeping?: boolean;
-            cpu_governor?: string;
-            cpu_governor_optimal?: boolean;
-            conversation_id?: number;
-          }>("get_runtime_snapshot");
+          const snapshot = await getRuntimeSnapshot();
           if (snapshot) {
             const engaged = snapshot.is_engaged ?? false;
             setIsEngaged(engaged);
@@ -537,9 +543,7 @@ export const Home: React.FC = () => {
 
             // Hydrate dialogue history if session is active
             if (engaged && snapshot.conversation_id && snapshot.conversation_id !== 0) {
-              const turns = await invoke<{ user_text: string; assistant_text: string; turn_id: number }[]>("get_turns", {
-                sessionId: snapshot.conversation_id,
-              });
+              const turns = await getTurns(snapshot.conversation_id);
               const history = turns.map((t) => ({
                 user: t.user_text,
                 assistant: t.assistant_text,
@@ -707,7 +711,7 @@ export const Home: React.FC = () => {
         );
 
         setTimeout(async () => {
-          await invoke("show_main_window");
+          await showMainWindow();
         }, 300);
       } catch (err) {
         console.error("[Home] Failed to setup Tauri listeners:", err);

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, memo, type HTMLAttributes } from "react"
-import { cn } from "../lib/utils"
+import { cn } from "@/shared/lib/utils";
 import { useDynamicFPS } from "@/shared/hooks/useDynamicFPS"
 
 export type LiveWaveformProps = HTMLAttributes<HTMLDivElement> & {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { launchEngine, stopEngine } from '@/services/pipelineService';
+import { listInputDevices, getSettings, updateSetting, type AudioDevice } from '@/services/settingsService';
 import { listen } from '@tauri-apps/api/event';
 import { motion } from 'framer-motion';
 import { Mic, Check, Volume2, Activity } from 'lucide-react';
@@ -8,11 +9,6 @@ import { cn } from '@/shared/lib/utils';
 // --- Modular Components ---
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
-
-interface AudioDevice {
-  name: string;
-  is_default: boolean;
-}
 
 interface Props {
   onNext: () => void;
@@ -28,14 +24,14 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     const init = async () => {
       try {
         // Ensure engine is running so we get energy events
-        await invoke('launch_engine');
+        await launchEngine();
         
-        const devList = await invoke<AudioDevice[]>('list_input_devices');
+        const devList = await listInputDevices();
         setDevices(devList);
         
         // Try to get current device from settings first
         try {
-          const settings = await invoke<any>('get_settings');
+          const settings = await getSettings();
           if (settings.audio.input_device) {
             setSelected(settings.audio.input_device);
           } else {
@@ -78,10 +74,10 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
   const handleSelect = async (name: string) => {
     setSelected(name);
     try {
-      await invoke('update_setting', { domain: 'audio', key: 'input_device', value: name });
+      await updateSetting('audio', 'input_device', name);
       // Restart engine to apply hardware change immediately
-      await invoke('stop_engine');
-      await invoke('launch_engine');
+      await stopEngine();
+      await launchEngine();
     } catch (e) {
       console.error('Failed to update audio device', e);
     }
