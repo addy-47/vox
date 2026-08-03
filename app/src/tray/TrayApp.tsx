@@ -7,7 +7,9 @@ import { useVisibility } from "@/shared/hooks/useVisibility";
 import { useInteraction } from "@/shared/hooks/useInteraction";
 import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
-import { invoke } from "@tauri-apps/api/core";
+import { hideTrayWindow, syncHudVisibility, setHudIgnoreCursor } from "@/services/windowService";
+import { pttStart, pttStop } from "@/services/pipelineService";
+import { commitSessionToHistory, getTranscriptHistory } from "@/services/historyService";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { cn } from "@/shared/lib/utils";
@@ -67,9 +69,9 @@ export const TrayApp: React.FC = () => {
     const syncVisibility = async () => {
       try {
         if (visibilityState === 'HIDDEN') {
-          invoke("hide_tray_window");
-          invoke("sync_hud_visibility", { visible: false });
-          invoke("set_hud_ignore_cursor", { ignore: true });
+          hideTrayWindow();
+          syncHudVisibility(false);
+          setHudIgnoreCursor(true);
           reset();
           setInteractionState("Idle");
           setPttStatus("IDLE");
@@ -77,10 +79,10 @@ export const TrayApp: React.FC = () => {
           setHistoryIndex(-1);
           setViewingHistory(false);
         } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
-          invoke("sync_hud_visibility", { visible: true });
-          invoke("set_hud_ignore_cursor", { ignore: false });
+          syncHudVisibility(true);
+          setHudIgnoreCursor(false);
         } else if (visibilityState === 'FADING') {
-          invoke("set_hud_ignore_cursor", { ignore: true });
+          setHudIgnoreCursor(true);
         }
       } catch (e) {
         console.warn("[TrayApp] Failed to sync visibility:", e);
@@ -147,7 +149,7 @@ export const TrayApp: React.FC = () => {
   const handleClose = useCallback(() => {
     const textToCommit = stateRef.current.liveTargetText;
     if (textToCommit.trim()) {
-      invoke<string[]>("commit_session_to_history", { text: textToCommit }).then(h => {
+      commitSessionToHistory(textToCommit).then((h: string[]) => {
         setHistory(h.slice(0, stateRef.current.historyLimit));
       });
     }
@@ -176,9 +178,9 @@ export const TrayApp: React.FC = () => {
   const togglePtt = async () => {
     try {
       if (pttStatus === 'IDLE') {
-        invoke("ptt_start", { owner: "Tray" });
+        pttStart("Tray");
       } else {
-        invoke("ptt_stop", { owner: "Tray" });
+        pttStop("Tray");
       }
     } catch (e) {
       console.error("[TrayApp] Failed to toggle PTT:", e);
@@ -276,7 +278,7 @@ export const TrayApp: React.FC = () => {
             // Auto-sleep: Commit current session & hide HUD
             const textToCommit = stateRef.current.liveTargetText;
             if (textToCommit.trim()) {
-              invoke<string[]>("commit_session_to_history", { text: textToCommit }).then(h => {
+              commitSessionToHistory(textToCommit).then((h: string[]) => {
                 if (active) setHistory(h.slice(0, stateRef.current.historyLimit));
               });
             }
@@ -297,7 +299,7 @@ export const TrayApp: React.FC = () => {
     setupListeners();
 
     // Initial History Sync
-    invoke<string[]>("get_transcript_history").then(h => {
+    getTranscriptHistory().then((h: string[]) => {
       if (active) setHistory(h.slice(0, stateRef.current.historyLimit));
     });
 

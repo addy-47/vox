@@ -3,10 +3,16 @@ import { useSettings } from "@/shared/context/SettingsContext";
 import { HexColorPicker } from "react-colorful";
 import { Palette, Sun, Moon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Card, SegmentedControl } from "@/shared/ui";
 
 interface AppearanceCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
+
+const THEME_OPTIONS = [
+  { id: "dark", icon: Moon, title: "Dark Mode" },
+  { id: "light", icon: Sun, title: "Light Mode" },
+];
 
 export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardProps) => {
   const { draftSettings, updateDraft } = useSettings();
@@ -18,15 +24,15 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   const isMin = layoutMode === "full-min";
 
   return (
-    <div 
+    <Card 
+      layoutMode={layoutMode}
+      elevation="card"
       className={cn(
         "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between select-none",
-        isSmall
-          ? "w-full bg-transparent p-0"
-          : cn(
-              "w-full glass-card p-5 min-h-[180px] h-full",
-              isMin ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]"
-            )
+        !isSmall && cn(
+          "p-5 min-h-[180px] h-full",
+          isMin ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]"
+        )
       )}
     >
       {/* Top Row: Header Title & Simple Theme Mode Switcher side-by-side */}
@@ -38,28 +44,13 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
           </span>
         </div>
 
-        {/* Simple Sun/Moon Icon Toggle Capsule */}
-        <div className="flex bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.08)] p-0.5 rounded-xl gap-0.5">
-          {[
-            { id: "dark", icon: Moon, desc: "Dark Mode" },
-            { id: "light", icon: Sun, desc: "Light Mode" },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => updateDraft("ui", "theme", t.id)}
-              className={cn(
-                "w-7.5 h-7.5 rounded-lg transition-all duration-300 cursor-pointer border flex items-center justify-center",
-                ui.theme === t.id
-                  ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.1)]"
-                  : "bg-transparent border-transparent text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-              )}
-              aria-label={t.desc}
-              title={t.desc}
-            >
-              <t.icon size={14} />
-            </button>
-          ))}
-        </div>
+        {/* Theme Mode Switcher */}
+        <SegmentedControl
+          options={THEME_OPTIONS}
+          value={ui.theme}
+          onChange={(theme) => updateDraft("ui", "theme", theme)}
+          size="sm"
+        />
       </div>
 
       {/* Bottom Row: Full card width color picker */}
@@ -71,8 +62,9 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
           style={{ width: "100%", height: "92px" }}
         />
       </div>
-    </div>
+    </Card>
   );
 });
 
 AppearanceCard.displayName = "AppearanceCard";
+

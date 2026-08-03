@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { launchEngine, stopEngine } from '@/services/pipelineService';
 import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Activity, X, MessageSquare, Sparkles } from 'lucide-react';
@@ -27,7 +27,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
     setError(null);
     setIsEngineReady(false);
     try {
-      await invoke('launch_engine');
+      await launchEngine();
       setIsEngineReady(true);
     } catch (e: any) {
       console.error('Engine launch failed', e);
@@ -78,7 +78,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
       unlistenFinal.then(u => u());
       unlistenEnergy.then(u => u());
       if (transcriptTimeoutRef.current) clearTimeout(transcriptTimeoutRef.current);
-      invoke('stop_engine').catch(console.error);
+      stopEngine().catch(console.error);
     };
   }, []);
 

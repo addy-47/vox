@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { getRuntimeSnapshot } from "@/services/pipelineService";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -9,7 +9,7 @@ interface VoxFootprint {
   isReady: boolean;
 }
 
-interface RuntimeSnapshot {
+export interface RuntimeSnapshot {
   vox_cpu_usage: number;
   vox_ram_mb: number;
 }
@@ -36,7 +36,7 @@ export function useVoxFootprint(): VoxFootprint {
   useEffect(() => {
     const poll = async () => {
       try {
-        const snap = await invoke<RuntimeSnapshot>("get_runtime_snapshot");
+        const snap = await getRuntimeSnapshot();
         if (snap) {
           setVoxCpu(snap.vox_cpu_usage);
           setVoxRam(snap.vox_ram_mb);

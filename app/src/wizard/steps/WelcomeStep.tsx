@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, ShieldCheck, Zap, Globe, Activity, ChevronLeft, ChevronRight, Copy, X, Mic } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { VoxOrb } from '@/shared/components/AdvancedOrb';
+import { VoxOrb } from '@/shared/components/home';
 
 interface Props {
   onNext: () => void;

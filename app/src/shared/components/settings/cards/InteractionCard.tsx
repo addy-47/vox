@@ -20,7 +20,7 @@ import {
   Database,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { invoke } from "@tauri-apps/api/core";
+import { checkLlmProviderHealth } from "@/services/settingsService";
 
 const CLOUD_PROVIDERS = [
   {
@@ -379,9 +379,7 @@ export const InteractionCard = memo(
           setCheckingHealth(true);
           setModelsError(null);
           try {
-            const healthy = await invoke<boolean>("check_llm_provider_health", {
-              provider: currentProvider,
-            });
+            const healthy = await checkLlmProviderHealth(currentProvider);
             setIsHealthy(healthy);
 
             if (healthy) {

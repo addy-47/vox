@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Minus, Square, X, ArrowUpCircle, Copy, Check } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { checkForUpdates, checkForModelUpdates } from "@/services/modelService";
 
 // Navigate without depending on Router context (TitleBar renders before Router)
 function navigateTo(path: string) {
@@ -19,7 +19,7 @@ export const TitleBar: React.FC = () => {
     if (!isTauri) return;
     const fetchUpdates = async () => {
       try {
-        const appRes = await invoke<any>("check_for_updates");
+        const appRes = await checkForUpdates();
         if (appRes && appRes.update_available) {
           setAppUpdate(appRes);
         } else {
@@ -30,7 +30,7 @@ export const TitleBar: React.FC = () => {
       }
 
       try {
-        const modelRes = await invoke<any>("check_for_model_updates");
+        const modelRes = await checkForModelUpdates();
         if (modelRes && modelRes.update_available) {
           setModelUpdate(modelRes);
         } else {
