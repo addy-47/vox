@@ -190,6 +190,8 @@ interface SettingsState {
   updateDraft: (domain: keyof VoxSettings, key: string, value: any) => void;
   commitChanges: () => Promise<void>;
   discardChanges: () => void;
+  isDomainDirty: (domainId: string) => boolean;
+  discardDomainChanges: (domainId: string) => void;
   restoreDefaults: () => Promise<void>;
   toggleTheme: () => void;
   clearRestartKeys: () => void;
@@ -224,7 +226,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const cloned = structuredClone(fetched);
       
       set((state) => {
-        // Preserve active UI draft theme and accent seed to prevent race conditions during backend save
         if (state.draftSettings) {
           cloned.ui.theme = state.draftSettings.ui.theme;
           cloned.ui.accent_seed = state.draftSettings.ui.accent_seed;
@@ -263,7 +264,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       applyAppearance(newDraft.ui);
       updateSetting(domain, key, value).catch(console.error);
       
-      // Update baseline settings immediately so appearance has no unsaved changes state
       const newSettings = structuredClone(settings);
       (newSettings.ui as any)[key] = value;
       set({ settings: newSettings, draftSettings: newDraft, hasChanges: false });
@@ -272,6 +272,168 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     const hasChanges = JSON.stringify(settings) !== JSON.stringify(newDraft);
     set({ draftSettings: newDraft, hasChanges });
+  },
+
+  isDomainDirty: (domainId: string) => {
+    const { settings, draftSettings } = get();
+    if (!settings || !draftSettings) return false;
+    switch (domainId) {
+      case "models": {
+        const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+        if (isRealtime) {
+          const provId = draftSettings.realtime?.provider || "gemini_live";
+          const subkey = provId === "gemini_live" ? "gemini" :
+                         provId === "openai_realtime" ? "openai" :
+                         provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
+                         
+          const savedProvConfig = settings.realtime?.[subkey] || {};
+          const draftProvConfig = draftSettings.realtime?.[subkey] || {};
+          
+          const { api_key: _, ...savedClean } = savedProvConfig;
+          const { api_key: __, ...draftClean } = draftProvConfig;
+          
+          return JSON.stringify(savedClean) !== JSON.stringify(draftClean);
+        }
+        return (
+          JSON.stringify(settings.vad) !== JSON.stringify(draftSettings.vad) ||
+          JSON.stringify(settings.asr) !== JSON.stringify(draftSettings.asr) ||
+          JSON.stringify(settings.tts) !== JSON.stringify(draftSettings.tts) ||
+          settings.llm.model !== draftSettings.llm.model ||
+          settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
+          settings.llm.threads !== draftSettings.llm.threads ||
+          (settings.llm.provider?.model !== draftSettings.llm.provider?.model)
+        );
+      }
+      case "tray":
+        return (
+          settings.ui.tray_enabled !== draftSettings.ui.tray_enabled ||
+          settings.ui.tray_blur_density !== draftSettings.ui.tray_blur_density ||
+          settings.ui.tray_glass_tint !== draftSettings.ui.tray_glass_tint ||
+          settings.ui.tray_history_limit !== draftSettings.ui.tray_history_limit ||
+          settings.interaction.tray_mode !== draftSettings.interaction.tray_mode
+        );
+      case "persona":
+        return JSON.stringify(settings.assistant) !== JSON.stringify(draftSettings.assistant);
+      case "memory":
+        return (
+          JSON.stringify(settings.persistence) !== JSON.stringify(draftSettings.persistence) ||
+          JSON.stringify(settings.memory) !== JSON.stringify(draftSettings.memory)
+        );
+      case "appearance":
+        return false;
+      case "interaction": {
+        const { model: _, ...provSettings } = settings.llm.provider || {};
+        const { model: __, ...provDraft } = draftSettings.llm.provider || {};
+        
+        const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+        let realtimeChanges = false;
+        if (isRealtime) {
+          if (settings.realtime?.provider !== draftSettings.realtime?.provider) {
+            realtimeChanges = true;
+          } else {
+            const provId = draftSettings.realtime?.provider || "gemini_live";
+            const subkey = provId === "gemini_live" ? "gemini" :
+                           provId === "openai_realtime" ? "openai" :
+                           provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
+            if (settings.realtime?.[subkey]?.api_key !== draftSettings.realtime?.[subkey]?.api_key) {
+              realtimeChanges = true;
+            }
+          }
+        }
+        
+        return (
+          settings.interaction.main_app_mode !== draftSettings.interaction.main_app_mode ||
+          settings.interaction.auto_sleep_timeout !== draftSettings.interaction.auto_sleep_timeout ||
+          settings.interaction.pipeline_mode !== draftSettings.interaction.pipeline_mode ||
+          JSON.stringify(provSettings) !== JSON.stringify(provDraft) ||
+          realtimeChanges
+        );
+      }
+      default:
+        return false;
+    }
+  },
+
+  discardDomainChanges: (domainId: string) => {
+    const { settings, draftSettings, updateDraft } = get();
+    if (!settings || !draftSettings) return;
+    switch (domainId) {
+      case "models": {
+        const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+        if (isRealtime) {
+          const provId = draftSettings.realtime?.provider || "gemini_live";
+          const subkey = provId === "gemini_live" ? "gemini" :
+                         provId === "openai_realtime" ? "openai" :
+                         provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
+                         
+          const savedProvConfig = (settings.realtime as any)?.[subkey] || {};
+          const currentDraftProvConfig = (draftSettings.realtime as any)?.[subkey] || {};
+          
+          const { api_key: _, ...savedClean } = savedProvConfig;
+          updateDraft("realtime", subkey, {
+            ...currentDraftProvConfig,
+            ...savedClean
+          });
+        } else {
+          Object.keys(settings.vad).forEach(k => updateDraft("vad", k, (settings.vad as any)[k]));
+          Object.keys(settings.asr).forEach(k => updateDraft("asr", k, (settings.asr as any)[k]));
+          updateDraft("llm", "model", settings.llm.model);
+          updateDraft("llm", "ctx_size", settings.llm.ctx_size);
+          updateDraft("llm", "threads", settings.llm.threads);
+          Object.keys(settings.tts).forEach(k => updateDraft("tts", k, (settings.tts as any)[k]));
+          if (settings.llm.provider && draftSettings?.llm.provider) {
+            updateDraft("llm", "provider", {
+              ...draftSettings.llm.provider,
+              model: settings.llm.provider.model
+            });
+          }
+        }
+        break;
+      }
+      case "tray":
+        updateDraft("ui", "tray_enabled", settings.ui.tray_enabled);
+        updateDraft("ui", "tray_blur_density", settings.ui.tray_blur_density);
+        updateDraft("ui", "tray_glass_tint", settings.ui.tray_glass_tint);
+        updateDraft("ui", "tray_history_limit", settings.ui.tray_history_limit);
+        updateDraft("interaction", "tray_mode", settings.interaction.tray_mode);
+        break;
+      case "persona":
+        Object.keys(settings.assistant).forEach(k => updateDraft("assistant", k, (settings.assistant as any)[k]));
+        break;
+      case "memory":
+        Object.keys(settings.persistence).forEach(k => updateDraft("persistence", k, (settings.persistence as any)[k]));
+        Object.keys(settings.memory).forEach(k => updateDraft("memory", k, (settings.memory as any)[k]));
+        break;
+      case "appearance":
+        updateDraft("ui", "theme", settings.ui.theme);
+        updateDraft("ui", "accent_seed", settings.ui.accent_seed);
+        break;
+      case "interaction": {
+        updateDraft("interaction", "main_app_mode", settings.interaction.main_app_mode);
+        updateDraft("interaction", "auto_sleep_timeout", settings.interaction.auto_sleep_timeout);
+        updateDraft("interaction", "pipeline_mode", settings.interaction.pipeline_mode);
+        const currentDraftModel = draftSettings?.llm.provider?.model || "";
+        updateDraft("llm", "provider", {
+          ...settings.llm.provider,
+          model: currentDraftModel
+        });
+        
+        const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+        if (isRealtime) {
+          updateDraft("realtime", "provider", settings.realtime.provider);
+          const subkeys = ["gemini", "openai", "deepgram", "elevenlabs"] as const;
+          subkeys.forEach(subkey => {
+            if ((settings.realtime as any)?.[subkey] && (draftSettings?.realtime as any)?.[subkey]) {
+              updateDraft("realtime", subkey, {
+                ...(draftSettings.realtime as any)[subkey],
+                api_key: (settings.realtime as any)[subkey].api_key
+              });
+            }
+          });
+        }
+        break;
+      }
+    }
   },
 
   commitChanges: async () => {
