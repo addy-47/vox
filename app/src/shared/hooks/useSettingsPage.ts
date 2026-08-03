@@ -1,88 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsDomains";
-import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
-
-export const discardCardChanges = (domainId: DomainId, settings: any, updateDraft: any, draftSettings?: any) => {
-  if (!settings) return;
-  switch (domainId) {
-    case "models": {
-      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-      if (isRealtime) {
-        const provId = draftSettings.realtime?.provider || "gemini_live";
-        const subkey = provId === "gemini_live" ? "gemini" :
-                       provId === "openai_realtime" ? "openai" :
-                       provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
-                       
-        const savedProvConfig = settings.realtime?.[subkey] || {};
-        const currentDraftProvConfig = draftSettings.realtime?.[subkey] || {};
-        
-        const { api_key: _, ...savedClean } = savedProvConfig;
-        updateDraft("realtime", subkey, {
-          ...currentDraftProvConfig,
-          ...savedClean
-        });
-      } else {
-        Object.keys(settings.vad).forEach(k => updateDraft("vad", k, (settings.vad as any)[k]));
-        Object.keys(settings.asr).forEach(k => updateDraft("asr", k, (settings.asr as any)[k]));
-        updateDraft("llm", "model", settings.llm.model);
-        updateDraft("llm", "ctx_size", settings.llm.ctx_size);
-        updateDraft("llm", "threads", settings.llm.threads);
-        Object.keys(settings.tts).forEach(k => updateDraft("tts", k, (settings.tts as any)[k]));
-        if (settings.llm.provider && draftSettings?.llm.provider) {
-          updateDraft("llm", "provider", {
-            ...draftSettings.llm.provider,
-            model: settings.llm.provider.model
-          });
-        }
-      }
-      break;
-    }
-    case "tray":
-      updateDraft("ui", "tray_enabled", settings.ui.tray_enabled);
-      updateDraft("ui", "tray_blur_density", settings.ui.tray_blur_density);
-      updateDraft("ui", "tray_glass_tint", settings.ui.tray_glass_tint);
-      updateDraft("ui", "tray_history_limit", settings.ui.tray_history_limit);
-      updateDraft("interaction", "tray_mode", settings.interaction.tray_mode);
-      break;
-    case "persona":
-      Object.keys(settings.assistant).forEach(k => updateDraft("assistant", k, (settings.assistant as any)[k]));
-      break;
-    case "memory":
-      Object.keys(settings.persistence).forEach(k => updateDraft("persistence", k, (settings.persistence as any)[k]));
-      Object.keys(settings.memory).forEach(k => updateDraft("memory", k, (settings.memory as any)[k]));
-      break;
-    case "appearance":
-      updateDraft("ui", "theme", settings.ui.theme);
-      updateDraft("ui", "accent_seed", settings.ui.accent_seed);
-      break;
-    case "interaction": {
-      updateDraft("interaction", "main_app_mode", settings.interaction.main_app_mode);
-      updateDraft("interaction", "auto_sleep_timeout", settings.interaction.auto_sleep_timeout);
-      updateDraft("interaction", "pipeline_mode", settings.interaction.pipeline_mode);
-      const currentDraftModel = draftSettings?.llm.provider?.model || "";
-      updateDraft("llm", "provider", {
-        ...settings.llm.provider,
-        model: currentDraftModel
-      });
-      
-      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-      if (isRealtime) {
-        updateDraft("realtime", "provider", settings.realtime.provider);
-        const subkeys = ["gemini", "openai", "deepgram", "elevenlabs"] as const;
-        subkeys.forEach(subkey => {
-          if (settings.realtime?.[subkey] && draftSettings?.realtime?.[subkey]) {
-            updateDraft("realtime", subkey, {
-              ...draftSettings.realtime[subkey],
-              api_key: settings.realtime[subkey].api_key
-            });
-          }
-        });
-      }
-      break;
-    }
-  }
-};
 
 export function useSettingsPage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -104,19 +22,16 @@ export function useSettingsPage() {
     interaction: null,
   });
 
-  const { settings } = useSettings();
-  const { updateDraft, draftSettings } = useSettingsStore();
-
   const lastActiveDomains = useRef<DomainId[]>([]);
   useEffect(() => {
     const closed = lastActiveDomains.current.filter((d) => !activeDomains.includes(d));
-    if (closed.length > 0 && settings) {
+    if (closed.length > 0) {
       closed.forEach((domainId) => {
-        discardCardChanges(domainId, settings, updateDraft, draftSettings);
+        useSettingsStore.getState().discardDomainChanges(domainId);
       });
     }
     lastActiveDomains.current = activeDomains;
-  }, [activeDomains, settings, updateDraft, draftSettings]);
+  }, [activeDomains]);
 
   useEffect(() => {
     let rafId: number;

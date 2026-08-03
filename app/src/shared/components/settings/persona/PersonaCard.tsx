@@ -1,5 +1,5 @@
 import { useState, memo } from "react";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettingsStore } from "@/store/settingsStore";
 import { UserCircle } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -32,7 +32,8 @@ const MarkdownComponents = {
 };
 
 export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) => {
-  const { draftSettings, updateDraft } = useSettings();
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const updateDraft = useSettingsStore((s) => s.updateDraft);
   const [activeTab, setActiveTab] = useState<"modular" | "realtime">("modular");
   const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
 

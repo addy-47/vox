@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettingsStore } from "@/store/settingsStore";
 import { HexColorPicker } from "react-colorful";
 import { Palette, Sun, Moon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -15,7 +15,8 @@ const THEME_OPTIONS = [
 ];
 
 export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardProps) => {
-  const { draftSettings, updateDraft } = useSettings();
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   if (!draftSettings) return null;
   const { ui } = draftSettings;

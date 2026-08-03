@@ -6,13 +6,13 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { GlassSkeleton, ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { PersonaCard } from "@/shared/components/settings/cards/PersonaCard";
-import { ModelsCard } from "@/shared/components/settings/cards/ModelsCard";
-import { RealtimeCard } from "@/shared/components/settings/cards/RealtimeCard";
-import { TrayCard } from "@/shared/components/settings/cards/TrayCard";
-import { MemoryCard } from "@/shared/components/settings/cards/MemoryCard";
-import { AppearanceCard } from "@/shared/components/settings/cards/AppearanceCard";
-import { InteractionCard } from "@/shared/components/settings/cards/InteractionCard";
+import { PersonaCard } from "@/shared/components/settings/persona/PersonaCard";
+import { ModelsCard } from "@/shared/components/settings/models/ModelsCard";
+import { RealtimeCard } from "@/shared/components/settings/realtime/RealtimeCard";
+import { TrayCard } from "@/shared/components/settings/tray/TrayCard";
+import { MemoryCard } from "@/shared/components/settings/memory/MemoryCard";
+import { AppearanceCard } from "@/shared/components/settings/appearance/AppearanceCard";
+import { InteractionCard } from "@/shared/components/settings/interaction/InteractionCard";
 
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
 
@@ -22,7 +22,7 @@ import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type Se
 // ─── Domain content map ───────────────────────────────────────────────────────
 
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
-  const { draftSettings } = useSettings();
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
   const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
   return (
     <Suspense fallback={<GlassSkeleton variant="card" />}>
@@ -116,84 +116,11 @@ const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
 ));
 HubCenter.displayName = "HubCenter";
 
-const hasCardChanges = (domainId: DomainId, settings: any, draftSettings: any) => {
-  if (!settings || !draftSettings) return false;
-  switch (domainId) {
-    case "models": {
-      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-      if (isRealtime) {
-        const provId = draftSettings.realtime?.provider || "gemini_live";
-        const subkey = provId === "gemini_live" ? "gemini" :
-                       provId === "openai_realtime" ? "openai" :
-                       provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
-                       
-        const savedProvConfig = settings.realtime?.[subkey] || {};
-        const draftProvConfig = draftSettings.realtime?.[subkey] || {};
-        
-        // Exclude api_key when checking model-specific card changes
-        const { api_key: _, ...savedClean } = savedProvConfig;
-        const { api_key: __, ...draftClean } = draftProvConfig;
-        
-        return JSON.stringify(savedClean) !== JSON.stringify(draftClean);
-      }
-      return (
-        JSON.stringify(settings.vad) !== JSON.stringify(draftSettings.vad) ||
-        JSON.stringify(settings.asr) !== JSON.stringify(draftSettings.asr) ||
-        JSON.stringify(settings.tts) !== JSON.stringify(draftSettings.tts) ||
-        settings.llm.model !== draftSettings.llm.model ||
-        settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
-        settings.llm.threads !== draftSettings.llm.threads ||
-        (settings.llm.provider?.model !== draftSettings.llm.provider?.model)
-      );
-    }
-    case "tray":
-      return (
-        settings.ui.tray_enabled !== draftSettings.ui.tray_enabled ||
-        settings.ui.tray_blur_density !== draftSettings.ui.tray_blur_density ||
-        settings.ui.tray_glass_tint !== draftSettings.ui.tray_glass_tint ||
-        settings.ui.tray_history_limit !== draftSettings.ui.tray_history_limit ||
-        settings.interaction.tray_mode !== draftSettings.interaction.tray_mode
-      );
-    case "persona":
-      return JSON.stringify(settings.assistant) !== JSON.stringify(draftSettings.assistant);
-    case "memory":
-      return JSON.stringify(settings.persistence) !== JSON.stringify(draftSettings.persistence);
-    case "appearance":
-      return false; // Appearance changes are applied instantly and saved automatically
-    case "interaction": {
-      const { model: _, ...provSettings } = settings.llm.provider || {};
-      const { model: __, ...provDraft } = draftSettings.llm.provider || {};
-      
-      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-      let realtimeChanges = false;
-      if (isRealtime) {
-        if (settings.realtime?.provider !== draftSettings.realtime?.provider) {
-          realtimeChanges = true;
-        } else {
-          const provId = draftSettings.realtime?.provider || "gemini_live";
-          const subkey = provId === "gemini_live" ? "gemini" :
-                         provId === "openai_realtime" ? "openai" :
-                         provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
-          if (settings.realtime?.[subkey]?.api_key !== draftSettings.realtime?.[subkey]?.api_key) {
-            realtimeChanges = true;
-          }
-        }
-      }
-      
-      return (
-        settings.interaction.main_app_mode !== draftSettings.interaction.main_app_mode ||
-        settings.interaction.auto_sleep_timeout !== draftSettings.interaction.auto_sleep_timeout ||
-        settings.interaction.pipeline_mode !== draftSettings.interaction.pipeline_mode ||
-        JSON.stringify(provSettings) !== JSON.stringify(provDraft) ||
-        realtimeChanges
-      );
-    }
-    default:
-      return false;
-  }
+const hasCardChanges = (domainId: DomainId, _settings: any, _draftSettings: any) => {
+  return useSettingsStore.getState().isDomainDirty(domainId);
 };
 
-import { useSettingsPage, discardCardChanges } from "@/shared/hooks/useSettingsPage";
+import { useSettingsPage } from "@/shared/hooks/useSettingsPage";
 
 // Custom styles to seamlessly merge the card and the footer tray
 const unsavedStyles = `
@@ -215,7 +142,6 @@ interface SettingsCardWrapperProps {
 
 const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, isActive, layoutMode }) => {
   const { settings, draftSettings, commitChanges } = useSettings();
-  const updateDraft = useSettingsStore(s => s.updateDraft);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   
   const hasChanges = useMemo(() => {
@@ -315,7 +241,7 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
                         Save
                       </button>
                       <button
-                        onClick={() => discardCardChanges(domain.id, settings, updateDraft, draftSettings)}
+                        onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
                         className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
                       >
                         Discard

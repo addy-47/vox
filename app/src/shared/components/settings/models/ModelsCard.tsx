@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, memo } from "react";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettingsStore } from "@/store/settingsStore";
 import {
   setupRemoteServer,
   listVoices,
@@ -20,24 +20,21 @@ import {
 } from "@/services/settingsService";
 import { listen } from "@tauri-apps/api/event";
 import { 
-  Brain, Volume2, Database,
-  Activity, Sparkles, Check, ArrowLeft,
-  Download, RefreshCw, Info, AlertCircle, Network,
+  Database,
+  Sparkles, Check, ArrowLeft,
+  RefreshCw, Info, AlertCircle, Network,
   Loader2,
-  Layers, Globe, AlertTriangle
+  Globe, AlertTriangle
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
 
-
-
-interface ModelStatus {
-  step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
-  progress: number;
-  bytesDownloaded: number;
-  totalBytes: number;
-  error?: string;
-}
+import { VoiceCarousel } from "../voice/VoiceCarousel";
+import { SubModelCard } from "../SubModelCard";
+import { ModelsTopologyMap } from "./ModelsTopologyMap";
+import { VadWorkspace } from "./VadWorkspace";
+import { AsrWorkspace } from "./AsrWorkspace";
+import { AuxiliaryWorkspace } from "./AuxiliaryWorkspace";
 
 const pulseStyles = `
 @keyframes premium-pulse-red {
@@ -65,23 +62,29 @@ const pulseStyles = `
 }
 `;
 
-
-
-import { VoiceCarousel } from "./subcomponents/VoiceCarousel";
-import { SubModelCard } from "./subcomponents/SubModelCard";
+interface ModelStatus {
+  step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  bytesDownloaded: number;
+  totalBytes: number;
+  error?: string;
+}
 
 interface ModelsCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
 export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) => {
-  const { settings, draftSettings, updateDraft, modelCatalog } = useSettings();
+  const settings = useSettingsStore((s) => s.settings);
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const updateDraft = useSettingsStore((s) => s.updateDraft);
+  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const [downloadStatuses, setDownloadStatuses] = useState<Record<string, ModelStatus>>({});
   const [modelPresence, setModelPresence] = useState<Record<string, boolean>>({});
   const [activePipelineTab, setActivePipelineTab] = useState<"vad" | "asr" | "llm" | "tts" | "auxiliary">("llm");
   const [activeCategoryTab, setActiveCategoryTab] = useState<"model" | "settings">("model");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [outdatedModels, setOutdatedModels] = useState<string[]>([]);
+  const [_outdatedModels, setOutdatedModels] = useState<string[]>([]);
   const [manifest, setManifest] = useState<VoxManifest | null>(null);
 
   interface CustomVoice {
@@ -586,33 +589,6 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   const isTtsVerified = modelPresence["supertonic_tts"] || modelPresence["chatterbox_tts"];
 
-  const isVadCategoryMissing = activeVadBackend === "ten_vad" && !modelPresence["ten_vad"];
-  const isAsrCategoryMissing = !modelPresence[selectedAsrId];
-  const isLlmCategoryMissing = !modelPresence[selectedLlmId];
-  const isTtsCategoryMissing = !modelPresence["supertonic_tts"] && !modelPresence["chatterbox_tts"];
-
-  const hasVadUpdate = outdatedModels.includes("ten_vad");
-  const hasAsrUpdate = outdatedModels.includes(selectedAsrId);
-  const hasLlmUpdate = outdatedModels.includes(selectedLlmId);
-  const hasTtsUpdate = outdatedModels.includes("supertonic_tts") || outdatedModels.includes("chatterbox_tts");
-
-  const getPulseClass = (isMissing: boolean, hasUpdate: boolean) => {
-    if (isMissing) return "pulse-missing border-red-500/35";
-    if (hasUpdate) return "pulse-update border-purple-500/35";
-    return "";
-  };
-
-  const renderOverlayIcon = (isMissing: boolean, hasUpdate: boolean) => {
-    if (!isMissing && !hasUpdate) return null;
-    const Icon = isMissing ? Download : RefreshCw;
-    const colorClass = isMissing ? "text-[rgb(var(--accent))]/75 animate-bounce" : "text-[rgb(var(--accent))] animate-spin";
-    return (
-      <div className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.2)] backdrop-blur-sm z-10">
-        <Icon size={12} className={colorClass} style={{ animationDuration: isMissing ? "2s" : "4s" }} />
-      </div>
-    );
-  };
-
 
   return (
     <div className={cn(
@@ -721,230 +697,48 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         )}
 
         {/* Topology Pipeline Map */}
-        <div className={cn(
-          "gap-1 shrink-0 p-1 rounded-xl glass overflow-visible mb-1 bg-[rgba(var(--foreground),0.02)]",
-          layoutMode === "small"
-            ? "flex overflow-x-auto snap-x no-scrollbar scrollbar-none w-full scroll-smooth"
-            : "grid grid-cols-5"
-        )}>
-          
-          {/* NODE 1: VAD */}
-          <button
-            onClick={() => setActivePipelineTab("vad")}
-            className={cn(
-              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
-              activePipelineTab === "vad"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
-              getPulseClass(isVadCategoryMissing, hasVadUpdate)
-            )}
-          >
-            {renderOverlayIcon(isVadCategoryMissing, hasVadUpdate)}
-            <Activity size={18} className={cn("transition-colors shrink-0", activePipelineTab === "vad" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">VAD</span>
-            <span className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isVadVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
-            )} />
-          </button>
-
-          {/* NODE 2: STT */}
-          <button
-            onClick={() => setActivePipelineTab("asr")}
-            className={cn(
-              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
-              activePipelineTab === "asr"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
-              getPulseClass(isAsrCategoryMissing, hasAsrUpdate)
-            )}
-          >
-            {renderOverlayIcon(isAsrCategoryMissing, hasAsrUpdate)}
-            <Sparkles size={18} className={cn("transition-colors shrink-0", activePipelineTab === "asr" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">STT</span>
-            <span className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isAsrVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
-            )} />
-          </button>
-
-          {/* NODE 3: LLM */}
-          <button
-            onClick={() => setActivePipelineTab("llm")}
-            className={cn(
-              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
-              activePipelineTab === "llm"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
-              getPulseClass(isLlmCategoryMissing, hasLlmUpdate)
-            )}
-          >
-            {renderOverlayIcon(isLlmCategoryMissing, hasLlmUpdate)}
-            <Brain size={18} className={cn("transition-colors shrink-0", activePipelineTab === "llm" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">LLM</span>
-            <span className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isLlmDownloaded ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
-            )} />
-          </button>
-
-          {/* NODE 4: TTS */}
-          <button
-            onClick={() => setActivePipelineTab("tts")}
-            className={cn(
-              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
-              activePipelineTab === "tts"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1",
-              getPulseClass(isTtsCategoryMissing, hasTtsUpdate)
-            )}
-          >
-            {renderOverlayIcon(isTtsCategoryMissing, hasTtsUpdate)}
-            <Volume2 size={18} className={cn("transition-colors shrink-0", activePipelineTab === "tts" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">TTS</span>
-            <span className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              isTtsVerified ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" : "bg-[rgb(var(--accent))]/30"
-            )} />
-          </button>
-
-          {/* NODE 5: AUXILIARY */}
-          <button
-            onClick={() => setActivePipelineTab("auxiliary")}
-            className={cn(
-              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden",
-              activePipelineTab === "auxiliary"
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
-            )}
-          >
-            <Layers size={18} className={cn("transition-colors shrink-0", activePipelineTab === "auxiliary" ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]")} />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">Auxiliary</span>
-            <span className={cn(
-              "w-1 h-1 rounded-full shrink-0 mt-0.5",
-              (modelPresence["distilbert_query_classifier"] && modelPresence["minilm_l12_v2"] && modelPresence["deberta_v3_xsmall_nli"] && modelPresence["vox_translit_rnn"])
-                ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
-                : "bg-[rgb(var(--accent))]/30"
-            )} />
-          </button>
-
-        </div>
+        <ModelsTopologyMap
+          activeTab={activePipelineTab}
+          onChangeTab={setActivePipelineTab}
+          layoutMode={layoutMode}
+          isVadVerified={isVadVerified}
+          isAsrVerified={isAsrVerified}
+          isLlmDownloaded={isLlmDownloaded}
+          isTtsVerified={isTtsVerified}
+          isAuxiliaryVerified={!!(modelPresence["distilbert_query_classifier"] && modelPresence["minilm_l12_v2"] && modelPresence["deberta_v3_xsmall_nli"] && modelPresence["vox_translit_rnn"])}
+        />
 
         {/* Workspace Detail Panel */}
         <div className={cn(
           "h-auto w-full flex flex-col glass rounded-xl p-3 relative bg-[rgba(var(--foreground),0.02)]",
           layoutMode === "small" ? "max-h-none overflow-y-visible" : "max-h-[190px] overflow-y-auto custom-scrollbar"
         )}>
-                   {/* TAB 1: SILENCE DETECTION (VAD) */}
+          {/* TAB 1: VAD */}
           {activePipelineTab === "vad" && (
-            <div className="space-y-3">
-              {activeCategoryTab === "model" ? (
-                <div className={cn("grid gap-3", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
-                  <SubModelCard
-                    id="earshot"
-                    name="Earshot (Built-in)"
-                    description="Pure Rust voice detection. Embedded weights, runs instantly with zero CPU load."
-                    parameters="Built-in"
-                    ramUsage="0 MB"
-                    isDownloaded={true}
-                    isActive={activeVadBackend === "earshot"}
-                    isRequired={true}
-                    layoutMode={layoutMode}
-                    onSelect={() => updateDraft("vad", "vad_backend", "earshot")}
-                    confirmDeleteId={confirmDeleteId}
-                    setConfirmDeleteId={setConfirmDeleteId}
-                    startDownload={() => {}}
-                    deleteModel={() => {}}
-                  />
-                  <SubModelCard
-                    id="ten_vad"
-                    name="TenVAD Engine"
-                    description="ONNX-based voice detector. Requires downloading auxiliary neural files."
-                    parameters="ONNX"
-                    ramUsage="~2 MB"
-                    isDownloaded={modelPresence["ten_vad"]}
-                    isActive={activeVadBackend === "ten_vad"}
-                    isRequired={false}
-                    layoutMode={layoutMode}
-                    onSelect={() => updateDraft("vad", "vad_backend", "ten_vad")}
-                    confirmDeleteId={confirmDeleteId}
-                    setConfirmDeleteId={setConfirmDeleteId}
-                    downloadStatus={downloadStatuses["ten_vad"]}
-                    startDownload={() => startDownload("ten_vad")}
-                    deleteModel={() => deleteModel("ten_vad")}
-                  />
-                </div>
-              ) : (
-                /* VAD Settings */
-                <div className="space-y-4 p-1">
-                  <div className="space-y-2">
-                    <span className="text-[12px] text-[rgb(var(--foreground))] font-bold block">Silence Threshold</span>
-                    <div className="flex gap-1">
-                      {[
-                        { label: "Sensitive", value: 0.3 },
-                        { label: "Balanced", value: 0.5 },
-                        { label: "Conservative", value: 0.7 },
-                        { label: "Aggressive", value: 0.9 },
-                      ].map(({ label, value }) => (
-                        <button key={value} onClick={() => updateDraft("vad", "threshold", value)}
-                          className={cn(
-                            "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-                            Math.abs(draftSettings.vad.threshold - value) < 0.01
-                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                              : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
-                          )}
-                        >{label}</button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <VadWorkspace
+              activeCategoryTab={activeCategoryTab}
+              layoutMode={layoutMode}
+              confirmDeleteId={confirmDeleteId}
+              setConfirmDeleteId={setConfirmDeleteId}
+              modelPresence={modelPresence}
+              downloadStatuses={downloadStatuses}
+              startDownload={startDownload}
+              deleteModel={handleDeleteModelGroup}
+            />
           )}
 
-          {/* TAB 2: VOICE RECOGNITION (ASR) — Local Embedded Only */}
+          {/* TAB 2: ASR */}
           {activePipelineTab === "asr" && (
-            <div className="space-y-3">
-              {/* Embedded model cards */}
-              <div className={cn("grid gap-2.5", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
-                {modelCatalog.asr.map((model) => {
-                  const isSelected = draftSettings.asr.model === model.id;
-                  const modelGroupId = model.id;
-                  const isDownloaded = modelPresence[modelGroupId];
-                  const status = downloadStatuses[modelGroupId];
-
-                  return (
-                    <SubModelCard
-                      key={model.id}
-                      id={modelGroupId}
-                      name={model.name}
-                      description={model.description}
-                      parameters={model.parameters}
-                      ramUsage={model.ram_usage}
-                      tradeoffs={model.tradeoffs}
-                      isDownloaded={isDownloaded}
-                      isActive={isSelected}
-                      isRequired={isGroupRequired(model.id)}
-                      layoutMode={layoutMode}
-                      onSelect={() => {
-                        updateDraft("asr", "model", model.id);
-                        updateDraft("asr", "provider", { kind: "embedded", model_type: model.id });
-                      }}
-                      confirmDeleteId={confirmDeleteId}
-                      setConfirmDeleteId={setConfirmDeleteId}
-                      downloadStatus={status}
-                      startDownload={() => startDownload(modelGroupId)}
-                      deleteModel={() => handleDeleteModelGroup(modelGroupId)}
-                    />
-                  );
-                })}
-              </div>
-            </div>
+            <AsrWorkspace
+              layoutMode={layoutMode}
+              confirmDeleteId={confirmDeleteId}
+              setConfirmDeleteId={setConfirmDeleteId}
+              modelPresence={modelPresence}
+              downloadStatuses={downloadStatuses}
+              startDownload={startDownload}
+              deleteModel={handleDeleteModelGroup}
+              isGroupRequired={isGroupRequired}
+            />
           )}
 
 
@@ -1727,60 +1521,17 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             </div>
           )}
 
-          {/* TAB 5: AUXILIARY UTILITY MODELS */}
+          {/* TAB 5: AUXILIARY */}
           {activePipelineTab === "auxiliary" && (
-            <div className="space-y-4">
-              <div className={cn("grid gap-2.5", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
-                {(() => {
-                  const auxiliaryCategories = ["classifier", "embedding", "nli", "translit"];
-                  const groups = (manifest?.model_groups || []).filter(g => auxiliaryCategories.includes(g.category));
-                  
-                  if (groups.length === 0) {
-                    return (
-                      <div className="col-span-2 text-center py-6 text-[11px] text-[rgb(var(--foreground-muted))]/70">
-                        Loading auxiliary models manifest from backend...
-                      </div>
-                    );
-                  }
-
-                  const categoryDescriptions: Record<string, string> = {
-                    classifier: "Intent router classifying user queries into Generic or Semantic memory paths.",
-                    embedding: "Dense vector encoder for personal memory retrieval & semantic search.",
-                    nli: "Intra-collection contradiction detector ensuring memory consistency.",
-                    translit: "Converts Devanagari (Hindi) script to natural Hinglish phonetic spelling."
-                  };
-
-                  return groups.map((group) => {
-                    const totalBytes = group.files.reduce((acc, f) => acc + f.size, 0);
-                    const formattedSize = totalBytes > 0 ? `${(totalBytes / (1024 * 1024)).toFixed(1)} MB` : "ONNX";
-                    const isDownloaded = modelPresence[group.id] ?? false;
-                    const isRequired = group.files.some(f => f.required);
-                    const status = downloadStatuses[group.id];
-
-                    return (
-                      <SubModelCard
-                        key={group.id}
-                        id={group.id}
-                        name={group.name}
-                        description={categoryDescriptions[group.category] || `${group.name} engine.`}
-                        parameters={formattedSize}
-                        ramUsage={`~${Math.round(totalBytes / (1024 * 1024))} MB`}
-                        isDownloaded={isDownloaded}
-                        isActive={true}
-                        isRequired={isRequired}
-                        layoutMode={layoutMode}
-                        onSelect={() => {}}
-                        confirmDeleteId={confirmDeleteId}
-                        setConfirmDeleteId={setConfirmDeleteId}
-                        downloadStatus={status}
-                        startDownload={() => startDownload(group.id)}
-                        deleteModel={() => handleDeleteModelGroup(group.id)}
-                      />
-                    );
-                  });
-                })()}
-              </div>
-            </div>
+            <AuxiliaryWorkspace
+              layoutMode={layoutMode}
+              confirmDeleteId={confirmDeleteId}
+              setConfirmDeleteId={setConfirmDeleteId}
+              modelPresence={modelPresence}
+              downloadStatuses={downloadStatuses}
+              startDownload={startDownload}
+              deleteModel={handleDeleteModelGroup}
+            />
           )}
 
         </div>

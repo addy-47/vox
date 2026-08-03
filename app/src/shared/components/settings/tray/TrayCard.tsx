@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettingsStore } from "@/store/settingsStore";
 import { Eye, EyeOff, Activity, Radio } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, ToggleTile, SliderField } from "@/shared/ui";
@@ -21,7 +21,8 @@ const trayStyles = `
 `;
 
 export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
-  const { draftSettings, updateDraft } = useSettings();
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   if (!draftSettings) return null;
   const { ui, interaction } = draftSettings;

@@ -12,7 +12,7 @@ interface SubModelCardProps {
   isDownloaded: boolean;
   isActive: boolean;
   isRequired: boolean;
-  layoutMode: "full-max" | "full-min" | "small";
+  layoutMode?: "full-max" | "full-min" | "small";
   onSelect: () => void;
   confirmDeleteId: string | null;
   setConfirmDeleteId: (id: string | null) => void;

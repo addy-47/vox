@@ -1,5 +1,5 @@
 import { useState, memo } from "react";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettingsStore } from "@/store/settingsStore";
 import { Database, ShieldAlert, Brain, Cpu } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, SegmentedControl, ToggleTile, SliderField } from "@/shared/ui";
@@ -14,7 +14,8 @@ const MODE_OPTIONS = [
 ];
 
 export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) => {
-  const { draftSettings, updateDraft } = useSettings();
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const updateDraft = useSettingsStore((s) => s.updateDraft);
   const [activeMode, setActiveMode] = useState<"history" | "memory">("history");
 
   if (!draftSettings) return null;
