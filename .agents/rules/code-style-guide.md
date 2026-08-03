@@ -46,23 +46,6 @@ This document contains the durable coding standards for Vox. **Agents doing writ
 #### 1.6 Evals Directory Structure Standard (`app/src-tauri/evals/`)
 Every evaluation capability suite lives in its own dedicated subdirectory under `app/src-tauri/evals/<capability>/`:
 ```
-app/src-tauri/evals/
-├── compaction/
-│   ├── eval_compaction.rs      ◄─ Eval execution script with built-in LLM Judge
-│   ├── dataset.json            ◄─ Curated evaluation dataset
-│   └── results.json            ◄─ Metrics & LLM Judge evaluation output
-├── pipeline/
-│   ├── eval_pipeline.rs
-│   ├── dataset.json
-│   └── results.json
-├── graph_budgeting/
-│   ├── eval_graph_budgeting.rs
-│   ├── dataset.json
-│   └── results.json
-└── retrieval/
-    ├── eval_retrieval.rs
-    ├── dataset.json
-    └── results.json
 ```
 
 **Mandatory Header Format for `tests/`, `evals/`, `benches/`, `examples/`:**
@@ -83,10 +66,14 @@ app/src-tauri/evals/
 ## 2. Frontend Standards (`app/src/`)
 
 - **Package Manager:** Always use `pnpm`, never `npm` or `yarn`.
-- **Type Safety:** Strict TypeScript. `any` is strictly prohibited — define interfaces or type aliases explicitly.
-- **Service Layer:** Centralize API / IPC calls in `src/services/`. Components render layout and delegate data fetching/mutations.
-- **State Management:** Local component state for UI transients. React Context only for low-frequency global state (theme, settings). Shared stateful logic extracted to custom hooks in `src/hooks/`.
-- **Verification:** Run `pnpm lint` and `pnpm build` to verify frontend changes.
+- **Zero Hardcoded Text / Labels:** Banned inline hardcoded strings, labels, select options, or mock objects inside components/pages. All static content must live in `src/data/` (e.g., `appData.ts`, `settingsDomains.ts`).
+- **Strict Service Layer Boundary:** Banned raw `@tauri-apps/api` invoke calls or direct fetches inside React components. All IPC/API calls MUST pass through dedicated service modules in `src/services/` (e.g. `pipelineService.ts`, `settingsService.ts`).
+- **Page Responsibility (Layout Only):** Files in `src/pages/` MUST only define visual structure, routing, and layout composition. Heavy business logic, state sync, and data transformations belong in `src/services/`, `src/hooks/`, or `src/store/`.
+- **Modular Component Subdirectories:** `src/shared/components/` must be structured into logical feature/domain subdirectories (e.g., `layout/`, `home/`, `history/`, `settings/`, `monitoring/`, `common/`). Banned flat, uncategorized component directories.
+- **Component Consolidation & Deduplication:** Audit and merge components performing identical or near-identical visual/functional tasks into clean, configurable shared primitives.
+- **Type Safety:** Strict TypeScript. `any` is strictly prohibited — define explicit interfaces/types for all props and service returns.
+- **State Management:** Transient UI state in local component state/refs. Low-frequency app configuration in React Context or Zustand (`src/store/`). Shared stateful logic extracted to custom hooks (`src/hooks/`).
+- **Verification:** Run `pnpm lint` and `pnpm build` after every modification. Zero warnings/errors permitted.
 
 ---
 

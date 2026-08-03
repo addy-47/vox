@@ -1,8 +1,8 @@
 import React, { useRef, useState, useEffect } from "react";
 import { EdgeNav } from "./EdgeNav";
 import { TitleBar } from "./TitleBar";
-import { AmbientBackground } from "@/shared/components/AmbientBackground";
-import { MonitoringPopover } from "@/shared/components/MonitoringPopover";
+import { AmbientBackground } from "@/shared/components/common";
+import { MonitoringPopover } from "@/shared/components/monitoring";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Activity } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
