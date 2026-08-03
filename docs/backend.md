@@ -69,9 +69,9 @@ src/
 │   ├── vad/                # VadEngine trait + VadBackend enum dispatch (Earshot / TenVAD)
 │   ├── stt/                # SttEngine trait + EmbeddedSttProvider (Nemotron-3.5 / Qwen3-ASR)
 │   ├── llm/                # LlmProvider trait (Embedded / OpenAiCompat), LlmEngine, capability probe
-│   ├── tts/                # TtsProvider trait (Supertonic 3 / Chatterbox / ChatterboxRemote)
+│   ├── tts/                # TtsProvider trait (Edge TTS / Supertonic 3 / Chatterbox / ChatterboxRemote)
 │   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits (Gemini Live, Deepgram Voice Agent)
-│   ├── memory/             # 12 modules: classifier, deduplication, embedder, formatter, ingestion, llm_edge_classifier, nli, orchestrator, retrieval, tokenizer, working_memory
+│   ├── memory/             # 11 modules: query_classifier, deduplication, embedder, formatter, ingestion, nli, edge_classifier, retrieval, scope_router, tokenizer, working_memory
 │   ├── pipeline.rs         # Pipeline orchestrator (LLM→TTS→Playback coordination, ~1888 lines)
 │   ├── ptt.rs              # Push-to-talk mode (VAD gate, realtime support, speech_detected)
 │   ├── translit.rs         # Devanagari→Roman ONNX encoder-decoder
@@ -92,7 +92,7 @@ src/
 ```
 audio → VAD → STT → (Transliteration) → LLM → (Tag Stripping) → TTS → Playback → speaker
        ↑                                                                           ↓
-  Audio Capture (cpal, 16kHz)                                         Playback Engine (48kHz)
+   Audio Capture (cpal, 16kHz)                                         Playback Engine (48kHz)
 ```
 
 ### Pipeline State Machine
@@ -153,7 +153,8 @@ Cloud routing is automatic: `provider_name = "openai"` → `api.openai.com`, `"g
 
 | Provider | Type | Params | Memory | Output | Feature |
 |----------|------|-------:|:------:|--------|---------|
-| **Supertonic 3** (default) | ONNX INT8, sherpa-onnx | 99M | ~144 MB | 24kHz f32 | 31 languages, 10 voices |
+| **Edge TTS** (default) | Pure Rust WebSocket (`tokio-tungstenite`) | Remote | **0 MB** | 24kHz f32 | Free Microsoft Bing ReadAloud, 3.3× RTF, sub-200ms latency |
+| **Supertonic 3** (local) | ONNX INT8, sherpa-onnx | 99M | ~144 MB | 24kHz f32 | 31 languages, 10 local voices |
 | **Chatterbox** (local clone) | GGML, chatterbox-rs | 340M Q4 | ~1.1 GB | 24kHz native | Voice cloning from 5s reference |
 | **Chatterbox Remote** | reqwest blocking HTTP | 340M | 0 MB (local) | 24kHz | Offloads to remote CUDA GPU |
 
@@ -174,20 +175,13 @@ All realtime providers follow `RealtimeVoiceProvider` + `RealtimeSession` traits
 
 > **Status: Active Development (WIP)** — See `docs/plans/memory-spec-v7.md` for the complete architecture specification.
 
-Vox implements a **cognitive memory subsystem** that operates asynchronously via a background worker (`persistence/memory_worker.rs`), decoupled from the live voice pipeline. The architecture is organized into 6 cognitive domains:
+Vox implements a **cognitive memory subsystem** that operates asynchronously via a background worker (`persistence/memory_worker.rs`), decoupled from the live voice pipeline. The architecture is organized into 4 cognitive scopes: `ChitChat`, `User`, `Domain` (primary default), `Temporal`.
 
-| Domain | Purpose | Processing |
-|--------|---------|------------|
-| `Identity` | Core user identity (name, age, profession) | NLI State Resolution |
-| `Directives` | Agent operational state (active tasks, promises) | Temporal SQL Fetch |
-| `Constraints` | Hard boundaries, safety rules | NLI Conflict Detection |
-| `Profile` | User persona, tastes, skills, preferences | LLM Edge Classification + ANN |
-| `Entities` | External knowledge (tools, APIs, codebases) | LLM Edge Classification + ANN |
-| `Narrative` | Session history summary (ephemeral) | In-memory compaction chain |
+A pre-retrieval **MemoryScope classifier** (ModernBERT INT8 ONNX, 4-class) routes each user query to the appropriate memory collection before embedding generation and vector search. This prunes irrelevant collections early, saving ~30ms of embedding inference and ~10–50ms of vector DB search per chit-chat turn.
 
-The ingestion pipeline runs as a 5-step async queue: **String Dedup → MiniLM-L12 Soft Vector Dedup → Domain Dispatch → NLI or LLM Evaluator → Turso MVCC persistence**. Full implementation details and benchmark gate results in `docs/plans/memory-spec-v7.md`.
+The ingestion pipeline runs as a 4-stage async queue: **Dedup(128) → Embed(16) → Eval(16, concurrent NLI+Edge) → Commit(32)**. Full implementation details and benchmark gate results in `docs/features/memory-architecture.md`.
 
-Key files: `services/memory/` (12 modules), `persistence/memory_worker.rs`, `persistence/mutations.rs`, `persistence/queries.rs`. See [`docs/features/memory-architecture.md`](features/memory-architecture.md) for the v6 architecture reference (being superseded).
+Key files: `services/memory/` (11 modules), `persistence/memory_worker.rs`, `persistence/mutations.rs`, `persistence/queries.rs`. See [`docs/features/memory-architecture.md`](features/memory-architecture.md) for the current v7 architecture reference.
 
 ---
 
@@ -320,4 +314,4 @@ Cold ──(engage)──→ Warm ──(auto-sleep timeout)──→ Cold
 
 ---
 
-**Last Updated:** 2026-07-27
+**Last Updated:** 2026-08-02

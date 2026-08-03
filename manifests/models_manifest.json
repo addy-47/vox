@@ -249,6 +249,13 @@
       ]
     },
     {
+      "id": "edge_tts",
+      "name": "Microsoft Edge TTS Engine (Cloud)",
+      "category": "tts",
+      "version": "1.0.0",
+      "files": []
+    },
+    {
       "id": "chatterbox_tts",
       "name": "Chatterbox Multilingual TTS Engine",
       "category": "tts",
@@ -332,14 +339,14 @@
           "id": "nli_deberta_onnx",
           "path": "nli/nli-deberta-v3-base/model_quantized.onnx",
           "size": 244288000,
-          "sha256": "addyo07_nli_deberta_v3_base",
+          "sha256": "9d83d9d0ba179cab8b78b942dcc42756da7712b2bbe101a2a4c25fdfa7968e2f",
           "required": true
         },
         {
           "id": "nli_deberta_tokenizer",
           "path": "nli/nli-deberta-v3-base/tokenizer.json",
           "size": 8656551,
-          "sha256": "addyo07_nli_tok",
+          "sha256": "a86f883318afa11c8c10466f1bf4efaeb6ded28a52cbe57217a8fa0d0a2a87df",
           "required": true
         }
       ]
@@ -354,14 +361,14 @@
           "id": "memory_scope_model_quantized",
           "path": "classifier/modernbert_memory_scope/model_quantized.onnx",
           "size": 150650880,
-          "sha256": "addyo07_memory_scope_v2",
+          "sha256": "2a24244f282966ded439a9e1c669d739b3fcbdebd52adeada642b4d364e9ffd8",
           "required": true
         },
         {
           "id": "memory_scope_tokenizer",
           "path": "classifier/modernbert_memory_scope/tokenizer.json",
           "size": 3583200,
-          "sha256": "addyo07_memory_scope_tok",
+          "sha256": "82d1ca5ef2019321c91a01b78653345e6fe8ef25a38b7d83f7857c380649c7cf",
           "required": true
         }
       ]
@@ -376,14 +383,14 @@
           "id": "edge_classifier_model_quantized",
           "path": "classifier/modernbert_edge_creation/model_quantized.onnx",
           "size": 150650880,
-          "sha256": "addyo07_edge_classifier_v1",
+          "sha256": "4118dd78d49db25f2d6b44a7f23b31886222f50c85a3f01134578cee5e27f4f7",
           "required": true
         },
         {
           "id": "edge_classifier_tokenizer",
           "path": "classifier/modernbert_edge_creation/tokenizer.json",
           "size": 3583200,
-          "sha256": "addyo07_edge_tok",
+          "sha256": "9fd55248d51d33976b324fc11592e28071da7d41e0e9401dfb7082e30574b7b1",
           "required": true
         }
       ]

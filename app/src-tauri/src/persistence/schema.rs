@@ -86,6 +86,20 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             vector         F32_BLOB(384),
             relations_json TEXT
         );",
+        // Pipeline Operational Observability Metrics Table
+        "CREATE TABLE IF NOT EXISTS memory_pipeline_metrics (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id            TEXT NOT NULL,
+            stage_name        TEXT NOT NULL,
+            session_id        TEXT NOT NULL DEFAULT '',
+            items_claimed     INTEGER NOT NULL DEFAULT 0,
+            items_processed   INTEGER NOT NULL DEFAULT 0,
+            items_superseded  INTEGER NOT NULL DEFAULT 0,
+            relations_created INTEGER NOT NULL DEFAULT 0,
+            duration_ms       INTEGER NOT NULL,
+            error_count       INTEGER NOT NULL DEFAULT 0,
+            created_at        INTEGER NOT NULL
+        );",
 
         // Performance Indices
         "CREATE INDEX IF NOT EXISTS idx_mf_type_status ON memory_facts(type, status);",
@@ -95,6 +109,8 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_mr_from ON memory_relations(from_id, relation);",
         "CREATE INDEX IF NOT EXISTS idx_mr_to ON memory_relations(to_id, relation);",
         "CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, created_at ASC);",
+        "CREATE INDEX IF NOT EXISTS idx_mpm_run ON memory_pipeline_metrics(run_id, stage_name);",
+        "CREATE INDEX IF NOT EXISTS idx_mpm_created ON memory_pipeline_metrics(created_at DESC);",
     ];
 
     for stmt in statements {

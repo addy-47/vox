@@ -748,3 +748,68 @@ pub async fn stop_backend_recording() -> Result<(Vec<f32>, u32), String> {
 
     Ok((samples, sample_rate))
 }
+
+// ─── Edge TTS Voice DTO & IPC Command ────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct EdgeTtsVoiceDto {
+    pub name: String,
+    pub short_name: String,
+    pub gender: String,
+    pub locale: String,
+    pub friendly_name: String,
+}
+
+#[tauri::command]
+pub async fn fetch_edge_tts_voices() -> Result<Vec<EdgeTtsVoiceDto>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(6))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let token = crate::services::tts::providers::edge_tts::get_trusted_client_token();
+    let url = format!("https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken={}", token);
+    let resp = client
+        .get(url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
+        .send()
+        .await
+        .map_err(|e| format!("Network error: Cannot reach Edge TTS voices endpoint. Internet connection required: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Edge TTS service error: HTTP {}", resp.status()));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct RawEdgeVoice {
+        #[serde(rename = "Name")]
+        name: String,
+        #[serde(rename = "ShortName")]
+        short_name: String,
+        #[serde(rename = "Gender")]
+        gender: String,
+        #[serde(rename = "Locale")]
+        locale: String,
+        #[serde(rename = "FriendlyName")]
+        friendly_name: String,
+    }
+
+    let raw_voices: Vec<RawEdgeVoice> = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Edge TTS voices response: {}", e))?;
+
+    let voices = raw_voices
+        .into_iter()
+        .map(|v| EdgeTtsVoiceDto {
+            name: v.name,
+            short_name: v.short_name,
+            gender: v.gender,
+            locale: v.locale,
+            friendly_name: v.friendly_name,
+        })
+        .collect();
+
+    Ok(voices)
+}
+

@@ -23,7 +23,8 @@ export interface SttProviderConfig {
 export type TtsProviderConfig =
   | { kind: "supertonic" }
   | { kind: "chatterbox"; language: string; quality_steps: number; speed: number }
-  | { kind: "chatterbox_remote"; endpoint: string; language: string; quality_steps: number; speed: number; remote_path: string };
+  | { kind: "chatterbox_remote"; endpoint: string; language: string; quality_steps: number; speed: number; remote_path: string }
+  | { kind: "edge_tts"; voice?: string };
 
 export interface ModelCapabilities {
   model_id: string;

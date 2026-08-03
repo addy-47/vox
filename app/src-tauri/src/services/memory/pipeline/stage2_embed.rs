@@ -23,6 +23,11 @@ pub struct Stage2Item {
 /// evaluates Phase 2 soft vector deduplication (cos >= 0.95), stores vector BLOB,
 /// and transitions to `embedded` or `superseded`.
 pub async fn run_stage2_embed(conn: &Connection) -> Result<usize> {
+    run_stage2_embed_with_metrics(conn, "").await
+}
+
+pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> Result<usize> {
+    let start_time = std::time::Instant::now();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -68,9 +73,11 @@ pub async fn run_stage2_embed(conn: &Connection) -> Result<usize> {
         return Ok(0);
     }
 
+    let items_claimed = items.len();
     ensure_embedder_loaded(true)?;
 
     let mut processed_count = 0;
+    let mut superseded_count = 0;
 
     for item in items {
         let embedding_res = generate_embedding(&item.fact);
@@ -103,6 +110,7 @@ pub async fn run_stage2_embed(conn: &Connection) -> Result<usize> {
                         (PM_QUEUE_STATUS_SUPERSEDED, blob_bytes, rel_json, item.id),
                     )
                     .await?;
+                    superseded_count += 1;
                 } else {
                     conn.execute(
                         "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
@@ -118,6 +126,23 @@ pub async fn run_stage2_embed(conn: &Connection) -> Result<usize> {
                 mutations::mark_job_failed(conn, item.id, "Embedding generation failed").await;
             }
         }
+    }
+
+    let duration_ms = start_time.elapsed().as_millis();
+
+    if !run_id.is_empty() {
+        let metrics = super::metrics::PipelineStageMetrics {
+            run_id: run_id.to_string(),
+            stage_name: "stage2_embed".to_string(),
+            session_id: String::new(),
+            items_claimed,
+            items_processed: processed_count,
+            items_superseded: superseded_count,
+            relations_created: 0,
+            duration_ms,
+            error_count: 0,
+        };
+        let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
     }
 
     Ok(processed_count)

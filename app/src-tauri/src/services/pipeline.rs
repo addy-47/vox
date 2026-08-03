@@ -306,7 +306,7 @@ impl PipelineOrchestrator {
         };
 
         use crate::core::settings::TtsProviderConfig;
-        use crate::services::tts::{ChatterboxEngine, ChatterboxRemoteProvider, TtsEngine as SupertonicEngine, TtsProvider};
+        use crate::services::tts::{ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider, TtsEngine as SupertonicEngine, TtsProvider};
 
         let provider: Box<dyn TtsProvider> = match &provider_config {
             TtsProviderConfig::Supertonic => {
@@ -343,6 +343,10 @@ impl PipelineOrchestrator {
                     ChatterboxRemoteProvider::new(endpoint, language, *remote_quality, *remote_speed, remote_path)
                         .map_err(|e| format!("Failed to create ChatterboxRemote provider: {}", e))?,
                 )
+            }
+            TtsProviderConfig::EdgeTts { voice: edge_voice } => {
+                log::info!("[Pipeline] Warming up TTS worker (EdgeTTS)...");
+                Box::new(EdgeTtsProvider::new(edge_voice.as_deref()))
             }
         };
 
