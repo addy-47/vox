@@ -1,12 +1,10 @@
 import React, {
-  useState,
-  useEffect,
-  useRef,
   useMemo,
-  useCallback,
   memo,
 } from "react";
-import { stopEngine, launchEngine, getRuntimeSnapshot, type RuntimeSnapshot, type LocalSnapshot } from "@/services/pipelineService";
+import { stopEngine, launchEngine } from "@/services/pipelineService";
+import { useMonitoringMetrics } from "@/shared/hooks/useMonitoringMetrics";
+import { Sparkline } from "@/shared/components/monitoring/Sparkline";
 import {
   Activity,
   Cpu,
@@ -19,42 +17,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { StatusDot } from "@/shared/components/ui";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const MAX_SAMPLES = 60;
-const POLL_MS = 1000;
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-const EngineBadge = memo(
-  ({
-    label,
-    active,
-    icon,
-  }: {
-    label: string;
-    active: boolean;
-    icon: React.ReactNode;
-  }) => (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all duration-500",
-        active
-          ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.1)]"
-          : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.06)]"
-      )}
-    >
-      <StatusDot status={active ? "active" : "offline"} size="sm" />
-      <span className={cn("transition-transform duration-500", active && "scale-110")}>
-        {icon}
-      </span>
-      {label}
-    </div>
-  )
-);
-EngineBadge.displayName = "EngineBadge";
+import { EngineBadge } from "@/shared/components/monitoring/EngineBadge";
 
 const ResourceBar = memo(
   ({
@@ -92,161 +55,20 @@ const ResourceBar = memo(
 );
 ResourceBar.displayName = "ResourceBar";
 
-const Sparkline = memo(
-  ({
-    history,
-    dataKey,
-  }: {
-    history: LocalSnapshot[];
-    dataKey: keyof RuntimeSnapshot;
-  }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const animationRef = useRef<number>(0);
-    const historyRef = useRef<LocalSnapshot[]>(history);
-    const dimensionsRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
-
-    useEffect(() => {
-      historyRef.current = history;
-    }, [history]);
-
-    useEffect(() => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const resize = () => {
-        const dpr = window.devicePixelRatio || 1;
-        const width = canvas.offsetWidth;
-        const height = canvas.offsetHeight;
-        
-        if (width !== dimensionsRef.current.width || height !== dimensionsRef.current.height) {
-          canvas.width = width * dpr;
-          canvas.height = height * dpr;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.resetTransform();
-            ctx.scale(dpr, dpr);
-          }
-          dimensionsRef.current = { width, height };
-        }
-      };
-
-      resize();
-      const observer = new ResizeObserver(() => {
-        resize();
-      });
-      observer.observe(canvas);
-
-      return () => {
-        observer.disconnect();
-      };
-    }, []);
-
-    useEffect(() => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const render = () => {
-        const ctx = canvas.getContext("2d", { alpha: true });
-        if (!ctx) {
-          animationRef.current = requestAnimationFrame(render);
-          return;
-        }
-
-        const { width, height } = dimensionsRef.current;
-        if (width === 0 || height === 0) {
-          animationRef.current = requestAnimationFrame(render);
-          return;
-        }
-
-        ctx.clearRect(0, 0, width, height);
-
-        const currentHistory = historyRef.current;
-        if (currentHistory.length < 2) {
-          animationRef.current = requestAnimationFrame(render);
-          return;
-        }
-
-        const now = performance.now();
-        const maxAge = MAX_SAMPLES * POLL_MS;
-
-        const points: { x: number; y: number }[] = [];
-        const values = currentHistory.map((h) => h[dataKey] as number);
-        const minVal = 0;
-        const maxVal =
-          dataKey === "vox_ram_mb"
-            ? Math.max(...values, 100)
-            : dataKey === "vox_cpu_usage"
-            ? 100
-            : 1.0;
-
-        for (let i = 0; i < currentHistory.length; i++) {
-          const pt = currentHistory[i];
-          const age = now - pt.localTime;
-          if (age > maxAge) continue;
-
-          const x = width - (age / maxAge) * width;
-          const val = pt[dataKey] as number;
-          const y = height - ((val - minVal) / (maxVal - minVal)) * (height - 6) - 3;
-          points.push({ x, y });
-        }
-
-        if (points.length < 2) {
-          animationRef.current = requestAnimationFrame(render);
-          return;
-        }
-
-        const accentVal =
-          getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() ||
-          "0, 219, 233";
-        const grad = ctx.createLinearGradient(0, 0, 0, height);
-        grad.addColorStop(0, `rgba(${accentVal}, 0.22)`);
-        grad.addColorStop(1, `rgba(${accentVal}, 0)`);
-
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, height);
-        for (let i = 0; i < points.length; i++) {
-          ctx.lineTo(points[i].x, points[i].y);
-        }
-        ctx.lineTo(points[points.length - 1].x, height);
-        ctx.closePath();
-        ctx.fillStyle = grad;
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length - 1; i++) {
-          const xc = (points[i].x + points[i + 1].x) / 2;
-          const yc = (points[i].y + points[i + 1].y) / 2;
-          ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
-        }
-        ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
-        ctx.strokeStyle = `rgb(${accentVal})`;
-        ctx.lineWidth = 1.8;
-        ctx.stroke();
-
-        animationRef.current = requestAnimationFrame(render);
-      };
-
-      animationRef.current = requestAnimationFrame(render);
-      return () => {
-        cancelAnimationFrame(animationRef.current);
-      };
-    }, [dataKey]);
-
-    return (
-      <div className="w-full h-[64px] relative rounded-xl overflow-hidden glass">
-        <canvas ref={canvasRef} className="block w-full h-full" />
-      </div>
-    );
-  }
-);
-Sparkline.displayName = "Sparkline";
-
 // ─── Main Page Component ──────────────────────────────────────────────────────
 
-export const Monitoring: React.FC = () => {
-  const [history, setHistory] = useState<LocalSnapshot[]>([]);
-  const latest = useMemo(() => history[history.length - 1] ?? null, [history]);
+export const Monitoring = memo(() => {
+  const {
+    history,
+    latest,
+    engineToggling: togglingEngine,
+    setEngineToggling: setTogglingEngine,
+    cpuTextRef,
+    cpuBarRef,
+    ramTextRef,
+    ramBarRef,
+    formatLatency,
+  } = useMonitoringMetrics();
 
   const isEngineLoaded = useMemo(() => {
     return !!(
@@ -256,87 +78,6 @@ export const Monitoring: React.FC = () => {
       latest?.is_tts_loaded
     );
   }, [latest]);
-
-  const [togglingEngine, setTogglingEngine] = useState(false);
-
-
-
-  const cpuTextRef = useRef<HTMLSpanElement>(null);
-  const cpuBarRef = useRef<HTMLDivElement>(null);
-  const ramTextRef = useRef<HTMLSpanElement>(null);
-  const ramBarRef = useRef<HTMLDivElement>(null);
-
-  const latestRef = useRef<LocalSnapshot | null>(null);
-  latestRef.current = latest;
-
-  // Background Polling Loop
-  useEffect(() => {
-    const poll = async () => {
-      try {
-        const snap = await getRuntimeSnapshot();
-        if (snap) {
-          setHistory((prev) => {
-            const next = [...prev, { ...snap, localTime: performance.now() }];
-            return next.length > MAX_SAMPLES ? next.slice(next.length - MAX_SAMPLES) : next;
-          });
-        }
-      } catch {
-        // silent
-      }
-    };
-
-    poll();
-    const id = setInterval(poll, POLL_MS);
-    return () => clearInterval(id);
-  }, []);
-
-  // Direct DOM Interpolation Loop (EMA) at 60fps
-  useEffect(() => {
-    let curCpu = 0;
-    let curRam = 0;
-    let rafId = 0;
-
-    if (latestRef.current) {
-      curCpu = latestRef.current.vox_cpu_usage;
-      curRam = latestRef.current.vox_ram_mb;
-    }
-
-    const tick = () => {
-      const snap = latestRef.current;
-      if (snap) {
-        const targetCpu = snap.vox_cpu_usage;
-        const targetRam = snap.vox_ram_mb;
-
-        curCpu += (targetCpu - curCpu) * 0.12;
-        curRam += (targetRam - curRam) * 0.12;
-
-        if (cpuTextRef.current) {
-          cpuTextRef.current.textContent = `${curCpu.toFixed(1)}%`;
-        }
-        if (cpuBarRef.current) {
-          cpuBarRef.current.style.width = `${Math.min(100, Math.max(0, curCpu))}%`;
-        }
-        if (ramTextRef.current) {
-          const ramGb = curRam / 1024;
-          ramTextRef.current.textContent = `${ramGb.toFixed(2)} GB`;
-        }
-        if (ramBarRef.current) {
-          const pct = Math.min(100, Math.max(0, (curRam / snap.total_ram_mb) * 100));
-          ramBarRef.current.style.width = `${pct}%`;
-        }
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
-
-  const formatLatency = useCallback((ms: number | null) => {
-    if (ms === null) return "--";
-    if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
-    return `${ms}ms`;
-  }, []);
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent px-8 pt-6 z-10 select-none">
@@ -497,4 +238,4 @@ export const Monitoring: React.FC = () => {
       </div>
     </div>
   );
-};
+});

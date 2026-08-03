@@ -1,31 +1,17 @@
-import React, { useState, useEffect, useRef , useCallback} from "react";
+import React, { memo } from "react";
 import { VoxOrb, PipelineField, StatusCapsule } from "@/shared/components/home";
 import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/shared/lib/utils";
-import { useTelemetry } from "@/shared/hooks/useTelemetry";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  engage,
-  startRealtimeSession,
-  stopRealtimeSession,
-  pausePipeline,
-  resumePipeline,
-  pttStart,
-  pttStop,
-  testClip,
-  testClipCancel,
-  getRealtimeSessionCache,
-  getRuntimeSnapshot,
-} from "@/services/pipelineService";
-import { getSettings } from "@/services/settingsService";
-import { getTurns } from "@/services/historyService";
-import { showMainWindow } from "@/services/windowService";
-import { type InteractionState } from "@/services/eventsService";
+  useHomePage,
+  toMood,
+  toStatusLabel,
+  isDotActive,
+} from "@/shared/hooks/useHomePage";
 import ReactMarkdown from "react-markdown";
 
 const MarkdownComponents = {
@@ -39,80 +25,6 @@ const MarkdownComponents = {
   code: ({node, ...props}: any) => <code className="bg-[rgba(var(--foreground),0.06)] px-1 rounded font-mono text-[11px]" {...props} />,
 };
 
-type InteractionMode = "PASSIVE" | "PTT";
-
-type AmbientMood = "calm" | "active" | "thinking" | "speaking";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Map interaction state → ambient background mood */
-function toMood(
-  state: InteractionState,
-  sleeping: boolean
-): AmbientMood {
-  if (sleeping) return "calm";
-  switch (state) {
-    case "UserSpeaking":
-      return "active";
-    case "Thinking":
-      return "thinking";
-    case "AssistantSpeaking":
-      return "speaking";
-    case "Listening":
-      return "active";
-    default:
-      return "calm";
-  }
-}
-
-/** Human-readable, single label for the top-right status capsule */
-function toStatusLabel(
-  state: InteractionState,
-  engaged: boolean,
-  sleeping: boolean,
-  ptt: "IDLE" | "RECORDING" | "PROCESSING",
-  isPaused: boolean,
-  idleTimeout: number | null
-): string {
-  if (!engaged) return "Dormant";
-  if (isPaused) return "Paused";
-  if (idleTimeout !== null) return `Idle · ${idleTimeout}s`;
-  if (sleeping) return "Sleeping";
-  if (ptt === "RECORDING") return "Recording";
-  if (ptt === "PROCESSING") return "Processing";
-  switch (state) {
-    case "UserSpeaking":
-      return "Listening";
-    case "Thinking":
-      return "Thinking";
-    case "AssistantSpeaking":
-      return "Speaking";
-    case "Listening":
-      return "Ready";
-    case "Interrupted":
-      return "Interrupted";
-    default:
-      return "Ready";
-  }
-}
-
-/** Whether the status capsule dot should pulse */
-function isDotActive(
-  state: InteractionState,
-  engaged: boolean,
-  ptt: "IDLE" | "RECORDING" | "PROCESSING",
-  isPaused: boolean
-): boolean {
-  if (!engaged || isPaused) return false;
-  return (
-    state === "UserSpeaking" ||
-    state === "Thinking" ||
-    state === "AssistantSpeaking" ||
-    ptt === "RECORDING" ||
-    ptt === "PROCESSING"
-  );
-}
-
 // ─── Test clips metadata ──────────────────────────────────────────────────────
 
 const TEST_CLIPS = [
@@ -124,599 +36,54 @@ const TEST_CLIPS = [
 ] as const;
 
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
-export const Home: React.FC = () => {
-  const hasActiveTurnStarted = useRef(false);
-  const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>("PASSIVE");
-  const [isEngaged, setIsEngaged] = useState(false);
-  const [pipelineMode, setPipelineMode] = useState<"modular" | "realtime">("modular");
-  const pipelineModeRef = useRef(pipelineMode);
-  useEffect(() => {
-    pipelineModeRef.current = pipelineMode;
-  }, [pipelineMode]);
-  const [isPaused, setIsPaused] = useState(false);
-  const [sessionResumed, setSessionResumed] = useState(false);
-  const [idleTimeout, setIdleTimeout] = useState<number | null>(null);
-  const [hasCachedSession, setHasCachedSession] = useState(false);
-  const [pttStatus, setPttStatus] = useState<"IDLE" | "RECORDING" | "PROCESSING">("IDLE");
-  const [transcript, setTranscript] = useState("");
-  const [assistantText, setAssistantText] = useState("");
-  const [isSleeping, setIsSleeping] = useState(false);
-  const [cpuWarning, setCpuWarning] = useState<{ governor: string } | null>(null);
-  const [isLaunching, setIsLaunching] = useState(false);
-  const [testMode, setTestMode] = useState(false);
-  const [testingClip, setTestingClip] = useState<string | null>(null);
-  const testingClipRef = useRef<string | null>(null);
-  const telemetryRef = useTelemetry();
-  const [errorAlert, setErrorAlert] = useState<string | null>(null);
+export const Home = memo(() => {
   const navigate = useNavigate();
+  const {
+    interactionState,
+    interactionMode,
+    isEngaged,
+    isSleeping,
+    isPaused,
+    hasCachedSession,
+    pttStatus,
+    transcript,
+    assistantText,
+    cpuWarning,
+    idleTimeout,
+    testMode,
+    setTestMode,
+    testingClip,
+    dialogueHistory,
+    telemetryRef,
+    errorAlert,
+    setErrorAlert,
+    dialogueScrollRef,
+    isLaunching,
+    isThinking,
+    isMobileScreen,
+    testButtonRef,
+    testPanelRef,
+    handleEngage,
+    handleEnd,
+    handlePause,
+    handleResume,
+    togglePtt,
+    handleTestClip,
+  } = useHomePage();
 
-  // Dialogue history system
-  const [dialogueHistory, setDialogueHistory] = useState<{ user: string; assistant: string; id: number }[]>([]);
-  const activeUserTextRef = useRef("");
-  const activeAiTextRef = useRef("");
-  const turnIdCounter = useRef(0);
-
-  // Layout refs
-  const testButtonRef = useRef<HTMLButtonElement>(null);
-  const testPanelRef = useRef<HTMLDivElement>(null);
-  const dialogueScrollRef = useRef<HTMLDivElement>(null);
-  const engageLockRef = useRef(false);
-  const engageTimeoutRef = useRef<NodeJS.Timeout | number | null>(null);
-  const prevEngagedRef = useRef(false);
-
-  // Streaming text hooks
   const streamedTranscript = useStreamingRenderer(transcript);
   const streamedAssistantText = useStreamingRenderer(assistantText);
 
-  // Mobile layout detection
-  const [isMobileScreen, setIsMobileScreen] = useState(false);
-  useEffect(() => {
-    const checkMobile = () => setIsMobileScreen(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
-
-  // Derived state
-  const isThinking = interactionState === "Thinking" || pttStatus === "PROCESSING";
   const ambientMood = toMood(interactionState, isSleeping);
-  const statusLabel = toStatusLabel(interactionState, isEngaged, isSleeping, pttStatus, isPaused, idleTimeout) + (sessionResumed && pipelineMode === "realtime" ? " (Resumed)" : "");
-  const dotActive = isDotActive(interactionState, isEngaged, pttStatus, isPaused);
-
-  // Keep testingClipRef in sync
-  useEffect(() => {
-    testingClipRef.current = testingClip;
-  }, [testingClip]);
-
-  // Archive current turn if there is any user or assistant content
-  const archiveCurrentTurn = useCallback(() => {
-    const userText = activeUserTextRef.current.trim();
-    const aiText = activeAiTextRef.current.trim();
-    if (userText || aiText) {
-      turnIdCounter.current += 1;
-      setDialogueHistory((prev) => {
-        const next = [...prev, { user: userText, assistant: aiText, id: turnIdCounter.current }];
-        // Only cap in modular mode — realtime sessions show full session history
-        return pipelineModeRef.current === "modular" ? next.slice(-4) : next;
-      });
-      activeUserTextRef.current = "";
-      activeAiTextRef.current = "";
-      setTranscript("");
-      setAssistantText("");
-    }
-  }, []);
-
-  // Clear dialogue history and transcript refs when session ends (isEngaged becomes false)
-  useEffect(() => {
-    if (prevEngagedRef.current && !isEngaged) {
-      setDialogueHistory([]);
-      setTranscript("");
-      setAssistantText("");
-      activeUserTextRef.current = "";
-      activeAiTextRef.current = "";
-    }
-    prevEngagedRef.current = isEngaged;
-  }, [isEngaged]);
-
-  // Auto-scroll to bottom of dialogue zone when transcript or history updates
-  useEffect(() => {
-    if (dialogueScrollRef.current) {
-      dialogueScrollRef.current.scrollTo({
-        top: dialogueScrollRef.current.scrollHeight,
-        behavior: "auto",
-      });
-    }
-  }, [dialogueHistory, streamedTranscript, streamedAssistantText]);
-
-  // Click outside to close test clips panel
-  useEffect(() => {
-    if (!testMode) return;
-    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
-      if (
-        testButtonRef.current &&
-        !testButtonRef.current.contains(event.target as Node) &&
-        testPanelRef.current &&
-        !testPanelRef.current.contains(event.target as Node)
-      ) {
-        setTestMode(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
-    };
-  }, [testMode]);
-
-  // Auto-reset test state when pipeline finishes (returns to Idle)
-  useEffect(() => {
-    if (interactionState === "Idle" && testingClip && hasActiveTurnStarted.current) {
-      archiveCurrentTurn();
-      setTestingClip(null);
-      setIsEngaged(false);
-      hasActiveTurnStarted.current = false;
-    }
-  }, [interactionState, testingClip, archiveCurrentTurn]);
-
-  // ── Handlers ────────────────────────────────────────────────────────────────
-
-  const handleCancelTest = async () => {
-    try {
-      await testClipCancel();
-      archiveCurrentTurn();
-      setTestingClip(null);
-      setTranscript("");
-      setAssistantText("");
-      setIsEngaged(false);
-      hasActiveTurnStarted.current = false;
-    } catch (err) {
-      console.error("[Home] Test clip cancel failed:", err);
-    }
-  };
-
-  const handleEngage = useCallback(async () => {
-    if (engageLockRef.current) return;
-    engageLockRef.current = true;
-
-    if (testingClip) {
-      await handleCancelTest();
-      engageLockRef.current = false;
-      return;
-    }
-    archiveCurrentTurn();
-    setIsLaunching(true);
-    setErrorAlert(null);
-    try {
-      // Fetch latest settings to check pipeline mode
-      const settings = await getSettings();
-      const mode = settings?.interaction?.pipeline_mode || "modular";
-
-      if (mode === "realtime") {
-        await startRealtimeSession();
-        setIsEngaged(true);
-        setIsPaused(false);
-        setPipelineMode("realtime");
-      } else {
-        await engage();
-        setIsEngaged(true);
-        setIsPaused(false);
-        setPipelineMode("modular");
-      }
-      setTranscript("");
-      setAssistantText("");
-    } catch (err) {
-      console.error("[Home] Engagement failed:", err);
-      const errMsg = typeof err === "string" ? err : (err instanceof Error ? err.message : String(err));
-      setErrorAlert(errMsg);
-    } finally {
-      setIsLaunching(false);
-      engageTimeoutRef.current = setTimeout(() => {
-        engageLockRef.current = false;
-      }, 800) as any;
-    }
-  }, [testingClip, archiveCurrentTurn]);
-
-  const handleEnd = useCallback(async () => {
-    if (!isEngaged || engageLockRef.current) return;
-    engageLockRef.current = true;
-    setIsLaunching(true);
-    setErrorAlert(null);
-
-    try {
-      if (pipelineMode === "realtime") {
-        await stopRealtimeSession();
-      } else {
-        await engage(); // Toggle off
-      }
-      setIsEngaged(false);
-      setIsPaused(false);
-      setTranscript("");
-      setAssistantText("");
-      setDialogueHistory([]);
-      activeUserTextRef.current = "";
-      activeAiTextRef.current = "";
-    } catch (err) {
-      console.error("[Home] End session failed:", err);
-    } finally {
-      setIsLaunching(false);
-      engageTimeoutRef.current = setTimeout(() => {
-        engageLockRef.current = false;
-      }, 800) as any;
-    }
-  }, [isEngaged, pipelineMode]);
-
-  const handlePause = useCallback(async () => {
-    if (!isEngaged || isPaused) return;
-    try {
-      await pausePipeline();
-      setIsPaused(true);
-      archiveCurrentTurn();
-    } catch (err) {
-      console.error("[Home] Pause failed:", err);
-    }
-  }, [isEngaged, isPaused, archiveCurrentTurn]);
-
-  const handleResume = useCallback(async () => {
-    if (!isEngaged || !isPaused) return;
-    try {
-      await resumePipeline();
-      setIsPaused(false);
-      setTranscript("");
-      setAssistantText("");
-    } catch (err) {
-      console.error("[Home] Resume failed:", err);
-    }
-  }, [isEngaged, isPaused]);
-
-  // ── Keyboard Keybindings ───────────────────────────────────────────────────
-  useEffect(() => {
-    const isInputActive = () => {
-      const activeEl = document.activeElement;
-      if (!activeEl) return false;
-      const tagName = activeEl.tagName.toLowerCase();
-      return (
-        tagName === "input" ||
-        tagName === "textarea" ||
-        tagName === "select" ||
-        activeEl.getAttribute("contenteditable") === "true"
-      );
-    };
-
-    const isSpacePressedRef = { current: false };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isInputActive()) return;
-      if (e.repeat) return;
-
-      const key = e.key.toLowerCase();
-
-      if (e.code === "Space") {
-        if (interactionMode === "PTT" && isEngaged && !isPaused) {
-          e.preventDefault();
-          if (!isSpacePressedRef.current) {
-            isSpacePressedRef.current = true;
-            archiveCurrentTurn();
-            pttStart("MainWindow").catch((err) => {
-              console.error("[Home] PTT start failed:", err);
-              isSpacePressedRef.current = false;
-            });
-          }
-        }
-      } else if (key === "s") {
-        e.preventDefault();
-        if (isEngaged) {
-          handleEnd();
-        } else {
-          handleEngage();
-        }
-      } else if (key === "p") {
-        e.preventDefault();
-        handlePause();
-      } else if (key === "r") {
-        e.preventDefault();
-        handleResume();
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        if (isSpacePressedRef.current) {
-          isSpacePressedRef.current = false;
-          if (interactionMode === "PTT" && isEngaged && !isPaused) {
-            e.preventDefault();
-            pttStop("MainWindow").catch((err) => {
-              console.error("[Home] PTT stop failed:", err);
-            });
-          }
-        }
-      }
-    };
-
-    const handleBlur = () => {
-      if (isSpacePressedRef.current) {
-        isSpacePressedRef.current = false;
-        if (interactionMode === "PTT" && isEngaged && !isPaused) {
-          pttStop("MainWindow").catch((err) => {
-            console.error("[Home] PTT stop on blur failed:", err);
-          });
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", handleBlur);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", handleBlur);
-      if (isSpacePressedRef.current && interactionMode === "PTT" && isEngaged && !isPaused) {
-        pttStop("MainWindow").catch(() => {});
-      }
-    };
-  }, [isEngaged, isPaused, interactionMode, handleEngage, handleEnd, handlePause, handleResume, archiveCurrentTurn]);
-
-  const togglePtt = async () => {
-    if (!isEngaged || isPaused) return;
-    try {
-      if (pttStatus === "IDLE") {
-        archiveCurrentTurn();
-        await pttStart("MainWindow");
-      } else {
-        await pttStop("MainWindow");
-      }
-    } catch (err) {
-      console.error("[Home] PTT toggle failed:", err);
-    }
-  };
-
-  const handleTestClip = async (clipId: string) => {
-    if (isEngaged) return;
-    archiveCurrentTurn();
-    hasActiveTurnStarted.current = false;
-    setTestingClip(clipId);
-    setIsEngaged(true);
-    setTestMode(false);
-    setTranscript("");
-    setAssistantText("");
-    try {
-      await testClip(clipId);
-    } catch (err) {
-      console.error("[Home] Test clip failed:", err);
-      setTestingClip(null);
-      setIsEngaged(false);
-    }
-  };
-
-  // ── Session Cache Check ──────────────────────────────────────────────────────
-  useEffect(() => {
-    if (pipelineMode === "realtime" && !isEngaged) {
-      getRealtimeSessionCache()
-        .then((cache) => setHasCachedSession(cache?.has_session ?? false))
-        .catch((err) => console.warn("[Home] Failed to check session cache:", err));
-    } else {
-      setHasCachedSession(false);
-    }
-  }, [isEngaged, pipelineMode]);
-
-  // ── Tauri event listeners ────────────────────────────────────────────────────
-
-  useEffect(() => {
-    let unlisteners: (() => void)[] = [];
-
-    const setup = async () => {
-      try {
-        const appWindow = getCurrentWindow();
-
-        const settings = await getSettings();
-        if (settings?.interaction?.main_app_mode) {
-          setInteractionMode(settings.interaction.main_app_mode.toUpperCase() as InteractionMode);
-        }
-        if (settings?.interaction?.pipeline_mode) {
-          setPipelineMode(settings.interaction.pipeline_mode.toLowerCase() as "modular" | "realtime");
-        }
-
-        try {
-          const snapshot = await getRuntimeSnapshot();
-          if (snapshot) {
-            const engaged = snapshot.is_engaged ?? false;
-            setIsEngaged(engaged);
-            prevEngagedRef.current = engaged;
-            setIsSleeping(snapshot.is_sleeping ?? false);
-            if (snapshot.cpu_governor && !snapshot.cpu_governor_optimal) {
-              setCpuWarning({ governor: snapshot.cpu_governor });
-            }
-
-            // Hydrate dialogue history if session is active
-            if (engaged && snapshot.conversation_id && snapshot.conversation_id !== 0) {
-              const turns = await getTurns(snapshot.conversation_id);
-              const history = turns.map((t) => ({
-                user: t.user_text,
-                assistant: t.assistant_text,
-                id: t.turn_id,
-              }));
-              setDialogueHistory(history);
-              if (history.length > 0) {
-                turnIdCounter.current = Math.max(...history.map((h) => h.id));
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("[Home] Failed to sync initial state:", e);
-        }
-
-        unlisteners.push(
-          await appWindow.listen<InteractionState>("state_changed", (event) => {
-            const newState = event.payload;
-            setInteractionState(newState);
-            if (newState !== "Idle") {
-              hasActiveTurnStarted.current = true;
-              setIdleTimeout(null);
-            }
-            // Archive old turns when starting speech or resetting to Listening/Idle
-            if (newState === "UserSpeaking" || newState === "Listening") {
-              archiveCurrentTurn();
-            }
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<{ text: string }>("transcript_partial", (event) => {
-            setTranscript(event.payload.text);
-            activeUserTextRef.current = event.payload.text;
-            setIdleTimeout(null);
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<{ text: string }>("transcript_final", (event) => {
-            setTranscript(event.payload.text);
-            activeUserTextRef.current = event.payload.text;
-            setIdleTimeout(null);
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<string>("llm_token", (event) => {
-            setAssistantText(event.payload);
-            activeAiTextRef.current = event.payload;
-            setIdleTimeout(null);
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<string>("mode_changed_main", (event) => {
-            setInteractionMode(event.payload.toUpperCase() as InteractionMode);
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<{ state: string }>("ptt_status", (event) => {
-            setPttStatus(event.payload.state as "IDLE" | "RECORDING" | "PROCESSING");
-            if (event.payload.state === "RECORDING") {
-              archiveCurrentTurn();
-              setAssistantText("");
-              setTranscript("");
-            }
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<boolean>("auto_sleep_state", (event) => {
-            setIsSleeping(event.payload);
-          })
-        );
-
-        unlisteners.push(
-          await listen<{ governor: string; optimal: boolean }>("cpu_governor_warning", (event) => {
-            if (!event.payload.optimal) {
-              setCpuWarning({ governor: event.payload.governor });
-            }
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen("playback_finished", () => {
-            if (testingClipRef.current) {
-              archiveCurrentTurn();
-              setTestingClip(null);
-              setIsEngaged(false);
-              hasActiveTurnStarted.current = false;
-            }
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<string | undefined>("pipeline_error", (event) => {
-            if (testingClipRef.current) {
-              archiveCurrentTurn();
-              setTestingClip(null);
-              setIsEngaged(false);
-              hasActiveTurnStarted.current = false;
-            }
-            if (pipelineModeRef.current === "realtime") {
-              setIsPaused(true);
-              console.error("[Home] Realtime S2S connection error:", event.payload);
-              setErrorAlert(event.payload || "Realtime connection to Gemini Live lost.");
-            }
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen("pipeline_paused", () => {
-            setIsPaused(true);
-            archiveCurrentTurn();
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen("pipeline_resumed", () => {
-            setIsPaused(false);
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen("realtime_session_started", () => {
-            setPipelineMode("realtime");
-            setSessionResumed(false);
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen("realtime_session_resumed", () => {
-            setPipelineMode("realtime");
-            setSessionResumed(true);
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<string>("realtime_session_ended", (event) => {
-            const reason = event.payload; // "user", "idle_timeout", "error"
-            setIsEngaged(false);
-            setIsPaused(false);
-            setDialogueHistory([]);
-            setTranscript("");
-            setAssistantText("");
-            activeUserTextRef.current = "";
-            activeAiTextRef.current = "";
-            console.log("[Home] Realtime S2S session ended. Reason:", reason);
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen("realtime_interrupted", () => {
-            setInteractionState("Interrupted");
-            setTimeout(() => setInteractionState("UserSpeaking"), 150);
-          })
-        );
-
-        unlisteners.push(
-          await appWindow.listen<{ seconds_remaining: number }>("realtime_idle_warning", (event) => {
-            setIdleTimeout(event.payload.seconds_remaining);
-          })
-        );
-
-        setTimeout(async () => {
-          await showMainWindow();
-        }, 300);
-      } catch (err) {
-        console.error("[Home] Failed to setup Tauri listeners:", err);
-      }
-    };
-
-    setup();
-    return () => {
-      if (engageTimeoutRef.current) {
-        clearTimeout(engageTimeoutRef.current as any);
-      }
-      unlisteners.forEach((u) => u());
-    };
-  }, []);
+  const statusLabel = toStatusLabel(
+    interactionState,
+    isEngaged,
+    isSleeping,
+    pttStatus,
+    isPaused,
+    idleTimeout
+  );
+  const dotActive = isDotActive(isEngaged, interactionState, pttStatus, isSleeping);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -796,7 +163,7 @@ export const Home: React.FC = () => {
         >
           <div className="flex-1 min-h-[4vh]" />
           {/* Dialogue History */}
-          {dialogueHistory.map((turn) => (
+          {dialogueHistory.map((turn: { user: string; assistant: string; id: number }) => (
             <React.Fragment key={turn.id}>
               {turn.user && (
                 <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed opacity-90 prose prose-invert select-text">
@@ -1021,4 +388,4 @@ export const Home: React.FC = () => {
 
     </div>
   );
-};
+});

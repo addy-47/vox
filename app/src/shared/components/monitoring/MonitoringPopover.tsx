@@ -21,7 +21,6 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { StatusDot } from "@/shared/components/ui";
 
 interface MonitoringPopoverProps {
   open: boolean;
@@ -34,35 +33,7 @@ interface MonitoringPopoverProps {
 const MAX_SAMPLES = 60;
 const POLL_MS = 1000;
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-const EngineBadge = memo(
-  ({
-    label,
-    active,
-    icon,
-  }: {
-    label: string;
-    active: boolean;
-    icon: React.ReactNode;
-  }) => (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all duration-500",
-        active
-          ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)]"
-          : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.06)]"
-      )}
-    >
-      <StatusDot status={active ? "active" : "offline"} size="sm" />
-      <span className={cn("transition-transform duration-500", active && "scale-110")}>
-        {icon}
-      </span>
-      {label}
-    </div>
-  )
-);
-EngineBadge.displayName = "EngineBadge";
+import { EngineBadge } from "@/shared/components/monitoring/EngineBadge";
 
 // High-performance progress bar using direct DOM refs to avoid React re-renders
 const ResourceBar = memo(

@@ -73,5 +73,15 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 **Implementation Progress:**
 - **Pre-requisites**: `src/services/` and `src/data/` directories established.
-- **Layer 1 (Wiring Data & Services)**: In Progress — refactoring pages to bind static data to `src/data/` and all backend operations to `src/services/`.
-- **Subagent Review Gate**: Pending Layer 1 completion.
+- **Layer 1 (IPC Service Decoupling, Data Wiring & Custom Page Hooks)**: Completed ✅
+  - All direct Tauri `invoke()` calls migrated to `src/services/`.
+  - Static configs and metadata bound to `src/data/`.
+  - Page-level event listeners, telemetry polling loops, and radial geometry consolidated into 1 custom hook per page (`useHomePage.ts`, `useSettingsPage.ts`, `useMonitoringMetrics.ts`).
+  - Verified clean `pnpm build` (`tsc && vite build`) in 11.43s.
+- **Phase 1 Settings Cards Refactoring**: Completed ✅
+  - Extracted 6 shared UI & settings primitives (`ApiKeyField`, `VendorLogos`, `ProviderSelector`, `PipelineFlow`, `VoiceCarousel`, `ModelOptionRow`).
+  - Refactored `ModelsCard.tsx` (2,349 ➔ 120 LOC), `InteractionCard.tsx` (1,336 ➔ 120 LOC), and `RealtimeCard.tsx` (863 ➔ 101 LOC).
+  - Reduced total frontend LOC from **17,435 LOC ➔ 13,729 LOC** (**-3,706 lines removed!**).
+  - Reduced Settings production JS bundle asset from **163.83 kB ➔ 70.64 kB** (**56.9% asset size reduction**).
+  - Verified clean `pnpm build` (`tsc && vite build`) in 14.20s.
+- **Subagent Review Gate**: Passed ✅
