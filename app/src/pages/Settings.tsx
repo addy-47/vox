@@ -1,5 +1,5 @@
 import { useState, useCallback, memo, useEffect, useMemo, useRef, Suspense } from "react";
-import { Brain, Palette, Eye, Database, UserCircle, Sliders, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";

@@ -2,7 +2,7 @@ import { memo } from "react";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { Eye, EyeOff, Activity, Radio } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Card, Badge, ToggleTile } from "@/shared/ui";
+import { Card, ToggleTile, SliderField } from "@/shared/ui";
 
 interface TrayCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -117,37 +117,20 @@ export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
         </div>
 
         {/* History Limit Slider */}
-        <div className="space-y-2 mt-4">
-          <div className="flex justify-between items-center">
-            <div className="flex flex-col">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70">
-                History Limit
-              </span>
-              {!isSmall && (
-                <span className="text-[11px] text-[rgb(var(--foreground-muted))]/55">
-                  Maximum stored dialogue turns in tray
-                </span>
-              )}
-            </div>
-            <Badge variant="accent" size="sm" className="font-mono">
-              {ui.tray_history_limit} turns
-            </Badge>
-          </div>
-          <input
-            type="range"
-            min="1"
-            max="15"
-            value={ui.tray_history_limit}
-            onChange={(e) => updateDraft("ui", "tray_history_limit", Number(e.target.value))}
-            className="w-full mt-2"
-          />
-        </div>
+        <SliderField
+          label="History Limit"
+          sublabel={!isSmall ? "Maximum stored dialogue turns in tray" : undefined}
+          value={ui.tray_history_limit}
+          min={1}
+          max={15}
+          step={1}
+          formatValue={(v) => `${v} turns`}
+          onChange={(v) => updateDraft("ui", "tray_history_limit", v)}
+          className="mt-2"
+        />
       </div>
     </Card>
   );
 });
-
-TrayCard.displayName = "TrayCard";
-
 
 TrayCard.displayName = "TrayCard";

@@ -318,33 +318,16 @@ const PipelineFlow = ({
   );
 };
 
-// ─── Provider display name helpers ────────────────────────────────────────────
+import {
+  REALTIME_PROVIDER_DISPLAY_NAMES,
+  REALTIME_PROVIDER_SHORT_NAMES,
+} from "@/data/providers";
 
-const providerDisplayName = (id: string): string => {
-  switch (id) {
-    case "gemini_live":
-      return "Gemini Multimodal Live";
-    case "openai_realtime":
-      return "OpenAI Realtime API";
-    case "deepgram_voice_agent":
-      return "Deepgram Voice Agent";
-    default:
-      return "ElevenLabs Conversational AI";
-  }
-};
+const providerDisplayName = (id: string): string =>
+  (REALTIME_PROVIDER_DISPLAY_NAMES as any)[id] || "ElevenLabs Conversational AI";
 
-const providerShortName = (id: string): string => {
-  switch (id) {
-    case "gemini_live":
-      return "Gemini";
-    case "openai_realtime":
-      return "OpenAI";
-    case "deepgram_voice_agent":
-      return "Deepgram";
-    default:
-      return "ElevenLabs";
-  }
-};
+const providerShortName = (id: string): string =>
+  (REALTIME_PROVIDER_SHORT_NAMES as any)[id] || "ElevenLabs";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 

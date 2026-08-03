@@ -21,39 +21,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { checkLlmProviderHealth } from "@/services/settingsService";
-
-const CLOUD_PROVIDERS = [
-  {
-    id: "openai",
-    name: "OpenAI",
-    url: "https://api.openai.com/v1",
-    keyPlaceholder: "sk-proj-...",
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    url: "https://generativelanguage.googleapis.com/v1beta",
-    keyPlaceholder: "AIzaSy...",
-  },
-  {
-    id: "nvidia",
-    name: "NVIDIA NIM",
-    url: "https://integrate.api.nvidia.com/v1",
-    keyPlaceholder: "nvapi-...",
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    url: "https://api.anthropic.com/v1",
-    keyPlaceholder: "sk-ant-...",
-  },
-  {
-    id: "groq",
-    name: "Groq",
-    url: "https://api.groq.com/openai/v1",
-    keyPlaceholder: "gsk_...",
-  },
-];
+import { CLOUD_PROVIDERS } from "@/data/providers";
 
 const GeminiLogo = ({
   active,

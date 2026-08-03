@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { useDynamicFPS } from '@/shared/hooks/useDynamicFPS';
+import { type InteractionState } from '@/services/eventsService';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface VoxOrbProps {
   telemetryRef?: React.MutableRefObject<{ energy: number; vad_prob: number; low: number; mid: number; high: number }>;
   amplitude?: number;
-  interactionState?: 'Idle' | 'Listening' | 'UserSpeaking' | 'Thinking' | 'AssistantSpeaking' | 'Interrupted';
+  interactionState?: InteractionState;
   isSleeping?: boolean;
   isTesting?: boolean;
 }

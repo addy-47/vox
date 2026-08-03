@@ -10,13 +10,15 @@ import { LiveTestStep } from "./steps/LiveTestStep";
 import { CompletedStep } from "./steps/CompletedStep";
 import { revealWizard, fetchManifest } from '@/services/modelService';
 import { listen } from "@tauri-apps/api/event";
-import { CheckCircle2, Settings2, Shield, Mic2, Sparkles, Home } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { TitleBar } from '@/layout/TitleBar';
 import { AmbientBackground } from '@/shared/components/common';
 import { useSettingsStore } from '@/store/settingsStore';
 import logo from '@/assets/logo.webp';
 import logoLight from '@/assets/logo-light.webp';
+
+import { WIZARD_STEPS } from '@/data/welcomeContent';
 
 export const WizardRoot: React.FC = () => {
   const [state, send] = useMachine(setupMachine);
@@ -35,7 +37,7 @@ export const WizardRoot: React.FC = () => {
       .catch(() => {});
     
     return () => clearTimeout(timer);
-  }, [send]);
+  }, []);
 
   React.useEffect(() => {
     // Listen for model setup progress
@@ -48,14 +50,7 @@ export const WizardRoot: React.FC = () => {
     };
   }, [send]);
 
-  const steps = [
-    { id: 'welcome', label: 'Welcome', icon: <Home className="w-4 h-4" /> },
-    { id: 'checking', label: 'System Check', icon: <Shield className="w-4 h-4" /> },
-    { id: 'downloading', label: 'AI Models', icon: <Settings2 className="w-4 h-4" /> },
-    { id: 'audio', label: 'Audio Pipeline', icon: <Mic2 className="w-4 h-4" /> },
-    { id: 'testing', label: 'Live Test', icon: <Sparkles className="w-4 h-4" /> },
-    { id: 'completed', label: 'Setup Done', icon: <CheckCircle2 className="w-4 h-4" /> },
-  ];
+  const steps = WIZARD_STEPS.map(s => ({ ...s, icon: <s.icon className="w-4 h-4" /> }));
 
   const renderStep = () => {
     const error = state.context.error;

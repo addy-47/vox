@@ -16,6 +16,7 @@ import {
   checkForModelUpdates,
   checkModelExists,
   fetchManifest,
+  type VoxManifest,
 } from "@/services/modelService";
 import {
   checkTtsProviderHealth,
@@ -42,28 +43,6 @@ interface ModelStatus {
   bytesDownloaded: number;
   totalBytes: number;
   error?: string;
-}
-
-interface ModelEntry {
-  id: string;
-  path: string;
-  size: number;
-  required: boolean;
-}
-
-interface ModelGroup {
-  id: string;
-  name: string;
-  category: string;
-  version: string;
-  files: ModelEntry[];
-}
-
-interface VoxManifest {
-  models_version: string;
-  release_notes?: string[] | null;
-  total_size_bytes: number;
-  model_groups: ModelGroup[];
 }
 
 const pulseStyles = `
