@@ -84,6 +84,7 @@ Inside Stage 3, **2 dedicated model workers** (1 for Sub-Branch A: NLI and 1 for
 - **Input status**: `embedded`
 - **Output status**: `evaluated` or `superseded`
 - **Execution**: Claims up to 16 `embedded` queue items (`UPDATE ... SET status = 'processing_eval', claimed_at = ?`).
+- **Candidate Resolution Union**: Candidates are fetched by unioning persistent DB active facts from `memory_facts` WITH in-flight queue items in the current batch (`items` in `personal_memory_queue`). This guarantees intra-batch NLI and edge evaluation operates seamlessly on cold starts.
 - **Concurrent Sub-Branches**:
   - **Sub-Branch A (DeBERTa-v3 NLI Engine)**: Evaluates intra-domain candidate pairs ($\text{cos} \ge 0.40$) for stateful domains (`Identity`, `Directives`, `Constraints`).
     - `Identity` & `Directives`: `ENTAILMENT` ($\ge 0.85$) $\rightarrow$ `SUPPORTS` edge; `CONTRADICTION` ($\ge 0.85$) $\rightarrow$ `SUPERSEDES` edge.
@@ -96,12 +97,12 @@ Inside Stage 3, **2 dedicated model workers** (1 for Sub-Branch A: NLI and 1 for
 
 ### Stage 4: Commit & Prune Worker (Batch Size 32)
 - **Input status**: `evaluated` or `superseded`
-- **Output status**: Deleted from queue; active in `memory_facts` and `memory_relations`.
-- **Execution**: Claims up to 32 items (`UPDATE ... SET status = 'processing_commit', claimed_at = ?`).
+- **Output status**: Deleted from queue; active/superseded in `memory_facts` and relations in `memory_relations`.
+- **Execution**: Claims up to 32 `evaluated` or `superseded` items (`UPDATE ... SET status = 'processing_commit', claimed_at = ?`).
 - **Transaction**: Inside a single atomic Turso transaction (`BEGIN TRANSACTION` ... `COMMIT`):
-  1. Inserts record into `memory_facts` (`status = 'active'`).
+  1. Inserts record into `memory_facts` (`status = 'active'` for `evaluated` items, `status = 'superseded'` for `superseded` items).
   2. Inserts vector into `memory_facts_vectors` (if vector present).
-  3. Inserts forward and inverse edges into `memory_relations` (`INSERT OR IGNORE`).
+  3. Inserts forward and inverse edges into `memory_relations` (`INSERT OR IGNORE`) for all relations in `relations_json` (including Stage 2 soft-vector `SUPERSEDES` edges).
   4. For any `SUPERSEDES` relation edge, updates target fact `status = 'inactive'` in `memory_facts`.
   5. Deletes processed rows from `personal_memory_queue` (`DELETE FROM personal_memory_queue WHERE id = ?`).
 

@@ -38,3 +38,19 @@ pub async fn run_pipeline_cycle(conn: &Connection, cancel_flag: &Arc<AtomicBool>
 
     Ok(total_processed)
 }
+
+/// Continuously executes pipeline cycles until the personal_memory_queue is completely drained.
+pub async fn drain_pipeline_queue(conn: &Connection, cancel_flag: &Arc<AtomicBool>) -> Result<usize> {
+    let mut total_drained = 0;
+    loop {
+        if cancel_flag.load(Ordering::Relaxed) {
+            break;
+        }
+        let cycle_processed = run_pipeline_cycle(conn, cancel_flag).await?;
+        if cycle_processed == 0 {
+            break;
+        }
+        total_drained += cycle_processed;
+    }
+    Ok(total_drained)
+}
