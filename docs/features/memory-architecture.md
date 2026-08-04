@@ -89,6 +89,7 @@ The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & 
 2. For each item, fetch two candidate sets concurrently:
    - **Sub-Branch A (NLI):** Intra-collection candidates with cosine ≥ `SAME_COLLECTION_CANDIDATE_SEARCH` (0.40), no K-cap. Only for items in NLI domains: `Identity`, `Directives`, `Constraints`.
    - **Sub-Branch B (Edge Classifier):** Inter-collection candidates with cosine ≥ `INTER_COLLECTION_CANDIDATE_SEARCH` (0.55), no K-cap. Only for pairs where `inter_collection_edge()` returns a valid policy pair.
+   - **Candidate Resolution Union:** Candidates are fetched by unioning persistent DB active facts from `memory_facts` WITH in-flight queue items in the current batch (`items` in `personal_memory_queue`). This guarantees intra-batch NLI and edge evaluation operates seamlessly on cold starts.
 3. Both sub-branches run concurrently via `tokio::task::spawn_blocking` + `tokio::join!`.
 4. Results merged into a single `BatchEvaluationResult` and written as one atomic `UPDATE`.
 
@@ -138,18 +139,20 @@ Note: `Narrative` never originates inter-collection edges. Special state collect
 | Input statuses | `evaluated` or `superseded` |
 
 **Logic:**
-1. SELECT up to 32 `evaluated`/`superseded` rows, claim atomically.
+1. SELECT up to 32 `evaluated` or `superseded` rows, claim atomically.
 2. For each item:
    - Generate a fact ID: `mem_{timestamp}_{uuid}`.
-   - `INSERT INTO memory_facts` with `status = 'active'`.
+   - `INSERT INTO memory_facts` with `status = 'active'` (for `evaluated` items) or `status = 'superseded'` (for `superseded` items from Stage 2 soft-dedup or Stage 3 NLI).
    - If vector present → `INSERT INTO memory_facts_vectors`.
-   - For each relation in `relations_json` → `INSERT OR IGNORE INTO memory_relations`.
+   - For each relation in `relations_json` (including Stage 2 soft-vector `SUPERSEDES` edges) → `INSERT OR IGNORE INTO memory_relations`.
    - If any relation is `SUPERSEDES` → `UPDATE memory_facts SET status = 'inactive' WHERE id = to_id`.
 3. All operations wrapped in a single `BEGIN TRANSACTION / COMMIT` with `ROLLBACK` on error.
 4. `DELETE FROM personal_memory_queue WHERE id = ?` for all processed rows.
 
 **Constants:**
 - `STAGE4_BATCH_SIZE = 32`
+
+> **Execution & Evaluation Rule:** All benchmark probes and evaluation scripts MUST be executed using `--release` mode (`cargo run --release --example <eval_name>`). Debug profile builds omit SIMD/LTO/ONNX optimizations and produce unrepresentative latency metrics.
 
 ---
 
