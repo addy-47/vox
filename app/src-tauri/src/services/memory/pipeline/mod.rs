@@ -8,7 +8,7 @@ pub mod stage4_commit;
 
 pub use batch_result::{BatchEvaluationResult, RelationEdge};
 pub use metrics::PipelineStageMetrics;
-pub use runner::run_pipeline_cycle;
+pub use runner::{drain_pipeline_queue, run_pipeline_cycle};
 pub use stage1_dedup::run_stage1_dedup;
 pub use stage2_embed::run_stage2_embed;
 pub use stage3_eval::run_stage3_eval;

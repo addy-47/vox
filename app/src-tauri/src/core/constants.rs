@@ -95,15 +95,14 @@ pub const TRANSITION_MESSAGES_HI: &[&str] = &[
 
 // ─── Working Memory Compaction ──────────────────
 
-pub const COMPACTION_SYSTEM_PROMPT: &str = r#"pub const COMPACTION_SYSTEM_PROMPT: &str = r#"
+pub const COMPACTION_SYSTEM_PROMPT: &str = r#"
 <role>
-You are a high-precision memory extraction engine.
-Your task is to compress a conversation into durable structured memory.
+You are a cognitive memory extraction engine for an intelligent assistant.
+Your task is to analyze conversation turns and extract complete, self-contained declarative facts.
 </role>
 
 <objective>
-Extract only explicit, high-confidence information from the conversation into the defined memory collections.
-Maximize precision over recall.
+Extract explicit, high-confidence observations into 6 structured memory collections.
 </objective>
 
 <output_schema>
@@ -120,34 +119,32 @@ Maximize precision over recall.
 <collection_definitions>
 
 Identity
-Stable present-tense identity establishing who the primary subject fundamentally is.
+Stable present-tense statements establishing fundamental facts about who the primary user is.
 
 Directives
-Current operational state, active goals, assigned work, standing instructions, commitments, progress and blockers.
+Active operational goals, pending tasks, commitments, standing instructions, and progress updates.
 
 Narrative
-A single chronological summary describing the session's progression and important milestones.
+A single concise chronological summary describing the session's overall progression.
 
 Profile
-Stable personal characteristics including preferences, habits, skills, background, experience and behavioral tendencies.
+Personal traits, preferences, background, skills, and habits of user.
 
 Entities
-Named external subjects such as people, projects, organizations, products, codebases, tools, locations and systems.
+Complete declarative statements describing named external subjects (people, projects, tools, locations etc) and the context around them.
 
 Constraints
-Hard non-negotiable limitations, prohibitions, safety boundaries or technical restrictions whose violation would cause failure or unacceptable behavior.
+Hard non-negotiable limitations, safety boundaries, or technical restrictions imposed by user or external factors.
 
 </collection_definitions>
 
 <extraction_principles>
-- Assign every fact to exactly one collection and choose the most specific applicable collection.
-- Identity describes fundamental identity; Profile describes characteristics.
-- Directives describe active work; Constraints describe hard boundaries.
-- Entities describe external named objects, not the user.
-- Narrative contains only the chronological session summary.
-- Never infer, assume, speculate or complete missing information.
-- Every collection is optional except narrative. Leave collections empty when nothing qualifies.
-- Prefer omitting uncertain information over storing incorrect information.
+- Every extracted item MUST be a complete, meaningful declarative sentence.
+- NEVER output bare entity names, single words, or incomplete fragments.
+- Assign every statement to its most specific applicable collection.
+- Entities must describe the named object AND the user's relationship or context with it.
+- Never infer, speculate, or hallucinate missing information.
+- All collections except Narrative are optional arrays of statements.
 - Translate all extracted content into clear English.
 </extraction_principles>
 

@@ -108,18 +108,32 @@ pub async fn evaluate_compaction_quality(
                 "max_tokens": 1500
             });
 
-            let resp = client
-                .post("https://integrate.api.nvidia.com/v1/chat/completions")
-                .header("Authorization", format!("Bearer {}", api_key))
-                .header("Content-Type", "application/json")
-                .json(&payload)
-                .send()
-                .await?;
-
-            if !resp.status().is_success() {
-                let err_text = resp.text().await.unwrap_or_default();
-                return Err(anyhow!("Nvidia API error during LLM Judge evaluation: {}", err_text));
+            let mut resp = None;
+            for attempt in 1..=3 {
+                let r = client
+                    .post("https://integrate.api.nvidia.com/v1/chat/completions")
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&payload)
+                    .send()
+                    .await;
+                match r {
+                    Ok(res) if res.status().is_success() => {
+                        resp = Some(res);
+                        break;
+                    }
+                    Ok(res) => {
+                        let err_text = res.text().await.unwrap_or_default();
+                        log::warn!("[LlmJudge] Nvidia API attempt {} failed: {}", attempt, err_text);
+                    }
+                    Err(e) => {
+                        log::warn!("[LlmJudge] Nvidia API attempt {} request error: {}", attempt, e);
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             }
+
+            let resp = resp.ok_or_else(|| anyhow!("Nvidia API request failed after 3 attempts"))?;
 
             let json_body: serde_json::Value = resp.json().await?;
             let content = json_body["choices"][0]["message"]["content"]
@@ -277,14 +291,18 @@ fn parse_compaction_metrics_json(resp_text: &str) -> Result<CompactionJudgeMetri
         return Ok(m);
     }
 
-    // Fallback: sanitize unescaped annotations like `"string" (annotation)` or `"string" should be...` -> `"string (annotation)"`
+    // Fallback: sanitize unescaped annotations like `"string" should be in "Collection"...` -> `"string (should be in Collection)"`
     let re1 = regex::Regex::new(r#""([^"]*)"\s*\(([^)]*)\)"#).unwrap();
     let sanitized1 = re1.replace_all(cleaned, r#""$1 ($2)""#).to_string();
 
-    let re2 = regex::Regex::new(r#""([^"]*)"\s+(should be [^"\]\n]*|is [^"\]\n]*|belongs [^"\]\n]*)"#).unwrap();
+    let re2 = regex::Regex::new(r#""([^"\n]+)"\s+(should be [^,\n\]]+|is [^,\n\]]+|belongs [^,\n\]]+)"#).unwrap();
     let sanitized2 = re2.replace_all(&sanitized1, r#""$1 ($2)""#).to_string();
 
-    serde_json::from_str::<CompactionJudgeMetrics>(&sanitized2)
+    // Remove any trailing internal unescaped quotes within array string items
+    let re3 = regex::Regex::new(r#"\((should be|is|belongs) ([^)]*)"([^)]*)"([^)]*)\)"#).unwrap();
+    let sanitized3 = re3.replace_all(&sanitized2, r#"($1 $2'$3'$4)"#).to_string();
+
+    serde_json::from_str::<CompactionJudgeMetrics>(&sanitized3)
         .map_err(|e| anyhow!("Failed to parse CompactionJudgeMetrics JSON: {}. Raw response: {}", e, resp_text))
 }
 
