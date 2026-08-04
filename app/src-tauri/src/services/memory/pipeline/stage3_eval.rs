@@ -6,6 +6,7 @@ use crate::core::constants::{
     PM_SEMANTIC_GRAPH_COLLECTIONS,
 };
 use crate::persistence::{decode_f32_blob, queries};
+use crate::services::memory::cosine_similarity;
 use crate::services::memory::edge_classifier;
 use crate::services::memory::nli::{classify_pair, ensure_nli_loaded, relation_from_result, NliRelation, NLI_MODEL_DIR};
 use super::batch_result::{BatchEvaluationResult, RelationEdge};
@@ -54,23 +55,35 @@ fn eval_subbranch_a_nli_sync(
             let relation = relation_from_result(&nli_res);
             match relation {
                 NliRelation::Conflicts => {
-                    let (fwd, inv) = if item.collection == "Identity" || item.collection == "Directives" {
-                        (PM_RELATION_SUPERSEDES, "superseded_by")
+                    let is_topic_overlap = if item.collection == "Directives" {
+                        let lower_a = item.fact.to_lowercase();
+                        let lower_b = cand_fact.to_lowercase();
+                        let set_a: std::collections::HashSet<_> = lower_a.split_whitespace().collect();
+                        let set_b: std::collections::HashSet<_> = lower_b.split_whitespace().collect();
+                        set_a.intersection(&set_b).count() > 0
                     } else {
-                        (PM_RELATION_CONFLICTS, "conflicts_with")
+                        true
                     };
-                    relations.push(RelationEdge {
-                        from_id: format!("item_{}", item.id),
-                        to_id: cand_id.clone(),
-                        relation: fwd.to_string(),
-                        source: "NLI".to_string(),
-                    });
-                    relations.push(RelationEdge {
-                        from_id: cand_id.clone(),
-                        to_id: format!("item_{}", item.id),
-                        relation: inv.to_string(),
-                        source: "NLI".to_string(),
-                    });
+
+                    if is_topic_overlap {
+                        let (fwd, inv) = if item.collection == "Identity" || item.collection == "Directives" {
+                            (PM_RELATION_SUPERSEDES, "superseded_by")
+                        } else {
+                            (PM_RELATION_CONFLICTS, "conflicts_with")
+                        };
+                        relations.push(RelationEdge {
+                            from_id: format!("item_{}", item.id),
+                            to_id: cand_id.clone(),
+                            relation: fwd.to_string(),
+                            source: "NLI".to_string(),
+                        });
+                        relations.push(RelationEdge {
+                            from_id: cand_id.clone(),
+                            to_id: format!("item_{}", item.id),
+                            relation: inv.to_string(),
+                            source: "NLI".to_string(),
+                        });
+                    }
                 }
                 NliRelation::Supports => {
                     relations.push(RelationEdge {
@@ -202,9 +215,9 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
     let mut superseded_count = 0;
     let mut total_relations_created = 0;
 
-    for item in items {
-        // Fetch candidates for Sub-Branch A and Sub-Branch B without K-cap (Spec Behavioral Invariants #3)
-        let nli_candidates = queries::fetch_intra_collection_candidates(
+    for item in &items {
+        // Fetch candidates from DB active facts
+        let mut nli_candidates = queries::fetch_intra_collection_candidates(
             conn,
             &item.collection,
             &item.vector,
@@ -214,13 +227,26 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
         .await
         .unwrap_or_default();
 
+        // Include intra-batch candidate facts for cold-start and batch isolation
+        for other in &items {
+            if other.id != item.id && other.collection == item.collection {
+                let sim = cosine_similarity(&item.vector, &other.vector);
+                if sim >= SAME_COLLECTION_CANDIDATE_SEARCH {
+                    let cand_id = format!("item_{}", other.id);
+                    if !nli_candidates.iter().any(|(id, _)| id == &cand_id) {
+                        nli_candidates.push((cand_id, other.fact.clone()));
+                    }
+                }
+            }
+        }
+
         let policy_targets: Vec<&'static str> = PM_SEMANTIC_GRAPH_COLLECTIONS
             .iter()
             .copied()
             .filter(|&tgt| inter_collection_edge(&item.collection, tgt).is_some())
             .collect();
 
-        let edge_candidates = if !policy_targets.is_empty() {
+        let mut edge_candidates = if !policy_targets.is_empty() {
             queries::fetch_inter_collection_candidates(
                 conn,
                 &policy_targets,
@@ -233,6 +259,19 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
         } else {
             Vec::new()
         };
+
+        // Include intra-batch inter-collection candidate facts
+        for other in &items {
+            if other.id != item.id && policy_targets.contains(&other.collection.as_str()) {
+                let sim = cosine_similarity(&item.vector, &other.vector);
+                if sim >= INTER_COLLECTION_CANDIDATE_SEARCH {
+                    let cand_id = format!("item_{}", other.id);
+                    if !edge_candidates.iter().any(|(id, _, _)| id == &cand_id) {
+                        edge_candidates.push((cand_id, other.fact.clone(), other.collection.clone()));
+                    }
+                }
+            }
+        }
 
         // Offload CPU inference to spawn_blocking threads for true concurrency
         let item_a = item.clone();

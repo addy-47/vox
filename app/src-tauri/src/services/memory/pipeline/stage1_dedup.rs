@@ -73,74 +73,71 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
     let items_claimed = items.len();
     let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
 
-    let mut processed_count = 0;
-    let mut superseded_count = 0;
+    // 2. PRE-FETCH ALL ACTIVE FACTS & QUEUE FACTS IN 2 QUERIES (0 SQL inside loop)
+    let mut active_facts_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut db_rows = conn.query("SELECT collection, fact FROM memory_facts WHERE status = 'active'", ()).await?;
+    while let Some(row) = db_rows.next().await? {
+        let coll: String = row.get(0)?;
+        let fact: String = row.get(1)?;
+        active_facts_map.entry(coll).or_default().push(fact);
+    }
 
-    for item in items {
+    let mut queue_rows = conn.query(
+        "SELECT collection, fact FROM personal_memory_queue WHERE status IN ('deduped', 'embedded', 'evaluated', 'processing_embed', 'processing_eval')",
+        (),
+    ).await?;
+    while let Some(row) = queue_rows.next().await? {
+        let coll: String = row.get(0)?;
+        let fact: String = row.get(1)?;
+        active_facts_map.entry(coll).or_default().push(fact);
+    }
+
+    // 3. Pure In-Memory Rust Comparison Loop
+    let mut deduped_ids = Vec::new();
+    let mut superseded_ids = Vec::new();
+
+    for item in &items {
         let trimmed_fact = item.fact.trim();
         if trimmed_fact.is_empty() {
-            conn.execute(
-                "UPDATE personal_memory_queue SET status = ? WHERE id = ?",
-                (PM_QUEUE_STATUS_SUPERSEDED, item.id),
-            )
-            .await?;
-            processed_count += 1;
-            superseded_count += 1;
+            superseded_ids.push(item.id);
             continue;
         }
 
-        // Fetch active facts in same collection to compare Jaccard similarity
-        let mut cand_rows = conn
-            .query(
-                "SELECT fact FROM memory_facts WHERE collection = ? AND status = 'active'",
-                (item.collection.as_str(),),
-            )
-            .await?;
+        let is_dup = active_facts_map.get(&item.collection).map_or(false, |cand_list| {
+            cand_list.iter().any(|cand_fact| {
+                let jacc_sim = jaccard_similarity(trimmed_fact, cand_fact);
+                is_exact_duplicate(0.0, jacc_sim)
+            })
+        });
 
-        let mut is_dup = false;
-        while let Some(row) = cand_rows.next().await? {
-            let cand_fact: String = row.get(0)?;
-            let jacc_sim = jaccard_similarity(trimmed_fact, &cand_fact);
-            if is_exact_duplicate(0.0, jacc_sim) {
-                is_dup = true;
-                break;
-            }
-        }
-
-        // Also check against earlier items in personal_memory_queue to catch batch intra-queue duplicates
-        if !is_dup {
-            let mut queue_rows = conn
-                .query(
-                    "SELECT fact FROM personal_memory_queue WHERE collection = ? AND id != ? AND status IN ('deduped', 'embedded', 'evaluated', 'processing_embed', 'processing_eval')",
-                    (item.collection.as_str(), item.id),
-                )
-                .await?;
-
-            while let Some(row) = queue_rows.next().await? {
-                let cand_fact: String = row.get(0)?;
-                let jacc_sim = jaccard_similarity(trimmed_fact, &cand_fact);
-                if is_exact_duplicate(0.0, jacc_sim) {
-                    is_dup = true;
-                    break;
-                }
-            }
-        }
-
-        let new_status = if is_dup {
-            superseded_count += 1;
-            PM_QUEUE_STATUS_SUPERSEDED
+        if is_dup {
+            superseded_ids.push(item.id);
         } else {
-            PM_QUEUE_STATUS_DEDUPED
-        };
+            deduped_ids.push(item.id);
+            // Add new unique fact to in-memory map for subsequent intra-batch item comparison
+            active_facts_map.entry(item.collection.clone()).or_default().push(trimmed_fact.to_string());
+        }
+    }
 
+    // 4. Batch Update Results in SQL Queries
+    for id in &deduped_ids {
         conn.execute(
             "UPDATE personal_memory_queue SET status = ? WHERE id = ?",
-            (new_status, item.id),
+            (PM_QUEUE_STATUS_DEDUPED, *id),
         )
         .await?;
-
-        processed_count += 1;
     }
+
+    for id in &superseded_ids {
+        conn.execute(
+            "UPDATE personal_memory_queue SET status = ? WHERE id = ?",
+            (PM_QUEUE_STATUS_SUPERSEDED, *id),
+        )
+        .await?;
+    }
+
+    let processed_count = items.len();
+    let superseded_count = superseded_ids.len();
 
     let duration_ms = start_time.elapsed().as_millis();
 

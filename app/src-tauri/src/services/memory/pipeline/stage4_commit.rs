@@ -2,6 +2,7 @@ use anyhow::Result;
 use turso::Connection;
 use crate::core::constants::{
     collection_type, PM_QUEUE_STATUS_EVALUATED, PM_QUEUE_STATUS_PROCESSING_COMMIT,
+    PM_QUEUE_STATUS_SUPERSEDED,
 };
 use super::batch_result::RelationEdge;
 
@@ -84,6 +85,13 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
     let items_claimed = items.len();
     let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
 
+    // Pre-allocate UUID fact_ids for all items in the batch so intra-batch relations resolve cleanly
+    let mut id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for item in &items {
+        let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
+        id_map.insert(format!("item_{}", item.id), fact_id);
+    }
+
     conn.execute("BEGIN TRANSACTION", ()).await?;
 
     let mut committed_ids = Vec::new();
@@ -91,20 +99,28 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
 
     let commit_res: Result<()> = async {
         for item in items {
-            let fact_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
+            let item_placeholder = format!("item_{}", item.id);
+            let fact_id = id_map
+                .get(&item_placeholder)
+                .cloned()
+                .unwrap_or_else(|| format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple()));
             let coll_type = collection_type(&item.collection);
 
-            if item.status == PM_QUEUE_STATUS_EVALUATED {
+            let item_status = item.status.as_str();
+            if item_status == PM_QUEUE_STATUS_EVALUATED || item_status == PM_QUEUE_STATUS_SUPERSEDED {
+                let fact_status = if item_status == PM_QUEUE_STATUS_SUPERSEDED { "superseded" } else { "active" };
+
                 // 1. Insert into memory_facts
                 conn.execute(
                     "INSERT INTO memory_facts (id, type, collection, fact, source, status, session_id, created_at)
-                     VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         fact_id.clone(),
                         coll_type.to_string(),
                         item.collection.clone(),
                         item.fact.clone(),
                         item.source.clone(),
+                        fact_status,
                         item.session_id.clone(),
                         now,
                     ),
@@ -124,32 +140,27 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
                 if let Some(ref rels_json) = item.relations_json {
                     if let Ok(relations) = serde_json::from_str::<Vec<RelationEdge>>(rels_json) {
                         for rel in relations {
-                            let from_id = if rel.from_id.starts_with("item_") {
-                                fact_id.clone()
-                            } else {
-                                rel.from_id
-                            };
-                            let to_id = if rel.to_id.starts_with("item_") {
-                                fact_id.clone()
-                            } else {
-                                rel.to_id
-                            };
+                            let from_id = id_map.get(&rel.from_id).cloned().unwrap_or(rel.from_id);
+                            let to_id = id_map.get(&rel.to_id).cloned().unwrap_or(rel.to_id);
 
-                            conn.execute(
-                                "INSERT OR IGNORE INTO memory_relations (from_id, to_id, relation, source, created_at)
-                                 VALUES (?, ?, ?, ?, ?)",
-                                (from_id, to_id.clone(), rel.relation.clone(), rel.source, now),
-                            )
-                            .await?;
-
-                            total_relations_committed += 1;
-
-                            if rel.relation == crate::core::constants::PM_RELATION_SUPERSEDES {
+                            // Guard against self-referential graph loops
+                            if from_id != to_id {
                                 conn.execute(
-                                    "UPDATE memory_facts SET status = 'inactive' WHERE id = ?",
-                                    (to_id,),
+                                    "INSERT OR IGNORE INTO memory_relations (from_id, to_id, relation, source, created_at)
+                                     VALUES (?, ?, ?, ?, ?)",
+                                    (from_id, to_id.clone(), rel.relation.clone(), rel.source, now),
                                 )
                                 .await?;
+
+                                total_relations_committed += 1;
+
+                                if rel.relation == crate::core::constants::PM_RELATION_SUPERSEDES {
+                                    conn.execute(
+                                        "UPDATE memory_facts SET status = 'inactive' WHERE id = ?",
+                                        (to_id,),
+                                    )
+                                    .await?;
+                                }
                             }
                         }
                     }

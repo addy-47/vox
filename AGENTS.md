@@ -36,6 +36,10 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
    - Running multiple GGUF or ONNX inference commands concurrently causes CPU thread contention and invalidates per-pair latency metrics.
    - Always execute benchmark probes **strictly sequentially, one model at a time**.
 
+2. **NEVER RUN BENCHMARKS OR EVALUATION SCRIPTS IN DEBUG MODE**:
+   - Debug builds (`dev` profile without `--release`) omit SIMD vectorization, ONNX graph optimizations, and LTO, producing invalid latency metrics (up to 7x slower).
+   - Always execute evaluation scripts and benchmarks using `--release` mode (e.g. `cargo run --release --example <eval_name>`).
+
 ---
 
 ## 3. HARD GATE: Code Modification Gate
