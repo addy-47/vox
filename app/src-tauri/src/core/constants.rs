@@ -97,13 +97,12 @@ pub const TRANSITION_MESSAGES_HI: &[&str] = &[
 
 pub const COMPACTION_SYSTEM_PROMPT: &str = r#"
 <role>
-You are a cognitive memory extraction engine for an intelligent assistant.
+You are a structured memory extraction engine for an intelligent assistant..
 Your task is to analyze conversation turns and extract complete, self-contained declarative facts.
 </role>
 
 <objective>
-Extract explicit, high-confidence observations into 6 structured memory collections.
-</objective>
+Extract explicit, durable ,high-confidence declarative facts into the six memory collections.</objective>
 
 <output_schema>
 {
@@ -119,41 +118,40 @@ Extract explicit, high-confidence observations into 6 structured memory collecti
 <collection_definitions>
 
 Identity
-Stable present-tense statements establishing fundamental facts about who the primary user is.
+Stable foundational identity facts that uniquely identify the user, such as their name, primary role, or enduring self-identification.
 
 Directives
-Active operational goals, pending tasks, commitments, standing instructions, and progress updates.
+Active operational goals, pending tasks, assigned work, commitments, standing instructions, scheduled events, and progress updates.
 
 Narrative
-A single concise chronological summary describing the session's overall progression.
+A single concise chronological summary describing the session's overall progression and key milestones.
 
 Profile
-Personal traits, preferences, background, skills, and habits of user.
+Stable personal characteristics, preferences, skills, habits, experiences, interests, and behavioral tendencies.
 
 Entities
-Complete declarative statements describing named external subjects (people, projects, tools, locations etc) and the context around them.
+Complete declarative facts about named external subjects and their relationship or relevance to the user.
 
 Constraints
-Hard non-negotiable limitations, safety boundaries, or technical restrictions imposed by user or external factors.
+Hard non-negotiable limits, safety boundaries, security rules, health restrictions, budget limits, or strict technical requirements.
 
 </collection_definitions>
 
 <extraction_principles>
-- Every extracted item MUST be a complete, meaningful declarative sentence.
-- NEVER output bare entity names, single words, or incomplete fragments.
-- Assign every statement to its most specific applicable collection.
-- Entities must describe the named object AND the user's relationship or context with it.
-- Never infer, speculate, or hallucinate missing information.
+- Write every extracted fact as a complete, self-contained declarative sentence that remains understandable without additional context.
+- Identity vs Profile Rule: Identity is reserved strictly for core foundational identity facts. If ever in doubt between Identity and Profile, ALWAYS classify the fact under Profile.
+- Constraints Rule: Constraints are strictly for non-negotiable hard limits, safety boundaries, allergies or health restrictions, security rules, or strict technical prohibitions. Soft preferences belong under Profile.
+- Directives vs Profile Rule: Directives describe active work, current tasks, and scheduled commitments. Past experience or general skills belong under Profile.
+- Entities Rule: Entities describe external named subjects and the user's explicit relationship or context with them.
 - All collections except Narrative are optional arrays of statements.
-- Translate all extracted content into clear English.
+- Express every extracted fact in clear English.
+- Prefer precision over completeness.
+- Keep each extracted statement atomic by expressing one durable fact per sentence.
 </extraction_principles>
 
 <output_requirements>
 - Output exactly one JSON object matching <output_schema>.
-- Do not add explanations, markdown or additional text.
-- Preserve the collection names exactly.
-</output_requirements>
-"#;
+- Use the collection names exactly as defined in <output_schema>."#;
 
 use serde::{Deserialize, Serialize};
 
@@ -169,6 +167,17 @@ pub enum MemoryCollection {
 }
 
 impl MemoryCollection {
+    pub fn priority(&self) -> u8 {
+        match self {
+            Self::Identity => 6,
+            Self::Constraints => 5,
+            Self::Directives => 4,
+            Self::Profile => 3,
+            Self::Entities => 2,
+            Self::Narrative => 1,
+        }
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Identity => "Identity",

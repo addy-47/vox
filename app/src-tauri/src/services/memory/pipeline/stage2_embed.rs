@@ -77,7 +77,6 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
     ensure_embedder_loaded(true)?;
 
     let mut processed_count = 0;
-    let mut superseded_count = 0;
 
     for item in items {
         let embedding_res = generate_embedding(&item.fact);
@@ -85,10 +84,9 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
             Ok(Some(vec)) => {
                 let blob_bytes = encode_f32_blob(&vec);
 
-                // Phase 2 Soft Vector Deduplication Check (cos >= 0.95)
-                let soft_dups = queries::fetch_intra_collection_candidates(
+                // Phase 2 Cross-Collection Soft Vector Deduplication Check (cos >= 0.95) & Priority Resolution
+                let soft_dups = queries::fetch_cross_collection_candidates(
                     conn,
-                    &item.collection,
                     &vec,
                     SOFT_VECTOR_DEDUP_THRESHOLD,
                     Some(1),
@@ -96,21 +94,66 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                 .await
                 .unwrap_or_default();
 
-                if let Some((match_id, _match_fact)) = soft_dups.first() {
-                    let rel = vec![RelationEdge {
-                        from_id: format!("item_{}", item.id),
-                        to_id: match_id.clone(),
-                        relation: PM_RELATION_SUPERSEDES.to_string(),
-                        source: "Embedding".to_string(),
-                    }];
-                    let rel_json = serde_json::to_string(&rel).unwrap_or_else(|_| "[]".to_string());
+                if let Some((match_id, match_fact, match_coll, sim)) = soft_dups.first() {
+                    let incoming_priority = crate::core::constants::MemoryCollection::parse(&item.collection)
+                        .map(|c| c.priority())
+                        .unwrap_or(0);
+                    let existing_priority = crate::core::constants::MemoryCollection::parse(match_coll)
+                        .map(|c| c.priority())
+                        .unwrap_or(0);
 
-                    conn.execute(
-                        "UPDATE personal_memory_queue SET status = ?, vector = ?, relations_json = ? WHERE id = ?",
-                        (PM_QUEUE_STATUS_SUPERSEDED, blob_bytes, rel_json, item.id),
-                    )
-                    .await?;
-                    superseded_count += 1;
+                    if incoming_priority <= existing_priority {
+                        // Lower or equal priority incoming item is superseded by existing DB fact
+                        let rel = vec![RelationEdge {
+                            from_id: format!("item_{}", item.id),
+                            to_id: match_id.clone(),
+                            relation: PM_RELATION_SUPERSEDES.to_string(),
+                            source: "Embedding".to_string(),
+                        }];
+                        let rel_json = serde_json::to_string(&rel).unwrap_or_else(|_| "[]".to_string());
+
+                        conn.execute(
+                            "UPDATE personal_memory_queue SET status = ?, vector = ?, relations_json = ? WHERE id = ?",
+                            (PM_QUEUE_STATUS_SUPERSEDED, blob_bytes, rel_json, item.id),
+                        )
+                        .await?;
+
+                        let log = super::batch_result::DedupAuditLog {
+                            queue_item_id: item.id,
+                            item_fact: item.fact.clone(),
+                            item_collection: item.collection.clone(),
+                            stage: "stage2_soft_vector".to_string(),
+                            action: "superseded_lower_priority".to_string(),
+                            matched_fact_id: match_id.clone(),
+                            matched_fact: match_fact.clone(),
+                            score: *sim,
+                        };
+                        let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+                    } else {
+                        // Higher priority incoming item supersedes existing lower priority DB fact
+                        conn.execute(
+                            "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
+                            (match_id.as_str(),),
+                        )
+                        .await?;
+                        conn.execute(
+                            "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
+                            (PM_QUEUE_STATUS_EMBEDDED, blob_bytes, item.id),
+                        )
+                        .await?;
+
+                        let log = super::batch_result::DedupAuditLog {
+                            queue_item_id: item.id,
+                            item_fact: item.fact.clone(),
+                            item_collection: item.collection.clone(),
+                            stage: "stage2_soft_vector".to_string(),
+                            action: "superseded_existing".to_string(),
+                            matched_fact_id: match_id.clone(),
+                            matched_fact: match_fact.clone(),
+                            score: *sim,
+                        };
+                        let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+                    }
                 } else {
                     conn.execute(
                         "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
@@ -135,12 +178,10 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
             run_id: run_id.to_string(),
             stage_name: "stage2_embed".to_string(),
             session_id: String::new(),
+            batch_seq: 0,
             items_claimed,
-            items_processed: processed_count,
-            items_superseded: superseded_count,
-            relations_created: 0,
-            duration_ms,
             error_count: 0,
+            duration_ms,
         };
         let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
     }
