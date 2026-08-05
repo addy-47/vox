@@ -1,38 +1,380 @@
 {
-  "avg_ms_per_fact": 37.495726495726494,
+  "avg_ms_per_fact": 58.27495107632094,
   "fact_status_counts": {
-    "active": 161,
-    "inactive": 20,
-    "superseded": 46
+    "active": 182,
+    "inactive": 47,
+    "superseded": 39
   },
   "output_db_path": "/home/addy/projects/apps/vox/app/src-tauri/evals/results/stage_2_pipeline.db",
-  "processed_count": 819,
+  "processed_count": 1022,
   "queue_status_counts": {},
   "relation_type_counts": {
-    "DEPENDS_ON": 2,
-    "SHAPES": 4,
-    "SUPERSEDES": 33,
-    "SUPPORTS": 53,
-    "constrains": 1,
+    "CONFLICTS": 18,
+    "DEPENDS_ON": 1,
+    "SHAPES": 7,
+    "SUPERSEDES": 57,
+    "SUPPORTS": 82,
+    "conflicts_with": 18,
     "dependency_of": 1,
-    "restricted_by": 3,
-    "restricts": 3,
-    "shaped_by": 4,
-    "superseded_by": 30,
-    "supported_by": 53
+    "shaped_by": 7,
+    "superseded_by": 29,
+    "supported_by": 82
   },
-  "sample_superseded_facts": [],
+  "sample_relations": [
+    {
+      "from": "[Constraints] The user has a tree nut allergy, specifically walnuts and cashews.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user has a tree nut allergy, specifically to walnuts and cashews."
+    },
+    {
+      "from": "[Constraints] The user has a tree nut allergy, specifically to walnuts and cashews.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user has a tree nut allergy, specifically walnuts and cashews."
+    },
+    {
+      "from": "[Constraints] The user has a tree nut allergy, specifically walnuts and cashews.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user has a tree nut allergy."
+    },
+    {
+      "from": "[Constraints] The user has a tree nut allergy.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user has a tree nut allergy, specifically walnuts and cashews."
+    },
+    {
+      "from": "[Constraints] The user has a tree nut allergy, specifically to walnuts and cashews.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user has a tree nut allergy, specifically walnuts and cashews."
+    },
+    {
+      "from": "[Constraints] The user has a tree nut allergy, specifically walnuts and cashews.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user has a tree nut allergy, specifically to walnuts and cashews."
+    },
+    {
+      "from": "[Constraints] The user has a tree nut allergy, specifically to walnuts and cashews.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user has a tree nut allergy."
+    },
+    {
+      "from": "[Constraints] The user has a tree nut allergy.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user has a tree nut allergy, specifically to walnuts and cashews."
+    },
+    {
+      "from": "[Constraints] The user's sourdough starter, Doughvid, needs to be fed every 6-8 hours.",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to take Doughvid out of the fridge in 3 hours."
+    },
+    {
+      "from": "[Constraints] The user needs to take Doughvid out of the fridge in 3 hours.",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] The user's sourdough starter, Doughvid, needs to be fed every 6-8 hours."
+    },
+    {
+      "from": "[Constraints] The user wants to review the performance warnings related to image processing.",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to add the `image` crate as a dependency to the perception project."
+    },
+    {
+      "from": "[Constraints] The user wants to add the `image` crate as a dependency to the perception project.",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to review the performance warnings related to image processing."
+    },
+    {
+      "from": "[Constraints] The user wants to show examples of image resizing using the `image` crate in Rust.",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to try using a different library for some of the image transformations."
+    },
+    {
+      "from": "[Constraints] The user wants to try using a different library for some of the image transformations.",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to show examples of image resizing using the `image` crate in Rust."
+    },
+    {
+      "from": "[Constraints] The user wants to implement image resizing using the `image` crate in the perception software project.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to add the `image` crate as a dependency to the perception project."
+    },
+    {
+      "from": "[Constraints] The user wants to add the `image` crate as a dependency to the perception project.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to implement image resizing using the `image` crate in the perception software project."
+    },
+    {
+      "from": "[Constraints] The user wants to implement image resizing using the `image` crate in the perception software project.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to optimize the image processing component of the perception software."
+    },
+    {
+      "from": "[Constraints] The user wants to optimize the image processing component of the perception software.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to implement image resizing using the `image` crate in the perception software project."
+    },
+    {
+      "from": "[Constraints] The user wants to implement image resizing using the `image` crate in the perception software project.",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to try using a different library for some of the image transformations."
+    },
+    {
+      "from": "[Constraints] The user wants to try using a different library for some of the image transformations.",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to implement image resizing using the `image` crate in the perception software project."
+    },
+    {
+      "from": "[Constraints] The user wants to clean up some of the old commented-out code in the object detection module.",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to pull up the latest logs for the perception module."
+    },
+    {
+      "from": "[Constraints] The user needs to pull up the latest logs for the perception module.",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to clean up some of the old commented-out code in the object detection module."
+    },
+    {
+      "from": "[Constraints] The user wants to push the latest changes to the perception software project.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to pull up the latest logs for the perception module."
+    },
+    {
+      "from": "[Constraints] The user needs to pull up the latest logs for the perception module.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user wants to push the latest changes to the perception software project."
+    },
+    {
+      "from": "[Constraints] The user needs to pick up dry cleaning.",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to pick up whole wheat flour after work."
+    },
+    {
+      "from": "[Constraints] The user needs to pick up whole wheat flour after work.",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to pick up dry cleaning."
+    },
+    {
+      "from": "[Constraints] The user needs to pick up whole wheat flour after work.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to buy whole wheat flour on their way home."
+    },
+    {
+      "from": "[Constraints] The user needs to buy whole wheat flour on their way home.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to pick up whole wheat flour after work."
+    },
+    {
+      "from": "[Constraints] The user needs to pick up whole wheat flour after work.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to buy flour."
+    },
+    {
+      "from": "[Constraints] The user needs to buy flour.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to pick up whole wheat flour after work."
+    },
+    {
+      "from": "[Constraints] The user needs to pick up whole wheat flour after work.",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to pick up dry cleaning."
+    },
+    {
+      "from": "[Constraints] The user needs to pick up dry cleaning.",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to pick up whole wheat flour after work."
+    },
+    {
+      "from": "[Constraints] The user needs to buy whole wheat flour on their way home.",
+      "relation": "SUPPORTS",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to buy flour."
+    },
+    {
+      "from": "[Constraints] The user needs to buy flour.",
+      "relation": "supported_by",
+      "source": "NLI",
+      "to": "[Constraints] The user needs to buy whole wheat flour on their way home."
+    },
+    {
+      "from": "[Constraints] limit: anaphylactic",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] limit: refined sugar"
+    },
+    {
+      "from": "[Constraints] limit: refined sugar",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] limit: anaphylactic"
+    },
+    {
+      "from": "[Constraints] limit: anaphylactic",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] limit: cloudy"
+    },
+    {
+      "from": "[Constraints] limit: cloudy",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] limit: anaphylactic"
+    },
+    {
+      "from": "[Constraints] limit: refined sugar",
+      "relation": "CONFLICTS",
+      "source": "NLI",
+      "to": "[Constraints] limit: anaphylactic"
+    },
+    {
+      "from": "[Constraints] limit: anaphylactic",
+      "relation": "conflicts_with",
+      "source": "NLI",
+      "to": "[Constraints] limit: refined sugar"
+    }
+  ],
+  "sample_superseded_facts": [
+    {
+      "collection": "Constraints",
+      "fact": "The user has a tree nut allergy, specifically to walnuts and cashews, and it's described as anaphylactic.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Profile",
+      "fact": "The user is a programmer working on the Rust project.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Profile",
+      "fact": "The user has a sourdough starter named Doughvid.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Profile",
+      "fact": "The user has a pet named Doughvid.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Profile",
+      "fact": "The user has a tree nut allergy, specifically to walnuts and cashews.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Identity",
+      "fact": "The user's name is not explicitly stated in the conversation history.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Identity",
+      "fact": "The user's name is not explicitly stated in the conversation history.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Identity",
+      "fact": "The user's name is not explicitly stated in this conversation.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Identity",
+      "fact": "The user's name is not explicitly stated in the conversation history.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Entities",
+      "fact": "Chicago",
+      "source": "LLM"
+    },
+    {
+      "collection": "Entities",
+      "fact": "Doughvid",
+      "source": "LLM"
+    },
+    {
+      "collection": "Entities",
+      "fact": "Mexico City",
+      "source": "LLM"
+    },
+    {
+      "collection": "Directives",
+      "fact": "The user needs to take Doughvid out of the fridge in 3 hours.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Directives",
+      "fact": "The user needs to buy flour.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Directives",
+      "fact": "The user has a remote debugging session at 10 AM.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Directives",
+      "fact": "The user has a virtual coffee chat with Jamie at 3 PM.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Directives",
+      "fact": "The user needs to pull up the latest logs for the perception module.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Directives",
+      "fact": "The user wants to review the performance warnings related to image processing.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Directives",
+      "fact": "The user wants to optimize the image processing component of the perception software.",
+      "source": "LLM"
+    },
+    {
+      "collection": "Directives",
+      "fact": "The user wants to try using a different library for some of the image transformations.",
+      "source": "LLM"
+    }
+  ],
   "stage_metrics": [
     {
-      "duration_ms": 1002,
+      "duration_ms": 954,
       "items_claimed": 128,
       "items_processed": 128,
-      "items_superseded": 8,
+      "items_superseded": 0,
       "relations_created": 0,
       "stage_name": "stage1_dedup"
     },
     {
-      "duration_ms": 882,
+      "duration_ms": 1066,
       "items_claimed": 16,
       "items_processed": 16,
       "items_superseded": 0,
@@ -40,31 +382,111 @@
       "stage_name": "stage2_embed"
     },
     {
-      "duration_ms": 3361,
+      "duration_ms": 4259,
       "items_claimed": 16,
       "items_processed": 16,
       "items_superseded": 0,
-      "relations_created": 6,
+      "relations_created": 46,
       "stage_name": "stage3_eval"
     },
     {
-      "duration_ms": 107,
-      "items_claimed": 24,
-      "items_processed": 24,
+      "duration_ms": 65,
+      "items_claimed": 16,
+      "items_processed": 16,
       "items_superseded": 0,
-      "relations_created": 6,
+      "relations_created": 14,
       "stage_name": "stage4_commit"
     },
     {
-      "duration_ms": 728,
-      "items_claimed": 99,
-      "items_processed": 99,
-      "items_superseded": 35,
+      "duration_ms": 961,
+      "items_claimed": 128,
+      "items_processed": 128,
+      "items_superseded": 11,
       "relations_created": 0,
       "stage_name": "stage1_dedup"
     },
     {
-      "duration_ms": 211,
+      "duration_ms": 234,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 1,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 3113,
+      "items_claimed": 15,
+      "items_processed": 15,
+      "items_superseded": 0,
+      "relations_created": 60,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 104,
+      "items_claimed": 27,
+      "items_processed": 27,
+      "items_superseded": 0,
+      "relations_created": 31,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 71,
+      "items_claimed": 12,
+      "items_processed": 12,
+      "items_superseded": 0,
+      "relations_created": 0,
+      "stage_name": "stage1_dedup"
+    },
+    {
+      "duration_ms": 274,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 3510,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 58,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 67,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 26,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 260,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 6431,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 106,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 88,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 74,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 266,
       "items_claimed": 16,
       "items_processed": 16,
       "items_superseded": 2,
@@ -72,7 +494,127 @@
       "stage_name": "stage2_embed"
     },
     {
-      "duration_ms": 717,
+      "duration_ms": 3691,
+      "items_claimed": 14,
+      "items_processed": 14,
+      "items_superseded": 0,
+      "relations_created": 54,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 107,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 28,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 215,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 12,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 1974,
+      "items_claimed": 4,
+      "items_processed": 4,
+      "items_superseded": 0,
+      "relations_created": 18,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 71,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 22,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 255,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 5,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 3916,
+      "items_claimed": 11,
+      "items_processed": 11,
+      "items_superseded": 0,
+      "relations_created": 64,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 65,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 47,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 228,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 1,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 4387,
+      "items_claimed": 15,
+      "items_processed": 15,
+      "items_superseded": 0,
+      "relations_created": 46,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 79,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 23,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 208,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 2345,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 0,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 58,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 0,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 266,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 2,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 2503,
       "items_claimed": 14,
       "items_processed": 14,
       "items_superseded": 0,
@@ -80,39 +622,39 @@
       "stage_name": "stage3_eval"
     },
     {
-      "duration_ms": 143,
-      "items_claimed": 32,
-      "items_processed": 32,
+      "duration_ms": 78,
+      "items_claimed": 16,
+      "items_processed": 16,
       "items_superseded": 0,
       "relations_created": 2,
       "stage_name": "stage4_commit"
     },
     {
-      "duration_ms": 257,
+      "duration_ms": 264,
       "items_claimed": 16,
       "items_processed": 16,
-      "items_superseded": 0,
+      "items_superseded": 1,
       "relations_created": 0,
       "stage_name": "stage2_embed"
     },
     {
-      "duration_ms": 1115,
-      "items_claimed": 16,
-      "items_processed": 16,
+      "duration_ms": 3088,
+      "items_claimed": 15,
+      "items_processed": 15,
       "items_superseded": 0,
-      "relations_created": 10,
+      "relations_created": 4,
       "stage_name": "stage3_eval"
     },
     {
-      "duration_ms": 112,
-      "items_claimed": 32,
-      "items_processed": 32,
+      "duration_ms": 67,
+      "items_claimed": 16,
+      "items_processed": 16,
       "items_superseded": 0,
-      "relations_created": 10,
+      "relations_created": 5,
       "stage_name": "stage4_commit"
     },
     {
-      "duration_ms": 302,
+      "duration_ms": 329,
       "items_claimed": 16,
       "items_processed": 16,
       "items_superseded": 0,
@@ -120,7 +662,79 @@
       "stage_name": "stage2_embed"
     },
     {
-      "duration_ms": 301,
+      "duration_ms": 2255,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 42,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 90,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 22,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 284,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 1,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 1708,
+      "items_claimed": 15,
+      "items_processed": 15,
+      "items_superseded": 0,
+      "relations_created": 4,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 100,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 3,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 220,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 2,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 2706,
+      "items_claimed": 14,
+      "items_processed": 14,
+      "items_superseded": 0,
+      "relations_created": 0,
+      "stage_name": "stage3_eval"
+    },
+    {
+      "duration_ms": 80,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 2,
+      "stage_name": "stage4_commit"
+    },
+    {
+      "duration_ms": 237,
+      "items_claimed": 16,
+      "items_processed": 16,
+      "items_superseded": 0,
+      "relations_created": 0,
+      "stage_name": "stage2_embed"
+    },
+    {
+      "duration_ms": 1922,
       "items_claimed": 16,
       "items_processed": 16,
       "items_superseded": 0,
@@ -129,150 +743,6 @@
     },
     {
       "duration_ms": 86,
-      "items_claimed": 19,
-      "items_processed": 19,
-      "items_superseded": 0,
-      "relations_created": 0,
-      "stage_name": "stage4_commit"
-    },
-    {
-      "duration_ms": 203,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 0,
-      "stage_name": "stage2_embed"
-    },
-    {
-      "duration_ms": 2735,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 16,
-      "stage_name": "stage3_eval"
-    },
-    {
-      "duration_ms": 71,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 16,
-      "stage_name": "stage4_commit"
-    },
-    {
-      "duration_ms": 205,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 0,
-      "stage_name": "stage2_embed"
-    },
-    {
-      "duration_ms": 3547,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 28,
-      "stage_name": "stage3_eval"
-    },
-    {
-      "duration_ms": 89,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 28,
-      "stage_name": "stage4_commit"
-    },
-    {
-      "duration_ms": 185,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 0,
-      "stage_name": "stage2_embed"
-    },
-    {
-      "duration_ms": 3657,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 68,
-      "stage_name": "stage3_eval"
-    },
-    {
-      "duration_ms": 87,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 68,
-      "stage_name": "stage4_commit"
-    },
-    {
-      "duration_ms": 182,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 0,
-      "stage_name": "stage2_embed"
-    },
-    {
-      "duration_ms": 4087,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 34,
-      "stage_name": "stage3_eval"
-    },
-    {
-      "duration_ms": 74,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 34,
-      "stage_name": "stage4_commit"
-    },
-    {
-      "duration_ms": 210,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 0,
-      "stage_name": "stage2_embed"
-    },
-    {
-      "duration_ms": 2640,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 20,
-      "stage_name": "stage3_eval"
-    },
-    {
-      "duration_ms": 89,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 20,
-      "stage_name": "stage4_commit"
-    },
-    {
-      "duration_ms": 172,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 0,
-      "stage_name": "stage2_embed"
-    },
-    {
-      "duration_ms": 938,
-      "items_claimed": 16,
-      "items_processed": 16,
-      "items_superseded": 0,
-      "relations_created": 0,
-      "stage_name": "stage3_eval"
-    },
-    {
-      "duration_ms": 84,
       "items_claimed": 16,
       "items_processed": 16,
       "items_superseded": 0,
@@ -280,7 +750,7 @@
       "stage_name": "stage4_commit"
     },
     {
-      "duration_ms": 175,
+      "duration_ms": 229,
       "items_claimed": 16,
       "items_processed": 16,
       "items_superseded": 1,
@@ -288,15 +758,15 @@
       "stage_name": "stage2_embed"
     },
     {
-      "duration_ms": 1020,
+      "duration_ms": 2940,
       "items_claimed": 15,
       "items_processed": 15,
       "items_superseded": 0,
-      "relations_created": 2,
+      "relations_created": 8,
       "stage_name": "stage3_eval"
     },
     {
-      "duration_ms": 55,
+      "duration_ms": 72,
       "items_claimed": 16,
       "items_processed": 16,
       "items_superseded": 0,
@@ -304,29 +774,31 @@
       "stage_name": "stage4_commit"
     },
     {
-      "duration_ms": 83,
-      "items_claimed": 8,
-      "items_processed": 8,
+      "duration_ms": 20,
+      "items_claimed": 1,
+      "items_processed": 1,
       "items_superseded": 0,
       "relations_created": 0,
       "stage_name": "stage2_embed"
     },
     {
-      "duration_ms": 599,
-      "items_claimed": 8,
-      "items_processed": 8,
+      "duration_ms": 416,
+      "items_claimed": 1,
+      "items_processed": 1,
       "items_superseded": 0,
       "relations_created": 0,
       "stage_name": "stage3_eval"
     },
     {
-      "duration_ms": 33,
-      "items_claimed": 8,
-      "items_processed": 8,
+      "duration_ms": 13,
+      "items_claimed": 1,
+      "items_processed": 1,
       "items_superseded": 0,
       "relations_created": 0,
       "stage_name": "stage4_commit"
     }
   ],
-  "total_duration_ms": 30709
+  "total_duration_ms": 59557,
+  "total_edge_rows": 302,
+  "unique_semantic_pairs": 151
 }
