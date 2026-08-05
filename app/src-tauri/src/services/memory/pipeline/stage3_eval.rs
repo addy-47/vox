@@ -9,17 +9,15 @@ use crate::persistence::{decode_f32_blob, queries};
 use crate::services::memory::edge_classifier;
 use crate::services::memory::nli::{classify_batch, ensure_nli_loaded, relation_from_result, NliRelation, NLI_MODEL_DIR};
 use super::batch_result::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
-use once_cell::sync::Lazy;
-use stop_words::{get, LANGUAGE};
 
 pub const STAGE3_BATCH_SIZE: usize = 16;
 pub const SAME_COLLECTION_CANDIDATE_SEARCH: f32 = 0.40;
 pub const INTER_COLLECTION_CANDIDATE_SEARCH: f32 = 0.55;
 pub const SUBFLOOR_CANDIDATE_FLOOR: f32 = 0.25;
 
-pub const NLI_CONTRADICTION_CONFIDENCE_THRESHOLD: f32 = 0.80;
-pub const NLI_CONTRADICTION_MARGIN_THRESHOLD: f32 = 0.25;
-pub const NLI_ENTAILMENT_CONFIDENCE_THRESHOLD: f32 = 0.70;
+pub const NLI_CONTRADICTION_CONFIDENCE_THRESHOLD: f32 = 0.85;
+pub const NLI_CONTRADICTION_MARGIN_THRESHOLD: f32 = 0.20;
+pub const NLI_ENTAILMENT_CONFIDENCE_THRESHOLD: f32 = 0.85;
 
 #[derive(Debug, Clone)]
 pub struct Stage3Item {
@@ -74,12 +72,10 @@ fn eval_subbranch_a_nli_sync(
 
         match relation {
             NliRelation::Conflicts => {
-                let topic_overlap = has_meaningful_topic_overlap(&item.fact, cand_fact);
                 let confident_score = nli_res.contradiction >= NLI_CONTRADICTION_CONFIDENCE_THRESHOLD
                     && (nli_res.contradiction - nli_res.neutral) >= NLI_CONTRADICTION_MARGIN_THRESHOLD;
-                let is_confident_conflict = confident_score && topic_overlap;
 
-                if is_confident_conflict {
+                if confident_score {
                     let (fwd, inv) = if item.collection == "Identity" || item.collection == "Directives" {
                         (PM_RELATION_SUPERSEDES, "superseded_by")
                     } else {
@@ -99,11 +95,7 @@ fn eval_subbranch_a_nli_sync(
                         source: "NLI".to_string(),
                     });
                 } else {
-                    if !confident_score {
-                        rejection_reason = Some("below_nli_confidence".to_string());
-                    } else if !topic_overlap {
-                        rejection_reason = Some("topic_overlap_failed".to_string());
-                    }
+                    rejection_reason = Some("below_nli_confidence".to_string());
                 }
             }
             NliRelation::Supports => {
@@ -156,31 +148,6 @@ fn eval_subbranch_a_nli_sync(
     (relations, logs)
 }
 
-
-static ENGLISH_STOP_WORDS: Lazy<std::collections::HashSet<String>> = Lazy::new(|| {
-    let mut set: std::collections::HashSet<String> = get(LANGUAGE::English).iter().map(|s| s.to_string()).collect();
-    set.insert("user".to_string());
-    set.insert("users".to_string());
-    set.insert("needs".to_string());
-    set.insert("specifically".to_string());
-    set
-});
-
-fn has_meaningful_topic_overlap(fact_a: &str, fact_b: &str) -> bool {
-    let extract_keywords = |text: &str| -> std::collections::HashSet<String> {
-        text.to_lowercase()
-            .split_whitespace()
-            .map(|s| s.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
-            .filter(|s| !s.is_empty() && !ENGLISH_STOP_WORDS.contains(s))
-            .collect()
-    };
-    let tokens_a = extract_keywords(fact_a);
-    let tokens_b = extract_keywords(fact_b);
-    tokens_a.intersection(&tokens_b).count() > 0
-}
-
-
-
 /// Synchronous CPU worker function for Sub-Branch B (ModernBERT Edge Classifier Engine).
 fn eval_subbranch_b_edges_sync(
     item: &Stage3Item,
@@ -196,6 +163,8 @@ fn eval_subbranch_b_edges_sync(
         if let Some((forward_edge, inverse_edge)) = inter_collection_edge(&item.collection, cand_coll) {
             let mut decision = "NONE".to_string();
             let mut rejection_reason = None;
+            let mut edge_score_val = None;
+
             match edge_classifier::classify_edge(
                 &item.collection,
                 &item.fact,
@@ -205,7 +174,8 @@ fn eval_subbranch_b_edges_sync(
                 None,
                 forward_edge,
             ) {
-                Ok(Some(pred_edge)) => {
+                Ok((Some(pred_edge), score)) => {
+                    edge_score_val = Some(score);
                     decision = pred_edge.to_string();
                     relations.push(RelationEdge {
                         from_id: format!("item_{}", item.id),
@@ -220,7 +190,11 @@ fn eval_subbranch_b_edges_sync(
                         source: "ModernBERT".to_string(),
                     });
                 }
-                Ok(None) | Err(_) => {
+                Ok((None, score)) => {
+                    edge_score_val = Some(score);
+                    rejection_reason = Some("below_edge_classifier_confidence".to_string());
+                }
+                Err(_) => {
                     rejection_reason = Some("below_edge_classifier_confidence".to_string());
                 }
             }
@@ -242,7 +216,7 @@ fn eval_subbranch_b_edges_sync(
                 cosine_sim: *sim,
                 engine: "ModernBERT".to_string(),
                 nli_scores: None,
-                edge_score: None,
+                edge_score: edge_score_val,
                 decision,
                 rejection_reason,
             });
@@ -251,6 +225,7 @@ fn eval_subbranch_b_edges_sync(
 
     (relations, logs)
 }
+
 
 /// Stage 3: Unified Edge & State Evaluation Stage (Batch Size 16)
 /// Atomically claims `embedded` items, offloads CPU ONNX tasks to `spawn_blocking` threads,

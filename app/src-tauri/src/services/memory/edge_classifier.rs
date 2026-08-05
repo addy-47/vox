@@ -87,7 +87,7 @@ pub fn ensure_edge_classifier_loaded() -> Result<()> {
 }
 
 /// Classifies an inter-collection candidate pair using the fine-tuned ModernBERT INT8 ONNX sequence classifier.
-/// Returns `Ok(Some(forward_edge))` if calibrated prediction score >= tau* (0.80) and matches `forward_edge`, else `Ok(None)`.
+/// Returns `Ok((Some(forward_edge), prob))` if calibrated prediction score >= tau* (0.80) and matches `forward_edge`, else `Ok((None, prob))`.
 pub fn classify_edge(
     src_collection: &str,
     src_fact: &str,
@@ -96,15 +96,15 @@ pub fn classify_edge(
     tgt_fact: &str,
     _tgt_context: Option<&str>,
     forward_edge: &str,
-) -> Result<Option<String>> {
+) -> Result<(Option<String>, f32)> {
     // 1. Verify policy matrix allows an edge for this pair
     let policy_edge = match inter_collection_edge(src_collection, tgt_collection) {
         Some((fwd, _inv)) => fwd,
-        None => return Ok(None),
+        None => return Ok((None, 0.0)),
     };
 
     if policy_edge != forward_edge {
-        return Ok(None);
+        return Ok((None, 0.0));
     }
 
     let engine = match EDGE_ENGINE.get() {
@@ -113,7 +113,7 @@ pub fn classify_edge(
             ensure_edge_classifier_loaded()?;
             match EDGE_ENGINE.get() {
                 Some(e) => e,
-                None => return Ok(None),
+                None => return Ok((None, 0.0)),
             }
         }
     };
@@ -161,7 +161,7 @@ pub fn classify_edge(
     let logits_slice: Vec<f32> = logits_array.iter().copied().collect();
 
     if logits_slice.is_empty() {
-        return Ok(None);
+        return Ok((None, 0.0));
     }
 
     // Softmax calculation
@@ -185,11 +185,12 @@ pub fn classify_edge(
 
     // Label index 0, 1, 2 map to positive relation, label index 3 (or last) maps to NONE
     if max_prob >= EDGE_CLASSIFIER_THRESHOLD && max_idx < probs.len().saturating_sub(1) {
-        Ok(Some(forward_edge.to_string()))
+        Ok((Some(forward_edge.to_string()), max_prob))
     } else {
-        Ok(None)
+        Ok((None, max_prob))
     }
 }
+
 
 #[cfg(test)]
 mod tests {
