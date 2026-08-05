@@ -16,6 +16,7 @@ pub struct DedupAuditLog {
     pub stage: String,             // "stage1_jaccard" | "stage2_soft_vector"
     pub action: String,            // "duplicate_dropped" | "superseded_lower_priority" | "superseded_existing"
     pub matched_fact_id: String,   // available for both stages
+    pub matched_fact_coll: String,
     pub matched_fact: String,
     pub score: f32,
 }
