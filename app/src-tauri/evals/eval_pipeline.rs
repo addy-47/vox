@@ -58,7 +58,75 @@ fn get_nvidia_api_key() -> String {
     String::new()
 }
 
+fn format_stage3_batch_toon(
+
+    batch_num: usize,
+    chunk: &[(i64, String, String, Vec<CandidateAuditLog>)],
+) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "<stage3_batch_evaluation batch=\"{:02}\" fact_count=\"{}\">\n",
+        batch_num,
+        chunk.len()
+    ));
+
+    for (idx, (_item_id, item_fact, item_coll, logs)) in chunk.iter().enumerate() {
+        let item_num = idx + 1;
+        out.push_str(&format!(
+            "\n[Fact {:02}/{:02}] [{}] {}\n",
+            item_num,
+            chunk.len(),
+            item_coll,
+            item_fact
+        ));
+
+        if logs.is_empty() {
+            out.push_str("  Candidates Evaluated: None\n");
+            continue;
+        }
+
+        out.push_str(&format!("  Candidates Evaluated ({}):\n", logs.len()));
+
+        for (cand_idx, log) in logs.iter().enumerate() {
+            let cand_num = cand_idx + 1;
+            let engine_tag = match log.engine.as_str() {
+                "NLI" => "NLI",
+                "ModernBERT" => "ModernBERT",
+                "subfloor" => "Subfloor",
+                other => other,
+            };
+
+            out.push_str(&format!(
+                "  {}. [{}] [{}] {}\n",
+                cand_num, engine_tag, log.cand_collection, log.cand_fact
+            ));
+
+            let mut metrics = vec![format!("cos_sim: {:.3}", log.cosine_sim)];
+
+            if let Some([c, e, n]) = log.nli_scores {
+                metrics.push(format!("logits: [c: {:.3}, e: {:.3}, n: {:.3}]", c, e, n));
+            }
+
+            if let Some(edge_sc) = log.edge_score {
+                metrics.push(format!("edge_score: {:.3}", edge_sc));
+            }
+
+            metrics.push(format!("decision: {}", log.decision));
+
+            if let Some(ref reason) = log.rejection_reason {
+                metrics.push(format!("rejection_reason: {}", reason));
+            }
+
+            out.push_str(&format!("     {}\n", metrics.join(" | ")));
+        }
+    }
+
+    out.push_str("</stage3_batch_evaluation>");
+    out
+}
+
 async fn run_llm_judge_prompt(
+
     client: &reqwest::Client,
     api_key: &str,
     prompt: &str,
@@ -389,56 +457,55 @@ async fn main() -> Result<()> {
         let batch_num = batch_idx + 1;
         println!("  Generating Judge Report for Stage 3 Batch {:02}/{}", batch_num, chunks.len());
 
-        let mut nli_pairs = Vec::new();
-        let mut edge_pairs = Vec::new();
-        let mut subfloor_pairs = Vec::new();
-
-        for (item_id, item_fact, item_coll, logs) in chunk.iter() {
-            for log in logs {
-                let entry = serde_json::json!({
-                    "item_id": item_id,
-                    "item_fact": format!("[{}] {}", item_coll, item_fact),
-                    "cand_id": log.cand_id,
-                    "cand_fact": format!("[{}] {}", log.cand_collection, log.cand_fact),
-                    "candidate_source": log.candidate_source,
-                    "cosine_sim": log.cosine_sim,
-                    "decision": log.decision,
-                    "rejection_reason": log.rejection_reason,
-                    "nli_scores": log.nli_scores,
-                    "edge_score": log.edge_score,
-                });
-
-                match log.engine.as_str() {
-                    "NLI" => nli_pairs.push(entry),
-                    "ModernBERT" => edge_pairs.push(entry),
-                    "subfloor" => subfloor_pairs.push(entry),
-                    _ => {}
-                }
-            }
-        }
-
+        let batch_toon = format_stage3_batch_toon(batch_num, chunk);
         let batch_prompt = format!(
-            "<stage3_batch_evaluation batch=\"{}\">\n\
-             <nli_intra_collection_pairs>\n{}\n</nli_intra_collection_pairs>\n\n\
-             <modernbert_inter_collection_pairs>\n{}\n</modernbert_inter_collection_pairs>\n\n\
-             <subfloor_near_miss_pairs>\n{}\n</subfloor_near_miss_pairs>\n\n\
-             <task>\n\
-             Act as a Senior AI Systems & Knowledge Graph Judge auditing Stage 3 candidate evaluations for Batch {:02}.\n\
-             Evaluate the following three distinct candidate categories independently:\n\
-             1. NLI Intra-Collection Analysis: Evaluate formed SUPERSEDES/CONFLICTS/SUPPORTS edges vs DeBERTa-v3 probabilities. Identify any false positive relations or invalid topic overlap rejections.\n\
-             2. ModernBERT Inter-Collection Analysis: Evaluate cross-collection graph relation predictions vs ModernBERT scores. Verify edge policy alignment.\n\
-             3. Sub-Floor Near-Miss Audit: Check candidate pairs in the 0.25 <= sim < threshold window. Were any valid semantic relations missed due to vector similarity floor cutoff?\n\
-             4. Batch Scorecard (0-10) and Actionable Findings.\n\n\
-             Format as clean Markdown starting with '# Stage 3 Batch {:02} Evaluation & Audit Report'.\n\
-             </task>\n\
-             </stage3_batch_evaluation>",
+            "{}\n\n\
+            <evaluation_instructions>\n\
+            You are a Principal AI Knowledge Graph & Memory Systems Architect performing a rigorous, evidence-anchored audit of Stage 3 candidate evaluations for Batch {:02}.\n\n\
+            <input_structure_guide>\n\
+            - The input above presents exactly 16 target facts (labeled `[Fact XX/16]`). Each target fact is the NEW incoming memory state (Hypothesis).\n\
+            - Listed under each target fact are its evaluated candidates. Each candidate is an established historical DB record (Premise).\n\
+            - Candidate tags: `[NLI]` (DeBERTa-v3 state transition evaluation), `[ModernBERT]` (cross-collection edge classification), `[Subfloor]` (near-miss candidates in 0.25 <= cos_sim < threshold).\n\
+            </input_structure_guide>\n\n\
+            <audit_thought_process>\n\
+            For each of the 16 facts in this batch, execute the following systematic 4-step audit in your thought process before rendering your verdict:\n\n\
+            Step 1: NLI State Transition & Contradiction Audit (`[NLI]` candidates)\n\
+            - Check formed `SUPERSEDES` and `CONFLICTS` edges against DeBERTa-v3 logits (`c` = contradiction, `e` = entailment, `n` = neutral).\n\
+            - Audit for FALSE POSITIVES: Did the pipeline mistakenly supersede an existing fact when the incoming fact was merely an additive update, task progression, or separate context?\n\
+            - Audit for FALSE NEGATIVES: Did the pipeline fail to supersede or conflict an existing fact when the new fact clearly contradicted it?\n\
+            - Check formed `SUPPORTS` edges against entailment score (threshold >= 0.85).\n\n\
+            Step 2: Inter-Collection Graph Edge Audit (`[ModernBERT]` candidates)\n\
+            - Verify relation classification (`SHAPES`, `restricted_by`, `DEPENDS_ON`) against inter-collection policy rules.\n\
+            - Verify confidence scores (`edge_score` >= 0.80) to ensure high-confidence edge creation.\n\n\
+            Step 3: Subfloor Near-Miss Analysis (`[Subfloor]` candidates)\n\
+            - Examine candidates in the `0.25 <= cos_sim < search_threshold` window.\n\
+            - Determine if any vital semantic contradiction or relationship was missed purely due to similarity floor cutoff.\n\n\
+            Step 4: Synthesis & Scorecard\n\
+            - Score this batch from 0 to 10 based strictly on semantic precision and graph integrity.\n\
+            </audit_thought_process>\n\n\
+            <report_format_requirements>\n\
+            Format your response as clean, professional Markdown starting with '# Stage 3 Batch {:02} Evaluation & Audit Report' using the following exact sections:\n\n\
+            # Stage 3 Batch {:02} Evaluation & Audit Report\n\n\
+            ## 1. Executive Summary & Batch Scorecard\n\
+            - Overall Batch Score: X/10\n\
+            - Total Facts Audited: 16\n\
+            - Key Operational Observations\n\n\
+            ## 2. NLI Intra-Collection State Transition Audit\n\
+            - Detailed analysis of formed `SUPERSEDES`, `CONFLICTS`, and `SUPPORTS` edges.\n\
+            - Highlight specific false positive or false negative state resolutions with exact fact text.\n\n\
+            ## 3. ModernBERT Inter-Collection Edge Audit\n\
+            - Audit of cross-collection graph relationships and confidence score calibration.\n\n\
+            ## 4. Subfloor Near-Miss Analysis\n\
+            - Audit of near-miss candidate pairs in the 0.25-0.40 range.\n\n\
+            ## 5. Actionable Engineering Recommendations\n\
+            - Concrete logic or threshold adjustments indicated by evidence in this batch.\n\
+            </report_format_requirements>",
+            batch_toon,
             batch_num,
-            serde_json::to_string_pretty(&nli_pairs)?,
-            serde_json::to_string_pretty(&edge_pairs)?,
-            serde_json::to_string_pretty(&subfloor_pairs)?,
             batch_num,
             batch_num
         );
+
 
         let report_b_path = reports_dir.join(format!("stage3_batch_{:02}_report.md", batch_num));
         match run_llm_judge_prompt(&client, &api_key, &batch_prompt).await {
@@ -449,6 +516,7 @@ async fn main() -> Result<()> {
             Err(e) => println!("    [Batch {:02} Warning] Failed: {}", batch_num, e),
         }
     }
+
 
     // =========================================================================
     // Phase D: Report C — Reserved for QA Subagent Synthesis
