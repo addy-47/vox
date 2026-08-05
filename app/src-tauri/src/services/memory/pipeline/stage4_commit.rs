@@ -194,12 +194,10 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
             run_id: run_id.to_string(),
             stage_name: "stage4_commit".to_string(),
             session_id,
+            batch_seq: 0,
             items_claimed,
-            items_processed: processed_count,
-            items_superseded: 0,
-            relations_created: total_relations_committed,
-            duration_ms,
             error_count: 0,
+            duration_ms,
         };
         let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
     }

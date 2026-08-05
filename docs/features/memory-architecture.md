@@ -90,6 +90,13 @@ The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & 
    - **Sub-Branch A (NLI):** Intra-collection candidates with cosine ≥ `SAME_COLLECTION_CANDIDATE_SEARCH` (0.40), no K-cap. Only for items in NLI domains: `Identity`, `Directives`, `Constraints`.
    - **Sub-Branch B (Edge Classifier):** Inter-collection candidates with cosine ≥ `INTER_COLLECTION_CANDIDATE_SEARCH` (0.55), no K-cap. Only for pairs where `inter_collection_edge()` returns a valid policy pair.
    - **Candidate Resolution Union:** Candidates are fetched by unioning persistent DB active facts from `memory_facts` WITH in-flight queue items in the current batch (`items` in `personal_memory_queue`). This guarantees intra-batch NLI and edge evaluation operates seamlessly on cold starts.
+
+> [!NOTE]
+> **Future Consideration — Candidate Retrieval Trade-offs & Hybrid Search:**
+> Pure vector cosine search captures direct topic contradictions well (high cosine similarity), but can face candidate window saturation ("crowding") or vocabulary drift across disjoint contexts. Future hybrid options under evaluation:
+> 1. *Entity/Topic Keying:* Filtering candidates via explicit category tags (e.g. `[Diet]`, `[Location]`) alongside vector distance.
+> 2. *Graph-Assisted Candidate Traversal:* 1-hop graph neighbor expansion from top vector seed nodes.
+
 3. Both sub-branches run concurrently via `tokio::task::spawn_blocking` + `tokio::join!`.
 4. Results merged into a single `BatchEvaluationResult` and written as one atomic `UPDATE`.
 
@@ -422,6 +429,21 @@ WHERE id = ?
 | `claimed_at` | INTEGER | |
 | `vector` | F32_BLOB(384) | Embedding (intermediate) |
 | `relations_json` | TEXT | JSON array of `RelationEdge` (intermediate) |
+| `dedup_match_json` | TEXT | JSON object of `DedupAuditLog` (Stage 1 Jaccard / Stage 2 Soft Vector match) |
+| `audit_json` | TEXT | JSON array of `CandidateAuditLog` (Stage 3 NLI & ModernBERT logits/scores, rejection reasons, candidate sources) |
+
+### `memory_pipeline_metrics`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | Autoincrement |
+| `run_id` | TEXT | Unique pipeline execution run UUID |
+| `stage_name` | TEXT | Stage identifier (`stage1_dedup`, `stage2_embed`, `stage3_eval`, `stage4_commit`) |
+| `session_id` | TEXT | Provenance session ID |
+| `batch_seq` | INTEGER | Batch sequence counter within execution run |
+| `items_claimed` | INTEGER | Count of items claimed in stage execution |
+| `error_count` | INTEGER | Count of failed items |
+| `duration_ms` | INTEGER | Wall-clock execution duration in milliseconds |
+| `created_at` | INTEGER | Epoch timestamp |
 
 ---
 

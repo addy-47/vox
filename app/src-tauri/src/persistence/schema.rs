@@ -71,34 +71,34 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
 
         // Unified Queue + Staging WAL 
         "CREATE TABLE IF NOT EXISTS personal_memory_queue (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            fact           TEXT NOT NULL,
-            collection     TEXT NOT NULL,
-            source         TEXT NOT NULL DEFAULT 'LLM',
-            session_id     TEXT NOT NULL DEFAULT '',
-            status         TEXT NOT NULL DEFAULT 'staged_pending', -- 'staged_pending', 'processing_dedup', 'deduped', 'processing_embed', 'embedded', 'processing_eval', 'evaluated', 'processing_commit', 'completed', 'superseded', 'failed'
-            attempts       INTEGER NOT NULL DEFAULT 0,
-            retry_count    INTEGER NOT NULL DEFAULT 0,
-            error_msg      TEXT,
-            created_at     INTEGER NOT NULL,
-            processed_at   INTEGER,
-            claimed_at     INTEGER,
-            vector         F32_BLOB(384),
-            relations_json TEXT
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            fact             TEXT NOT NULL,
+            collection       TEXT NOT NULL,
+            source           TEXT NOT NULL DEFAULT 'LLM',
+            session_id       TEXT NOT NULL DEFAULT '',
+            status           TEXT NOT NULL DEFAULT 'staged_pending', -- 'staged_pending', 'processing_dedup', 'deduped', 'processing_embed', 'embedded', 'processing_eval', 'evaluated', 'processing_commit', 'completed', 'superseded', 'failed'
+            attempts         INTEGER NOT NULL DEFAULT 0,
+            retry_count      INTEGER NOT NULL DEFAULT 0,
+            error_msg        TEXT,
+            created_at       INTEGER NOT NULL,
+            processed_at     INTEGER,
+            claimed_at       INTEGER,
+            vector           F32_BLOB(384),
+            relations_json   TEXT,
+            dedup_match_json TEXT,
+            audit_json       TEXT
         );",
         // Pipeline Operational Observability Metrics Table
         "CREATE TABLE IF NOT EXISTS memory_pipeline_metrics (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id            TEXT NOT NULL,
-            stage_name        TEXT NOT NULL,
-            session_id        TEXT NOT NULL DEFAULT '',
-            items_claimed     INTEGER NOT NULL DEFAULT 0,
-            items_processed   INTEGER NOT NULL DEFAULT 0,
-            items_superseded  INTEGER NOT NULL DEFAULT 0,
-            relations_created INTEGER NOT NULL DEFAULT 0,
-            duration_ms       INTEGER NOT NULL,
-            error_count       INTEGER NOT NULL DEFAULT 0,
-            created_at        INTEGER NOT NULL
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id        TEXT    NOT NULL,
+            stage_name    TEXT    NOT NULL,
+            session_id    TEXT    NOT NULL DEFAULT '',
+            batch_seq     INTEGER NOT NULL DEFAULT 0,
+            items_claimed INTEGER NOT NULL DEFAULT 0,
+            error_count   INTEGER NOT NULL DEFAULT 0,
+            duration_ms   INTEGER NOT NULL,
+            created_at    INTEGER NOT NULL
         );",
 
         // Performance Indices
@@ -109,26 +109,12 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_mr_from ON memory_relations(from_id, relation);",
         "CREATE INDEX IF NOT EXISTS idx_mr_to ON memory_relations(to_id, relation);",
         "CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, created_at ASC);",
-        "CREATE INDEX IF NOT EXISTS idx_mpm_run ON memory_pipeline_metrics(run_id, stage_name);",
-        "CREATE INDEX IF NOT EXISTS idx_mpm_created ON memory_pipeline_metrics(created_at DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_mpm_run_stage ON memory_pipeline_metrics(run_id, stage_name);",
+        "CREATE INDEX IF NOT EXISTS idx_mpm_batch_seq ON memory_pipeline_metrics(run_id, stage_name, batch_seq);",
     ];
 
     for stmt in statements {
         conn.execute(stmt, ()).await?;
-    }
-
-    // Idempotent column additions for v7 schema migration
-    let alter_statements = [
-        "ALTER TABLE personal_memory_queue ADD COLUMN vector F32_BLOB(384);",
-        "ALTER TABLE personal_memory_queue ADD COLUMN relations_json TEXT;",
-        "ALTER TABLE personal_memory_queue ADD COLUMN claimed_at INTEGER;",
-        "ALTER TABLE personal_memory_queue ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;",
-    ];
-
-    for stmt in alter_statements {
-        if let Err(e) = conn.execute(stmt, ()).await {
-            log::debug!("[Persistence] Migration alter statement skipped or already applied ('{}'): {}", stmt, e);
-        }
     }
 
     if let Err(e) = seed_packaged_voices(conn).await {

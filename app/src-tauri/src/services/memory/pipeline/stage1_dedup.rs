@@ -2,6 +2,7 @@ use anyhow::Result;
 use turso::Connection;
 use crate::core::constants::{PM_QUEUE_STATUS_DEDUPED, PM_QUEUE_STATUS_PROCESSING_DEDUP, PM_QUEUE_STATUS_STAGED_PENDING, PM_QUEUE_STATUS_SUPERSEDED};
 use crate::services::memory::deduplication::{is_exact_duplicate, jaccard_similarity};
+use super::batch_result::DedupAuditLog;
 
 pub const STAGE1_BATCH_CEILING: usize = 128;
 
@@ -74,22 +75,24 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
     let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
 
     // 2. PRE-FETCH ALL ACTIVE FACTS & QUEUE FACTS IN 2 QUERIES (0 SQL inside loop)
-    let mut active_facts_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    let mut db_rows = conn.query("SELECT collection, fact FROM memory_facts WHERE status = 'active'", ()).await?;
+    let mut active_facts_map: std::collections::HashMap<String, Vec<(String, String)>> = std::collections::HashMap::new();
+    let mut db_rows = conn.query("SELECT id, collection, fact FROM memory_facts WHERE status = 'active'", ()).await?;
     while let Some(row) = db_rows.next().await? {
-        let coll: String = row.get(0)?;
-        let fact: String = row.get(1)?;
-        active_facts_map.entry(coll).or_default().push(fact);
+        let id: String = row.get(0)?;
+        let coll: String = row.get(1)?;
+        let fact: String = row.get(2)?;
+        active_facts_map.entry(coll).or_default().push((id, fact));
     }
 
     let mut queue_rows = conn.query(
-        "SELECT collection, fact FROM personal_memory_queue WHERE status IN ('deduped', 'embedded', 'evaluated', 'processing_embed', 'processing_eval')",
+        "SELECT printf('item_%d', id), collection, fact FROM personal_memory_queue WHERE status IN ('deduped', 'embedded', 'evaluated', 'processing_embed', 'processing_eval')",
         (),
     ).await?;
     while let Some(row) = queue_rows.next().await? {
-        let coll: String = row.get(0)?;
-        let fact: String = row.get(1)?;
-        active_facts_map.entry(coll).or_default().push(fact);
+        let id: String = row.get(0)?;
+        let coll: String = row.get(1)?;
+        let fact: String = row.get(2)?;
+        active_facts_map.entry(coll).or_default().push((id, fact));
     }
 
     // 3. Pure In-Memory Rust Comparison Loop
@@ -100,22 +103,51 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
         let trimmed_fact = item.fact.trim();
         if trimmed_fact.is_empty() {
             superseded_ids.push(item.id);
+            let log = DedupAuditLog {
+                queue_item_id: item.id,
+                item_fact: item.fact.clone(),
+                item_collection: item.collection.clone(),
+                stage: "stage1_jaccard".to_string(),
+                action: "empty_fact_dropped".to_string(),
+                matched_fact_id: String::new(),
+                matched_fact: String::new(),
+                score: 0.0,
+            };
+            let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
             continue;
         }
 
-        let is_dup = active_facts_map.get(&item.collection).map_or(false, |cand_list| {
-            cand_list.iter().any(|cand_fact| {
+        let matched = active_facts_map.get(&item.collection).and_then(|cand_list| {
+            cand_list.iter().find_map(|(cand_id, cand_fact)| {
                 let jacc_sim = jaccard_similarity(trimmed_fact, cand_fact);
-                is_exact_duplicate(0.0, jacc_sim)
+                if is_exact_duplicate(0.0, jacc_sim) {
+                    Some((cand_id.clone(), cand_fact.clone(), jacc_sim))
+                } else {
+                    None
+                }
             })
         });
 
-        if is_dup {
+        if let Some((matched_id, matched_fact, jacc_sim)) = matched {
             superseded_ids.push(item.id);
+            let log = DedupAuditLog {
+                queue_item_id: item.id,
+                item_fact: item.fact.clone(),
+                item_collection: item.collection.clone(),
+                stage: "stage1_jaccard".to_string(),
+                action: "duplicate_dropped".to_string(),
+                matched_fact_id: matched_id,
+                matched_fact: matched_fact,
+                score: jacc_sim,
+            };
+            let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
         } else {
             deduped_ids.push(item.id);
             // Add new unique fact to in-memory map for subsequent intra-batch item comparison
-            active_facts_map.entry(item.collection.clone()).or_default().push(trimmed_fact.to_string());
+            active_facts_map
+                .entry(item.collection.clone())
+                .or_default()
+                .push((format!("item_{}", item.id), trimmed_fact.to_string()));
         }
     }
 
@@ -137,8 +169,6 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
     }
 
     let processed_count = items.len();
-    let superseded_count = superseded_ids.len();
-
     let duration_ms = start_time.elapsed().as_millis();
 
     if !run_id.is_empty() {
@@ -146,12 +176,10 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
             run_id: run_id.to_string(),
             stage_name: "stage1_dedup".to_string(),
             session_id,
+            batch_seq: 0,
             items_claimed,
-            items_processed: processed_count,
-            items_superseded: superseded_count,
-            relations_created: 0,
-            duration_ms,
             error_count: 0,
+            duration_ms,
         };
         let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
     }

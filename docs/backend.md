@@ -173,7 +173,7 @@ All realtime providers follow `RealtimeVoiceProvider` + `RealtimeSession` traits
 
 ## 5. Memory Subsystem
 
-> **Status: Active Development (WIP)** — See `docs/plans/memory-spec-v7.md` for the complete architecture specification.
+> **Status: Active Development** — See `docs/features/memory-architecture.md` for the complete architecture.
 
 Vox implements a **cognitive memory subsystem** that operates asynchronously via a background worker (`persistence/memory_worker.rs`), decoupled from the live voice pipeline. The architecture is organized into 4 cognitive scopes: `ChitChat`, `User`, `Domain` (primary default), `Temporal`.
 
@@ -188,7 +188,7 @@ Key files: `services/memory/` (11 modules), `persistence/memory_worker.rs`, `per
 ## 6. Persistence Layer
 
 - **Database**: Turso/libSQL (`turso` crate), WAL mode, `busy_timeout = 5000ms`
-- **Tables**: `sessions`, `turns`, `voice_library`, `memory_facts`, `memory_facts_vectors`, `memory_relations`, `personal_memory_queue`
+- **Tables**: `sessions`, `turns`, `voice_library`, `memory_facts`, `memory_facts_vectors`, `memory_relations`, `personal_memory_queue`, `memory_pipeline_metrics`
 - **Workers**: Dedicated OS thread for session persistence (`persistence/worker.rs`), dedicated OS thread for background memory ingestion (`persistence/memory_worker.rs`)
 - **Events**: `SessionStarted`, `SessionEnded`, `TurnCompleted`, `TurnCancelled`
 - **Private mode**: Atomic `is_private_mode` check before each write

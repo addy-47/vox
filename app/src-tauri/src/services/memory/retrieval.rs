@@ -93,14 +93,14 @@ pub async fn retrieve_personal_context_v7(
         ).await.unwrap_or_default();
 
         if !fetched_seeds.is_empty() {
-            let seed_ids: Vec<String> = fetched_seeds.iter().map(|(id, _, _)| id.clone()).collect();
+            let seed_ids: Vec<String> = fetched_seeds.iter().map(|(id, _, _, _)| id.clone()).collect();
             let parent_quota = (remaining_budget / seed_ids.len().max(1)).max(30);
 
             let mut graph_lines = Vec::new();
             let mut visited_ids: HashSet<String> = seed_ids.iter().cloned().collect();
 
             // Render Seed facts
-            for (_id, fact_text, collection) in &fetched_seeds {
+            for (_id, fact_text, collection, _sim) in &fetched_seeds {
                 let line = format!("- [{}] {}", collection, fact_text);
                 let tokens = estimate_tokens(&line);
                 if remaining_budget >= tokens && tokens <= parent_quota * 2 {
