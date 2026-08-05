@@ -6,14 +6,20 @@ use crate::core::constants::{
     PM_SEMANTIC_GRAPH_COLLECTIONS,
 };
 use crate::persistence::{decode_f32_blob, queries};
-use crate::services::memory::cosine_similarity;
 use crate::services::memory::edge_classifier;
-use crate::services::memory::nli::{classify_pair, ensure_nli_loaded, relation_from_result, NliRelation, NLI_MODEL_DIR};
-use super::batch_result::{BatchEvaluationResult, RelationEdge};
+use crate::services::memory::nli::{classify_batch, ensure_nli_loaded, relation_from_result, NliRelation, NLI_MODEL_DIR};
+use super::batch_result::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
+use once_cell::sync::Lazy;
+use stop_words::{get, LANGUAGE};
 
 pub const STAGE3_BATCH_SIZE: usize = 16;
 pub const SAME_COLLECTION_CANDIDATE_SEARCH: f32 = 0.40;
 pub const INTER_COLLECTION_CANDIDATE_SEARCH: f32 = 0.55;
+pub const SUBFLOOR_CANDIDATE_FLOOR: f32 = 0.25;
+
+pub const NLI_CONTRADICTION_CONFIDENCE_THRESHOLD: f32 = 0.80;
+pub const NLI_CONTRADICTION_MARGIN_THRESHOLD: f32 = 0.25;
+pub const NLI_ENTAILMENT_CONFIDENCE_THRESHOLD: f32 = 0.70;
 
 #[derive(Debug, Clone)]
 pub struct Stage3Item {
@@ -27,65 +33,82 @@ pub struct Stage3Item {
 /// Synchronous CPU worker function for Sub-Branch A (DeBERTa-v3 NLI Engine).
 fn eval_subbranch_a_nli_sync(
     item: &Stage3Item,
-    nli_candidates: &[(String, String)],
-) -> Vec<RelationEdge> {
+    nli_candidates: &[(String, String, f32)],
+) -> (Vec<RelationEdge>, Vec<CandidateAuditLog>) {
     let mut relations = Vec::new();
+    let mut logs = Vec::new();
     let is_nli_domain = matches!(
         item.collection.as_str(),
         "Identity" | "Directives" | "Constraints"
     );
     if nli_candidates.is_empty() || !is_nli_domain {
-        return relations;
+        return (relations, logs);
     }
 
     if ensure_nli_loaded(NLI_MODEL_DIR).is_err() {
-        return relations;
+        return (relations, logs);
     }
 
-    for (cand_id, cand_fact) in nli_candidates {
-        if let Ok(nli_res) = classify_pair(&item.fact, cand_fact) {
-            log::debug!(
-                "[Stage3Eval NLI] Premise: '{}' | Hypothesis: '{}' | Res: c={:.3}, e={:.3}, n={:.3}",
-                item.fact,
-                cand_fact,
-                nli_res.contradiction,
-                nli_res.entailment,
-                nli_res.neutral
-            );
-            let relation = relation_from_result(&nli_res);
-            match relation {
-                NliRelation::Conflicts => {
-                    let is_topic_overlap = if item.collection == "Directives" {
-                        let lower_a = item.fact.to_lowercase();
-                        let lower_b = cand_fact.to_lowercase();
-                        let set_a: std::collections::HashSet<_> = lower_a.split_whitespace().collect();
-                        let set_b: std::collections::HashSet<_> = lower_b.split_whitespace().collect();
-                        set_a.intersection(&set_b).count() > 0
-                    } else {
-                        true
-                    };
+    let pairs: Vec<(&str, &str)> = nli_candidates
+        .iter()
+        .map(|(_, cand_fact, _)| (cand_fact.as_str(), item.fact.as_str()))
+        .collect();
 
-                    if is_topic_overlap {
-                        let (fwd, inv) = if item.collection == "Identity" || item.collection == "Directives" {
-                            (PM_RELATION_SUPERSEDES, "superseded_by")
-                        } else {
-                            (PM_RELATION_CONFLICTS, "conflicts_with")
-                        };
-                        relations.push(RelationEdge {
-                            from_id: format!("item_{}", item.id),
-                            to_id: cand_id.clone(),
-                            relation: fwd.to_string(),
-                            source: "NLI".to_string(),
-                        });
-                        relations.push(RelationEdge {
-                            from_id: cand_id.clone(),
-                            to_id: format!("item_{}", item.id),
-                            relation: inv.to_string(),
-                            source: "NLI".to_string(),
-                        });
+    let nli_results = match classify_batch(&pairs) {
+        Ok(res) => res,
+        Err(_) => return (relations, logs),
+    };
+
+    for ((cand_id, cand_fact, sim), nli_res) in nli_candidates.iter().zip(nli_results.iter()) {
+        log::debug!(
+            "[Stage3Eval NLI] Premise (old): '{}' | Hypothesis (new): '{}' | Res: c={:.3}, e={:.3}, n={:.3}",
+            cand_fact,
+            item.fact,
+            nli_res.contradiction,
+            nli_res.entailment,
+            nli_res.neutral
+        );
+        let relation = relation_from_result(nli_res);
+        let mut decision = "NONE".to_string();
+        let mut rejection_reason = None;
+
+        match relation {
+            NliRelation::Conflicts => {
+                let topic_overlap = has_meaningful_topic_overlap(&item.fact, cand_fact);
+                let confident_score = nli_res.contradiction >= NLI_CONTRADICTION_CONFIDENCE_THRESHOLD
+                    && (nli_res.contradiction - nli_res.neutral) >= NLI_CONTRADICTION_MARGIN_THRESHOLD;
+                let is_confident_conflict = confident_score && topic_overlap;
+
+                if is_confident_conflict {
+                    let (fwd, inv) = if item.collection == "Identity" || item.collection == "Directives" {
+                        (PM_RELATION_SUPERSEDES, "superseded_by")
+                    } else {
+                        (PM_RELATION_CONFLICTS, "conflicts_with")
+                    };
+                    decision = fwd.to_string();
+                    relations.push(RelationEdge {
+                        from_id: format!("item_{}", item.id),
+                        to_id: cand_id.clone(),
+                        relation: fwd.to_string(),
+                        source: "NLI".to_string(),
+                    });
+                    relations.push(RelationEdge {
+                        from_id: cand_id.clone(),
+                        to_id: format!("item_{}", item.id),
+                        relation: inv.to_string(),
+                        source: "NLI".to_string(),
+                    });
+                } else {
+                    if !confident_score {
+                        rejection_reason = Some("below_nli_confidence".to_string());
+                    } else if !topic_overlap {
+                        rejection_reason = Some("topic_overlap_failed".to_string());
                     }
                 }
-                NliRelation::Supports => {
+            }
+            NliRelation::Supports => {
+                if nli_res.entailment >= NLI_ENTAILMENT_CONFIDENCE_THRESHOLD {
+                    decision = PM_RELATION_SUPPORTS.to_string();
                     relations.push(RelationEdge {
                         from_id: format!("item_{}", item.id),
                         to_id: cand_id.clone(),
@@ -98,27 +121,81 @@ fn eval_subbranch_a_nli_sync(
                         relation: "supported_by".to_string(),
                         source: "NLI".to_string(),
                     });
+                } else {
+                    rejection_reason = Some("below_nli_confidence".to_string());
                 }
-                NliRelation::Neutral => {}
+            }
+            NliRelation::Neutral => {
+                rejection_reason = Some("nli_neutral".to_string());
             }
         }
+
+        let cand_source = if cand_id.starts_with("item_") {
+            "queue_in_flight".to_string()
+        } else {
+            "memory_facts".to_string()
+        };
+
+        logs.push(CandidateAuditLog {
+            item_id: item.id,
+            item_fact: item.fact.clone(),
+            item_collection: item.collection.clone(),
+            cand_id: cand_id.clone(),
+            cand_fact: cand_fact.clone(),
+            cand_collection: item.collection.clone(),
+            candidate_source: cand_source,
+            cosine_sim: *sim,
+            engine: "NLI".to_string(),
+            nli_scores: Some([nli_res.contradiction, nli_res.entailment, nli_res.neutral]),
+            edge_score: None,
+            decision,
+            rejection_reason,
+        });
     }
 
-    relations
+    (relations, logs)
 }
+
+
+static ENGLISH_STOP_WORDS: Lazy<std::collections::HashSet<String>> = Lazy::new(|| {
+    let mut set: std::collections::HashSet<String> = get(LANGUAGE::English).iter().map(|s| s.to_string()).collect();
+    set.insert("user".to_string());
+    set.insert("users".to_string());
+    set.insert("needs".to_string());
+    set.insert("specifically".to_string());
+    set
+});
+
+fn has_meaningful_topic_overlap(fact_a: &str, fact_b: &str) -> bool {
+    let extract_keywords = |text: &str| -> std::collections::HashSet<String> {
+        text.to_lowercase()
+            .split_whitespace()
+            .map(|s| s.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .filter(|s| !s.is_empty() && !ENGLISH_STOP_WORDS.contains(s))
+            .collect()
+    };
+    let tokens_a = extract_keywords(fact_a);
+    let tokens_b = extract_keywords(fact_b);
+    tokens_a.intersection(&tokens_b).count() > 0
+}
+
+
 
 /// Synchronous CPU worker function for Sub-Branch B (ModernBERT Edge Classifier Engine).
 fn eval_subbranch_b_edges_sync(
     item: &Stage3Item,
-    edge_candidates: &[(String, String, String)],
-) -> Vec<RelationEdge> {
+    edge_candidates: &[(String, String, String, f32)],
+) -> (Vec<RelationEdge>, Vec<CandidateAuditLog>) {
     let mut relations = Vec::new();
+    let mut logs = Vec::new();
     if edge_candidates.is_empty() {
-        return relations;
+        return (relations, logs);
     }
 
-    for (cand_id, cand_fact, cand_coll) in edge_candidates {
+    for (cand_id, cand_fact, cand_coll, sim) in edge_candidates {
         if let Some((forward_edge, inverse_edge)) = inter_collection_edge(&item.collection, cand_coll) {
+            let mut decision = "NONE".to_string();
+            let mut rejection_reason = None;
             match edge_classifier::classify_edge(
                 &item.collection,
                 &item.fact,
@@ -129,25 +206,50 @@ fn eval_subbranch_b_edges_sync(
                 forward_edge,
             ) {
                 Ok(Some(pred_edge)) => {
+                    decision = pred_edge.to_string();
                     relations.push(RelationEdge {
                         from_id: format!("item_{}", item.id),
                         to_id: cand_id.clone(),
                         relation: pred_edge.to_string(),
-                        source: "LLM".to_string(),
+                        source: "ModernBERT".to_string(),
                     });
                     relations.push(RelationEdge {
                         from_id: cand_id.clone(),
                         to_id: format!("item_{}", item.id),
                         relation: inverse_edge.to_string(),
-                        source: "LLM".to_string(),
+                        source: "ModernBERT".to_string(),
                     });
                 }
-                Ok(None) | Err(_) => {}
+                Ok(None) | Err(_) => {
+                    rejection_reason = Some("below_edge_classifier_confidence".to_string());
+                }
             }
+
+            let cand_source = if cand_id.starts_with("item_") {
+                "queue_in_flight".to_string()
+            } else {
+                "memory_facts".to_string()
+            };
+
+            logs.push(CandidateAuditLog {
+                item_id: item.id,
+                item_fact: item.fact.clone(),
+                item_collection: item.collection.clone(),
+                cand_id: cand_id.clone(),
+                cand_fact: cand_fact.clone(),
+                cand_collection: cand_coll.clone(),
+                candidate_source: cand_source,
+                cosine_sim: *sim,
+                engine: "ModernBERT".to_string(),
+                nli_scores: None,
+                edge_score: None,
+                decision,
+                rejection_reason,
+            });
         }
     }
 
-    relations
+    (relations, logs)
 }
 
 /// Stage 3: Unified Edge & State Evaluation Stage (Batch Size 16)
@@ -159,6 +261,10 @@ pub async fn run_stage3_eval(conn: &Connection) -> Result<usize> {
 }
 
 pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Result<usize> {
+    run_stage3_eval_with_metrics_seq(conn, run_id, 0).await
+}
+
+pub async fn run_stage3_eval_with_metrics_seq(conn: &Connection, run_id: &str, batch_seq: usize) -> Result<usize> {
     let start_time = std::time::Instant::now();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -212,12 +318,10 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
     let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
 
     let mut processed_count = 0;
-    let mut superseded_count = 0;
-    let mut total_relations_created = 0;
 
     for item in &items {
-        // Fetch candidates from DB active facts
-        let mut nli_candidates = queries::fetch_intra_collection_candidates(
+        // Fetch candidates combining active memory_facts AND in-flight personal_memory_queue items
+        let nli_candidates = queries::fetch_intra_collection_candidates(
             conn,
             &item.collection,
             &item.vector,
@@ -227,26 +331,13 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
         .await
         .unwrap_or_default();
 
-        // Include intra-batch candidate facts for cold-start and batch isolation
-        for other in &items {
-            if other.id != item.id && other.collection == item.collection {
-                let sim = cosine_similarity(&item.vector, &other.vector);
-                if sim >= SAME_COLLECTION_CANDIDATE_SEARCH {
-                    let cand_id = format!("item_{}", other.id);
-                    if !nli_candidates.iter().any(|(id, _)| id == &cand_id) {
-                        nli_candidates.push((cand_id, other.fact.clone()));
-                    }
-                }
-            }
-        }
-
         let policy_targets: Vec<&'static str> = PM_SEMANTIC_GRAPH_COLLECTIONS
             .iter()
             .copied()
             .filter(|&tgt| inter_collection_edge(&item.collection, tgt).is_some())
             .collect();
 
-        let mut edge_candidates = if !policy_targets.is_empty() {
+        let edge_candidates = if !policy_targets.is_empty() {
             queries::fetch_inter_collection_candidates(
                 conn,
                 &policy_targets,
@@ -260,19 +351,6 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
             Vec::new()
         };
 
-        // Include intra-batch inter-collection candidate facts
-        for other in &items {
-            if other.id != item.id && policy_targets.contains(&other.collection.as_str()) {
-                let sim = cosine_similarity(&item.vector, &other.vector);
-                if sim >= INTER_COLLECTION_CANDIDATE_SEARCH {
-                    let cand_id = format!("item_{}", other.id);
-                    if !edge_candidates.iter().any(|(id, _, _)| id == &cand_id) {
-                        edge_candidates.push((cand_id, other.fact.clone(), other.collection.clone()));
-                    }
-                }
-            }
-        }
-
         // Offload CPU inference to spawn_blocking threads for true concurrency
         let item_a = item.clone();
         let cand_a = nli_candidates.clone();
@@ -282,25 +360,26 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
         let cand_b = edge_candidates.clone();
         let handle_b = tokio::task::spawn_blocking(move || eval_subbranch_b_edges_sync(&item_b, &cand_b));
 
-        let (nli_res, edge_res) = tokio::join!(handle_a, handle_b);
+        let (res_a, res_b) = tokio::join!(handle_a, handle_b);
 
-        let mut all_relations = nli_res.unwrap_or_else(|_| Vec::new());
-        all_relations.extend(edge_res.unwrap_or_else(|_| Vec::new()));
+        let (nli_rels, nli_logs) = res_a.unwrap_or_else(|_| (Vec::new(), Vec::new()));
+        let (edge_rels, edge_logs) = res_b.unwrap_or_else(|_| (Vec::new(), Vec::new()));
 
-        total_relations_created += all_relations.len();
+        let mut all_relations = nli_rels;
+        all_relations.extend(edge_rels);
+
+        let mut candidate_logs = nli_logs;
+        candidate_logs.extend(edge_logs);
 
         let item_target_id = format!("item_{}", item.id);
         let is_superseded = all_relations.iter().any(|rel| rel.to_id == item_target_id && rel.relation == PM_RELATION_SUPERSEDES);
-
-        if is_superseded {
-            superseded_count += 1;
-        }
 
         let eval_result = BatchEvaluationResult {
             item_id: item.id,
             is_superseded,
             superseded_by: None,
             relations: all_relations,
+            candidate_logs,
         };
 
         let json_str = serde_json::to_string(&eval_result.relations).unwrap_or_else(|_| "[]".to_string());
@@ -316,6 +395,10 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
         )
         .await?;
 
+        if !eval_result.candidate_logs.is_empty() {
+            let _ = crate::persistence::mutations::write_candidate_audit(conn, item.id, &eval_result.candidate_logs).await;
+        }
+
         processed_count += 1;
     }
 
@@ -326,12 +409,10 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
             run_id: run_id.to_string(),
             stage_name: "stage3_eval".to_string(),
             session_id,
+            batch_seq,
             items_claimed,
-            items_processed: processed_count,
-            items_superseded: superseded_count,
-            relations_created: total_relations_created,
-            duration_ms,
             error_count: 0,
+            duration_ms,
         };
         let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
     }

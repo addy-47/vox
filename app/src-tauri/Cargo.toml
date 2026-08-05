@@ -52,7 +52,7 @@ llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openm
 llama-cpp-sys-4 = { version = "0.2.61", default-features = false }
 
 chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false }
-query-sieve = { path = "../../submodules/query-sieve-rs" }
+query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }
 
 encoding_rs = "0.8.35"
 regex = "1.12.3"
@@ -89,6 +89,7 @@ symphonia = { version = "0.6.0", features = ["mp3", "flac", "wav", "aac"] }
 symphonia-core = "0.6.0"
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }
 tiktoken-rs = "0.6.0"
+stop-words = "0.10"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }

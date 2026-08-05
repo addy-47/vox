@@ -159,46 +159,59 @@ pub async fn fetch_facts_by_ids(
 
 
 /// Fetches intra-collection NLI candidates using Turso vector_distance_cos pushdown SQL search.
-/// Returns (id, fact_text) tuples pre-filtered by cosine similarity threshold.
-/// If `limit` is None, candidate selection is purely threshold-driven without K-capping (Spec §System Behavioral Invariants #3).
+/// Returns (id, fact_text, cosine_sim) tuples pre-filtered by cosine similarity threshold.
+/// Combines active historical facts in `memory_facts` AND in-flight items in `personal_memory_queue`.
 pub async fn fetch_intra_collection_candidates(
     conn: &Connection,
     collection: &str,
     query_embedding: &[f32],
     threshold: f32,
     limit: Option<i64>,
-) -> Result<Vec<(String, String)>> {
+) -> Result<Vec<(String, String, f32)>> {
     let query_blob = encode_f32_blob(query_embedding);
 
     let (query_str, params) = match limit {
         Some(lim) if lim > 0 => (
-            "SELECT mf.id, mf.fact
-             FROM memory_facts_vectors mfv
-             JOIN memory_facts mf ON mf.id = mfv.fact_id
-             WHERE mf.collection = ? AND mf.status = 'active'
-               AND (1.0 - vector_distance_cos(mfv.embedding, ?)) >= ?
-             ORDER BY vector_distance_cos(mfv.embedding, ?) ASC
-             LIMIT ?".to_string(),
+            "SELECT id, fact, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection = ? AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection = ? AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? ORDER BY sim DESC LIMIT ?".to_string(),
             vec![
+                turso::Value::Blob(query_blob.clone()),
                 turso::Value::Text(collection.to_string()),
                 turso::Value::Blob(query_blob.clone()),
+                turso::Value::Text(collection.to_string()),
                 turso::Value::Real(threshold as f64),
-                turso::Value::Blob(query_blob),
                 turso::Value::Integer(lim),
             ],
         ),
         _ => (
-            "SELECT mf.id, mf.fact
-             FROM memory_facts_vectors mfv
-             JOIN memory_facts mf ON mf.id = mfv.fact_id
-             WHERE mf.collection = ? AND mf.status = 'active'
-               AND (1.0 - vector_distance_cos(mfv.embedding, ?)) >= ?
-             ORDER BY vector_distance_cos(mfv.embedding, ?) ASC".to_string(),
+            "SELECT id, fact, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection = ? AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection = ? AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? ORDER BY sim DESC".to_string(),
             vec![
+                turso::Value::Blob(query_blob.clone()),
                 turso::Value::Text(collection.to_string()),
                 turso::Value::Blob(query_blob.clone()),
+                turso::Value::Text(collection.to_string()),
                 turso::Value::Real(threshold as f64),
-                turso::Value::Blob(query_blob),
             ],
         ),
     };
@@ -209,21 +222,76 @@ pub async fn fetch_intra_collection_candidates(
     while let Some(row) = cand_rows.next().await? {
         let id: String = row.get(0)?;
         let f_text: String = row.get(1)?;
-        candidates.push((id, f_text));
+        let sim: f64 = row.get(2)?;
+        candidates.push((id, f_text, sim as f32));
+    }
+    Ok(candidates)
+}
+
+/// Fetches active vector candidates across ALL collections (for Stage 2 soft deduplication & priority resolution).
+/// Returns (id, fact_text, collection) tuples pre-filtered by cosine similarity threshold.
+pub async fn fetch_cross_collection_candidates(
+    conn: &Connection,
+    query_embedding: &[f32],
+    threshold: f32,
+    limit: Option<i64>,
+) -> Result<Vec<(String, String, String, f32)>> {
+    let query_blob = encode_f32_blob(query_embedding);
+
+    let (query_str, params) = match limit {
+        Some(lim) if lim > 0 => (
+            "SELECT mf.id, mf.fact, mf.collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+             FROM memory_facts_vectors mfv
+             JOIN memory_facts mf ON mf.id = mfv.fact_id
+             WHERE mf.status = 'active'
+               AND (1.0 - vector_distance_cos(mfv.embedding, ?)) >= ?
+             ORDER BY sim DESC
+             LIMIT ?".to_string(),
+            vec![
+                turso::Value::Blob(query_blob.clone()),
+                turso::Value::Blob(query_blob.clone()),
+                turso::Value::Real(threshold as f64),
+                turso::Value::Integer(lim),
+            ],
+        ),
+        _ => (
+            "SELECT mf.id, mf.fact, mf.collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+             FROM memory_facts_vectors mfv
+             JOIN memory_facts mf ON mf.id = mfv.fact_id
+             WHERE mf.status = 'active'
+               AND (1.0 - vector_distance_cos(mfv.embedding, ?)) >= ?
+             ORDER BY sim DESC".to_string(),
+            vec![
+                turso::Value::Blob(query_blob.clone()),
+                turso::Value::Blob(query_blob.clone()),
+                turso::Value::Real(threshold as f64),
+            ],
+        ),
+    };
+
+    let mut cand_rows = conn.query(&query_str, params).await?;
+
+    let mut candidates = Vec::new();
+    while let Some(row) = cand_rows.next().await? {
+        let id: String = row.get(0)?;
+        let f_text: String = row.get(1)?;
+        let col: String = row.get(2)?;
+        let sim: f64 = row.get(3)?;
+        candidates.push((id, f_text, col, sim as f32));
     }
     Ok(candidates)
 }
 
 /// Fetches inter-collection LLM edge candidates using Turso vector_distance_cos pushdown SQL search.
-/// Returns (id, fact_text, collection) tuples pre-filtered by cosine similarity threshold.
-/// If `limit` is None, candidate selection is purely threshold-driven without K-capping (Spec §System Behavioral Invariants #3).
+/// Returns (id, fact_text, collection, cosine_sim) tuples pre-filtered by cosine similarity threshold.
+/// Combines active historical facts in `memory_facts` AND in-flight items in `personal_memory_queue`.
 pub async fn fetch_inter_collection_candidates(
     conn: &Connection,
     target_collections: &[&str],
     query_embedding: &[f32],
     threshold: f32,
     limit: Option<i64>,
-) -> Result<Vec<(String, String, String)>> {
+) -> Result<Vec<(String, String, String, f32)>> {
     if target_collections.is_empty() {
         return Ok(Vec::new());
     }
@@ -235,34 +303,48 @@ pub async fn fetch_inter_collection_candidates(
 
     let query_str = if has_limit {
         format!(
-            "SELECT mf.id, mf.fact, mf.collection
-             FROM memory_facts_vectors mfv
-             JOIN memory_facts mf ON mf.id = mfv.fact_id
-             WHERE mf.collection IN ({}) AND mf.status = 'active'
-               AND (1.0 - vector_distance_cos(mfv.embedding, ?)) >= ?
-             ORDER BY vector_distance_cos(mfv.embedding, ?) ASC
-             LIMIT ?",
-            placeholders
+            "SELECT id, fact, collection, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, mf.collection as collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection IN ({}) AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, q.collection as collection, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection IN ({}) AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? ORDER BY sim DESC LIMIT ?",
+            placeholders, placeholders
         )
     } else {
         format!(
-            "SELECT mf.id, mf.fact, mf.collection
-             FROM memory_facts_vectors mfv
-             JOIN memory_facts mf ON mf.id = mfv.fact_id
-             WHERE mf.collection IN ({}) AND mf.status = 'active'
-               AND (1.0 - vector_distance_cos(mfv.embedding, ?)) >= ?
-             ORDER BY vector_distance_cos(mfv.embedding, ?) ASC",
-            placeholders
+            "SELECT id, fact, collection, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, mf.collection as collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection IN ({}) AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, q.collection as collection, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection IN ({}) AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? ORDER BY sim DESC",
+            placeholders, placeholders
         )
     };
 
     let mut params: Vec<turso::Value> = Vec::new();
+    params.push(turso::Value::Blob(query_blob.clone()));
     for col in target_collections {
         params.push(turso::Value::Text(col.to_string()));
     }
     params.push(turso::Value::Blob(query_blob.clone()));
+    for col in target_collections {
+        params.push(turso::Value::Text(col.to_string()));
+    }
     params.push(turso::Value::Real(threshold as f64));
-    params.push(turso::Value::Blob(query_blob));
 
     if let Some(lim) = limit {
         if lim > 0 {
@@ -277,7 +359,164 @@ pub async fn fetch_inter_collection_candidates(
         let id: String = row.get(0)?;
         let f_text: String = row.get(1)?;
         let col: String = row.get(2)?;
-        candidates.push((id, f_text, col));
+        let sim: f64 = row.get(3)?;
+        candidates.push((id, f_text, col, sim as f32));
+    }
+    Ok(candidates)
+}
+
+/// Fetches intra-collection candidates in the sub-floor window [floor_threshold, ceil_threshold).
+/// Used exclusively by eval_pipeline.rs post-pipeline audit pass.
+pub async fn fetch_intra_subfloor_candidates(
+    conn: &Connection,
+    collection: &str,
+    query_embedding: &[f32],
+    floor_threshold: f32,
+    ceil_threshold: f32,
+    limit: Option<i64>,
+) -> Result<Vec<(String, String, f32)>> {
+    let query_blob = encode_f32_blob(query_embedding);
+
+    let (query_str, params) = match limit {
+        Some(lim) if lim > 0 => (
+            "SELECT id, fact, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection = ? AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection = ? AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? AND sim < ? ORDER BY sim DESC LIMIT ?".to_string(),
+            vec![
+                turso::Value::Blob(query_blob.clone()),
+                turso::Value::Text(collection.to_string()),
+                turso::Value::Blob(query_blob.clone()),
+                turso::Value::Text(collection.to_string()),
+                turso::Value::Real(floor_threshold as f64),
+                turso::Value::Real(ceil_threshold as f64),
+                turso::Value::Integer(lim),
+            ],
+        ),
+        _ => (
+            "SELECT id, fact, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection = ? AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection = ? AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? AND sim < ? ORDER BY sim DESC".to_string(),
+            vec![
+                turso::Value::Blob(query_blob.clone()),
+                turso::Value::Text(collection.to_string()),
+                turso::Value::Blob(query_blob.clone()),
+                turso::Value::Text(collection.to_string()),
+                turso::Value::Real(floor_threshold as f64),
+                turso::Value::Real(ceil_threshold as f64),
+            ],
+        ),
+    };
+
+    let mut cand_rows = conn.query(&query_str, params).await?;
+
+    let mut candidates = Vec::new();
+    while let Some(row) = cand_rows.next().await? {
+        let id: String = row.get(0)?;
+        let f_text: String = row.get(1)?;
+        let sim: f64 = row.get(2)?;
+        candidates.push((id, f_text, sim as f32));
+    }
+    Ok(candidates)
+}
+
+/// Fetches inter-collection candidates in the sub-floor window [floor_threshold, ceil_threshold).
+/// Used exclusively by eval_pipeline.rs post-pipeline audit pass.
+pub async fn fetch_inter_subfloor_candidates(
+    conn: &Connection,
+    target_collections: &[&str],
+    query_embedding: &[f32],
+    floor_threshold: f32,
+    ceil_threshold: f32,
+    limit: Option<i64>,
+) -> Result<Vec<(String, String, String, f32)>> {
+    if target_collections.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let query_blob = encode_f32_blob(query_embedding);
+    let placeholders = vec!["?"; target_collections.len()].join(",");
+
+    let has_limit = matches!(limit, Some(lim) if lim > 0);
+
+    let query_str = if has_limit {
+        format!(
+            "SELECT id, fact, collection, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, mf.collection as collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection IN ({}) AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, q.collection as collection, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection IN ({}) AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? AND sim < ? ORDER BY sim DESC LIMIT ?",
+            placeholders, placeholders
+        )
+    } else {
+        format!(
+            "SELECT id, fact, collection, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, mf.collection as collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection IN ({}) AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, q.collection as collection, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection IN ({}) AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? AND sim < ? ORDER BY sim DESC",
+            placeholders, placeholders
+        )
+    };
+
+    let mut params: Vec<turso::Value> = Vec::new();
+    params.push(turso::Value::Blob(query_blob.clone()));
+    for col in target_collections {
+        params.push(turso::Value::Text(col.to_string()));
+    }
+    params.push(turso::Value::Blob(query_blob.clone()));
+    for col in target_collections {
+        params.push(turso::Value::Text(col.to_string()));
+    }
+    params.push(turso::Value::Real(floor_threshold as f64));
+    params.push(turso::Value::Real(ceil_threshold as f64));
+
+    if let Some(lim) = limit {
+        if lim > 0 {
+            params.push(turso::Value::Integer(lim));
+        }
+    }
+
+    let mut cand_rows = conn.query(&query_str, params).await?;
+
+    let mut candidates = Vec::new();
+    while let Some(row) = cand_rows.next().await? {
+        let id: String = row.get(0)?;
+        let f_text: String = row.get(1)?;
+        let col: String = row.get(2)?;
+        let sim: f64 = row.get(3)?;
+        candidates.push((id, f_text, col, sim as f32));
     }
     Ok(candidates)
 }

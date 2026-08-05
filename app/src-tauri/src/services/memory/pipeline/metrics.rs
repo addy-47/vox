@@ -6,10 +6,9 @@ pub struct PipelineStageMetrics {
     pub run_id: String,
     pub stage_name: String,
     pub session_id: String,
+    pub batch_seq: usize,
     pub items_claimed: usize,
-    pub items_processed: usize,
-    pub items_superseded: usize,
-    pub relations_created: usize,
-    pub duration_ms: u128,
     pub error_count: usize,
+    pub duration_ms: u128,
 }
+

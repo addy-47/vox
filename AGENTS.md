@@ -70,6 +70,23 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 **Global Evaluation Configuration:**
 - **Context Window Cap:** Set to **8192 tokens** across all stage evaluation runs (`eval_compaction.rs`, `eval_pipeline.rs`, `eval_retrieval.rs`).
 
+**Code Fixes & Audit Expansion Applied (Current Working Tree):**
+1. **Intra-Batch Candidate Self-Fetch & Circular Loop Fix (`queries.rs`)**: Updated `fetch_intra_collection_candidates` and `fetch_inter_collection_candidates` SQL status clauses from `IN ('embedded', 'processing_eval', 'evaluated')` to `IN ('embedded', 'evaluated')`. In-flight items in `processing_eval` within the same active batch can no longer self-fetch as candidates, eliminating bidirectional `A <-> B` circular `SUPERSEDES` loops.
+2. **Chronological NLI Premise/Hypothesis Alignment (`stage3_eval.rs`)**: Configured NLI candidate pair evaluation so `cand_fact` (established historical DB state) is passed as **Premise** and `item.fact` (new incoming state) is passed as **Hypothesis**, ensuring DeBERTa-v3 evaluates state transitions in chronological order.
+3. **Multi-Pair ONNX Tensor Batching (`nli.rs` & `stage3_eval.rs`)**: Implemented `raw_predict_batch` and `classify_batch` in `nli.rs` to encode and predict all candidate pairs for an item in a single 2D ONNX tensor pass (`[batch_size, max_seq_len]`), reducing Stage 3 CPU ONNX execution latency by up to 5x.
+4. **Expanded Audit Logging & 3-Report Architecture**:
+   - `personal_memory_queue`: Added `dedup_match_json` (stage, action, matched_fact_id, matched_fact, score) and `audit_json` (nli_scores, edge_score, rejection_reason, candidate_source).
+   - `memory_pipeline_metrics`: Redesigned lean schema (removed SQL-derivable columns `items_processed`, `items_superseded`, `relations_created`), added `batch_seq`.
+   - `stage1_dedup.rs`: Refactored prefetch map to `HashMap<collection, Vec<(id, fact_text)>>` to surface matched fact IDs at zero SQL cost.
+   - `stage2_embed.rs`: Writes `dedup_match_json` on soft vector dedup hits.
+   - `stage3_eval.rs`: Enriched `CandidateAuditLog` with explicit rejection reasons (`below_nli_confidence`, `topic_overlap_failed`, `nli_neutral`, `below_edge_classifier_confidence`) and candidate sources (`memory_facts` vs `queue_in_flight`).
+   - `eval_pipeline.rs`: Built 3-report architecture (`stage1_stage2_dedup_report.md`, per-batch `stage3_batch_{01..NN}_report.md`, with Report C reserved for QA Subagent synthesis). Sub-floor candidate pass (`0.25 <= sim < threshold`) tags near-miss pairs.
+
+**Last Evaluation Run Observations:**
+- **Eval 1 (Compaction)**: Overall score **85/100** (Accuracy: 92%, Recall: 90%, Schema Disambiguation: 95%, Redundancy: 8%). 0% hallucinations. Occasional context drops and sliding window redundancy across turns.
+- **Eval 2 (4-Stage Pipeline)**: Overall score **8.5/10** (Stage 1: 9/10, Stage 2: 8.5/10, Stage 3 NLI: 8.5/10, ModernBERT: 9/10).
+- **Core Observation**: We cannot tune global thresholds based on superficial observations of 1-2 edge cases. We must collect granular, un-truncated per-batch logging data and evaluate facts, candidate pairs, model confidence scores, and rejection reasons via scope-reduced, per-batch/per-stage LLM judge reports.
+
 ---
 
 ### Phase 11 QA Evaluation Focus (Semantic Quality & System Behavior)
@@ -83,9 +100,14 @@ Deterministic checks (e.g. table creation, schema existence, non-null values, no
 - **Failure Analysis:** If compaction fails or requires retries, why did it fail (prompt length overflow, schema confusion, LLM degradation)?
 
 #### 2. Eval 2 — 4-Stage Ingestion Pipeline & State Resolution (`eval_pipeline.rs`)
-- **Deduplication Semantic Validity:** Exactly which facts were merged in Stage 1 (Jaccard) and Stage 2 (Soft Vector)? Were merged facts genuinely identical, or did soft-dedup cause false positives that destroyed distinct facts?
-- **Candidate Retrieval & Edge Soundness:** Is candidate selection missing valid fact pairs? Are generated NLI edges (`SUPERSEDES`, `SUPPORTS`, `CONFLICTS`) and cross-collection edges (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`) logically sound?
-- **Grouped Stage Latency & Throughput:** Measure per-stage grouped latencies per batch. Track end-to-end processing time for a single fact vs. a full batch of 128 facts. Verify metric population in `memory_pipeline_metrics`.
+- **Deduplication Semantic Validity (Stage 1 & Stage 2 Audit Report)**: Audit all facts merged in Stage 1 (Jaccard) and Stage 2 (Soft Vector). Evaluate whether merged facts were genuinely identical, or if soft-dedup caused false positives that destroyed distinct facts.
+- **Per-Batch Stage 3 Evaluation (Batch Size 16 Judge Reports)**: Stage 3 naturally executes in atomic batches of 16 items (`STAGE3_BATCH_SIZE = 16`). For EACH Stage 3 batch of 16 items, execute a dedicated LLM judge pass using the 16 facts + full candidate audit logs (including model logits, sub-floor candidates `0.25 <= sim < 0.40`, topic overlap flags, and rejection reasons).
+- **Report C Master Synthesis**: Executed by the **QA Subagent** (`agy-subagent`), synthesizing individual deduplication and per-batch Stage 3 reports into an empirical scorecard and recommendation matrix.
+- **Formed Relations & Candidate Retrieval Audit**:
+  - Evaluate formed `SUPERSEDES`, `CONFLICTS`, and `SUPPORTS` edges for semantic correctness vs false positives.
+  - Audit candidate retrieval precision: Did any candidate fall in the sub-floor range (`0.25 <= sim < 0.40`) that should have formed a relation but was missed?
+  - Threshold & Heuristic Rejection Audit: Did a relation fail because model confidence was just below threshold or topic overlap failed?
+- **Grouped Stage Latency & Throughput**: Measure per-stage grouped latencies per batch. Track end-to-end processing time for a single fact vs. a full batch of 128 facts. Verify metric population in `memory_pipeline_metrics`.
 
 #### 3. Eval 3 — Pre-Retrieval Scope Classifier & Dynamic Token Waterfall (`eval_retrieval.rs`) [CRITICAL]
 - **Scope Classification Validity:** Did `query-sieve-rs` classify test queries into the correct `MemoryScope` (`ChitChat`, `User`, `Domain`, `Temporal`)?

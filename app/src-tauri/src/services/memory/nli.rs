@@ -163,21 +163,55 @@ impl NliEngine {
     }
 
     fn raw_predict(&self, premise: &str, hypothesis: &str) -> Result<Vec<f32>> {
-        let encoding = self
-            .tokenizer
-            .encode(format!("{} [SEP] {}", premise, hypothesis), true)
-            .map_err(|e| anyhow!("NLI Tokenization failed: {:?}", e))?;
+        let batch = self.raw_predict_batch(&[(premise, hypothesis)])?;
+        batch.into_iter().next().ok_or_else(|| anyhow!("Empty prediction output"))
+    }
 
-        let ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
-        let mask: Vec<i64> = encoding
-            .get_attention_mask()
+    fn raw_predict_batch(&self, pairs: &[(&str, &str)]) -> Result<Vec<Vec<f32>>> {
+        if pairs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let batch_size = pairs.len();
+        let mut encodings = Vec::with_capacity(batch_size);
+
+        for (premise, hypothesis) in pairs {
+            let enc = self
+                .tokenizer
+                .encode(format!("{} [SEP] {}", premise, hypothesis), true)
+                .map_err(|e| anyhow!("NLI Tokenization failed: {:?}", e))?;
+            encodings.push(enc);
+        }
+
+        let max_seq_len = encodings
             .iter()
-            .map(|&x| x as i64)
-            .collect();
-        let seq_len = ids.len();
+            .map(|e| e.get_ids().len())
+            .max()
+            .unwrap_or(1)
+            .min(512);
 
-        let input_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), ids)?;
-        let attention_mask_arr = Array2::<i64>::from_shape_vec((1, seq_len), mask)?;
+        let mut input_ids = vec![0i64; batch_size * max_seq_len];
+        let mut attention_mask = vec![0i64; batch_size * max_seq_len];
+        let mut token_type_ids = vec![0i64; batch_size * max_seq_len];
+
+        for (b, enc) in encodings.iter().enumerate() {
+            let ids = enc.get_ids();
+            let mask = enc.get_attention_mask();
+            let types = enc.get_type_ids();
+            let len = ids.len().min(max_seq_len);
+
+            for i in 0..len {
+                let idx = b * max_seq_len + i;
+                input_ids[idx] = ids[i] as i64;
+                attention_mask[idx] = mask[i] as i64;
+                if i < types.len() {
+                    token_type_ids[idx] = types[i] as i64;
+                }
+            }
+        }
+
+        let input_ids_arr = Array2::<i64>::from_shape_vec((batch_size, max_seq_len), input_ids)?;
+        let attention_mask_arr = Array2::<i64>::from_shape_vec((batch_size, max_seq_len), attention_mask)?;
 
         let input_ids_tensor = ort::value::Tensor::from_array(input_ids_arr)
             .map_err(|e| anyhow!("Failed to create NLI input_ids tensor: {:?}", e))?;
@@ -187,8 +221,7 @@ impl NliEngine {
         let mut session_guard = self.session.lock();
 
         let outputs = if self.has_token_type_ids {
-            let type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
-            let type_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), type_ids)?;
+            let type_ids_arr = Array2::<i64>::from_shape_vec((batch_size, max_seq_len), token_type_ids)?;
             let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
                 .map_err(|e| anyhow!("Failed to create NLI type_ids tensor: {:?}", e))?;
 
@@ -213,18 +246,23 @@ impl NliEngine {
             .map_err(|e| anyhow!("Failed to extract NLI logits array: {:?}", e))?;
 
         let shape = logits_array.shape();
-        if shape.len() < 2 || shape[1] < 3 {
+        if shape.len() < 2 || shape[0] < batch_size || shape[1] < 3 {
             return Err(anyhow!(
-                "Invalid output logits tensor dimensions. Expected [1, >=3], received: {:?}",
-                shape
+                "Invalid output logits tensor dimensions. Expected [{}, >=3], received: {:?}",
+                batch_size, shape
             ));
         }
 
-        Ok(vec![
-            logits_array[[0, 0]],
-            logits_array[[0, 1]],
-            logits_array[[0, 2]],
-        ])
+        let mut batch_logits = Vec::with_capacity(batch_size);
+        for b in 0..batch_size {
+            batch_logits.push(vec![
+                logits_array[[b, 0]],
+                logits_array[[b, 1]],
+                logits_array[[b, 2]],
+            ]);
+        }
+
+        Ok(batch_logits)
     }
 }
 
@@ -257,36 +295,51 @@ pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {
 /// Performs NLI classification between premise and hypothesis.
 /// Returns the softmax probabilities mapped to the output struct.
 pub fn classify_pair(premise: &str, hypothesis: &str) -> Result<NliResult> {
-    let engine = NLI_ENGINE.get().ok_or_else(|| anyhow!("NLI Engine is not loaded."))?;
-    let logits = engine.raw_predict(premise, hypothesis)?;
+    let mut results = classify_batch(&[(premise, hypothesis)])?;
+    results.pop().ok_or_else(|| anyhow!("Empty prediction result"))
+}
 
-    // Softmax
-    let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let exps: Vec<f32> = logits.iter().map(|&l| (l - max_logit).exp()).collect();
-    let sum_exp: f32 = exps.iter().sum();
-    let probs: Vec<f32> = if sum_exp > 0.0 {
-        exps.iter().map(|e| e / sum_exp).collect()
-    } else {
-        vec![0.333, 0.333, 0.333]
-    };
-
-    let mut contradiction = 0.0;
-    let mut entailment = 0.0;
-    let mut neutral = 0.0;
-
-    for (i, &prob) in probs.iter().enumerate() {
-        match engine.class_mapping[i] {
-            NliLabel::Contradiction => contradiction = prob,
-            NliLabel::Entailment => entailment = prob,
-            NliLabel::Neutral => neutral = prob,
-        }
+/// Performs batched NLI classification for a slice of (premise, hypothesis) pairs.
+/// Returns softmax probabilities for each pair mapped to NliResult.
+pub fn classify_batch(pairs: &[(&str, &str)]) -> Result<Vec<NliResult>> {
+    if pairs.is_empty() {
+        return Ok(Vec::new());
     }
 
-    Ok(NliResult {
-        contradiction,
-        entailment,
-        neutral,
-    })
+    let engine = NLI_ENGINE.get().ok_or_else(|| anyhow!("NLI Engine is not loaded."))?;
+    let batch_logits = engine.raw_predict_batch(pairs)?;
+
+    let mut results = Vec::with_capacity(batch_logits.len());
+    for logits in batch_logits {
+        let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let exps: Vec<f32> = logits.iter().map(|&l| (l - max_logit).exp()).collect();
+        let sum_exp: f32 = exps.iter().sum();
+        let probs: Vec<f32> = if sum_exp > 0.0 {
+            exps.iter().map(|e| e / sum_exp).collect()
+        } else {
+            vec![0.333, 0.333, 0.333]
+        };
+
+        let mut contradiction = 0.0;
+        let mut entailment = 0.0;
+        let mut neutral = 0.0;
+
+        for (i, &prob) in probs.iter().enumerate() {
+            match engine.class_mapping[i] {
+                NliLabel::Contradiction => contradiction = prob,
+                NliLabel::Entailment => entailment = prob,
+                NliLabel::Neutral => neutral = prob,
+            }
+        }
+
+        results.push(NliResult {
+            contradiction,
+            entailment,
+            neutral,
+        });
+    }
+
+    Ok(results)
 }
 
 /// Determines the logical relationship classification based on prediction scores and settings.

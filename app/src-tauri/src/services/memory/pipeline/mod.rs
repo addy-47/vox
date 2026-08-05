@@ -6,10 +6,11 @@ pub mod stage2_embed;
 pub mod stage3_eval;
 pub mod stage4_commit;
 
-pub use batch_result::{BatchEvaluationResult, RelationEdge};
+pub use batch_result::{BatchEvaluationResult, CandidateAuditLog, DedupAuditLog, RelationEdge};
 pub use metrics::PipelineStageMetrics;
-pub use runner::{drain_pipeline_queue, run_pipeline_cycle};
+pub use runner::{drain_pipeline_queue, drain_pipeline_queue_with_run_id, run_pipeline_cycle, run_pipeline_cycle_with_id_seq};
 pub use stage1_dedup::run_stage1_dedup;
 pub use stage2_embed::run_stage2_embed;
-pub use stage3_eval::run_stage3_eval;
+pub use stage3_eval::{run_stage3_eval, run_stage3_eval_with_metrics_seq};
 pub use stage4_commit::run_stage4_commit;
+

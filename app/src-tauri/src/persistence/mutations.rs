@@ -178,18 +178,16 @@ pub async fn record_stage_metrics(
 
     conn.execute(
         "INSERT INTO memory_pipeline_metrics 
-         (run_id, stage_name, session_id, items_claimed, items_processed, items_superseded, relations_created, duration_ms, error_count, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         (run_id, stage_name, session_id, batch_seq, items_claimed, error_count, duration_ms, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             metrics.run_id.clone(),
             metrics.stage_name.clone(),
             metrics.session_id.clone(),
+            metrics.batch_seq as i64,
             metrics.items_claimed as i64,
-            metrics.items_processed as i64,
-            metrics.items_superseded as i64,
-            metrics.relations_created as i64,
-            metrics.duration_ms as i64,
             metrics.error_count as i64,
+            metrics.duration_ms as i64,
             now,
         ),
     )
@@ -197,6 +195,35 @@ pub async fn record_stage_metrics(
 
     Ok(())
 }
+
+pub async fn write_dedup_audit(
+    conn: &Connection,
+    item_id: i64,
+    log: &crate::services::memory::pipeline::DedupAuditLog,
+) -> Result<()> {
+    let json_str = serde_json::to_string(log)?;
+    conn.execute(
+        "UPDATE personal_memory_queue SET dedup_match_json = ? WHERE id = ?",
+        (json_str, item_id),
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn write_candidate_audit(
+    conn: &Connection,
+    item_id: i64,
+    logs: &[crate::services::memory::pipeline::CandidateAuditLog],
+) -> Result<()> {
+    let json_str = serde_json::to_string(logs)?;
+    conn.execute(
+        "UPDATE personal_memory_queue SET audit_json = ? WHERE id = ?",
+        (json_str, item_id),
+    )
+    .await?;
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {
