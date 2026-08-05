@@ -75,13 +75,13 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
     let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
 
     // 2. PRE-FETCH ALL ACTIVE FACTS & QUEUE FACTS IN 2 QUERIES (0 SQL inside loop)
-    let mut active_facts_map: std::collections::HashMap<String, Vec<(String, String)>> = std::collections::HashMap::new();
+    let mut active_facts_map: std::collections::HashMap<String, Vec<(String, String, String)>> = std::collections::HashMap::new();
     let mut db_rows = conn.query("SELECT id, collection, fact FROM memory_facts WHERE status = 'active'", ()).await?;
     while let Some(row) = db_rows.next().await? {
         let id: String = row.get(0)?;
         let coll: String = row.get(1)?;
         let fact: String = row.get(2)?;
-        active_facts_map.entry(coll).or_default().push((id, fact));
+        active_facts_map.entry(coll.clone()).or_default().push((id, coll, fact));
     }
 
     let mut queue_rows = conn.query(
@@ -92,10 +92,14 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
         let id: String = row.get(0)?;
         let coll: String = row.get(1)?;
         let fact: String = row.get(2)?;
-        active_facts_map.entry(coll).or_default().push((id, fact));
+        active_facts_map.entry(coll.clone()).or_default().push((id, coll, fact));
     }
 
-    // 3. Pure In-Memory Rust Comparison Loop
+    // 3. Pure In-Memory Rust Comparison Loop across 5 Core Factual Collections
+    const FACTUAL_DEDUP_COLLECTIONS: &[&str] = &[
+        "Identity", "Constraints", "Directives", "Profile", "Entities",
+    ];
+
     let mut deduped_ids = Vec::new();
     let mut superseded_ids = Vec::new();
 
@@ -110,6 +114,7 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
                 stage: "stage1_jaccard".to_string(),
                 action: "empty_fact_dropped".to_string(),
                 matched_fact_id: String::new(),
+                matched_fact_coll: String::new(),
                 matched_fact: String::new(),
                 score: 0.0,
             };
@@ -117,39 +122,79 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
             continue;
         }
 
-        let matched = active_facts_map.get(&item.collection).and_then(|cand_list| {
-            cand_list.iter().find_map(|(cand_id, cand_fact)| {
-                let jacc_sim = jaccard_similarity(trimmed_fact, cand_fact);
-                if is_exact_duplicate(0.0, jacc_sim) {
-                    Some((cand_id.clone(), cand_fact.clone(), jacc_sim))
-                } else {
-                    None
-                }
+        let incoming_priority = crate::core::constants::MemoryCollection::parse(&item.collection)
+            .map(|c| c.priority())
+            .unwrap_or(0);
+
+        let matched = FACTUAL_DEDUP_COLLECTIONS.iter().find_map(|&coll| {
+            active_facts_map.get(coll).and_then(|cand_list| {
+                cand_list.iter().find_map(|(cand_id, cand_coll, cand_fact)| {
+                    let jacc_sim = jaccard_similarity(trimmed_fact, cand_fact);
+                    if is_exact_duplicate(0.0, jacc_sim) {
+                        Some((cand_id.clone(), cand_coll.clone(), cand_fact.clone(), jacc_sim))
+                    } else {
+                        None
+                    }
+                })
             })
         });
 
-        if let Some((matched_id, matched_fact, jacc_sim)) = matched {
-            superseded_ids.push(item.id);
-            let log = DedupAuditLog {
-                queue_item_id: item.id,
-                item_fact: item.fact.clone(),
-                item_collection: item.collection.clone(),
-                stage: "stage1_jaccard".to_string(),
-                action: "duplicate_dropped".to_string(),
-                matched_fact_id: matched_id,
-                matched_fact: matched_fact,
-                score: jacc_sim,
-            };
-            let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+        if let Some((matched_id, matched_coll, matched_fact, jacc_sim)) = matched {
+            let existing_priority = crate::core::constants::MemoryCollection::parse(&matched_coll)
+                .map(|c| c.priority())
+                .unwrap_or(0);
+
+            if incoming_priority <= existing_priority {
+                superseded_ids.push(item.id);
+                let log = DedupAuditLog {
+                    queue_item_id: item.id,
+                    item_fact: item.fact.clone(),
+                    item_collection: item.collection.clone(),
+                    stage: "stage1_jaccard".to_string(),
+                    action: "duplicate_dropped".to_string(),
+                    matched_fact_id: matched_id,
+                    matched_fact_coll: matched_coll,
+                    matched_fact: matched_fact,
+                    score: jacc_sim,
+                };
+                let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+            } else {
+                // Higher priority incoming item supersedes existing lower-priority DB fact
+                if !matched_id.starts_with("item_") {
+                    let _ = conn.execute(
+                        "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
+                        (matched_id.as_str(),),
+                    ).await;
+                }
+                deduped_ids.push(item.id);
+                let log = DedupAuditLog {
+                    queue_item_id: item.id,
+                    item_fact: item.fact.clone(),
+                    item_collection: item.collection.clone(),
+                    stage: "stage1_jaccard".to_string(),
+                    action: "superseded_existing".to_string(),
+                    matched_fact_id: matched_id,
+                    matched_fact_coll: matched_coll,
+                    matched_fact: matched_fact,
+                    score: jacc_sim,
+                };
+                let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+
+                active_facts_map
+                    .entry(item.collection.clone())
+                    .or_default()
+                    .push((format!("item_{}", item.id), item.collection.clone(), trimmed_fact.to_string()));
+            }
         } else {
             deduped_ids.push(item.id);
             // Add new unique fact to in-memory map for subsequent intra-batch item comparison
             active_facts_map
                 .entry(item.collection.clone())
                 .or_default()
-                .push((format!("item_{}", item.id), trimmed_fact.to_string()));
+                .push((format!("item_{}", item.id), item.collection.clone(), trimmed_fact.to_string()));
         }
     }
+
 
     // 4. Batch Update Results in SQL Queries
     for id in &deduped_ids {

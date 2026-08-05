@@ -44,10 +44,11 @@ The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & 
 1. SELECT up to 128 `staged_pending` rows, ordered by `created_at ASC`.
 2. Atomically claim each with `UPDATE ... WHERE status = 'staged_pending'`.
 3. Empty-fact items → immediately `superseded`.
-4. For each remaining item: fetch all active facts in the same collection from `memory_facts`.
-5. Compute **Jaccard word-set similarity** between the incoming fact and each existing active fact.
-6. Threshold: `JACCARD_EXACT_MATCH_THRESHOLD = 1.0` — only a perfect word-set match is treated as a duplicate.
-7. Match found → `superseded`. No match → `deduped`.
+4. For each remaining item: prefetch active facts across the 5 core factual collections (`Identity: 6 > Constraints: 5 > Directives: 4 > Profile: 3 > Entities: 2`) from `memory_facts` AND in-flight queue items.
+5. Compute **Jaccard word-set similarity** (`JACCARD_EXACT_MATCH_THRESHOLD = 1.0`) against candidate facts across all 5 factual collections.
+6. **5-Collection Priority Resolution:** On exact Jaccard match:
+   - If `incoming_priority <= matched_priority`: Incoming item marked `superseded` (`duplicate_dropped`).
+   - If `incoming_priority > matched_priority`: Existing lower-priority DB fact marked `superseded`, incoming item proceeds as `deduped`.
 
 **Constants:**
 - `STAGE1_BATCH_CEILING = 128`
@@ -66,8 +67,11 @@ The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & 
 1. SELECT up to 16 `deduped` rows, claim atomically.
 2. Load MiniLM-L12 ONNX embedder if not already loaded.
 3. For each item, generate a 384-dim float vector via `generate_embedding()`.
-4. **Phase 2 Soft Vector Dedup:** Query intra-collection candidates with cosine similarity ≥ `SOFT_VECTOR_DEDUP_THRESHOLD` (0.95), limit 1. If a match is found, mark the item as `superseded` with a `SUPERSEDES` edge pointing to the matched existing fact. Otherwise mark as `embedded`.
-5. On embedding failure → call `mark_job_failed()` (increments `retry_count`, resets to `staged_pending`; transitions to `failed` after 3 attempts).
+4. **Phase 2 Cross-Collection Soft Vector Dedup:** Query candidate facts (cos ≥ `SOFT_VECTOR_DEDUP_THRESHOLD` 0.95) across the 5 core factual collections in `memory_facts` AND in-flight queue items.
+5. **Priority Resolution:**
+   - If `incoming_priority <= matched_priority`: Incoming item marked `superseded`, pushing a `SUPERSEDES` edge from `match_id` (surviving fact) → `item_X` (dropped fact).
+   - If `incoming_priority > matched_priority`: Existing lower-priority DB fact marked `superseded`, incoming item proceeds to `embedded`.
+6. On embedding failure → call `mark_job_failed()` (increments `retry_count`, resets to `staged_pending`; transitions to `failed` after 3 attempts).
 
 **Constants:**
 - `STAGE2_BATCH_SIZE = 16`
@@ -75,6 +79,7 @@ The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & 
 - `EMBEDDING_DIM = 384`
 - `PRIMARY_MODEL_DIR = "minilm-l12-v2"`
 - `PRIMARY_MODEL_FILENAME = "model_int8.onnx"`
+
 
 ### 3.3 Stage 3 — Unified Edge & State Evaluation (`stage3_eval.rs`)
 
@@ -311,7 +316,11 @@ WHERE id = ?
 |---|---|---|
 | `NLI_CONTRADICTION_THRESHOLD` | 0.85 | `nli.rs` |
 | `NLI_ENTAILMENT_THRESHOLD` | 0.85 | `nli.rs` |
+| `NLI_CONTRADICTION_CONFIDENCE_THRESHOLD` | 0.85 | `stage3_eval.rs` |
+| `NLI_CONTRADICTION_MARGIN_THRESHOLD` | 0.20 | `stage3_eval.rs` |
+| `NLI_ENTAILMENT_CONFIDENCE_THRESHOLD` | 0.85 | `stage3_eval.rs` |
 | `NLI_MODEL_DIR` | `"nli-deberta-v3-base"` | `nli.rs` |
+
 
 ### Edge Classifier Constants
 | Constant | Value | Location |

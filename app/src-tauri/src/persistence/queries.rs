@@ -228,8 +228,9 @@ pub async fn fetch_intra_collection_candidates(
     Ok(candidates)
 }
 
-/// Fetches active vector candidates across ALL collections (for Stage 2 soft deduplication & priority resolution).
-/// Returns (id, fact_text, collection) tuples pre-filtered by cosine similarity threshold.
+/// Fetches active vector candidates across 5 factual collections (for Stage 2 soft deduplication & priority resolution).
+/// Returns (id, fact_text, collection, cosine_sim) tuples pre-filtered by cosine similarity threshold.
+/// Combines active historical facts in `memory_facts` AND in-flight items in `personal_memory_queue`.
 pub async fn fetch_cross_collection_candidates(
     conn: &Connection,
     query_embedding: &[f32],
@@ -240,13 +241,18 @@ pub async fn fetch_cross_collection_candidates(
 
     let (query_str, params) = match limit {
         Some(lim) if lim > 0 => (
-            "SELECT mf.id, mf.fact, mf.collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
-             FROM memory_facts_vectors mfv
-             JOIN memory_facts mf ON mf.id = mfv.fact_id
-             WHERE mf.status = 'active'
-               AND (1.0 - vector_distance_cos(mfv.embedding, ?)) >= ?
-             ORDER BY sim DESC
-             LIMIT ?".to_string(),
+            "SELECT id, fact, collection, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, mf.collection as collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection IN ('Identity', 'Constraints', 'Directives', 'Profile', 'Entities') AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, q.collection as collection, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection IN ('Identity', 'Constraints', 'Directives', 'Profile', 'Entities') AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? ORDER BY sim DESC LIMIT ?".to_string(),
             vec![
                 turso::Value::Blob(query_blob.clone()),
                 turso::Value::Blob(query_blob.clone()),
@@ -255,12 +261,18 @@ pub async fn fetch_cross_collection_candidates(
             ],
         ),
         _ => (
-            "SELECT mf.id, mf.fact, mf.collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
-             FROM memory_facts_vectors mfv
-             JOIN memory_facts mf ON mf.id = mfv.fact_id
-             WHERE mf.status = 'active'
-               AND (1.0 - vector_distance_cos(mfv.embedding, ?)) >= ?
-             ORDER BY sim DESC".to_string(),
+            "SELECT id, fact, collection, sim FROM (
+                SELECT mf.id as id, mf.fact as fact, mf.collection as collection, (1.0 - vector_distance_cos(mfv.embedding, ?)) as sim
+                FROM memory_facts_vectors mfv
+                JOIN memory_facts mf ON mf.id = mfv.fact_id
+                WHERE mf.collection IN ('Identity', 'Constraints', 'Directives', 'Profile', 'Entities') AND mf.status = 'active'
+                
+                UNION ALL
+                
+                SELECT printf('item_%d', q.id) as id, q.fact as fact, q.collection as collection, (1.0 - vector_distance_cos(q.vector, ?)) as sim
+                FROM personal_memory_queue q
+                WHERE q.collection IN ('Identity', 'Constraints', 'Directives', 'Profile', 'Entities') AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
+             ) WHERE sim >= ? ORDER BY sim DESC".to_string(),
             vec![
                 turso::Value::Blob(query_blob.clone()),
                 turso::Value::Blob(query_blob.clone()),
@@ -281,6 +293,7 @@ pub async fn fetch_cross_collection_candidates(
     }
     Ok(candidates)
 }
+
 
 /// Fetches inter-collection LLM edge candidates using Turso vector_distance_cos pushdown SQL search.
 /// Returns (id, fact_text, collection, cosine_sim) tuples pre-filtered by cosine similarity threshold.

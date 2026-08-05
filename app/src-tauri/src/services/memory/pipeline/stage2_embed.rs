@@ -105,8 +105,8 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                     if incoming_priority <= existing_priority {
                         // Lower or equal priority incoming item is superseded by existing DB fact
                         let rel = vec![RelationEdge {
-                            from_id: format!("item_{}", item.id),
-                            to_id: match_id.clone(),
+                            from_id: match_id.clone(),
+                            to_id: format!("item_{}", item.id),
                             relation: PM_RELATION_SUPERSEDES.to_string(),
                             source: "Embedding".to_string(),
                         }];
@@ -125,6 +125,7 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                             stage: "stage2_soft_vector".to_string(),
                             action: "superseded_lower_priority".to_string(),
                             matched_fact_id: match_id.clone(),
+                            matched_fact_coll: match_coll.clone(),
                             matched_fact: match_fact.clone(),
                             score: *sim,
                         };
@@ -149,11 +150,13 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                             stage: "stage2_soft_vector".to_string(),
                             action: "superseded_existing".to_string(),
                             matched_fact_id: match_id.clone(),
+                            matched_fact_coll: match_coll.clone(),
                             matched_fact: match_fact.clone(),
                             score: *sim,
                         };
                         let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
                     }
+
                 } else {
                     conn.execute(
                         "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
