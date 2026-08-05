@@ -81,6 +81,13 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
    - `stage2_embed.rs`: Writes `dedup_match_json` on soft vector dedup hits.
    - `stage3_eval.rs`: Enriched `CandidateAuditLog` with explicit rejection reasons (`below_nli_confidence`, `topic_overlap_failed`, `nli_neutral`, `below_edge_classifier_confidence`) and candidate sources (`memory_facts` vs `queue_in_flight`).
    - `eval_pipeline.rs`: Built 3-report architecture (`stage1_stage2_dedup_report.md`, per-batch `stage3_batch_{01..NN}_report.md`, with Report C reserved for QA Subagent synthesis). Sub-floor candidate pass (`0.25 <= sim < threshold`) tags near-miss pairs.
+5. **5-Collection Priority Cross-Collection Dedup & Heuristic Stripping**:
+   - `stage1_dedup.rs`: Implemented 5-collection Jaccard exact match dedup across `Identity` > `Constraints` > `Directives` > `Profile` > `Entities`. Applies `MemoryCollection::priority()` resolution on collisions (higher priority incoming replaces lower priority DB fact with `status = 'superseded'`, or lower priority incoming is dropped).
+   - `stage2_embed.rs`: Fixed inverted `SUPERSEDES` edge direction for `superseded_lower_priority` path (`from_id = match_id`, `to_id = incoming`). Populated `matched_fact_coll` in `DedupAuditLog`.
+   - `stage3_eval.rs`: Removed brittle `has_meaningful_topic_overlap` keyword filter and `ENGLISH_STOP_WORDS` dependency, relying 100% on DeBERTa-v3 logits (`contradiction >= 0.85`, margin `>= 0.20`). Unified NLI confidence thresholds across `nli.rs` and `stage3_eval.rs` (`0.85`). Surfaced ModernBERT prediction probabilities as `edge_score` in `CandidateAuditLog`.
+   - `queries.rs`: Updated `fetch_cross_collection_candidates` with `UNION ALL` for in-flight `personal_memory_queue` items (`status IN ('embedded', 'evaluated')`) scoped to the 5 core factual collections.
+   - `batch_result.rs`: Added `matched_fact_coll` to `DedupAuditLog`.
+   - `Cargo.toml`: Removed unused `stop-words` crate dependency.
 
 **Last Evaluation Run Observations:**
 - **Eval 1 (Compaction)**: Overall score **85/100** (Accuracy: 92%, Recall: 90%, Schema Disambiguation: 95%, Redundancy: 8%). 0% hallucinations. Occasional context drops and sliding window redundancy across turns.
