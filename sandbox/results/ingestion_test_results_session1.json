@@ -1,0 +1,11 @@
+{
+  "avg_compaction_latency_ms": 111791.5294117647,
+  "data_path": "sandbox/datasets/dataset_session1.json",
+  "final_token_count": 2664,
+  "final_utilization_pct": 74.33036041259766,
+  "model": "meta/llama-3.1-70b-instruct",
+  "provider": "nvidia",
+  "total_compactions_triggered": 17,
+  "total_facts_extracted": 462,
+  "total_turns_processed": 1000
+}

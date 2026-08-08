@@ -56,7 +56,6 @@ impl ChatCompletionsAdapter {
                 builder = builder.header("anthropic-version", "2023-06-01");
                 if let Some(ref key) = self.api_key {
                     builder = builder.header("x-api-key", key);
-                    builder = builder.bearer_auth(key);
                 }
                 return builder;
             }

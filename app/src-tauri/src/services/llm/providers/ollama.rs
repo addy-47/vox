@@ -91,13 +91,19 @@ impl OllamaAdapter {
                 }
             }
 
-            let response = self
-                .client
-                .post(&url)
-                .json(&req_body)
-                .send()
-                .await
-                .map_err(|e| LlmError::Transport(e.to_string()))?;
+            let response = tokio::select! {
+                res = self.client.post(&url).json(&req_body).send() => {
+                    res.map_err(|e| LlmError::Transport(e.to_string()))?
+                }
+                _ = async {
+                    while !cancel_flag.load(Ordering::Relaxed) {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                } => {
+                    let _ = tx.send(VoxEvent::Cancelled { turn_id });
+                    return Ok(());
+                }
+            };
 
             if !response.status().is_success() {
                 let status = response.status();

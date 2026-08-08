@@ -28,6 +28,11 @@ pub fn spawn_llm_worker(
 
     log::info!("[LLM Worker] Persistent loop started.");
 
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to build LLM worker runtime");
+
     while let Ok(cmd) = rx.recv() {
         match cmd {
             LlmCommand::Generate {
@@ -35,17 +40,7 @@ pub fn spawn_llm_worker(
                 turn_id,
                 cancel_flag,
             } => {
-                let handle = tokio::runtime::Handle::try_current();
-                let res = match handle {
-                    Ok(h) => {
-                        h.block_on(provider.generate(request, turn_id, &cancel_flag, &event_tx))
-                    }
-                    Err(_) => tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("Failed to build temporary tokio runtime")
-                        .block_on(provider.generate(request, turn_id, &cancel_flag, &event_tx)),
-                };
+                let res = runtime.block_on(provider.generate(request, turn_id, &cancel_flag, &event_tx));
 
                 if let Err(e) = res {
                     log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);

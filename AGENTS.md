@@ -109,7 +109,8 @@ Every evaluation run must track and report exact item counts across these failur
 
 ### 5.4 GPU Server & 3-Tier Ollama Judge Cascade Architecture
 
-To avoid API rate limits and achieve fast, scalable evaluation across large datasets, evaluation uses the server in `temp/server.txt`):
+To avoid API rate limits and achieve fast, scalable evaluation across large datasets, evaluation uses the remote GPU server (`hypr4@100.86.62.14` RTX 5070 Ti, creds in `temp/server.txt`):
+- **Temperature & Window Config**: Evaluation judge calls use `temperature = 0.0` for deterministic scoring and respect the **8192 token context window cap**.
 
 ```mermaid
 flowchart TD
@@ -118,24 +119,28 @@ flowchart TD
     Llama --> AtomicReports[Per-Batch Audit Reports (Batch 01..NN)]
     AtomicReports --> Gemma[Ollama gemma4:e4b Sub-Master Synthesizer]
     Gemma --> SubMasterReports[Sub-Master Dataset Group Reports]
-    SubMasterReports --> Subagent[QA Subagent invoke_subagent]
+    SubMasterReports --> Subagent[Persistent QA Subagent send_message]
     Subagent --> MasterReport[Report C Master Synthesis & ML Diagnostic Spec]
 ```
 
 1. **Atomic Batch Judge (`llama3.1:8b`)**: Evaluates individual 16-item batches from `eval_pipeline.rs`, auditing raw NLI logits, sub-floor candidates, and rejection reasons.
 2. **Sub-Master Batch Synthesizer (`gemma4:e4b`)**: Aggregates 3-4 atomic batch reports into a sub-master report per dataset session.
-3. **Master Synthesis & Review (`invoke_subagent`)**: A dedicated QA Subagent reads all sub-master reports, compiles the overall confusion matrix, and generates `memory_architecture_failure_analysis.md`.
+3. **Persistent QA Subagent (`.agents/rules/qa-engineer.md`)**: A single QA Subagent is invoked **ONCE** via `invoke_subagent` and reused across all phases via `send_message` to execute deep semantic audits and compile the final master synthesis.
 
 ---
 
-### 5.6 Mandatory Per-Eval Independent Subagent Audit & HITL Gate
+### 5.5 Mandatory Per-Eval Independent Subagent Audit & HITL Gate
 
 > 🛑 **MANDATORY PER-EVAL GATING INVARIANT:**
-> 1. **Isolated Phases**: Each dataset evaluation run (`dataset_session_1.json`, `dataset_session_2.json`, `dataset_session_3.json`, `curated_300_turns.json`) is an independent phase.
-> 2. **Independent Subagent Auditor (`invoke_subagent`)**: After each evaluation run completes, spawn an independent subagent auditor. The auditor MUST inspect the SQLite database, raw JSON audit logs (`audit_json`, `dedup_match_json`), and report files to verify that all data was captured completely and without truncation.
-> 3. **HITL User Approval Gate**: After the subagent auditor finishes its report, execution MUST STOP. Present the audit findings to the user and wait for explicit HITL user approval before starting the next evaluation run.
+> 1. **Single QA Subagent Reuse**: Spawn ONE QA Subagent at Phase 2 using `.agents/rules/qa-engineer.md`. Reuse its conversation ID via `send_message` for ALL subsequent checkpoints. DO NOT spawn duplicate subagents per turn.
+> 2. **2 Checkpoints Per Phase**:
+>    - **Checkpoint A (Post-Compaction)**: QA Subagent audits extracted facts for completeness, schema disambiguation, and context retention.
+>    - **Checkpoint B (Post-Pipeline)**: QA Subagent audits Stage 1/2 dedup merges, Stage 3 NLI false positives/negatives, ModernBERT edge calibration, sub-floor near-misses, and Ollama judge reports.
+> 3. **Deep Semantic Audit**: The subagent must act as a mini QA Lead, inspecting raw database rows (`audit_json`, `dedup_match_json`) and verifying output matching our goals rather than just checking exit codes.
+> 4. **HITL User Approval Gate**: After the QA Subagent completes its report for a phase, execution MUST STOP. Present the audit findings to the user and wait for explicit HITL user approval before starting the next evaluation phase.
 
 **Phase 11 Goal:** Produce a 100% evidence-backed, un-truncated diagnostic report and dataset curation specification for `@ml-research-engineer.md` using the multi-dataset GPU judge pipeline.
+
 
 
 
