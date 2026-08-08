@@ -17,6 +17,7 @@ export const useTelemetry = () => {
   const telemetryRef = useRef<TelemetryData>({ energy: 0, vad_prob: 0, low: 0, mid: 0, high: 0 });
 
   useEffect(() => {
+    let isMounted = true;
     let unlisten: (() => void) | null = null;
 
     const setup = async () => {
@@ -24,9 +25,16 @@ export const useTelemetry = () => {
         if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
           const { getCurrentWindow } = await import('@tauri-apps/api/window');
           const appWindow = getCurrentWindow();
-          unlisten = await appWindow.listen<TelemetryData>('telemetry', (event) => {
-            telemetryRef.current = event.payload;
+          const unlistenFn = await appWindow.listen<TelemetryData>('telemetry', (event) => {
+            if (isMounted) {
+              telemetryRef.current = event.payload;
+            }
           });
+          if (isMounted) {
+            unlisten = unlistenFn;
+          } else {
+            unlistenFn();
+          }
         }
       } catch (err) {
         console.error('[Telemetry] Failed to setup listener:', err);
@@ -36,6 +44,7 @@ export const useTelemetry = () => {
     setup();
 
     return () => {
+      isMounted = false;
       if (unlisten) unlisten();
     };
   }, []);

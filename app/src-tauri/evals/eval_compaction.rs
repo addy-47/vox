@@ -135,30 +135,30 @@ async fn extract_facts_via_nvidia_llm(
     Err(anyhow!("Nvidia API call failed for chunk {} after {} attempts. Last error: {}", chunk_idx + 1, max_retries, last_err))
 }
 
-async fn run_llm_compaction_judge_report(
+async fn run_llm_subbatch_judge_report(
     client: &reqwest::Client,
     api_key: &str,
+    subbatch_num: usize,
+    turns_start: u32,
+    turns_end: u32,
     raw_dialogue: &str,
     extracted_facts_json: &str,
 ) -> Result<String> {
     let judge_prompt = format!(
-        "<judge_compaction_evaluation>\n\
+        "<judge_subbatch_evaluation subbatch=\"{:02}\" turns=\"{}-{}\">\n\
          <raw_dialogue>\n{}\n</raw_dialogue>\n\n\
          <extracted_facts>\n{}\n</extracted_facts>\n\n\
          <task>\n\
-         Act as an expert AI Evaluation Judge. Analyze <extracted_facts> against <raw_dialogue>.\n\
-         Write a comprehensive, highly detailed Markdown Evaluation Report auditing the compaction engine across 5 core pillars:\n\
-         1. Overall Assessment & Score Breakdown (Overall Score out of 100, Fact Accuracy %, Redundancy %, Schema Disambiguation %, Recall Coverage %).\n\
-         2. Information Coverage & Recall Analysis (Did extracted facts capture all critical user information across conversation turns, or was vital context silently dropped?).\n\
-         3. Redundancy & Over-Extraction Audit (Identify specific duplicate or redundant fact strings extracted across sliding windows).\n\
-         4. Collection Disambiguation & Category Correctness (Verify if facts were assigned to the correct collections: Identity, Directives, Profile, Entities, Constraints, Narrative. Call out any misclassified facts).\n\
-         5. Hallucinations & Precision Check (Check if any extracted fact is false, hallucinated, or unstated in raw_dialogue).\n\
-         6. Actionable System Recommendations (Provide concrete recommendations to optimize the compaction prompt, schema boundaries, or token windowing).\n\n\
-         Format your output ONLY as a clean, complete GitHub-flavored Markdown report starting with '# Eval 1 Compaction Evaluation Report'.\n\
-         DO NOT output raw JSON or code fences around the report.\n\
+         Act as an expert AI Evaluation Judge. Analyze <extracted_facts> against <raw_dialogue> for Turns {} to {}.\n\
+         Write a detailed, evidence-anchored Markdown Evaluation Report auditing compaction performance in this sub-batch across 4 key criteria:\n\
+         1. Local Information Coverage & Recall (Did extracted facts capture all critical user information in Turns {}-{}?).\n\
+         2. Local Redundancy & Over-Extraction (Identify duplicate or redundant fact strings extracted within this sub-batch).\n\
+         3. Collection Disambiguation & Category Correctness (Verify if facts were placed in correct collections: Identity, Directives, Profile, Entities, Constraints, Narrative).\n\
+         4. Precision & Hallucination Audit (Identify any facts that are unstated, false, or hallucinated relative to raw_dialogue).\n\n\
+         Format your output ONLY as a clean Markdown report starting with '# Eval 1 Sub-Batch {:02} Evaluation Report (Turns {}-{})'.\n\
          </task>\n\
-         </judge_compaction_evaluation>",
-        raw_dialogue, extracted_facts_json
+         </judge_subbatch_evaluation>",
+        subbatch_num, turns_start, turns_end, raw_dialogue, extracted_facts_json, turns_start, turns_end, turns_start, turns_end, subbatch_num, turns_start, turns_end
     );
 
     let payload = serde_json::json!({
@@ -167,7 +167,7 @@ async fn run_llm_compaction_judge_report(
             {"role": "user", "content": judge_prompt}
         ],
         "temperature": 0.2,
-        "max_tokens": 2500
+        "max_tokens": 2000
     });
 
     let max_retries = 3;
@@ -199,21 +199,106 @@ async fn run_llm_compaction_judge_report(
                     return Ok(cleaned.to_string());
                 } else {
                     let err_text = resp.text().await.unwrap_or_default();
-                    last_err = anyhow!("LLM Judge Nvidia API returned error: {}", err_text);
+                    last_err = anyhow!("LLM Sub-batch Judge Nvidia API returned error: {}", err_text);
                 }
             }
             Err(e) => {
-                last_err = anyhow!("Request to LLM Judge Nvidia API failed: {}", e);
+                last_err = anyhow!("Request to LLM Sub-batch Judge Nvidia API failed: {}", e);
             }
         }
 
         if attempt < max_retries {
-            println!("[Eval 1 LLM Judge] Attempt {} failed ({}). Retrying in 5s...", attempt, last_err);
+            println!("[Eval 1 Sub-batch Judge {:02}] Attempt {} failed ({}). Retrying in 5s...", subbatch_num, attempt, last_err);
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     }
 
-    Err(anyhow!("LLM Judge Nvidia API call failed after {} attempts. Last error: {}", max_retries, last_err))
+    Err(anyhow!("LLM Sub-batch Judge {:02} Nvidia API call failed after {} attempts. Last error: {}", subbatch_num, max_retries, last_err))
+}
+
+async fn run_llm_compaction_master_synthesis(
+    client: &reqwest::Client,
+    api_key: &str,
+    subbatch_reports: &[String],
+    full_extracted_facts_json: &str,
+) -> Result<String> {
+    let mut combined_subbatch_reports = String::new();
+    for (idx, r) in subbatch_reports.iter().enumerate() {
+        combined_subbatch_reports.push_str(&format!("<subbatch_report num=\"{:02}\">\n{}\n</subbatch_report>\n\n", idx + 1, r));
+    }
+
+    let synthesis_prompt = format!(
+        "<judge_master_compaction_synthesis>\n\
+         <subbatch_reports>\n{}\n</subbatch_reports>\n\n\
+         <full_extracted_facts>\n{}\n</full_extracted_facts>\n\n\
+         <task>\n\
+         Act as a Principal AI Systems Architect. Synthesize the sub-batch evaluation reports and full extracted facts above into a Master Compaction Evaluation Report.\n\
+         Evaluate the compaction engine across the following 6 unified sections:\n\
+         1. Overall Assessment & Score Breakdown (Overall Score out of 100, Fact Accuracy %, Redundancy %, Schema Disambiguation %, Recall Coverage %).\n\
+         2. Information Coverage & Recall Analysis (Synthesize recall and silent context drops across all 300 turns).\n\
+         3. Cross-Window Redundancy & Over-Extraction Audit (Identify facts that were extracted repeatedly across different context windows).\n\
+         4. Collection Disambiguation & Category Correctness (Audit placement across Identity, Directives, Profile, Entities, Constraints, Narrative).\n\
+         5. Hallucinations & Precision Check (Global check for false or unstated facts).\n\
+         6. Actionable Engineering Recommendations (Concrete prompts, token windowing, or schema boundary recommendations).\n\n\
+         Format output ONLY as clean Markdown starting with '# Eval 1 Compaction Master Evaluation Report'.\n\
+         </task>\n\
+         </judge_master_compaction_synthesis>",
+        combined_subbatch_reports, full_extracted_facts_json
+    );
+
+    let payload = serde_json::json!({
+        "model": "meta/llama-3.1-70b-instruct",
+        "messages": [
+            {"role": "user", "content": synthesis_prompt}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 2500
+    });
+
+    let max_retries = 3;
+    let mut last_err = anyhow!("Unknown error");
+
+    for attempt in 1..=max_retries {
+        match client
+            .post("https://integrate.api.nvidia.com/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    let json_body: serde_json::Value = resp.json().await?;
+                    let content = json_body["choices"][0]["message"]["content"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Invalid response structure from LLM Master Judge API"))?;
+
+                    let cleaned = content
+                        .trim()
+                        .trim_start_matches("```markdown")
+                        .trim_start_matches("```")
+                        .trim_end_matches("```")
+                        .trim();
+
+                    return Ok(cleaned.to_string());
+                } else {
+                    let err_text = resp.text().await.unwrap_or_default();
+                    last_err = anyhow!("LLM Master Judge Nvidia API returned error: {}", err_text);
+                }
+            }
+            Err(e) => {
+                last_err = anyhow!("Request to LLM Master Judge Nvidia API failed: {}", e);
+            }
+        }
+
+        if attempt < max_retries {
+            println!("[Eval 1 Master Judge] Attempt {} failed ({}). Retrying in 5s...", attempt, last_err);
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+    }
+
+    Err(anyhow!("LLM Master Judge Nvidia API call failed after {} attempts. Last error: {}", max_retries, last_err))
 }
 
 #[tokio::main]
@@ -225,7 +310,8 @@ async fn main() -> Result<()> {
         return Err(anyhow!("NVIDIA_API_KEY not found in environment or temp/.env. Cannot run real LLM compaction."));
     }
 
-    let dataset_path = resolve_path("evals/datasets/curated_300_turns.json");
+    let dataset_filename = std::env::var("EVAL_DATASET_NAME").unwrap_or_else(|_| "dataset_session_3.json".to_string());
+    let dataset_path = resolve_path(&format!("evals/datasets/{}", dataset_filename));
     let output_db_path = resolve_path("evals/results/stage_1_compaction.db");
 
     if let Some(parent) = output_db_path.parent() {
@@ -260,21 +346,19 @@ async fn main() -> Result<()> {
     println!("[Eval 1] Divided 300 turns into {} sliding context windows ({} turns/window)", chunks.len(), window_size);
 
     let mut accumulated_facts: HashMap<String, Vec<String>> = HashMap::new();
-    let mut raw_dialogue_summary = String::new();
+    let mut chunk_facts_map: Vec<HashMap<String, Vec<String>>> = Vec::new();
 
     for (idx, chunk) in chunks.iter().enumerate() {
-        for t in *chunk {
-            raw_dialogue_summary.push_str(&format!("Turn {}: User: {} | Asst: {}\n", t.turn, t.user, t.assistant));
-        }
-
         match extract_facts_via_nvidia_llm(&client, &api_key, chunk, idx).await {
             Ok(facts) => {
+                chunk_facts_map.push(facts.clone());
                 for (col, fact_list) in facts {
                     accumulated_facts.entry(col).or_default().extend(fact_list);
                 }
             }
             Err(e) => {
                 println!("[Eval 1 Chunk {} Error] {}", idx + 1, e);
+                chunk_facts_map.push(HashMap::new());
             }
         }
 
@@ -306,35 +390,96 @@ async fn main() -> Result<()> {
 
     println!("[Eval 1] Enqueued {} facts into personal_memory_queue at {:?}", total_enqueued, output_db_path);
 
-    // Run Deep Semantic LLM-as-a-Judge evaluation over raw dialogue turns AND extracted facts
-    println!("\n[Eval 1] Requesting Deep Semantic LLM-as-a-Judge Markdown Evaluation via Nvidia API...");
-    let extracted_facts_json = serde_json::to_string_pretty(&accumulated_facts)?;
+    let staged_db_path = resolve_path("evals/results/stage_1_compaction_staged.db");
+    let _ = std::fs::copy(&output_db_path, &staged_db_path);
 
-    let judge_markdown_report = run_llm_compaction_judge_report(
+    // =========================================================================
+    // Hierarchical LLM Judge Phase: 3 Sub-Batch Reports + 1 Master Synthesis Report
+    // =========================================================================
+    println!("\n[Eval 1] Initiating Hierarchical LLM Judge Evaluation (3 Sub-Batches + Master Synthesis)...");
+
+
+    let reports_dir = resolve_path("evals/results/reports");
+    std::fs::create_dir_all(&reports_dir)?;
+
+    // Define 3 sub-batch chunk ranges: Chunks 0..3 (Turns 1-90), Chunks 3..6 (Turns 91-180), Chunks 6..10 (Turns 181-300)
+    let subbatch_ranges = vec![
+        (1, 0..3),
+        (2, 3..6),
+        (3, 6..chunks.len()),
+    ];
+
+    let mut subbatch_report_contents = Vec::new();
+
+    for (sb_num, chunk_range) in subbatch_ranges {
+        let mut sb_dialogue = String::new();
+        let mut sb_facts: HashMap<String, Vec<String>> = HashMap::new();
+
+        let mut start_turn = u32::MAX;
+        let mut end_turn = 0;
+
+        for chunk_i in chunk_range.clone() {
+            if let Some(c) = chunks.get(chunk_i) {
+                for t in *c {
+                    if t.turn < start_turn { start_turn = t.turn; }
+                    if t.turn > end_turn { end_turn = t.turn; }
+                    sb_dialogue.push_str(&format!("Turn {}: User: {} | Asst: {}\n", t.turn, t.user, t.assistant));
+                }
+            }
+            if let Some(f_map) = chunk_facts_map.get(chunk_i) {
+                for (col, f_list) in f_map {
+                    sb_facts.entry(col.clone()).or_default().extend(f_list.clone());
+                }
+            }
+        }
+
+        let sb_facts_json = serde_json::to_string_pretty(&sb_facts)?;
+        println!("  Generating Sub-Batch {:02} Judge Report (Turns {}-{})...", sb_num, start_turn, end_turn);
+
+        let sb_report = run_llm_subbatch_judge_report(
+            &client,
+            &api_key,
+            sb_num,
+            start_turn,
+            end_turn,
+            &sb_dialogue,
+            &sb_facts_json,
+        )
+        .await?;
+
+        let sb_report_path = reports_dir.join(format!("eval1_subbatch_{:02}_report.md", sb_num));
+        std::fs::write(&sb_report_path, &sb_report)?;
+        println!("    Saved Sub-Batch Report {:02} To: {:?}", sb_num, sb_report_path);
+        subbatch_report_contents.push(sb_report);
+    }
+
+    println!("\n[Eval 1 Master Synthesis] Generating Master Compaction Evaluation Report...");
+    let full_extracted_facts_json = serde_json::to_string_pretty(&accumulated_facts)?;
+    let master_report = run_llm_compaction_master_synthesis(
         &client,
         &api_key,
-        &raw_dialogue_summary,
-        &extracted_facts_json,
+        &subbatch_report_contents,
+        &full_extracted_facts_json,
     )
     .await?;
 
-    let report_path = resolve_path("evals/results/eval1_compaction_report.md");
-    if let Some(parent) = report_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&report_path, &judge_markdown_report)?;
+    let master_report_path = resolve_path("evals/results/eval1_compaction_report.md");
+    std::fs::write(&master_report_path, &master_report)?;
+
+    let secondary_master_path = reports_dir.join("eval1_compaction_master_report.md");
+    std::fs::write(&secondary_master_path, &master_report)?;
 
     println!("\n=========================================================================");
-    println!("[Eval 1 Deep Semantic LLM-as-a-Judge Evaluation Complete]");
+    println!("[Eval 1 Hierarchical LLM Judge Evaluation Complete]");
     println!("  Turns Processed           : {}", turns.len());
-    println!("  Compaction Windows (30t)  : {}", chunks.len());
+    println!("  Sub-Batch Reports Created : 3");
     println!("  Total Facts Extracted     : {}", total_extracted);
     println!("  Total Facts Enqueued in DB: {}", total_enqueued);
     println!("  Output Database Artifact  : {:?}", output_db_path);
     println!("  -----------------------------------------------------------------------");
-    println!("  LLM Judge Report Saved To : {:?}", report_path);
+    println!("  Master Judge Report Saved : {:?}", master_report_path);
     println!("=========================================================================\n");
-    println!("--- LLM Judge Markdown Report Preview ---\n{}\n", judge_markdown_report);
 
     Ok(())
 }
+

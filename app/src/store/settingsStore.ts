@@ -308,10 +308,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           JSON.stringify(settings.vad) !== JSON.stringify(draftSettings.vad) ||
           JSON.stringify(settings.asr) !== JSON.stringify(draftSettings.asr) ||
           JSON.stringify(settings.tts) !== JSON.stringify(draftSettings.tts) ||
-          settings.llm.model !== draftSettings.llm.model ||
-          settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
-          settings.llm.threads !== draftSettings.llm.threads ||
-          (settings.llm.provider?.model !== draftSettings.llm.provider?.model)
+          JSON.stringify(settings.llm) !== JSON.stringify(draftSettings.llm)
         );
       }
       case "tray":
@@ -332,9 +329,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       case "appearance":
         return false;
       case "interaction": {
-        const { model: _, ...provSettings } = settings.llm.provider || {};
-        const { model: __, ...provDraft } = draftSettings.llm.provider || {};
-        
         const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
         let realtimeChanges = false;
         if (isRealtime) {
@@ -355,7 +349,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           settings.interaction.main_app_mode !== draftSettings.interaction.main_app_mode ||
           settings.interaction.auto_sleep_timeout !== draftSettings.interaction.auto_sleep_timeout ||
           settings.interaction.pipeline_mode !== draftSettings.interaction.pipeline_mode ||
-          JSON.stringify(provSettings) !== JSON.stringify(provDraft) ||
+          settings.interaction.tray_mode !== draftSettings.interaction.tray_mode ||
           realtimeChanges
         );
       }

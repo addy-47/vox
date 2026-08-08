@@ -71,7 +71,7 @@ src/
 │   ├── llm/                # LlmProvider trait (Embedded / OpenAiCompat), LlmEngine, capability probe
 │   ├── tts/                # TtsProvider trait (Edge TTS / Supertonic 3 / Chatterbox / ChatterboxRemote)
 │   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits (Gemini Live, Deepgram Voice Agent)
-│   ├── memory/             # 11 modules: query_classifier, deduplication, embedder, formatter, ingestion, nli, edge_classifier, retrieval, scope_router, tokenizer, working_memory
+│   ├── memory/             # Modularity: classifiers/ (intra_edge_classifier, inter_edge_classifier, query_classifier), deduplication, embedder, formatter, ingestion, retrieval, scope_router, tokenizer, working_memory, pipeline/
 │   ├── pipeline.rs         # Pipeline orchestrator (LLM→TTS→Playback coordination, ~1888 lines)
 │   ├── ptt.rs              # Push-to-talk mode (VAD gate, realtime support, speech_detected)
 │   ├── translit.rs         # Devanagari→Roman ONNX encoder-decoder

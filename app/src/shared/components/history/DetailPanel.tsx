@@ -2,19 +2,11 @@ import { memo } from "react";
 import { motion } from "framer-motion";
 import { Ghost, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { type SessionRow, type TurnRow } from "@/services/historyService";
+import { formatDateTime, type SessionRow, type TurnRow } from "@/services/historyService";
+import { EmptyState } from "@/shared/components/common/EmptyState";
 
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatDateTime(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -65,12 +57,11 @@ export const DetailPanel = memo(
               <div className="w-5 h-5 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : turns.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-2 opacity-50">
-              <Ghost size={28} />
-              <span className="text-[10px] font-bold uppercase tracking-widest">
-                No interaction data
-              </span>
-            </div>
+            <EmptyState
+              icon={Ghost}
+              title="No interaction data"
+              className="py-12 border-0 bg-transparent"
+            />
           ) : (
             <div className="space-y-6 pb-4">
               {turns.map((turn) => (
