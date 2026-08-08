@@ -1,6 +1,6 @@
 import React, { memo } from "react";
 import { cn } from "@/shared/lib/utils";
-import { StatusDot } from "@/shared/components/ui";
+import { StatusDot } from "@/shared/ui";
 
 interface EngineBadgeProps {
   label: string;

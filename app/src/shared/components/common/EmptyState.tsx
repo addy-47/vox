@@ -1,6 +1,6 @@
 import React from "react";
 import { cn } from "@/shared/lib/utils";
-import { Card } from "../ui/Card";
+import { Card } from "../../ui/Card";
 
 export interface EmptyStateProps {
   icon?: React.ElementType;

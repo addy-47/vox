@@ -20,29 +20,14 @@ import {
   getSessions,
   getTurns,
   deleteSession,
+  formatDateShort,
+  formatDateTime,
   type SessionRow,
   type TurnRow,
 } from "@/services/historyService";
 import { VoiceRippleNode } from "@/shared/components/history";
 import { DetailPanel } from "@/shared/components/history";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDateShort(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatDateTime(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+import { EmptyState } from "@/shared/components/common/EmptyState";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -320,9 +305,13 @@ export const History: React.FC = () => {
             <span className="text-[10px] font-bold uppercase tracking-widest">Loading memories...</span>
           </div>
         ) : sessions.length === 0 ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-40">
-            <Ghost size={32} className="text-[rgb(var(--accent))]" />
-            <span className="text-[11px] font-bold uppercase tracking-widest">No memories persisted</span>
+          <div className="absolute inset-0 flex items-center justify-center p-8">
+            <EmptyState
+              icon={Ghost}
+              title="No memories persisted"
+              description="Transcribed interactions and voice sessions will appear here as memory nodes."
+              className="max-w-sm border-0 bg-transparent"
+            />
           </div>
         ) : dimensions.width < 680 ? (
           // ─── Compact mobile list view ───────────────────────────────────────

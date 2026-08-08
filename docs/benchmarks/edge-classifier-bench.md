@@ -2,7 +2,7 @@
 
 **Status**: ✅ **PASSED**  
 **Date**: 2026-07-29  
-**Target System**: `app/src-tauri/src/services/memory/edge_classifier.rs`  
+**Target System**: `app/src-tauri/src/services/memory/classifiers/inter_edge_classifier.rs`  
 **Model Name**: `addyo07/modernbert-vox-cognitive-edge-classifier`  
 **ONNX Artifact**: [`~/.vox/models/classifier/modernbert-base/model_quantized.onnx`](file:///home/addy/.vox/models/classifier/modernbert-base/model_quantized.onnx) (`143.67 MB`)
 

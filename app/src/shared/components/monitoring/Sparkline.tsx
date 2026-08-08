@@ -63,7 +63,7 @@ export const Sparkline: React.FC<SparklineProps> = memo(({ history, dataKey }) =
       }
 
       const { width, height } = dimensionsRef.current;
-      if (width === 0 || height === 0) {
+      if (width <= 0 || height <= 0) {
         animationRef.current = requestAnimationFrame(render);
         return;
       }

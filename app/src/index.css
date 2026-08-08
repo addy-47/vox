@@ -643,8 +643,59 @@ input[type="range"]:active::-webkit-slider-thumb {
   background: rgba(var(--accent), 0.22);
   border-radius: 9px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--accent), 0.45);
+/* ── Centralized Component Keyframe Animations ── */
+@keyframes wave-bar-1 {
+  0%, 100% { height: 4px; }
+  50% { height: 12px; }
+}
+@keyframes wave-bar-2 {
+  0%, 100% { height: 8px; }
+  50% { height: 16px; }
+}
+@keyframes wave-bar-3 {
+  0%, 100% { height: 6px; }
+  50% { height: 14px; }
+}
+@keyframes wave-bar-4 {
+  0%, 100% { height: 10px; }
+  50% { height: 6px; }
+}
+@keyframes flow-dot {
+  0% { transform: translateX(0); opacity: 0.2; }
+  50% { opacity: 1; }
+  100% { transform: translateX(20px); opacity: 0.2; }
+}
+@keyframes ribbon-flow {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes particle-drift {
+  0% { transform: translateY(0) scale(1); opacity: 0.3; }
+  50% { transform: translateY(-15px) scale(1.2); opacity: 0.8; }
+  100% { transform: translateY(-30px) scale(0.8); opacity: 0; }
+}
+@keyframes ring-pulse-slow {
+  0%, 100% { transform: scale(1); opacity: 0.15; }
+  50% { transform: scale(1.1); opacity: 0.35; }
+}
+
+.animate-wave-bar-1 { animation: wave-bar-1 1s ease-in-out infinite; }
+.animate-wave-bar-2 { animation: wave-bar-2 1.2s ease-in-out infinite 0.1s; }
+.animate-wave-bar-3 { animation: wave-bar-3 0.9s ease-in-out infinite 0.2s; }
+.animate-wave-bar-4 { animation: wave-bar-4 1.1s ease-in-out infinite 0.3s; }
+.animate-flow-dot { animation: flow-dot 1.5s infinite linear; }
+.animate-ribbon-flow { animation: ribbon-flow 3s ease-in-out infinite; }
+.animate-particle-drift { animation: particle-drift 2.5s ease-in-out infinite; }
+.animate-ring-pulse-slow { animation: ring-pulse-slow 4s ease-in-out infinite; }
+
+/* Dynamic Card Footer Merge on Unsaved Changes */
+.has-unsaved-changes > div:first-child {
+  border-bottom-left-radius: 0px !important;
+  border-bottom-right-radius: 0px !important;
+  border-bottom-color: rgba(var(--accent), 0.25) !important;
+}
+[data-theme='dark'] .has-unsaved-changes > div:first-child {
+  border-bottom-color: rgba(var(--accent), 0.1) !important;
 }
 
 

@@ -2,30 +2,17 @@ import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { Eye, EyeOff, Activity, Radio } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Card, ToggleTile, SliderField } from "@/shared/ui";
+import { Card, ToggleTile, RotaryKnob } from "@/shared/ui";
 
 interface TrayCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
-const trayStyles = `
-@keyframes wave-bar-1 { 0%, 100% { height: 4px; } 50% { height: 16px; } }
-@keyframes wave-bar-2 { 0%, 100% { height: 16px; } 50% { height: 6px; } }
-@keyframes wave-bar-3 { 0%, 100% { height: 8px; } 50% { height: 18px; } }
-@keyframes wave-bar-4 { 0%, 100% { height: 12px; } 50% { height: 4px; } }
-
-.animate-wave-bar-1 { animation: wave-bar-1 1.2s ease-in-out infinite; }
-.animate-wave-bar-2 { animation: wave-bar-2 1.2s ease-in-out infinite 0.2s; }
-.animate-wave-bar-3 { animation: wave-bar-3 1.2s ease-in-out infinite 0.4s; }
-.animate-wave-bar-4 { animation: wave-bar-4 1.2s ease-in-out infinite 0.6s; }
-`;
-
 export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const trayEnabled = useSettingsStore((s) => s.draftSettings?.ui.tray_enabled ?? true);
+  const trayMode = useSettingsStore((s) => s.draftSettings?.interaction.tray_mode ?? "Passive");
+  const trayHistoryLimit = useSettingsStore((s) => s.draftSettings?.ui.tray_history_limit ?? 5);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
-
-  if (!draftSettings) return null;
-  const { ui, interaction } = draftSettings;
 
   const isSmall = layoutMode === "small";
 
@@ -34,18 +21,16 @@ export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
       layoutMode={layoutMode}
       elevation="card"
       className={cn(
-        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between",
+        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between transform-gpu",
         !isSmall && cn(
-          "p-5 lg:h-[240px]",
-          layoutMode === "full-min" ? "lg:w-[300px] xl:w-[340px] 2xl:w-[380px]" : "lg:w-[380px]"
+          "p-5 lg:h-[265px]",
+          layoutMode === "full-min" ? "lg:w-[330px] xl:w-[370px] 2xl:w-[410px]" : "lg:w-[420px]"
         )
       )}
     >
-      <style>{trayStyles}</style>
-
       {/* Header */}
       {!isSmall && (
-        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+        <div className="flex items-center justify-between mb-2 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
             <Eye className="text-[rgb(var(--accent))]" size={18} />
             <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
@@ -55,26 +40,26 @@ export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
         </div>
       )}
 
-      <div className="flex flex-col gap-3 flex-1 justify-between mt-2">
-        {/* Core Controls Dashboard Grid (2 Buttons) */}
-        <div className={cn(
-          "grid gap-2 shrink-0",
-          layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
-        )}>
-          
+      {/* Main Body: Vertical Toggles on Left, Rotary Knob on Right */}
+      <div className={cn(
+        "flex flex-1 items-center gap-4 mt-1",
+        isSmall ? "flex-col" : "flex-row justify-between"
+      )}>
+        {/* Left Side: Vertically Stacked Toggle Tiles */}
+        <div className="flex-1 flex flex-col gap-2.5 min-w-0 w-full">
           {/* Card 1: Enable HUD */}
           <ToggleTile
             title="HUD Window"
-            active={ui.tray_enabled}
+            active={trayEnabled}
             activeLabel="Enabled"
             inactiveLabel="Disabled"
             activeSublabel="Overlay Active"
             inactiveSublabel="Background Run"
-            icon={ui.tray_enabled ? Eye : EyeOff}
-            onToggle={() => updateDraft("ui", "tray_enabled", !ui.tray_enabled)}
+            icon={trayEnabled ? Eye : EyeOff}
+            onToggle={() => updateDraft("ui", "tray_enabled", !trayEnabled)}
             layoutMode={layoutMode}
             visualizer={
-              ui.tray_enabled ? (
+              trayEnabled ? (
                 <div className="w-3 h-3 rounded border border-[rgb(var(--accent))]/40 flex items-center justify-center relative">
                   <span className="absolute inset-0 rounded border border-[rgb(var(--accent))] animate-ping opacity-60" />
                   <span className="w-1.5 h-1.5 rounded bg-[rgb(var(--accent))]" />
@@ -90,16 +75,16 @@ export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
           {/* Card 2: Tray Mode */}
           <ToggleTile
             title="Tray Mode"
-            active={interaction.tray_mode === "Passive"}
-            activeLabel={interaction.tray_mode === "Passive" ? "Continuous" : "Push-To-Talk"}
+            active={trayMode === "Passive"}
+            activeLabel={trayMode === "Passive" ? "Continuous" : "Push-To-Talk"}
             inactiveLabel="Push-To-Talk"
-            activeSublabel={interaction.tray_mode === "Passive" ? "Passive Sense" : "Manual Trigger"}
+            activeSublabel={trayMode === "Passive" ? "Passive Sense" : "Manual Trigger"}
             inactiveSublabel="Manual Trigger"
-            icon={interaction.tray_mode === "Passive" ? Activity : Radio}
-            onToggle={() => updateDraft("interaction", "tray_mode", interaction.tray_mode === "Passive" ? "PTT" : "Passive")}
+            icon={trayMode === "Passive" ? Activity : Radio}
+            onToggle={() => updateDraft("interaction", "tray_mode", trayMode === "Passive" ? "PTT" : "Passive")}
             layoutMode={layoutMode}
             visualizer={
-              interaction.tray_mode === "Passive" ? (
+              trayMode === "Passive" ? (
                 <div className="flex items-end gap-[1.5px] h-3">
                   <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-1" />
                   <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-2" />
@@ -114,21 +99,23 @@ export const TrayCard = memo(({ layoutMode = "full-max" }: TrayCardProps) => {
               )
             }
           />
-
         </div>
 
-        {/* History Limit Slider */}
-        <SliderField
-          label="History Limit"
-          sublabel={!isSmall ? "Maximum stored dialogue turns in tray" : undefined}
-          value={ui.tray_history_limit}
-          min={1}
-          max={15}
-          step={1}
-          formatValue={(v) => `${v} turns`}
-          onChange={(v) => updateDraft("ui", "tray_history_limit", v)}
-          className="mt-2"
-        />
+        {/* Right Side: Rotary Studio Knob for History Limit */}
+        <div className="shrink-0 flex items-center justify-center pl-1">
+          <RotaryKnob
+            label="History Limit"
+            value={trayHistoryLimit}
+            min={1}
+            max={15}
+            step={1}
+            defaultValue={5}
+            formatValue={(v) => `${v}`}
+            formatPreset={(v) => `${v}`}
+            onChange={(v) => updateDraft("ui", "tray_history_limit", v)}
+            presetSteps={[3, 5, 8, 10, 15]}
+          />
+        </div>
       </div>
     </Card>
   );
