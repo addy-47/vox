@@ -57,6 +57,87 @@ fn get_nvidia_api_key() -> String {
     String::new()
 }
 
+const OLLAMA_GPU_SERVER_URL: &str = "http://100.86.62.14:11434/v1/chat/completions";
+
+async fn post_chat_completion(
+    client: &reqwest::Client,
+    api_key: &str,
+    model: &str,
+    messages: serde_json::Value,
+    max_tokens: usize,
+) -> Result<String> {
+    let payload = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "temperature": 0.5,
+        "max_tokens": max_tokens
+    });
+
+    // Attempt 1: Try Ollama GPU Server
+    if let Ok(resp) = client
+        .post(OLLAMA_GPU_SERVER_URL)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(json_body) = resp.json::<serde_json::Value>().await {
+                if let Some(content) = json_body["choices"][0]["message"]["content"].as_str() {
+                    let cleaned = content
+                        .trim()
+                        .trim_start_matches("```markdown")
+                        .trim_start_matches("```")
+                        .trim_end_matches("```")
+                        .trim();
+                    return Ok(cleaned.to_string());
+                }
+            }
+        }
+    }
+
+    // Fallback: Nvidia API
+    if !api_key.is_empty() {
+        let fallback_model = if model.contains("gemma") {
+            "google/gemma-2-27b-it"
+        } else {
+            "meta/llama-3.1-70b-instruct"
+        };
+        let fallback_payload = serde_json::json!({
+            "model": fallback_model,
+            "messages": messages,
+            "temperature": 0.5,
+            "max_tokens": max_tokens
+        });
+
+
+        if let Ok(resp) = client
+            .post("https://integrate.api.nvidia.com/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&fallback_payload)
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(json_body) = resp.json::<serde_json::Value>().await {
+                    if let Some(content) = json_body["choices"][0]["message"]["content"].as_str() {
+                        let cleaned = content
+                            .trim()
+                            .trim_start_matches("```markdown")
+                            .trim_start_matches("```")
+                            .trim_end_matches("```")
+                            .trim();
+                        return Ok(cleaned.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Err(anyhow!("Chat completion failed on both Ollama GPU Server and Nvidia API fallback"))
+}
+
 async fn extract_facts_via_nvidia_llm(
     client: &reqwest::Client,
     api_key: &str,
@@ -75,93 +156,43 @@ async fn extract_facts_via_nvidia_llm(
         "<conversation_history>\n{}\n</conversation_history>\n\n\
          <task>\n\
          Analyze the <conversation_history> above and extract all stated facts into the 6 collections from the <schema>.\n\
-         Follow every rule in <rules>. Output ONLY the JSON object starting with {{ and ending with }}.\n\
+         Follow every rule in <rules>. Absolute Rule: NEVER extract bare entity names or single-word labels (e.g. 'Alex', 'Intolerance'). Every extracted statement MUST be a complete, self-contained declarative sentence.\n\
+         Output ONLY the JSON object starting with {{ and ending with }}.\n\
          </task>",
         history_text
     );
 
-    let payload = serde_json::json!({
-        "model": "meta/llama-3.1-8b-instruct",
-        "messages": [
-            {"role": "system", "content": COMPACTION_SYSTEM_PROMPT},
-            {"role": "user", "content": user_content}
-        ],
-        "temperature": 0.1,
-        "max_tokens": 1500
-    });
+    let messages = serde_json::json!([
+        {"role": "system", "content": COMPACTION_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content}
+    ]);
 
     println!(
-        "[Eval 1 Chunk {}] Requesting compaction extraction via Nvidia API...",
+        "[Eval 1 Chunk {}] Requesting compaction extraction via GPU Ollama Server (llama3.1:8b)...",
         chunk_idx + 1
     );
 
-    let max_retries = 3;
-    let mut last_err = anyhow!("Unknown error");
-
-    for attempt in 1..=max_retries {
-        match client
-            .post("https://integrate.api.nvidia.com/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    let json_body: serde_json::Value = resp.json().await?;
-                    let content = json_body["choices"][0]["message"]["content"]
-                        .as_str()
-                        .ok_or_else(|| {
-                            anyhow!(
-                                "No content in Nvidia API response for chunk {}",
-                                chunk_idx + 1
-                            )
-                        })?;
-
-                    if let Some(parsed) = parse_compaction_json(content) {
-                        let fact_count: usize = parsed.values().map(|v| v.len()).sum();
-                        println!(
-                            "[Eval 1 Chunk {}] Extracted {} facts across collections.",
-                            chunk_idx + 1,
-                            fact_count
-                        );
-                        return Ok(parsed);
-                    } else {
-                        println!(
-                            "[Eval 1 Chunk {}] Warning: Failed to parse JSON from response:\n{}",
-                            chunk_idx + 1,
-                            content
-                        );
-                        return Ok(HashMap::new());
-                    }
-                } else {
-                    let err_text = resp.text().await.unwrap_or_default();
-                    last_err = anyhow!("Nvidia API returned error status: {}", err_text);
-                }
-            }
-            Err(e) => {
-                last_err = anyhow!("Request to Nvidia API failed: {}", e);
+    match post_chat_completion(client, api_key, "llama3.1:8b", messages, 2000).await {
+        Ok(content) => {
+            if let Some(parsed) = parse_compaction_json(&content) {
+                let fact_count: usize = parsed.values().map(|v| v.len()).sum();
+                println!(
+                    "[Eval 1 Chunk {}] Extracted {} facts across collections.",
+                    chunk_idx + 1,
+                    fact_count
+                );
+                Ok(parsed)
+            } else {
+                println!(
+                    "[Eval 1 Chunk {}] Warning: Failed to parse JSON from response:\n{}",
+                    chunk_idx + 1,
+                    content
+                );
+                Ok(HashMap::new())
             }
         }
-
-        if attempt < max_retries {
-            println!(
-                "[Eval 1 Chunk {}] Attempt {} failed ({}). Retrying in 3s...",
-                chunk_idx + 1,
-                attempt,
-                last_err
-            );
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        }
+        Err(e) => Err(anyhow!("Compaction extraction failed for chunk {}: {}", chunk_idx + 1, e)),
     }
-
-    Err(anyhow!(
-        "Nvidia API call failed for chunk {} after {} attempts. Last error: {}",
-        chunk_idx + 1,
-        max_retries,
-        last_err
-    ))
 }
 
 async fn run_llm_subbatch_judge_report(
@@ -178,82 +209,34 @@ async fn run_llm_subbatch_judge_report(
          <raw_dialogue>\n{}\n</raw_dialogue>\n\n\
          <extracted_facts>\n{}\n</extracted_facts>\n\n\
          <task>\n\
-         Act as an expert AI Evaluation Judge. Analyze <extracted_facts> against <raw_dialogue> for Turns {} to {}.\n\
-         Write a detailed, evidence-anchored Markdown Evaluation Report auditing compaction performance in this sub-batch across 4 key criteria:\n\
-         1. Local Information Coverage & Recall (Did extracted facts capture all critical user information in Turns {}-{}?).\n\
-         2. Local Redundancy & Over-Extraction (Identify duplicate or redundant fact strings extracted within this sub-batch).\n\
-         3. Collection Disambiguation & Category Correctness (Verify if facts were placed in correct collections: Identity, Directives, Profile, Entities, Constraints, Narrative).\n\
-         4. Precision & Hallucination Audit (Identify any facts that are unstated, false, or hallucinated relative to raw_dialogue).\n\n\
-         Format your output ONLY as a clean Markdown report starting with '# Eval 1 Sub-Batch {:02} Evaluation Report (Turns {}-{})'.\n\
+         Act as a Principal AI Knowledge Graph & Memory Systems Auditor performing a strict, evidence-anchored audit of extracted facts against raw dialogue for Turns {} to {}.\n\n\
+         Write a comprehensive Markdown Evaluation Report auditing compaction performance in this sub-batch across the following 5 mandatory criteria:\n\n\
+         1. Fact Quality & Self-Containment Audit (CRITICAL):\n\
+            - Audit every extracted fact string. Check if facts are complete, grammatically whole, self-contained declarative statements.\n\
+            - Explicitly flag any LOW-QUALITY EXTRACTIONS, such as bare entity names, single-word labels, or incomplete fragments (e.g. 'Alex', 'Intolerance', 'Fintech', 'Budget').\n\
+            - Count exact number of bare-entity/single-word extractions vs self-contained declarative statements.\n\n\
+         2. Information Coverage & Detail Density Audit:\n\
+            - Compare <extracted_facts> against <raw_dialogue> for Turns {}-{}.\n\
+            - Did extracted facts preserve full context, exact numbers/quantities ($5,000 budget cap, 5 miles, 7 AM), temporal markers, and specific constraints/directives?\n\
+            - Detail any critical user facts that were SILENTLY DROPPED or OVER-SIMPLIFIED into generic statements.\n\n\
+         3. Local Redundancy & Over-Extraction Audit:\n\
+            - Identify duplicate, near-identical, or redundant fact strings extracted within this sub-batch.\n\n\
+         4. Collection Disambiguation & Schema Placement:\n\
+            - Audit placement across Identity, Directives, Profile, Entities, Constraints, and Narrative.\n\
+            - Flag misclassified facts (e.g., general preferences wrongly placed in Identity or soft preferences placed in Constraints).\n\n\
+         5. Precision & Hallucination Check:\n\
+            - Identify any extracted statements that are false, unstated, or hallucinated relative to raw_dialogue.\n\n\
+         Format your output ONLY as a clean Markdown report starting with '# Eval 1 Sub-Batch {:02} Compaction Audit Report (Turns {}-{})'.\n\
          </task>\n\
          </judge_subbatch_evaluation>",
         subbatch_num, turns_start, turns_end, raw_dialogue, extracted_facts_json, turns_start, turns_end, turns_start, turns_end, subbatch_num, turns_start, turns_end
     );
 
-    let payload = serde_json::json!({
-        "model": "meta/llama-3.1-70b-instruct",
-        "messages": [
-            {"role": "user", "content": judge_prompt}
-        ],
-        "temperature": 0.2,
-        "max_tokens": 2000
-    });
+    let messages = serde_json::json!([
+        {"role": "user", "content": judge_prompt}
+    ]);
 
-    let max_retries = 3;
-    let mut last_err = anyhow!("Unknown error");
-
-    for attempt in 1..=max_retries {
-        match client
-            .post("https://integrate.api.nvidia.com/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    let json_body: serde_json::Value = resp.json().await?;
-                    let content = json_body["choices"][0]["message"]["content"]
-                        .as_str()
-                        .ok_or_else(|| anyhow!("Invalid response structure from LLM Judge API"))?;
-
-                    let cleaned = content
-                        .trim()
-                        .trim_start_matches("```markdown")
-                        .trim_start_matches("```")
-                        .trim_end_matches("```")
-                        .trim();
-
-                    return Ok(cleaned.to_string());
-                } else {
-                    let err_text = resp.text().await.unwrap_or_default();
-                    last_err = anyhow!(
-                        "LLM Sub-batch Judge Nvidia API returned error: {}",
-                        err_text
-                    );
-                }
-            }
-            Err(e) => {
-                last_err = anyhow!("Request to LLM Sub-batch Judge Nvidia API failed: {}", e);
-            }
-        }
-
-        if attempt < max_retries {
-            println!(
-                "[Eval 1 Sub-batch Judge {:02}] Attempt {} failed ({}). Retrying in 5s...",
-                subbatch_num, attempt, last_err
-            );
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        }
-    }
-
-    Err(anyhow!(
-        "LLM Sub-batch Judge {:02} Nvidia API call failed after {} attempts. Last error: {}",
-        subbatch_num,
-        max_retries,
-        last_err
-    ))
+    post_chat_completion(client, api_key, "llama3.1:8b", messages, 2500).await
 }
 
 async fn run_llm_compaction_master_synthesis(
@@ -278,81 +261,25 @@ async fn run_llm_compaction_master_synthesis(
          <task>\n\
          Act as a Principal AI Systems Architect. Synthesize the sub-batch evaluation reports and full extracted facts above into a Master Compaction Evaluation Report.\n\
          Evaluate the compaction engine across the following 6 unified sections:\n\
-         1. Overall Assessment & Score Breakdown (Overall Score out of 100, Fact Accuracy %, Redundancy %, Schema Disambiguation %, Recall Coverage %).\n\
-         2. Information Coverage & Recall Analysis (Synthesize recall and silent context drops across all 300 turns).\n\
-         3. Cross-Window Redundancy & Over-Extraction Audit (Identify facts that were extracted repeatedly across different context windows).\n\
-         4. Collection Disambiguation & Category Correctness (Audit placement across Identity, Directives, Profile, Entities, Constraints, Narrative).\n\
-         5. Hallucinations & Precision Check (Global check for false or unstated facts).\n\
-         6. Actionable Engineering Recommendations (Concrete prompts, token windowing, or schema boundary recommendations).\n\n\
+         1. Executive Summary & Score Breakdown (Overall Compaction Score out of 100, Fact Quality %, Information Coverage %, Redundancy %, Schema Disambiguation %, Precision %).\n\
+         2. Fact Quality & Bare-Entity Audit (Synthesize occurrences of low-quality single-word or bare-entity extractions vs self-contained declarative statements).\n\
+         3. Information Coverage & Context Retention Analysis (Synthesize recall coverage, detail preservation, numbers/amounts retention, and silent context drops).\n\
+         4. Cross-Window Redundancy & Over-Extraction Audit (Identify facts extracted repeatedly across sliding context windows).\n\
+         5. Collection Disambiguation & Category Correctness (Audit placement across Identity, Directives, Profile, Entities, Constraints, Narrative).\n\
+         6. Actionable Engineering Recommendations (Concrete prompt, schema boundary, or token windowing recommendations).\n\n\
          Format output ONLY as clean Markdown starting with '# Eval 1 Compaction Master Evaluation Report'.\n\
          </task>\n\
          </judge_master_compaction_synthesis>",
         combined_subbatch_reports, full_extracted_facts_json
     );
 
-    let payload = serde_json::json!({
-        "model": "meta/llama-3.1-70b-instruct",
-        "messages": [
-            {"role": "user", "content": synthesis_prompt}
-        ],
-        "temperature": 0.2,
-        "max_tokens": 2500
-    });
+    let messages = serde_json::json!([
+        {"role": "user", "content": synthesis_prompt}
+    ]);
 
-    let max_retries = 3;
-    let mut last_err = anyhow!("Unknown error");
-
-    for attempt in 1..=max_retries {
-        match client
-            .post("https://integrate.api.nvidia.com/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    let json_body: serde_json::Value = resp.json().await?;
-                    let content = json_body["choices"][0]["message"]["content"]
-                        .as_str()
-                        .ok_or_else(|| {
-                            anyhow!("Invalid response structure from LLM Master Judge API")
-                        })?;
-
-                    let cleaned = content
-                        .trim()
-                        .trim_start_matches("```markdown")
-                        .trim_start_matches("```")
-                        .trim_end_matches("```")
-                        .trim();
-
-                    return Ok(cleaned.to_string());
-                } else {
-                    let err_text = resp.text().await.unwrap_or_default();
-                    last_err = anyhow!("LLM Master Judge Nvidia API returned error: {}", err_text);
-                }
-            }
-            Err(e) => {
-                last_err = anyhow!("Request to LLM Master Judge Nvidia API failed: {}", e);
-            }
-        }
-
-        if attempt < max_retries {
-            println!(
-                "[Eval 1 Master Judge] Attempt {} failed ({}). Retrying in 5s...",
-                attempt, last_err
-            );
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        }
-    }
-
-    Err(anyhow!(
-        "LLM Master Judge Nvidia API call failed after {} attempts. Last error: {}",
-        max_retries,
-        last_err
-    ))
+    post_chat_completion(client, api_key, "gemma4:e4b", messages, 3000).await
 }
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -365,8 +292,13 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let dataset_filename =
-        std::env::var("EVAL_DATASET_NAME").unwrap_or_else(|_| "dataset_session_3.json".to_string());
+    let cli_arg = std::env::args().nth(1);
+    let dataset_filename = cli_arg
+        .map(|a| a.trim_start_matches("--dataset=").trim_start_matches("--dataset").to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            std::env::var("EVAL_DATASET_NAME").unwrap_or_else(|_| "dataset_session_1.json".to_string())
+        });
     let dataset_path = resolve_path(&format!("evals/datasets/{}", dataset_filename));
     let output_db_path = resolve_path("evals/results/stage_1_compaction.db");
 
@@ -462,6 +394,7 @@ async fn main() -> Result<()> {
         total_enqueued, output_db_path
     );
 
+    let _ = conn.execute("PRAGMA wal_checkpoint(FULL);", ()).await;
     let staged_db_path = resolve_path("evals/results/stage_1_compaction_staged.db");
     let _ = std::fs::copy(&output_db_path, &staged_db_path);
 
