@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { useSettingsStore, type LlmModelInfo, type ModelCapabilities } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import { Loader2, Network, RefreshCw, AlertCircle, Sparkles, Check } from "lucide-react";
@@ -28,7 +28,7 @@ export interface LlmCatalogViewProps {
   activeCategoryTab?: "model" | "settings";
 }
 
-export const LlmCatalogView: React.FC<LlmCatalogViewProps> = memo(({
+export const LlmCatalogView = memo(({
   layoutMode,
   selectedLlmId,
   modelPresence,
@@ -50,7 +50,7 @@ export const LlmCatalogView: React.FC<LlmCatalogViewProps> = memo(({
   customModelStatus,
   handleValidateCustomModel,
   activeCategoryTab = "model",
-}) => {
+}: LlmCatalogViewProps) => {
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const llmSettings = useSettingsStore((s) => s.draftSettings?.llm);
   const updateDraft = useSettingsStore((s) => s.updateDraft);

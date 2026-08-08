@@ -2,7 +2,8 @@ use crate::core::error::PersistenceError;
 use turso::{Builder, Connection};
 
 /// Global static cell to hold the main Tokio runtime handle.
-pub static TOKIO_HANDLE: once_cell::sync::OnceCell<tokio::runtime::Handle> = once_cell::sync::OnceCell::new();
+pub static TOKIO_HANDLE: once_cell::sync::OnceCell<tokio::runtime::Handle> =
+    once_cell::sync::OnceCell::new();
 
 /// Returns the active Tokio runtime handle, falling back to a lightweight local runtime if not initialized.
 pub fn get_tokio_handle() -> tokio::runtime::Handle {

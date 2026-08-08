@@ -61,7 +61,6 @@ pub enum InteractionState {
     MaintainingContext,
 }
 
-
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TelemetryData {
     pub energy: f32,

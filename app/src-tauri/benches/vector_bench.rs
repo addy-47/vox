@@ -34,7 +34,10 @@ struct XorShift64(u64);
 impl XorShift64 {
     fn new() -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
         Self(seed)
     }
     fn f32(&mut self) -> f32 {
@@ -166,7 +169,10 @@ async fn main() -> Result<()> {
         warm_count += 1;
     }
     let _ = conn
-        .query("SELECT id, embedding FROM memory_facts_vectors ORDER BY id ASC", ())
+        .query(
+            "SELECT id, embedding FROM memory_facts_vectors ORDER BY id ASC",
+            (),
+        )
         .await?;
     println!("  Warmup complete (SQL returned {} rows)", warm_count);
 
@@ -219,7 +225,10 @@ async fn main() -> Result<()> {
     // Pre-load all vectors once (this is the minimum cost for the Rust approach)
     let load_start = Instant::now();
     let mut rows = conn
-        .query("SELECT id, embedding FROM memory_facts_vectors ORDER BY id ASC", ())
+        .query(
+            "SELECT id, embedding FROM memory_facts_vectors ORDER BY id ASC",
+            (),
+        )
         .await?;
     let mut db_vectors: Vec<(i64, Vec<f32>)> = Vec::with_capacity(num_vectors);
     while let Some(row) = rows.next().await? {
@@ -313,8 +322,14 @@ async fn main() -> Result<()> {
 
     if sql_avg.as_secs_f64() > 0.0 {
         let speedup = rust_avg.as_secs_f64() / sql_avg.as_secs_f64();
-        println!("  SQL  vector_distance_cos() avg: {:>8.3}ms", sql_avg.as_secs_f64() * 1000.0);
-        println!("  Rust cosine_similarity()   avg: {:>8.3}ms", rust_avg.as_secs_f64() * 1000.0);
+        println!(
+            "  SQL  vector_distance_cos() avg: {:>8.3}ms",
+            sql_avg.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Rust cosine_similarity()   avg: {:>8.3}ms",
+            rust_avg.as_secs_f64() * 1000.0
+        );
         println!("  Speedup (Rust over SQL):     {:>8.2}x", speedup);
 
         let sql_per_item = sql_avg.as_secs_f64() / num_vectors as f64;
@@ -330,7 +345,9 @@ async fn main() -> Result<()> {
     println!("  - SQL approach eliminates Rust-side decode + O(n) loop entirely.");
     println!("  - Data never leaves the engine — no Vec<Vec<f32>> allocation in app memory.");
     println!("  - For Vox's memory pipeline (seed + intra + inter), this means:");
-    println!("    - Lower latency per fact ingestion (3 SQL queries replaced 3 decode+loop passes)");
+    println!(
+        "    - Lower latency per fact ingestion (3 SQL queries replaced 3 decode+loop passes)"
+    );
     println!("    - Zero heap pressure from decoded vector storage");
     println!("    - Future: vector index (DiskANN) turns O(n) into O(log n)");
     println!();

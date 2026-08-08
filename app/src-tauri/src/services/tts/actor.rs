@@ -50,12 +50,9 @@ pub fn spawn_tts_worker(
     while let Ok(cmd) = rx.recv() {
         match cmd {
             TtsCommand::Generate { turn_id, text } => {
-                if let Err(e) = provider.synthesize_chunk(
-                    &text,
-                    turn_id,
-                    cancel_flag.clone(),
-                    event_tx.clone(),
-                ) {
+                if let Err(e) =
+                    provider.synthesize_chunk(&text, turn_id, cancel_flag.clone(), event_tx.clone())
+                {
                     log::error!("[TTS Worker] Synthesis error (turn {}): {}", turn_id, e);
                 }
             }
@@ -229,10 +226,7 @@ fn is_abbreviation(word: &str) -> bool {
     }
 
     // Version prefixes like "v0", "v1", "v2"
-    if lower.starts_with('v')
-        && lower.len() > 1
-        && lower[1..].chars().all(|c| c.is_ascii_digit())
-    {
+    if lower.starts_with('v') && lower.len() > 1 && lower[1..].chars().all(|c| c.is_ascii_digit()) {
         return true;
     }
 
@@ -308,7 +302,10 @@ mod tests {
         // Trigger turn cancellation / clear buffer
         chunker.clear();
 
-        assert!(chunker.is_empty(), "Buffer should be empty after cancellation");
+        assert!(
+            chunker.is_empty(),
+            "Buffer should be empty after cancellation"
+        );
         assert_eq!(chunker.buffer(), "");
 
         // Next turn should proceed cleanly without stale buffer text
@@ -316,4 +313,3 @@ mod tests {
         assert_eq!(new_turn_chunks, vec!["New turn sentence."]);
     }
 }
-

@@ -11,4 +11,3 @@ pub struct PipelineStageMetrics {
     pub error_count: usize,
     pub duration_ms: u128,
 }
-

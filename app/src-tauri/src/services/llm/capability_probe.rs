@@ -40,9 +40,7 @@ impl CapabilityProbeEngine {
         config: &LlmProviderConfig,
         target_model_id: Option<&str>,
     ) -> Result<ModelCapabilities> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?;
+        let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -151,14 +149,20 @@ impl CapabilityProbeEngine {
                     "[CapabilityProbe] Phase 1: Executing live inference prompt via /v1/chat/completions to wake up server and measure performance..."
                 );
 
-                let (supports_latin, supports_devanagari, tps, ttft_ms, tool_probe_success, headers_indicate_gpu) =
-                    Self::functional_inference_probe(
-                        &client,
-                        base_url,
-                        &model_id,
-                        api_key.as_deref(),
-                    )
-                    .await;
+                let (
+                    supports_latin,
+                    supports_devanagari,
+                    tps,
+                    ttft_ms,
+                    tool_probe_success,
+                    headers_indicate_gpu,
+                ) = Self::functional_inference_probe(
+                    &client,
+                    base_url,
+                    &model_id,
+                    api_key.as_deref(),
+                )
+                .await;
 
                 log::info!(
                     "[CapabilityProbe] Phase 1 Complete: ttft={:?}ms, tps={:?}, devanagari={}, latin={}, tool_probe={}",
@@ -389,13 +393,18 @@ impl CapabilityProbeEngine {
                     // Check system fingerprint if present (vLLM / LM Studio / OpenAI)
                     if let Some(fp) = body.get("system_fingerprint").and_then(|f| f.as_str()) {
                         let fp_lower = fp.to_lowercase();
-                        if fp_lower.contains("cuda") || fp_lower.contains("vllm") || fp_lower.contains("gpu") {
+                        if fp_lower.contains("cuda")
+                            || fp_lower.contains("vllm")
+                            || fp_lower.contains("gpu")
+                        {
                             headers_indicate_gpu = true;
                         }
                     }
 
                     if let Some(content) = body["choices"][0]["message"]["content"].as_str() {
-                        supports_devanagari = content.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c));
+                        supports_devanagari = content
+                            .chars()
+                            .any(|c| ('\u{0900}'..='\u{097F}').contains(&c));
                         supports_latin = true;
 
                         // Check if response contains native server timing metrics (Ollama / vLLM / LM Studio)
@@ -419,10 +428,21 @@ impl CapabilityProbeEngine {
                         // Fallback: Use usage["completion_tokens"] excluding cold-load time
                         if tps.is_none() {
                             if let Some(usage) = body.get("usage") {
-                                if let Some(completion_tokens) = usage["completion_tokens"].as_f64() {
-                                    let load_secs = body.get("load_duration").and_then(|v| v.as_f64()).unwrap_or(0.0) / 1_000_000_000.0;
-                                    let prompt_secs = body.get("prompt_eval_duration").and_then(|v| v.as_f64()).unwrap_or(0.0) / 1_000_000_000.0;
-                                    let pure_gen_secs = (latency.as_secs_f32() as f64 - load_secs - prompt_secs).max(0.05);
+                                if let Some(completion_tokens) = usage["completion_tokens"].as_f64()
+                                {
+                                    let load_secs = body
+                                        .get("load_duration")
+                                        .and_then(|v| v.as_f64())
+                                        .unwrap_or(0.0)
+                                        / 1_000_000_000.0;
+                                    let prompt_secs = body
+                                        .get("prompt_eval_duration")
+                                        .and_then(|v| v.as_f64())
+                                        .unwrap_or(0.0)
+                                        / 1_000_000_000.0;
+                                    let pure_gen_secs =
+                                        (latency.as_secs_f32() as f64 - load_secs - prompt_secs)
+                                            .max(0.05);
 
                                     if completion_tokens > 0.0 {
                                         let calc_tps = (completion_tokens / pure_gen_secs) as f32;

@@ -19,7 +19,6 @@
 ///   <voices-dir>/<name>/baked/       — pre-baked speaker tensors (from save_voice)
 ///
 /// Output goes to <voices-dir>/<name>/samples/<lang>_<text_slug>.wav
-
 use clap::Parser;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -29,7 +28,10 @@ use vox_lib::core::events::VoxEvent;
 use vox_lib::services::tts::TtsProvider;
 
 #[derive(Parser, Debug)]
-#[command(name = "vox-clone-bench", about = "Voice cloning validation bench for Chatterbox")]
+#[command(
+    name = "vox-clone-bench",
+    about = "Voice cloning validation bench for Chatterbox"
+)]
 struct Args {
     /// Root directory containing cloned voice subdirectories.
     /// Defaults to <workspace>/temp/voice_corpus/cloned_voices
@@ -120,7 +122,11 @@ fn main() -> anyhow::Result<()> {
 
     // Locate the chatterbox model directory
     let home = dirs::home_dir().expect("cannot find home dir");
-    let model_dir = home.join(".vox").join("models").join("tts").join("chatterbox");
+    let model_dir = home
+        .join(".vox")
+        .join("models")
+        .join("tts")
+        .join("chatterbox");
     if !model_dir.exists() {
         anyhow::bail!(
             "Chatterbox model not found at {:?}. Install via Vox settings first.",
@@ -154,9 +160,13 @@ fn main() -> anyhow::Result<()> {
         // Walk up from the binary CWD to find the workspace root
         // Fallback: assume we're running from app/src-tauri
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent().unwrap() // app/
-            .parent().unwrap() // vox/
-            .join("temp").join("voice_corpus").join("cloned_voices")
+            .parent()
+            .unwrap() // app/
+            .parent()
+            .unwrap() // vox/
+            .join("temp")
+            .join("voice_corpus")
+            .join("cloned_voices")
     });
 
     if !voices_dir.exists() {
@@ -165,10 +175,7 @@ fn main() -> anyhow::Result<()> {
             voices_dir
         );
     }
-    println!(
-        "\x1b[32m[CloneBench]\x1b[0m Voices dir: {:?}\n",
-        voices_dir
-    );
+    println!("\x1b[32m[CloneBench]\x1b[0m Voices dir: {:?}\n", voices_dir);
 
     let corpus = corpus();
     let mut results: Vec<(String, bool, String)> = Vec::new();
@@ -206,18 +213,22 @@ fn main() -> anyhow::Result<()> {
         // Determine which reference to pass to Chatterbox:
         //   - Prefer baked/ dir (pre-baked tensors) — faster
         //   - Fall back to source.wav (raw reference) — slower but always works
-        let (reference, ref_kind) = if baked_dir.exists() && baked_dir.join("speaker_emb.npy").exists() {
-            (baked_dir.to_string_lossy().into_owned(), "baked tensors")
-        } else if source_wav.exists() {
-            (source_wav.to_string_lossy().into_owned(), "source.wav (no baked tensors)")
-        } else {
-            println!("  \x1b[31m✗ No source.wav or baked/ dir found, skipping.\x1b[0m");
-            results.push((entry.name.to_string(), false, "missing source".into()));
-            continue;
-        };
+        let (reference, ref_kind) =
+            if baked_dir.exists() && baked_dir.join("speaker_emb.npy").exists() {
+                (baked_dir.to_string_lossy().into_owned(), "baked tensors")
+            } else if source_wav.exists() {
+                (
+                    source_wav.to_string_lossy().into_owned(),
+                    "source.wav (no baked tensors)",
+                )
+            } else {
+                println!("  \x1b[31m✗ No source.wav or baked/ dir found, skipping.\x1b[0m");
+                results.push((entry.name.to_string(), false, "missing source".into()));
+                continue;
+            };
         println!("  Reference: {} ({})", reference, ref_kind);
 
-        // Build ChatterboxEngine  
+        // Build ChatterboxEngine
         let t0 = std::time::Instant::now();
         let engine = match vox_lib::services::tts::ChatterboxEngine::new(
             &model_dir,
@@ -266,7 +277,10 @@ fn main() -> anyhow::Result<()> {
         }
 
         let duration_s = pcm.len() as f32 / 24000.0;
-        println!("  Synthesis: {}ms  →  {:.2}s of audio", synth_ms, duration_s);
+        println!(
+            "  Synthesis: {}ms  →  {:.2}s of audio",
+            synth_ms, duration_s
+        );
 
         // Write output WAV
         let samples_dir = voice_dir.join("samples");
@@ -296,7 +310,11 @@ fn main() -> anyhow::Result<()> {
         writer.finalize()?;
 
         println!("  \x1b[32m✓ Saved:\x1b[0m {:?}", out_path);
-        results.push((entry.name.to_string(), true, out_path.to_string_lossy().into_owned()));
+        results.push((
+            entry.name.to_string(),
+            true,
+            out_path.to_string_lossy().into_owned(),
+        ));
     }
 
     // Summary table
@@ -304,7 +322,11 @@ fn main() -> anyhow::Result<()> {
     println!("  {:<12} {:<8} {}", "Voice", "Status", "Output / Error");
     println!("  {}", "─".repeat(70));
     for (name, ok, detail) in &results {
-        let status = if *ok { "\x1b[32m✓ OK\x1b[0m   " } else { "\x1b[31m✗ FAIL\x1b[0m " };
+        let status = if *ok {
+            "\x1b[32m✓ OK\x1b[0m   "
+        } else {
+            "\x1b[31m✗ FAIL\x1b[0m "
+        };
         println!("  {:<12} {} {}", name, status, detail);
     }
     println!();

@@ -27,10 +27,10 @@ pub fn fix_missing_commas_in_json(input: &str) -> String {
     let mut output = String::with_capacity(input.len() + 16);
     let mut in_string = false;
     let mut escaped = false;
-    
+
     let chars = input.chars().collect::<Vec<char>>();
     let mut i = 0;
-    
+
     while i < chars.len() {
         let c = chars[i];
         if escaped {
@@ -43,7 +43,15 @@ pub fn fix_missing_commas_in_json(input: &str) -> String {
             i += 1;
         } else if c == '"' {
             if !in_string {
-                let keys = &["\"summary\"", "\"profile_updates\"", "\"memory_updates\"", "\"category\"", "\"key\"", "\"value\"", "\"confidence\""];
+                let keys = &[
+                    "\"summary\"",
+                    "\"profile_updates\"",
+                    "\"memory_updates\"",
+                    "\"category\"",
+                    "\"key\"",
+                    "\"value\"",
+                    "\"confidence\"",
+                ];
                 let mut matched_key = None;
                 for &k in keys {
                     let k_chars = k.chars().collect::<Vec<char>>();
@@ -61,7 +69,7 @@ pub fn fix_missing_commas_in_json(input: &str) -> String {
                         }
                     }
                 }
-                
+
                 if let Some(ref k_chars) = matched_key {
                     let mut last_non_ws = None;
                     for prev_char in output.chars().rev() {
@@ -70,13 +78,13 @@ pub fn fix_missing_commas_in_json(input: &str) -> String {
                             break;
                         }
                     }
-                    
+
                     if let Some(p) = last_non_ws {
                         if p != '{' && p != ',' && p != '[' {
                             output.push(',');
                         }
                     }
-                    
+
                     for kc in k_chars {
                         output.push(*kc);
                     }
@@ -84,7 +92,7 @@ pub fn fix_missing_commas_in_json(input: &str) -> String {
                     continue;
                 }
             }
-            
+
             in_string = !in_string;
             output.push(c);
             i += 1;
@@ -100,7 +108,7 @@ pub fn escape_control_chars_in_json(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     let mut in_string = false;
     let mut escaped = false;
-    
+
     for c in input.chars() {
         if escaped {
             match c {
@@ -199,14 +207,21 @@ where
     deserializer.deserialize_any(ValueVisitor)
 }
 
-pub fn parse_compaction_json(content: &str) -> Option<std::collections::HashMap<String, Vec<String>>> {
+pub fn parse_compaction_json(
+    content: &str,
+) -> Option<std::collections::HashMap<String, Vec<String>>> {
     let cleaned = clean_json_content(content);
     let parsed_val = serde_json::from_str::<serde_json::Value>(&cleaned).ok()?;
     let obj = parsed_val.as_object()?;
 
     let mut results = std::collections::HashMap::new();
     let primary_keys = [
-        "Identity", "Directives", "Narrative", "Profile", "Entities", "Constraints"
+        "Identity",
+        "Directives",
+        "Narrative",
+        "Profile",
+        "Entities",
+        "Constraints",
     ];
 
     for &k in &primary_keys {
@@ -231,7 +246,15 @@ pub fn parse_compaction_json(content: &str) -> Option<std::collections::HashMap<
             }
             serde_json::Value::Object(map) => {
                 let mut found = false;
-                for possible_key in &["text", "fact", "description", "desc", "content", "value", "name"] {
+                for possible_key in &[
+                    "text",
+                    "fact",
+                    "description",
+                    "desc",
+                    "content",
+                    "value",
+                    "name",
+                ] {
                     if let Some(sub_val) = map.get(*possible_key) {
                         extract_strings(sub_val, list);
                         found = true;
@@ -260,8 +283,11 @@ pub fn parse_compaction_json(content: &str) -> Option<std::collections::HashMap<
             "identity" => Some("Identity"),
             "directives" | "directive" | "tasks" | "task" | "goals" | "goal" => Some("Directives"),
             "narrative" | "context" => Some("Narrative"),
-            "profile" | "preferences" | "preference" | "skills" | "skill" | "experiences" | "experience" => Some("Profile"),
-            "entities" | "entity" | "projects" | "project" | "relationships" | "relationship" => Some("Entities"),
+            "profile" | "preferences" | "preference" | "skills" | "skill" | "experiences"
+            | "experience" => Some("Profile"),
+            "entities" | "entity" | "projects" | "project" | "relationships" | "relationship" => {
+                Some("Entities")
+            }
             "constraints" | "constraint" => Some("Constraints"),
             _ => None,
         };
@@ -275,4 +301,3 @@ pub fn parse_compaction_json(content: &str) -> Option<std::collections::HashMap<
 
     Some(results)
 }
-

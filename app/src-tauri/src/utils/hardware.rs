@@ -23,7 +23,9 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
 
     #[cfg(target_os = "linux")]
     {
-        if std::path::Path::new("/dev/nvidia0").exists() || std::path::Path::new("/dev/nvidiactl").exists() {
+        if std::path::Path::new("/dev/nvidia0").exists()
+            || std::path::Path::new("/dev/nvidiactl").exists()
+        {
             return LocalHardwareGpuInfo {
                 has_gpu: true,
                 vendor: "Nvidia".to_string(),

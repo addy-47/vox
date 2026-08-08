@@ -53,10 +53,17 @@ use std::time::Instant;
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 
 #[derive(Parser, Debug)]
-#[command(name = "edge_classifier_probe", about = "Vox v7 Gate 3 LFM2.5 GGUF Edge Classifier Probe")]
+#[command(
+    name = "edge_classifier_probe",
+    about = "Vox v7 Gate 3 LFM2.5 GGUF Edge Classifier Probe"
+)]
 struct Args {
     /// Input JSON dataset
-    #[arg(short, long, default_value = "sandbox/datasets/gate3_edge_1750_pairs.json")]
+    #[arg(
+        short,
+        long,
+        default_value = "sandbox/datasets/gate3_edge_1750_pairs.json"
+    )]
     input: PathBuf,
 
     /// Output JSON result file
@@ -113,10 +120,10 @@ enum EdgeLabel {
 impl EdgeLabel {
     fn as_str(self) -> &'static str {
         match self {
-            Self::Shapes        => "SHAPES",
-            Self::DependsOn     => "DEPENDS_ON",
+            Self::Shapes => "SHAPES",
+            Self::DependsOn => "DEPENDS_ON",
             Self::ConflictsWith => "CONFLICTS_WITH",
-            Self::None          => "NONE",
+            Self::None => "NONE",
         }
     }
 
@@ -124,18 +131,30 @@ impl EdgeLabel {
         let t = s.trim().to_uppercase();
         // Try JSON first
         if let Some(start) = t.find('"') {
-            if let Some(end) = t[start+1..].find('"') {
-                let inner = &t[start+1..start+1+end];
+            if let Some(end) = t[start + 1..].find('"') {
+                let inner = &t[start + 1..start + 1 + end];
                 return Self::parse(&inner.to_string());
             }
         }
         if t.contains("SHAPES") || t.contains("SHAPE") || t.contains("MODIFIES") {
             Some(Self::Shapes)
-        } else if t.contains("DEPENDS_ON") || t.contains("DEPENDS") || t.contains("DEPEND") || t.contains("REQUIRES") {
+        } else if t.contains("DEPENDS_ON")
+            || t.contains("DEPENDS")
+            || t.contains("DEPEND")
+            || t.contains("REQUIRES")
+        {
             Some(Self::DependsOn)
-        } else if t.contains("CONFLICTS_WITH") || t.contains("CONFLICTS") || t.contains("CONFLICT") || t.contains("OPPOSING") {
+        } else if t.contains("CONFLICTS_WITH")
+            || t.contains("CONFLICTS")
+            || t.contains("CONFLICT")
+            || t.contains("OPPOSING")
+        {
             Some(Self::ConflictsWith)
-        } else if t.contains("NONE") || t.contains("NO RELATION") || t.contains("UNRELATED") || t.contains("NO LINK") {
+        } else if t.contains("NONE")
+            || t.contains("NO RELATION")
+            || t.contains("UNRELATED")
+            || t.contains("NO LINK")
+        {
             Some(Self::None)
         } else {
             // Try numeric index
@@ -201,7 +220,7 @@ struct MetricSummary {
     total_evaluated: usize,
     total_matches: usize,
     overall_accuracy_pct: f64,
-    format_compliance_pct: f64, 
+    format_compliance_pct: f64,
     domain_pair_accuracy: HashMap<String, f64>,
     label_precision: HashMap<String, f64>,
     label_recall: HashMap<String, f64>,
@@ -354,9 +373,8 @@ unsafe impl Sync for NativeEngine {}
 impl NativeEngine {
     fn load(model_path: &PathBuf, n_threads: u32, context_size: u32) -> Result<Self> {
         let t0 = Instant::now();
-        let backend = NATIVE_BACKEND.get_or_init(|| {
-            LlamaBackend::init().expect("Failed to initialise llama.cpp backend")
-        });
+        let backend = NATIVE_BACKEND
+            .get_or_init(|| LlamaBackend::init().expect("Failed to initialise llama.cpp backend"));
 
         let model_params = LlamaModelParams::default();
         let model = LlamaModel::load_from_file(backend, model_path, &model_params)
@@ -365,11 +383,9 @@ impl NativeEngine {
         println!("  Model loaded in {:.0} ms", load_ms);
 
         // Tokenise the static system prompt once
-        let sys_text = format!(
-            "<|im_start|>system\n{}<|im_end|>\n",
-            static_system_prompt()
-        );
-        let system_tokens = model.str_to_token(&sys_text, AddBos::Always)
+        let sys_text = format!("<|im_start|>system\n{}<|im_end|>\n", static_system_prompt());
+        let system_tokens = model
+            .str_to_token(&sys_text, AddBos::Always)
             .map_err(|e| anyhow!("Tokenisation failed: {:?}", e))?;
         println!("  System prompt tokens: {}", system_tokens.len());
 
@@ -378,7 +394,8 @@ impl NativeEngine {
             .with_n_ctx(Some(NonZeroU32::new(context_size).unwrap()))
             .with_n_threads(n_threads as i32)
             .with_n_threads_batch(n_threads as i32);
-        let mut ctx = model.new_context(backend, ctx_params)
+        let mut ctx = model
+            .new_context(backend, ctx_params)
             .map_err(|e| anyhow!("Context creation failed: {:?}", e))?;
 
         let t_sys = Instant::now();
@@ -387,14 +404,20 @@ impl NativeEngine {
         let sys_last = sys_len - 1;
         for (i, &tok) in system_tokens.iter().enumerate() {
             let is_last = i == sys_last;
-            sys_batch.add(tok, i as i32, &[0], is_last)
+            sys_batch
+                .add(tok, i as i32, &[0], is_last)
                 .map_err(|e| anyhow!("Batch sys add: {:?}", e))?;
         }
-        ctx.decode(&mut sys_batch).map_err(|e| anyhow!("System prefill decode: {:?}", e))?;
+        ctx.decode(&mut sys_batch)
+            .map_err(|e| anyhow!("System prefill decode: {:?}", e))?;
         let sys_ms = t_sys.elapsed().as_secs_f64() * 1000.0;
-        println!("  System prompt prefilled in {:.1} ms (frozen in KV cache)", sys_ms);
+        println!(
+            "  System prompt prefilled in {:.1} ms (frozen in KV cache)",
+            sys_ms
+        );
 
-        let static_ctx: llama_cpp_4::context::LlamaContext<'static> = unsafe { std::mem::transmute(ctx) };
+        let static_ctx: llama_cpp_4::context::LlamaContext<'static> =
+            unsafe { std::mem::transmute(ctx) };
 
         Ok(Self {
             model,
@@ -407,17 +430,25 @@ impl NativeEngine {
     }
 
     /// Raw logit evaluation with true end-to-end per-pair latency timing
-    fn predict_raw(&self, pair: &InputEdgePair, prompt_variant: usize) -> Result<((f32, f32, f32, f32), f64)> {
+    fn predict_raw(
+        &self,
+        pair: &InputEdgePair,
+        prompt_variant: usize,
+    ) -> Result<((f32, f32, f32, f32), f64)> {
         let pair_start = Instant::now();
 
-        let backend = NATIVE_BACKEND.get().ok_or_else(|| anyhow!("Backend not initialised"))?;
+        let backend = NATIVE_BACKEND
+            .get()
+            .ok_or_else(|| anyhow!("Backend not initialised"))?;
 
         let mut ctx_params = LlamaContextParams::default();
         ctx_params = ctx_params
             .with_n_ctx(Some(NonZeroU32::new(self.context_size).unwrap()))
             .with_n_threads(self.n_threads as i32)
             .with_n_threads_batch(self.n_threads as i32);
-        let mut ctx = self.model.new_context(backend, ctx_params)
+        let mut ctx = self
+            .model
+            .new_context(backend, ctx_params)
             .map_err(|e| anyhow!("Context creation: {:?}", e))?;
 
         let sys_len = self.system_tokens.len();
@@ -425,25 +456,30 @@ impl NativeEngine {
             "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
             build_user_turn(pair, prompt_variant)
         );
-        let user_tokens = self.model.str_to_token(&user_turn_text, AddBos::Never)
+        let user_tokens = self
+            .model
+            .str_to_token(&user_turn_text, AddBos::Never)
             .map_err(|e| anyhow!("User tokenisation: {:?}", e))?;
 
         let total_prompt_len = sys_len + user_tokens.len();
         let mut batch = LlamaBatch::new(total_prompt_len + 16, 1);
 
         for (i, &tok) in self.system_tokens.iter().enumerate() {
-            batch.add(tok, i as i32, &[0], false)
+            batch
+                .add(tok, i as i32, &[0], false)
                 .map_err(|e| anyhow!("Batch sys add: {:?}", e))?;
         }
 
         let user_last = user_tokens.len() - 1;
         for (i, &tok) in user_tokens.iter().enumerate() {
             let is_last = i == user_last;
-            batch.add(tok, (sys_len + i) as i32, &[0], is_last)
+            batch
+                .add(tok, (sys_len + i) as i32, &[0], is_last)
                 .map_err(|e| anyhow!("Batch user add: {:?}", e))?;
         }
 
-        ctx.decode(&mut batch).map_err(|e| anyhow!("Prompt decode: {:?}", e))?;
+        ctx.decode(&mut batch)
+            .map_err(|e| anyhow!("Prompt decode: {:?}", e))?;
 
         let last_token_idx = (total_prompt_len - 1) as i32;
         let logits = ctx.get_logits_ith(last_token_idx);
@@ -467,30 +503,90 @@ impl NativeEngine {
 
             (
                 get_word_score(&["SHAPES", " SHAPES", "Shapes", " Shapes"]),
-                get_word_score(&["DEPENDS", " DEPENDS", "DEPENDS_ON", " DEPENDS_ON", "Depends", " Depends"]),
-                get_word_score(&["CONFLICTS", " CONFLICTS", "CONFLICTS_WITH", " CONFLICTS_WITH", "Conflicts", " Conflicts"]),
+                get_word_score(&[
+                    "DEPENDS",
+                    " DEPENDS",
+                    "DEPENDS_ON",
+                    " DEPENDS_ON",
+                    "Depends",
+                    " Depends",
+                ]),
+                get_word_score(&[
+                    "CONFLICTS",
+                    " CONFLICTS",
+                    "CONFLICTS_WITH",
+                    " CONFLICTS_WITH",
+                    "Conflicts",
+                    " Conflicts",
+                ]),
                 get_word_score(&["NONE", " NONE", "None", " None"]),
             )
         } else {
-            let t1 = self.model.str_to_token("1", AddBos::Never).unwrap_or_default().get(0).copied();
-            let t2 = self.model.str_to_token("2", AddBos::Never).unwrap_or_default().get(0).copied();
-            let t3 = self.model.str_to_token("3", AddBos::Never).unwrap_or_default().get(0).copied();
-            let t4 = self.model.str_to_token("4", AddBos::Never).unwrap_or_default().get(0).copied();
+            let t1 = self
+                .model
+                .str_to_token("1", AddBos::Never)
+                .unwrap_or_default()
+                .get(0)
+                .copied();
+            let t2 = self
+                .model
+                .str_to_token("2", AddBos::Never)
+                .unwrap_or_default()
+                .get(0)
+                .copied();
+            let t3 = self
+                .model
+                .str_to_token("3", AddBos::Never)
+                .unwrap_or_default()
+                .get(0)
+                .copied();
+            let t4 = self
+                .model
+                .str_to_token("4", AddBos::Never)
+                .unwrap_or_default()
+                .get(0)
+                .copied();
 
-            let t1_sp = self.model.str_to_token(" 1", AddBos::Never).unwrap_or_default().get(0).copied();
-            let t2_sp = self.model.str_to_token(" 2", AddBos::Never).unwrap_or_default().get(0).copied();
-            let t3_sp = self.model.str_to_token(" 3", AddBos::Never).unwrap_or_default().get(0).copied();
-            let t4_sp = self.model.str_to_token(" 4", AddBos::Never).unwrap_or_default().get(0).copied();
+            let t1_sp = self
+                .model
+                .str_to_token(" 1", AddBos::Never)
+                .unwrap_or_default()
+                .get(0)
+                .copied();
+            let t2_sp = self
+                .model
+                .str_to_token(" 2", AddBos::Never)
+                .unwrap_or_default()
+                .get(0)
+                .copied();
+            let t3_sp = self
+                .model
+                .str_to_token(" 3", AddBos::Never)
+                .unwrap_or_default()
+                .get(0)
+                .copied();
+            let t4_sp = self
+                .model
+                .str_to_token(" 4", AddBos::Never)
+                .unwrap_or_default()
+                .get(0)
+                .copied();
 
-            let get_score = |t_opt: Option<llama_cpp_4::token::LlamaToken>, t_sp_opt: Option<llama_cpp_4::token::LlamaToken>| -> f32 {
+            let get_score = |t_opt: Option<llama_cpp_4::token::LlamaToken>,
+                             t_sp_opt: Option<llama_cpp_4::token::LlamaToken>|
+             -> f32 {
                 let mut s = f32::NEG_INFINITY;
                 if let Some(t) = t_opt {
                     let idx = t.0 as usize;
-                    if idx < logits.len() { s = s.max(logits[idx]); }
+                    if idx < logits.len() {
+                        s = s.max(logits[idx]);
+                    }
                 }
                 if let Some(t) = t_sp_opt {
                     let idx = t.0 as usize;
-                    if idx < logits.len() { s = s.max(logits[idx]); }
+                    if idx < logits.len() {
+                        s = s.max(logits[idx]);
+                    }
                 }
                 s
             };
@@ -508,8 +604,14 @@ impl NativeEngine {
     }
 
     /// Predict label for one pair with optional baseline logit calibration.
-    fn predict(&self, pair: &InputEdgePair, prompt_variant: usize, baseline: Option<(f32, f32, f32, f32)>) -> Result<(String, f64)> {
-        let ((mut s_shp, mut s_dep, mut s_cnf, mut s_non), decode_ms) = self.predict_raw(pair, prompt_variant)?;
+    fn predict(
+        &self,
+        pair: &InputEdgePair,
+        prompt_variant: usize,
+        baseline: Option<(f32, f32, f32, f32)>,
+    ) -> Result<(String, f64)> {
+        let ((mut s_shp, mut s_dep, mut s_cnf, mut s_non), decode_ms) =
+            self.predict_raw(pair, prompt_variant)?;
 
         if let Some((b_shp, b_dep, b_cnf, b_non)) = baseline {
             s_shp -= b_shp;
@@ -522,15 +624,17 @@ impl NativeEngine {
         let mut candidates = Vec::new();
         for &lbl in allowed {
             match lbl {
-                "SHAPES"        => candidates.push(("SHAPES", s_shp)),
-                "DEPENDS_ON"    => candidates.push(("DEPENDS_ON", s_dep)),
-                "CONFLICTS_WITH"=> candidates.push(("CONFLICTS_WITH", s_cnf)),
-                "NONE"          => candidates.push(("NONE", s_non)),
-                _               => {}
+                "SHAPES" => candidates.push(("SHAPES", s_shp)),
+                "DEPENDS_ON" => candidates.push(("DEPENDS_ON", s_dep)),
+                "CONFLICTS_WITH" => candidates.push(("CONFLICTS_WITH", s_cnf)),
+                "NONE" => candidates.push(("NONE", s_non)),
+                _ => {}
             }
         }
 
-        let best = candidates.into_iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        let best = candidates
+            .into_iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         let (pred_label, _best_score) = best.unwrap_or(("NONE", 0.0));
 
         let text = format!("Choice: {}", pred_label);
@@ -589,7 +693,7 @@ fn resolve_model_path(model_size: &str, quant: &str, override_path: Option<&Path
         ("350m", "q4") => "LFM2.5-350M-Q4_K_M.gguf",
         ("350m", "q8") => "LFM2.5-350M-Q8_0.gguf",
         ("230m", "q8") => "LFM2.5-230M-Q8_0.gguf",
-        _              => "LFM2.5-230M-Q4_K_M.gguf",
+        _ => "LFM2.5-230M-Q4_K_M.gguf",
     };
     PathBuf::from(home).join(".vox/models/llm").join(filename)
 }
@@ -615,7 +719,10 @@ fn main() -> Result<()> {
     let t_load = Instant::now();
     let (engine_opt, engine_type, model_load_ms, sys_prefill_ms) = if args.api_endpoint.is_none() {
         if !model_path.exists() {
-            println!("[WARN] Model not found at {:?}. Using HTTP fallback.", model_path);
+            println!(
+                "[WARN] Model not found at {:?}. Using HTTP fallback.",
+                model_path
+            );
             (None, "HTTP_API_Fallback".to_string(), 0.0, 0.0)
         } else {
             println!("Loading native engine from: {:?}", model_path);
@@ -623,12 +730,22 @@ fn main() -> Result<()> {
                 Ok(eng) => {
                     let load_total = t_load.elapsed().as_secs_f64() * 1000.0;
                     let sys_ms = eng.system_prefill_ms;
-                    (Some(eng), format!("Native_llama.cpp_{}_{}",
-                        args.model_size.to_uppercase(), args.quant.to_uppercase()),
-                     load_total - sys_ms, sys_ms)
-                },
+                    (
+                        Some(eng),
+                        format!(
+                            "Native_llama.cpp_{}_{}",
+                            args.model_size.to_uppercase(),
+                            args.quant.to_uppercase()
+                        ),
+                        load_total - sys_ms,
+                        sys_ms,
+                    )
+                }
                 Err(e) => {
-                    println!("[WARN] Failed to load native engine: {}. Using HTTP fallback.", e);
+                    println!(
+                        "[WARN] Failed to load native engine: {}. Using HTTP fallback.",
+                        e
+                    );
                     (None, "HTTP_API_Fallback".to_string(), 0.0, 0.0)
                 }
             }
@@ -637,7 +754,10 @@ fn main() -> Result<()> {
         (None, "HTTP_API_Endpoint".to_string(), 0.0, 0.0)
     };
 
-    println!("Model load: {:.0} ms | System prefill: {:.0} ms", model_load_ms, sys_prefill_ms);
+    println!(
+        "Model load: {:.0} ms | System prefill: {:.0} ms",
+        model_load_ms, sys_prefill_ms
+    );
 
     // Load dataset
     #[derive(Deserialize)]
@@ -662,7 +782,9 @@ fn main() -> Result<()> {
         .unwrap_or(42);
     let mut rng = seed;
     for i in (1..pairs.len()).rev() {
-        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng = rng
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let j = (rng % ((i + 1) as u64)) as usize;
         pairs.swap(i, j);
     }
@@ -723,7 +845,9 @@ fn main() -> Result<()> {
                 }
             }
         } else {
-            let ep = args.api_endpoint.as_deref()
+            let ep = args
+                .api_endpoint
+                .as_deref()
                 .unwrap_or("http://localhost:8080/v1/chat/completions");
             let user_turn = build_user_turn(pair, args.prompt_variant);
             match query_http_api(ep, &args.model_name, static_system_prompt(), &user_turn) {
@@ -739,17 +863,28 @@ fn main() -> Result<()> {
 
         let parsed = EdgeLabel::parse(&raw_out);
         let is_format_ok = parsed.is_some();
-        if is_format_ok { total_format_ok += 1; }
+        if is_format_ok {
+            total_format_ok += 1;
+        }
 
-        let pred_str = parsed.map(|l| l.as_str().to_string())
+        let pred_str = parsed
+            .map(|l| l.as_str().to_string())
             .unwrap_or_else(|| "INVALID_FORMAT".to_string());
 
         let exp_raw = pair.expected_label.trim().to_uppercase();
-        let exp_str = if exp_raw.is_empty() { String::new() } else {
-            EdgeLabel::parse(&exp_raw).map(|l| l.as_str().to_string()).unwrap_or(exp_raw.clone())
+        let exp_str = if exp_raw.is_empty() {
+            String::new()
+        } else {
+            EdgeLabel::parse(&exp_raw)
+                .map(|l| l.as_str().to_string())
+                .unwrap_or(exp_raw.clone())
         };
 
-        let exp_parsed = if exp_str.is_empty() { None } else { EdgeLabel::parse(&exp_str) };
+        let exp_parsed = if exp_str.is_empty() {
+            None
+        } else {
+            EdgeLabel::parse(&exp_str)
+        };
         let is_match = match (parsed, exp_parsed) {
             (Some(p), Some(e)) => p == e,
             _ => false,
@@ -784,21 +919,45 @@ fn main() -> Result<()> {
         if (idx + 1) % 50 == 0 || (idx + 1) == pairs.len() {
             let running_acc = (total_matches as f64 / (idx + 1) as f64) * 100.0;
             let running_lat = total_decode_sum / (idx + 1) as f64;
-            println!("  [{}/{}] acc={:.1}%  decode={:.1}ms",
-                     idx + 1, pairs.len(), running_acc, running_lat);
+            println!(
+                "  [{}/{}] acc={:.1}%  decode={:.1}ms",
+                idx + 1,
+                pairs.len(),
+                running_acc,
+                running_lat
+            );
         }
     }
 
     let n = pairs.len();
     let wall_sec = global_start.elapsed().as_secs_f64();
-    let overall_acc = if n > 0 { total_matches as f64 / n as f64 * 100.0 } else { 0.0 };
-    let fmt_pct = if n > 0 { total_format_ok as f64 / n as f64 * 100.0 } else { 0.0 };
-    let avg_decode = if n > 0 { total_decode_sum / n as f64 } else { 0.0 };
+    let overall_acc = if n > 0 {
+        total_matches as f64 / n as f64 * 100.0
+    } else {
+        0.0
+    };
+    let fmt_pct = if n > 0 {
+        total_format_ok as f64 / n as f64 * 100.0
+    } else {
+        0.0
+    };
+    let avg_decode = if n > 0 {
+        total_decode_sum / n as f64
+    } else {
+        0.0
+    };
 
     let mut domain_pair_accuracy = HashMap::new();
     for (dp, tot) in &domain_total {
         let mat = domain_matches.get(dp).cloned().unwrap_or(0);
-        domain_pair_accuracy.insert(dp.clone(), if *tot > 0 { mat as f64 / *tot as f64 * 100.0 } else { 0.0 });
+        domain_pair_accuracy.insert(
+            dp.clone(),
+            if *tot > 0 {
+                mat as f64 / *tot as f64 * 100.0
+            } else {
+                0.0
+            },
+        );
     }
 
     let mut label_precision = HashMap::new();
@@ -831,15 +990,23 @@ fn main() -> Result<()> {
 
     let report = ProbeReport { summary, results };
 
-    if let Some(p) = args.output.parent() { fs::create_dir_all(p)?; }
+    if let Some(p) = args.output.parent() {
+        fs::create_dir_all(p)?;
+    }
     fs::write(&args.output, serde_json::to_string_pretty(&report)?)?;
 
     println!();
     println!("=================================================================");
     println!(" PROBE COMPLETE");
-    println!(" Overall accuracy:        {:.2}% ({}/{})", overall_acc, total_matches, n);
+    println!(
+        " Overall accuracy:        {:.2}% ({}/{})",
+        overall_acc, total_matches, n
+    );
     println!(" Format compliance:       {:.1}%", fmt_pct);
-    println!(" Avg decode latency:      {:.1} ms/pair (variable segment only)", avg_decode);
+    println!(
+        " Avg decode latency:      {:.1} ms/pair (variable segment only)",
+        avg_decode
+    );
     println!(" System prefill (1-time): {:.0} ms", sys_prefill_ms);
     println!(" Model load:              {:.0} ms", model_load_ms);
     println!(" Total wall time:         {:.1} sec", wall_sec);

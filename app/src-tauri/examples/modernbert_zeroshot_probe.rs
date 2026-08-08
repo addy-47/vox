@@ -37,11 +37,19 @@ use tokenizers::Tokenizer;
 )]
 struct Args {
     /// Input JSON dataset (gate3 pairs with expected_label)
-    #[arg(short, long, default_value = "sandbox/datasets/gate3_edge_1750_pairs.json")]
+    #[arg(
+        short,
+        long,
+        default_value = "sandbox/datasets/gate3_edge_1750_pairs.json"
+    )]
     input: PathBuf,
 
     /// Output JSON result file
-    #[arg(short, long, default_value = "sandbox/results/gate3_modernbert_zeroshot_scores.json")]
+    #[arg(
+        short,
+        long,
+        default_value = "sandbox/results/gate3_modernbert_zeroshot_scores.json"
+    )]
     output: PathBuf,
 
     /// Model directory override
@@ -65,10 +73,22 @@ fn get_allowed_labels(_src_domain: &str, _tgt_domain: &str) -> &'static [&'stati
 /// Build NLI hypothesis for a given label
 fn build_hypothesis(label: &str, src_domain: &str, tgt_domain: &str, _variant: usize) -> String {
     match label {
-        "SHAPES" => format!("The {} fact modifies or shapes how the {} fact is executed or interpreted.", src_domain, tgt_domain),
-        "DEPENDS_ON" => format!("The {} fact functionally requires or depends on the {} fact to exist first.", src_domain, tgt_domain),
-        "CONFLICTS_WITH" => format!("The {} fact conflicts with or opposes the {} fact.", src_domain, tgt_domain),
-        "NONE" => format!("The {} fact and the {} fact are independent with no relationship.", src_domain, tgt_domain),
+        "SHAPES" => format!(
+            "The {} fact modifies or shapes how the {} fact is executed or interpreted.",
+            src_domain, tgt_domain
+        ),
+        "DEPENDS_ON" => format!(
+            "The {} fact functionally requires or depends on the {} fact to exist first.",
+            src_domain, tgt_domain
+        ),
+        "CONFLICTS_WITH" => format!(
+            "The {} fact conflicts with or opposes the {} fact.",
+            src_domain, tgt_domain
+        ),
+        "NONE" => format!(
+            "The {} fact and the {} fact are independent with no relationship.",
+            src_domain, tgt_domain
+        ),
         _ => label.to_string(),
     }
 }
@@ -176,14 +196,16 @@ impl ModernBertSession {
         println!("  Loading tokenizer from: {:?}", tokenizer_path);
         let mut tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| anyhow!("Failed to load tokenizer: {}", e))?;
-        
+
         // Set max length to prevent truncation issues
-        tokenizer.with_truncation(Some(tokenizers::TruncationParams {
-            max_length: 512,
-            strategy: tokenizers::TruncationStrategy::LongestFirst,
-            stride: 0,
-            direction: tokenizers::TruncationDirection::Right,
-        })).map_err(|e| anyhow!("Truncation config error: {}", e))?;
+        tokenizer
+            .with_truncation(Some(tokenizers::TruncationParams {
+                max_length: 512,
+                strategy: tokenizers::TruncationStrategy::LongestFirst,
+                stride: 0,
+                direction: tokenizers::TruncationDirection::Right,
+            }))
+            .map_err(|e| anyhow!("Truncation config error: {}", e))?;
 
         println!("  Loading ONNX session from: {:?}", model_path);
         let session = ort::session::Session::builder()
@@ -195,25 +217,48 @@ impl ModernBertSession {
             .commit_from_file(&model_path)
             .map_err(|e| anyhow!("Failed to load model: {:?}", e))?;
 
-        println!("  ONNX inputs: {:?}", session.inputs().iter().map(|i| i.name()).collect::<Vec<_>>());
-        println!("  ONNX outputs: {:?}", session.outputs().iter().map(|o| o.name()).collect::<Vec<_>>());
+        println!(
+            "  ONNX inputs: {:?}",
+            session
+                .inputs()
+                .iter()
+                .map(|i| i.name())
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "  ONNX outputs: {:?}",
+            session
+                .outputs()
+                .iter()
+                .map(|o| o.name())
+                .collect::<Vec<_>>()
+        );
 
         // Calibrate: "A cat is sleeping" entails "An animal is resting"
         // ModernBERT-large-zeroshot config says: id2label {0: "entailment", 1: "not_entailment"}
         // So entailment_idx = 0
         let entailment_idx = 0usize;
 
-        Ok(Self { session, tokenizer, entailment_idx })
+        Ok(Self {
+            session,
+            tokenizer,
+            entailment_idx,
+        })
     }
 
     /// Run a single NLI inference, return [entailment_score, not_entailment_score]
     fn predict_nli(&mut self, premise: &str, hypothesis: &str) -> Result<[f32; 2]> {
-        let encoding = self.tokenizer
+        let encoding = self
+            .tokenizer
             .encode((premise, hypothesis), true)
             .map_err(|e| anyhow!("Tokenization error: {:?}", e))?;
 
         let ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
-        let mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
+        let mask: Vec<i64> = encoding
+            .get_attention_mask()
+            .iter()
+            .map(|&x| x as i64)
+            .collect();
         let seq_len = ids.len();
 
         if seq_len == 0 {
@@ -223,32 +268,41 @@ impl ModernBertSession {
         let input_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), ids)?;
         let attn_mask_arr = Array2::<i64>::from_shape_vec((1, seq_len), mask)?;
 
-        let ids_tensor = ort::value::Tensor::from_array(input_ids_arr)
-            .map_err(|e| anyhow!("{:?}", e))?;
-        let mask_tensor = ort::value::Tensor::from_array(attn_mask_arr)
-            .map_err(|e| anyhow!("{:?}", e))?;
+        let ids_tensor =
+            ort::value::Tensor::from_array(input_ids_arr).map_err(|e| anyhow!("{:?}", e))?;
+        let mask_tensor =
+            ort::value::Tensor::from_array(attn_mask_arr).map_err(|e| anyhow!("{:?}", e))?;
 
-        let has_token_type_ids = self.session.inputs().iter().any(|i| i.name() == "token_type_ids");
-        
+        let has_token_type_ids = self
+            .session
+            .inputs()
+            .iter()
+            .any(|i| i.name() == "token_type_ids");
+
         let outputs = if has_token_type_ids {
             let type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
             let type_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), type_ids)?;
-            let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
-                .map_err(|e| anyhow!("{:?}", e))?;
-            self.session.run(ort::inputs![
-                "input_ids" => ids_tensor,
-                "attention_mask" => mask_tensor,
-                "token_type_ids" => type_ids_tensor
-            ]).map_err(|e| anyhow!("{:?}", e))?
+            let type_ids_tensor =
+                ort::value::Tensor::from_array(type_ids_arr).map_err(|e| anyhow!("{:?}", e))?;
+            self.session
+                .run(ort::inputs![
+                    "input_ids" => ids_tensor,
+                    "attention_mask" => mask_tensor,
+                    "token_type_ids" => type_ids_tensor
+                ])
+                .map_err(|e| anyhow!("{:?}", e))?
         } else {
-            self.session.run(ort::inputs![
-                "input_ids" => ids_tensor,
-                "attention_mask" => mask_tensor
-            ]).map_err(|e| anyhow!("{:?}", e))?
+            self.session
+                .run(ort::inputs![
+                    "input_ids" => ids_tensor,
+                    "attention_mask" => mask_tensor
+                ])
+                .map_err(|e| anyhow!("{:?}", e))?
         };
 
         let out_key = outputs.keys().next().ok_or_else(|| anyhow!("No outputs"))?;
-        let logits = outputs[out_key].try_extract_array::<f32>()
+        let logits = outputs[out_key]
+            .try_extract_array::<f32>()
             .map_err(|e| anyhow!("{:?}", e))?;
 
         // Softmax over 2 logits
@@ -353,7 +407,9 @@ fn main() -> Result<()> {
         .unwrap_or(42);
     let mut rng = seed;
     for i in (1..pairs.len()).rev() {
-        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng = rng
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let j = (rng % ((i + 1) as u64)) as usize;
         pairs.swap(i, j);
     }
@@ -387,15 +443,25 @@ fn main() -> Result<()> {
             &pair.session_narrative,
         );
 
-        let (predicted_label, predicted_score, label_scores, total_ms, per_label_ms) =
-            model.classify_zeroshot(&premise, &allowed_slice, &pair.source_domain, &pair.target_domain, args.hypothesis_variant)?;
+        let (predicted_label, predicted_score, label_scores, total_ms, per_label_ms) = model
+            .classify_zeroshot(
+                &premise,
+                &allowed_slice,
+                &pair.source_domain,
+                &pair.target_domain,
+                args.hypothesis_variant,
+            )?;
 
         total_latency_sum += total_ms;
         let domain_pair_key = format!("{} -> {}", pair.source_domain, pair.target_domain);
-        
+
         // Normalize expected label
         let exp_label = pair.expected_label.trim().to_uppercase();
-        let exp_label = if exp_label == "RELATES_TO" || exp_label == "RELATES TO" { "RELATES_TO".to_string() } else { exp_label };
+        let exp_label = if exp_label == "RELATES_TO" || exp_label == "RELATES TO" {
+            "RELATES_TO".to_string()
+        } else {
+            exp_label
+        };
 
         let is_match = !exp_label.is_empty() && predicted_label == exp_label;
 
@@ -409,7 +475,9 @@ fn main() -> Result<()> {
         if !exp_label.is_empty() {
             *label_expected_count.entry(exp_label.clone()).or_insert(0) += 1;
         }
-        *label_predicted_count.entry(predicted_label.clone()).or_insert(0) += 1;
+        *label_predicted_count
+            .entry(predicted_label.clone())
+            .or_insert(0) += 1;
 
         results.push(OutputPairResult {
             id: pair.id,
@@ -429,24 +497,49 @@ fn main() -> Result<()> {
 
         if (idx + 1) % 50 == 0 || (idx + 1) == pairs.len() {
             let acc_so_far = (total_matches as f64 / (idx + 1) as f64) * 100.0;
-            println!("  [{}/{}] Running accuracy: {:.1}%", idx + 1, pairs.len(), acc_so_far);
+            println!(
+                "  [{}/{}] Running accuracy: {:.1}%",
+                idx + 1,
+                pairs.len(),
+                acc_so_far
+            );
         }
     }
 
     let total_duration = global_start.elapsed().as_secs_f64();
     let n = pairs.len();
-    let overall_acc = if n > 0 { (total_matches as f64 / n as f64) * 100.0 } else { 0.0 };
-    let avg_total_lat = if n > 0 { total_latency_sum / n as f64 } else { 0.0 };
+    let overall_acc = if n > 0 {
+        (total_matches as f64 / n as f64) * 100.0
+    } else {
+        0.0
+    };
+    let avg_total_lat = if n > 0 {
+        total_latency_sum / n as f64
+    } else {
+        0.0
+    };
     // Per label latency: each domain pair runs N_labels inferences; average per label across all
-    let total_label_inferences: usize = pairs.iter().map(|p| get_allowed_labels(&p.source_domain, &p.target_domain).len()).sum();
+    let total_label_inferences: usize = pairs
+        .iter()
+        .map(|p| get_allowed_labels(&p.source_domain, &p.target_domain).len())
+        .sum();
     let avg_per_label_ms = if total_label_inferences > 0 {
         total_latency_sum / total_label_inferences as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let mut domain_pair_accuracy = HashMap::new();
     for (dp, tot) in &domain_total {
         let mat = domain_matches.get(dp).cloned().unwrap_or(0);
-        domain_pair_accuracy.insert(dp.clone(), if *tot > 0 { (mat as f64 / *tot as f64) * 100.0 } else { 0.0 });
+        domain_pair_accuracy.insert(
+            dp.clone(),
+            if *tot > 0 {
+                (mat as f64 / *tot as f64) * 100.0
+            } else {
+                0.0
+            },
+        );
     }
 
     let mut label_precision = HashMap::new();
@@ -456,8 +549,22 @@ fn main() -> Result<()> {
         let tp = *label_tp_count.get(&ls).unwrap_or(&0) as f64;
         let pred_cnt = *label_predicted_count.get(&ls).unwrap_or(&0) as f64;
         let exp_cnt = *label_expected_count.get(&ls).unwrap_or(&0) as f64;
-        label_precision.insert(ls.clone(), if pred_cnt > 0.0 { tp / pred_cnt * 100.0 } else { 0.0 });
-        label_recall.insert(ls.clone(), if exp_cnt > 0.0 { tp / exp_cnt * 100.0 } else { 0.0 });
+        label_precision.insert(
+            ls.clone(),
+            if pred_cnt > 0.0 {
+                tp / pred_cnt * 100.0
+            } else {
+                0.0
+            },
+        );
+        label_recall.insert(
+            ls.clone(),
+            if exp_cnt > 0.0 {
+                tp / exp_cnt * 100.0
+            } else {
+                0.0
+            },
+        );
     }
 
     let summary = MetricSummary {
@@ -483,9 +590,15 @@ fn main() -> Result<()> {
     println!();
     println!("=================================================================");
     println!(" MODERNBERT ZEROSHOT PROBE COMPLETE");
-    println!(" Overall Accuracy:      {:.2}% ({}/{})", overall_acc, total_matches, n);
+    println!(
+        " Overall Accuracy:      {:.2}% ({}/{})",
+        overall_acc, total_matches, n
+    );
     println!(" Avg total latency:     {:.1} ms/pair", avg_total_lat);
-    println!(" Avg per-label latency: {:.1} ms/label-inference", avg_per_label_ms);
+    println!(
+        " Avg per-label latency: {:.1} ms/label-inference",
+        avg_per_label_ms
+    );
     println!(" Total wall time:       {:.1} sec", total_duration);
     println!(" Report: {:?}", args.output);
     println!("=================================================================");

@@ -65,7 +65,7 @@ You're Vox — always listening, never hovering. You talk like someone who's bee
 - If [Compacted History Summary] is present as Message 1, it provides a chronological narrative summary of earlier turns in this session.\n\
 - If <user_profile> is present, use it for personal context.\n\
 - The <memory_manifest> shows total stored records per collection in database.\n\
-</memory_context>";// ─── Transition Speech Assets (Working Memory Maintenance) ──────────────────
+</memory_context>"; // ─── Transition Speech Assets (Working Memory Maintenance) ──────────────────
 
 pub const TRANSITION_MESSAGES_EN: &[&str] = &[
     "Give me a moment while I organize our conversation.",
@@ -98,7 +98,7 @@ pub const TRANSITION_MESSAGES_HI: &[&str] = &[
 pub const COMPACTION_SYSTEM_PROMPT: &str = r#"
 <role>
 You are a structured memory extraction engine for an intelligent assistant..
-Your task is to analyze conversation turns and extract complete, self-contained declarative facts.
+Your task is to analyze conversation turns and extract complete, self-contained declarative facts maintaing the context around those facts.
 </role>
 
 <objective>
@@ -138,7 +138,7 @@ Hard non-negotiable limits, safety boundaries, security rules, health restrictio
 </collection_definitions>
 
 <extraction_principles>
-- Write every extracted fact as a complete, self-contained declarative sentence that remains understandable without additional context.
+- Write every extracted fact as a complete, self-contained declarative sentence that remains understandable while maintianing the context around those facts like keeping temporal relationships, conversational context, etc.
 - Identity vs Profile Rule: Identity is reserved strictly for core foundational identity facts. If ever in doubt between Identity and Profile, ALWAYS classify the fact under Profile.
 - Constraints Rule: Constraints are strictly for non-negotiable hard limits, safety boundaries, allergies or health restrictions, security rules, or strict technical prohibitions. Soft preferences belong under Profile.
 - Directives vs Profile Rule: Directives describe active work, current tasks, and scheduled commitments. Past experience or general skills belong under Profile.
@@ -217,7 +217,12 @@ impl std::fmt::Display for MemoryCollection {
 
 // ─── Personal Memory Collections & Taxonomy ─────────────────────────────
 pub const PM_COLLECTIONS: &[&str] = &[
-    "Identity", "Directives", "Narrative", "Profile", "Entities", "Constraints",
+    "Identity",
+    "Directives",
+    "Narrative",
+    "Profile",
+    "Entities",
+    "Constraints",
 ];
 
 // ─── Collection Structural Classes ───────────────────────────────────────────
@@ -290,6 +295,3 @@ pub const PM_QUEUE_STATUS_SUPERSEDED: &str = "superseded";
 pub const PM_QUEUE_STATUS_COMPLETED: &str = "completed";
 pub const PM_QUEUE_STATUS_FAILED: &str = "failed";
 pub const PM_QUEUE_STATUS_PAUSED: &str = "paused";
-
-
-

@@ -76,7 +76,9 @@ impl ModelManager {
         // ── 0. Check if already verified ─────────────────────────────────────
         if verified_path.exists() {
             if let Ok(marker) = VerifiedMarker::load(&verified_path) {
-                if marker.sha256 == entry.sha256 && (entry.archive_type.is_some() || dest_path.exists()) {
+                if marker.sha256 == entry.sha256
+                    && (entry.archive_type.is_some() || dest_path.exists())
+                {
                     log::info!(
                         "[ModelManager] Model/Archive {} already verified. Skipping setup.",
                         model_id

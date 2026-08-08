@@ -1,13 +1,13 @@
+use crate::core::settings::VoxSettings;
+pub use crate::persistence::mutations::{enqueue_personal_facts, session_end_consolidation};
+pub use crate::persistence::{decode_f32_blob, encode_f32_blob};
+pub use crate::services::memory::pipeline::run_pipeline_cycle;
 use crossbeam_channel::{bounded, Sender};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
-use crate::core::settings::VoxSettings;
-pub use crate::persistence::{encode_f32_blob, decode_f32_blob};
-pub use crate::persistence::mutations::{enqueue_personal_facts, session_end_consolidation};
-pub use crate::services::memory::pipeline::run_pipeline_cycle;
 
 pub const MIN_IDLE_DEBOUNCE_SECS: u64 = 30;
 
@@ -18,7 +18,7 @@ pub enum MemoryWorkerEvent {
     SessionEnd { session_id: String, summary: String },
     /// Extracted facts from compaction — enqueued to personal_memory_queue
     PersonalFactsReady {
-        facts: HashMap<String, Vec<String>>,  // collection → facts
+        facts: HashMap<String, Vec<String>>, // collection → facts
         session_id: String,
     },
     /// The pipeline has entered Idle state. Trigger background memory sweep.

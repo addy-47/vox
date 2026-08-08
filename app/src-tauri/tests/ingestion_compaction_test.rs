@@ -1,8 +1,8 @@
+use serde_json::Value;
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
-use serde_json::Value;
 
 use vox_lib::core::constants::SYSTEM_PROMPT_MODULAR;
 use vox_lib::services::llm::providers::OpenAiCompatProvider;
@@ -95,14 +95,16 @@ fn test_ingestion_and_compaction_session1() {
 
     let base_url = env::var("LLM_BASE_URL")
         .unwrap_or_else(|_| "https://integrate.api.nvidia.com/v1".to_string());
-    let model = env::var("LLM_MODEL")
-        .unwrap_or_else(|_| "meta/llama-3.1-70b-instruct".to_string());
-    let provider_name = env::var("LLM_PROVIDER_NAME")
-        .unwrap_or_else(|_| "nvidia".to_string());
+    let model = env::var("LLM_MODEL").unwrap_or_else(|_| "meta/llama-3.1-70b-instruct".to_string());
+    let provider_name = env::var("LLM_PROVIDER_NAME").unwrap_or_else(|_| "nvidia".to_string());
 
-    println!("[TestSetup] LLM Provider: {} | Model: {} | Base URL: {}", provider_name, model, base_url);
+    println!(
+        "[TestSetup] LLM Provider: {} | Model: {} | Base URL: {}",
+        provider_name, model, base_url
+    );
 
-    let provider = OpenAiCompatProvider::new(&base_url, &model, Some(&api_key), Some(&provider_name));
+    let provider =
+        OpenAiCompatProvider::new(&base_url, &model, Some(&api_key), Some(&provider_name));
 
     let ctx_window = env::var("CTX_WINDOW")
         .ok()
@@ -134,11 +136,16 @@ fn test_ingestion_and_compaction_session1() {
             compaction_count += 1;
             println!(
                 "\n[Compaction #{}] Triggered at Turn {} (Utilization: {:.2}%, Tokens: {}/{})",
-                compaction_count, turn.turn, utilization * 100.0, mgr.total_token_count(), ctx_window
+                compaction_count,
+                turn.turn,
+                utilization * 100.0,
+                mgr.total_token_count(),
+                ctx_window
             );
 
             let start_time = Instant::now();
-            let (ctx, speech, personal_memory) = mgr.build_context(ProviderKind::OpenAiCompat, false, Some(&provider));
+            let (ctx, speech, personal_memory) =
+                mgr.build_context(ProviderKind::OpenAiCompat, false, Some(&provider), None);
             let elapsed_ms = start_time.elapsed().as_millis();
             total_compaction_time_ms += elapsed_ms;
 
@@ -146,16 +153,30 @@ fn test_ingestion_and_compaction_session1() {
             total_facts_extracted += turn_facts_count;
 
             println!("  -> Duration: {} ms", elapsed_ms);
-            println!("  -> Transition Speech: {:?}", speech.as_deref().unwrap_or("None"));
-            println!("  -> Extracted Facts Count: {} across {} collections", turn_facts_count, personal_memory.len());
+            println!(
+                "  -> Transition Speech: {:?}",
+                speech.as_deref().unwrap_or("None")
+            );
+            println!(
+                "  -> Extracted Facts Count: {} across {} collections",
+                turn_facts_count,
+                personal_memory.len()
+            );
 
             for (col, facts) in &personal_memory {
                 println!("     [{}] {} facts: {:?}", col, facts.len(), facts);
             }
 
             // Verify System Prompt Consolidation
-            assert!(!ctx.messages.is_empty(), "Context messages must not be empty after compaction");
-            assert_eq!(ctx.messages[0].role, Role::System, "Message 0 must be System role");
+            assert!(
+                !ctx.messages.is_empty(),
+                "Context messages must not be empty after compaction"
+            );
+            assert_eq!(
+                ctx.messages[0].role,
+                Role::System,
+                "Message 0 must be System role"
+            );
 
             let sys_content = &ctx.messages[0].content;
             let has_session_history = sys_content.contains("<session_history>");
@@ -167,8 +188,14 @@ fn test_ingestion_and_compaction_session1() {
             println!("     - <narrative_chain>: {}", has_narrative_chain);
             println!("     - <recent_compaction_facts>: {}", has_recent_facts);
 
-            assert!(has_session_history, "System message must contain <session_history>");
-            assert!(has_narrative_chain, "System message must contain <narrative_chain>");
+            assert!(
+                has_session_history,
+                "System message must contain <session_history>"
+            );
+            assert!(
+                has_narrative_chain,
+                "System message must contain <narrative_chain>"
+            );
         }
     }
 
@@ -186,7 +213,10 @@ fn test_ingestion_and_compaction_session1() {
     println!("Total Facts Extracted:       {}", total_facts_extracted);
     println!("Average Compaction Latency:  {:.2} ms", avg_latency);
     println!("Final Context Token Count:   {}", mgr.total_token_count());
-    println!("Final Context Utilization:   {:.2}%", mgr.context_utilization() * 100.0);
+    println!(
+        "Final Context Utilization:   {:.2}%",
+        mgr.context_utilization() * 100.0
+    );
     println!("==================================================\n");
 
     // Save JSON test result report to sandbox/results/ingestion_test_results_session1.json
@@ -209,8 +239,14 @@ fn test_ingestion_and_compaction_session1() {
     let output_json_path = results_dir.join("ingestion_test_results_session1.json");
     if let Ok(json_str) = serde_json::to_string_pretty(&report_json) {
         let _ = fs::write(&output_json_path, json_str);
-        println!("[TestReport] Saved test report JSON to {:?}", output_json_path);
+        println!(
+            "[TestReport] Saved test report JSON to {:?}",
+            output_json_path
+        );
     }
 
-    assert!(compaction_count > 0, "At least 1 compaction should have been triggered for Session 1");
+    assert!(
+        compaction_count > 0,
+        "At least 1 compaction should have been triggered for Session 1"
+    );
 }

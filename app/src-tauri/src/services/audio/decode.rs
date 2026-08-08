@@ -16,8 +16,8 @@ use symphonia_core::audio::GenericAudioBufferRef;
 use symphonia_core::codecs::audio::AudioDecoderOptions;
 use symphonia_core::codecs::CodecParameters;
 use symphonia_core::errors::Error;
-use symphonia_core::formats::FormatOptions;
 use symphonia_core::formats::probe::Hint;
+use symphonia_core::formats::FormatOptions;
 use symphonia_core::io::MediaSourceStream;
 use symphonia_core::meta::MetadataOptions;
 
@@ -54,8 +54,8 @@ pub fn decode_bytes_to_24khz_mono(bytes: &[u8], format_hint: &str) -> DecodeResu
 /// Returns `Err` if the file cannot be opened, decoded, or contains no audio.
 pub fn decode_to_24khz_mono<P: AsRef<Path>>(path: P) -> DecodeResult<DecodedAudio> {
     let path = path.as_ref();
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open file '{}': {}", path.display(), e))?;
+    let file =
+        File::open(path).map_err(|e| format!("Failed to open file '{}': {}", path.display(), e))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
     let mut hint = Hint::new();
@@ -211,8 +211,7 @@ fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
         let idx_floor = src_idx.floor() as usize;
         let idx_ceil = (idx_floor + 1).min(input.len() - 1);
         let frac = src_idx - idx_floor as f64;
-        let sample =
-            (1.0 - frac) as f32 * input[idx_floor] + frac as f32 * input[idx_ceil];
+        let sample = (1.0 - frac) as f32 * input[idx_floor] + frac as f32 * input[idx_ceil];
         out.push(sample);
     }
 
@@ -235,7 +234,11 @@ pub fn truncate_to(audio: DecodedAudio, max_secs: f32) -> DecodedAudio {
 }
 
 /// Write f32 PCM samples as a 24 kHz mono 16-bit WAV file using `hound`.
-pub fn write_wav_f32<P: AsRef<Path>>(path: P, samples: &[f32], sample_rate: u32) -> DecodeResult<()> {
+pub fn write_wav_f32<P: AsRef<Path>>(
+    path: P,
+    samples: &[f32],
+    sample_rate: u32,
+) -> DecodeResult<()> {
     use hound::WavSpec;
 
     let spec = WavSpec {
@@ -245,9 +248,8 @@ pub fn write_wav_f32<P: AsRef<Path>>(path: P, samples: &[f32], sample_rate: u32)
         sample_format: hound::SampleFormat::Int,
     };
 
-    let mut writer =
-        hound::WavWriter::create(path.as_ref(), spec)
-            .map_err(|e| format!("Failed to create WAV writer: {}", e))?;
+    let mut writer = hound::WavWriter::create(path.as_ref(), spec)
+        .map_err(|e| format!("Failed to create WAV writer: {}", e))?;
 
     for &sample in samples {
         let clamped = sample.clamp(-1.0, 1.0);
@@ -279,9 +281,8 @@ pub fn write_wav_f32_raw<P: AsRef<Path>>(
         sample_format: hound::SampleFormat::Float,
     };
 
-    let mut writer =
-        hound::WavWriter::create(path.as_ref(), spec)
-            .map_err(|e| format!("Failed to create WAV writer: {}", e))?;
+    let mut writer = hound::WavWriter::create(path.as_ref(), spec)
+        .map_err(|e| format!("Failed to create WAV writer: {}", e))?;
 
     for &sample in samples {
         writer
@@ -342,9 +343,9 @@ mod tests {
     #[test]
     fn test_write_and_read_back() {
         let dir = tempfile::tempdir().unwrap();
-        let samples: Vec<f32> = (0..24000).map(|i| {
-            (i as f32 / 24000.0 * std::f32::consts::PI * 440.0).sin() * 0.5
-        }).collect();
+        let samples: Vec<f32> = (0..24000)
+            .map(|i| (i as f32 / 24000.0 * std::f32::consts::PI * 440.0).sin() * 0.5)
+            .collect();
 
         let path = dir.path().join("out.wav");
         write_wav_f32(&path, &samples, 24000).unwrap();

@@ -5,14 +5,14 @@
 //! Since the synthesis runs on the dedicated `vox-tts-persistent` OS thread,
 //! blocking I/O is correct and keeps thread context switches low.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
-use std::sync::mpsc::Sender;
-use std::io::Read;
 use anyhow::{anyhow, Result};
+use std::io::Read;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
 
-use crate::core::events::VoxEvent;
 use super::{TtsProvider, TtsProviderKind};
+use crate::core::events::VoxEvent;
 
 const MIN_QUALITY_STEPS: u32 = 2;
 const MAX_QUALITY_STEPS: u32 = 10;
@@ -46,21 +46,35 @@ impl ChatterboxRemoteProvider {
             client,
             endpoint: endpoint.to_string(),
             language: language.to_string(),
-            quality_steps: AtomicU32::new(quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS)),
+            quality_steps: AtomicU32::new(
+                quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS),
+            ),
             speed: AtomicU32::new(speed.clamp(MIN_SPEED, MAX_SPEED).to_bits()),
         };
 
         // Note: We check health on construction to guarantee the endpoint is up.
         if !prov.health_check() {
-            log::warn!("[ChatterboxRemote] Initial health check failed for {}", endpoint);
+            log::warn!(
+                "[ChatterboxRemote] Initial health check failed for {}",
+                endpoint
+            );
         } else {
-            log::info!("[ChatterboxRemote] Connected to remote TTS server at {}", endpoint);
-            
+            log::info!(
+                "[ChatterboxRemote] Connected to remote TTS server at {}",
+                endpoint
+            );
+
             // Decoupled loading: Load models now that connection is established
             let load_url = format!("{}/models/load", endpoint.trim_end_matches('/'));
-            let t3_path = format!("{}/models/tts/chatterbox/chatterbox-t3-mtl-q4_0.gguf", remote_path.trim_end_matches('/'));
-            let s3gen_path = format!("{}/models/tts/chatterbox/chatterbox-s3gen-mtl-f16.gguf", remote_path.trim_end_matches('/'));
-            
+            let t3_path = format!(
+                "{}/models/tts/chatterbox/chatterbox-t3-mtl-q4_0.gguf",
+                remote_path.trim_end_matches('/')
+            );
+            let s3gen_path = format!(
+                "{}/models/tts/chatterbox/chatterbox-s3gen-mtl-f16.gguf",
+                remote_path.trim_end_matches('/')
+            );
+
             let payload = serde_json::json!({
                 "t3_gguf_path": t3_path,
                 "s3gen_gguf_path": s3gen_path,
@@ -70,17 +84,28 @@ impl ChatterboxRemoteProvider {
                 "stream_chunk_tokens": 16,
             });
 
-            log::info!("[ChatterboxRemote] Requesting remote model load from: {}", load_url);
+            log::info!(
+                "[ChatterboxRemote] Requesting remote model load from: {}",
+                load_url
+            );
             match prov.client.post(&load_url).json(&payload).send() {
                 Ok(res) => {
                     if res.status().is_success() {
-                        log::info!("[ChatterboxRemote] Models loaded successfully on remote GPU server.");
+                        log::info!(
+                            "[ChatterboxRemote] Models loaded successfully on remote GPU server."
+                        );
                     } else {
-                        log::warn!("[ChatterboxRemote] Remote load models returned status: {}", res.status());
+                        log::warn!(
+                            "[ChatterboxRemote] Remote load models returned status: {}",
+                            res.status()
+                        );
                     }
                 }
                 Err(e) => {
-                    log::warn!("[ChatterboxRemote] Failed to send load models command: {}", e);
+                    log::warn!(
+                        "[ChatterboxRemote] Failed to send load models command: {}",
+                        e
+                    );
                 }
             }
         }
@@ -130,7 +155,12 @@ impl TtsProvider for ChatterboxRemoteProvider {
 
     fn health_check(&self) -> bool {
         let url = format!("{}/health", self.endpoint.trim_end_matches('/'));
-        match self.client.get(&url).timeout(std::time::Duration::from_secs(3)).send() {
+        match self
+            .client
+            .get(&url)
+            .timeout(std::time::Duration::from_secs(3))
+            .send()
+        {
             Ok(res) => {
                 if res.status().is_success() {
                     if let Ok(body) = res.json::<serde_json::Value>() {
@@ -174,9 +204,11 @@ impl TtsProvider for ChatterboxRemoteProvider {
         });
 
         let url = format!("{}/tts/stream-pcm", self.endpoint.trim_end_matches('/'));
-        
+
         // Execute synchronous HTTP request
-        let mut response = self.client.post(&url)
+        let mut response = self
+            .client
+            .post(&url)
             .json(&payload)
             .send()
             .map_err(|e| anyhow!("Failed to send remote TTS request to {}: {}", url, e))?;
@@ -184,7 +216,11 @@ impl TtsProvider for ChatterboxRemoteProvider {
         if !response.status().is_success() {
             let status = response.status();
             let err_text = response.text().unwrap_or_default();
-            return Err(anyhow!("Remote server returned error status {}: {}", status, err_text));
+            return Err(anyhow!(
+                "Remote server returned error status {}: {}",
+                status,
+                err_text
+            ));
         }
 
         // Buffer and stream PCM samples in chunks of 2048 (clamped f32-LE bytes)
@@ -196,7 +232,10 @@ impl TtsProvider for ChatterboxRemoteProvider {
 
         loop {
             if cancel.load(Ordering::Relaxed) {
-                log::info!("[ChatterboxRemote] Synthesis cancelled for turn {}", turn_id);
+                log::info!(
+                    "[ChatterboxRemote] Synthesis cancelled for turn {}",
+                    turn_id
+                );
                 return Ok(());
             }
 
@@ -204,7 +243,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
                 Ok(0) => break, // EOF reached
                 Ok(n) => {
                     byte_buf.extend_from_slice(&buf[..n]);
-                    
+
                     // Decode bytes into f32-LE
                     let num_samples = byte_buf.len() / 4;
                     if num_samples > 0 {
@@ -222,7 +261,8 @@ impl TtsProvider for ChatterboxRemoteProvider {
                             return Ok(());
                         }
 
-                        let chunk_samples = raw_pcm_samples.drain(..CHUNK_SIZE).collect::<Vec<f32>>();
+                        let chunk_samples =
+                            raw_pcm_samples.drain(..CHUNK_SIZE).collect::<Vec<f32>>();
                         total_samples_received += chunk_samples.len();
 
                         // Apply time-stretch if speed != 1.0
@@ -234,10 +274,13 @@ impl TtsProvider for ChatterboxRemoteProvider {
                             chunk_samples
                         };
 
-                        if event_tx.send(VoxEvent::TtsChunk {
-                            turn_id,
-                            samples: stretched_chunk,
-                        }).is_err() {
+                        if event_tx
+                            .send(VoxEvent::TtsChunk {
+                                turn_id,
+                                samples: stretched_chunk,
+                            })
+                            .is_err()
+                        {
                             log::warn!("[ChatterboxRemote] event_tx closed, stopping synthesis");
                             return Ok(());
                         }

@@ -42,17 +42,28 @@ async fn test_nli_state_resolution_and_edge_policies_rigorous() -> Result<()> {
 
     // 3. Execute Stage 3 Eval (runs real DeBERTa-v3 NLI inference)
     let evaluated_count = run_stage3_eval(&conn).await?;
-    assert_eq!(evaluated_count, 1, "Stage 3 must evaluate the embedded item");
+    assert_eq!(
+        evaluated_count, 1,
+        "Stage 3 must evaluate the embedded item"
+    );
 
     // 4. Execute Stage 4 Commit
     let committed_count = run_stage4_commit(&conn).await?;
     assert_eq!(committed_count, 1, "Stage 4 must commit the evaluated item");
 
     // 5. Assert that real DeBERTa NLI inference detected ENTAILMENT and kept both facts active (SUPPORTS edge)
-    let mut row = conn.query("SELECT status FROM memory_facts WHERE id = 'mem_identity_old'", ()).await?;
+    let mut row = conn
+        .query(
+            "SELECT status FROM memory_facts WHERE id = 'mem_identity_old'",
+            (),
+        )
+        .await?;
     if let Some(r) = row.next().await? {
         let status: String = r.get(0)?;
-        assert_eq!(status, "active", "Identity fact must remain active when NLI entailment produces SUPPORTS edge");
+        assert_eq!(
+            status, "active",
+            "Identity fact must remain active when NLI entailment produces SUPPORTS edge"
+        );
     }
 
     println!("[Integration Test Success] Layer 4 real ONNX NLI State Resolution test passed!");

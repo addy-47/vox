@@ -36,8 +36,7 @@ use clap::Parser;
 
 use vox_lib::services::audio::decode as audio_decode;
 
-const DEFAULT_EN_PROMPT: &str =
-    "Hello, this is a sample of my cloned voice. I hope you like it. \
+const DEFAULT_EN_PROMPT: &str = "Hello, this is a sample of my cloned voice. I hope you like it. \
      The quick brown fox jumps over the lazy dog.";
 
 // ─── CLI ───────────────────────────────────────────────────────────
@@ -104,15 +103,9 @@ fn main() -> anyhow::Result<()> {
 
     // Initialise logging
     if args.verbose {
-        env_logger::Builder::from_env(
-            env_logger::Env::default().default_filter_or("debug"),
-        )
-        .init();
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     } else {
-        env_logger::Builder::from_env(
-            env_logger::Env::default().default_filter_or("info"),
-        )
-        .init();
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     }
 
     // Initialise Vox paths (needed by vox_lib::utils::paths::model_dir)
@@ -141,7 +134,11 @@ fn main() -> anyhow::Result<()> {
     // Clamp max_duration to valid range
     let max_duration = args.max_duration.clamp(10.0, 60.0);
     if (max_duration - args.max_duration).abs() > 0.01 {
-        log::warn!("Clamped max-duration from {:.0}s to {:.0}s", args.max_duration, max_duration);
+        log::warn!(
+            "Clamped max-duration from {:.0}s to {:.0}s",
+            args.max_duration,
+            max_duration
+        );
     }
 
     // Ensure output directory exists
@@ -154,12 +151,7 @@ fn main() -> anyhow::Result<()> {
     let mut failures = 0;
 
     for (idx, (name, source_path)) in voice_entries.iter().enumerate() {
-        println!(
-            "\n[{}/{}] Processing voice: {}",
-            idx + 1,
-            total,
-            name
-        );
+        println!("\n[{}/{}] Processing voice: {}", idx + 1, total, name);
         println!("  Source: {}", source_path.display());
 
         match process_one_voice(
@@ -257,10 +249,12 @@ fn process_one_voice(
         decoded
     };
 
-
     // Truncate to max_duration (only if longer than max)
     let final_audio = if final_audio.duration_secs > max_duration {
-        println!("     Truncating from {:.1}s to {:.1}s", final_audio.duration_secs, max_duration);
+        println!(
+            "     Truncating from {:.1}s to {:.1}s",
+            final_audio.duration_secs, max_duration
+        );
         audio_decode::truncate_to(final_audio, max_duration)
     } else {
         final_audio
@@ -298,7 +292,11 @@ fn process_one_voice(
         // Engine drops here → ENGINE_INIT_MUTEX released
     }
 
-    println!("     Baked tensors: {} ({:.1}s)", baked_dir.display(), bake_start.elapsed().as_secs_f32());
+    println!(
+        "     Baked tensors: {} ({:.1}s)",
+        baked_dir.display(),
+        bake_start.elapsed().as_secs_f32()
+    );
 
     // ── Step 3: Synthesize English sample ───────────────────────
     println!("  ③ Synthesizing English TTS sample...");
@@ -359,10 +357,7 @@ fn parse_voice_args(args: &[String]) -> anyhow::Result<Vec<(String, PathBuf)>> {
 
     for arg in args {
         let eq_pos = arg.find('=').ok_or_else(|| {
-            anyhow::anyhow!(
-                "Invalid voice format: '{}'. Expected 'name=path'.",
-                arg
-            )
+            anyhow::anyhow!("Invalid voice format: '{}'. Expected 'name=path'.", arg)
         })?;
 
         let name = arg[..eq_pos].trim().to_string();
@@ -417,7 +412,7 @@ fn find_t3_model(dir: &PathBuf) -> PathBuf {
     let candidates = [
         dir.join("t3-q4_0.gguf"),
         dir.join("chatterbox-t3-mtl-q4_0.gguf"),
-        dir.join("t3-q4_0.gguf"),  // check again in base dir
+        dir.join("t3-q4_0.gguf"), // check again in base dir
     ];
     for c in &candidates {
         if c.exists() {
@@ -445,10 +440,12 @@ fn find_s3_model(dir: &PathBuf) -> PathBuf {
 /// Sanitise a voice name for use as a directory name.
 fn sanitise_name(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' {
-            c
-        } else {
-            '_'
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
         })
         .collect::<String>()
         .trim_matches('_')

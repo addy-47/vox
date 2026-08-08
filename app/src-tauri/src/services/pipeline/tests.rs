@@ -4,8 +4,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::services::pipeline::PipelineState;
     use crate::core::state::InteractionOwner;
+    use crate::services::pipeline::PipelineState;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;
 
@@ -121,8 +121,14 @@ mod tests {
         // Delayed/stale task from turn 1 arrives -> filtered out / dropped
         let stale_task_turn_1 = 1u32;
         let is_stale = stale_task_turn_1 < worker_turn_id;
-        assert!(is_stale, "Stale turn 1 task must be dropped when worker is on turn 2");
-        assert_eq!(worker_turn_id, 2, "Worker turn ID must remain on current turn");
+        assert!(
+            is_stale,
+            "Stale turn 1 task must be dropped when worker is on turn 2"
+        );
+        assert_eq!(
+            worker_turn_id, 2,
+            "Worker turn ID must remain on current turn"
+        );
     }
 
     #[test]

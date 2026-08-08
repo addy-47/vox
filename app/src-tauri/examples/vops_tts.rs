@@ -68,7 +68,10 @@ fn main() -> Result<()> {
 
     let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
     if !super_tts_path.exists() {
-        return Err(anyhow!("Supertonic 3 model path missing at {:?}", super_tts_path));
+        return Err(anyhow!(
+            "Supertonic 3 model path missing at {:?}",
+            super_tts_path
+        ));
     }
 
     println!("[vops-tts] Loading Supertonic 3 TTS Engine...");
@@ -101,7 +104,10 @@ fn main() -> Result<()> {
     }
 
     write_wav_file(&out_path, &accumulated_samples, 24000)?;
-    println!("[vops-tts] Successfully saved generated audio to {:?}", out_path);
+    println!(
+        "[vops-tts] Successfully saved generated audio to {:?}",
+        out_path
+    );
 
     Ok(())
 }

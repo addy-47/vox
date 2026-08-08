@@ -1,10 +1,10 @@
-use anyhow::Result;
-use turso::Connection;
+use super::batch_result::RelationEdge;
 use crate::core::constants::{
     collection_type, PM_QUEUE_STATUS_EVALUATED, PM_QUEUE_STATUS_PROCESSING_COMMIT,
     PM_QUEUE_STATUS_SUPERSEDED,
 };
-use super::batch_result::RelationEdge;
+use anyhow::Result;
+use turso::Connection;
 
 pub const STAGE4_BATCH_SIZE: usize = 32;
 
@@ -83,7 +83,10 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
     }
 
     let items_claimed = items.len();
-    let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
+    let session_id = items
+        .first()
+        .map(|i| i.session_id.clone())
+        .unwrap_or_default();
 
     // Pre-allocate UUID fact_ids for all items in the batch so intra-batch relations resolve cleanly
     let mut id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();

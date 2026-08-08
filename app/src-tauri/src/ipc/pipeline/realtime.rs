@@ -65,7 +65,10 @@ pub async fn start_realtime_session_internal(
                 let cached_model = cached["model"].as_str().unwrap_or("");
                 let cached_handle = cached["handle"].as_str().unwrap_or("");
 
-                if expires_at > now_ms && cached_model == gemini_config.model && !cached_handle.is_empty() {
+                if expires_at > now_ms
+                    && cached_model == gemini_config.model
+                    && !cached_handle.is_empty()
+                {
                     log::info!(
                         "[Realtime] Found valid session resumption token, using handle: {}",
                         if cached_handle.len() > 12 {
@@ -166,11 +169,20 @@ pub async fn start_realtime_session_internal(
     );
     let _ = engine
         .vad_tx
-        .send(crate::core::state::VadCommand::StartRealtime { tx: audio_tx, is_ptt });
+        .send(crate::core::state::VadCommand::StartRealtime {
+            tx: audio_tx,
+            is_ptt,
+        });
 
     // Update backend engagement state
-    state.pipeline.is_engaged.store(true, std::sync::atomic::Ordering::Relaxed);
-    state.pipeline.cancel_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+    state
+        .pipeline
+        .is_engaged
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    state
+        .pipeline
+        .cancel_flag
+        .store(false, std::sync::atomic::Ordering::Relaxed);
 
     *rt_guard = Some(rt_engine);
 
@@ -180,16 +192,19 @@ pub async fn start_realtime_session_internal(
     tokio::spawn(async move {
         const TIMEOUT_MS: u64 = 10 * 60 * 1000; // 10 minutes
         const WARN_1_MS: u64 = TIMEOUT_MS - 15_000; // 9m 45s (15s warning)
-        const WARN_2_MS: u64 = TIMEOUT_MS - 5_000;  // 9m 55s (5s warning)
+        const WARN_2_MS: u64 = TIMEOUT_MS - 5_000; // 9m 55s (5s warning)
 
         loop {
             // Check if still engaged in realtime mode
-            let is_engaged = state_clone.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed);
+            let is_engaged = state_clone
+                .pipeline
+                .is_engaged
+                .load(std::sync::atomic::Ordering::Relaxed);
             let is_realtime = {
                 let settings = state_clone.settings.read().unwrap();
                 settings.interaction.pipeline_mode == crate::core::settings::PipelineMode::Realtime
             };
-            
+
             if !is_engaged || !is_realtime {
                 break;
             }
@@ -209,8 +224,10 @@ pub async fn start_realtime_session_internal(
                 let elapsed = now.saturating_sub(last_activity);
 
                 if elapsed >= TIMEOUT_MS {
-                    log::warn!("[Realtime] S2S session idle for over 10 minutes. Triggering idle timeout.");
-                    
+                    log::warn!(
+                        "[Realtime] S2S session idle for over 10 minutes. Triggering idle timeout."
+                    );
+
                     // Stop the session internally
                     let mut rt_guard = state_clone.realtime_engine.lock().await;
                     if let Some(mut rt_engine) = rt_guard.take() {
@@ -219,7 +236,10 @@ pub async fn start_realtime_session_internal(
                     drop(rt_guard);
 
                     // Update backend engagement state
-                    state_clone.pipeline.is_engaged.store(false, std::sync::atomic::Ordering::Relaxed);
+                    state_clone
+                        .pipeline
+                        .is_engaged
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
 
                     // Tell VAD to stop routing chunks
                     if let Some(engine) = state_clone.engine.lock().await.as_ref() {
@@ -235,15 +255,28 @@ pub async fn start_realtime_session_internal(
                     }
 
                     // Emit event to frontend
-                    let _ = app_clone.emit_to("main", "realtime_session_ended", "idle_timeout".to_string());
+                    let _ = app_clone.emit_to(
+                        "main",
+                        "realtime_session_ended",
+                        "idle_timeout".to_string(),
+                    );
                     break;
                 } else if elapsed >= WARN_2_MS {
                     let remaining = 600 - (elapsed / 1000);
-                    let _ = app_clone.emit_to("main", "realtime_idle_warning", serde_json::json!({ "seconds_remaining": remaining }));
-                    tokio::time::sleep(std::time::Duration::from_millis(TIMEOUT_MS - elapsed)).await;
+                    let _ = app_clone.emit_to(
+                        "main",
+                        "realtime_idle_warning",
+                        serde_json::json!({ "seconds_remaining": remaining }),
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(TIMEOUT_MS - elapsed))
+                        .await;
                 } else if elapsed >= WARN_1_MS {
                     let remaining = 600 - (elapsed / 1000);
-                    let _ = app_clone.emit_to("main", "realtime_idle_warning", serde_json::json!({ "seconds_remaining": remaining }));
+                    let _ = app_clone.emit_to(
+                        "main",
+                        "realtime_idle_warning",
+                        serde_json::json!({ "seconds_remaining": remaining }),
+                    );
                     tokio::time::sleep(std::time::Duration::from_millis(WARN_2_MS - elapsed)).await;
                 } else {
                     let time_until_warning = WARN_1_MS - elapsed;
@@ -289,7 +322,7 @@ pub async fn get_realtime_session_cache() -> Result<RealtimeSessionCache, String
                 let provider = cached["provider"].as_str().unwrap_or("").to_string();
                 let model = cached["model"].as_str().unwrap_or("").to_string();
                 let expires_in_seconds = (expires_at as i64 - now_ms as i64) / 1000;
-                
+
                 return Ok(RealtimeSessionCache {
                     has_session: expires_in_seconds > 0,
                     provider,
@@ -299,7 +332,7 @@ pub async fn get_realtime_session_cache() -> Result<RealtimeSessionCache, String
             }
         }
     }
-    
+
     Ok(RealtimeSessionCache {
         has_session: false,
         provider: String::new(),
@@ -331,8 +364,14 @@ pub async fn stop_realtime_session(
     }
 
     // Update backend engagement state and owner
-    state.pipeline.is_engaged.store(false, std::sync::atomic::Ordering::Relaxed);
-    state.owner.store(crate::core::state::InteractionOwner::Tray as u32, std::sync::atomic::Ordering::Relaxed);
+    state
+        .pipeline
+        .is_engaged
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    state.owner.store(
+        crate::core::state::InteractionOwner::Tray as u32,
+        std::sync::atomic::Ordering::Relaxed,
+    );
     if let Some(engine) = state.engine.lock().await.as_ref() {
         let _ = engine
             .vad_tx

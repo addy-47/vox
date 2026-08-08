@@ -263,4 +263,3 @@ mod tests {
         assert!(monitoring.get_history().is_empty());
     }
 }
-

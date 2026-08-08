@@ -35,7 +35,9 @@ impl PipelineOrchestrator {
             let _ = app_handle.emit_to(target, "state_changed", new_state);
 
             // Notify Memory Worker of Pipeline Idle / Active state change
-            if let Some(app_state) = app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
+            if let Some(app_state) =
+                app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>()
+            {
                 let memory_tx = app_state.memory_tx.lock();
                 if let Some(ref tx) = *memory_tx {
                     let event = if new_state == crate::core::state::InteractionState::Idle {
@@ -145,13 +147,18 @@ impl PipelineOrchestrator {
             } else {
                 ("English", "Latin")
             };
-            let resolved_prompt = assistant_settings.modular_prompt
+            let resolved_prompt = assistant_settings
+                .modular_prompt
                 .replace("<lang>", lang)
                 .replace("<script>", script);
 
             let provider_kind = match &settings_snap.llm.provider {
-                crate::core::settings::LlmProviderConfig::Embedded => crate::services::llm::ProviderKind::Embedded,
-                crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } => crate::services::llm::ProviderKind::OpenAiCompat,
+                crate::core::settings::LlmProviderConfig::Embedded => {
+                    crate::services::llm::ProviderKind::Embedded
+                }
+                crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } => {
+                    crate::services::llm::ProviderKind::OpenAiCompat
+                }
             };
 
             let db_path = crate::utils::paths::db_path();
@@ -164,10 +171,15 @@ impl PipelineOrchestrator {
                 log::info!("[Pipeline] MemoryScope: ChitChat turn. Bypassing embedding generation and database RAG lookup.");
                 String::new()
             } else {
-                let query_embedding = rt.block_on(async {
-                    crate::services::memory::ensure_embedder_loaded(settings_snap.memory.context_retrieval_enabled).ok();
-                    crate::services::memory::generate_embedding(&text).unwrap_or(None)
-                }).unwrap_or_else(|| vec![0.0; 1024]);
+                let query_embedding = rt
+                    .block_on(async {
+                        crate::services::memory::ensure_embedder_loaded(
+                            settings_snap.memory.context_retrieval_enabled,
+                        )
+                        .ok();
+                        crate::services::memory::generate_embedding(&text).unwrap_or(None)
+                    })
+                    .unwrap_or_else(|| vec![0.0; 1024]);
 
                 rt.block_on(async {
                     if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
@@ -177,7 +189,9 @@ impl PipelineOrchestrator {
                             scope,
                             &settings_snap.memory,
                             settings_snap.llm.ctx_size as usize,
-                        ).await.unwrap_or_default()
+                        )
+                        .await
+                        .unwrap_or_default()
                     } else {
                         String::new()
                     }
@@ -190,17 +204,18 @@ impl PipelineOrchestrator {
             }
 
             let provider_ref: Option<Box<dyn crate::services::llm::LlmProvider>> = {
-                let is_tier_1a = provider_kind == crate::services::llm::ProviderKind::Embedded 
+                let is_tier_1a = provider_kind == crate::services::llm::ProviderKind::Embedded
                     && settings_snap.llm.ctx_size <= 4096;
-                
+
                 if settings_snap.memory.context_retrieval_enabled && !is_tier_1a {
                     match &settings_snap.llm.provider {
                         crate::core::settings::LlmProviderConfig::Embedded => {
-                            let provider = crate::services::llm::providers::embedded::EmbeddedProvider::new(
-                                &self.llm_path,
-                                settings_snap.llm.ctx_size,
-                                settings_snap.llm.threads,
-                            );
+                            let provider =
+                                crate::services::llm::providers::embedded::EmbeddedProvider::new(
+                                    &self.llm_path,
+                                    settings_snap.llm.ctx_size,
+                                    settings_snap.llm.threads,
+                                );
                             if let Ok(p) = provider {
                                 Some(Box::new(p) as Box<dyn crate::services::llm::LlmProvider>)
                             } else {
@@ -235,12 +250,15 @@ impl PipelineOrchestrator {
                     mgr.new_session(&final_prompt);
                 }
                 mgr.push_user_turn(text.clone());
-                let provider_dyn: Option<&dyn crate::services::llm::LlmProvider> = provider_ref.as_ref().map(|p| p.as_ref());
-                mgr.build_context(provider_kind, is_hi, provider_dyn)
+                let provider_dyn: Option<&dyn crate::services::llm::LlmProvider> =
+                    provider_ref.as_ref().map(|p| p.as_ref());
+                mgr.build_context(provider_kind, is_hi, provider_dyn, Some(&settings_snap.llm))
             };
 
             if !personal_memory.is_empty() {
-                if let Some(app_state) = _app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
+                if let Some(app_state) =
+                    _app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>()
+                {
                     let memory_tx = app_state.memory_tx.lock();
                     if let Some(ref tx) = *memory_tx {
                         let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::PersonalFactsReady {
@@ -252,7 +270,10 @@ impl PipelineOrchestrator {
             }
 
             if let Some(speech_text) = transition_speech {
-                log::info!("[Pipeline] MaintainingContext transition speech triggered: {:?}", speech_text);
+                log::info!(
+                    "[Pipeline] MaintainingContext transition speech triggered: {:?}",
+                    speech_text
+                );
                 self.update_interaction_state(
                     crate::core::state::InteractionState::MaintainingContext,
                     owner,
@@ -267,8 +288,16 @@ impl PipelineOrchestrator {
                 }
             }
 
+            let policy = crate::services::llm::GenerationPolicy::from_settings(&settings_snap.llm);
+            let request = policy.build_request(
+                crate::services::llm::GenerationPurpose::Conversation,
+                crate::services::llm::ConversationInput {
+                    messages: ctx.messages,
+                },
+            );
+
             let cmd = crate::services::llm::LlmCommand::Generate {
-                ctx,
+                request,
                 turn_id: new_turn,
                 cancel_flag: Arc::clone(&self.cancel_flag),
             };
