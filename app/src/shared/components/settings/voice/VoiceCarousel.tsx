@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Folder, Mic, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Folder, Mic, Trash2, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import {
   startBackendRecording,
   stopBackendRecording,
@@ -10,7 +10,7 @@ import {
   deleteVoice,
 } from "@/services/pipelineService";
 
-export function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean }) {
+export const VoiceBars = memo(function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean }) {
   const hash = Array.from(seed).reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const bars = Array.from({ length: 16 }, (_, i) => ((hash * (i + 1)) % 25) + 10);
 
@@ -52,9 +52,9 @@ export function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean
       })}
     </div>
   );
-}
+});
 
-export function VoiceCarousel({
+export const VoiceCarousel = memo(function VoiceCarousel({
   voices,
   selected,
   onChange,
@@ -71,9 +71,21 @@ export function VoiceCarousel({
   isAdding: boolean;
   setIsAdding: (val: boolean) => void;
 }) {
-  const index = voices.findIndex((v) => v.id === selected);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredVoices = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return voices;
+    return voices.filter((v) =>
+      v.name.toLowerCase().includes(q) || v.id.toLowerCase().includes(q)
+    );
+  }, [voices, searchQuery]);
+
+  const activeList = filteredVoices.length > 0 ? filteredVoices : voices;
+  const index = activeList.findIndex((v) => v.id === selected);
   const activeIndex = index === -1 ? 0 : index;
-  const currentVoice = voices[activeIndex];
+  const currentVoice = activeList[activeIndex];
 
   const [activeTab, setActiveTab] = useState<"upload" | "record">("upload");
   const [newVoiceName, setNewVoiceName] = useState("");
@@ -87,9 +99,9 @@ export function VoiceCarousel({
   const [recordingError, setRecordingError] = useState<string | null>(null);
 
   const cycle = (dir: number) => {
-    if (disabled || voices.length === 0) return;
-    const next = (activeIndex + dir + voices.length) % voices.length;
-    onChange(voices[next].id);
+    if (disabled || activeList.length === 0) return;
+    const next = (activeIndex + dir + activeList.length) % activeList.length;
+    onChange(activeList[next].id);
   };
 
   const handleSelectFile = async () => {
@@ -320,31 +332,100 @@ export function VoiceCarousel({
         disabled && "opacity-50 pointer-events-none"
       )}
     >
-      {currentVoice?.isCustom && (
-        <button
-          onClick={() => handleDeleteVoice(currentVoice.id)}
-          className="absolute top-0 right-0 p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-all duration-300 z-10"
-          title="Delete Custom Voice"
+      {/* Dynamic Animated Top Flat Underline Search Bar or Standard Title Header */}
+      <div className="relative w-full h-8 flex items-center justify-center mt-0.5 mb-2 shrink-0">
+        {/* Layer 1: Search Input (Smoothly reveals when isSearching = true) */}
+        <div
+          className={cn(
+            "absolute inset-0 flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 transition-all duration-200 ease-out",
+            isSearching
+              ? "opacity-100 translate-y-0 pointer-events-auto"
+              : "opacity-0 -translate-y-1 pointer-events-none"
+          )}
         >
-          <Trash2 size={15} />
-        </button>
-      )}
+          <Search size={13} className="text-[rgb(var(--accent))] shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Type voice name or locale..."
+            className="flex-1 bg-transparent border-none outline-none text-[11px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/35"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="text-[9px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] px-1 cursor-pointer"
+            >
+              Clear
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setIsSearching(false);
+              setSearchQuery("");
+            }}
+            className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
+            title="Close Search"
+          >
+            <X size={13} />
+          </button>
+        </div>
 
-      <div className="text-center w-full mt-1.5 mb-3 shrink-0">
-        <span className="text-[14px] font-black tracking-wide block text-[rgb(var(--foreground))]">
-          {currentVoice?.name || "No Voice"}
-        </span>
-        <span className="text-[9px] block leading-normal mt-0.5 font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/40">
-          {currentVoice?.isCustom ? "Custom Clone" : "System Preset"}
-        </span>
+        {/* Layer 2: Title Header & Search Trigger Icon (Fades out when searching) */}
+        <div
+          className={cn(
+            "absolute inset-0 flex items-center justify-center transition-all duration-200 ease-out",
+            isSearching
+              ? "opacity-0 translate-y-1 pointer-events-none"
+              : "opacity-100 translate-y-0 pointer-events-auto"
+          )}
+        >
+          {/* Search Expand Icon (Top Left Corner - Primary Accent Color) */}
+          <button
+            type="button"
+            onClick={() => setIsSearching(true)}
+            className="absolute left-0 top-1/2 -translate-y-1/2 p-1 text-[rgb(var(--accent))] hover:scale-110 active:scale-95 transition-all duration-150 cursor-pointer"
+            title="Search Voices"
+            aria-label="Search Voices"
+          >
+            <Search size={15} />
+          </button>
+
+          {/* Delete Custom Voice (Top Right Corner) */}
+          {currentVoice?.isCustom && (
+            <button
+              onClick={() => handleDeleteVoice(currentVoice.id)}
+              className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-rose-400 hover:text-rose-300 hover:scale-110 transition-all duration-150 z-10 cursor-pointer"
+              title="Delete Custom Voice"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+
+          <div className="flex flex-col items-center justify-center min-w-0 max-w-[70%]">
+            <span className="text-[13px] font-black tracking-wide text-[rgb(var(--foreground))] truncate leading-tight">
+              {currentVoice?.name || "No Voice"}
+            </span>
+            <span className="text-[9px] leading-tight font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/40 mt-0.5">
+              {currentVoice?.isCustom
+                ? "Custom Clone"
+                : activeList.length > 1
+                ? `${activeIndex + 1} of ${activeList.length} Voices`
+                : "System Preset"}
+            </span>
+          </div>
+        </div>
       </div>
 
+      {/* Voice Carousel Soundwave with Left / Right Navigation */}
       <div className="flex-1 flex items-center justify-between gap-4 w-full px-2">
         <button
           type="button"
           onClick={() => cycle(-1)}
-          disabled={disabled || voices.length <= 1}
-          className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-10"
+          disabled={disabled || activeList.length <= 1}
+          className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-10 cursor-pointer"
           aria-label="Previous Voice"
         >
           <ChevronLeft size={20} />
@@ -357,8 +438,8 @@ export function VoiceCarousel({
         <button
           type="button"
           onClick={() => cycle(1)}
-          disabled={disabled || voices.length <= 1}
-          className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-10"
+          disabled={disabled || activeList.length <= 1}
+          className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-10 cursor-pointer"
           aria-label="Next Voice"
         >
           <ChevronRight size={20} />
@@ -366,4 +447,4 @@ export function VoiceCarousel({
       </div>
     </div>
   );
-}
+});

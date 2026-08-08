@@ -69,7 +69,8 @@ export function useMonitoringMetrics() {
           ramTextRef.current.textContent = `${ramGb.toFixed(2)} GB`;
         }
         if (ramBarRef.current) {
-          const pct = Math.min(100, Math.max(0, (curRam / snap.total_ram_mb) * 100));
+          const totalRam = snap.total_ram_mb > 0 ? snap.total_ram_mb : 8192;
+          const pct = Math.min(100, Math.max(0, (curRam / totalRam) * 100));
           ramBarRef.current.style.width = `${pct}%`;
         }
       }

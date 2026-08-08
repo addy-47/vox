@@ -3,10 +3,11 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providers";
 import { checkLlmProviderHealth } from "@/services/settingsService";
 import {
-  Brain, Cloud, Network, Eye, EyeOff, Volume2,
-  RefreshCw, ChevronLeft, ChevronRight, AlertCircle
+  Brain, Cloud, Network, Volume2, Sparkles, Mic,
+  RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Clock
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { ApiKeyField } from "@/shared/ui";
 
 interface LlmConfigDeskProps {
   activeCategory: "STT" | "LLM" | "TTS";
@@ -20,7 +21,6 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-  const [showApiKey, setShowApiKey] = useState(false);
   const [url, setUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [prevLlmProvider, setPrevLlmProvider] = useState<any>(null);
@@ -202,10 +202,80 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             : "flex-1 min-h-[140px]"
       )}
     >
-      {/* STATE 1: Modular + LLM Local Core */}
+      {/* ─── SECTION 1: STT CATEGORY ─── */}
+      {isModular && activeCategory === "STT" && activePill === "local" && (
+        <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
+          <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
+            <div className="absolute w-20 h-20 rounded-full border border-[rgb(var(--accent))]/5 animate-ring-pulse-slow" />
+            <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/40 flex items-center justify-center relative z-10">
+              <Mic className="text-[rgb(var(--accent))]" size={18} />
+            </div>
+          </div>
+          <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+                Embedded STT Engine
+              </span>
+              <span className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase font-mono">
+                {draftSettings.asr?.model || "Whisper Medium"}
+              </span>
+            </div>
+            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+              On-device voice transcription powered by whisper.cpp with streaming INT8 quantization.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isModular && activeCategory === "STT" && activePill === "remote" && (
+        <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
+          <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
+            <div className="w-8 h-8 rounded-full bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center">
+              <Clock className="text-[rgb(var(--accent))]" size={18} />
+            </div>
+          </div>
+          <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+                Remote Whisper Server
+              </span>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-mono">
+                Coming Soon
+              </span>
+            </div>
+            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+              Remote WebSocket streaming STT server integration is scheduled for an upcoming release.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isModular && activeCategory === "STT" && activePill === "cloud" && (
+        <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
+          <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
+            <div className="w-8 h-8 rounded-full bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center">
+              <Cloud className="text-[rgb(var(--accent))]" size={18} />
+            </div>
+          </div>
+          <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+                Cloud Transcription
+              </span>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-mono">
+                Coming Soon
+              </span>
+            </div>
+            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+              Ultra-fast Groq & Deepgram cloud speech-to-text integration is in active development.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ─── SECTION 2: LLM CATEGORY ─── */}
       {isModular && activeCategory === "LLM" && activePill === "local" && (
         <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
-          {/* Left Side: Ambient Breathing Core */}
           <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
             <div className="absolute w-20 h-20 rounded-full border border-[rgb(var(--accent))]/5 animate-ring-pulse-slow" />
             <div className="absolute w-14 h-14 rounded-full border border-[rgb(var(--accent))]/15 animate-pulse-slow" />
@@ -215,7 +285,6 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             </div>
           </div>
 
-          {/* Right Side: Active Engine Status */}
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse" />
@@ -247,7 +316,6 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
         </div>
       )}
 
-      {/* STATE 2: Modular + LLM Remote Server */}
       {isModular && activeCategory === "LLM" && activePill === "remote" && (
         <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
           <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
@@ -278,27 +346,12 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
                 />
               </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
-                API Key (Optional)
-              </label>
-              <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5 flex items-center gap-1.5">
-                <input
-                  type={showApiKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => handleApiKeyChange(e.target.value)}
-                  placeholder="Bearer token..."
-                  className="flex-1 bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="text-[rgb(var(--foreground-muted))]/45 hover:text-[rgb(var(--accent))] transition-colors shrink-0 leading-none"
-                >
-                  {showApiKey ? <EyeOff size={13} /> : <Eye size={13} />}
-                </button>
-              </div>
-            </div>
+            <ApiKeyField
+              label="API Key (Optional)"
+              value={apiKey}
+              onChange={handleApiKeyChange}
+              placeholder="Bearer token..."
+            />
           </div>
 
           {modelsError && (
@@ -309,7 +362,6 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
         </div>
       )}
 
-      {/* STATE 3: Modular + LLM Cloud API */}
       {isModular && activeCategory === "LLM" && activePill === "cloud" && (
         <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
           <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
@@ -320,12 +372,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             {renderLlmStatusBadge()}
           </div>
 
-          <div
-            className={cn(
-              "grid gap-3 items-end flex-1 pb-1",
-              layoutMode === "small" ? "grid-cols-1 gap-3" : "grid-cols-[1.5fr_2fr]"
-            )}
-          >
+          <div className="grid grid-cols-2 gap-3 flex-1 min-h-0 items-center">
             <div className="space-y-1">
               <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
                 Cloud Provider
@@ -349,27 +396,12 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
-                API Key (Required)
-              </label>
-              <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5 flex items-center gap-1.5">
-                <input
-                  type={showApiKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => handleApiKeyChange(e.target.value)}
-                  placeholder={CLOUD_PROVIDERS[cloudIndex].keyPlaceholder}
-                  className="flex-1 bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="text-[rgb(var(--foreground-muted))]/45 hover:text-[rgb(var(--accent))] transition-colors shrink-0 leading-none"
-                >
-                  {showApiKey ? <EyeOff size={13} /> : <Eye size={13} />}
-                </button>
-              </div>
-            </div>
+            <ApiKeyField
+              label="API Key (Required)"
+              value={apiKey}
+              onChange={handleApiKeyChange}
+              placeholder={CLOUD_PROVIDERS[cloudIndex].keyPlaceholder}
+            />
           </div>
 
           {modelsError && (
@@ -380,7 +412,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
         </div>
       )}
 
-      {/* STATE 4: Modular + TTS Local */}
+      {/* ─── SECTION 3: TTS CATEGORY ─── */}
       {isModular && activeCategory === "TTS" && activePill === "local" && (
         <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
           <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
@@ -406,7 +438,6 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
         </div>
       )}
 
-      {/* STATE 5: Modular + TTS Remote */}
       {isModular && activeCategory === "TTS" && activePill === "remote" && (
         <div className="flex flex-col gap-2.5 h-full justify-center animate-fade-in py-1">
           <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
@@ -445,6 +476,31 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
                 />
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isModular && activeCategory === "TTS" && activePill === "cloud" && (
+        <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
+          <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
+            <div className="absolute w-20 h-20 rounded-full border border-[rgb(var(--accent))]/5 animate-ring-pulse-slow" />
+            <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/40 flex items-center justify-center relative z-10">
+              <Sparkles className="text-[rgb(var(--accent))]" size={18} />
+            </div>
+          </div>
+
+          <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+                Microsoft Edge Neural TTS
+              </span>
+              <span className="text-[10px] font-bold text-emerald-400 uppercase font-mono">
+                Zero Config
+              </span>
+            </div>
+            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+              Free, high-fidelity neural voices streamed directly over Edge WebSockets.
+            </p>
           </div>
         </div>
       )}

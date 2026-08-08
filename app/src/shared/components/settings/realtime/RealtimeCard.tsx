@@ -12,42 +12,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
-// ─── Animation styles ─────────────────────────────────────────────────────────
-
-const pipelineStyles = `
-@keyframes ribbon-flow {
-  0% { background-position: 0% 50%; }
-  100% { background-position: 200% 50%; }
-}
-@keyframes particle-drift {
-  0% { transform: translateX(0) translateY(0); opacity: 0; }
-  20% { opacity: 1; }
-  80% { opacity: 1; }
-  100% { transform: translateX(80px) translateY(var(--drift, 6px)); opacity: 0; }
-}
-@keyframes particle-return {
-  0% { transform: translateX(80px) translateY(0); opacity: 0; }
-  20% { opacity: 0.5; }
-  80% { opacity: 0.5; }
-  100% { transform: translateX(0) translateY(var(--drift, -6px)); opacity: 0; }
-}
-@keyframes node-glow {
-  0%, 100% { box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.08), inset 0 0 8px rgba(var(--accent-rgb), 0.03); }
-  50% { box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.25), inset 0 0 12px rgba(var(--accent-rgb), 0.06); }
-}
-.node-glow-active { animation: node-glow 3s ease-in-out infinite; }
-
-@keyframes waveform-pulse {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(0.7); }
-}
-
-@keyframes dynamic-eq {
-  0% { transform: scaleY(0.15); }
-  100% { transform: scaleY(1.0); }
-}
-`;
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // ─── Voice data ───────────────────────────────────────────────────────────────
@@ -91,8 +55,6 @@ const PipelineFlow = ({
 
   return (
     <div className="relative w-full overflow-hidden rounded-xl border border-[rgba(var(--accent),0.06)]">
-      <style>{pipelineStyles}</style>
-
       <div className="flex items-center justify-between relative z-10 px-3 py-2.5">
         {/* Stage 1: Capture */}
         <div className="flex flex-col items-center gap-1 shrink-0">

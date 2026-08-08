@@ -58,6 +58,7 @@ export const TitleBar: React.FC = () => {
     setIsTauri(hasTauri);
 
     if (hasTauri) {
+      let isMounted = true;
       let unlistenFocus: (() => void) | undefined;
       let unlistenBlur: (() => void) | undefined;
 
@@ -66,12 +67,23 @@ export const TitleBar: React.FC = () => {
           const { getCurrentWindow } = await import("@tauri-apps/api/window");
           const win = getCurrentWindow();
           
-          unlistenFocus = await win.listen("tauri://focus", () => {
-            setIsCloseHovered(false);
+          const fnFocus = await win.listen("tauri://focus", () => {
+            if (isMounted) setIsCloseHovered(false);
           });
-          unlistenBlur = await win.listen("tauri://blur", () => {
-            setIsCloseHovered(false);
+          if (isMounted) {
+            unlistenFocus = fnFocus;
+          } else {
+            fnFocus();
+          }
+
+          const fnBlur = await win.listen("tauri://blur", () => {
+            if (isMounted) setIsCloseHovered(false);
           });
+          if (isMounted) {
+            unlistenBlur = fnBlur;
+          } else {
+            fnBlur();
+          }
         } catch (err) {
           console.error("[TitleBar] Failed to setup listeners:", err);
         }
@@ -80,10 +92,13 @@ export const TitleBar: React.FC = () => {
       setupListeners();
       
       // Also use standard web focus event for redundancy
-      const handleWebFocus = () => setIsCloseHovered(false);
+      const handleWebFocus = () => {
+        if (isMounted) setIsCloseHovered(false);
+      };
       window.addEventListener('focus', handleWebFocus);
       
       return () => {
+        isMounted = false;
         if (unlistenFocus) unlistenFocus();
         if (unlistenBlur) unlistenBlur();
         window.removeEventListener('focus', handleWebFocus);

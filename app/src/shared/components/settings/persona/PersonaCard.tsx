@@ -1,4 +1,4 @@
-import { useState, memo } from "react";
+import { useState, memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { UserCircle } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -32,12 +32,26 @@ const MarkdownComponents = {
 };
 
 export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const modularPrompt = useSettingsStore((s) => s.draftSettings?.assistant.modular_prompt ?? "");
+  const realtimePrompt = useSettingsStore((s) => s.draftSettings?.assistant.realtime_prompt ?? "");
   const updateDraft = useSettingsStore((s) => s.updateDraft);
+
   const [activeTab, setActiveTab] = useState<"modular" | "realtime">("modular");
   const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
 
-  if (!draftSettings) return null;
+  const handleModularChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      updateDraft("assistant", "modular_prompt", e.target.value);
+    },
+    [updateDraft]
+  );
+
+  const handleRealtimeChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      updateDraft("assistant", "realtime_prompt", e.target.value);
+    },
+    [updateDraft]
+  );
 
   const isSmall = layoutMode === "small";
 
@@ -46,7 +60,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       layoutMode={layoutMode}
       elevation="card"
       className={cn(
-        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85",
+        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 transform-gpu",
         !isSmall && cn(
           "p-5",
           layoutMode === "full-min" ? "lg:w-[320px] xl:w-[380px] 2xl:w-[460px]" : "lg:w-[460px]"
@@ -84,8 +98,8 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
           <div className="space-y-2 flex-1 flex flex-col justify-between">
             {viewMode === "edit" ? (
               <textarea
-                value={draftSettings.assistant.modular_prompt}
-                onChange={(e) => updateDraft("assistant", "modular_prompt", e.target.value)}
+                value={modularPrompt}
+                onChange={handleModularChange}
                 rows={layoutMode === "full-max" ? 6 : isSmall ? 8 : 4}
                 className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.12)] rounded-xl px-3 py-2 text-[12px] text-[rgb(var(--foreground))]/80 font-mono leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.35)] transition-colors flex-1"
                 placeholder="Modular instruction prompt..."
@@ -98,7 +112,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                   layoutMode === "full-max" ? "h-[154px]" : isSmall ? "h-[194px]" : "h-[104px]"
                 )}
               >
-                <ReactMarkdown components={MarkdownComponents}>{draftSettings.assistant.modular_prompt}</ReactMarkdown>
+                <ReactMarkdown components={MarkdownComponents}>{modularPrompt}</ReactMarkdown>
               </div>
             )}
             <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold uppercase tracking-wide">
@@ -111,8 +125,8 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
           <div className="space-y-2 flex-1 flex flex-col justify-between">
             {viewMode === "edit" ? (
               <textarea
-                value={draftSettings.assistant.realtime_prompt}
-                onChange={(e) => updateDraft("assistant", "realtime_prompt", e.target.value)}
+                value={realtimePrompt}
+                onChange={handleRealtimeChange}
                 rows={layoutMode === "full-max" ? 6 : isSmall ? 8 : 4}
                 className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.12)] rounded-xl px-3 py-2 text-[12px] text-[rgb(var(--foreground))]/80 font-mono leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.35)] transition-colors flex-1"
                 placeholder="Realtime instruction prompt..."
@@ -125,7 +139,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                   layoutMode === "full-max" ? "h-[154px]" : isSmall ? "h-[194px]" : "h-[104px]"
                 )}
               >
-                <ReactMarkdown components={MarkdownComponents}>{draftSettings.assistant.realtime_prompt}</ReactMarkdown>
+                <ReactMarkdown components={MarkdownComponents}>{realtimePrompt}</ReactMarkdown>
               </div>
             )}
             <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold uppercase tracking-wide">

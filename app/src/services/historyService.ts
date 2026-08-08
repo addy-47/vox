@@ -51,3 +51,19 @@ export function getTurns(sessionId: number): Promise<TurnRow[]> {
 export function deleteSession(id: number): Promise<void> {
   return invoke("delete_session", { id });
 }
+
+export function formatDateShort(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export function formatDateTime(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

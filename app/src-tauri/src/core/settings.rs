@@ -241,6 +241,14 @@ pub fn get_tts_metadata() -> Vec<ModelMetadata> {
             parameters: "340M (Remote)".to_string(),
             tradeoffs: "Real-time latency with zero local memory footprint. Requires GPU server.".to_string(),
         },
+        ModelMetadata {
+            id: "edge_tts".to_string(),
+            name: "Microsoft Edge Neural TTS".to_string(),
+            description: "Zero-latency cloud synthesis over Edge WebSockets with 400+ neural voices.".to_string(),
+            ram_usage: " 0 MB (Cloud)".to_string(),
+            parameters: "Cloud (Neural)".to_string(),
+            tradeoffs: "Ultra-crisp neural prosody with zero local CPU load. Requires active internet.".to_string(),
+        },
     ]
 }
 
