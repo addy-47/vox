@@ -1,0 +1,141 @@
+import { memo } from "react";
+import { useSettingsStore } from "@/store/settingsStore";
+import { SubModelCard } from "../SubModelCard";
+import { Loader2 } from "lucide-react";
+import { cn } from "@/shared/lib/utils";
+
+interface TtsModelWorkspaceProps {
+  layoutMode?: "full-max" | "full-min" | "small";
+  confirmDeleteId: string | null;
+  setConfirmDeleteId: (id: string | null) => void;
+  modelPresence: Record<string, boolean>;
+  downloadStatuses: Record<string, any>;
+  startDownload: (id: string) => void;
+  deleteModel: (id: string) => void;
+  isRemoteTtsHealthy: boolean | null;
+  checkingTtsHealth: boolean;
+}
+
+export const TtsModelWorkspace = memo(
+  ({
+    layoutMode,
+    confirmDeleteId,
+    setConfirmDeleteId,
+    modelPresence,
+    downloadStatuses,
+    startDownload,
+    deleteModel,
+    isRemoteTtsHealthy,
+    checkingTtsHealth,
+  }: TtsModelWorkspaceProps) => {
+    const draftSettings = useSettingsStore((s) => s.draftSettings);
+    const updateDraft = useSettingsStore((s) => s.updateDraft);
+    const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+
+    if (!draftSettings || !modelCatalog) return null;
+
+    const isRemote = draftSettings.tts.provider?.kind === "chatterbox_remote";
+    const isCloud = draftSettings.tts.provider?.kind === "edge_tts";
+
+    // Strictly partition models according to the active provider tier (Embedded, Remote, or Cloud)
+    const filteredModels = (modelCatalog.tts || []).filter((model) => {
+      if (isCloud) {
+        return model.id === "edge_tts";
+      }
+      if (isRemote) {
+        return model.id === "chatterbox_remote";
+      }
+      // Embedded / Local Tier
+      return model.id === "supertonic_tts" || model.id === "chatterbox_tts";
+    });
+
+    return (
+      <div className="space-y-3">
+        <div
+          className={cn(
+            "grid gap-2.5",
+            layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
+          )}
+        >
+          {filteredModels.map((model) => {
+            const isSelected =
+              (model.id === "edge_tts" && draftSettings.tts.provider?.kind === "edge_tts") ||
+              (model.id === "supertonic_tts" && draftSettings.tts.provider?.kind === "supertonic") ||
+              (model.id === "chatterbox_tts" && draftSettings.tts.provider?.kind === "chatterbox") ||
+              (model.id === "chatterbox_remote" && draftSettings.tts.provider?.kind === "chatterbox_remote");
+
+            const isDownloaded =
+              model.id === "edge_tts" || model.id === "chatterbox_remote"
+                ? true
+                : modelPresence[model.id];
+            const status = downloadStatuses[model.id];
+
+            return (
+              <div key={model.id} className="relative">
+                <SubModelCard
+                  id={model.id}
+                  name={model.name}
+                  description={model.description}
+                  parameters={model.parameters}
+                  ramUsage={model.ram_usage}
+                  tradeoffs={model.tradeoffs}
+                  isDownloaded={isDownloaded}
+                  isActive={isSelected}
+                  isRequired={false}
+                  layoutMode={layoutMode}
+                  onSelect={() => {
+                    if (model.id === "edge_tts") {
+                      updateDraft("tts", "provider", { kind: "edge_tts", voice: "en-US-AriaNeural" });
+                    } else if (model.id === "supertonic_tts") {
+                      updateDraft("tts", "provider", { kind: "supertonic" });
+                    } else if (model.id === "chatterbox_tts") {
+                      updateDraft("tts", "provider", {
+                        kind: "chatterbox",
+                        language: "en",
+                        quality_steps: 8,
+                        speed: 1.0,
+                      });
+                    } else if (model.id === "chatterbox_remote") {
+                      updateDraft("tts", "provider", {
+                        kind: "chatterbox_remote",
+                        endpoint:
+                          draftSettings.tts.provider?.kind === "chatterbox_remote"
+                            ? draftSettings.tts.provider.endpoint || "http://127.0.0.1:7860"
+                            : "http://127.0.0.1:7860",
+                        language: "en",
+                        quality_steps: 8,
+                        speed: 1.0,
+                        remote_path:
+                          draftSettings.tts.provider?.kind === "chatterbox_remote"
+                            ? draftSettings.tts.provider.remote_path || "~/.vox"
+                            : "~/.vox",
+                      });
+                    }
+                  }}
+                  confirmDeleteId={confirmDeleteId}
+                  setConfirmDeleteId={setConfirmDeleteId}
+                  downloadStatus={status}
+                  startDownload={() => startDownload(model.id)}
+                  deleteModel={() => deleteModel(model.id)}
+                />
+                {model.id === "chatterbox_remote" && isSelected && (
+                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 select-none pointer-events-none">
+                    {checkingTtsHealth ? (
+                      <Loader2 size={10} className="animate-spin text-[rgb(var(--accent))]" />
+                    ) : isRemoteTtsHealthy === true ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
+                    ) : isRemoteTtsHealthy === false ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.7)] animate-pulse" />
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+);
+
+TtsModelWorkspace.displayName = "TtsModelWorkspace";

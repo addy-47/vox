@@ -8,10 +8,7 @@ import {
 import {
   downloadOptionalModel,
   deleteModel,
-  checkForModelUpdates,
   checkModelExists,
-  fetchManifest,
-  type VoxManifest,
 } from "@/services/modelService";
 import {
   checkTtsProviderHealth,
@@ -19,48 +16,18 @@ import {
   listLlmModels,
 } from "@/services/settingsService";
 import { listen } from "@tauri-apps/api/event";
-import { 
-  Database,
-  Sparkles, Check, ArrowLeft,
-  RefreshCw, Info, AlertCircle, Network,
-  Loader2,
-  Globe, AlertTriangle
-} from "lucide-react";
+import { Database } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
 
-import { VoiceCarousel } from "../voice/VoiceCarousel";
-import { SubModelCard } from "../SubModelCard";
 import { ModelsTopologyMap } from "./ModelsTopologyMap";
 import { VadWorkspace } from "./VadWorkspace";
 import { AsrWorkspace } from "./AsrWorkspace";
 import { AuxiliaryWorkspace } from "./AuxiliaryWorkspace";
-
-const pulseStyles = `
-@keyframes premium-pulse-red {
-  0%, 100% { border-color: rgba(239, 68, 68, 0.25); box-shadow: 0 0 4px rgba(239, 68, 68, 0.15); }
-  50% { border-color: rgba(239, 68, 68, 0.75); box-shadow: 0 0 12px rgba(239, 68, 68, 0.4); }
-}
-@keyframes premium-pulse-purple {
-  0%, 100% { border-color: rgba(168, 85, 247, 0.25); box-shadow: 0 0 4px rgba(168, 85, 247, 0.15); }
-  50% { border-color: rgba(168, 85, 247, 0.75); box-shadow: 0 0 12px rgba(168, 85, 247, 0.4); }
-}
-@keyframes dynamic-eq {
-  0% { transform: scaleY(0.15); }
-  100% { transform: scaleY(1.0); }
-}
-.pulse-missing {
-  animation: premium-pulse-red 2s infinite ease-in-out;
-  border-width: 1px !important;
-}
-.pulse-update {
-  animation: premium-pulse-purple 2s infinite ease-in-out;
-  border-width: 1px !important;
-}
-.tooltip-container:hover .tooltip-content {
-  display: block !important;
-}
-`;
+import { RemoteServerSetup } from "./RemoteServerSetup";
+import { TtsVoiceManager, type CustomVoice } from "./TtsVoiceManager";
+import { TtsModelWorkspace } from "./TtsModelWorkspace";
+import { LlmCatalogView } from "./LlmCatalogView";
 
 interface ModelStatus {
   step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
@@ -79,41 +46,15 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+
   const [downloadStatuses, setDownloadStatuses] = useState<Record<string, ModelStatus>>({});
   const [modelPresence, setModelPresence] = useState<Record<string, boolean>>({});
   const [activePipelineTab, setActivePipelineTab] = useState<"vad" | "asr" | "llm" | "tts" | "auxiliary">("llm");
   const [activeCategoryTab, setActiveCategoryTab] = useState<"model" | "settings">("model");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [_outdatedModels, setOutdatedModels] = useState<string[]>([]);
-  const [manifest, setManifest] = useState<VoxManifest | null>(null);
-
-  interface CustomVoice {
-    id: string;
-    name: string;
-    source_kind: string;
-    has_preview: boolean;
-    created_at: number;
-  }
 
   const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
   const [chatterboxIsAdding, setChatterboxIsAdding] = useState(false);
-
-  const loadCustomVoices = useCallback(async () => {
-    try {
-      const list = await listVoices();
-      setCustomVoices(list);
-    } catch (e) {
-      console.error("Failed to list voices", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activePipelineTab === "tts") {
-      loadCustomVoices();
-    }
-  }, [activePipelineTab, loadCustomVoices]);
-
-  // Chatterbox Remote setup & health states
   const [isRemoteTtsHealthy, setIsRemoteTtsHealthy] = useState<boolean | null>(null);
   const [checkingTtsHealth, setCheckingTtsHealth] = useState(false);
   const [sshConnectionString, setSshConnectionString] = useState(() => localStorage.getItem("vox_ssh_conn") || "root@localhost");
@@ -124,6 +65,77 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [edgeTtsVoices, setEdgeTtsVoices] = useState<Array<{ name: string; short_name: string; gender: string; locale: string; friendly_name: string }>>([]);
   const [edgeTtsError, setEdgeTtsError] = useState<string | null>(null);
   const [loadingEdgeVoices, setLoadingEdgeVoices] = useState<boolean>(false);
+
+  // LLM Remote state
+  const [remoteModels, setRemoteModels] = useState<LlmModelInfo[]>([]);
+  const [loadingRemoteModels, setLoadingRemoteModels] = useState(false);
+  const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
+  const [probingMap, setProbingMap] = useState<Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>>({});
+  const [customModelId, setCustomModelId] = useState("");
+  const [customModelStatus, setCustomModelStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
+
+  // Base layout decisions on committed and draft settings
+  const savedProvider = settings?.llm?.provider;
+  const isRemoteLlm = draftSettings?.llm?.provider?.kind === "open_ai_compat" || savedProvider?.kind === "open_ai_compat";
+  const provider = draftSettings?.llm?.provider || savedProvider;
+
+  // 1. Bidirectional Pipeline Tab Synchronization with InteractionCard
+  useEffect(() => {
+    const handleSync = (e: Event) => {
+      const tab = (e as CustomEvent).detail;
+      if (tab === "stt") {
+        setActivePipelineTab("asr");
+      } else if (tab === "llm" || tab === "tts") {
+        setActivePipelineTab(tab);
+      }
+    };
+    window.addEventListener("sync_pipeline_tab", handleSync);
+    return () => window.removeEventListener("sync_pipeline_tab", handleSync);
+  }, []);
+
+  useEffect(() => {
+    let cat = "";
+    if (activePipelineTab === "asr") cat = "STT";
+    else if (activePipelineTab === "llm") cat = "LLM";
+    else if (activePipelineTab === "tts") cat = "TTS";
+    if (cat) {
+      const event = new CustomEvent("sync_interaction_category", { detail: cat });
+      window.dispatchEvent(event);
+    }
+  }, [activePipelineTab]);
+
+  // 2. Check model files presence
+  const refreshPresence = useCallback(async () => {
+    try {
+      const presence: Record<string, boolean> = {};
+      const allModels = [
+        ...(modelCatalog?.asr || []),
+        ...(modelCatalog?.llm || []),
+        ...(modelCatalog?.tts || []),
+      ];
+
+      for (const model of allModels) {
+        presence[model.id] = await checkModelExists(model.id);
+      }
+      setModelPresence(presence);
+    } catch (e) {
+      console.error("Failed to fetch models presence:", e);
+    }
+  }, [modelCatalog]);
+
+  useEffect(() => {
+    refreshPresence();
+  }, [refreshPresence]);
+
+  // 3. Custom Voices & Edge TTS
+  const loadCustomVoices = useCallback(async () => {
+    try {
+      const list = await listVoices();
+      setCustomVoices(list);
+    } catch (e) {
+      console.error("Failed to list voices", e);
+    }
+  }, []);
 
   const loadEdgeVoices = useCallback(async () => {
     setLoadingEdgeVoices(true);
@@ -140,11 +152,18 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   }, []);
 
   useEffect(() => {
+    if (activePipelineTab === "tts") {
+      loadCustomVoices();
+    }
+  }, [activePipelineTab, loadCustomVoices]);
+
+  useEffect(() => {
     if (draftSettings?.tts?.provider?.kind === "edge_tts" && edgeTtsVoices.length === 0 && !loadingEdgeVoices) {
       loadEdgeVoices();
     }
   }, [draftSettings?.tts?.provider?.kind, edgeTtsVoices.length, loadingEdgeVoices, loadEdgeVoices]);
 
+  // 4. Chatterbox Remote Health Polling
   useEffect(() => {
     if (draftSettings?.tts?.provider?.kind !== "chatterbox_remote") {
       setIsRemoteTtsHealthy(null);
@@ -173,60 +192,112 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     const unlistenPromise = listen<any>("remote_setup_status", (event) => {
       setSetupStatus(event.payload);
       if (event.payload?.step === "complete" && draftSettings?.tts?.provider) {
-        checkTtsProviderHealth(draftSettings.tts.provider).then(healthy => setIsRemoteTtsHealthy(healthy));
+        checkTtsProviderHealth(draftSettings.tts.provider).then((healthy) => setIsRemoteTtsHealthy(healthy));
       }
     });
     return () => {
-      unlistenPromise.then(fn => fn());
+      unlistenPromise.then((fn) => fn());
     };
   }, [draftSettings?.tts?.provider]);
 
   useEffect(() => {
     localStorage.setItem("vox_ssh_conn", sshConnectionString);
   }, [sshConnectionString]);
-
   useEffect(() => {
     localStorage.setItem("vox_ssh_port", sshPort);
   }, [sshPort]);
-
   useEffect(() => {
     localStorage.setItem("vox_ssh_key", sshIdentityKey);
   }, [sshIdentityKey]);
 
-  useEffect(() => {
-    const handleSync = (e: Event) => {
-      const tab = (e as CustomEvent).detail;
-      if (tab === "stt") {
-        setActivePipelineTab("asr");
-      } else if (tab === "llm" || tab === "tts") {
-        setActivePipelineTab(tab);
-      }
-    };
-    window.addEventListener("sync_pipeline_tab", handleSync);
-    return () => window.removeEventListener("sync_pipeline_tab", handleSync);
-  }, []);
+  // 5. Remote LLM Fetching & Probing
+  const fetchRemoteModels = useCallback(async () => {
+    if (!provider || provider.kind !== "open_ai_compat") return;
+    setLoadingRemoteModels(true);
+    setRemoteModelsError(null);
+    try {
+      const list = await listLlmModels(provider);
+      setRemoteModels(list);
+    } catch (err: any) {
+      console.error("Failed to list remote models:", err);
+      setRemoteModelsError(String(err));
+    } finally {
+      setLoadingRemoteModels(false);
+    }
+  }, [provider]);
 
   useEffect(() => {
-    let cat = "";
-    if (activePipelineTab === "asr") cat = "STT";
-    else if (activePipelineTab === "llm") cat = "LLM";
-    else if (activePipelineTab === "tts") cat = "TTS";
-    if (cat) {
-      const event = new CustomEvent("sync_interaction_category", { detail: cat });
-      window.dispatchEvent(event);
+    if (activePipelineTab === "llm" && isRemoteLlm) {
+      fetchRemoteModels();
     }
-  }, [activePipelineTab]);
+  }, [activePipelineTab, isRemoteLlm, fetchRemoteModels]);
+
+  const handleProbeCapabilities = useCallback(
+    async (modelId?: string) => {
+      if (!provider) return;
+      const targetId = modelId || (provider.kind === "open_ai_compat" ? provider.model : "embedded");
+      if (!targetId) return;
+
+      setProbingMap((prev) => ({
+        ...prev,
+        [targetId]: { status: "testing" },
+      }));
+
+      try {
+        const caps = await probeModelCapabilities(provider, targetId);
+        setProbingMap((prev) => ({
+          ...prev,
+          [targetId]: { status: "success", capabilities: caps },
+        }));
+        setRemoteModels((prev) =>
+          prev.map((m) => (m.id === targetId ? { ...m, capabilities: caps } : m))
+        );
+      } catch (err) {
+        console.error("[CapabilityProbe] Failed to probe model:", err);
+        setProbingMap((prev) => ({
+          ...prev,
+          [targetId]: { status: "error", error: String(err) },
+        }));
+      }
+    },
+    [provider]
+  );
+
+  const handleValidateCustomModel = async () => {
+    if (!customModelId.trim() || !provider) return;
+    setCustomModelStatus("checking");
+    try {
+      const caps = await probeModelCapabilities(provider, customModelId.trim());
+      updateDraft("llm", "provider", {
+        ...provider,
+        model: customModelId.trim(),
+      });
+      setProbingMap((prev) => ({
+        ...prev,
+        [customModelId.trim()]: { status: "success", capabilities: caps },
+      }));
+      setCustomModelStatus("valid");
+    } catch (_) {
+      updateDraft("llm", "provider", {
+        ...provider,
+        model: customModelId.trim(),
+      });
+      setCustomModelStatus("invalid");
+    }
+  };
 
   const triggerRemoteSetup = async () => {
     if (!draftSettings?.tts?.provider) return;
     setSetupStatus({ progress: 10, step: "initiating", log_line: "Starting connection..." });
     try {
-      const endpoint = draftSettings.tts.provider.kind === "chatterbox_remote" 
-        ? draftSettings.tts.provider.endpoint 
-        : "http://127.0.0.1:7860";
-      const remotePath = draftSettings.tts.provider.kind === "chatterbox_remote"
-        ? draftSettings.tts.provider.remote_path
-        : "~/.vox";
+      const endpoint =
+        draftSettings.tts.provider.kind === "chatterbox_remote"
+          ? draftSettings.tts.provider.endpoint
+          : "http://127.0.0.1:7860";
+      const remotePath =
+        draftSettings.tts.provider.kind === "chatterbox_remote"
+          ? draftSettings.tts.provider.remote_path
+          : "~/.vox";
 
       let srvPort = 7860;
       try {
@@ -238,375 +309,89 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           srvPort = parseInt(parts[parts.length - 1]) || 7860;
         }
       }
-      
+
       await setupRemoteServer({
         connectionString: sshConnectionString,
         sshPort: sshPort ? parseInt(sshPort) : null,
         identityKeyPath: sshIdentityKey || null,
         remotePath: remotePath || "~/.vox",
-        serverPort: srvPort
+        serverPort: srvPort,
       });
     } catch (err) {
       setSetupStatus({ progress: 0, step: "failed", log_line: `Error: ${err}`, error: String(err) });
     }
   };
 
-  // Remote LLM models catalog live state
-  const [remoteModels, setRemoteModels] = useState<LlmModelInfo[]>([]);
-  const [loadingRemoteModels, setLoadingRemoteModels] = useState(false);
-  const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
-  const [probingMap, setProbingMap] = useState<Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>>({});
-
-  // Fix: Base layout decisions on committed settings to prevent uncommitted leaks
-  const savedProvider = settings?.llm?.provider;
-  const isRemoteLlm = savedProvider?.kind === "open_ai_compat";
-  const provider = (draftSettings?.llm?.provider?.kind === savedProvider?.kind)
-    ? draftSettings?.llm?.provider
-    : savedProvider;
-
-  const handleProbeCapabilities = useCallback(async (modelId?: string) => {
-    if (!provider) return;
-    const targetId = modelId || (provider.kind === "open_ai_compat" ? provider.model : "embedded");
-    if (!targetId) return;
-
-    setProbingMap(prev => ({
-      ...prev,
-      [targetId]: { status: 'testing' }
-    }));
-
+  const startDownload = async (modelId: string) => {
     try {
-      const caps = await probeModelCapabilities(provider, targetId);
-
-      setProbingMap(prev => ({
+      setDownloadStatuses((prev) => ({
         ...prev,
-        [targetId]: { status: 'success', capabilities: caps }
+        [modelId]: { step: "downloading", progress: 0, bytesDownloaded: 0, totalBytes: 100 },
       }));
-
-      setRemoteModels(prev => prev.map(m => m.id === targetId ? { ...m, capabilities: caps } : m));
-    } catch (err) {
-      console.error("[CapabilityProbe] Failed to probe model:", err);
-      setProbingMap(prev => ({
-        ...prev,
-        [targetId]: { status: 'error', error: String(err) }
-      }));
-    }
-  }, [provider]);
-
-
-
-  const [customModelId, setCustomModelId] = useState("");
-  const [customModelStatus, setCustomModelStatus] = useState<'idle' | 'valid' | 'invalid' | 'checking'>('idle');
-
-  const getFilteredModels = useCallback(() => {
-    if (!provider || !provider.provider_name) return remoteModels;
-    const name = provider.provider_name.toLowerCase();
-    
-    let filtered: LlmModelInfo[] = [];
-    if (remoteModels && remoteModels.length > 0) {
-      if (name.includes("openai")) {
-        filtered = remoteModels.filter(m => 
-          m.id.toLowerCase().includes("gpt") && 
-          !m.id.toLowerCase().includes("instruct") && 
-          !m.id.toLowerCase().includes("embedding") && 
-          !m.id.toLowerCase().includes("audio")
-        );
-      } else if (name.includes("gemini") || name.includes("google")) {
-        filtered = remoteModels.filter(m => 
-          m.id.toLowerCase().includes("gemini") && 
-          !m.id.toLowerCase().includes("embedding")
-        );
-      } else if (name.includes("anthropic")) {
-        filtered = remoteModels.filter(m => 
-          m.id.toLowerCase().includes("claude")
-        );
-      } else if (name.includes("nvidia")) {
-        filtered = remoteModels.filter(m => 
-          !m.id.toLowerCase().includes("embedding") && 
-          !m.id.toLowerCase().includes("rerank") &&
-          !m.id.toLowerCase().includes("clip") &&
-          !m.id.toLowerCase().includes("guard")
-        );
-      } else if (name.includes("groq")) {
-        filtered = remoteModels.filter(m => 
-          (m.id.toLowerCase().includes("llama") || m.id.toLowerCase().includes("mixtral") || m.id.toLowerCase().includes("gemma")) && 
-          !m.id.toLowerCase().includes("whisper")
-        );
-      } else {
-        filtered = [...remoteModels];
-      }
-
-      // Sort: newer versions first (e.g. 2.5 > 2.0 > 1.5)
-      filtered.sort((a, b) => {
-        const aId = a.id.toLowerCase();
-        const bId = b.id.toLowerCase();
-        
-        // Put experimental or preview models at the bottom
-        const aExp = aId.includes("exp") || aId.includes("preview");
-        const bExp = bId.includes("exp") || bId.includes("preview");
-        if (aExp && !bExp) return 1;
-        if (!aExp && bExp) return -1;
-
-        // Compare numbers if present
-        const aNum = parseFloat(aId.match(/\d+(\.\d+)?/)?.[0] || "0");
-        const bNum = parseFloat(bId.match(/\d+(\.\d+)?/)?.[0] || "0");
-        if (bNum !== aNum) {
-          return bNum - aNum; // Higher version number first
-        }
-        return aId.localeCompare(bId);
-      });
-
-      // Strip models/ prefix from names
-      return filtered.map(m => ({
-        ...m,
-        name: m.name.replace(/^models\//, "")
-      })).slice(0, 4);
-    }
-    return [];
-  }, [provider?.provider_name, remoteModels]);
-
-
-
-  useEffect(() => {
-    if (provider?.model) {
-      const filtered = getFilteredModels();
-      const isFiltered = filtered.some(m => m.id === provider.model);
-      if (!isFiltered) {
-        setCustomModelId(provider.model);
-      } else {
-        setCustomModelId("");
-      }
-    } else {
-      setCustomModelId("");
-    }
-    setCustomModelStatus('idle');
-  }, [provider?.base_url, provider?.provider_name, provider?.model, remoteModels, getFilteredModels]);
-
-  const handleValidateCustomModel = useCallback(() => {
-    if (!customModelId.trim() || !provider) return;
-    setCustomModelStatus('checking');
-    const modelToUse = customModelId.trim();
-    
-    const exists = remoteModels.some(m => m.id.toLowerCase() === modelToUse.toLowerCase());
-    if (exists) {
-      setCustomModelStatus('valid');
-      updateDraft("llm", "provider", {
-        ...provider,
-        model: modelToUse
-      });
-    } else {
-      if (remoteModels.length > 0) {
-        setCustomModelStatus('invalid');
-        updateDraft("llm", "provider", {
-          ...provider,
-          model: modelToUse
-        });
-      } else {
-        setCustomModelStatus('valid');
-        updateDraft("llm", "provider", {
-          ...provider,
-          model: modelToUse
-        });
-      }
-    }
-  }, [customModelId, provider, remoteModels, updateDraft]);
-
-  useEffect(() => {
-    if (activePipelineTab === "llm" && activeCategoryTab === "model" && isRemoteLlm && provider) {
-      const fetchRemoteModels = async () => {
-        setLoadingRemoteModels(true);
-        setRemoteModelsError(null);
-        try {
-          const list = await listLlmModels(provider);
-          setRemoteModels(list);
-        } catch (err) {
-          console.error(err);
-          setRemoteModelsError("Failed to fetch remote models list");
-        } finally {
-          setLoadingRemoteModels(false);
-        }
-      };
-      fetchRemoteModels();
-    }
-  }, [activePipelineTab, activeCategoryTab, isRemoteLlm, provider?.base_url, provider?.api_key, provider?.provider_name]);
-
-  const getGroupIdForFile = useCallback((fileId: string): string => {
-    if (!manifest) {
-      if (fileId.startsWith("vad")) return "ten_vad";
-      if (fileId.startsWith("translit")) return "vox_translit_rnn";
-      if (fileId.startsWith("stt_nemotron")) return "nvidia_nemotron";
-      if (fileId.startsWith("stt_")) return "qwen3_asr";
-      if (fileId.startsWith("tts_supertonic")) return "supertonic_tts";
-      if (fileId.startsWith("tts_chatterbox")) return "chatterbox_tts";
-      return fileId;
-    }
-    for (const group of manifest.model_groups) {
-      if (group.id === fileId || group.files.some(f => f.id === fileId)) {
-        return group.id;
-      }
-    }
-    return fileId;
-  }, [manifest]);
-
-  const isGroupRequired = useCallback((groupId: string): boolean => {
-    if (!manifest) return groupId === "ten_vad" || groupId === "vox_translit_rnn" || groupId === "qwen3_asr" || groupId === "nvidia_nemotron";
-    const group = manifest.model_groups.find(g => g.id === groupId);
-    return group ? group.files.some(f => f.required) : false;
-  }, [manifest]);
-
-
-
-  const checkOutdated = useCallback(async () => {
-    try {
-      const res = await checkForModelUpdates();
-      if (res && res.update_available) {
-        setOutdatedModels(res.outdated_models);
-      } else {
-        setOutdatedModels([]);
-      }
+      await downloadOptionalModel(modelId);
+      refreshPresence();
     } catch (e) {
-      console.warn("Failed to check outdated models:", e);
+      console.error("Failed to start download:", e);
     }
-  }, []);
-
-  const checkPresence = useCallback(async () => {
-    if (!modelCatalog || !draftSettings) return;
-    const presence: Record<string, boolean> = {};
-
-    checkOutdated();
-
-    const groups = manifest?.model_groups || [];
-    const checkIds = groups.length > 0 
-      ? groups.map(g => g.id)
-      : [
-          "ten_vad",
-          "vox_translit_rnn",
-          "qwen3_asr",
-          "nvidia_nemotron",
-          "gemma_4_reasoning",
-          "llama_3_2_reasoning",
-          "gemma_4_uncensored",
-          "supertonic_tts",
-          "chatterbox_tts"
-        ];
-
-    for (const id of checkIds) {
-      try {
-        const exists = await checkModelExists(id);
-        presence[id] = exists;
-      } catch (err) {
-        presence[id] = false;
-      }
-    }
-
-    presence["earshot"] = true;
-    presence["edge_tts"] = true;
-    setModelPresence(presence);
-  }, [modelCatalog, draftSettings, checkOutdated, manifest]);
-
-  useEffect(() => {
-    const loadManifest = async () => {
-      try {
-        const data = await fetchManifest();
-        setManifest(data);
-      } catch (err) {
-        console.error("Failed to fetch manifest:", err);
-      }
-    };
-    loadManifest();
-  }, []);
-
-  useEffect(() => {
-    setActiveCategoryTab("model");
-  }, [activePipelineTab]);
-
-  useEffect(() => {
-    checkPresence();
-
-    const unlistenStatus = listen<{
-      model_id: string;
-      step: string;
-      progress: number;
-      bytes_downloaded: number;
-      total_bytes: number;
-      error?: string;
-    }>("model_setup_status", (event) => {
-      const fileId = event.payload.model_id;
-      const groupId = getGroupIdForFile(fileId);
-      setDownloadStatuses(prev => ({
-        ...prev,
-        [groupId]: {
-          step: event.payload.step as any,
-          progress: event.payload.progress,
-          bytesDownloaded: event.payload.bytes_downloaded,
-          totalBytes: event.payload.total_bytes,
-          error: event.payload.error
-        }
-      }));
-    });
-
-    const unlistenComplete = listen<string>("optional_model_complete", (event) => {
-      checkPresence();
-      setDownloadStatuses(prev => {
-        const next = { ...prev };
-        delete next[event.payload];
-        return next;
-      });
-    });
-
-    return () => {
-      unlistenStatus.then(u => u());
-      unlistenComplete.then(u => u());
-    };
-  }, [checkPresence, getGroupIdForFile]);
-
-  if (!draftSettings || !modelCatalog) return null;
-
-  const startDownload = (modelId: string) => {
-    setDownloadStatuses(prev => ({
-      ...prev,
-      [modelId]: { step: 'idle', progress: 0, bytesDownloaded: 0, totalBytes: 0 }
-    }));
-    downloadOptionalModel(modelId);
   };
 
-  const handleDeleteModelGroup = async (modelId: string) => {
+  const handleDeleteModelGroup = async (modelGroupId: string) => {
     try {
-      await deleteModel(modelId);
-      checkPresence();
-    } catch (err) {
-      console.error("Failed to delete model:", err);
+      await deleteModel(modelGroupId);
+      setModelPresence((prev) => ({ ...prev, [modelGroupId]: false }));
+      setConfirmDeleteId(null);
+    } catch (e) {
+      console.error("Failed to delete model group:", e);
     }
   };
 
-  const activeVadBackend = draftSettings.vad.vad_backend;
-  const isVadVerified = activeVadBackend === "earshot" || modelPresence["ten_vad"];
+  const isGroupRequired = (id: string) => {
+    return id.includes("required") || id.includes("base");
+  };
 
-  const selectedAsrId = draftSettings.asr.model;
-  const isAsrVerified = modelPresence[selectedAsrId];
+  if (!draftSettings) return null;
 
-  const selectedLlmId = draftSettings.llm.model;
-  const isLlmDownloaded = modelPresence[selectedLlmId];
-
-  const isTtsVerified = modelPresence["supertonic_tts"] || modelPresence["chatterbox_tts"];
-
+  // Topology verification flags
+  const isVadVerified = !!(modelPresence["silero_vad_v5"] && modelPresence["speech_tokenizer"]);
+  const isAsrVerified = !!(modelPresence["whisper_medium"] || modelPresence["whisper_small"] || modelPresence["whisper_tiny"]);
+  const isLlmDownloaded = !!(modelPresence["qwen2_5_0_5b"] || modelPresence["qwen2_5_1_5b"] || isRemoteLlm);
+  const isTtsVerified =
+    draftSettings?.tts?.provider?.kind === "chatterbox_remote"
+      ? isRemoteTtsHealthy === true
+      : !!(modelPresence["chatterbox_turbo"] || modelPresence["supertonic"]);
+  const isAuxiliaryVerified = !!(
+    modelPresence["distilbert_query_classifier"] &&
+    modelPresence["minilm_l12_v2"] &&
+    modelPresence["deberta_v3_xsmall_nli"] &&
+    modelPresence["vox_translit_rnn"]
+  );
 
   return (
-    <div className={cn(
-      "w-full h-auto flex flex-col text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
-      layoutMode === "small"
-        ? "bg-transparent p-0"
-        : cn(
-            "glass-card p-5",
-            layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
-          )
-    )}>
-      <style>{pulseStyles}</style>
+    <div
+      className={cn(
+        "w-full h-auto flex flex-col text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
+        layoutMode === "small"
+          ? "bg-transparent p-0"
+          : cn(
+              "glass-card p-5",
+              layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
+            )
+      )}
+    >
       <div className="flex flex-col gap-4">
-        
-        {/* Header */}
-        {layoutMode === "small" ? (
-          (activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (() => {
-            const isRemoteTtsSetupNotDone = activePipelineTab === "tts" &&
+        {/* Header with Model vs Settings Toggle */}
+        <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+          <div className="flex items-center gap-2">
+            <Database className="text-[rgb(var(--accent))]" size={18} />
+            <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+              Model Hub
+            </span>
+          </div>
+
+          {/* Small Category Tabs: Model vs Settings */}
+          {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (() => {
+            const isRemoteTtsSetupNotDone =
+              activePipelineTab === "tts" &&
               draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
               isRemoteTtsHealthy !== true;
 
@@ -615,88 +400,37 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             }
 
             return (
-              <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
-                <span className="text-[10px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/70 uppercase">CATALOG VIEW</span>
-                <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
+              <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
+                <button
+                  onClick={() => setActiveCategoryTab("model")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                    activeCategoryTab === "model"
+                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  Model
+                </button>
+                {!isRemoteTtsSetupNotDone && (
                   <button
-                    onClick={() => setActiveCategoryTab("model")}
+                    onClick={() => setActiveCategoryTab("settings")}
                     className={cn(
                       "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                      activeCategoryTab === "model"
+                      activeCategoryTab === "settings"
                         ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                         : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
                     )}
                   >
-                    Model
+                    Settings
                   </button>
-                  {!isRemoteTtsSetupNotDone && (
-                    <button
-                      onClick={() => setActiveCategoryTab("settings")}
-                      className={cn(
-                        "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                        activeCategoryTab === "settings"
-                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                          : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                      )}
-                    >
-                      Settings
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             );
-          })()
-        ) : (
-          <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
-            <div className="flex items-center gap-2">
-              <Database className="text-[rgb(var(--accent))]" size={18} />
-              <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
-                Model Hub
-              </span>
-            </div>
-            {/* Small Category Tabs */}
-            {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (() => {
-              const isRemoteTtsSetupNotDone = activePipelineTab === "tts" &&
-                draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
-                isRemoteTtsHealthy !== true;
+          })()}
+        </div>
 
-              if (isRemoteTtsSetupNotDone && activeCategoryTab === "settings") {
-                setTimeout(() => setActiveCategoryTab("model"), 0);
-              }
-
-              return (
-                <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
-                  <button
-                    onClick={() => setActiveCategoryTab("model")}
-                    className={cn(
-                      "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                      activeCategoryTab === "model"
-                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                        : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                    )}
-                  >
-                    Model
-                  </button>
-                  {!isRemoteTtsSetupNotDone && (
-                    <button
-                      onClick={() => setActiveCategoryTab("settings")}
-                      className={cn(
-                        "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                        activeCategoryTab === "settings"
-                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                          : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                      )}
-                    >
-                      Settings
-                    </button>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        )}
-
-        {/* Topology Pipeline Map */}
+        {/* Models Topology Interactive Bar */}
         <ModelsTopologyMap
           activeTab={activePipelineTab}
           onChangeTab={setActivePipelineTab}
@@ -705,15 +439,16 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           isAsrVerified={isAsrVerified}
           isLlmDownloaded={isLlmDownloaded}
           isTtsVerified={isTtsVerified}
-          isAuxiliaryVerified={!!(modelPresence["distilbert_query_classifier"] && modelPresence["minilm_l12_v2"] && modelPresence["deberta_v3_xsmall_nli"] && modelPresence["vox_translit_rnn"])}
+          isAuxiliaryVerified={isAuxiliaryVerified}
         />
 
-        {/* Workspace Detail Panel */}
-        <div className={cn(
-          "h-auto w-full flex flex-col glass rounded-xl p-3 relative bg-[rgba(var(--foreground),0.02)]",
-          layoutMode === "small" ? "max-h-none overflow-y-visible" : "max-h-[190px] overflow-y-auto custom-scrollbar"
-        )}>
-          {/* TAB 1: VAD */}
+        {/* Workspaces by Pipeline Tab */}
+        <div
+          className={cn(
+            "h-auto w-full flex flex-col glass rounded-xl p-3 relative bg-[rgba(var(--foreground),0.02)]",
+            layoutMode === "small" ? "max-h-none overflow-y-visible" : "max-h-[220px] overflow-y-auto custom-scrollbar"
+          )}
+        >
           {activePipelineTab === "vad" && (
             <VadWorkspace
               activeCategoryTab={activeCategoryTab}
@@ -727,7 +462,6 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             />
           )}
 
-          {/* TAB 2: ASR */}
           {activePipelineTab === "asr" && (
             <AsrWorkspace
               layoutMode={layoutMode}
@@ -741,787 +475,77 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             />
           )}
 
-
-
-          {/* TAB 4: AI REASONING (LLM) */}
           {activePipelineTab === "llm" && (
-            <div className="space-y-4">
+            <LlmCatalogView
+              layoutMode={layoutMode}
+              selectedLlmId={draftSettings.llm.model}
+              modelPresence={modelPresence}
+              downloadStatuses={downloadStatuses}
+              confirmDeleteId={confirmDeleteId}
+              setConfirmDeleteId={setConfirmDeleteId}
+              startDownload={startDownload}
+              handleDeleteModelGroup={handleDeleteModelGroup}
+              isGroupRequired={isGroupRequired}
+              isRemoteLlm={isRemoteLlm}
+              provider={provider}
+              remoteModels={remoteModels}
+              loadingRemoteModels={loadingRemoteModels}
+              remoteModelsError={remoteModelsError}
+              probingMap={probingMap}
+              handleProbeCapabilities={handleProbeCapabilities}
+              customModelId={customModelId}
+              setCustomModelId={setCustomModelId}
+              customModelStatus={customModelStatus}
+              handleValidateCustomModel={handleValidateCustomModel}
+              activeCategoryTab={activeCategoryTab}
+            />
+          )}
+
+          {activePipelineTab === "tts" && (
+            <>
               {activeCategoryTab === "model" ? (
-                isRemoteLlm ? (
-                  /* Remote Models Picker Panel */
-                  <div className="space-y-3 p-3 rounded-2xl bg-[rgba(var(--foreground),0.015)] border border-[rgba(var(--foreground),0.02)] hover:border-[rgba(var(--accent),0.1)] transition-all duration-300 w-full animate-fade-in">
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-[rgb(var(--foreground))]/90 text-[12px] flex items-center gap-1.5">
-                          <Network size={16} className="text-[rgb(var(--accent))]" /> Connected Server
-                        </span>
-                        <span className="text-[10px] text-[rgb(var(--foreground-muted))]/70 font-mono mt-0.5">
-                          {provider?.base_url || "No server configured"}
-                        </span>
-                      </div>
-                      {loadingRemoteModels ? (
-                        <span className="text-[10px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
-                          <RefreshCw size={14} className="animate-spin" /> Fetching...
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/60">
-                          {remoteModels.length} models available
-                        </span>
-                      )}
-                    </div>
-
-                    {remoteModelsError && (
-                      <div className="text-[11px] font-bold text-red-400/80 bg-red-400/5 border border-red-400/15 rounded-xl px-3 py-2 flex items-center gap-2">
-                        <AlertCircle size={16} />
-                        <span>{remoteModelsError}</span>
-                      </div>
-                    )}
-
-                    <div className={cn(
-                      "grid grid-cols-1 gap-2 pr-1",
-                      layoutMode === "small" ? "max-h-none overflow-y-visible" : "max-h-[220px] overflow-y-auto"
-                    )}>
-                      {getFilteredModels().length === 0 ? (
-                        <div className="text-center py-6 text-[11px] text-[rgb(var(--foreground-muted))]/70">
-                          No remote models loaded. Ensure the server is online and configured in the Interaction Card.
-                        </div>
-                      ) : (
-                        getFilteredModels().map((model) => {
-                          const isSelected = provider?.model === model.id;
-                          const probed = probingMap[model.id]?.capabilities || model.capabilities;
-                          const isTesting = probingMap[model.id]?.status === 'testing';
-                          const isGpu = probed?.is_gpu_accelerated;
-
-                          return (
-                            <button
-                              key={model.id}
-                              onClick={() => {
-                                updateDraft("llm", "provider", {
-                                  ...provider,
-                                  model: model.id,
-                                });
-                                if (!probed && !isTesting) {
-                                  handleProbeCapabilities(model.id);
-                                }
-                              }}
-                              className={cn(
-                                "w-full text-left p-3 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3 relative overflow-hidden",
-                                isGpu ? "border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.2)]" : "",
-                                isSelected
-                                  ? "bg-[rgba(var(--accent),0.05)] border-[rgb(var(--accent))]"
-                                  : "bg-[rgba(var(--foreground),0.01)] border-[rgba(var(--foreground),0.04)] hover:border-[rgba(var(--accent),0.2)]"
-                              )}
-                            >
-                              <div className="flex-1 space-y-1.5 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-bold text-[rgb(var(--foreground))]/90 text-[11px] truncate">
-                                    {model.name}
-                                  </span>
-                                  {model.quantization && (
-                                    <span className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground))]/70 border border-[rgba(var(--foreground),0.04)] leading-none">
-                                      {model.quantization}
-                                    </span>
-                                  )}
-                                  {model.family && (
-                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.08)] leading-none">
-                                      {model.family}
-                                    </span>
-                                  )}
-                                  {isGpu ? (
-                                    <span title={probed?.gpu_status || "GPU Offloaded"} className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 leading-none flex items-center gap-1">
-                                      🚀 GPU {probed?.vram_bytes ? `(${(probed.vram_bytes / (1024 * 1024)).toFixed(0)}MB)` : ""}
-                                    </span>
-                                  ) : probed?.server_has_gpu ? (
-                                    <span title="Server has GPU hardware, but model is running in CPU mode" className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 leading-none flex items-center gap-1">
-                                      ⚠️ GPU Server (CPU)
-                                    </span>
-                                  ) : null}
-                                </div>
-
-                                <div className="flex items-center gap-2 text-[10px] text-[rgb(var(--foreground-muted))]/70">
-                                  <span className="font-mono truncate">{model.id}</span>
-                                  {model.size_bytes !== null && model.size_bytes !== undefined && (
-                                    <>
-                                      <span>•</span>
-                                      <span>{(model.size_bytes / (1024 * 1024 * 1024)).toFixed(2)} GB</span>
-                                    </>
-                                  )}
-                                </div>
-
-                                {/* Capability Badges & Readouts */}
-                                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                                  {isTesting ? (
-                                    <span className="text-[9px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
-                                      <Loader2 size={10} className="animate-spin" />
-                                      Testing capabilities...
-                                    </span>
-                                  ) : probed ? (
-                                    <>
-                                      {probed.supports_tools && (
-                                        <span title="Supports Tool Calling" className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1">
-                                          🛠️ Tools
-                                        </span>
-                                      )}
-                                      {probed.supports_latin && (
-                                        <span title="Latin Script (EN)" className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                          EN
-                                        </span>
-                                      )}
-                                      {probed.supports_devanagari && (
-                                        <span title="Devanagari Script (Hindi/Hinglish)" className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                          DEV
-                                        </span>
-                                      )}
-                                      {probed.context_window && (
-                                        <span title="Context Window" className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-300 border border-zinc-700/50">
-                                          🧠 {probed.context_window >= 1000000 ? `${(probed.context_window / 1000000).toFixed(1)}M ctx` : `${Math.round(probed.context_window / 1024)}k ctx`}
-                                        </span>
-                                      )}
-                                      {probed.tps && (
-                                        <span title="Generation Speed" className="text-[9px] font-mono text-emerald-400 font-bold">
-                                          ⚡ {probed.tps.toFixed(1)} tps
-                                        </span>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleProbeCapabilities(model.id);
-                                      }}
-                                      className="text-[9px] font-bold text-[rgb(var(--accent))] hover:underline flex items-center gap-1"
-                                    >
-                                      <Sparkles size={10} /> Test Capabilities
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-
-                                {isSelected && (
-                                  <div className="w-5 h-5 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] flex items-center justify-center">
-                                    <Check size={16} strokeWidth={3} />
-                                  </div>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    {/* Custom Model ID field */}
-                    <div className="mt-3 pt-3 border-t border-[rgba(var(--foreground),0.06)] space-y-2">
-                      <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/80 uppercase tracking-wider block">
-                        Use Custom Model ID
-                      </span>
-                      <div className="flex gap-2">
-                        <div className="flex-1 border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-                          <input
-                            type="text"
-                            value={customModelId}
-                            onChange={(e) => {
-                              setCustomModelId(e.target.value);
-                              setCustomModelStatus('idle');
-                            }}
-                            placeholder="e.g. gemini-2.5-pro"
-                            className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-                          />
-                        </div>
-                        <button
-                          onClick={handleValidateCustomModel}
-                          disabled={!customModelId.trim() || customModelStatus === 'checking'}
-                          className={cn(
-                            "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border shrink-0",
-                            customModelStatus === 'checking' && "bg-[rgba(var(--foreground),0.05)] border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground-muted))]",
-                            customModelStatus === 'valid' && "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20",
-                            customModelStatus === 'invalid' && "bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20",
-                            customModelStatus === 'idle' && "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] border-[rgba(var(--accent),0.2)] hover:scale-[1.02] active:scale-95"
-                          )}
-                        >
-                          {customModelStatus === 'checking' && "Checking..."}
-                          {customModelStatus === 'valid' && "Valid ✓"}
-                          {customModelStatus === 'invalid' && "Not Listed ⚠"}
-                          {customModelStatus === 'idle' && "Validate & Use"}
-                        </button>
-                      </div>
-                      {customModelStatus === 'invalid' && (
-                        <div className="text-[9px] text-amber-400/80 leading-normal flex items-start gap-1">
-                          <span>⚠</span>
-                          <span>Model ID not in standard server list. Selected in draft anyway, but verify spelling.</span>
-                        </div>
-                      )}
-                      {customModelStatus === 'valid' && (
-                        <div className="text-[9px] text-emerald-400/80 leading-normal flex items-start gap-1">
-                          <span>✓</span>
-                          <span>Model verified successfully! Selected and ready to save.</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                draftSettings.tts.provider?.kind === "chatterbox_remote" && isRemoteTtsHealthy !== true ? (
+                  <RemoteServerSetup
+                    sshConnectionString={sshConnectionString}
+                    setSshConnectionString={setSshConnectionString}
+                    sshPort={sshPort}
+                    setSshPort={setSshPort}
+                    sshIdentityKey={sshIdentityKey}
+                    setSshIdentityKey={setSshIdentityKey}
+                    setupStatus={setupStatus}
+                    triggerRemoteSetup={triggerRemoteSetup}
+                    isRemoteTtsHealthy={isRemoteTtsHealthy}
+                  />
                 ) : (
-                  /* Local GGUF Card Grid */
-                  <div className={cn("grid gap-2.5", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
-                    {[...modelCatalog.llm].sort((a, b) => {
-                      if (selectedLlmId === a.id) return -1;
-                      if (selectedLlmId === b.id) return 1;
-                      return 0;
-                    }).map((model) => {
-                      const isSelected = selectedLlmId === model.id;
-                      const modelGroupId = model.id;
-                      const isDownloaded = modelPresence[modelGroupId];
-                      const status = downloadStatuses[modelGroupId];
-
-                      return (
-                        <SubModelCard
-                          key={model.id}
-                          id={modelGroupId}
-                          name={model.name}
-                          description={model.description}
-                          parameters={model.parameters}
-                          ramUsage={model.ram_usage}
-                          tradeoffs={model.tradeoffs}
-                          isDownloaded={isDownloaded}
-                          isActive={isSelected}
-                          isRequired={isGroupRequired(model.id)}
-                          layoutMode={layoutMode}
-                          onSelect={() => updateDraft("llm", "model", model.id)}
-                          confirmDeleteId={confirmDeleteId}
-                          setConfirmDeleteId={setConfirmDeleteId}
-                          downloadStatus={status}
-                          startDownload={() => startDownload(modelGroupId)}
-                          deleteModel={() => handleDeleteModelGroup(modelGroupId)}
-                          showTooltip={true}
-                        />
-                      );
-                    })}
-                  </div>
+                  <TtsModelWorkspace
+                    layoutMode={layoutMode}
+                    confirmDeleteId={confirmDeleteId}
+                    setConfirmDeleteId={setConfirmDeleteId}
+                    modelPresence={modelPresence}
+                    downloadStatuses={downloadStatuses}
+                    startDownload={startDownload}
+                    deleteModel={handleDeleteModelGroup}
+                    isRemoteTtsHealthy={isRemoteTtsHealthy}
+                    checkingTtsHealth={checkingTtsHealth}
+                  />
                 )
               ) : (
-                /* LLM Settings */
-                <div className="space-y-4 p-1">
-                  {/* Context Size */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Memory Context Tokens</span>
-                      <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.llm.ctx_size}</span>
-                    </div>
-                    <div className="flex gap-1">
-                      {[512, 1024, 2048, 4096, 8192].map(val => (
-                        <button key={val} onClick={() => updateDraft("llm", "ctx_size", val)}
-                          className={cn(
-                            "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-                            draftSettings.llm.ctx_size === val
-                              ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                              : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
-                          )}
-                        >{val < 1024 ? val : `${val / 1024}k`}</button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Threads */}
-                  {(() => {
-                    const totalCores = (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined) || 4;
-                    const maxSafe = Math.max(2, totalCores - 2);
-                    const threadPresets = (() => {
-                      const base = [2, 4];
-                      if (maxSafe > 4 && maxSafe !== totalCores) return [...base, maxSafe, totalCores];
-                      if (maxSafe > 4) return [...base, maxSafe];
-                      return base;
-                    })();
-                    return (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Processor Threads</span>
-                          <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.llm.threads}</span>
-                        </div>
-                        <div className="flex gap-1">
-                          {threadPresets.map(val => (
-                            <button key={val} onClick={() => updateDraft("llm", "threads", val)}
-                              className={cn(
-                                "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-                                draftSettings.llm.threads === val
-                                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                                  : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
-                              )}
-                            >{val}{val === maxSafe && val !== totalCores ? " (max)" : ""}{val === totalCores && val !== maxSafe ? " (all)" : ""}</button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
+                <TtsVoiceManager
+                  layoutMode={layoutMode}
+                  customVoices={customVoices}
+                  loadCustomVoices={loadCustomVoices}
+                  chatterboxIsAdding={chatterboxIsAdding}
+                  setChatterboxIsAdding={setChatterboxIsAdding}
+                  edgeTtsVoices={edgeTtsVoices}
+                  edgeTtsError={edgeTtsError}
+                  loadingEdgeVoices={loadingEdgeVoices}
+                  loadEdgeVoices={loadEdgeVoices}
+                  activeCategoryTab={activeCategoryTab}
+                />
               )}
-            </div>
+            </>
           )}
 
-          {/* TAB 5: VOICE SYNTHESIS (TTS) */}
-          {activePipelineTab === "tts" && (
-            <div className="space-y-4">
-              {activeCategoryTab === "model" ? (
-                <div className="space-y-4">
-                  {draftSettings.tts.provider?.kind === "chatterbox_remote" && isRemoteTtsHealthy !== true ? (
-                    /* Show only setup panel + description banner */
-                    <div className="space-y-4">
-                      {/* Concise info box describing setup and model */}
-                      <div className="border border-[rgba(var(--accent),0.15)] bg-[rgba(var(--accent),0.02)] rounded-xl p-4 space-y-2">
-                        <div className="flex items-center gap-2 text-[rgb(var(--accent))]">
-                          <Info size={16} />
-                          <span className="font-bold text-[11px] uppercase tracking-[0.1em]">Chatterbox Remote Deployment</span>
-                        </div>
-                        <p className="text-[11px] text-[rgb(var(--foreground-muted))]/80 leading-relaxed font-medium">
-                          Deploy Chatterbox on a remote CUDA-accelerated GPU host (e.g. RunPod, Vast.ai, or homelab) to offload memory-intensive flow-matching voice synthesis. Enter your SSH connection info below to automatically sync the codebase, download GGUF models, and run the server.
-                        </p>
-                      </div>
-
-                      {/* Setup Panel */}
-                      <div className="border border-[rgba(var(--accent),0.15)] bg-[rgba(var(--accent),0.02)] rounded-xl p-3 animate-fade-in space-y-3">
-                        <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1.5">
-                          <span className="font-bold text-[11px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                            <Network size={14} className="text-[rgb(var(--accent))]" />
-                            Setup Remote GPU Server (SSH Setup Required)
-                          </span>
-                          <span className="text-[9px] font-black uppercase bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/20">
-                            Offline / Unconfigured
-                          </span>
-                        </div>
-                        
-                        <div className="grid grid-cols-[2.5fr_1fr_2.5fr] gap-2.5">
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">SSH Host / Profile</label>
-                            <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-                              <input
-                                type="text"
-                                value={sshConnectionString}
-                                onChange={(e) => setSshConnectionString(e.target.value)}
-                                placeholder="user@hostname"
-                                className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">SSH Port</label>
-                            <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-                              <input
-                                type="text"
-                                value={sshPort}
-                                onChange={(e) => setSshPort(e.target.value)}
-                                placeholder="22"
-                                className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">Identity Key Path</label>
-                            <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-                              <input
-                                type="text"
-                                value={sshIdentityKey}
-                                onChange={(e) => setSshIdentityKey(e.target.value)}
-                                placeholder="~/.ssh/id_rsa"
-                                className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-3 pt-1 border-t border-[rgba(var(--border),0.04)]">
-                          <div className="flex-1 min-w-0">
-                            {setupStatus ? (
-                              <div className="space-y-1">
-                                <div className="flex items-center justify-between text-[10px]">
-                                  <span className={cn(
-                                    "font-bold uppercase tracking-wider",
-                                    setupStatus.step === "complete" ? "text-emerald-400" : setupStatus.step === "failed" ? "text-rose-400 animate-pulse" : "text-[rgb(var(--accent))]"
-                                  )}>
-                                    {setupStatus.step === "complete" ? "Ready" : setupStatus.step === "failed" ? "Setup Failed" : `Phase: ${setupStatus.step}`}
-                                  </span>
-                                  <span className="font-mono font-bold text-[rgb(var(--foreground-muted))]/70">{setupStatus.progress}%</span>
-                                </div>
-                                <div className="h-1 bg-[rgba(var(--foreground),0.04)] rounded-full overflow-hidden relative">
-                                  <div 
-                                    className="h-full bg-[rgb(var(--accent))] transition-all duration-300 rounded-full"
-                                    style={{ width: `${setupStatus.progress}%` }}
-                                  />
-                                </div>
-                                <p className="text-[9px] text-[rgb(var(--foreground-muted))]/60 font-semibold truncate leading-none mt-1">
-                                  {setupStatus.log_line}
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="text-[9px] text-[rgb(var(--foreground-muted))]/55 font-semibold leading-normal">
-                                Pipes setup_server.sh to the host over native SSH. Key auth / SSH configs supported.
-                              </p>
-                            )}
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={triggerRemoteSetup}
-                            disabled={!sshConnectionString || (setupStatus && setupStatus.progress > 0 && setupStatus.progress < 100 && setupStatus.step !== "failed")}
-                            className={cn(
-                              "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 shrink-0 select-none outline-none",
-                              !sshConnectionString
-                                ? "bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/30 border border-transparent cursor-not-allowed"
-                                : (setupStatus && setupStatus.progress > 0 && setupStatus.progress < 100 && setupStatus.step !== "failed")
-                                  ? "bg-[rgba(var(--accent),0.05)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] cursor-wait"
-                                  : "bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))]/40 active:scale-95"
-                            )}
-                          >
-                            {setupStatus && setupStatus.progress > 0 && setupStatus.progress < 100 && setupStatus.step !== "failed" ? (
-                              <>
-                                <Loader2 size={11} className="animate-spin text-[rgb(var(--accent))]" />
-                                Deploying
-                              </>
-                            ) : setupStatus?.step === "failed" ? (
-                              "Retry Deploy"
-                            ) : setupStatus?.step === "complete" ? (
-                              <>
-                                <Check size={11} className="text-emerald-400" />
-                                Deployed
-                              </>
-                            ) : (
-                              "Deploy Server"
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Show only selected filter models list */
-                    <div className={cn("grid gap-3", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
-                      {(modelCatalog?.tts || [])
-                        .filter((model) => {
-                          const isRemoteConfig = draftSettings.tts.provider?.kind === "chatterbox_remote";
-                          if (isRemoteConfig) {
-                            return model.id === "chatterbox_remote";
-                          } else {
-                            return model.id === "edge_tts" || model.id === "supertonic_tts" || model.id === "chatterbox_tts";
-                          }
-                        })
-                        .map((model) => {
-                          const isSelected = (model.id === "edge_tts" && draftSettings.tts.provider?.kind === "edge_tts") ||
-                                            (model.id === "supertonic_tts" && draftSettings.tts.provider?.kind === "supertonic") ||
-                                            (model.id === "chatterbox_tts" && draftSettings.tts.provider?.kind === "chatterbox") ||
-                                            (model.id === "chatterbox_remote" && draftSettings.tts.provider?.kind === "chatterbox_remote");
-                          const isDownloaded = (model.id === "edge_tts" || model.id === "chatterbox_remote") ? true : modelPresence[model.id];
-                          const status = downloadStatuses[model.id];
-
-                          return (
-                            <div key={model.id} className="relative">
-                              <SubModelCard
-                                id={model.id}
-                                name={model.name}
-                                description={model.description}
-                                parameters={model.parameters}
-                                ramUsage={model.ram_usage}
-                                tradeoffs={model.tradeoffs}
-                                isDownloaded={isDownloaded}
-                                isActive={isSelected}
-                                isRequired={false}
-                                layoutMode={layoutMode}
-                                onSelect={() => {
-                                  if (model.id === "edge_tts") {
-                                    updateDraft("tts", "provider", { kind: "edge_tts", voice: "en-US-AriaNeural" });
-                                  } else if (model.id === "supertonic_tts") {
-                                    updateDraft("tts", "provider", { kind: "supertonic" });
-                                  } else if (model.id === "chatterbox_tts") {
-                                    updateDraft("tts", "provider", { kind: "chatterbox", language: "en", quality_steps: 8, speed: 1.0 });
-                                  } else if (model.id === "chatterbox_remote") {
-                                    updateDraft("tts", "provider", {
-                                      kind: "chatterbox_remote",
-                                      endpoint: draftSettings.tts.provider?.kind === "chatterbox_remote" ? (draftSettings.tts.provider.endpoint || "http://127.0.0.1:7860") : "http://127.0.0.1:7860",
-                                      language: "en",
-                                      quality_steps: 8,
-                                      speed: 1.0,
-                                      remote_path: draftSettings.tts.provider?.kind === "chatterbox_remote" ? (draftSettings.tts.provider.remote_path || "~/.vox") : "~/.vox"
-                                    });
-                                  }
-                                }}
-                                confirmDeleteId={confirmDeleteId}
-                                setConfirmDeleteId={setConfirmDeleteId}
-                                downloadStatus={status}
-                                startDownload={() => startDownload(model.id)}
-                                deleteModel={() => handleDeleteModelGroup(model.id)}
-                              />
-                              {model.id === "chatterbox_remote" && isSelected && (
-                                <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 select-none pointer-events-none">
-                                  {checkingTtsHealth ? (
-                                    <Loader2 size={10} className="animate-spin text-[rgb(var(--accent))]" />
-                                  ) : isRemoteTtsHealthy === true ? (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
-                                  ) : isRemoteTtsHealthy === false ? (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.7)] animate-pulse" />
-                                  ) : null}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                </div>
-              ) : (() => {
-                const isEdgeTts = draftSettings.tts.provider?.kind === "edge_tts";
-                const isChatterbox = draftSettings.tts.provider?.kind?.startsWith("chatterbox");
-
-                const currentEdgeVoice = (draftSettings.tts.provider as any)?.voice || "en-US-AriaNeural";
-
-                if (isEdgeTts) {
-                  return (
-                    <div className="w-full flex flex-col gap-3 p-3 rounded-lg border border-[rgba(var(--accent),0.15)] bg-[rgba(var(--surface-bg),0.4)] mt-2">
-                      <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-2">
-                        <span className="text-[12px] font-bold text-[rgb(var(--foreground))] flex items-center gap-1.5 uppercase tracking-wider">
-                          <Globe size={14} className="text-[rgb(var(--accent))]" />
-                          Edge TTS Voice Configuration
-                        </span>
-                        <span className="text-[10px] font-semibold text-[rgb(var(--foreground-muted))]">
-                          {loadingEdgeVoices ? "Loading voices..." : edgeTtsVoices.length > 0 ? `${edgeTtsVoices.length} Neural Voices Available` : "Cloud Neural TTS"}
-                        </span>
-                      </div>
-
-                      {edgeTtsError ? (
-                        <div className="flex flex-col gap-2 p-3 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[11px]">
-                          <div className="flex items-center gap-2 font-bold">
-                            <AlertTriangle size={14} className="text-rose-400 shrink-0" />
-                            <span>Network Error Loading Edge Voices</span>
-                          </div>
-                          <p className="text-[10px] leading-relaxed text-rose-300/80">{edgeTtsError}</p>
-                          <button
-                            type="button"
-                            onClick={loadEdgeVoices}
-                            disabled={loadingEdgeVoices}
-                            className="self-start px-2.5 py-1 text-[10px] font-bold rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 transition-all flex items-center gap-1 mt-1 outline-none"
-                          >
-                            {loadingEdgeVoices ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-                            <span>Retry Connection</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-                            Select Edge Neural Voice
-                          </label>
-                          <div className="relative">
-                            <select
-                              value={currentEdgeVoice}
-                              disabled={loadingEdgeVoices}
-                              onChange={(e) => updateDraft("tts", "provider", { kind: "edge_tts", voice: e.target.value })}
-                              className="w-full bg-[rgb(var(--surface-bg))] border border-[rgba(var(--accent),0.2)] rounded px-3 py-2 text-[12px] font-medium text-[rgb(var(--foreground))] outline-none focus:border-[rgb(var(--accent))] transition-all appearance-none cursor-pointer"
-                            >
-                              {edgeTtsVoices.length === 0 ? (
-                                <option value="en-US-AriaNeural">en-US-AriaNeural (Default Aria Online Natural)</option>
-                              ) : (
-                                edgeTtsVoices.map((v) => (
-                                  <option key={v.short_name} value={v.short_name}>
-                                    {v.friendly_name} ({v.gender}) [{v.locale}]
-                                  </option>
-                                ))
-                              )}
-                            </select>
-                            {loadingEdgeVoices && (
-                              <div className="absolute right-3 top-2.5 pointer-events-none">
-                                <Loader2 size={12} className="animate-spin text-[rgb(var(--accent))]" />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-                const simplifyVoiceName = (n: string) => {
-                  if (n.includes("Pain")) return "Pain";
-                  if (n.includes("Madara")) return "Madara";
-                  if (n.includes("Shreya")) return "Shreya";
-                  if (n.includes("Hayami")) return "Hayami";
-                  if (n.includes("Ellen")) return "Ellen";
-                  if (n.includes("Juniper")) return "Juniper";
-                  if (n.includes("Mark")) return "Mark";
-                  if (n.includes("Spuds")) return "Spuds";
-                  return n;
-                };
-
-                const voices = isChatterbox 
-                  ? [
-                      { id: "default", name: "Default" },
-                      ...customVoices.map(v => ({ id: v.id, name: simplifyVoiceName(v.name), isCustom: true }))
-                    ]
-                  : (modelCatalog?.voices || []).map(v => ({ id: String(v.id), name: simplifyVoiceName(v.name) }));
-
-                const selectedVoiceId = isChatterbox 
-                  ? (draftSettings.tts.provider?.kind === "chatterbox" ? (draftSettings.tts.provider as any).voice_id || "default" : "default")
-                  : String(draftSettings.tts.voice);
-
-                const handleVoiceChange = (id: string) => {
-                  if (isChatterbox) {
-                    const voiceIdVal = id === "default" ? null : id;
-                    updateDraft("tts", "provider", {
-                      ...draftSettings.tts.provider,
-                      voice_id: voiceIdVal
-                    });
-                  } else {
-                    updateDraft("tts", "voice", Number(id));
-                  }
-                };
-
-                const canShowVoiceProfile = isTtsVerified || draftSettings.tts.provider?.kind === "chatterbox_remote";
-
-                return (
-                  /* TTS Settings */
-                  <div className={cn(
-                    "w-full items-stretch",
-                    layoutMode === "small" ? "flex flex-col gap-3" : "flex flex-row gap-4"
-                  )}>
-                    {/* Left column: Voice Carousel (60% width) */}
-                    <div className={cn(
-                      "shrink-0 flex flex-col justify-center",
-                      layoutMode === "small" ? "w-full" : "w-[60%] min-w-[200px]"
-                    )}>
-                      {canShowVoiceProfile ? (
-                        <VoiceCarousel
-                          voices={voices as any}
-                          selected={selectedVoiceId as any}
-                          onChange={handleVoiceChange as any}
-                          disabled={false}
-                          onVoicesChanged={loadCustomVoices}
-                          isAdding={chatterboxIsAdding}
-                          setIsAdding={setChatterboxIsAdding}
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full min-h-[100px] border border-dashed border-[rgba(var(--accent),0.15)] rounded-lg text-[rgb(var(--foreground-muted))]/60 text-[11px] font-bold uppercase tracking-wider text-center p-2 leading-tight">
-                          Deploy Remote Server first
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Right column: Quality & Speed Sliders + Clone Button (40% width) */}
-                    <div className="flex-1 flex flex-col justify-between gap-3.5 min-w-0">
-                      <div className="flex flex-col gap-3.5">
-                        {isChatterbox ? (
-                          <>
-                            {/* Chatterbox Quality Slider (cfm_steps) */}
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
-                                <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
-                                  {((draftSettings.tts.provider as any).quality_steps || 8)} steps
-                                </span>
-                              </div>
-                              <input 
-                                type="range" 
-                                min="2" max="12" step="1"
-                                value={((draftSettings.tts.provider as any).quality_steps || 8)}
-                                onChange={(e) => {
-                                  updateDraft("tts", "provider", {
-                                    ...draftSettings.tts.provider,
-                                    quality_steps: Number(e.target.value)
-                                  });
-                                }}
-                                className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
-                              />
-                            </div>
-
-                            {/* Chatterbox Speed Slider */}
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
-                                <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
-                                  {((draftSettings.tts.provider as any).speed || 1.0).toFixed(2)}x
-                                </span>
-                              </div>
-                              <input 
-                                type="range" 
-                                min="0.7" max="2.0" step="0.05"
-                                value={((draftSettings.tts.provider as any).speed || 1.0)}
-                                onChange={(e) => {
-                                  updateDraft("tts", "provider", {
-                                    ...draftSettings.tts.provider,
-                                    speed: Number(e.target.value)
-                                  });
-                                }}
-                                className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
-                              />
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            {/* Supertonic Quality Steps */}
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
-                                <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
-                                  {draftSettings.tts.quality_steps <= 4 ? "Speed" : draftSettings.tts.quality_steps <= 8 ? "Quality" : "Best"}
-                                </span>
-                              </div>
-                              <div className="flex gap-1">
-                                {[2, 4, 6, 8, 10, 12].map(step => (
-                                  <button key={step} onClick={() => updateDraft("tts", "quality_steps", step)}
-                                    className={cn(
-                                      "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-                                      draftSettings.tts.quality_steps === step
-                                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                                        : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
-                                    )}
-                                  >{step}</button>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Supertonic Speed */}
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Speed</span>
-                                <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">{draftSettings.tts.speed.toFixed(2)}x</span>
-                              </div>
-                              <input 
-                                type="range" 
-                                min="0.7" max="2.0" step="0.05"
-                                value={draftSettings.tts.speed}
-                                onChange={(e) => updateDraft("tts", "speed", Number(e.target.value))}
-                                className="w-full h-1 bg-[rgba(var(--border),0.1)] rounded-lg appearance-none cursor-pointer accent-[rgb(var(--accent))]"
-                              />
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Clone Voice button (toggles isAdding on the left) */}
-                      {isChatterbox && (
-                        <button
-                          type="button"
-                          onClick={() => setChatterboxIsAdding(prev => !prev)}
-                          className={cn(
-                            "w-full py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(var(--accent),0.1)]",
-                            chatterboxIsAdding
-                              ? "bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20"
-                              : "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-[1.01] active:scale-95 hover:shadow-[0_0_16px_rgba(var(--accent),0.25)]"
-                          )}
-                        >
-                          {chatterboxIsAdding ? (
-                            <>
-                              <ArrowLeft size={11} />
-                              Back to Presets
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles size={11} />
-                              Clone Voice Profile
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* TAB 5: AUXILIARY */}
           {activePipelineTab === "auxiliary" && (
             <AuxiliaryWorkspace
               layoutMode={layoutMode}
@@ -1533,7 +557,6 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               deleteModel={handleDeleteModelGroup}
             />
           )}
-
         </div>
       </div>
     </div>

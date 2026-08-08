@@ -69,60 +69,73 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 **Global Evaluation Configuration:**
 - **Context Window Cap:** Set to **8192 tokens** across all stage evaluation runs (`eval_compaction.rs`, `eval_pipeline.rs`, `eval_retrieval.rs`).
-
-**Code Fixes & Audit Expansion Applied (Current Working Tree):**
-1. **Intra-Batch Candidate Self-Fetch & Circular Loop Fix (`queries.rs`)**: Updated `fetch_intra_collection_candidates` and `fetch_inter_collection_candidates` SQL status clauses from `IN ('embedded', 'processing_eval', 'evaluated')` to `IN ('embedded', 'evaluated')`. In-flight items in `processing_eval` within the same active batch can no longer self-fetch as candidates, eliminating bidirectional `A <-> B` circular `SUPERSEDES` loops.
-2. **Chronological NLI Premise/Hypothesis Alignment (`stage3_eval.rs`)**: Configured NLI candidate pair evaluation so `cand_fact` (established historical DB state) is passed as **Premise** and `item.fact` (new incoming state) is passed as **Hypothesis**, ensuring DeBERTa-v3 evaluates state transitions in chronological order.
-3. **Multi-Pair ONNX Tensor Batching (`nli.rs` & `stage3_eval.rs`)**: Implemented `raw_predict_batch` and `classify_batch` in `nli.rs` to encode and predict all candidate pairs for an item in a single 2D ONNX tensor pass (`[batch_size, max_seq_len]`), reducing Stage 3 CPU ONNX execution latency by up to 5x.
-4. **Expanded Audit Logging & 3-Report Architecture**:
-   - `personal_memory_queue`: Added `dedup_match_json` (stage, action, matched_fact_id, matched_fact, score) and `audit_json` (nli_scores, edge_score, rejection_reason, candidate_source).
-   - `memory_pipeline_metrics`: Redesigned lean schema (removed SQL-derivable columns `items_processed`, `items_superseded`, `relations_created`), added `batch_seq`.
-   - `stage1_dedup.rs`: Refactored prefetch map to `HashMap<collection, Vec<(id, fact_text)>>` to surface matched fact IDs at zero SQL cost.
-   - `stage2_embed.rs`: Writes `dedup_match_json` on soft vector dedup hits.
-   - `stage3_eval.rs`: Enriched `CandidateAuditLog` with explicit rejection reasons (`below_nli_confidence`, `topic_overlap_failed`, `nli_neutral`, `below_edge_classifier_confidence`) and candidate sources (`memory_facts` vs `queue_in_flight`).
-   - `eval_pipeline.rs`: Built 3-report architecture (`stage1_stage2_dedup_report.md`, per-batch `stage3_batch_{01..NN}_report.md`, with Report C reserved for QA Subagent synthesis). Sub-floor candidate pass (`0.25 <= sim < threshold`) tags near-miss pairs.
-5. **5-Collection Priority Cross-Collection Dedup & Heuristic Stripping**:
-   - `stage1_dedup.rs`: Implemented 5-collection Jaccard exact match dedup across `Identity` > `Constraints` > `Directives` > `Profile` > `Entities`. Applies `MemoryCollection::priority()` resolution on collisions (higher priority incoming replaces lower priority DB fact with `status = 'superseded'`, or lower priority incoming is dropped).
-   - `stage2_embed.rs`: Fixed inverted `SUPERSEDES` edge direction for `superseded_lower_priority` path (`from_id = match_id`, `to_id = incoming`). Populated `matched_fact_coll` in `DedupAuditLog`.
-   - `stage3_eval.rs`: Removed brittle `has_meaningful_topic_overlap` keyword filter and `ENGLISH_STOP_WORDS` dependency, relying 100% on DeBERTa-v3 logits (`contradiction >= 0.85`, margin `>= 0.20`). Unified NLI confidence thresholds across `nli.rs` and `stage3_eval.rs` (`0.85`). Surfaced ModernBERT prediction probabilities as `edge_score` in `CandidateAuditLog`.
-   - `queries.rs`: Updated `fetch_cross_collection_candidates` with `UNION ALL` for in-flight `personal_memory_queue` items (`status IN ('embedded', 'evaluated')`) scoped to the 5 core factual collections.
-   - `batch_result.rs`: Added `matched_fact_coll` to `DedupAuditLog`.
-   - `Cargo.toml`: Removed unused `stop-words` crate dependency.
-
-**Last Evaluation Run Observations:**
-- **Eval 1 (Compaction)**: Overall score **85/100** (Accuracy: 92%, Recall: 90%, Schema Disambiguation: 95%, Redundancy: 8%). 0% hallucinations. Occasional context drops and sliding window redundancy across turns.
-- **Eval 2 (4-Stage Pipeline)**: Overall score **8.5/10** (Stage 1: 9/10, Stage 2: 8.5/10, Stage 3 NLI: 8.5/10, ModernBERT: 9/10).
-- **Core Observation**: We cannot tune global thresholds based on superficial observations of 1-2 edge cases. We must collect granular, un-truncated per-batch logging data and evaluate facts, candidate pairs, model confidence scores, and rejection reasons via scope-reduced, per-batch/per-stage LLM judge reports.
+- **Benchmark Execution:** `--release` mode only (`cargo run --release --example <eval_name>`).
 
 ---
 
-### Phase 11 QA Evaluation Focus (Semantic Quality & System Behavior)
+### 5.1 Progress Summary (Completed Architecture & Code Enhancements)
 
-Deterministic checks (e.g. table creation, schema existence, non-null values, non-crashing execution) belong in automated unit tests. **QA Evaluation focuses strictly on semantic validity, information coverage, false positive/negative detection, edge correctness, and latency dynamics.**
-
-#### 1. Eval 1 — LLM Compaction & Fact Extraction (`eval_compaction.rs`)
-- **Information Coverage:** Do extracted facts capture all critical user information across conversation turns, or was vital context silently dropped?
-- **Redundancy & Over-Extraction:** Is there semantic redundancy or over-extraction across or within collections?
-- **Collection Disambiguation:** Are extracted facts correctly assigned to their true semantic domain (`Identity` vs `Profile`, `Entities` vs `Constraints`), or miscategorized?
-- **Failure Analysis:** If compaction fails or requires retries, why did it fail (prompt length overflow, schema confusion, LLM degradation)?
-
-#### 2. Eval 2 — 4-Stage Ingestion Pipeline & State Resolution (`eval_pipeline.rs`)
-- **Deduplication Semantic Validity (Stage 1 & Stage 2 Audit Report)**: Audit all facts merged in Stage 1 (Jaccard) and Stage 2 (Soft Vector). Evaluate whether merged facts were genuinely identical, or if soft-dedup caused false positives that destroyed distinct facts.
-- **Per-Batch Stage 3 Evaluation (Batch Size 16 Judge Reports)**: Stage 3 naturally executes in atomic batches of 16 items (`STAGE3_BATCH_SIZE = 16`). For EACH Stage 3 batch of 16 items, execute a dedicated LLM judge pass using the 16 facts + full candidate audit logs (including model logits, sub-floor candidates `0.25 <= sim < 0.40`, topic overlap flags, and rejection reasons).
-- **Report C Master Synthesis**: Executed by the **QA Subagent** (`agy-subagent`), synthesizing individual deduplication and per-batch Stage 3 reports into an empirical scorecard and recommendation matrix.
-- **Formed Relations & Candidate Retrieval Audit**:
-  - Evaluate formed `SUPERSEDES`, `CONFLICTS`, and `SUPPORTS` edges for semantic correctness vs false positives.
-  - Audit candidate retrieval precision: Did any candidate fall in the sub-floor range (`0.25 <= sim < 0.40`) that should have formed a relation but was missed?
-  - Threshold & Heuristic Rejection Audit: Did a relation fail because model confidence was just below threshold or topic overlap failed?
-- **Grouped Stage Latency & Throughput**: Measure per-stage grouped latencies per batch. Track end-to-end processing time for a single fact vs. a full batch of 128 facts. Verify metric population in `memory_pipeline_metrics`.
-
-#### 3. Eval 3 — Pre-Retrieval Scope Classifier & Dynamic Token Waterfall (`eval_retrieval.rs`) [CRITICAL]
-- **Scope Classification Validity:** Did `query-sieve-rs` classify test queries into the correct `MemoryScope` (`ChitChat`, `User`, `Domain`, `Temporal`)?
-- **Retrieval Precision & Noise Ratio:** For each query, what facts were retrieved? Were they genuinely relevant? How many irrelevant facts were retrieved, and why?
-- **Adversarial & Vague Query Dataset:** Benchmark queries must be purposefully engineered by analyzing stored facts and creating vague, ambiguous, or negative queries designed to stress-test vector search and BFS graph expansion.
-- **Context Budget Enforcement:** Verify dynamic waterfall rendering respects the 15% budget cap under an **8192 token context window**.
+1. **Intra-Batch Candidate Self-Fetch Fix (`queries.rs`)**: Scoped candidate queries to `status IN ('embedded', 'evaluated')`, eliminating circular `A <-> B` loops within in-flight batch items.
+2. **Chronological NLI Alignment (`stage3_eval.rs`)**: Passed DB historical fact as `Premise` and incoming item as `Hypothesis` for accurate DeBERTa-v3 state transition evaluation.
+3. **Multi-Pair ONNX Tensor Batching (`nli.rs`)**: Implemented 2D ONNX tensor encoding (`raw_predict_batch`), reducing Stage 3 ONNX inference CPU latency by 5x.
+4. **5-Collection Priority Cross-Collection Dedup (`stage1_dedup.rs` & `stage2_embed.rs`)**: Implemented Priority resolution (`Identity` > `Constraints` > `Directives` > `Profile` > `Entities`) on exact/soft vector collisions.
+5. **Heuristic Stripping & ModernBERT Probability Logging (`stage3_eval.rs`)**: Removed brittle keyword filters; unified NLI threshold (`contradiction >= 0.85`, margin `>= 0.20`); logged ModernBERT relation probabilities as `edge_score`.
 
 ---
 
-**Phase 11 Goal:** Evaluate each stage of the Vox v7 Memory System independently against semantic quality, coverage, false positive rates, and latency dynamics using empirical datasets (`app/src-tauri/evals/datasets/`), logging all evidence, and executing independent subagent reviews via `agy-subagent`.
+### 5.2 QA Evaluation Purpose, Non-Negotiable Rules & Pitfalls to Avoid
+
+> 🛑 **MANDATORY EVALUATION INVARIANTS:**
+> 1. **No Shallow Summaries / No Narrative Abstractions**: Reports must contain exact failure counts, percentages, un-truncated text pairs, logits, similarity scores, and rejection tags. NEVER accept 2 handpicked examples as a complete analysis.
+> 2. **No Threshold Guessing**: Do NOT tweak constants in `constants.rs` based on superficial observations. Every threshold recommendation must be backed by a full confusion matrix.
+> 3. **Source of Truth for Fine-Tuning**: The primary deliverable is an un-truncated, evidence-backed diagnostic artifact (`memory_architecture_failure_analysis.md`) that `@ml-research-engineer.md` can directly consume to curate fine-tuning datasets (`vox-nli-state-transitions` and `vox-modernbert-graph-edges`).
+
+---
+
+### 5.3 Deterministic Error Taxonomy & Classifier Confusion Matrix
+
+Every evaluation run must track and report exact item counts across these failure modes:
+
+| Classifier Stage | Metric / Cell | Failure Type & Definition |
+| :--- | :--- | :--- |
+| **Vector Search Floor** | **Sub-Floor FN** | Valid state update/relation pruned before Stage 3 because $0.25 \le \text{cos\_sim} < \text{threshold}$. |
+| **Intra-Collection NLI** | **False Negative (FN)** | Incoming fact updated/superseded DB fact, but NLI scored `Neutral` or $< 0.85$ `Contradiction`. |
+| **Intra-Collection NLI** | **False Positive (FP)** | Distinct incoming fact incorrectly deleted an existing fact (`Contradiction` $\ge 0.85$). |
+| **Intra-Collection NLI** | **True Positive / TN** | Correctly superseded facts (TP) and correctly retained distinct facts (TN). |
+| **Inter-Collection Edge** | **False Negative (FN)** | Valid cross-collection relation present, but ModernBERT score $< 0.80$ (`below_edge_classifier_confidence`). |
+| **Inter-Collection Edge** | **False Positive (FP)** | Unrelated entities/directives linked with confidence $\ge 0.80$. |
+
+---
+
+### 5.4 GPU Server & 3-Tier Ollama Judge Cascade Architecture
+
+To avoid API rate limits and achieve fast, scalable evaluation across large datasets, evaluation uses the server in `temp/server.txt`):
+
+```mermaid
+flowchart TD
+    Eval[eval_pipeline.rs Run] --> Batches[Atomic Batches of 16 Items]
+    Batches --> Llama[Ollama llama3.1:8b Atomic Batch Judge]
+    Llama --> AtomicReports[Per-Batch Audit Reports (Batch 01..NN)]
+    AtomicReports --> Gemma[Ollama gemma4:e4b Sub-Master Synthesizer]
+    Gemma --> SubMasterReports[Sub-Master Dataset Group Reports]
+    SubMasterReports --> Subagent[QA Subagent invoke_subagent]
+    Subagent --> MasterReport[Report C Master Synthesis & ML Diagnostic Spec]
+```
+
+1. **Atomic Batch Judge (`llama3.1:8b`)**: Evaluates individual 16-item batches from `eval_pipeline.rs`, auditing raw NLI logits, sub-floor candidates, and rejection reasons.
+2. **Sub-Master Batch Synthesizer (`gemma4:e4b`)**: Aggregates 3-4 atomic batch reports into a sub-master report per dataset session.
+3. **Master Synthesis & Review (`invoke_subagent`)**: A dedicated QA Subagent reads all sub-master reports, compiles the overall confusion matrix, and generates `memory_architecture_failure_analysis.md`.
+
+---
+
+### 5.5 Evaluation Dataset Suite
+
+Evaluation runs across **4 distinct datasets** in `app/src-tauri/evals/datasets/`:
+1. `dataset_session_1.json`
+2. `dataset_session_2.json`
+3. `dataset_session_3.json`
+4. `curated_300_turns.json`
+
+**Phase 11 Goal:** Produce a 100% evidence-backed, un-truncated diagnostic report and dataset curation specification for `@ml-research-engineer.md` using the multi-dataset GPU judge pipeline.
+
 

@@ -8,39 +8,6 @@ import { CategorySelector } from "./CategorySelector";
 import { LlmConfigDesk } from "./LlmConfigDesk";
 import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providers";
 
-const interactionStyles = `
-@keyframes wave-bar-1 { 0%, 100% { height: 4px; } 50% { height: 16px; } }
-@keyframes wave-bar-2 { 0%, 100% { height: 16px; } 50% { height: 6px; } }
-@keyframes wave-bar-3 { 0%, 100% { height: 8px; } 50% { height: 18px; } }
-@keyframes wave-bar-4 { 0%, 100% { height: 12px; } 50% { height: 4px; } }
-
-.animate-wave-bar-1 { animation: wave-bar-1 1.2s ease-in-out infinite; }
-.animate-wave-bar-2 { animation: wave-bar-2 1.2s ease-in-out infinite 0.2s; }
-.animate-wave-bar-3 { animation: wave-bar-3 1.2s ease-in-out infinite 0.4s; }
-.animate-wave-bar-4 { animation: wave-bar-4 1.2s ease-in-out infinite 0.6s; }
-
-@keyframes flow-dot { 0% { left: -10%; } 100% { left: 110%; } }
-.animate-flow-dot { animation: flow-dot 2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
-
-@keyframes ring-pulse-slow {
-  0%, 100% { transform: scale(1); opacity: 0.15; }
-  50% { transform: scale(1.25); opacity: 0.45; }
-}
-.animate-ring-pulse-slow { animation: ring-pulse-slow 4s ease-in-out infinite; }
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 5px rgba(var(--accent-rgb), 0.2), inset 0 0 5px rgba(var(--accent-rgb), 0.1);
-  }
-  50% {
-    box-shadow: 0 0 15px rgba(var(--accent-rgb), 0.6), inset 0 0 10px rgba(var(--accent-rgb), 0.2);
-  }
-}
-.active-glow {
-  animation: pulse-glow 2.5s infinite ease-in-out;
-}
-`;
-
 interface InteractionCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
@@ -184,8 +151,6 @@ export const InteractionCard = memo(
               )
         )}
       >
-        <style>{interactionStyles}</style>
-
         {/* Header Section */}
         {layoutMode !== "small" && (
           <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">

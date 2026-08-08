@@ -121,18 +121,6 @@ const hasCardChanges = (domainId: DomainId, _settings: any, _draftSettings: any)
 
 import { useSettingsPage } from "@/shared/hooks/useSettingsPage";
 
-// Custom styles to seamlessly merge the card and the footer tray
-const unsavedStyles = `
-  .has-unsaved-changes > div:first-child {
-    border-bottom-left-radius: 0px !important;
-    border-bottom-right-radius: 0px !important;
-    border-bottom-color: rgba(var(--accent), 0.25) !important;
-  }
-  [data-theme='dark'] .has-unsaved-changes > div:first-child {
-    border-bottom-color: rgba(var(--accent), 0.1) !important;
-  }
-`;
-
 interface SettingsCardWrapperProps {
   domain: Domain;
   isActive: boolean;
@@ -159,6 +147,8 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
         settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
         settings.llm.threads !== draftSettings.llm.threads ||
         settings.tts.voice !== draftSettings.tts.voice ||
+        settings.tts.provider?.kind !== draftSettings.tts.provider?.kind ||
+        settings.llm.provider?.kind !== draftSettings.llm.provider?.kind ||
         settings.llm.provider?.model !== draftSettings.llm.provider?.model
       );
     }
@@ -190,7 +180,6 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
           transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
           className="w-full h-full flex items-center justify-center pointer-events-auto"
         >
-          <style>{unsavedStyles}</style>
           <div 
             id={`card-${domain.id}`} 
             className={cn(

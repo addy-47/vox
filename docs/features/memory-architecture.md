@@ -121,7 +121,7 @@ The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & 
 - `NLI_ENTAILMENT_THRESHOLD = 0.85`
 - Model: `nli-deberta-v3-base` INT8 ONNX at `~/.vox/models/nli/nli-deberta-v3-base/model_quantized.onnx`
 
-**Sub-Branch B — Edge Classifier (`edge_classifier.rs`):**
+**Sub-Branch B — Inter-Collection Edge Classifier (`classifiers/inter_edge_classifier.rs`):**
 
 Classifies cross-domain candidate pairs using ModernBERT INT8 ONNX. Returns `Some(forward_edge)` if calibrated prediction score ≥ `EDGE_CLASSIFIER_THRESHOLD` (0.80) and matches the policy matrix's forward edge label. Otherwise returns `None`.
 
@@ -234,7 +234,7 @@ Both are token-budgeted — facts are added until `remaining_budget` is exhauste
 
 ---
 
-## 7. NLI Engine (`nli.rs`)
+## 7. Intra-Collection Edge Classifier Engine (`classifiers/intra_edge_classifier.rs`)
 
 | Parameter | Value |
 |---|---|
@@ -250,7 +250,7 @@ Both are token-budgeted — facts are added until `remaining_budget` is exhauste
 
 ---
 
-## 8. Edge Classifier Engine (`edge_classifier.rs`)
+## 8. Inter-Collection Edge Classifier Engine (`classifiers/inter_edge_classifier.rs`)
 
 | Parameter | Value |
 |---|---|
@@ -319,14 +319,14 @@ WHERE id = ?
 | `NLI_CONTRADICTION_CONFIDENCE_THRESHOLD` | 0.85 | `stage3_eval.rs` |
 | `NLI_CONTRADICTION_MARGIN_THRESHOLD` | 0.20 | `stage3_eval.rs` |
 | `NLI_ENTAILMENT_CONFIDENCE_THRESHOLD` | 0.85 | `stage3_eval.rs` |
-| `NLI_MODEL_DIR` | `"nli-deberta-v3-base"` | `nli.rs` |
+| `NLI_MODEL_DIR` | `"nli-deberta-v3-base"` | `classifiers/intra_edge_classifier.rs` |
 
 
 ### Edge Classifier Constants
 | Constant | Value | Location |
 |---|---|---|
-| `EDGE_CLASSIFIER_THRESHOLD` | 0.80 | `edge_classifier.rs` |
-| `EDGE_CLASSIFIER_MODEL_DIR` | `"classifier/modernbert_edge_creation"` | `edge_classifier.rs` |
+| `EDGE_CLASSIFIER_THRESHOLD` | 0.80 | `classifiers/inter_edge_classifier.rs` |
+| `EDGE_CLASSIFIER_MODEL_DIR` | `"classifier/modernbert_edge_creation"` | `classifiers/inter_edge_classifier.rs` |
 
 ### Embedding Constants
 | Constant | Value | Location |

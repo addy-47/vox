@@ -10,7 +10,8 @@
 
 use anyhow::Result;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use std::sync::Arc;
 use turso::Builder;
 use vox_lib::core::constants::{
@@ -101,7 +102,10 @@ fn format_stage3_batch_toon(
                 cand_num, engine_tag, log.cand_collection, log.cand_fact
             ));
 
-            let mut metrics = vec![format!("cos_sim: {:.3}", log.cosine_sim)];
+            let mut metrics = vec![
+                format!("cos_sim: {:.3}", log.cosine_sim),
+                format!("source: {}", log.candidate_source),
+            ];
 
             if let Some([c, e, n]) = log.nli_scores {
                 metrics.push(format!("logits: [c: {:.3}, e: {:.3}, n: {:.3}]", c, e, n));
@@ -124,6 +128,7 @@ fn format_stage3_batch_toon(
     out.push_str("</stage3_batch_evaluation>");
     out
 }
+
 
 async fn run_llm_judge_prompt(
 
@@ -190,7 +195,12 @@ async fn run_llm_judge_prompt(
 async fn main() -> Result<()> {
     println!("=== Vox Memory Subsystem: Ladder Eval 2 (4-Stage Pipeline & Ingestion) ===");
 
-    let input_db_path = resolve_path("evals/results/stage_1_compaction.db");
+    let staged_db_path = resolve_path("evals/results/stage_1_compaction_staged.db");
+    let input_db_path = if staged_db_path.exists() {
+        staged_db_path
+    } else {
+        resolve_path("evals/results/stage_1_compaction.db")
+    };
     let output_db_path = resolve_path("evals/results/stage_2_pipeline.db");
     let reports_dir = resolve_path("evals/results/reports");
 
@@ -201,10 +211,12 @@ async fn main() -> Result<()> {
         ));
     }
 
-    if let Some(parent) = output_db_path.parent() {
-        std::fs::create_dir_all(parent)?;
+
+    if output_db_path.exists() {
+        let _ = std::fs::remove_file(&output_db_path);
+        let _ = std::fs::remove_file(reports_dir.join("../stage_2_pipeline.db-wal"));
+        let _ = std::fs::remove_file(reports_dir.join("../stage_2_pipeline.db-shm"));
     }
-    std::fs::create_dir_all(&reports_dir)?;
 
     let _ = std::fs::copy(&input_db_path, &output_db_path)?;
 
@@ -214,6 +226,8 @@ async fn main() -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Invalid output DB path {:?}", abs_db_path))?;
     let db = Builder::new_local(db_path_str).build().await?;
     let conn = db.connect()?;
+    vox_lib::persistence::schema::run_migrations(&conn).await?;
+
 
     let run_id = uuid::Uuid::new_v4().to_string();
     println!("[Eval 2] Running 4-stage memory pipeline (run_id={}) on {:?}", run_id, output_db_path);
@@ -221,10 +235,21 @@ async fn main() -> Result<()> {
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let start_time = std::time::Instant::now();
 
-    let processed_count = drain_pipeline_queue_with_run_id(&conn, &cancel_flag, &run_id).await?;
+    let mut processed_count = 0;
+    let mut stage3_seq = 0;
+    loop {
+        if cancel_flag.load(Ordering::Relaxed) { break; }
+        let n1 = vox_lib::services::memory::pipeline::run_stage1_dedup(&conn).await?;
+        let n2 = vox_lib::services::memory::pipeline::run_stage2_embed(&conn).await?;
+        let n3 = vox_lib::services::memory::pipeline::stage3_eval::run_stage3_eval_with_metrics_seq(&conn, &run_id, stage3_seq).await?;
+        if n1 == 0 && n2 == 0 && n3 == 0 { break; }
+        processed_count += n1 + n2 + n3;
+        stage3_seq += 1;
+    }
     let total_duration = start_time.elapsed();
 
-    println!("[Eval 2] Pipeline execution complete. Processed {} queue items in {:?}", processed_count, total_duration);
+    println!("[Eval 2] Stages 1-3 execution complete. Processed {} items across stages in {:?}", processed_count, total_duration);
+
 
     // =========================================================================
     // Phase A: Post-Pipeline Sub-Floor Candidate Audit Pass (0.25 <= sim < threshold)
@@ -261,7 +286,7 @@ async fn main() -> Result<()> {
             &vector,
             SUBFLOOR_CANDIDATE_FLOOR,
             SAME_COLLECTION_CANDIDATE_SEARCH,
-            None,
+            Some(5),
         )
         .await
         .unwrap_or_default();
@@ -279,13 +304,14 @@ async fn main() -> Result<()> {
                 &vector,
                 SUBFLOOR_CANDIDATE_FLOOR,
                 INTER_COLLECTION_CANDIDATE_SEARCH,
-                None,
+                Some(5),
             )
             .await
             .unwrap_or_default()
         } else {
             Vec::new()
         };
+
 
         let mut added_count = 0;
         for (cand_id, cand_fact, sim) in intra_subfloor {
@@ -452,6 +478,8 @@ async fn main() -> Result<()> {
 
     let chunks: Vec<&[(i64, String, String, Vec<CandidateAuditLog>)]> = batch_items.chunks(16).collect();
     println!("  Total Stage 3 Evaluation Batches to process: {}", chunks.len());
+    let mut generated_batch_reports = Vec::new();
+
 
     for (batch_idx, chunk) in chunks.iter().enumerate() {
         let batch_num = batch_idx + 1;
@@ -506,12 +534,32 @@ async fn main() -> Result<()> {
             batch_num
         );
 
+        let debug_log_path = reports_dir.join(format!("stage3_batch_{:02}_raw_vs_toon.log", batch_num));
+
+        let mut debug_content = String::new();
+        debug_content.push_str(&format!("=========================================================================\n"));
+        debug_content.push_str(&format!("STAGE 3 BATCH {:02} RAW INPUT vs TOON FORMAT AUDIT LOG\n", batch_num));
+        debug_content.push_str(&format!("=========================================================================\n\n"));
+        debug_content.push_str("--- SECTION 1: RAW CandidateAuditLog STRUCTS (JSON) ---\n");
+        for (item_id, item_fact, item_coll, logs) in chunk.iter() {
+            debug_content.push_str(&format!("\nQueue Item #{} [{}] {}\n", item_id, item_coll, item_fact));
+            debug_content.push_str(&serde_json::to_string_pretty(logs).unwrap_or_default());
+            debug_content.push_str("\n");
+        }
+        debug_content.push_str("\n\n--- SECTION 2: FORMATTED TOON STRING ---\n");
+        debug_content.push_str(&batch_toon);
+        debug_content.push_str("\n\n--- SECTION 3: FULL PROMPT SENT TO LLM JUDGE ---\n");
+        debug_content.push_str(&batch_prompt);
+
+        let _ = std::fs::write(&debug_log_path, &debug_content);
 
         let report_b_path = reports_dir.join(format!("stage3_batch_{:02}_report.md", batch_num));
+
         match run_llm_judge_prompt(&client, &api_key, &batch_prompt).await {
             Ok(content) => {
                 std::fs::write(&report_b_path, &content)?;
                 println!("    Saved Batch Report {:02} To: {:?}", batch_num, report_b_path);
+                generated_batch_reports.push(content);
             }
             Err(e) => println!("    [Batch {:02} Warning] Failed: {}", batch_num, e),
         }
@@ -519,15 +567,53 @@ async fn main() -> Result<()> {
 
 
     // =========================================================================
-    // Phase D: Report C — Reserved for QA Subagent Synthesis
+    // Phase D: Master Report C — LLM Synthesis across Stages 1-3 & Batch Reports
     // =========================================================================
-    println!("\n[Report C] Individual batch reports generated in {:?}", reports_dir);
-    println!("  Master Synthesis Report (Report C) is reserved for QA Subagent review.");
+    println!("\n[Report C] Initiating Master Synthesis LLM Judge Call across Stages 1-3...");
+
+    let dedup_report_text = std::fs::read_to_string(&report_a_path).unwrap_or_default();
+    let mut combined_batch_reports = String::new();
+    for (idx, r) in generated_batch_reports.iter().enumerate() {
+        combined_batch_reports.push_str(&format!("<stage3_batch_report num=\"{:02}\">\n{}\n</stage3_batch_report>\n\n", idx + 1, r));
+    }
+
+    let report_c_prompt = format!(
+        "<master_pipeline_synthesis_audit>\n\
+         <stage1_stage2_dedup_report>\n{}\n</stage1_stage2_dedup_report>\n\n\
+         <stage3_batch_reports>\n{}\n</stage3_batch_reports>\n\n\
+         <task>\n\
+         Act as a Principal AI Memory Systems Architect. Synthesize the Stage 1 & 2 Deduplication Report and all Stage 3 Batch Reports into a unified Master Ingestion Pipeline Audit Report (Report C).\n\
+         Evaluate the pipeline across the following 6 core pillars:\n\
+         1. Overall Pipeline Assessment & Scorecard (Overall Score out of 10.0, Stage 1-2 Sub-Score, Stage 3 Sub-Score).\n\
+         2. Deduplication & Merging Semantic Audit (Assess Jaccard exact match priority resolution and Soft Vector dedup precision).\n\
+         3. Stage 3 NLI State Resolution Precision (Synthesize false positive and false negative state transition rates across all batches).\n\
+         4. ModernBERT Inter-Collection Edge Calibration (Assess cross-collection relation classification and confidence score calibration).\n\
+         5. Subfloor Cutoff Analysis (Synthesize near-miss candidate findings in the 0.25-0.40 range).\n\
+         6. Actionable Engineering Recommendations (Concrete logic, threshold, or model fine-tuning recommendations).\n\n\
+         Format output ONLY as clean Markdown starting with '# Stage 3 Master Pipeline Evaluation & Audit Report (Report C)'.\n\
+         </task>\n\
+         </master_pipeline_synthesis_audit>",
+        dedup_report_text, combined_batch_reports
+    );
+
+    let report_c_path = reports_dir.join("stage3_master_report_c.md");
+    match run_llm_judge_prompt(&client, &api_key, &report_c_prompt).await {
+        Ok(content) => {
+            std::fs::write(&report_c_path, &content)?;
+            println!("  [Report C] Saved Master Synthesis Report To: {:?}", report_c_path);
+        }
+        Err(e) => println!("  [Report C Error] Master synthesis failed: {}", e),
+    }
+
+    // Run Stage 4 Commit & Prune post-reporting
+    let n4 = vox_lib::services::memory::pipeline::stage4_commit::run_stage4_commit_with_metrics(&conn, &run_id).await?;
+    println!("  [Stage 4 Commit] Finalized and pruned {} facts into memory_facts DB.", n4);
 
     println!("\n=========================================================================");
     println!("[Eval 2 Execution Complete]");
     println!("  Total Items Processed : {}", processed_count);
     println!("  Execution Time        : {:?}", total_duration);
+
     println!("  Batch Reports Saved To: {:?}", reports_dir);
     println!("=========================================================================\n");
 

@@ -266,6 +266,10 @@ impl NliEngine {
     }
 }
 
+pub fn is_nli_loaded() -> bool {
+    NLI_ENGINE.get().is_some()
+}
+
 /// Lazily loads the NLI engine if not already loaded.
 /// Returns `Ok(true)` if ready, `Ok(false)` if assets are missing.
 pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {

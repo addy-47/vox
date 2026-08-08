@@ -30,17 +30,43 @@ export const ToggleTile: React.FC<ToggleTileProps> = ({
 }) => {
   const isSmall = layoutMode === "small";
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      onToggle();
+    }
+  };
+
   return (
-    <div className={cn("group flex items-center w-full h-[85px] relative", className)}>
+    <div
+      role="switch"
+      aria-checked={active}
+      aria-label={title}
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={handleKeyDown}
+      className={cn(
+        "group flex items-center w-full h-[85px] relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] rounded-xl cursor-pointer select-none",
+        className
+      )}
+    >
       <div
-        onClick={onToggle}
-        className="flex-1 p-3 rounded-xl group-hover:rounded-r-none border border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] hover:border-[rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.02)] transition-all duration-300 flex flex-col justify-between h-full cursor-pointer min-w-0"
+        className="flex-1 p-3 rounded-xl group-hover:rounded-r-none border border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] group-hover:border-[rgba(var(--accent),0.2)] group-hover:bg-[rgba(var(--accent),0.02)] transition-all duration-300 flex flex-col justify-between h-full min-w-0"
       >
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-bold tracking-widest text-[rgb(var(--foreground-muted))]/70 whitespace-nowrap uppercase">
             {title}
           </span>
-          {Icon && <Icon size={16} className={active ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/40"} />}
+          {Icon && (
+            <Icon
+              size={16}
+              className={
+                active
+                  ? "text-[rgb(var(--accent))]"
+                  : "text-[rgb(var(--foreground-muted))]/40"
+              }
+            />
+          )}
         </div>
 
         <div className="flex items-end justify-between mt-2">
@@ -74,8 +100,7 @@ export const ToggleTile: React.FC<ToggleTileProps> = ({
 
       {/* Slide-out toggle side panel */}
       <div
-        onClick={onToggle}
-        className="h-full w-0 group-hover:w-[38px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent border-l-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden cursor-pointer select-none shrink-0"
+        className="h-full w-0 group-hover:w-[38px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden shrink-0"
       >
         <span className="text-[8px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
           {isSmall ? "TAP" : "TOGGLE"}

@@ -6,8 +6,8 @@ use crate::core::constants::{
     PM_SEMANTIC_GRAPH_COLLECTIONS,
 };
 use crate::persistence::{decode_f32_blob, queries};
-use crate::services::memory::edge_classifier;
-use crate::services::memory::nli::{classify_batch, ensure_nli_loaded, relation_from_result, NliRelation, NLI_MODEL_DIR};
+use crate::services::memory::classifiers::inter_edge_classifier;
+use crate::services::memory::classifiers::intra_edge_classifier::{classify_batch, ensure_nli_loaded, relation_from_result, NliRelation, NLI_MODEL_DIR};
 use super::batch_result::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
 
 pub const STAGE3_BATCH_SIZE: usize = 16;
@@ -165,7 +165,7 @@ fn eval_subbranch_b_edges_sync(
             let mut rejection_reason = None;
             let mut edge_score_val = None;
 
-            match edge_classifier::classify_edge(
+            match inter_edge_classifier::classify_edge(
                 &item.collection,
                 &item.fact,
                 None,

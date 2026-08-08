@@ -215,16 +215,30 @@ export const LiveWaveform = memo(({
   useEffect(() => {
     if (!active || telemetryRef?.current) return
 
+    let cancelled = false
+    let localStream: MediaStream | null = null
+    let localAudioContext: AudioContext | null = null
+
     const setupMicrophone = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: deviceId ? { deviceId: { exact: deviceId } } : true,
         })
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop())
+          return
+        }
+        localStream = stream
         streamRef.current = stream
         onStreamReady?.(stream)
 
         const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext
         const audioContext = new AudioContextConstructor()
+        if (cancelled) {
+          audioContext.close()
+          return
+        }
+        localAudioContext = audioContext
         const analyser = audioContext.createAnalyser()
         analyser.fftSize = fftSize
         analyser.smoothingTimeConstant = smoothingTimeConstant
@@ -234,14 +248,28 @@ export const LiveWaveform = memo(({
         audioContextRef.current = audioContext
         analyserRef.current = analyser
       } catch (error) {
-        onError?.(error as Error)
+        if (!cancelled) {
+          onError?.(error as Error)
+        }
       }
     }
 
     setupMicrophone()
     return () => {
-      streamRef.current?.getTracks().forEach(t => t.stop())
-      audioContextRef.current?.close()
+      cancelled = true
+      if (localStream) {
+        localStream.getTracks().forEach((t) => t.stop())
+      }
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+
+      if (localAudioContext && localAudioContext.state !== "closed") {
+        localAudioContext.close()
+      }
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+        audioContextRef.current.close()
+      }
+      audioContextRef.current = null
       analyserRef.current = null
     }
   }, [active, deviceId, fftSize, smoothingTimeConstant, telemetryRef])
