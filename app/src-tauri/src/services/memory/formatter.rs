@@ -21,7 +21,11 @@ pub fn format_relative_timestamp(created_at_ms: i64) -> String {
     if minutes < 1 {
         "Just now".to_string()
     } else if minutes < 60 {
-        format!("{} minute{} ago", minutes, if minutes == 1 { "" } else { "s" })
+        format!(
+            "{} minute{} ago",
+            minutes,
+            if minutes == 1 { "" } else { "s" }
+        )
     } else if hours < 24 {
         format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" })
     } else if days == 1 {

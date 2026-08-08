@@ -16,7 +16,7 @@ export interface RotaryKnobProps {
   className?: string;
 }
 
-export const RotaryKnob: React.FC<RotaryKnobProps> = memo(({
+export const RotaryKnob = memo(({
   label = "Speed",
   value,
   min,
@@ -28,7 +28,7 @@ export const RotaryKnob: React.FC<RotaryKnobProps> = memo(({
   onChange,
   presetSteps = [0.8, 1.0, 1.25, 1.5, 2.0],
   className,
-}) => {
+}: RotaryKnobProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const startYRef = useRef<number>(0);
   const startValRef = useRef<number>(value);

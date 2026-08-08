@@ -86,13 +86,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     app.emit(crate::core::constants::EVENT_MODEL_LOADING, "VAD")
         .ok();
 
-    let (
-        _stt_model_path,
-        stt_provider,
-        vad_model_path_opt,
-        vad_backend_opt,
-        input_device,
-    ) = {
+    let (_stt_model_path, stt_provider, vad_model_path_opt, vad_backend_opt, input_device) = {
         let (vad_backend, asr_provider, _tray_enabled, input_device) = {
             let settings = state.settings.read().unwrap();
             (
@@ -184,13 +178,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             None
         };
 
-        (
-            stt_path,
-            p,
-            vad_path,
-            vad_backend,
-            input_device,
-        )
+        (stt_path, p, vad_path, vad_backend, input_device)
     };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(100);
@@ -391,11 +379,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let orchestrator_handle = std::thread::Builder::new()
         .name("vox-pipeline".to_string())
         .spawn(move || {
-            orchestrator.run_event_loop(
-                vox_event_rx,
-                playback_for_orch,
-                app_for_orch,
-            );
+            orchestrator.run_event_loop(vox_event_rx, playback_for_orch, app_for_orch);
         })
         .map_err(|e| e.to_string())?;
 

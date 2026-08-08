@@ -1,8 +1,8 @@
-use anyhow::Result;
-use turso::Connection;
-use std::collections::HashMap;
 use crate::persistence::encode_f32_blob;
 use crate::services::memory::MemoryFact;
+use anyhow::Result;
+use std::collections::HashMap;
+use turso::Connection;
 
 /// Fetches all active Identity facts (deterministic baseline for non-ChitChat scopes).
 pub async fn fetch_all_active_identity(conn: &Connection) -> Result<Vec<MemoryFact>> {
@@ -82,8 +82,6 @@ pub async fn fetch_narrative_history(conn: &Connection, limit: u32) -> Result<Ve
     Ok(list)
 }
 
-
-
 /// Fetches graph neighbor edges from `memory_relations` for a batch of fact IDs.
 /// Returns tuples of (from_id, to_id, relation, source).
 pub async fn fetch_graph_neighbors(
@@ -138,7 +136,10 @@ pub async fn fetch_facts_by_ids(
         placeholders
     );
 
-    let params: Vec<turso::Value> = fact_ids.iter().map(|id| turso::Value::Text(id.clone())).collect();
+    let params: Vec<turso::Value> = fact_ids
+        .iter()
+        .map(|id| turso::Value::Text(id.clone()))
+        .collect();
     let mut rows = conn.query(&query_str, params).await?;
     let mut map = HashMap::new();
     while let Some(row) = rows.next().await? {
@@ -155,8 +156,6 @@ pub async fn fetch_facts_by_ids(
     }
     Ok(map)
 }
-
-
 
 /// Fetches intra-collection NLI candidates using Turso vector_distance_cos pushdown SQL search.
 /// Returns (id, fact_text, cosine_sim) tuples pre-filtered by cosine similarity threshold.
@@ -293,7 +292,6 @@ pub async fn fetch_cross_collection_candidates(
     }
     Ok(candidates)
 }
-
 
 /// Fetches inter-collection LLM edge candidates using Turso vector_distance_cos pushdown SQL search.
 /// Returns (id, fact_text, collection, cosine_sim) tuples pre-filtered by cosine similarity threshold.
@@ -534,8 +532,6 @@ pub async fn fetch_inter_subfloor_candidates(
     Ok(candidates)
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,12 +600,14 @@ mod tests {
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
              VALUES ('f_1', 'semantic', 'Skills', 'Rust', 'LLM', 'active', 100)",
             (),
-        ).await?;
+        )
+        .await?;
         conn.execute(
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
              VALUES ('f_2', 'semantic', 'Skills', 'C++', 'LLM', 'superseded', 100)",
             (),
-        ).await?;
+        )
+        .await?;
 
         let ids = vec!["f_1".to_string(), "f_2".to_string(), "f_3".to_string()];
         let map = fetch_facts_by_ids(&conn, &ids).await?;
@@ -621,8 +619,6 @@ mod tests {
         Ok(())
     }
 
-
-
     #[tokio::test]
     async fn test_fetch_graph_neighbors() -> Result<()> {
         let conn = setup_test_db().await?;
@@ -631,33 +627,39 @@ mod tests {
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
              VALUES ('node_a', 'semantic', 'Projects', 'Project Vox', 'LLM', 'active', 100)",
             (),
-        ).await?;
+        )
+        .await?;
         conn.execute(
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
              VALUES ('node_b', 'semantic', 'Skills', 'Rust', 'LLM', 'active', 100)",
             (),
-        ).await?;
+        )
+        .await?;
         conn.execute(
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
              VALUES ('node_c', 'operational', 'Tasks', 'Write tests', 'LLM', 'active', 100)",
             (),
-        ).await?;
+        )
+        .await?;
 
         conn.execute(
             "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at)
              VALUES ('node_a', 'node_b', 'requires_skill', 'LLM', 1000)",
             (),
-        ).await?;
+        )
+        .await?;
         conn.execute(
             "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at)
              VALUES ('node_b', 'node_a', 'used_in_project', 'LLM', 1000)",
             (),
-        ).await?;
+        )
+        .await?;
         conn.execute(
             "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at)
              VALUES ('node_a', 'node_c', 'contains_task', 'LLM', 1000)",
             (),
-        ).await?;
+        )
+        .await?;
 
         let neighbors_b = fetch_graph_neighbors(&conn, &["node_b".to_string()]).await?;
         assert_eq!(neighbors_b.len(), 2);
@@ -676,12 +678,14 @@ mod tests {
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
              VALUES ('v_1', 'semantic', 'Skills', 'Rust programming', 'LLM', 'active', 100)",
             (),
-        ).await?;
+        )
+        .await?;
         conn.execute(
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
              VALUES ('v_2', 'semantic', 'Projects', 'Vox desktop app', 'LLM', 'active', 100)",
             (),
-        ).await?;
+        )
+        .await?;
 
         let emb1 = vec![1.0f32; 384];
         let emb2 = vec![0.5f32; 384];
@@ -698,15 +702,17 @@ mod tests {
         ).await?;
 
         let query_emb = vec![1.0f32; 384];
-        let intra = fetch_intra_collection_candidates(&conn, "Skills", &query_emb, 0.5, Some(10)).await?;
+        let intra =
+            fetch_intra_collection_candidates(&conn, "Skills", &query_emb, 0.5, Some(10)).await?;
         assert_eq!(intra.len(), 1);
         assert_eq!(intra[0].0, "v_1");
 
         let target_colls = vec!["Skills", "Projects"];
-        let inter = fetch_inter_collection_candidates(&conn, &target_colls, &query_emb, 0.5, Some(10)).await?;
+        let inter =
+            fetch_inter_collection_candidates(&conn, &target_colls, &query_emb, 0.5, Some(10))
+                .await?;
         assert_eq!(inter.len(), 2);
 
         Ok(())
     }
-
 }

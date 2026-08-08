@@ -1,9 +1,9 @@
 use anyhow::{anyhow, bail, Result};
 use futures_util::{SinkExt, StreamExt};
-use std::sync::mpsc::Sender;
 use parking_lot::Mutex;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -163,7 +163,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 }
                 let keepalive_msg = serde_json::json!({
                     "type": "KeepAlive"
-                }).to_string();
+                })
+                .to_string();
 
                 let opt_tx = {
                     let guard = ws_sender_keepalive.lock();
@@ -204,7 +205,12 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 match res {
                     Ok(Message::Text(text)) => {
                         let text_str: &str = &text;
-                        if let Err(e) = handle_deepgram_server_message(text_str, &playback_tx_recv, &event_tx_recv, &state_recv) {
+                        if let Err(e) = handle_deepgram_server_message(
+                            text_str,
+                            &playback_tx_recv,
+                            &event_tx_recv,
+                            &state_recv,
+                        ) {
                             log::error!("[DeepgramVoiceAgent] Message handling error: {:?}", e);
                         }
                     }
@@ -384,7 +390,11 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         use std::net::ToSocketAddrs;
         if let Ok(mut addrs) = "agent.deepgram.com:443".to_socket_addrs() {
             if let Some(addr) = addrs.next() {
-                return std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(2)).is_ok();
+                return std::net::TcpStream::connect_timeout(
+                    &addr,
+                    std::time::Duration::from_secs(2),
+                )
+                .is_ok();
             }
         }
         false
@@ -397,9 +407,13 @@ async fn perform_handshake(
     config: &DeepgramVoiceAgentConfig,
     system_prompt: &str,
 ) -> Result<(WsWriter, WsReader)> {
-    log::info!("[DeepgramVoiceAgent] Connecting to Deepgram Voice Agent WebSocket: {}", url);
+    log::info!(
+        "[DeepgramVoiceAgent] Connecting to Deepgram Voice Agent WebSocket: {}",
+        url
+    );
 
-    let mut request = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(url)?;
+    let mut request =
+        tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(url)?;
     request.headers_mut().insert(
         "Authorization",
         tokio_tungstenite::tungstenite::http::HeaderValue::from_str(&format!("Token {}", api_key))?,
@@ -410,18 +424,25 @@ async fn perform_handshake(
         .map_err(|e| anyhow!("Deepgram WebSocket connection failed: {:?}", e))?;
 
     let (mut ws_write, mut ws_read) = ws_stream.split();
-    log::info!("[DeepgramVoiceAgent] WebSocket connection established. Sending Settings config frame.");
+    log::info!(
+        "[DeepgramVoiceAgent] WebSocket connection established. Sending Settings config frame."
+    );
 
-    let model = if config.model.is_empty() { "gpt-4o-mini" } else { &config.model };
-    let (provider_type, model_name) = if model.starts_with("gpt-") || model.starts_with("o1") || model.starts_with("o3") {
-        ("open_ai", model)
-    } else if model.starts_with("claude-") {
-        ("anthropic", model)
-    } else if model.starts_with("gemini-") {
-        ("google", model)
+    let model = if config.model.is_empty() {
+        "gpt-4o-mini"
     } else {
-        ("open_ai", model)
+        &config.model
     };
+    let (provider_type, model_name) =
+        if model.starts_with("gpt-") || model.starts_with("o1") || model.starts_with("o3") {
+            ("open_ai", model)
+        } else if model.starts_with("claude-") {
+            ("anthropic", model)
+        } else if model.starts_with("gemini-") {
+            ("google", model)
+        } else {
+            ("open_ai", model)
+        };
 
     let voice_model = match config.voice.as_str() {
         "Aoede" => "aura-asteria-en",
@@ -477,7 +498,9 @@ async fn perform_handshake(
         .await
         .map_err(|e| anyhow!("Failed to send Settings JSON frame: {:?}", e))?;
 
-    log::info!("[DeepgramVoiceAgent] Settings frame sent. Waiting for Welcome and SettingsApplied...");
+    log::info!(
+        "[DeepgramVoiceAgent] Settings frame sent. Waiting for Welcome and SettingsApplied..."
+    );
 
     let mut welcome_received = false;
     let mut settings_applied_received = false;
@@ -495,7 +518,10 @@ async fn perform_handshake(
                             log::info!("[DeepgramVoiceAgent] Received SettingsApplied event.");
                             settings_applied_received = true;
                         } else if msg_type == "Error" || msg_type == "Warning" {
-                            log::error!("[DeepgramVoiceAgent] Server error/warning during handshake: {:?}", val);
+                            log::error!(
+                                "[DeepgramVoiceAgent] Server error/warning during handshake: {:?}",
+                                val
+                            );
                             return Err(anyhow!("Deepgram error during handshake: {:?}", val));
                         }
 
@@ -505,14 +531,19 @@ async fn perform_handshake(
                     }
                 }
                 Ok(msg) => {
-                    log::debug!("[DeepgramVoiceAgent] Received non-text message during handshake: {:?}", msg);
+                    log::debug!(
+                        "[DeepgramVoiceAgent] Received non-text message during handshake: {:?}",
+                        msg
+                    );
                 }
                 Err(e) => {
                     return Err(anyhow!("WebSocket error during handshake: {:?}", e));
                 }
             }
         }
-        Err(anyhow!("WebSocket stream terminated before handshake complete"))
+        Err(anyhow!(
+            "WebSocket stream terminated before handshake complete"
+        ))
     })
     .await;
 
@@ -545,14 +576,20 @@ pub struct DeepgramVoiceAgentSession {
 
 impl RealtimeSession for DeepgramVoiceAgentSession {
     fn send_audio(&self, pcm: &[i16]) -> Result<()> {
-        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, Ordering::Relaxed);
+        self.last_activity_time.store(
+            chrono::Utc::now().timestamp_millis() as u64,
+            Ordering::Relaxed,
+        );
         self.audio_tx
             .send(pcm.to_vec())
             .map_err(|e| anyhow!("Failed to write to Deepgram audio queue: {:?}", e))
     }
 
     fn cancel(&self) -> Result<()> {
-        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, Ordering::Relaxed);
+        self.last_activity_time.store(
+            chrono::Utc::now().timestamp_millis() as u64,
+            Ordering::Relaxed,
+        );
         self.control_tx
             .send(ControlEvent::Interrupt)
             .map_err(|e| anyhow!("Failed to send interrupt control event: {:?}", e))
@@ -592,7 +629,10 @@ fn handle_deepgram_server_message(
 
     {
         let s_lock = state.lock();
-        s_lock.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, Ordering::Relaxed);
+        s_lock.last_activity_time.store(
+            chrono::Utc::now().timestamp_millis() as u64,
+            Ordering::Relaxed,
+        );
     }
 
     if let Some(msg_type) = val.get("type").and_then(|v| v.as_str()) {

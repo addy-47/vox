@@ -45,8 +45,10 @@ pub struct PipelineOrchestrator {
     pub latest_playback_start_ms: Arc<std::sync::atomic::AtomicU32>,
 
     // Lifecycle management
-    pub(crate) llm_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
-    pub(crate) tts_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<crate::services::tts::TtsCommand>>>>,
+    pub(crate) llm_tx:
+        Arc<Mutex<Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>>>,
+    pub(crate) tts_tx:
+        Arc<Mutex<Option<std::sync::mpsc::Sender<crate::services::tts::TtsCommand>>>>,
     pub llm_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
     pub tts_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 

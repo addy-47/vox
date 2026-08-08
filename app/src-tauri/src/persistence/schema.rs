@@ -118,7 +118,10 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
     }
 
     if let Err(e) = seed_packaged_voices(conn).await {
-        log::warn!("[Persistence] Failed to seed packaged voices (non-fatal): {}", e);
+        log::warn!(
+            "[Persistence] Failed to seed packaged voices (non-fatal): {}",
+            e
+        );
     }
 
     Ok(())
@@ -129,7 +132,12 @@ async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
         Some(h) => h,
         None => return Ok(()),
     };
-    let packaged_voices_dir = home.join(".vox").join("models").join("tts").join("chatterbox").join("voices");
+    let packaged_voices_dir = home
+        .join(".vox")
+        .join("models")
+        .join("tts")
+        .join("chatterbox")
+        .join("voices");
     if !packaged_voices_dir.exists() {
         return Ok(());
     }
@@ -142,11 +150,11 @@ async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
         if path.is_dir() {
             if let Some(name_str) = path.file_name().and_then(|n| n.to_str()) {
                 let id = format!("chatterbox_voice_{}", name_str);
-                
+
                 let mut rows = conn
                     .query("SELECT 1 FROM voices WHERE id = ?", (id.clone(),))
                     .await?;
-                
+
                 let exists = rows.next().await?.is_some();
                 if !exists {
                     let name = match name_str {
@@ -195,7 +203,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_schema_migrations_v6() -> Result<()> {
-        let db = turso::Builder::new_local(":memory:").experimental_index_method(true).build().await?;
+        let db = turso::Builder::new_local(":memory:")
+            .experimental_index_method(true)
+            .build()
+            .await?;
         let conn = db.connect()?;
         run_migrations(&conn).await?;
         // Test idempotency
@@ -217,7 +228,9 @@ mod tests {
         assert!(found_status, "memory_facts must have 'status' column");
 
         // Verify memory_relations has source column
-        let mut rel_col_rows = conn.query("PRAGMA table_info(memory_relations)", ()).await?;
+        let mut rel_col_rows = conn
+            .query("PRAGMA table_info(memory_relations)", ())
+            .await?;
         let mut found_source = false;
         while let Some(row) = rel_col_rows.next().await? {
             let col_name: String = row.get(1)?;
@@ -229,10 +242,18 @@ mod tests {
         assert!(found_source, "memory_relations must have 'source' column");
 
         // Verify all 4 memory tables exist
-        for table in &["memory_facts", "memory_facts_vectors", "memory_relations", "personal_memory_queue"] {
+        for table in &[
+            "memory_facts",
+            "memory_facts_vectors",
+            "memory_relations",
+            "personal_memory_queue",
+        ] {
             let mut rows = conn
                 .query(
-                    &format!("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='{}'", table),
+                    &format!(
+                        "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='{}'",
+                        table
+                    ),
                     (),
                 )
                 .await?;
@@ -243,5 +264,3 @@ mod tests {
         Ok(())
     }
 }
-
-

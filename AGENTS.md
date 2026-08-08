@@ -128,14 +128,14 @@ flowchart TD
 
 ---
 
-### 5.5 Evaluation Dataset Suite
+### 5.6 Mandatory Per-Eval Independent Subagent Audit & HITL Gate
 
-Evaluation runs across **4 distinct datasets** in `app/src-tauri/evals/datasets/`:
-1. `dataset_session_1.json`
-2. `dataset_session_2.json`
-3. `dataset_session_3.json`
-4. `curated_300_turns.json`
+> 🛑 **MANDATORY PER-EVAL GATING INVARIANT:**
+> 1. **Isolated Phases**: Each dataset evaluation run (`dataset_session_1.json`, `dataset_session_2.json`, `dataset_session_3.json`, `curated_300_turns.json`) is an independent phase.
+> 2. **Independent Subagent Auditor (`invoke_subagent`)**: After each evaluation run completes, spawn an independent subagent auditor. The auditor MUST inspect the SQLite database, raw JSON audit logs (`audit_json`, `dedup_match_json`), and report files to verify that all data was captured completely and without truncation.
+> 3. **HITL User Approval Gate**: After the subagent auditor finishes its report, execution MUST STOP. Present the audit findings to the user and wait for explicit HITL user approval before starting the next evaluation run.
 
 **Phase 11 Goal:** Produce a 100% evidence-backed, un-truncated diagnostic report and dataset curation specification for `@ml-research-engineer.md` using the multi-dataset GPU judge pipeline.
+
 
 

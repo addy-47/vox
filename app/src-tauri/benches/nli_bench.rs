@@ -159,8 +159,15 @@ impl ModelInstance {
             .commit_from_file(&model_path)
             .map_err(|e| anyhow!("{:?}", e))?;
 
-        let has_token_type_ids = session.inputs().iter().any(|i| i.name() == "token_type_ids");
-        let class_mapping = [NliLabel::Contradiction, NliLabel::Entailment, NliLabel::Neutral];
+        let has_token_type_ids = session
+            .inputs()
+            .iter()
+            .any(|i| i.name() == "token_type_ids");
+        let class_mapping = [
+            NliLabel::Contradiction,
+            NliLabel::Entailment,
+            NliLabel::Neutral,
+        ];
 
         let mut instance = Self {
             name: name.to_string(),
@@ -184,12 +191,29 @@ impl ModelInstance {
         let h_con = "A person is sleeping.";
         let logits_con = self.raw_predict(p_con, h_con)?;
 
-        let ent_idx = logits_ent.iter().enumerate().max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap().0;
-        let con_idx = logits_con.iter().enumerate().max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap().0;
+        let ent_idx = logits_ent
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .unwrap()
+            .0;
+        let con_idx = logits_con
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .unwrap()
+            .0;
 
         if ent_idx == con_idx {
-            println!("  [WARN] Calibration collision for {}. Using default mapping.", self.name);
-            self.class_mapping = [NliLabel::Contradiction, NliLabel::Entailment, NliLabel::Neutral];
+            println!(
+                "  [WARN] Calibration collision for {}. Using default mapping.",
+                self.name
+            );
+            self.class_mapping = [
+                NliLabel::Contradiction,
+                NliLabel::Entailment,
+                NliLabel::Neutral,
+            ];
         } else {
             let mut indices = vec![0, 1, 2];
             indices.retain(|&x| x != ent_idx && x != con_idx);
@@ -200,19 +224,30 @@ impl ModelInstance {
             self.class_mapping[neu_idx] = NliLabel::Neutral;
         }
 
-        println!("  Calibrated Mapping for {}: [0: {:?}, 1: {:?}, 2: {:?}] (Model Size: {:.1} MB)", 
-                 self.name, self.class_mapping[0], self.class_mapping[1], self.class_mapping[2], self.model_size_mb);
+        println!(
+            "  Calibrated Mapping for {}: [0: {:?}, 1: {:?}, 2: {:?}] (Model Size: {:.1} MB)",
+            self.name,
+            self.class_mapping[0],
+            self.class_mapping[1],
+            self.class_mapping[2],
+            self.model_size_mb
+        );
 
         Ok(())
     }
 
     fn raw_predict(&mut self, premise: &str, hypothesis: &str) -> Result<Vec<f32>> {
-        let encoding = self.tokenizer
+        let encoding = self
+            .tokenizer
             .encode((premise, hypothesis), true)
             .map_err(|e| anyhow!("Tokenization failed: {:?}", e))?;
 
         let ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
-        let mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
+        let mask: Vec<i64> = encoding
+            .get_attention_mask()
+            .iter()
+            .map(|&x| x as i64)
+            .collect();
         let seq_len = ids.len();
 
         if seq_len == 0 {
@@ -222,35 +257,52 @@ impl ModelInstance {
         let input_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), ids)?;
         let attention_mask_arr = Array2::<i64>::from_shape_vec((1, seq_len), mask)?;
 
-        let input_ids_tensor = ort::value::Tensor::from_array(input_ids_arr)
-            .map_err(|e| anyhow!("{:?}", e))?;
-        let attention_mask_tensor = ort::value::Tensor::from_array(attention_mask_arr)
-            .map_err(|e| anyhow!("{:?}", e))?;
+        let input_ids_tensor =
+            ort::value::Tensor::from_array(input_ids_arr).map_err(|e| anyhow!("{:?}", e))?;
+        let attention_mask_tensor =
+            ort::value::Tensor::from_array(attention_mask_arr).map_err(|e| anyhow!("{:?}", e))?;
 
         let outputs = if self.has_token_type_ids {
             let type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
             let type_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), type_ids)?;
-            let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
-                .map_err(|e| anyhow!("{:?}", e))?;
-            self.session.run(ort::inputs![
-                "input_ids" => input_ids_tensor,
-                "attention_mask" => attention_mask_tensor,
-                "token_type_ids" => type_ids_tensor
-            ]).map_err(|e| anyhow!("{:?}", e))?
+            let type_ids_tensor =
+                ort::value::Tensor::from_array(type_ids_arr).map_err(|e| anyhow!("{:?}", e))?;
+            self.session
+                .run(ort::inputs![
+                    "input_ids" => input_ids_tensor,
+                    "attention_mask" => attention_mask_tensor,
+                    "token_type_ids" => type_ids_tensor
+                ])
+                .map_err(|e| anyhow!("{:?}", e))?
         } else {
-            self.session.run(ort::inputs![
-                "input_ids" => input_ids_tensor,
-                "attention_mask" => attention_mask_tensor
-            ]).map_err(|e| anyhow!("{:?}", e))?
+            self.session
+                .run(ort::inputs![
+                    "input_ids" => input_ids_tensor,
+                    "attention_mask" => attention_mask_tensor
+                ])
+                .map_err(|e| anyhow!("{:?}", e))?
         };
 
-        let output_key = outputs.keys().next().ok_or_else(|| anyhow!("No output in model"))?;
-        let logits_array = outputs[output_key].try_extract_array::<f32>().map_err(|e| anyhow!("{:?}", e))?;
+        let output_key = outputs
+            .keys()
+            .next()
+            .ok_or_else(|| anyhow!("No output in model"))?;
+        let logits_array = outputs[output_key]
+            .try_extract_array::<f32>()
+            .map_err(|e| anyhow!("{:?}", e))?;
 
-        Ok(vec![logits_array[[0, 0]], logits_array[[0, 1]], logits_array[[0, 2]]])
+        Ok(vec![
+            logits_array[[0, 0]],
+            logits_array[[0, 1]],
+            logits_array[[0, 2]],
+        ])
     }
 
-    fn predict_full(&mut self, premise: &str, hypothesis: &str) -> Result<(NliLabel, LabelProbabilities, f32, u128)> {
+    fn predict_full(
+        &mut self,
+        premise: &str,
+        hypothesis: &str,
+    ) -> Result<(NliLabel, LabelProbabilities, f32, u128)> {
         let start = Instant::now();
         let logits = self.raw_predict(premise, hypothesis)?;
         let elapsed_us = start.elapsed().as_micros();
@@ -266,10 +318,17 @@ impl ModelInstance {
         }
 
         let p_ent = prob_map.get(&NliLabel::Entailment).cloned().unwrap_or(0.0);
-        let p_con = prob_map.get(&NliLabel::Contradiction).cloned().unwrap_or(0.0);
+        let p_con = prob_map
+            .get(&NliLabel::Contradiction)
+            .cloned()
+            .unwrap_or(0.0);
         let p_neu = prob_map.get(&NliLabel::Neutral).cloned().unwrap_or(0.0);
 
-        let (max_idx, &max_prob) = probs.iter().enumerate().max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap();
+        let (max_idx, &max_prob) = probs
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .unwrap();
         let label = self.class_mapping[max_idx];
 
         let probabilities = LabelProbabilities {
@@ -297,7 +356,11 @@ fn resolve_model_dir(override_dir: Option<PathBuf>) -> PathBuf {
     fallback_path
 }
 
-fn run_batch_nli_score(input: PathBuf, output: PathBuf, model_dir_opt: Option<PathBuf>) -> Result<()> {
+fn run_batch_nli_score(
+    input: PathBuf,
+    output: PathBuf,
+    model_dir_opt: Option<PathBuf>,
+) -> Result<()> {
     println!("=================================================================");
     println!(" VOX v7 GATE 2 DEBERTA-V3 NLI DOMAIN PRECISION BENCHMARK");
     println!(" Input Dataset: {:?}", input);
@@ -305,7 +368,10 @@ fn run_batch_nli_score(input: PathBuf, output: PathBuf, model_dir_opt: Option<Pa
     println!("=================================================================");
 
     if !input.exists() {
-        return Err(anyhow!("Input JSON dataset file does not exist: {:?}", input));
+        return Err(anyhow!(
+            "Input JSON dataset file does not exist: {:?}",
+            input
+        ));
     }
 
     let model_dir = resolve_model_dir(model_dir_opt);
@@ -324,7 +390,8 @@ fn run_batch_nli_score(input: PathBuf, output: PathBuf, model_dir_opt: Option<Pa
     let total_start = Instant::now();
 
     for (idx, p) in pairs.iter().enumerate() {
-        let (pred_label, probs, max_prob, elapsed_us) = model.predict_full(&p.premise, &p.hypothesis)?;
+        let (pred_label, probs, max_prob, elapsed_us) =
+            model.predict_full(&p.premise, &p.hypothesis)?;
 
         // Vox v7 threshold enforcement: ENTAILMENT or CONTRADICTION requires P >= 0.85, else fallback to NEUTRAL
         let final_pred_label = match pred_label {
@@ -376,13 +443,25 @@ fn run_batch_nli_score(input: PathBuf, output: PathBuf, model_dir_opt: Option<Pa
     }
 
     let total_duration_ms = total_start.elapsed().as_secs_f64() * 1000.0;
-    let avg_pair_latency_ms = if !pairs.is_empty() { total_duration_ms / pairs.len() as f64 } else { 0.0 };
-    let overall_accuracy = if !pairs.is_empty() { (total_matches as f64 / pairs.len() as f64) * 100.0 } else { 0.0 };
+    let avg_pair_latency_ms = if !pairs.is_empty() {
+        total_duration_ms / pairs.len() as f64
+    } else {
+        0.0
+    };
+    let overall_accuracy = if !pairs.is_empty() {
+        (total_matches as f64 / pairs.len() as f64) * 100.0
+    } else {
+        0.0
+    };
 
     let mut domain_accuracies = HashMap::new();
     for (d, tot) in &domain_total {
         let mat = domain_matches.get(d).cloned().unwrap_or(0);
-        let acc = if *tot > 0 { (mat as f64 / *tot as f64) * 100.0 } else { 0.0 };
+        let acc = if *tot > 0 {
+            (mat as f64 / *tot as f64) * 100.0
+        } else {
+            0.0
+        };
         domain_accuracies.insert(d.clone(), acc);
     }
 
@@ -408,11 +487,20 @@ fn run_batch_nli_score(input: PathBuf, output: PathBuf, model_dir_opt: Option<Pa
 
     println!("\n=================================================================");
     println!(" BENCHMARK COMPLETE");
-    println!(" Overall Accuracy: {:.2}% ({}/{} matches)", overall_accuracy, total_matches, pairs.len());
+    println!(
+        " Overall Accuracy: {:.2}% ({}/{} matches)",
+        overall_accuracy,
+        total_matches,
+        pairs.len()
+    );
     for (dom, acc) in &batch_output.summary.domain_accuracies {
         println!("   Domain '{}': {:.2}%", dom, acc);
     }
-    println!(" Total Time: {:.2}s ({:.2} ms/pair)", total_duration_ms / 1000.0, avg_pair_latency_ms);
+    println!(
+        " Total Time: {:.2}s ({:.2} ms/pair)",
+        total_duration_ms / 1000.0,
+        avg_pair_latency_ms
+    );
     println!(" Output persisted to: {:?}", output);
     println!("=================================================================");
 
@@ -423,7 +511,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::BatchNliScore { input, output, model_dir } => {
+        Commands::BatchNliScore {
+            input,
+            output,
+            model_dir,
+        } => {
             run_batch_nli_score(input, output, model_dir)?;
         }
     }

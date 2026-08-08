@@ -2,8 +2,8 @@
 //! src/services/pipeline/tts_lifecycle.rs — TTS worker thread initialization and cooldown
 //! ============================================================================
 
-use super::PipelineOrchestrator;
 use super::types::resolve_reference_audio;
+use super::PipelineOrchestrator;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -12,10 +12,7 @@ impl PipelineOrchestrator {
     ///
     /// Reads `TtsProviderConfig` from settings to determine which provider to
     /// construct (mirrors `warm_up_llm()`).
-    pub fn warm_up_tts(
-        &self,
-        app: &tauri::AppHandle,
-    ) -> Result<(), String> {
+    pub fn warm_up_tts(&self, app: &tauri::AppHandle) -> Result<(), String> {
         let mut lock = self.tts_tx.lock();
         if lock.is_some() {
             return Ok(());
@@ -32,7 +29,10 @@ impl PipelineOrchestrator {
         };
 
         use crate::core::settings::TtsProviderConfig;
-        use crate::services::tts::{ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider, TtsEngine as SupertonicEngine, TtsProvider};
+        use crate::services::tts::{
+            ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider,
+            TtsEngine as SupertonicEngine, TtsProvider,
+        };
 
         let provider: Box<dyn TtsProvider> = match &provider_config {
             TtsProviderConfig::Supertonic => {
@@ -52,8 +52,14 @@ impl PipelineOrchestrator {
                 let chatterbox_path = crate::utils::paths::model_dir("tts").join("chatterbox");
                 let ref_audio = resolve_reference_audio(voice_id.as_deref());
                 Box::new(
-                    ChatterboxEngine::new(&chatterbox_path, language, *cb_quality, *cb_speed, ref_audio.as_deref())
-                        .map_err(|e| format!("Failed to create Chatterbox engine: {}", e))?,
+                    ChatterboxEngine::new(
+                        &chatterbox_path,
+                        language,
+                        *cb_quality,
+                        *cb_speed,
+                        ref_audio.as_deref(),
+                    )
+                    .map_err(|e| format!("Failed to create Chatterbox engine: {}", e))?,
                 )
             }
             TtsProviderConfig::ChatterboxRemote {
@@ -62,12 +68,18 @@ impl PipelineOrchestrator {
                 quality_steps: remote_quality,
                 speed: remote_speed,
                 remote_path,
-                voice_id: _,    // Phase D: remote voice forwarding not yet implemented
+                voice_id: _, // Phase D: remote voice forwarding not yet implemented
             } => {
                 log::info!("[Pipeline] Warming up TTS worker (ChatterboxRemote)...");
                 Box::new(
-                    ChatterboxRemoteProvider::new(endpoint, language, *remote_quality, *remote_speed, remote_path)
-                        .map_err(|e| format!("Failed to create ChatterboxRemote provider: {}", e))?,
+                    ChatterboxRemoteProvider::new(
+                        endpoint,
+                        language,
+                        *remote_quality,
+                        *remote_speed,
+                        remote_path,
+                    )
+                    .map_err(|e| format!("Failed to create ChatterboxRemote provider: {}", e))?,
                 )
             }
             TtsProviderConfig::EdgeTts { voice: edge_voice } => {
@@ -76,10 +88,7 @@ impl PipelineOrchestrator {
             }
         };
 
-        log::info!(
-            "[Pipeline] TTS provider: {:?}",
-            provider.kind()
-        );
+        log::info!("[Pipeline] TTS provider: {:?}", provider.kind());
 
         let (tx, rx) = std::sync::mpsc::channel::<crate::services::tts::TtsCommand>();
 
@@ -93,12 +102,7 @@ impl PipelineOrchestrator {
             .name("vox-tts-persistent".to_string())
             .spawn(move || {
                 crate::services::tts::spawn_tts_worker(
-                    app_clone,
-                    rx,
-                    provider,
-                    event_tx,
-                    cancel_tts,
-                    is_loaded,
+                    app_clone, rx, provider, event_tx, cancel_tts, is_loaded,
                 );
             })
             .map_err(|e| e.to_string())?;

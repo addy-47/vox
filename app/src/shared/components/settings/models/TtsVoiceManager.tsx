@@ -34,7 +34,7 @@ export interface TtsVoiceManagerProps {
   activeCategoryTab?: "model" | "settings";
 }
 
-export const TtsVoiceManager: React.FC<TtsVoiceManagerProps> = memo(({
+export const TtsVoiceManager = memo(({
   layoutMode,
   customVoices,
   loadCustomVoices,
@@ -44,7 +44,7 @@ export const TtsVoiceManager: React.FC<TtsVoiceManagerProps> = memo(({
   edgeTtsError,
   loadingEdgeVoices,
   loadEdgeVoices,
-}) => {
+}: TtsVoiceManagerProps) => {
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);

@@ -63,7 +63,9 @@ mod tests {
         // Below 0.0 -> Err
         let res = apply_setting_mutation(&mut settings, "vad", "threshold", &json!(-0.1));
         assert!(res.is_err());
-        assert!(res.unwrap_err().contains("threshold must be between 0.0 and 1.0"));
+        assert!(res
+            .unwrap_err()
+            .contains("threshold must be between 0.0 and 1.0"));
 
         // Above 1.0 -> Err
         let res = apply_setting_mutation(&mut settings, "vad", "threshold", &json!(1.5));

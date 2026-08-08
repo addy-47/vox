@@ -1,9 +1,9 @@
+use crate::core::constants::inter_collection_edge;
 use anyhow::{anyhow, Result};
 use ndarray::Array2;
 use std::path::Path;
 use std::sync::OnceLock;
 use tokenizers::Tokenizer;
-use crate::core::constants::inter_collection_edge;
 
 pub const EDGE_CLASSIFIER_MODEL_DIR: &str = "classifier/modernbert_edge_creation";
 pub const MODEL_FILENAME: &str = "model_quantized.onnx";
@@ -42,7 +42,12 @@ pub fn init_edge_classifier(model_dir: &Path) -> Result<bool> {
                 max_length: 512,
                 ..Default::default()
             }))
-            .map_err(|e| anyhow!("Failed to configure Edge Classifier tokenizer truncation: {}", e))?;
+            .map_err(|e| {
+                anyhow!(
+                    "Failed to configure Edge Classifier tokenizer truncation: {}",
+                    e
+                )
+            })?;
     }
 
     let session = ort::session::Session::builder()
@@ -54,7 +59,10 @@ pub fn init_edge_classifier(model_dir: &Path) -> Result<bool> {
         .commit_from_file(&model_path)
         .map_err(|e| anyhow!("Failed to commit Edge Classifier session: {:?}", e))?;
 
-    let has_token_type_ids = session.inputs().iter().any(|i| i.name() == "token_type_ids");
+    let has_token_type_ids = session
+        .inputs()
+        .iter()
+        .any(|i| i.name() == "token_type_ids");
 
     let engine = EdgeClassifierEngine {
         session: parking_lot::Mutex::new(session),
@@ -63,7 +71,9 @@ pub fn init_edge_classifier(model_dir: &Path) -> Result<bool> {
     };
 
     let _ = EDGE_ENGINE.set(engine);
-    log::info!("[EdgeClassifier] ModernBERT INT8 ONNX Edge Classifier Engine initialized successfully.");
+    log::info!(
+        "[EdgeClassifier] ModernBERT INT8 ONNX Edge Classifier Engine initialized successfully."
+    );
     Ok(true)
 }
 
@@ -118,7 +128,10 @@ pub fn classify_edge(
         }
     };
 
-    let input_text = format!("[{}] {} [SEP] [{}] {}", src_collection, src_fact, tgt_collection, tgt_fact);
+    let input_text = format!(
+        "[{}] {} [SEP] [{}] {}",
+        src_collection, src_fact, tgt_collection, tgt_fact
+    );
 
     let encoding = engine
         .tokenizer
@@ -126,7 +139,11 @@ pub fn classify_edge(
         .map_err(|e| anyhow!("Tokenization failed for Edge Classifier: {}", e))?;
 
     let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
-    let attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&m| m as i64).collect();
+    let attention_mask: Vec<i64> = encoding
+        .get_attention_mask()
+        .iter()
+        .map(|&m| m as i64)
+        .collect();
     let seq_len = input_ids.len();
 
     let input_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), input_ids)?;
@@ -165,8 +182,14 @@ pub fn classify_edge(
     }
 
     // Softmax calculation
-    let max_logit = logits_slice.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let exps: Vec<f32> = logits_slice.iter().map(|&l| (l - max_logit).exp()).collect();
+    let max_logit = logits_slice
+        .iter()
+        .cloned()
+        .fold(f32::NEG_INFINITY, f32::max);
+    let exps: Vec<f32> = logits_slice
+        .iter()
+        .map(|&l| (l - max_logit).exp())
+        .collect();
     let sum_exp: f32 = exps.iter().sum();
     let probs: Vec<f32> = if sum_exp > 0.0 {
         exps.iter().map(|e| e / sum_exp).collect()
@@ -191,7 +214,6 @@ pub fn classify_edge(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::core::constants::{
@@ -215,10 +237,25 @@ mod tests {
         let allowed_pairs = [
             ("Identity", "Profile", PM_RELATION_SHAPES, "shaped_by"),
             ("Directives", "Constraints", PM_RELATION_SHAPES, "shaped_by"),
-            ("Directives", "Entities", PM_RELATION_DEPENDS_ON, "dependency_of"),
-            ("Entities", "Constraints", PM_RELATION_DEPENDS_ON, "constrains"),
+            (
+                "Directives",
+                "Entities",
+                PM_RELATION_DEPENDS_ON,
+                "dependency_of",
+            ),
+            (
+                "Entities",
+                "Constraints",
+                PM_RELATION_DEPENDS_ON,
+                "constrains",
+            ),
             ("Entities", "Profile", PM_RELATION_SHAPES, "shaped_by"),
-            ("Entities", "Entities", PM_RELATION_DEPENDS_ON, "dependency_of"),
+            (
+                "Entities",
+                "Entities",
+                PM_RELATION_DEPENDS_ON,
+                "dependency_of",
+            ),
             ("Profile", "Profile", PM_RELATION_SHAPES, "shaped_by"),
             ("Profile", "Entities", PM_RELATION_SHAPES, "shaped_by"),
             ("Profile", "Constraints", "restricted_by", "restricts"),

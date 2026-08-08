@@ -1,6 +1,10 @@
 use super::{LlmProvider, ProviderKind};
 use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
+use crate::services::llm::types::{
+    GenerationRequest, LlmError, OutputConstraint, ProviderCapabilities, Support,
+};
+use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +26,7 @@ pub struct OpenAiCompatProvider {
     provider_name: Option<String>,
     async_client: reqwest::Client,
     backend_kind: Arc<std::sync::RwLock<Option<LocalBackendKind>>>,
+    capabilities: ProviderCapabilities,
 }
 
 impl OpenAiCompatProvider {
@@ -68,6 +73,16 @@ impl OpenAiCompatProvider {
             provider_name: provider_name.map(|s| s.to_string()),
             async_client,
             backend_kind: Arc::new(std::sync::RwLock::new(None)),
+            capabilities: ProviderCapabilities {
+                temperature: Support::Supported,
+                top_p: Support::Supported,
+                top_k: Support::Supported,
+                max_output_tokens: Support::Supported,
+                json_object: Support::Supported,
+                json_schema: Support::Supported,
+                streaming: Support::Supported,
+                seed: Support::Supported,
+            },
         }
     }
 
@@ -103,7 +118,10 @@ impl OpenAiCompatProvider {
 
         // Try to probe Ollama
         let ollama_url = format!("{}/api/tags", self.base_url);
-        let mut builder = self.async_client.get(&ollama_url).timeout(Duration::from_secs(2));
+        let mut builder = self
+            .async_client
+            .get(&ollama_url)
+            .timeout(Duration::from_secs(2));
         builder = self.inject_headers(builder);
 
         let is_ollama = block_on(async {
@@ -114,12 +132,18 @@ impl OpenAiCompatProvider {
         });
 
         if is_ollama {
-            log::info!("[OpenAiCompat] Detected Ollama native backend at {}", self.base_url);
+            log::info!(
+                "[OpenAiCompat] Detected Ollama native backend at {}",
+                self.base_url
+            );
             detected = LocalBackendKind::Ollama;
         } else {
             // Try to probe LM Studio
             let lms_url = format!("{}/api/v1/models", self.base_url);
-            let mut builder = self.async_client.get(&lms_url).timeout(Duration::from_secs(2));
+            let mut builder = self
+                .async_client
+                .get(&lms_url)
+                .timeout(Duration::from_secs(2));
             builder = self.inject_headers(builder);
 
             let is_lms = block_on(async {
@@ -130,10 +154,16 @@ impl OpenAiCompatProvider {
             });
 
             if is_lms {
-                log::info!("[OpenAiCompat] Detected LM Studio native backend at {}", self.base_url);
+                log::info!(
+                    "[OpenAiCompat] Detected LM Studio native backend at {}",
+                    self.base_url
+                );
                 detected = LocalBackendKind::LmStudio;
             } else {
-                log::info!("[OpenAiCompat] Fallback to standard OpenAI compatibility at {}", self.base_url);
+                log::info!(
+                    "[OpenAiCompat] Fallback to standard OpenAI compatibility at {}",
+                    self.base_url
+                );
             }
         }
 
@@ -148,7 +178,6 @@ struct ChatMessage {
     role: String,
     content: String,
 }
-
 
 #[derive(Deserialize)]
 struct ChatCompletionChunk {
@@ -193,99 +222,172 @@ struct OllamaModelDetails {
     family: Option<String>,
 }
 
-use crate::services::memory::ConversationContext;
-
 impl LlmProvider for OpenAiCompatProvider {
-    fn generate(
-        &self,
-        ctx: &ConversationContext,
+    fn generate<'a>(
+        &'a self,
+        request: GenerationRequest,
         turn_id: u32,
-        cancel_flag: &Arc<AtomicBool>,
-        tx: &mpsc::Sender<VoxEvent>,
-    ) -> anyhow::Result<()> {
-        log::info!(
-            "[OpenAiCompat] Starting generation for turn {} on model {} with url {} ({} messages in context)",
-            turn_id,
-            self.model,
-            self.base_url,
-            ctx.messages.len()
-        );
+        cancel_flag: &'a Arc<AtomicBool>,
+        tx: &'a mpsc::Sender<VoxEvent>,
+    ) -> BoxFuture<'a, Result<(), LlmError>> {
+        Box::pin(async move {
+            log::info!(
+                "[OpenAiCompat] Starting generation for turn {} on model {} with url {} ({} messages in input)",
+                turn_id,
+                self.model,
+                self.base_url,
+                request.input.messages.len()
+            );
 
-        let last_user_text = ctx.messages.last().map(|m| m.content.as_str()).unwrap_or("");
-        if user_text_is_warmup(last_user_text) {
-            log::info!("[OpenAiCompat] Warmup request received. Skipping remote LLM call.");
-            return Ok(());
-        }
+            let last_user_text = request
+                .input
+                .messages
+                .last()
+                .map(|m| m.content.as_str())
+                .unwrap_or("");
+            if user_text_is_warmup(last_user_text) {
+                log::info!("[OpenAiCompat] Warmup request received. Skipping remote LLM call.");
+                return Ok(());
+            }
 
-        let messages: Vec<ChatMessage> = ctx
-            .messages
-            .iter()
-            .map(|m| ChatMessage {
-                role: m.role.to_string(),
-                content: m.content.clone(),
-            })
-            .collect();
+            let messages: Vec<ChatMessage> = request
+                .input
+                .messages
+                .iter()
+                .map(|m| ChatMessage {
+                    role: m.role.to_string(),
+                    content: m.content.clone(),
+                })
+                .collect();
 
-        let is_json_request = ctx.messages.iter().any(|m| {
-            m.content.contains("JSON") || m.content.contains("AI Memory Extraction Assistant") || m.content.contains("compaction") || m.content.contains("compress")
-        });
-
-        let response_format = if is_json_request {
-            Some(serde_json::json!({ "type": "json_object" }))
-        } else {
-            None
-        };
-
-        let kind = self.detect_backend_kind();
-
-        let (url, req_body) = match kind {
-            LocalBackendKind::Ollama => {
-                let url = format!("{}/api/chat", self.base_url);
-                let req_body = serde_json::json!({
-                    "model": self.model,
-                    "messages": messages,
-                    "stream": true,
-                    "options": {
-                        "num_ctx": 8192,
-                        "temperature": 0.2
+            let response_format = match &request.output {
+                OutputConstraint::Text => None,
+                OutputConstraint::JsonObject => Some(serde_json::json!({ "type": "json_object" })),
+                OutputConstraint::JsonSchema {
+                    name,
+                    schema,
+                    strict,
+                } => Some(serde_json::json!({
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": name,
+                        "schema": schema,
+                        "strict": strict
                     }
-                });
-                (url, req_body)
-            }
-            LocalBackendKind::LmStudio => {
-                let url = format!("{}/api/v1/chat", self.base_url);
-                let req_body = serde_json::json!({
-                    "model": self.model,
-                    "messages": messages,
-                    "stream": true,
-                    "context_length": 8192,
-                    "temperature": 0.2
-                });
-                (url, req_body)
-            }
-            LocalBackendKind::StandardOpenAi => {
-                let url = if self.base_url.ends_with("/chat/completions") {
-                    self.base_url.clone()
-                } else if self.base_url.ends_with("/v1") || self.base_url.ends_with("/openai") {
-                    format!("{}/chat/completions", self.base_url)
-                } else {
-                    format!("{}/v1/chat/completions", self.base_url)
-                };
-                let req_body = serde_json::json!({
-                    "model": self.model,
-                    "messages": messages,
-                    "stream": true,
-                    "response_format": response_format,
-                });
-                (url, req_body)
-            }
-        };
+                })),
+            };
 
-        block_on(async {
+            let kind = self.detect_backend_kind();
+
+            let (url, req_body) = match kind {
+                LocalBackendKind::Ollama => {
+                    let url = format!("{}/api/chat", self.base_url);
+                    let mut options_map = serde_json::Map::new();
+
+                    if let Some(temp) = request.options.temperature {
+                        options_map.insert("temperature".to_string(), serde_json::json!(temp));
+                    }
+                    if let Some(top_p) = request.options.top_p {
+                        options_map.insert("top_p".to_string(), serde_json::json!(top_p));
+                    }
+                    if let Some(top_k) = request.options.top_k {
+                        options_map.insert("top_k".to_string(), serde_json::json!(top_k));
+                    }
+                    if let Some(max_tokens) = request.options.max_output_tokens {
+                        options_map
+                            .insert("num_predict".to_string(), serde_json::json!(max_tokens));
+                    }
+                    if !request.options.stop.is_empty() {
+                        options_map
+                            .insert("stop".to_string(), serde_json::json!(request.options.stop));
+                    }
+                    if let Some(seed) = request.options.seed {
+                        options_map.insert("seed".to_string(), serde_json::json!(seed));
+                    }
+
+                    let req_body = serde_json::json!({
+                        "model": self.model,
+                        "messages": messages,
+                        "stream": true,
+                        "options": options_map
+                    });
+                    (url, req_body)
+                }
+                LocalBackendKind::LmStudio => {
+                    let url = format!("{}/api/v1/chat", self.base_url);
+                    let mut req_map = serde_json::Map::new();
+                    req_map.insert("model".to_string(), serde_json::json!(self.model));
+                    req_map.insert("messages".to_string(), serde_json::json!(messages));
+                    req_map.insert("stream".to_string(), serde_json::json!(true));
+
+                    if let Some(temp) = request.options.temperature {
+                        req_map.insert("temperature".to_string(), serde_json::json!(temp));
+                    }
+                    if let Some(top_p) = request.options.top_p {
+                        req_map.insert("top_p".to_string(), serde_json::json!(top_p));
+                    }
+                    if let Some(top_k) = request.options.top_k {
+                        req_map.insert("top_k".to_string(), serde_json::json!(top_k));
+                    }
+                    if let Some(max_tokens) = request.options.max_output_tokens {
+                        req_map.insert("max_tokens".to_string(), serde_json::json!(max_tokens));
+                    }
+                    if !request.options.stop.is_empty() {
+                        req_map.insert("stop".to_string(), serde_json::json!(request.options.stop));
+                    }
+                    if let Some(rf) = &response_format {
+                        req_map.insert("response_format".to_string(), rf.clone());
+                    }
+
+                    (url, serde_json::Value::Object(req_map))
+                }
+                LocalBackendKind::StandardOpenAi => {
+                    let url = if self.base_url.ends_with("/chat/completions") {
+                        self.base_url.clone()
+                    } else if self.base_url.ends_with("/v1") || self.base_url.ends_with("/openai") {
+                        format!("{}/chat/completions", self.base_url)
+                    } else {
+                        format!("{}/v1/chat/completions", self.base_url)
+                    };
+
+                    let mut req_map = serde_json::Map::new();
+                    req_map.insert("model".to_string(), serde_json::json!(self.model));
+                    req_map.insert("messages".to_string(), serde_json::json!(messages));
+                    req_map.insert("stream".to_string(), serde_json::json!(true));
+
+                    if let Some(temp) = request.options.temperature {
+                        req_map.insert("temperature".to_string(), serde_json::json!(temp));
+                    }
+                    if let Some(top_p) = request.options.top_p {
+                        req_map.insert("top_p".to_string(), serde_json::json!(top_p));
+                    }
+                    if let Some(max_tokens) = request.options.max_output_tokens {
+                        req_map.insert(
+                            "max_completion_tokens".to_string(),
+                            serde_json::json!(max_tokens),
+                        );
+                    }
+                    if !request.options.stop.is_empty() {
+                        req_map.insert("stop".to_string(), serde_json::json!(request.options.stop));
+                    }
+                    if let Some(seed) = request.options.seed {
+                        req_map.insert("seed".to_string(), serde_json::json!(seed));
+                    }
+                    if let Some(rf) = &response_format {
+                        req_map.insert("response_format".to_string(), rf.clone());
+                    }
+
+                    (url, serde_json::Value::Object(req_map))
+                }
+            };
+
             let mut builder = self.async_client.post(&url).json(&req_body);
             builder = self.inject_headers(builder);
 
-            let response = builder.send().await?;
+            let response = builder
+                .send()
+                .await
+                .map_err(|e| LlmError::Transport(e.to_string()))?;
 
             if !response.status().is_success() {
                 let status = response.status();
@@ -293,11 +395,10 @@ impl LlmProvider for OpenAiCompatProvider {
                     .text()
                     .await
                     .unwrap_or_else(|_| "Unknown error".to_string());
-                return Err(anyhow::anyhow!(
-                    "HTTP Error: {} - Content: {}",
-                    status,
-                    err_text
-                ));
+                return Err(LlmError::Provider {
+                    status: status.as_u16(),
+                    message: err_text,
+                });
             }
 
             let mut stream = response.bytes_stream();
@@ -311,7 +412,6 @@ impl LlmProvider for OpenAiCompatProvider {
                     return Ok(());
                 }
 
-                // Await the next stream chunk with a 150ms timeout to ensure we check cancel_flag frequently
                 let chunk_opt =
                     match tokio::time::timeout(Duration::from_millis(150), stream.next()).await {
                         Ok(Some(chunk_result)) => match chunk_result {
@@ -321,20 +421,13 @@ impl LlmProvider for OpenAiCompatProvider {
                                 break;
                             }
                         },
-                        Ok(None) => {
-                            // EOF
-                            break;
-                        }
-                        Err(_) => {
-                            // Timeout hit, loop again to check cancel_flag
-                            None
-                        }
+                        Ok(None) => break,
+                        Err(_) => None,
                     };
 
                 if let Some(chunk) = chunk_opt {
                     buffer.extend_from_slice(&chunk);
 
-                    // Extract lines from the buffer
                     while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                         let line_bytes = buffer.drain(..=pos).collect::<Vec<u8>>();
                         if let Ok(line) = String::from_utf8(line_bytes) {
@@ -352,7 +445,6 @@ impl LlmProvider for OpenAiCompatProvider {
                 }
             }
 
-            // Process any remaining data in buffer as a final line
             if !finished && !buffer.is_empty() {
                 if let Ok(line) = String::from_utf8(buffer) {
                     let trimmed = line.trim();
@@ -368,6 +460,10 @@ impl LlmProvider for OpenAiCompatProvider {
 
             Ok(())
         })
+    }
+
+    fn capabilities(&self) -> &ProviderCapabilities {
+        &self.capabilities
     }
 
     fn health_check(&self) -> bool {
@@ -393,7 +489,7 @@ impl LlmProvider for OpenAiCompatProvider {
         }
     }
 
-    fn list_models(&self) -> anyhow::Result<Vec<LlmModelInfo>> {
+    fn list_models(&self) -> Result<Vec<LlmModelInfo>, LlmError> {
         use crate::core::settings::LlmModelInfo;
 
         block_on(async {
@@ -439,7 +535,7 @@ impl LlmProvider for OpenAiCompatProvider {
                 }
             }
 
-            // Fallback: standard /v1/models (or /models if base_url already contains version path)
+            // Fallback: standard /v1/models
             let url = if self.base_url.ends_with("/v1") || self.base_url.ends_with("/openai") {
                 format!("{}/models", self.base_url)
             } else {
@@ -448,15 +544,21 @@ impl LlmProvider for OpenAiCompatProvider {
             let mut builder = self.async_client.get(&url).timeout(Duration::from_secs(3));
             builder = self.inject_headers(builder);
 
-            let resp = builder.send().await?;
+            let resp = builder
+                .send()
+                .await
+                .map_err(|e| LlmError::Transport(e.to_string()))?;
             if !resp.status().is_success() {
-                return Err(anyhow::anyhow!(
-                    "HTTP error listing models: {}",
-                    resp.status()
-                ));
+                return Err(LlmError::Provider {
+                    status: resp.status().as_u16(),
+                    message: "Failed listing models".to_string(),
+                });
             }
 
-            let model_list = resp.json::<ModelList>().await?;
+            let model_list = resp
+                .json::<ModelList>()
+                .await
+                .map_err(|e| LlmError::Parse(e.to_string()))?;
             let models = model_list
                 .data
                 .into_iter()
@@ -483,9 +585,28 @@ impl LlmProvider for OpenAiCompatProvider {
     }
 }
 
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
+fn block_on<F: std::future::Future + Send>(future: F) -> F::Output
+where
+    F::Output: Send,
+{
     match tokio::runtime::Handle::try_current() {
-        Ok(handle) => handle.block_on(future),
+        Ok(handle) => {
+            if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
+                tokio::task::block_in_place(|| handle.block_on(future))
+            } else {
+                std::thread::scope(|s| {
+                    s.spawn(|| {
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .expect("Failed to build worker runtime")
+                            .block_on(future)
+                    })
+                    .join()
+                    .unwrap()
+                })
+            }
+        }
         Err(_) => tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -548,7 +669,7 @@ fn process_line(line: &str, turn_id: u32, tx: &mpsc::Sender<VoxEvent>, finished:
             return;
         }
 
-        // Try parsing as raw JSON ChatCompletionChunk (some providers stream raw JSON without data: prefix)
+        // Try parsing as raw JSON ChatCompletionChunk
         if let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(line) {
             if let Some(choice) = chunk.choices.first() {
                 if let Some(token) = &choice.delta.content {

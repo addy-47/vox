@@ -1,12 +1,12 @@
-use anyhow::Result;
-use turso::Connection;
+use super::batch_result::RelationEdge;
 use crate::core::constants::{
     PM_QUEUE_STATUS_DEDUPED, PM_QUEUE_STATUS_EMBEDDED, PM_QUEUE_STATUS_PROCESSING_EMBED,
     PM_QUEUE_STATUS_SUPERSEDED, PM_RELATION_SUPERSEDES,
 };
 use crate::persistence::{encode_f32_blob, mutations, queries};
 use crate::services::memory::embedder::{ensure_embedder_loaded, generate_embedding};
-use super::batch_result::RelationEdge;
+use anyhow::Result;
+use turso::Connection;
 
 pub const STAGE2_BATCH_SIZE: usize = 16;
 pub const SOFT_VECTOR_DEDUP_THRESHOLD: f32 = 0.95;
@@ -95,12 +95,14 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                 .unwrap_or_default();
 
                 if let Some((match_id, match_fact, match_coll, sim)) = soft_dups.first() {
-                    let incoming_priority = crate::core::constants::MemoryCollection::parse(&item.collection)
-                        .map(|c| c.priority())
-                        .unwrap_or(0);
-                    let existing_priority = crate::core::constants::MemoryCollection::parse(match_coll)
-                        .map(|c| c.priority())
-                        .unwrap_or(0);
+                    let incoming_priority =
+                        crate::core::constants::MemoryCollection::parse(&item.collection)
+                            .map(|c| c.priority())
+                            .unwrap_or(0);
+                    let existing_priority =
+                        crate::core::constants::MemoryCollection::parse(match_coll)
+                            .map(|c| c.priority())
+                            .unwrap_or(0);
 
                     if incoming_priority <= existing_priority {
                         // Lower or equal priority incoming item is superseded by existing DB fact
@@ -110,7 +112,8 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                             relation: PM_RELATION_SUPERSEDES.to_string(),
                             source: "Embedding".to_string(),
                         }];
-                        let rel_json = serde_json::to_string(&rel).unwrap_or_else(|_| "[]".to_string());
+                        let rel_json =
+                            serde_json::to_string(&rel).unwrap_or_else(|_| "[]".to_string());
 
                         conn.execute(
                             "UPDATE personal_memory_queue SET status = ?, vector = ?, relations_json = ? WHERE id = ?",
@@ -129,7 +132,9 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                             matched_fact: match_fact.clone(),
                             score: *sim,
                         };
-                        let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+                        let _ =
+                            crate::persistence::mutations::write_dedup_audit(conn, item.id, &log)
+                                .await;
                     } else {
                         // Higher priority incoming item supersedes existing lower priority DB fact
                         conn.execute(
@@ -154,9 +159,10 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                             matched_fact: match_fact.clone(),
                             score: *sim,
                         };
-                        let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+                        let _ =
+                            crate::persistence::mutations::write_dedup_audit(conn, item.id, &log)
+                                .await;
                     }
-
                 } else {
                     conn.execute(
                         "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
@@ -168,7 +174,10 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                 processed_count += 1;
             }
             Ok(None) | Err(_) => {
-                log::warn!("[Stage2Embed] Failed to generate embedding for queue item {}", item.id);
+                log::warn!(
+                    "[Stage2Embed] Failed to generate embedding for queue item {}",
+                    item.id
+                );
                 mutations::mark_job_failed(conn, item.id, "Embedding generation failed").await;
             }
         }

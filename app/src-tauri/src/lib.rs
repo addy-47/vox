@@ -15,8 +15,9 @@ use crate::ipc::history::{
     commit_session_to_history, delete_session, get_sessions, get_transcript_history, get_turns,
 };
 use crate::ipc::pipeline::{
-    check_engine_status, engage, get_realtime_session_cache, launch_engine, start_realtime_session, stop_engine,
-    stop_realtime_session, test_clip, test_clip_cancel, pause_pipeline, resume_pipeline,
+    check_engine_status, engage, get_realtime_session_cache, launch_engine, pause_pipeline,
+    resume_pipeline, start_realtime_session, stop_engine, stop_realtime_session, test_clip,
+    test_clip_cancel,
 };
 use crate::ipc::settings::{
     check_llm_provider_health, check_stt_provider_health, check_tts_provider_health, get_settings,

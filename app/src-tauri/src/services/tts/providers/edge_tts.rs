@@ -11,24 +11,23 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use std::io::Write;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
+use std::io::Write;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
+use super::{TtsProvider, TtsProviderKind};
 use crate::core::events::VoxEvent;
 use crate::services::audio::decode::decode_bytes_to_24khz_mono;
-use super::{TtsProvider, TtsProviderKind};
 
 pub fn get_trusted_client_token() -> String {
     let bytes: [u8; 32] = [
-        0x36, 0x41, 0x35, 0x41, 0x41, 0x31, 0x44, 0x34,
-        0x45, 0x41, 0x46, 0x46, 0x34, 0x45, 0x39, 0x46,
-        0x42, 0x33, 0x37, 0x45, 0x32, 0x33, 0x44, 0x36,
-        0x38, 0x34, 0x39, 0x31, 0x44, 0x36, 0x46, 0x34,
+        0x36, 0x41, 0x35, 0x41, 0x41, 0x31, 0x44, 0x34, 0x45, 0x41, 0x46, 0x46, 0x34, 0x45, 0x39,
+        0x46, 0x42, 0x33, 0x37, 0x45, 0x32, 0x33, 0x44, 0x36, 0x38, 0x34, 0x39, 0x31, 0x44, 0x36,
+        0x46, 0x34,
     ];
     String::from_utf8_lossy(&bytes).to_string()
 }
@@ -62,9 +61,15 @@ pub fn resolve_full_voice_name(voice: &str) -> String {
     if voice.contains("Microsoft Server Speech") {
         voice.to_string()
     } else if let Some((lang, name)) = voice.rsplit_once('-') {
-        format!("Microsoft Server Speech Text to Speech Voice ({}, {})", lang, name)
+        format!(
+            "Microsoft Server Speech Text to Speech Voice ({}, {})",
+            lang, name
+        )
     } else {
-        format!("Microsoft Server Speech Text to Speech Voice (en-US, {})", voice)
+        format!(
+            "Microsoft Server Speech Text to Speech Voice (en-US, {})",
+            voice
+        )
     }
 }
 

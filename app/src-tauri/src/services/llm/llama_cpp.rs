@@ -124,7 +124,6 @@ impl ModelFamily {
         prompt
     }
 
-
     pub fn stop_sequences(&self) -> &'static [&'static str] {
         match self {
             ModelFamily::Gemma => &["<end", "<eos>", "<|turn>", "turn|>"],
@@ -357,12 +356,16 @@ impl LlmWorker {
         while let Ok(cmd) = rx.recv() {
             match cmd {
                 super::actor::LlmCommand::Generate {
-                    ctx,
+                    request,
                     turn_id,
                     cancel_flag,
                 } => {
-                    if let Err(e) = self.generate(&ctx, turn_id, &cancel_flag, &tx)
-                    {
+                    let ctx = crate::services::memory::ConversationContext {
+                        messages: request.input.messages,
+                        token_count: 0,
+                        kv_cache_index: 0,
+                    };
+                    if let Err(e) = self.generate(&ctx, turn_id, &cancel_flag, &tx) {
                         log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
                         let _ = tx.send(VoxEvent::Error {
                             turn_id,
@@ -380,7 +383,6 @@ impl LlmWorker {
         log::info!("[LLM Worker] Loop exited. Model will be dropped.");
     }
 }
-
 
 use crate::services::memory::ConversationContext;
 

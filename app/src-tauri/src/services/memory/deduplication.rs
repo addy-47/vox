@@ -44,7 +44,10 @@ mod tests {
     #[test]
     fn test_jaccard_similarity() {
         assert_eq!(jaccard_similarity("hello world", "hello world"), 1.0);
-        assert_eq!(jaccard_similarity("hello world", "hello there world"), 2.0 / 3.0);
+        assert_eq!(
+            jaccard_similarity("hello world", "hello there world"),
+            2.0 / 3.0
+        );
         assert_eq!(jaccard_similarity("apple", "banana"), 0.0);
     }
 

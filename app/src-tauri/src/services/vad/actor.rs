@@ -1,7 +1,7 @@
 use super::VadBackend;
+use super::VadEngine as _;
 use crate::core::settings::InteractionMode;
 use crate::core::state::{InteractionOwner, VadCommand};
-use super::VadEngine as _;
 use anyhow::Result;
 use serde_json::json;
 use std::sync::atomic::Ordering;
@@ -281,7 +281,8 @@ where
             };
 
             if effective_mode == InteractionMode::PTT {
-                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                    app.state();
                 let is_rec = state.ptt.is_recording.load(Ordering::SeqCst);
 
                 if is_rec {
@@ -308,7 +309,10 @@ where
                                     .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
                                     .collect();
                                 if let Err(e) = tx.try_send(pre_roll_i16) {
-                                    log::error!("[VAD] Failed to flush PTT pre-roll audio to S2S: {:?}", e);
+                                    log::error!(
+                                        "[VAD] Failed to flush PTT pre-roll audio to S2S: {:?}",
+                                        e
+                                    );
                                 } else {
                                     log::info!("[VAD] Flushed PTT pre-roll audio on speech onset.");
                                 }
@@ -323,7 +327,8 @@ where
 
                 // In Realtime PTT: Gate audio bridge forwarding
                 if let Some(ref tx) = realtime_tx {
-                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                        app.state();
                     if state.ptt.speech_detected.load(Ordering::Relaxed) {
                         let i16_samples: Vec<i16> = chunk
                             .iter()
@@ -332,17 +337,22 @@ where
                         if let Err(e) = tx.try_send(i16_samples) {
                             log::error!("[VAD] Failed to send gated PTT audio samples to realtime S2S bridge: {:?}", e);
                         } else {
-                            static PTT_ROUTE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                            static PTT_ROUTE_COUNT: std::sync::atomic::AtomicU64 =
+                                std::sync::atomic::AtomicU64::new(0);
                             let count = PTT_ROUTE_COUNT.fetch_add(1, Ordering::Relaxed);
                             if count % 200 == 0 {
-                                log::debug!("[VAD] Routing realtime PTT audio chunk (count: {})", count + 1);
+                                log::debug!(
+                                    "[VAD] Routing realtime PTT audio chunk (count: {})",
+                                    count + 1
+                                );
                             }
                         }
                     }
                 }
 
                 // In both Modular and Realtime PTT: Accumulate pre-roll when not in speech
-                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
+                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                    app.state();
                 if !state.ptt.speech_detected.load(Ordering::Relaxed) {
                     pre_roll_buffer.push(&chunk);
                 }
@@ -354,7 +364,6 @@ where
                 }
                 continue;
             }
-
 
             // ── Phase 4: Speaker-mode mic ducking ────────────────────────────
             // Drop mic frames while playback is active in Speaker mode.
@@ -369,7 +378,10 @@ where
                     .pipeline
                     .playback_active
                     .load(std::sync::atomic::Ordering::Relaxed);
-                if realtime_tx.is_none() && is_playing && audio_mode == crate::core::settings::AudioOutputMode::Speaker {
+                if realtime_tx.is_none()
+                    && is_playing
+                    && audio_mode == crate::core::settings::AudioOutputMode::Speaker
+                {
                     // Drop this frame — do NOT advance utterance buffer or VAD state
                     continue;
                 }
@@ -559,7 +571,11 @@ mod tests {
         let total_samples_pushed = 100_000;
         for _ in 0..(total_samples_pushed / 256) {
             pre_roll.push(&silence_chunk);
-            assert!(pre_roll.as_slice().len() <= 8000, "Pre-roll length exceeded cap: {}", pre_roll.as_slice().len());
+            assert!(
+                pre_roll.as_slice().len() <= 8000,
+                "Pre-roll length exceeded cap: {}",
+                pre_roll.as_slice().len()
+            );
         }
 
         // Verify pre-roll capacity stays strictly bounded at 8,000 samples (500ms at 16kHz)
@@ -626,4 +642,3 @@ mod tests {
         assert!(!is_above_noise_gate(borderline_rms, noise_gate, true));
     }
 }
-

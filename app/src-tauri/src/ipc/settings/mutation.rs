@@ -333,11 +333,15 @@ pub(crate) fn apply_setting_mutation(
         ("llm", "ctx_size") => {
             let val = value
                 .as_u64()
-                .ok_or("ctx_size must be a positive integer")?
-                as u32;
-            if let crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } = settings.llm.provider {
+                .ok_or("ctx_size must be a positive integer")? as u32;
+            if let crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } =
+                settings.llm.provider
+            {
                 if val < 8192 {
-                    return Err("Cloud/Server LLM providers require a minimum context size of 8192 tokens".to_string());
+                    return Err(
+                        "Cloud/Server LLM providers require a minimum context size of 8192 tokens"
+                            .to_string(),
+                    );
                 }
             }
             settings.llm.ctx_size = val;
@@ -347,8 +351,9 @@ pub(crate) fn apply_setting_mutation(
                 value.as_u64().ok_or("threads must be a positive integer")? as u32;
         }
         ("llm", "provider") => {
-            let prov: crate::core::settings::LlmProviderConfig = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid provider: {}", e))?;
+            let prov: crate::core::settings::LlmProviderConfig =
+                serde_json::from_value(value.clone())
+                    .map_err(|e| format!("Invalid provider: {}", e))?;
             if let crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } = prov {
                 if settings.llm.ctx_size < 8192 {
                     settings.llm.ctx_size = 8192;
@@ -458,7 +463,9 @@ pub(crate) fn apply_setting_mutation(
                 .ok_or("pipeline_processing_enabled must be a boolean")?;
         }
         ("memory", "max_personal_memory_share") => {
-            let val = value.as_f64().ok_or("max_personal_memory_share must be a number")? as f32;
+            let val = value
+                .as_f64()
+                .ok_or("max_personal_memory_share must be a number")? as f32;
             if !(0.0..=1.0).contains(&val) {
                 return Err("max_personal_memory_share must be between 0.0 and 1.0".to_string());
             }
@@ -473,8 +480,7 @@ pub(crate) fn apply_setting_mutation(
         ("memory", "top_k_facts") => {
             let top_k = value
                 .as_u64()
-                .ok_or("top_k_facts must be a positive integer")?
-                as u32;
+                .ok_or("top_k_facts must be a positive integer")? as u32;
             if top_k == 0 || top_k > 100 {
                 return Err("top_k_facts must be between 1 and 100".to_string());
             }
@@ -483,15 +489,16 @@ pub(crate) fn apply_setting_mutation(
         ("memory", "max_hops") => {
             let max_hops = value
                 .as_u64()
-                .ok_or("max_hops must be a positive integer")?
-                as u32;
+                .ok_or("max_hops must be a positive integer")? as u32;
             if max_hops == 0 || max_hops > 10 {
                 return Err("max_hops must be between 1 and 10".to_string());
             }
             settings.memory.max_hops = max_hops;
         }
         ("memory", "semantic_similarity_cutoff") => {
-            let val = value.as_f64().ok_or("semantic_similarity_cutoff must be a number")? as f32;
+            let val = value
+                .as_f64()
+                .ok_or("semantic_similarity_cutoff must be a number")? as f32;
             if !(0.0..=1.0).contains(&val) {
                 return Err("semantic_similarity_cutoff must be between 0.0 and 1.0".to_string());
             }

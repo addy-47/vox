@@ -152,5 +152,3 @@ mod tests {
         assert_eq!(output.len(), 255);
     }
 }
-
-

@@ -23,8 +23,8 @@ use vox_lib::core::settings::{MemorySettings, SttProviderConfig, VoxSettings};
 use vox_lib::persistence::memory_worker::{spawn_memory_worker, MemoryWorkerEvent};
 use vox_lib::services::llm::{LlmProvider, OpenAiCompatProvider, ProviderKind};
 use vox_lib::services::memory::{
-    classify_query, ensure_classifier_loaded, ensure_embedder_loaded, estimate_tokens,
-    ChatMessage, ConversationContext, ConversationManager, Role,
+    classify_query, ensure_classifier_loaded, ensure_embedder_loaded, estimate_tokens, ChatMessage,
+    ConversationContext, ConversationManager, Role,
 };
 use vox_lib::services::stt::providers::{create_stt_provider, SttProvider, SttProviderKind};
 use vox_lib::services::tts::providers::TtsProvider;
@@ -149,18 +149,18 @@ fn call_nvidia_judge(
         .timeout(Duration::from_secs(60))
         .build()?;
     let url = "https://integrate.api.nvidia.com/v1/chat/completions";
-    
+
     let system_prompt = "You are an independent semantic evaluator. You judge if the assistant correctly recalled the expected facts in its response given the user's query.\n\
                          You must output ONLY valid JSON of format:\n\
                          {\n  \"passed\": true/false,\n  \"reason\": \"One sentence explanation\"\n}";
-                         
+
     let user_content = format!(
         "User Query: {}\n\
          Expected Facts: {:?}\n\
          Assistant Response: {}",
         user_query, expected_facts, assistant_response
     );
-    
+
     let payload = serde_json::json!({
         "model": "meta/llama-3.1-70b-instruct",
         "messages": [
@@ -169,18 +169,21 @@ fn call_nvidia_judge(
         ],
         "temperature": 0.0
     });
-    
+
     let res = client
         .post(url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&payload)
         .send()?;
-        
+
     if !res.status().is_success() {
-        return Err(anyhow!("Nvidia API returned error status: {}", res.status()));
+        return Err(anyhow!(
+            "Nvidia API returned error status: {}",
+            res.status()
+        ));
     }
-    
+
     #[derive(Deserialize)]
     struct NvidiaResponse {
         choices: Vec<Choice>,
@@ -193,7 +196,7 @@ fn call_nvidia_judge(
     struct Message {
         content: String,
     }
-    
+
     let parsed: NvidiaResponse = res.json()?;
     if let Some(choice) = parsed.choices.first() {
         let cleaned = vox_lib::utils::json::clean_json_content(&choice.message.content);
@@ -256,7 +259,9 @@ fn main() -> Result<()> {
     let mut max_turns = args.turns;
     let ctx_window = args.ctx_size;
 
-    let prefix = args.output.unwrap_or_else(|| format!("0.9.0_5session_bge_m3_tier_{}", tier_str));
+    let prefix = args
+        .output
+        .unwrap_or_else(|| format!("0.9.0_5session_bge_m3_tier_{}", tier_str));
     let reporter = BenchReporter::new_with_prefix(Some(&prefix));
 
     let home = dirs::home_dir().expect("Could not find home directory");
@@ -323,7 +328,10 @@ fn main() -> Result<()> {
         "2a" => {
             let url = "http://100.86.62.14:11434";
             let model = args.model.as_str();
-            println!("  [INFO] Connecting to Remote GPU Ollama Provider at {} ({})", url, model);
+            println!(
+                "  [INFO] Connecting to Remote GPU Ollama Provider at {} ({})",
+                url, model
+            );
             (
                 Box::new(OpenAiCompatProvider::new(url, model, None, None)),
                 ProviderKind::OpenAiCompat,
@@ -333,7 +341,10 @@ fn main() -> Result<()> {
             let key = load_gemini_key();
             let url = "https://generativelanguage.googleapis.com";
             let model = "gemini-2.5-flash";
-            println!("  [INFO] Connecting to Cloud Gemini API Provider ({})", model);
+            println!(
+                "  [INFO] Connecting to Cloud Gemini API Provider ({})",
+                model
+            );
             (
                 Box::new(OpenAiCompatProvider::new(
                     url,
@@ -350,16 +361,16 @@ fn main() -> Result<()> {
             let model = args.model.as_str();
             println!("  [INFO] Connecting to Nvidia API Provider ({})", model);
             (
-                Box::new(OpenAiCompatProvider::new(
-                    url,
-                    model,
-                    Some(&key),
-                    None,
-                )),
+                Box::new(OpenAiCompatProvider::new(url, model, Some(&key), None)),
                 ProviderKind::OpenAiCompat,
             )
         }
-        _ => return Err(anyhow!("Invalid tier '{}'. Use 2a, 2b or nvidia.", tier_str)),
+        _ => {
+            return Err(anyhow!(
+                "Invalid tier '{}'. Use 2a, 2b or nvidia.",
+                tier_str
+            ))
+        }
     };
 
     // 3. Load TTS Engine
@@ -442,38 +453,60 @@ fn main() -> Result<()> {
         let _ = memory_tx.try_send(MemoryWorkerEvent::PipelineActive);
 
         println!("\n────────────────────────────────────────────────────────────");
-        println!("  [SESSION {} / {}] Executing {} turns (ID: {})", session_num, session_configs.len(), max_turns, session_id);
+        println!(
+            "  [SESSION {} / {}] Executing {} turns (ID: {})",
+            session_num,
+            session_configs.len(),
+            max_turns,
+            session_id
+        );
         println!("────────────────────────────────────────────────────────────\n");
 
         let mut compaction_summaries = Vec::new();
 
         for turn in 1..=max_turns {
-            let turn_dir = reporter.run_dir.join(format!("s{}_turn_{:02}", session_num, turn));
+            let turn_dir = reporter
+                .run_dir
+                .join(format!("s{}_turn_{:02}", session_num, turn));
             fs::create_dir_all(&turn_dir)?;
 
             let clip_path_a = PathBuf::from(format!("{}/clip_{:02}.wav", clips_rel, turn));
-            let clip_path_b = PathBuf::from("app/src-tauri").join(format!("{}/clip_{:02}.wav", clips_rel, turn));
-            let clip_path = if clip_path_a.exists() { clip_path_a } else { clip_path_b };
+            let clip_path_b =
+                PathBuf::from("app/src-tauri").join(format!("{}/clip_{:02}.wav", clips_rel, turn));
+            let clip_path = if clip_path_a.exists() {
+                clip_path_a
+            } else {
+                clip_path_b
+            };
 
             let mut raw_audio = Vec::new();
             if !args.text_only && clip_path.exists() {
                 let _ = fs::copy(&clip_path, turn_dir.join("input_audio.wav"));
                 if let Ok(mut reader) = hound::WavReader::open(&clip_path) {
                     let spec = reader.spec();
-                    let samples_f32: Vec<f32> = reader.samples::<i16>().map(|s| s.unwrap_or(0) as f32 / 32768.0).collect();
+                    let samples_f32: Vec<f32> = reader
+                        .samples::<i16>()
+                        .map(|s| s.unwrap_or(0) as f32 / 32768.0)
+                        .collect();
                     raw_audio = resample_linear(&samples_f32, spec.sample_rate, 16000);
                 }
             }
 
             let stt_start = Instant::now();
             let user_text = if !raw_audio.is_empty() {
-                let text = stt_provider.transcribe_chunk(&raw_audio, true).unwrap_or_default();
+                let text = stt_provider
+                    .transcribe_chunk(&raw_audio, true)
+                    .unwrap_or_default();
                 total_stt_latency_ms.push(stt_start.elapsed().as_millis() as u64);
                 text
             } else {
                 turns[turn - 1].user.clone()
             };
-            let user_prompt = if user_text.trim().is_empty() { turns[turn - 1].user.clone() } else { user_text };
+            let user_prompt = if user_text.trim().is_empty() {
+                turns[turn - 1].user.clone()
+            } else {
+                user_text
+            };
 
             // 1. Hot-Path Query Classification
             let classification = classify_query(&user_prompt);
@@ -485,24 +518,37 @@ fn main() -> Result<()> {
 
             // 2. Personal Memory Retrieval
             let rag_start = Instant::now();
-            let query_vector = tokio_handle.block_on(async {
-                vox_lib::services::memory::ensure_embedder_loaded(true).ok();
-                vox_lib::services::memory::generate_embedding(&user_prompt).unwrap_or(None)
-            }).unwrap_or_else(|| vec![0.0; 1024]);
+            let query_vector = tokio_handle
+                .block_on(async {
+                    vox_lib::services::memory::ensure_embedder_loaded(true).ok();
+                    vox_lib::services::memory::generate_embedding(&user_prompt).unwrap_or(None)
+                })
+                .unwrap_or_else(|| vec![0.0; 1024]);
 
             let personal_memory_block = tokio_handle.block_on(async {
-                vox_lib::services::memory::retrieval::retrieve_personal_context(&conn, &query_vector, &memory_settings, 2048, &session_id.to_string(), None).await.unwrap_or_default()
+                vox_lib::services::memory::retrieval::retrieve_personal_context(
+                    &conn,
+                    &query_vector,
+                    &memory_settings,
+                    2048,
+                    &session_id.to_string(),
+                    None,
+                )
+                .await
+                .unwrap_or_default()
             });
             let rag_latency = rag_start.elapsed().as_millis() as u64;
             overall_rag_latency.push(rag_latency);
 
-            let mut full_system_prompt = vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.to_string();
+            let mut full_system_prompt =
+                vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.to_string();
             if !personal_memory_block.is_empty() {
                 full_system_prompt.push_str(&format!("\n\n{}", personal_memory_block));
             }
             conv_mgr.update_system_prompt(&full_system_prompt);
 
-            let (ctx, speech, personal_memory) = conv_mgr.build_context(provider_kind, false, Some(&*provider));
+            let (ctx, speech, personal_memory) =
+                conv_mgr.build_context(provider_kind, false, Some(&*provider));
 
             if !personal_memory.is_empty() {
                 let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
@@ -513,7 +559,10 @@ fn main() -> Result<()> {
 
             if let Some(trans) = speech {
                 total_critical_maintenance += 1;
-                println!("  🚨 [S{} Turn {:02}] Maintenance Speech: \"{}\"", session_num, turn, trans);
+                println!(
+                    "  🚨 [S{} Turn {:02}] Maintenance Speech: \"{}\"",
+                    session_num, turn, trans
+                );
             }
 
             fs::write(turn_dir.join("rag_context.txt"), &personal_memory_block)?;
@@ -565,12 +614,21 @@ fn main() -> Result<()> {
                     if !nvidia_key.is_empty() {
                         print!("      🔍 [Probe S{}-T{:02}] Evaluating semantic recall via Nvidia LLM-as-a-Judge... ", session_num, turn);
                         let _ = std::io::Write::flush(&mut std::io::stdout());
-                        match call_nvidia_judge(&nvidia_key, &user_prompt, &turns[turn - 1].expected_facts, &assistant_resp) {
+                        match call_nvidia_judge(
+                            &nvidia_key,
+                            &user_prompt,
+                            &turns[turn - 1].expected_facts,
+                            &assistant_resp,
+                        ) {
                             Ok((passed, reason)) => {
                                 if passed {
                                     total_probes_passed += 1;
                                 }
-                                println!("{} (Reason: {})", if passed { "PASSED ✅" } else { "FAILED ❌" }, reason);
+                                println!(
+                                    "{} (Reason: {})",
+                                    if passed { "PASSED ✅" } else { "FAILED ❌" },
+                                    reason
+                                );
                             }
                             Err(e) => {
                                 println!("ERROR 🚨 (Failed to invoke judge: {})", e);
@@ -603,9 +661,15 @@ fn main() -> Result<()> {
                         }
                         if all_passed {
                             total_probes_passed += 1;
-                            println!("      🔍 [Probe S{}-T{:02}] Substring check: PASSED ✅", session_num, turn);
+                            println!(
+                                "      🔍 [Probe S{}-T{:02}] Substring check: PASSED ✅",
+                                session_num, turn
+                            );
                         } else {
-                            println!("      🔍 [Probe S{}-T{:02}] Substring check: FAILED ❌", session_num, turn);
+                            println!(
+                                "      🔍 [Probe S{}-T{:02}] Substring check: FAILED ❌",
+                                session_num, turn
+                            );
                         }
                     }
                 } else {
@@ -620,9 +684,15 @@ fn main() -> Result<()> {
                     }
                     if all_passed {
                         total_probes_passed += 1;
-                        println!("      🔍 [Probe S{}-T{:02}] Substring check: PASSED ✅", session_num, turn);
+                        println!(
+                            "      🔍 [Probe S{}-T{:02}] Substring check: PASSED ✅",
+                            session_num, turn
+                        );
                     } else {
-                        println!("      🔍 [Probe S{}-T{:02}] Substring check: FAILED ❌", session_num, turn);
+                        println!(
+                            "      🔍 [Probe S{}-T{:02}] Substring check: FAILED ❌",
+                            session_num, turn
+                        );
                     }
                 }
             }
@@ -666,9 +736,15 @@ fn main() -> Result<()> {
                     raw_response.clear();
                     let comp_cancel = Arc::new(AtomicBool::new(false));
                     let (c_tx, c_rx) = channel();
-                    
-                    println!("  [S{} COMPACTION] Attempt {}/{}...", session_num, attempts, max_attempts);
-                    if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
+
+                    println!(
+                        "  [S{} COMPACTION] Attempt {}/{}...",
+                        session_num, attempts, max_attempts
+                    );
+                    if provider
+                        .generate(&comp_ctx, 999_999, &comp_cancel, &c_tx)
+                        .is_ok()
+                    {
                         while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(90000)) {
                             match evt {
                                 VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
@@ -685,11 +761,17 @@ fn main() -> Result<()> {
                                 break;
                             }
                             None => {
-                                println!("  [S{} COMPACTION] JSON parsing failed on attempt {}/{}.", session_num, attempts, max_attempts);
+                                println!(
+                                    "  [S{} COMPACTION] JSON parsing failed on attempt {}/{}.",
+                                    session_num, attempts, max_attempts
+                                );
                             }
                         }
                     } else {
-                        println!("  [S{} COMPACTION] Attempt {}/{} returned empty or timed out.", session_num, attempts, max_attempts);
+                        println!(
+                            "  [S{} COMPACTION] Attempt {}/{} returned empty or timed out.",
+                            session_num, attempts, max_attempts
+                        );
                     }
                 }
 
@@ -699,14 +781,24 @@ fn main() -> Result<()> {
                         .and_then(|v| v.first())
                         .cloned()
                         .unwrap_or_else(|| raw_response.clone());
-                    println!("  [S{} COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
-                    println!("  [S{} COMPACTION] Found {} personal facts.", session_num, personal_memory.values().map(|v| v.len()).sum::<usize>());
+                    println!(
+                        "  [S{} COMPACTION] JSON parsed successfully. Summary length: {}",
+                        session_num,
+                        summary.len()
+                    );
+                    println!(
+                        "  [S{} COMPACTION] Found {} personal facts.",
+                        session_num,
+                        personal_memory.values().map(|v| v.len()).sum::<usize>()
+                    );
                     for (col, facts) in &personal_memory {
                         for fact in facts {
                             println!("    - {}: {}", col, fact);
                         }
                     }
-                    if !summary.trim().is_empty() && conv_mgr.commit_opportunistic(snap_len, summary.clone()) {
+                    if !summary.trim().is_empty()
+                        && conv_mgr.commit_opportunistic(snap_len, summary.clone())
+                    {
                         total_opp_succeeded += 1;
                         compaction_summaries.push(summary);
                         if !personal_memory.is_empty() {
@@ -774,8 +866,14 @@ fn main() -> Result<()> {
                 let comp_cancel = Arc::new(AtomicBool::new(false));
                 let (c_tx, c_rx) = channel();
 
-                println!("  [S{} FINAL COMPACTION] Attempt {}/{}...", session_num, attempts, max_attempts);
-                if provider.generate(&comp_ctx, 999_999, &comp_cancel, &c_tx).is_ok() {
+                println!(
+                    "  [S{} FINAL COMPACTION] Attempt {}/{}...",
+                    session_num, attempts, max_attempts
+                );
+                if provider
+                    .generate(&comp_ctx, 999_999, &comp_cancel, &c_tx)
+                    .is_ok()
+                {
                     while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(90000)) {
                         match evt {
                             VoxEvent::LlmToken { token, .. } => raw_response.push_str(&token),
@@ -792,11 +890,17 @@ fn main() -> Result<()> {
                             break;
                         }
                         None => {
-                            println!("  [S{} FINAL COMPACTION] JSON parsing failed on attempt {}/{}.", session_num, attempts, max_attempts);
+                            println!(
+                                "  [S{} FINAL COMPACTION] JSON parsing failed on attempt {}/{}.",
+                                session_num, attempts, max_attempts
+                            );
                         }
                     }
                 } else {
-                    println!("  [S{} FINAL COMPACTION] Attempt {}/{} returned empty or timed out.", session_num, attempts, max_attempts);
+                    println!(
+                        "  [S{} FINAL COMPACTION] Attempt {}/{} returned empty or timed out.",
+                        session_num, attempts, max_attempts
+                    );
                 }
             }
 
@@ -806,8 +910,16 @@ fn main() -> Result<()> {
                     .and_then(|v| v.first())
                     .cloned()
                     .unwrap_or_else(|| raw_response.clone());
-                println!("  [S{} FINAL COMPACTION] JSON parsed successfully. Summary length: {}", session_num, summary.len());
-                println!("  [S{} FINAL COMPACTION] Found {} personal facts.", session_num, personal_memory.values().map(|v| v.len()).sum::<usize>());
+                println!(
+                    "  [S{} FINAL COMPACTION] JSON parsed successfully. Summary length: {}",
+                    session_num,
+                    summary.len()
+                );
+                println!(
+                    "  [S{} FINAL COMPACTION] Found {} personal facts.",
+                    session_num,
+                    personal_memory.values().map(|v| v.len()).sum::<usize>()
+                );
                 for (col, facts) in &personal_memory {
                     for fact in facts {
                         println!("    - {}: {}", col, fact);
@@ -841,7 +953,10 @@ fn main() -> Result<()> {
             )
         };
 
-        println!("  [S{} END] Transitioning Pipeline to PipelineIdle...", session_num);
+        println!(
+            "  [S{} END] Transitioning Pipeline to PipelineIdle...",
+            session_num
+        );
         let _ = memory_tx.try_send(MemoryWorkerEvent::PipelineIdle);
         let _ = memory_tx.try_send(MemoryWorkerEvent::SessionEnd {
             session_id: format!("bench_session_{}", session_num),
@@ -870,7 +985,12 @@ fn main() -> Result<()> {
 
         let stored_episodes: i64 = tokio_handle.block_on(async {
             let conn_temp = vox_lib::persistence::db::VoxDb::open(&db_path).await?;
-            let mut rows = conn_temp.query("SELECT COUNT(*) FROM memory_facts WHERE collection = 'Context'", ()).await?;
+            let mut rows = conn_temp
+                .query(
+                    "SELECT COUNT(*) FROM memory_facts WHERE collection = 'Context'",
+                    (),
+                )
+                .await?;
             if let Ok(Some(row)) = rows.next().await {
                 let val: i64 = row.get(0).unwrap_or(0);
                 Ok::<i64, anyhow::Error>(val)
@@ -878,7 +998,10 @@ fn main() -> Result<()> {
                 Ok::<i64, anyhow::Error>(0i64)
             }
         })?;
-        println!("  [S{} END] Cumulative Episodes/Chunks in SQLite: {}", session_num, stored_episodes);
+        println!(
+            "  [S{} END] Cumulative Episodes/Chunks in SQLite: {}",
+            session_num, stored_episodes
+        );
     }
 
     // Final wait before shutdown to ensure 100% of all enqueued/pending jobs have been fully processed
@@ -904,13 +1027,34 @@ fn main() -> Result<()> {
     let _ = memory_tx.try_send(MemoryWorkerEvent::Shutdown);
 
     let total_executed_turns = max_turns * session_configs.len();
-    let avg_ttft = if !overall_ttft_samples.is_empty() { overall_ttft_samples.iter().sum::<u64>() / overall_ttft_samples.len() as u64 } else { 0 };
-    let avg_stt = if !total_stt_latency_ms.is_empty() { total_stt_latency_ms.iter().sum::<u64>() / total_stt_latency_ms.len() as u64 } else { 0 };
-    let avg_rag_lat = if !overall_rag_latency.is_empty() { overall_rag_latency.iter().sum::<u64>() / overall_rag_latency.len() as u64 } else { 0 };
-    let recall_acc = if total_probes_evaluated > 0 { (total_probes_passed as f32 / total_probes_evaluated as f32) * 100.0 } else { 100.0 };
+    let avg_ttft = if !overall_ttft_samples.is_empty() {
+        overall_ttft_samples.iter().sum::<u64>() / overall_ttft_samples.len() as u64
+    } else {
+        0
+    };
+    let avg_stt = if !total_stt_latency_ms.is_empty() {
+        total_stt_latency_ms.iter().sum::<u64>() / total_stt_latency_ms.len() as u64
+    } else {
+        0
+    };
+    let avg_rag_lat = if !overall_rag_latency.is_empty() {
+        overall_rag_latency.iter().sum::<u64>() / overall_rag_latency.len() as u64
+    } else {
+        0
+    };
+    let recall_acc = if total_probes_evaluated > 0 {
+        (total_probes_passed as f32 / total_probes_evaluated as f32) * 100.0
+    } else {
+        100.0
+    };
 
     let total_stored_episodes: i64 = tokio_handle.block_on(async {
-        let mut rows = conn.query("SELECT COUNT(*) FROM memory_facts WHERE collection = 'Context'", ()).await?;
+        let mut rows = conn
+            .query(
+                "SELECT COUNT(*) FROM memory_facts WHERE collection = 'Context'",
+                (),
+            )
+            .await?;
         if let Ok(Some(row)) = rows.next().await {
             let val: i64 = row.get(0).unwrap_or(0);
             Ok::<i64, anyhow::Error>(val)
@@ -924,9 +1068,18 @@ fn main() -> Result<()> {
     println!("\n============================================================");
     println!("  MULTI-SESSION BGE-M3 COMPREHENSIVE BENCHMARK SUMMARY       ");
     println!("============================================================");
-    println!(" Tier Tested                    : Tier {}", tier_str.to_uppercase());
-    println!(" Total Sessions Executed        : {} Sessions", session_configs.len());
-    println!(" Total Simulation Turns         : {} Turns", total_executed_turns);
+    println!(
+        " Tier Tested                    : Tier {}",
+        tier_str.to_uppercase()
+    );
+    println!(
+        " Total Sessions Executed        : {} Sessions",
+        session_configs.len()
+    );
+    println!(
+        " Total Simulation Turns         : {} Turns",
+        total_executed_turns
+    );
     println!(" Embedding Model Used           : BGE-M3 (1024-dim, Multilingual ONNX)");
     println!(" Evaluated Threshold            : 0.65 (Strict BGE-M3 Filtering)");
     println!(" Output Folder                  : {:?}", reporter.run_dir);
@@ -935,19 +1088,37 @@ fn main() -> Result<()> {
     println!(" Average RAG Retrieval Latency  : {} ms", avg_rag_lat);
     println!(" Average LLM TTFT (First Token) : {} ms", avg_ttft);
     println!(" Memory Consumption (Peak RSS)  : {} MB", peak_rss_mb);
-    println!(" Query Classifier Breakdown     : Semantic={}, Generic={}", semantic_query_count, generic_query_count);
-    println!(" Critical Maintenance Shifts    : {}", total_critical_maintenance);
-    println!(" Point-of-Idle Compactions      : Triggered={}, Succeeded={}, Cancelled={}", total_opp_triggered, total_opp_succeeded, total_opp_cancelled);
-    println!(" Total Bullet Chunks Stored     : {} Chunks in SQLite", total_stored_episodes);
+    println!(
+        " Query Classifier Breakdown     : Semantic={}, Generic={}",
+        semantic_query_count, generic_query_count
+    );
+    println!(
+        " Critical Maintenance Shifts    : {}",
+        total_critical_maintenance
+    );
+    println!(
+        " Point-of-Idle Compactions      : Triggered={}, Succeeded={}, Cancelled={}",
+        total_opp_triggered, total_opp_succeeded, total_opp_cancelled
+    );
+    println!(
+        " Total Bullet Chunks Stored     : {} Chunks in SQLite",
+        total_stored_episodes
+    );
     println!(" Total RAG Retrieval Hits       : {} Hits", total_rag_hits);
-    println!(" Semantic Recall Probes         : {} / {} Passed", total_probes_passed, total_probes_evaluated);
+    println!(
+        " Semantic Recall Probes         : {} / {} Passed",
+        total_probes_passed, total_probes_evaluated
+    );
     println!(" Cross-Session Recall Accuracy  : {:.1}%", recall_acc);
     println!(" Benchmark Status               : PASS (Zero budget violations)");
     println!("============================================================\n");
 
     println!("--- SQLite Database Contents ---");
     tokio_handle.block_on(async {
-        if let Ok(mut rows) = conn.query("SELECT collection, fact, session_id FROM memory_facts", ()).await {
+        if let Ok(mut rows) = conn
+            .query("SELECT collection, fact, session_id FROM memory_facts", ())
+            .await
+        {
             println!("  [memory_facts]");
             while let Ok(Some(row)) = rows.next().await {
                 let col: String = row.get(0).unwrap_or_default();
@@ -958,7 +1129,10 @@ fn main() -> Result<()> {
         } else {
             println!("  [memory_facts] query failed!");
         }
-        if let Ok(mut rows) = conn.query("SELECT from_id, to_id, relation FROM memory_relations", ()).await {
+        if let Ok(mut rows) = conn
+            .query("SELECT from_id, to_id, relation FROM memory_relations", ())
+            .await
+        {
             println!("  [memory_relations]");
             while let Ok(Some(row)) = rows.next().await {
                 let src: String = row.get(0).unwrap_or_default();
@@ -969,14 +1143,23 @@ fn main() -> Result<()> {
         } else {
             println!("  [memory_relations] query failed!");
         }
-        if let Ok(mut rows) = conn.query("SELECT id, session_id, fact, status FROM personal_memory_queue", ()).await {
+        if let Ok(mut rows) = conn
+            .query(
+                "SELECT id, session_id, fact, status FROM personal_memory_queue",
+                (),
+            )
+            .await
+        {
             println!("  [personal_memory_queue]");
             while let Ok(Some(row)) = rows.next().await {
                 let id: i64 = row.get(0).unwrap_or(0);
                 let sess_id: String = row.get(1).unwrap_or_default();
                 let text: String = row.get(2).unwrap_or_default();
                 let status: String = row.get(3).unwrap_or_default();
-                println!("    - #{}: (sess: {}, status: {}): {}", id, sess_id, status, text);
+                println!(
+                    "    - #{}: (sess: {}, status: {}): {}",
+                    id, sess_id, status, text
+                );
             }
         } else {
             println!("  [personal_memory_queue] query failed!");

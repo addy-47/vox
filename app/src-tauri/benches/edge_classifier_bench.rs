@@ -16,14 +16,25 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 #[derive(Parser, Debug)]
-#[command(name = "edge_classifier_bench", about = "Vox v7 Gate 3 ModernBERT-base INT8 Edge Classifier Benchmark")]
+#[command(
+    name = "edge_classifier_bench",
+    about = "Vox v7 Gate 3 ModernBERT-base INT8 Edge Classifier Benchmark"
+)]
 struct Args {
     /// Path to input JSON dataset file (defaults to sandbox/datasets/gate3_v7_ontology_6000p.json)
-    #[arg(short, long, default_value = "sandbox/datasets/gate3_v7_ontology_6000p.json")]
+    #[arg(
+        short,
+        long,
+        default_value = "sandbox/datasets/gate3_v7_ontology_6000p.json"
+    )]
     input: PathBuf,
 
     /// Path to output JSON result file (defaults to sandbox/results/gate3_modernbert_bench.json)
-    #[arg(short, long, default_value = "sandbox/results/gate3_modernbert_bench.json")]
+    #[arg(
+        short,
+        long,
+        default_value = "sandbox/results/gate3_modernbert_bench.json"
+    )]
     output: PathBuf,
 
     /// Model path override (defaults to ~/.vox/models/classifier/modernbert-base/model_quantized.onnx)
@@ -50,10 +61,10 @@ enum EdgeLabel {
 impl EdgeLabel {
     fn as_str(self) -> &'static str {
         match self {
-            Self::Shapes        => "SHAPES",
-            Self::DependsOn     => "DEPENDS_ON",
+            Self::Shapes => "SHAPES",
+            Self::DependsOn => "DEPENDS_ON",
             Self::ConflictsWith => "CONFLICTS_WITH",
-            Self::None          => "NONE",
+            Self::None => "NONE",
         }
     }
 
@@ -96,7 +107,8 @@ fn main() -> Result<()> {
 
     let model_path = args.model_path.unwrap_or_else(|| {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".vox/models/classifier/modernbert_edge_creation/model_quantized.onnx")
+        PathBuf::from(home)
+            .join(".vox/models/classifier/modernbert_edge_creation/model_quantized.onnx")
     });
 
     if !args.input.exists() {
@@ -105,7 +117,7 @@ fn main() -> Result<()> {
 
     let file_content = fs::read_to_string(&args.input)?;
     let parsed_json: serde_json::Value = serde_json::from_str(&file_content)?;
-    
+
     let pairs_value = if parsed_json.is_object() {
         parsed_json.get("pairs").cloned().unwrap_or(parsed_json)
     } else {
@@ -126,10 +138,13 @@ fn main() -> Result<()> {
     let bench_start = Instant::now();
     for pair in eval_pairs {
         let start = Instant::now();
-        
+
         // Input text formatting
-        let _input_text = format!("Fact A: {} | Fact B: {} | Context: {}", pair.fact_a, pair.fact_b, pair.context);
-        
+        let _input_text = format!(
+            "Fact A: {} | Fact B: {} | Context: {}",
+            pair.fact_a, pair.fact_b, pair.context
+        );
+
         // Latency timing check
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         latencies_ms.push(elapsed);
@@ -141,13 +156,25 @@ fn main() -> Result<()> {
     }
 
     let total_time_ms = bench_start.elapsed().as_secs_f64() * 1000.0;
-    let avg_latency = if !latencies_ms.is_empty() { total_time_ms / latencies_ms.len() as f64 } else { 0.0 };
+    let avg_latency = if !latencies_ms.is_empty() {
+        total_time_ms / latencies_ms.len() as f64
+    } else {
+        0.0
+    };
 
     latencies_ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let p95_idx = (latencies_ms.len() as f64 * 0.95) as usize;
-    let p95_latency = if p95_idx < latencies_ms.len() { latencies_ms[p95_idx] } else { avg_latency };
+    let p95_latency = if p95_idx < latencies_ms.len() {
+        latencies_ms[p95_idx]
+    } else {
+        avg_latency
+    };
 
-    let accuracy = if !eval_pairs.is_empty() { correct_count as f64 / eval_pairs.len() as f64 } else { 0.0 };
+    let accuracy = if !eval_pairs.is_empty() {
+        correct_count as f64 / eval_pairs.len() as f64
+    } else {
+        0.0
+    };
     let gate_passed = avg_latency <= 35.0 && accuracy >= 0.90;
 
     let summary = BenchmarkSummary {
@@ -171,9 +198,19 @@ fn main() -> Result<()> {
     println!("📊 VOX v7 GATE 3 EDGE CLASSIFIER BENCHMARK RESULTS");
     println!("==================================================");
     println!("Evaluated Pairs   : {}", summary.evaluated_pairs);
-    println!("Average Latency   : {:.2} ms/pair (Target: <= 35 ms)", summary.average_latency_ms);
+    println!(
+        "Average Latency   : {:.2} ms/pair (Target: <= 35 ms)",
+        summary.average_latency_ms
+    );
     println!("p95 Latency       : {:.2} ms/pair", summary.p95_latency_ms);
-    println!("Gate 3 Status     : {}", if summary.gate_passed { "✅ PASS" } else { "⚠️ PENDING LOCAL ONNX INFERENCE" });
+    println!(
+        "Gate 3 Status     : {}",
+        if summary.gate_passed {
+            "✅ PASS"
+        } else {
+            "⚠️ PENDING LOCAL ONNX INFERENCE"
+        }
+    );
     println!("=");
 
     Ok(())

@@ -9,8 +9,8 @@
 //! ## Output format
 //! Native 24 kHz f32 mono PCM — no resampling needed.
 
-use crate::core::events::VoxEvent;
 use super::{TtsProvider, TtsProviderKind};
+use crate::core::events::VoxEvent;
 use anyhow::{anyhow, Result};
 use chatterbox_rs::{Engine, EngineOptions};
 use parking_lot::Mutex;
@@ -93,7 +93,9 @@ impl ChatterboxEngine {
         } else {
             log::info!(
                 "[Chatterbox] Loading engine. lang={}, cfm_steps={}, speed={:.2}",
-                language, cfm, speed
+                language,
+                cfm,
+                speed
             );
         }
 
@@ -103,7 +105,7 @@ impl ChatterboxEngine {
             language: language.to_string(),
             n_gpu_layers: 0, // Vox is CPU-only
             cfm_steps: cfm,
-            seed: 42,          // reproducible by default
+            seed: 42, // reproducible by default
             temperature: 0.8,
             top_k: 1000,
             top_p: 0.95,
@@ -120,9 +122,8 @@ impl ChatterboxEngine {
             }
         }
 
-        let engine = Engine::new(opts)
-            .map_err(|e| anyhow!("Failed to create Chatterbox engine: {}", e))?;
-
+        let engine =
+            Engine::new(opts).map_err(|e| anyhow!("Failed to create Chatterbox engine: {}", e))?;
 
         log::info!("[Chatterbox] Engine ready.");
 
@@ -206,9 +207,9 @@ impl TtsProvider for ChatterboxEngine {
         // Lock engine, synthesize, release lock before sending events.
         let pcm = {
             let engine = self.engine.lock();
-            let result = engine.synthesize(text).map_err(|e| {
-                anyhow!("Chatterbox synthesis failed: {}", e)
-            })?;
+            let result = engine
+                .synthesize(text)
+                .map_err(|e| anyhow!("Chatterbox synthesis failed: {}", e))?;
             result.pcm
         };
 
