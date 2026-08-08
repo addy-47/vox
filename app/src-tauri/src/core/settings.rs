@@ -355,6 +355,7 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
 // ─── Domain Settings ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct UiSettings {
     pub theme: String,
     /// Seed color for the theme engine. Frontend derives full palette dynamically.
@@ -382,6 +383,7 @@ impl Default for UiSettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct AudioSettings {
     pub output_mode: AudioOutputMode,
     pub input_device: Option<String>,
@@ -397,6 +399,7 @@ impl Default for AudioSettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct VadSettings {
     pub threshold: f32,
     pub ptt_noise_gate: f32,
@@ -517,6 +520,7 @@ fn default_max_output_tokens() -> u32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LlmSettings {
     pub model: String, // e.g., "llama_3_2_reasoning"
     pub ctx_size: u32,
