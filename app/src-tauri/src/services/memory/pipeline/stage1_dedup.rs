@@ -1,8 +1,11 @@
+use super::batch_result::DedupAuditLog;
+use crate::core::constants::{
+    PM_QUEUE_STATUS_DEDUPED, PM_QUEUE_STATUS_PROCESSING_DEDUP, PM_QUEUE_STATUS_STAGED_PENDING,
+    PM_QUEUE_STATUS_SUPERSEDED,
+};
+use crate::services::memory::deduplication::{is_exact_duplicate, jaccard_similarity};
 use anyhow::Result;
 use turso::Connection;
-use crate::core::constants::{PM_QUEUE_STATUS_DEDUPED, PM_QUEUE_STATUS_PROCESSING_DEDUP, PM_QUEUE_STATUS_STAGED_PENDING, PM_QUEUE_STATUS_SUPERSEDED};
-use crate::services::memory::deduplication::{is_exact_duplicate, jaccard_similarity};
-use super::batch_result::DedupAuditLog;
 
 pub const STAGE1_BATCH_CEILING: usize = 128;
 
@@ -72,16 +75,28 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
     }
 
     let items_claimed = items.len();
-    let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
+    let session_id = items
+        .first()
+        .map(|i| i.session_id.clone())
+        .unwrap_or_default();
 
     // 2. PRE-FETCH ALL ACTIVE FACTS & QUEUE FACTS IN 2 QUERIES (0 SQL inside loop)
-    let mut active_facts_map: std::collections::HashMap<String, Vec<(String, String, String)>> = std::collections::HashMap::new();
-    let mut db_rows = conn.query("SELECT id, collection, fact FROM memory_facts WHERE status = 'active'", ()).await?;
+    let mut active_facts_map: std::collections::HashMap<String, Vec<(String, String, String)>> =
+        std::collections::HashMap::new();
+    let mut db_rows = conn
+        .query(
+            "SELECT id, collection, fact FROM memory_facts WHERE status = 'active'",
+            (),
+        )
+        .await?;
     while let Some(row) = db_rows.next().await? {
         let id: String = row.get(0)?;
         let coll: String = row.get(1)?;
         let fact: String = row.get(2)?;
-        active_facts_map.entry(coll.clone()).or_default().push((id, coll, fact));
+        active_facts_map
+            .entry(coll.clone())
+            .or_default()
+            .push((id, coll, fact));
     }
 
     let mut queue_rows = conn.query(
@@ -92,12 +107,19 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
         let id: String = row.get(0)?;
         let coll: String = row.get(1)?;
         let fact: String = row.get(2)?;
-        active_facts_map.entry(coll.clone()).or_default().push((id, coll, fact));
+        active_facts_map
+            .entry(coll.clone())
+            .or_default()
+            .push((id, coll, fact));
     }
 
     // 3. Pure In-Memory Rust Comparison Loop across 5 Core Factual Collections
     const FACTUAL_DEDUP_COLLECTIONS: &[&str] = &[
-        "Identity", "Constraints", "Directives", "Profile", "Entities",
+        "Identity",
+        "Constraints",
+        "Directives",
+        "Profile",
+        "Entities",
     ];
 
     let mut deduped_ids = Vec::new();
@@ -128,14 +150,21 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
 
         let matched = FACTUAL_DEDUP_COLLECTIONS.iter().find_map(|&coll| {
             active_facts_map.get(coll).and_then(|cand_list| {
-                cand_list.iter().find_map(|(cand_id, cand_coll, cand_fact)| {
-                    let jacc_sim = jaccard_similarity(trimmed_fact, cand_fact);
-                    if is_exact_duplicate(0.0, jacc_sim) {
-                        Some((cand_id.clone(), cand_coll.clone(), cand_fact.clone(), jacc_sim))
-                    } else {
-                        None
-                    }
-                })
+                cand_list
+                    .iter()
+                    .find_map(|(cand_id, cand_coll, cand_fact)| {
+                        let jacc_sim = jaccard_similarity(trimmed_fact, cand_fact);
+                        if is_exact_duplicate(0.0, jacc_sim) {
+                            Some((
+                                cand_id.clone(),
+                                cand_coll.clone(),
+                                cand_fact.clone(),
+                                jacc_sim,
+                            ))
+                        } else {
+                            None
+                        }
+                    })
             })
         });
 
@@ -161,10 +190,12 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
             } else {
                 // Higher priority incoming item supersedes existing lower-priority DB fact
                 if !matched_id.starts_with("item_") {
-                    let _ = conn.execute(
-                        "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
-                        (matched_id.as_str(),),
-                    ).await;
+                    let _ = conn
+                        .execute(
+                            "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
+                            (matched_id.as_str(),),
+                        )
+                        .await;
                 }
                 deduped_ids.push(item.id);
                 let log = DedupAuditLog {
@@ -183,7 +214,11 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
                 active_facts_map
                     .entry(item.collection.clone())
                     .or_default()
-                    .push((format!("item_{}", item.id), item.collection.clone(), trimmed_fact.to_string()));
+                    .push((
+                        format!("item_{}", item.id),
+                        item.collection.clone(),
+                        trimmed_fact.to_string(),
+                    ));
             }
         } else {
             deduped_ids.push(item.id);
@@ -191,10 +226,13 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
             active_facts_map
                 .entry(item.collection.clone())
                 .or_default()
-                .push((format!("item_{}", item.id), item.collection.clone(), trimmed_fact.to_string()));
+                .push((
+                    format!("item_{}", item.id),
+                    item.collection.clone(),
+                    trimmed_fact.to_string(),
+                ));
         }
     }
-
 
     // 4. Batch Update Results in SQL Queries
     for id in &deduped_ids {

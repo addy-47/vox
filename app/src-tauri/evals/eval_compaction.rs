@@ -65,7 +65,10 @@ async fn extract_facts_via_nvidia_llm(
 ) -> Result<HashMap<String, Vec<String>>> {
     let mut history_text = String::new();
     for turn in window_turns {
-        history_text.push_str(&format!("User: {}\nAssistant: {}\n\n", turn.user, turn.assistant));
+        history_text.push_str(&format!(
+            "User: {}\nAssistant: {}\n\n",
+            turn.user, turn.assistant
+        ));
     }
 
     let user_content = format!(
@@ -87,7 +90,10 @@ async fn extract_facts_via_nvidia_llm(
         "max_tokens": 1500
     });
 
-    println!("[Eval 1 Chunk {}] Requesting compaction extraction via Nvidia API...", chunk_idx + 1);
+    println!(
+        "[Eval 1 Chunk {}] Requesting compaction extraction via Nvidia API...",
+        chunk_idx + 1
+    );
 
     let max_retries = 3;
     let mut last_err = anyhow!("Unknown error");
@@ -106,14 +112,27 @@ async fn extract_facts_via_nvidia_llm(
                     let json_body: serde_json::Value = resp.json().await?;
                     let content = json_body["choices"][0]["message"]["content"]
                         .as_str()
-                        .ok_or_else(|| anyhow!("No content in Nvidia API response for chunk {}", chunk_idx + 1))?;
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "No content in Nvidia API response for chunk {}",
+                                chunk_idx + 1
+                            )
+                        })?;
 
                     if let Some(parsed) = parse_compaction_json(content) {
                         let fact_count: usize = parsed.values().map(|v| v.len()).sum();
-                        println!("[Eval 1 Chunk {}] Extracted {} facts across collections.", chunk_idx + 1, fact_count);
+                        println!(
+                            "[Eval 1 Chunk {}] Extracted {} facts across collections.",
+                            chunk_idx + 1,
+                            fact_count
+                        );
                         return Ok(parsed);
                     } else {
-                        println!("[Eval 1 Chunk {}] Warning: Failed to parse JSON from response:\n{}", chunk_idx + 1, content);
+                        println!(
+                            "[Eval 1 Chunk {}] Warning: Failed to parse JSON from response:\n{}",
+                            chunk_idx + 1,
+                            content
+                        );
                         return Ok(HashMap::new());
                     }
                 } else {
@@ -127,12 +146,22 @@ async fn extract_facts_via_nvidia_llm(
         }
 
         if attempt < max_retries {
-            println!("[Eval 1 Chunk {}] Attempt {} failed ({}). Retrying in 3s...", chunk_idx + 1, attempt, last_err);
+            println!(
+                "[Eval 1 Chunk {}] Attempt {} failed ({}). Retrying in 3s...",
+                chunk_idx + 1,
+                attempt,
+                last_err
+            );
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         }
     }
 
-    Err(anyhow!("Nvidia API call failed for chunk {} after {} attempts. Last error: {}", chunk_idx + 1, max_retries, last_err))
+    Err(anyhow!(
+        "Nvidia API call failed for chunk {} after {} attempts. Last error: {}",
+        chunk_idx + 1,
+        max_retries,
+        last_err
+    ))
 }
 
 async fn run_llm_subbatch_judge_report(
@@ -199,7 +228,10 @@ async fn run_llm_subbatch_judge_report(
                     return Ok(cleaned.to_string());
                 } else {
                     let err_text = resp.text().await.unwrap_or_default();
-                    last_err = anyhow!("LLM Sub-batch Judge Nvidia API returned error: {}", err_text);
+                    last_err = anyhow!(
+                        "LLM Sub-batch Judge Nvidia API returned error: {}",
+                        err_text
+                    );
                 }
             }
             Err(e) => {
@@ -208,12 +240,20 @@ async fn run_llm_subbatch_judge_report(
         }
 
         if attempt < max_retries {
-            println!("[Eval 1 Sub-batch Judge {:02}] Attempt {} failed ({}). Retrying in 5s...", subbatch_num, attempt, last_err);
+            println!(
+                "[Eval 1 Sub-batch Judge {:02}] Attempt {} failed ({}). Retrying in 5s...",
+                subbatch_num, attempt, last_err
+            );
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     }
 
-    Err(anyhow!("LLM Sub-batch Judge {:02} Nvidia API call failed after {} attempts. Last error: {}", subbatch_num, max_retries, last_err))
+    Err(anyhow!(
+        "LLM Sub-batch Judge {:02} Nvidia API call failed after {} attempts. Last error: {}",
+        subbatch_num,
+        max_retries,
+        last_err
+    ))
 }
 
 async fn run_llm_compaction_master_synthesis(
@@ -224,7 +264,11 @@ async fn run_llm_compaction_master_synthesis(
 ) -> Result<String> {
     let mut combined_subbatch_reports = String::new();
     for (idx, r) in subbatch_reports.iter().enumerate() {
-        combined_subbatch_reports.push_str(&format!("<subbatch_report num=\"{:02}\">\n{}\n</subbatch_report>\n\n", idx + 1, r));
+        combined_subbatch_reports.push_str(&format!(
+            "<subbatch_report num=\"{:02}\">\n{}\n</subbatch_report>\n\n",
+            idx + 1,
+            r
+        ));
     }
 
     let synthesis_prompt = format!(
@@ -272,7 +316,9 @@ async fn run_llm_compaction_master_synthesis(
                     let json_body: serde_json::Value = resp.json().await?;
                     let content = json_body["choices"][0]["message"]["content"]
                         .as_str()
-                        .ok_or_else(|| anyhow!("Invalid response structure from LLM Master Judge API"))?;
+                        .ok_or_else(|| {
+                            anyhow!("Invalid response structure from LLM Master Judge API")
+                        })?;
 
                     let cleaned = content
                         .trim()
@@ -293,12 +339,19 @@ async fn run_llm_compaction_master_synthesis(
         }
 
         if attempt < max_retries {
-            println!("[Eval 1 Master Judge] Attempt {} failed ({}). Retrying in 5s...", attempt, last_err);
+            println!(
+                "[Eval 1 Master Judge] Attempt {} failed ({}). Retrying in 5s...",
+                attempt, last_err
+            );
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     }
 
-    Err(anyhow!("LLM Master Judge Nvidia API call failed after {} attempts. Last error: {}", max_retries, last_err))
+    Err(anyhow!(
+        "LLM Master Judge Nvidia API call failed after {} attempts. Last error: {}",
+        max_retries,
+        last_err
+    ))
 }
 
 #[tokio::main]
@@ -307,10 +360,13 @@ async fn main() -> Result<()> {
 
     let api_key = get_nvidia_api_key();
     if api_key.is_empty() {
-        return Err(anyhow!("NVIDIA_API_KEY not found in environment or temp/.env. Cannot run real LLM compaction."));
+        return Err(anyhow!(
+            "NVIDIA_API_KEY not found in environment or temp/.env. Cannot run real LLM compaction."
+        ));
     }
 
-    let dataset_filename = std::env::var("EVAL_DATASET_NAME").unwrap_or_else(|_| "dataset_session_3.json".to_string());
+    let dataset_filename =
+        std::env::var("EVAL_DATASET_NAME").unwrap_or_else(|_| "dataset_session_3.json".to_string());
     let dataset_path = resolve_path(&format!("evals/datasets/{}", dataset_filename));
     let output_db_path = resolve_path("evals/results/stage_1_compaction.db");
 
@@ -334,7 +390,11 @@ async fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to read dataset at {:?}: {}", dataset_path, e))?;
     let turns: Vec<ConversationTurn> = serde_json::from_slice(&dataset_bytes)?;
 
-    println!("[Eval 1] Loaded {} turns from {:?}", turns.len(), dataset_path);
+    println!(
+        "[Eval 1] Loaded {} turns from {:?}",
+        turns.len(),
+        dataset_path
+    );
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
@@ -343,7 +403,11 @@ async fn main() -> Result<()> {
     // Chunk 300 turns into 30-turn windows (10 windows total)
     let window_size = 30;
     let chunks: Vec<&[ConversationTurn]> = turns.chunks(window_size).collect();
-    println!("[Eval 1] Divided 300 turns into {} sliding context windows ({} turns/window)", chunks.len(), window_size);
+    println!(
+        "[Eval 1] Divided 300 turns into {} sliding context windows ({} turns/window)",
+        chunks.len(),
+        window_size
+    );
 
     let mut accumulated_facts: HashMap<String, Vec<String>> = HashMap::new();
     let mut chunk_facts_map: Vec<HashMap<String, Vec<String>>> = Vec::new();
@@ -373,7 +437,10 @@ async fn main() -> Result<()> {
         total_extracted += list.len();
     }
 
-    println!("\n[Eval 1] Real LLM Fact Extraction Completed. Extracted {} total facts.", total_extracted);
+    println!(
+        "\n[Eval 1] Real LLM Fact Extraction Completed. Extracted {} total facts.",
+        total_extracted
+    );
     for (col, count) in &facts_by_collection {
         println!("  - Collection {:<12}: {} facts", col, count);
     }
@@ -381,14 +448,19 @@ async fn main() -> Result<()> {
     // Enqueue all extracted facts into personal_memory_queue in stage_1_compaction.db
     enqueue_personal_facts(&conn, accumulated_facts.clone(), "session_eval_1", true).await?;
 
-    let mut count_row = conn.query("SELECT COUNT(*) FROM personal_memory_queue", ()).await?;
+    let mut count_row = conn
+        .query("SELECT COUNT(*) FROM personal_memory_queue", ())
+        .await?;
     let total_enqueued: i64 = count_row
         .next()
         .await?
         .ok_or_else(|| anyhow::anyhow!("Failed to query personal_memory_queue count"))?
         .get(0)?;
 
-    println!("[Eval 1] Enqueued {} facts into personal_memory_queue at {:?}", total_enqueued, output_db_path);
+    println!(
+        "[Eval 1] Enqueued {} facts into personal_memory_queue at {:?}",
+        total_enqueued, output_db_path
+    );
 
     let staged_db_path = resolve_path("evals/results/stage_1_compaction_staged.db");
     let _ = std::fs::copy(&output_db_path, &staged_db_path);
@@ -398,16 +470,11 @@ async fn main() -> Result<()> {
     // =========================================================================
     println!("\n[Eval 1] Initiating Hierarchical LLM Judge Evaluation (3 Sub-Batches + Master Synthesis)...");
 
-
     let reports_dir = resolve_path("evals/results/reports");
     std::fs::create_dir_all(&reports_dir)?;
 
     // Define 3 sub-batch chunk ranges: Chunks 0..3 (Turns 1-90), Chunks 3..6 (Turns 91-180), Chunks 6..10 (Turns 181-300)
-    let subbatch_ranges = vec![
-        (1, 0..3),
-        (2, 3..6),
-        (3, 6..chunks.len()),
-    ];
+    let subbatch_ranges = vec![(1, 0..3), (2, 3..6), (3, 6..chunks.len())];
 
     let mut subbatch_report_contents = Vec::new();
 
@@ -421,20 +488,33 @@ async fn main() -> Result<()> {
         for chunk_i in chunk_range.clone() {
             if let Some(c) = chunks.get(chunk_i) {
                 for t in *c {
-                    if t.turn < start_turn { start_turn = t.turn; }
-                    if t.turn > end_turn { end_turn = t.turn; }
-                    sb_dialogue.push_str(&format!("Turn {}: User: {} | Asst: {}\n", t.turn, t.user, t.assistant));
+                    if t.turn < start_turn {
+                        start_turn = t.turn;
+                    }
+                    if t.turn > end_turn {
+                        end_turn = t.turn;
+                    }
+                    sb_dialogue.push_str(&format!(
+                        "Turn {}: User: {} | Asst: {}\n",
+                        t.turn, t.user, t.assistant
+                    ));
                 }
             }
             if let Some(f_map) = chunk_facts_map.get(chunk_i) {
                 for (col, f_list) in f_map {
-                    sb_facts.entry(col.clone()).or_default().extend(f_list.clone());
+                    sb_facts
+                        .entry(col.clone())
+                        .or_default()
+                        .extend(f_list.clone());
                 }
             }
         }
 
         let sb_facts_json = serde_json::to_string_pretty(&sb_facts)?;
-        println!("  Generating Sub-Batch {:02} Judge Report (Turns {}-{})...", sb_num, start_turn, end_turn);
+        println!(
+            "  Generating Sub-Batch {:02} Judge Report (Turns {}-{})...",
+            sb_num, start_turn, end_turn
+        );
 
         let sb_report = run_llm_subbatch_judge_report(
             &client,
@@ -449,7 +529,10 @@ async fn main() -> Result<()> {
 
         let sb_report_path = reports_dir.join(format!("eval1_subbatch_{:02}_report.md", sb_num));
         std::fs::write(&sb_report_path, &sb_report)?;
-        println!("    Saved Sub-Batch Report {:02} To: {:?}", sb_num, sb_report_path);
+        println!(
+            "    Saved Sub-Batch Report {:02} To: {:?}",
+            sb_num, sb_report_path
+        );
         subbatch_report_contents.push(sb_report);
     }
 
@@ -482,4 +565,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-

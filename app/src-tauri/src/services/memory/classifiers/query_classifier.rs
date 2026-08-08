@@ -85,12 +85,13 @@ pub fn ensure_scope_classifier_loaded() -> Result<bool> {
     let models_dir = if let Some(p) = crate::utils::paths::try_get() {
         p.models.clone()
     } else {
-        dirs::home_dir().unwrap_or_default().join(".vox").join("models")
+        dirs::home_dir()
+            .unwrap_or_default()
+            .join(".vox")
+            .join("models")
     };
 
-    let classifier_dir = models_dir
-        .join("classifier")
-        .join(MEMORY_SCOPE_MODEL_DIR);
+    let classifier_dir = models_dir.join("classifier").join(MEMORY_SCOPE_MODEL_DIR);
 
     init_scope_classifier(&classifier_dir)
 }
@@ -99,7 +100,10 @@ pub fn ensure_scope_classifier_loaded() -> Result<bool> {
 /// Default fallback: `MemoryScope::Domain` if model missing or error occurs.
 pub fn classify_scope(text: &str) -> MemoryScope {
     if let Err(e) = ensure_scope_classifier_loaded() {
-        log::warn!("[QueryScopeClassifier] Scope classifier lazy initialization error: {}", e);
+        log::warn!(
+            "[QueryScopeClassifier] Scope classifier lazy initialization error: {}",
+            e
+        );
     }
     if let Some(classifier) = SCOPE_CLASSIFIER_INSTANCE.get() {
         classifier.classify(text)

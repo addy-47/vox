@@ -1,8 +1,11 @@
 use super::super::llama_cpp::LlmWorker;
+use super::super::LlmEngine as _;
 use super::{LlmProvider, ProviderKind};
 use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
-use super::super::LlmEngine as _;
+use crate::services::llm::types::{GenerationRequest, LlmError, ProviderCapabilities};
+use crate::services::memory::ConversationContext;
+use futures_util::future::BoxFuture;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
@@ -11,6 +14,7 @@ use std::sync::Arc;
 pub struct EmbeddedProvider {
     worker: LlmWorker,
     model_path: PathBuf,
+    capabilities: ProviderCapabilities,
 }
 
 impl EmbeddedProvider {
@@ -19,31 +23,42 @@ impl EmbeddedProvider {
         Ok(Self {
             worker,
             model_path: model_path.to_path_buf(),
+            capabilities: ProviderCapabilities::default(),
         })
     }
 }
 
-use crate::services::memory::ConversationContext;
-
 impl LlmProvider for EmbeddedProvider {
-    fn generate(
-        &self,
-        ctx: &ConversationContext,
+    fn generate<'a>(
+        &'a self,
+        request: GenerationRequest,
         turn_id: u32,
-        cancel_flag: &Arc<AtomicBool>,
-        tx: &mpsc::Sender<VoxEvent>,
-    ) -> anyhow::Result<()> {
-        self.worker
-            .generate(ctx, turn_id, cancel_flag, tx)
+        cancel_flag: &'a Arc<AtomicBool>,
+        tx: &'a mpsc::Sender<VoxEvent>,
+    ) -> BoxFuture<'a, Result<(), LlmError>> {
+        Box::pin(async move {
+            let ctx = ConversationContext {
+                messages: request.input.messages,
+                token_count: 0,
+                kv_cache_index: 0,
+            };
+            self.worker
+                .generate(&ctx, turn_id, cancel_flag, tx)
+                .map_err(LlmError::Other)
+        })
+    }
+
+    fn capabilities(&self) -> &ProviderCapabilities {
+        &self.capabilities
     }
 
     fn health_check(&self) -> bool {
         self.model_path.exists()
     }
 
-    fn list_models(&self) -> anyhow::Result<Vec<LlmModelInfo>> {
+    fn list_models(&self) -> Result<Vec<LlmModelInfo>, LlmError> {
         if let Some(parent) = self.model_path.parent() {
-            Self::list_models_in_dir(parent)
+            Self::list_models_in_dir(parent).map_err(LlmError::Other)
         } else {
             Ok(Vec::new())
         }
@@ -56,9 +71,7 @@ impl LlmProvider for EmbeddedProvider {
     fn max_context_tokens(&self) -> usize {
         self.worker.ctx_size() as usize
     }
-
 }
-
 
 impl EmbeddedProvider {
     pub fn list_models_in_dir(dir: &Path) -> anyhow::Result<Vec<LlmModelInfo>> {

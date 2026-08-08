@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
-use vox_lib::services::memory::{ChatMessage, Role, ConversationContext};
+use vox_lib::services::memory::{ChatMessage, Role};
 
 // Helper to spawn a mock SSE HTTP server returning a custom body and status.
 fn spawn_mock_server(status: u16, headers: String, body: &'static str) -> String {
@@ -144,25 +144,36 @@ fn test_openai_compat_generate() {
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
 
-    let ctx = ConversationContext {
-        messages: vec![
-            ChatMessage {
-                role: Role::System,
-                content: "system prompt".to_string(),
-                timestamp_ms: 0,
-            },
-            ChatMessage {
-                role: Role::User,
-                content: "test prompt".to_string(),
-                timestamp_ms: 0,
-            },
-        ],
-        token_count: 10,
-        kv_cache_index: 0,
+    use vox_lib::services::llm::types::{
+        ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest,
+        OutputConstraint,
     };
 
-    provider
-        .generate(&ctx, 1, &cancel_flag, &tx)
+    let request = GenerationRequest {
+        input: ConversationInput {
+            messages: vec![
+                ChatMessage {
+                    role: Role::System,
+                    content: "system prompt".to_string(),
+                    timestamp_ms: 0,
+                },
+                ChatMessage {
+                    role: Role::User,
+                    content: "test prompt".to_string(),
+                    timestamp_ms: 0,
+                },
+            ],
+        },
+        options: GenerationOptions::default(),
+        output: OutputConstraint::Text,
+        purpose: GenerationPurpose::Conversation,
+    };
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(provider.generate(request, 1, &cancel_flag, &tx))
         .unwrap();
 
     let mut tokens = Vec::new();

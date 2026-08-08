@@ -57,11 +57,21 @@ pub async fn hide_tray_window(app: AppHandle) {
         .load(std::sync::atomic::Ordering::Relaxed)
         .into();
     if owner == crate::core::state::InteractionOwner::Tray {
-        state.pipeline.cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        state
+            .pipeline
+            .cancel_flag
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         if let Some(engine) = state.engine.lock().await.as_ref() {
-            let turn_id = state.pipeline.turn_id.load(std::sync::atomic::Ordering::Relaxed);
-            let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::Cancelled { turn_id });
-            let _ = engine.stt_tx.send(crate::services::stt::SttCommand::ResetStream);
+            let turn_id = state
+                .pipeline
+                .turn_id
+                .load(std::sync::atomic::Ordering::Relaxed);
+            let _ = engine
+                .pipeline_tx
+                .send(crate::core::events::VoxEvent::Cancelled { turn_id });
+            let _ = engine
+                .stt_tx
+                .send(crate::services::stt::SttCommand::ResetStream);
             engine.playback_engine.cancel();
         }
     }
@@ -114,16 +124,30 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
             .load(std::sync::atomic::Ordering::Relaxed)
             .into();
         if owner == crate::core::state::InteractionOwner::Tray {
-            state.pipeline.cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            state
+                .pipeline
+                .cancel_flag
+                .store(true, std::sync::atomic::Ordering::Relaxed);
             if let Some(engine) = state.engine.lock().await.as_ref() {
-                let turn_id = state.pipeline.turn_id.load(std::sync::atomic::Ordering::Relaxed);
-                let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::Cancelled { turn_id });
-                let _ = engine.stt_tx.send(crate::services::stt::SttCommand::ResetStream);
+                let turn_id = state
+                    .pipeline
+                    .turn_id
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                let _ = engine
+                    .pipeline_tx
+                    .send(crate::core::events::VoxEvent::Cancelled { turn_id });
+                let _ = engine
+                    .stt_tx
+                    .send(crate::services::stt::SttCommand::ResetStream);
                 engine.playback_engine.cancel();
             }
         }
 
-        if state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed) {
+        if state
+            .pipeline
+            .is_engaged
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             state.owner.store(
                 crate::core::state::InteractionOwner::MainWindow as u32,
                 std::sync::atomic::Ordering::Relaxed,
@@ -224,7 +248,10 @@ pub async fn update_interaction_mode(
             let s = state.settings.read().unwrap();
             (
                 s.ui.tray_enabled,
-                state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed),
+                state
+                    .pipeline
+                    .is_engaged
+                    .load(std::sync::atomic::Ordering::Relaxed),
                 s.interaction.main_app_mode == InteractionMode::Passive,
             )
         };

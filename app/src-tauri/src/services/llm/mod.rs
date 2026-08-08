@@ -1,12 +1,22 @@
 pub mod actor;
+pub mod capabilities;
 pub mod capability_probe;
 pub mod llama_cpp;
+pub mod policy;
+pub mod probe;
 pub mod providers;
+pub mod types;
 
 pub use actor::{spawn_llm_worker, LlmCommand};
+pub use capabilities::{
+    CapabilityObservation, CapabilityRegistry, CapabilitySource, ModelCapabilities,
+};
 pub use capability_probe::CapabilityProbeEngine;
 pub use llama_cpp::LlmWorker;
+pub use policy::GenerationPolicy;
+pub use probe::ActiveProbeEngine;
 pub use providers::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, ProviderKind};
+pub use types::*;
 
 // ─── LLM Model Constants ───────────────────────────────────────────────────
 pub const MODEL_DIR_LLM: &str = "llm/llama";
@@ -29,7 +39,6 @@ pub trait LlmEngine {
         tx: &std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
     ) -> anyhow::Result<()>;
 }
-
 
 use llama_cpp_4::llama_backend::LlamaBackend;
 use std::sync::OnceLock;

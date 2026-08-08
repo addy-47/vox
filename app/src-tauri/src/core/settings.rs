@@ -223,7 +223,8 @@ pub fn get_tts_metadata() -> Vec<ModelMetadata> {
             description: "Lightweight flow-matching local voice synthesis.".to_string(),
             ram_usage: " ~144MB".to_string(),
             parameters: "99M (INT8)".to_string(),
-            tradeoffs: "Fast start (~400ms), 10 preset voices. No custom voice cloning.".to_string(),
+            tradeoffs: "Fast start (~400ms), 10 preset voices. No custom voice cloning."
+                .to_string(),
         },
         ModelMetadata {
             id: "chatterbox_tts".to_string(),
@@ -231,7 +232,8 @@ pub fn get_tts_metadata() -> Vec<ModelMetadata> {
             description: "Local speech synthesis with zero-shot voice cloning.".to_string(),
             ram_usage: " ~1.1GB".to_string(),
             parameters: "340M (Q4)".to_string(),
-            tradeoffs: "Authentic voice mimicry from 5s clip. Heavy on CPU; GPU recommended.".to_string(),
+            tradeoffs: "Authentic voice mimicry from 5s clip. Heavy on CPU; GPU recommended."
+                .to_string(),
         },
         ModelMetadata {
             id: "chatterbox_remote".to_string(),
@@ -239,15 +241,20 @@ pub fn get_tts_metadata() -> Vec<ModelMetadata> {
             description: "Offload voice synthesis to a remote CUDA GPU host.".to_string(),
             ram_usage: " 0 MB (Local)".to_string(),
             parameters: "340M (Remote)".to_string(),
-            tradeoffs: "Real-time latency with zero local memory footprint. Requires GPU server.".to_string(),
+            tradeoffs: "Real-time latency with zero local memory footprint. Requires GPU server."
+                .to_string(),
         },
         ModelMetadata {
             id: "edge_tts".to_string(),
             name: "Microsoft Edge Neural TTS".to_string(),
-            description: "Zero-latency cloud synthesis over Edge WebSockets with 400+ neural voices.".to_string(),
+            description:
+                "Zero-latency cloud synthesis over Edge WebSockets with 400+ neural voices."
+                    .to_string(),
             ram_usage: " 0 MB (Cloud)".to_string(),
             parameters: "Cloud (Neural)".to_string(),
-            tradeoffs: "Ultra-crisp neural prosody with zero local CPU load. Requires active internet.".to_string(),
+            tradeoffs:
+                "Ultra-crisp neural prosody with zero local CPU load. Requires active internet."
+                    .to_string(),
         },
     ]
 }
@@ -497,12 +504,30 @@ impl Default for LlmProviderConfig {
     }
 }
 
+fn default_chat_temperature() -> f32 {
+    0.2
+}
+
+fn default_compaction_temperature() -> f32 {
+    0.5
+}
+
+fn default_max_output_tokens() -> u32 {
+    512
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmSettings {
     pub model: String, // e.g., "llama_3_2_reasoning"
     pub ctx_size: u32,
     pub threads: u32,
     pub provider: LlmProviderConfig,
+    #[serde(default = "default_chat_temperature")]
+    pub chat_temperature: f32,
+    #[serde(default = "default_compaction_temperature")]
+    pub compaction_temperature: f32,
+    #[serde(default = "default_max_output_tokens")]
+    pub max_output_tokens: u32,
 }
 
 impl Default for LlmSettings {
@@ -512,6 +537,9 @@ impl Default for LlmSettings {
             ctx_size: 2048,
             threads: 4,
             provider: LlmProviderConfig::default(),
+            chat_temperature: 0.2,
+            compaction_temperature: 0.5,
+            max_output_tokens: 512,
         }
     }
 }
@@ -551,7 +579,6 @@ pub enum TtsProviderConfig {
     // OpenAiCompat { base_url: String, model: String, api_key: Option<String>, voice: Option<String> },
     // OmniVoice { voice: Option<String> },
 }
-
 
 impl Default for TtsProviderConfig {
     fn default() -> Self {
@@ -674,8 +701,6 @@ impl Default for MemorySettings {
     }
 }
 
-
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SetupSettings {
     pub completed: bool,
@@ -724,7 +749,7 @@ pub struct GeminiRealtimeConfig {
     pub model: String,
     pub voice_name: String,    // default "Aoede"
     pub language_code: String, // BCP-47, default "en-US"
-    pub temperature: f32, // default 0.2
+    pub temperature: f32,      // default 0.2
     pub enable_web_search: bool,
     pub resume_handle: Option<String>,
 }

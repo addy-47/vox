@@ -1,9 +1,9 @@
 use anyhow::{anyhow, bail, Result};
 use futures_util::{SinkExt, StreamExt};
-use std::sync::mpsc::Sender;
 use parking_lot::Mutex;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -516,7 +516,7 @@ async fn perform_handshake(
 ) -> Result<(WsWriter, WsReader)> {
     log::info!("[GeminiLive] Connecting to Gemini Live WebSocket: {}", {
         if let Some(pos) = url.find("key=") {
-            let key = &url[pos+4..];
+            let key = &url[pos + 4..];
             let redacted_key = if key.len() > 8 {
                 format!("{}...", &key[..8])
             } else {
@@ -536,7 +536,7 @@ async fn perform_handshake(
             anyhow!("{}", err_msg)
         })?
         .0;
-        
+
     let (mut ws_write, mut ws_read) = ws_stream.split();
     log::info!("[GeminiLive] WebSocket connection established. Sending setup config frame.");
 
@@ -606,7 +606,10 @@ async fn perform_handshake(
     });
 
     if let Some(ref handle) = resume_handle {
-        log::info!("[GeminiLive] Requesting session resumption with handle length {}", handle.len());
+        log::info!(
+            "[GeminiLive] Requesting session resumption with handle length {}",
+            handle.len()
+        );
         setup_json["setup"]["sessionResumption"] = serde_json::json!({
             "handle": handle
         });
@@ -641,7 +644,9 @@ async fn perform_handshake(
                     let text = String::from_utf8_lossy(&bytes);
                     let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
                     if val.get("setupComplete").is_some() {
-                        log::info!("[GeminiLive] Received setupComplete (binary) from Gemini Live server.");
+                        log::info!(
+                            "[GeminiLive] Received setupComplete (binary) from Gemini Live server."
+                        );
                         return Ok(());
                     } else if let Some(err) = val.get("error") {
                         let err_msg = format!("Gemini setup error response (binary): {:?}", err);
@@ -708,14 +713,20 @@ pub struct GeminiLiveSession {
 
 impl RealtimeSession for GeminiLiveSession {
     fn send_audio(&self, pcm: &[i16]) -> Result<()> {
-        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.last_activity_time.store(
+            chrono::Utc::now().timestamp_millis() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         self.audio_tx
             .send(pcm.to_vec())
             .map_err(|e| anyhow!("Failed to write to S2S audio pipeline queue: {:?}", e))
     }
 
     fn cancel(&self) -> Result<()> {
-        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.last_activity_time.store(
+            chrono::Utc::now().timestamp_millis() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         self.control_tx
             .send(ControlEvent::Interrupt)
             .map_err(|e| anyhow!("Failed to send interrupt control event: {:?}", e))
@@ -729,14 +740,20 @@ impl RealtimeSession for GeminiLiveSession {
     }
 
     fn activity_start(&self) -> Result<()> {
-        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.last_activity_time.store(
+            chrono::Utc::now().timestamp_millis() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         self.control_tx
             .send(ControlEvent::ActivityStart)
             .map_err(|e| anyhow!("Failed to send activity_start control event: {:?}", e))
     }
 
     fn activity_end(&self) -> Result<()> {
-        self.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.last_activity_time.store(
+            chrono::Utc::now().timestamp_millis() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         self.control_tx
             .send(ControlEvent::ActivityEnd)
             .map_err(|e| anyhow!("Failed to send activity_end control event: {:?}", e))
@@ -747,7 +764,8 @@ impl RealtimeSession for GeminiLiveSession {
     }
 
     fn last_activity_time(&self) -> u64 {
-        self.last_activity_time.load(std::sync::atomic::Ordering::Relaxed)
+        self.last_activity_time
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -762,7 +780,10 @@ fn handle_gemini_server_message(
     // Update last activity timestamp
     {
         let s_lock = state.lock();
-        s_lock.last_activity_time.store(chrono::Utc::now().timestamp_millis() as u64, std::sync::atomic::Ordering::Relaxed);
+        s_lock.last_activity_time.store(
+            chrono::Utc::now().timestamp_millis() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 
     // Handle sessionResumptionUpdate token storage
@@ -797,7 +818,10 @@ fn handle_gemini_server_message(
             let tmp_path = cache_path.with_extension("tmp");
             if let Ok(payload_str) = serde_json::to_string_pretty(&payload) {
                 if let Err(e) = std::fs::write(&tmp_path, payload_str) {
-                    log::error!("[GeminiLive] Failed to write temporary session cache: {:?}", e);
+                    log::error!(
+                        "[GeminiLive] Failed to write temporary session cache: {:?}",
+                        e
+                    );
                 } else if let Err(e) = std::fs::rename(&tmp_path, &cache_path) {
                     log::error!("[GeminiLive] Failed to rename session cache file: {:?}", e);
                 }
@@ -845,9 +869,13 @@ fn handle_gemini_server_message(
                                         .map(|c| i16::from_ne_bytes([c[0], c[1]]))
                                         .collect();
                                     if let Err(e) = playback_tx.try_send(pcm) {
-                                        log::warn!("[GeminiLive] Playback bridge buffer full: {:?}", e);
+                                        log::warn!(
+                                            "[GeminiLive] Playback bridge buffer full: {:?}",
+                                            e
+                                        );
                                     } else {
-                                        static RECV_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                                        static RECV_COUNT: std::sync::atomic::AtomicU64 =
+                                            std::sync::atomic::AtomicU64::new(0);
                                         let count = RECV_COUNT.fetch_add(1, Ordering::Relaxed);
                                         if count % 100 == 0 {
                                             log::debug!("[GeminiLive] Received {} model audio response chunks.", count + 1);
@@ -872,7 +900,10 @@ fn handle_gemini_server_message(
         if let Some(input_transcription) = server_content.get("inputTranscription") {
             if !s_lock.interrupt_active {
                 if let Some(text) = input_transcription.get("text").and_then(|t| t.as_str()) {
-                    log::debug!("[GeminiLive] Received input transcription (ASR): {:?}", text);
+                    log::debug!(
+                        "[GeminiLive] Received input transcription (ASR): {:?}",
+                        text
+                    );
                     let _ = event_tx.send(VoxEvent::TranscriptFinal {
                         turn_id: 0,
                         owner: crate::core::state::InteractionOwner::MainWindow,
@@ -886,7 +917,10 @@ fn handle_gemini_server_message(
         if let Some(output_transcription) = server_content.get("outputTranscription") {
             if !s_lock.interrupt_active {
                 if let Some(text) = output_transcription.get("text").and_then(|t| t.as_str()) {
-                    log::debug!("[GeminiLive] Received output transcription (TTS): {:?}", text);
+                    log::debug!(
+                        "[GeminiLive] Received output transcription (TTS): {:?}",
+                        text
+                    );
                     let _ = event_tx.send(VoxEvent::LlmToken {
                         turn_id: 0,
                         token: text.to_string(),

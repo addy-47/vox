@@ -16,14 +16,25 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 #[derive(Parser, Debug)]
-#[command(name = "memory_scope_bench", about = "Vox Phase 9 MemoryScope INT8 ONNX Rust Local Benchmark")]
+#[command(
+    name = "memory_scope_bench",
+    about = "Vox Phase 9 MemoryScope INT8 ONNX Rust Local Benchmark"
+)]
 struct Args {
     /// Path to evaluation JSON dataset file
-    #[arg(short, long, default_value = "sandbox/datasets/memory_scope_eval_test.json")]
+    #[arg(
+        short,
+        long,
+        default_value = "sandbox/datasets/memory_scope_eval_test.json"
+    )]
     input: PathBuf,
 
     /// Path to output JSON result file
-    #[arg(short, long, default_value = "sandbox/results/memory_scope_rust_bench.json")]
+    #[arg(
+        short,
+        long,
+        default_value = "sandbox/results/memory_scope_rust_bench.json"
+    )]
     output: PathBuf,
 
     /// Model directory override containing model_quantized.onnx and tokenizer.json
@@ -116,7 +127,10 @@ fn main() -> Result<()> {
         return Err(anyhow!("INT8 ONNX model not found at {:?}", onnx_path));
     }
     if !tokenizer_path.exists() {
-        return Err(anyhow!("Tokenizer config not found at {:?}", tokenizer_path));
+        return Err(anyhow!(
+            "Tokenizer config not found at {:?}",
+            tokenizer_path
+        ));
     }
     if !input_path.exists() {
         return Err(anyhow!("Evaluation dataset not found at {:?}", input_path));
@@ -146,7 +160,10 @@ fn main() -> Result<()> {
     let limit = args.max_samples.unwrap_or(samples.len()).min(samples.len());
     let eval_samples = &samples[..limit];
 
-    println!("Loaded {} samples for local CPU evaluation.", eval_samples.len());
+    println!(
+        "Loaded {} samples for local CPU evaluation.",
+        eval_samples.len()
+    );
 
     let mut latencies_ms = Vec::with_capacity(eval_samples.len());
     let mut raw_correct = 0;
@@ -207,15 +224,31 @@ fn main() -> Result<()> {
     let p50_latency = latencies_ms.get(p50_idx).copied().unwrap_or(0.0);
     let p95_latency = latencies_ms.get(p95_idx).copied().unwrap_or(0.0);
     let p99_latency = latencies_ms.get(p99_idx).copied().unwrap_or(0.0);
-    let avg_latency = if !latencies_ms.is_empty() { latencies_ms.iter().sum::<f64>() / latencies_ms.len() as f64 } else { 0.0 };
+    let avg_latency = if !latencies_ms.is_empty() {
+        latencies_ms.iter().sum::<f64>() / latencies_ms.len() as f64
+    } else {
+        0.0
+    };
 
     let raw_accuracy = (raw_correct as f64 / eval_samples.len() as f64) * 100.0;
     let calib_accuracy = (calib_correct as f64 / eval_samples.len() as f64) * 100.0;
     let fallback_rate = (fallback_count as f64 / eval_samples.len() as f64) * 100.0;
 
-    let prec_chitchat = if class_pred_counts[0] > 0 { class_correct[0] as f64 / class_pred_counts[0] as f64 } else { 0.0 };
-    let prec_user = if class_pred_counts[1] > 0 { class_correct[1] as f64 / class_pred_counts[1] as f64 } else { 0.0 };
-    let prec_temporal = if class_pred_counts[3] > 0 { class_correct[3] as f64 / class_pred_counts[3] as f64 } else { 0.0 };
+    let prec_chitchat = if class_pred_counts[0] > 0 {
+        class_correct[0] as f64 / class_pred_counts[0] as f64
+    } else {
+        0.0
+    };
+    let prec_user = if class_pred_counts[1] > 0 {
+        class_correct[1] as f64 / class_pred_counts[1] as f64
+    } else {
+        0.0
+    };
+    let prec_temporal = if class_pred_counts[3] > 0 {
+        class_correct[3] as f64 / class_pred_counts[3] as f64
+    } else {
+        0.0
+    };
 
     let non_default_prec = ((prec_chitchat + prec_user + prec_temporal) / 3.0) * 100.0;
     let gate_passed = calib_accuracy >= 88.0 && non_default_prec >= 98.0 && avg_latency <= 30.0;
@@ -236,7 +269,9 @@ fn main() -> Result<()> {
         gate_passed,
     };
 
-    let json_out_path = if PathBuf::from("../../sandbox/results").exists() || PathBuf::from("../../sandbox").exists() {
+    let json_out_path = if PathBuf::from("../../sandbox/results").exists()
+        || PathBuf::from("../../sandbox").exists()
+    {
         PathBuf::from("../../sandbox/results/memory_scope_rust_bench.json")
     } else {
         args.output.clone()
@@ -282,11 +317,17 @@ fn main() -> Result<()> {
         summary.p99_latency_ms,
         prec_chitchat * 100.0,
         prec_user * 100.0,
-        if class_pred_counts[2] > 0 { (class_correct[2] as f64 / class_pred_counts[2] as f64) * 100.0 } else { 0.0 },
+        if class_pred_counts[2] > 0 {
+            (class_correct[2] as f64 / class_pred_counts[2] as f64) * 100.0
+        } else {
+            0.0
+        },
         prec_temporal * 100.0
     );
 
-    let report_path = if PathBuf::from("../../docs/benchmarks").exists() || PathBuf::from("../../docs").exists() {
+    let report_path = if PathBuf::from("../../docs/benchmarks").exists()
+        || PathBuf::from("../../docs").exists()
+    {
         PathBuf::from("../../docs/benchmarks/memory-scope-bench.md")
     } else {
         PathBuf::from("docs/benchmarks/memory-scope-bench.md")
@@ -301,13 +342,35 @@ fn main() -> Result<()> {
     println!("==================================================");
     println!("Evaluated Samples   : {}", summary.total_samples);
     println!("Raw Accuracy        : {:.2}%", summary.raw_accuracy_pct);
-    println!("Calibrated Accuracy : {:.2}% (tau* = 0.81)", summary.calibrated_accuracy_pct);
-    println!("Non-Default Prec    : {:.2}% (Target: >= 98.0%)", summary.non_default_precision_pct);
+    println!(
+        "Calibrated Accuracy : {:.2}% (tau* = 0.81)",
+        summary.calibrated_accuracy_pct
+    );
+    println!(
+        "Non-Default Prec    : {:.2}% (Target: >= 98.0%)",
+        summary.non_default_precision_pct
+    );
     println!("Fallback Rate       : {:.2}%", summary.fallback_rate_pct);
-    println!("Rust CPU Latency P50: {:.2} ms/query", summary.p50_latency_ms);
-    println!("Rust CPU Latency P95: {:.2} ms/query", summary.p95_latency_ms);
-    println!("Rust CPU Latency P99: {:.2} ms/query", summary.p99_latency_ms);
-    println!("Gate Status         : {}", if summary.gate_passed { "✅ PASS" } else { "❌ FAIL" });
+    println!(
+        "Rust CPU Latency P50: {:.2} ms/query",
+        summary.p50_latency_ms
+    );
+    println!(
+        "Rust CPU Latency P95: {:.2} ms/query",
+        summary.p95_latency_ms
+    );
+    println!(
+        "Rust CPU Latency P99: {:.2} ms/query",
+        summary.p99_latency_ms
+    );
+    println!(
+        "Gate Status         : {}",
+        if summary.gate_passed {
+            "✅ PASS"
+        } else {
+            "❌ FAIL"
+        }
+    );
     println!("==================================================");
 
     Ok(())

@@ -66,87 +66,87 @@ async fn test_gemini_live_handshake_and_bidirectional_flow() {
                                 if !data.is_empty() {
                                     *server_received_audio_clone.lock().unwrap() = true;
 
-                                        // Send user input transcription (ASR)
-                                        let input_tx_msg = serde_json::json!({
-                                            "serverContent": {
-                                                "inputTranscription": {
-                                                    "text": "testing speech"
-                                                }
+                                    // Send user input transcription (ASR)
+                                    let input_tx_msg = serde_json::json!({
+                                        "serverContent": {
+                                            "inputTranscription": {
+                                                "text": "testing speech"
                                             }
-                                        })
-                                        .to_string();
-                                        ws_write
-                                            .send(Message::Text(input_tx_msg.into()))
-                                            .await
-                                            .unwrap();
+                                        }
+                                    })
+                                    .to_string();
+                                    ws_write
+                                        .send(Message::Text(input_tx_msg.into()))
+                                        .await
+                                        .unwrap();
 
-                                        // Send mock assistant audio response (24kHz, 16-bit PCM little-endian)
-                                        // We send 480 samples of 42i16 = 960 bytes
-                                        let mock_pcm = vec![42i16; 480];
-                                        let mock_bytes = unsafe {
-                                            std::slice::from_raw_parts(
-                                                mock_pcm.as_ptr() as *const u8,
-                                                mock_pcm.len() * 2,
-                                            )
-                                        };
-                                        let mock_b64 = base64::Engine::encode(
-                                            &base64::prelude::BASE64_STANDARD,
-                                            mock_bytes,
-                                        );
+                                    // Send mock assistant audio response (24kHz, 16-bit PCM little-endian)
+                                    // We send 480 samples of 42i16 = 960 bytes
+                                    let mock_pcm = vec![42i16; 480];
+                                    let mock_bytes = unsafe {
+                                        std::slice::from_raw_parts(
+                                            mock_pcm.as_ptr() as *const u8,
+                                            mock_pcm.len() * 2,
+                                        )
+                                    };
+                                    let mock_b64 = base64::Engine::encode(
+                                        &base64::prelude::BASE64_STANDARD,
+                                        mock_bytes,
+                                    );
 
-                                        let audio_msg = serde_json::json!({
-                                            "serverContent": {
-                                                "modelTurn": {
-                                                    "parts": [
-                                                        {
-                                                            "inlineData": {
-                                                                "mimeType": "audio/pcm;rate=24000",
-                                                                "data": mock_b64
-                                                            }
+                                    let audio_msg = serde_json::json!({
+                                        "serverContent": {
+                                            "modelTurn": {
+                                                "parts": [
+                                                    {
+                                                        "inlineData": {
+                                                            "mimeType": "audio/pcm;rate=24000",
+                                                            "data": mock_b64
                                                         }
-                                                    ]
-                                                }
+                                                    }
+                                                ]
                                             }
-                                        })
-                                        .to_string();
-                                        ws_write
-                                            .send(Message::Text(audio_msg.into()))
-                                            .await
-                                            .unwrap();
+                                        }
+                                    })
+                                    .to_string();
+                                    ws_write
+                                        .send(Message::Text(audio_msg.into()))
+                                        .await
+                                        .unwrap();
 
-                                        // Send assistant output transcription (TTS Text)
-                                        let output_tx_msg = serde_json::json!({
-                                            "serverContent": {
-                                                "outputTranscription": {
-                                                    "text": "hello"
-                                                }
+                                    // Send assistant output transcription (TTS Text)
+                                    let output_tx_msg = serde_json::json!({
+                                        "serverContent": {
+                                            "outputTranscription": {
+                                                "text": "hello"
                                             }
-                                        })
-                                        .to_string();
-                                        ws_write
-                                            .send(Message::Text(output_tx_msg.into()))
-                                            .await
-                                            .unwrap();
+                                        }
+                                    })
+                                    .to_string();
+                                    ws_write
+                                        .send(Message::Text(output_tx_msg.into()))
+                                        .await
+                                        .unwrap();
 
-                                        // Send turnComplete
-                                        let turn_complete_msg = serde_json::json!({
-                                            "serverContent": {
-                                                "turnComplete": true
-                                            }
-                                        })
-                                        .to_string();
-                                        ws_write
-                                            .send(Message::Text(turn_complete_msg.into()))
-                                            .await
-                                            .unwrap();
-                                    }
+                                    // Send turnComplete
+                                    let turn_complete_msg = serde_json::json!({
+                                        "serverContent": {
+                                            "turnComplete": true
+                                        }
+                                    })
+                                    .to_string();
+                                    ws_write
+                                        .send(Message::Text(turn_complete_msg.into()))
+                                        .await
+                                        .unwrap();
                                 }
                             }
                         }
                     }
                 }
             }
-        });
+        }
+    });
 
     // 2. Configure GeminiLiveProvider with Endpoint Override
     std::env::set_var("GEMINI_LIVE_ENDPOINT_OVERRIDE", &server_url);

@@ -1,4 +1,4 @@
-import React, { memo, useRef, useEffect } from "react";
+import { memo, useRef, useEffect } from "react";
 import { type RuntimeSnapshot } from "@/services/pipelineService";
 
 const MAX_SAMPLES = 60;
@@ -9,7 +9,7 @@ interface SparklineProps {
   dataKey: keyof RuntimeSnapshot;
 }
 
-export const Sparkline: React.FC<SparklineProps> = memo(({ history, dataKey }) => {
+export const Sparkline = memo(({ history, dataKey }: SparklineProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const historyRef = useRef<(RuntimeSnapshot & { localTime: number })[]>(history);

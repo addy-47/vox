@@ -26,7 +26,11 @@ static EMBEDDER: OnceLock<TextEmbedder> = OnceLock::new();
 /// Fallback Model Path: `~/.vox/models/embedding/bge-m3/model_quantized.onnx` (1024-dim)
 /// Returns `Ok(true)` if model loaded successfully, `Ok(false)` if model assets missing.
 pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
-    let model_filename = if is_primary { PRIMARY_MODEL_FILENAME } else { FALLBACK_MODEL_FILENAME };
+    let model_filename = if is_primary {
+        PRIMARY_MODEL_FILENAME
+    } else {
+        FALLBACK_MODEL_FILENAME
+    };
     let model_path = model_dir.join(model_filename);
     let tokenizer_path = model_dir.join(TOKENIZER_FILENAME);
 
@@ -40,8 +44,9 @@ pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
         return Ok(false);
     }
 
-    let tokenizer = Tokenizer::from_file(&tokenizer_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load tokenizer from {:?}: {}", tokenizer_path, e))?;
+    let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
+        anyhow::anyhow!("Failed to load tokenizer from {:?}: {}", tokenizer_path, e)
+    })?;
 
     let session = ort::session::Session::builder()
         .map_err(|e| anyhow::anyhow!("Failed to create session builder: {:?}", e))?
@@ -50,9 +55,18 @@ pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
         .with_intra_threads(1)
         .map_err(|e| anyhow::anyhow!("Failed to set intra threads: {:?}", e))?
         .commit_from_file(&model_path)
-        .map_err(|e| anyhow::anyhow!("Failed to commit session from file {:?}: {:?}", model_path, e))?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to commit session from file {:?}: {:?}",
+                model_path,
+                e
+            )
+        })?;
 
-    let has_token_type_ids = session.inputs().iter().any(|i| i.name() == "token_type_ids");
+    let has_token_type_ids = session
+        .inputs()
+        .iter()
+        .any(|i| i.name() == "token_type_ids");
 
     let embedder = TextEmbedder {
         session: Mutex::new(session),
@@ -86,7 +100,10 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
     let models_dir = if let Some(p) = crate::utils::paths::try_get() {
         p.models.clone()
     } else {
-        dirs::home_dir().unwrap_or_default().join(".vox").join("models")
+        dirs::home_dir()
+            .unwrap_or_default()
+            .join(".vox")
+            .join("models")
     };
 
     let minilm_dir = models_dir.join("embedding").join(PRIMARY_MODEL_DIR);
@@ -139,16 +156,20 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
         let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
             .map_err(|e| anyhow::anyhow!("Failed to create type_ids tensor: {:?}", e))?;
 
-        session_guard.run(ort::inputs![
-            "input_ids" => input_ids_tensor,
-            "attention_mask" => attention_mask_tensor,
-            "token_type_ids" => type_ids_tensor
-        ]).map_err(|e| anyhow::anyhow!("ONNX inference error: {:?}", e))?
+        session_guard
+            .run(ort::inputs![
+                "input_ids" => input_ids_tensor,
+                "attention_mask" => attention_mask_tensor,
+                "token_type_ids" => type_ids_tensor
+            ])
+            .map_err(|e| anyhow::anyhow!("ONNX inference error: {:?}", e))?
     } else {
-        session_guard.run(ort::inputs![
-            "input_ids" => input_ids_tensor,
-            "attention_mask" => attention_mask_tensor
-        ]).map_err(|e| anyhow::anyhow!("ONNX inference error: {:?}", e))?
+        session_guard
+            .run(ort::inputs![
+                "input_ids" => input_ids_tensor,
+                "attention_mask" => attention_mask_tensor
+            ])
+            .map_err(|e| anyhow::anyhow!("ONNX inference error: {:?}", e))?
     };
 
     let output_key = outputs
@@ -260,7 +281,11 @@ mod tests {
         let v2d = vec![3.0f32, 4.0f32];
         let norm_2d = l2_normalize(&v2d);
         let l2_len: f32 = norm_2d.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((l2_len - 1.0).abs() < 1e-6, "Expected unit length 1.0, got {}", l2_len);
+        assert!(
+            (l2_len - 1.0).abs() < 1e-6,
+            "Expected unit length 1.0, got {}",
+            l2_len
+        );
         assert!((norm_2d[0] - 0.6).abs() < 1e-6);
         assert!((norm_2d[1] - 0.8).abs() < 1e-6);
 
@@ -284,25 +309,41 @@ mod tests {
         // Identical vectors (similarity should be 1.0)
         let a = vec![1.0f32, 2.0, 3.0];
         let sim_identical = cosine_similarity(&a, &a);
-        assert!((sim_identical - 1.0).abs() < 1e-6, "Identical vectors similarity expected 1.0, got {}", sim_identical);
+        assert!(
+            (sim_identical - 1.0).abs() < 1e-6,
+            "Identical vectors similarity expected 1.0, got {}",
+            sim_identical
+        );
 
         // Orthogonal vectors (similarity should be 0.0)
         let u = vec![1.0f32, 0.0, 0.0];
         let v = vec![0.0f32, 1.0, 0.0];
         let sim_ortho = cosine_similarity(&u, &v);
-        assert!(sim_ortho.abs() < 1e-6, "Orthogonal vectors similarity expected 0.0, got {}", sim_ortho);
+        assert!(
+            sim_ortho.abs() < 1e-6,
+            "Orthogonal vectors similarity expected 0.0, got {}",
+            sim_ortho
+        );
 
         // Opposite vectors (similarity should be -1.0)
         let x = vec![1.0f32, 2.0, 3.0];
         let y = vec![-1.0f32, -2.0, -3.0];
         let sim_opposite = cosine_similarity(&x, &y);
-        assert!((sim_opposite - (-1.0)).abs() < 1e-6, "Opposite vectors similarity expected -1.0, got {}", sim_opposite);
+        assert!(
+            (sim_opposite - (-1.0)).abs() < 1e-6,
+            "Opposite vectors similarity expected -1.0, got {}",
+            sim_opposite
+        );
 
         // Mismatched vector dimensions (should safely return 0.0)
         let short_vec = vec![1.0f32, 2.0];
         let long_vec = vec![1.0f32, 2.0, 3.0];
         let sim_mismatched = cosine_similarity(&short_vec, &long_vec);
-        assert_eq!(sim_mismatched, 0.0, "Mismatched dimensions expected 0.0, got {}", sim_mismatched);
+        assert_eq!(
+            sim_mismatched, 0.0,
+            "Mismatched dimensions expected 0.0, got {}",
+            sim_mismatched
+        );
 
         // Zero vector input (should safely return 0.0 without NaN)
         let zero_vec = vec![0.0f32; 3];
@@ -316,4 +357,3 @@ mod tests {
         assert_eq!(sim_empty, 0.0);
     }
 }
-

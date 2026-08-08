@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Result};
-use turso::Connection;
-use std::collections::HashMap;
 use crate::core::constants::{
-    PM_RELATION_SUPERSEDES, PM_SOURCE_USER, PM_QUEUE_STATUS_PAUSED, PM_QUEUE_STATUS_STAGED_PENDING,
-    collection_type, PM_TYPE_SEMANTIC_GRAPH,
+    collection_type, PM_QUEUE_STATUS_PAUSED, PM_QUEUE_STATUS_STAGED_PENDING,
+    PM_RELATION_SUPERSEDES, PM_SOURCE_USER, PM_TYPE_SEMANTIC_GRAPH,
 };
 use crate::persistence::encode_f32_blob;
+use anyhow::{anyhow, Result};
+use std::collections::HashMap;
+use turso::Connection;
 
 /// Enqueues extracted personal memory facts into `personal_memory_queue`.
 pub async fn enqueue_personal_facts(
@@ -62,8 +62,6 @@ pub async fn mark_job_failed(conn: &Connection, job_id: i64, err_msg: &str) {
         )
         .await;
 }
-
-
 
 /// Atomically transitions paused facts for session to pending, and saves session Context memory.
 pub async fn session_end_consolidation(
@@ -145,7 +143,8 @@ pub async fn supersede_user_fact(
         conn.execute(
             "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
             (new_id.clone(), collection.to_string(), blob_bytes),
-        ).await?;
+        )
+        .await?;
     }
 
     conn.execute(
@@ -161,7 +160,8 @@ pub async fn supersede_user_fact(
     conn.execute(
         "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
         (old_id.to_string(),),
-    ).await?;
+    )
+    .await?;
 
     Ok(new_id)
 }
@@ -224,7 +224,6 @@ pub async fn write_candidate_audit(
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,7 +243,10 @@ mod tests {
     async fn test_enqueue_personal_facts() -> Result<()> {
         let conn = setup_test_db().await?;
         let mut facts = HashMap::new();
-        facts.insert("Tasks".to_string(), vec!["Buy groceries".to_string(), "  ".to_string()]);
+        facts.insert(
+            "Tasks".to_string(),
+            vec!["Buy groceries".to_string(), "  ".to_string()],
+        );
         facts.insert("Skills".to_string(), vec!["Rust programming".to_string()]);
 
         enqueue_personal_facts(&conn, facts, "session_123", true).await?;
@@ -265,8 +267,24 @@ mod tests {
 
         assert_eq!(queue_items.len(), 2);
         queue_items.sort_by(|a, b| a.0.cmp(&b.0));
-        assert_eq!(queue_items[0], ("Buy groceries".to_string(), "Tasks".to_string(), "staged_pending".to_string(), "session_123".to_string()));
-        assert_eq!(queue_items[1], ("Rust programming".to_string(), "Skills".to_string(), "staged_pending".to_string(), "session_123".to_string()));
+        assert_eq!(
+            queue_items[0],
+            (
+                "Buy groceries".to_string(),
+                "Tasks".to_string(),
+                "staged_pending".to_string(),
+                "session_123".to_string()
+            )
+        );
+        assert_eq!(
+            queue_items[1],
+            (
+                "Rust programming".to_string(),
+                "Skills".to_string(),
+                "staged_pending".to_string(),
+                "session_123".to_string()
+            )
+        );
 
         Ok(())
     }
@@ -281,7 +299,12 @@ mod tests {
 
         // 1st attempt failure -> retry_count = 1, status reset to staged_pending
         mark_job_failed(&conn, 1, "Attempt 1 error").await;
-        let mut rows = conn.query("SELECT status, error_msg, retry_count FROM personal_memory_queue WHERE id = 1", ()).await?;
+        let mut rows = conn
+            .query(
+                "SELECT status, error_msg, retry_count FROM personal_memory_queue WHERE id = 1",
+                (),
+            )
+            .await?;
         let row = rows.next().await?.expect("job should exist");
         assert_eq!(row.get::<String>(0)?, "staged_pending");
         assert_eq!(row.get::<String>(1)?, "Attempt 1 error");
@@ -292,7 +315,12 @@ mod tests {
 
         // 3rd attempt failure -> retry_count = 3, status transitions to failed
         mark_job_failed(&conn, 1, "Attempt 3 error").await;
-        let mut rows = conn.query("SELECT status, error_msg, retry_count FROM personal_memory_queue WHERE id = 1", ()).await?;
+        let mut rows = conn
+            .query(
+                "SELECT status, error_msg, retry_count FROM personal_memory_queue WHERE id = 1",
+                (),
+            )
+            .await?;
         let row = rows.next().await?.expect("job should exist");
         assert_eq!(row.get::<String>(0)?, "failed");
         assert_eq!(row.get::<String>(1)?, "Attempt 3 error");
@@ -300,8 +328,6 @@ mod tests {
 
         Ok(())
     }
-
-
 
     #[tokio::test]
     async fn test_session_end_consolidation() -> Result<()> {
@@ -316,18 +342,39 @@ mod tests {
             (),
         ).await?;
 
-        session_end_consolidation(&conn, "sess_alpha", "User discussed task priorities for session alpha").await?;
+        session_end_consolidation(
+            &conn,
+            "sess_alpha",
+            "User discussed task priorities for session alpha",
+        )
+        .await?;
 
-        let mut rows = conn.query("SELECT status FROM personal_memory_queue WHERE session_id = 'sess_alpha'", ()).await?;
+        let mut rows = conn
+            .query(
+                "SELECT status FROM personal_memory_queue WHERE session_id = 'sess_alpha'",
+                (),
+            )
+            .await?;
         assert_eq!(rows.next().await?.unwrap().get::<String>(0)?, "pending");
 
-        let mut rows_b = conn.query("SELECT status FROM personal_memory_queue WHERE session_id = 'sess_beta'", ()).await?;
+        let mut rows_b = conn
+            .query(
+                "SELECT status FROM personal_memory_queue WHERE session_id = 'sess_beta'",
+                (),
+            )
+            .await?;
         assert_eq!(rows_b.next().await?.unwrap().get::<String>(0)?, "paused");
 
         let mut ctx_rows = conn.query("SELECT collection, fact, type, status FROM memory_facts WHERE session_id = 'sess_alpha'", ()).await?;
-        let ctx_row = ctx_rows.next().await?.expect("Context fact should be created");
+        let ctx_row = ctx_rows
+            .next()
+            .await?
+            .expect("Context fact should be created");
         assert_eq!(ctx_row.get::<String>(0)?, "Context");
-        assert_eq!(ctx_row.get::<String>(1)?, "User discussed task priorities for session alpha");
+        assert_eq!(
+            ctx_row.get::<String>(1)?,
+            "User discussed task priorities for session alpha"
+        );
         assert_eq!(ctx_row.get::<String>(2)?, "operational");
         assert_eq!(ctx_row.get::<String>(3)?, "active");
 
@@ -343,19 +390,38 @@ mod tests {
             (),
         ).await?;
 
-        let new_id = supersede_user_fact(&conn, "old_id_1", "Name is Alexander", "Identity").await?;
+        let new_id =
+            supersede_user_fact(&conn, "old_id_1", "Name is Alexander", "Identity").await?;
 
-        let mut old_rows = conn.query("SELECT status FROM memory_facts WHERE id = 'old_id_1'", ()).await?;
-        assert_eq!(old_rows.next().await?.unwrap().get::<String>(0)?, "superseded");
+        let mut old_rows = conn
+            .query("SELECT status FROM memory_facts WHERE id = 'old_id_1'", ())
+            .await?;
+        assert_eq!(
+            old_rows.next().await?.unwrap().get::<String>(0)?,
+            "superseded"
+        );
 
-        let mut new_rows = conn.query("SELECT fact, source, status FROM memory_facts WHERE id = ?", (new_id.clone(),)).await?;
+        let mut new_rows = conn
+            .query(
+                "SELECT fact, source, status FROM memory_facts WHERE id = ?",
+                (new_id.clone(),),
+            )
+            .await?;
         let new_row = new_rows.next().await?.expect("new fact should exist");
         assert_eq!(new_row.get::<String>(0)?, "Name is Alexander");
         assert_eq!(new_row.get::<String>(1)?, "User");
         assert_eq!(new_row.get::<String>(2)?, "active");
 
-        let mut rel_rows = conn.query("SELECT from_id, to_id, relation, source FROM memory_relations WHERE from_id = ?", (new_id,)).await?;
-        let rel_row = rel_rows.next().await?.expect("supersedes relation should exist");
+        let mut rel_rows = conn
+            .query(
+                "SELECT from_id, to_id, relation, source FROM memory_relations WHERE from_id = ?",
+                (new_id,),
+            )
+            .await?;
+        let rel_row = rel_rows
+            .next()
+            .await?
+            .expect("supersedes relation should exist");
         assert_eq!(rel_row.get::<String>(1)?, "old_id_1");
         assert_eq!(rel_row.get::<String>(2)?, "SUPERSEDES");
         assert_eq!(rel_row.get::<String>(3)?, "USER");

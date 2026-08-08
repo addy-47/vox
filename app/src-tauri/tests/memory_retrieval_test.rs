@@ -72,29 +72,57 @@ async fn test_v7_memory_scope_retrieval_pipeline_rigorous() -> Result<()> {
     let settings = MemorySettings::default(); // max_personal_memory_share = 0.15
 
     // 1. Test ChitChat scope -> must return empty string with zero RAG queries
-    let chitchat_res = retrieve_personal_context_v7(&conn, &norm_vec, MemoryScope::ChitChat, &settings, 4096).await?;
-    assert!(chitchat_res.is_empty(), "ChitChat scope must return empty string with zero retrieval");
+    let chitchat_res =
+        retrieve_personal_context_v7(&conn, &norm_vec, MemoryScope::ChitChat, &settings, 4096)
+            .await?;
+    assert!(
+        chitchat_res.is_empty(),
+        "ChitChat scope must return empty string with zero retrieval"
+    );
 
     // 2. Test System Prompt Identity Preloading via ConversationManager
     let mut conv_mgr = vox_lib::services::memory::working_memory::ConversationManager::new(4096);
     conv_mgr.load_identity_into_system_prompt(&conn).await?;
     let sys_content = &conv_mgr.get_messages()[0].content;
-    assert!(sys_content.contains("<user_profile>"), "System prompt must contain user_profile block");
-    assert!(sys_content.contains("User is Alex"), "System prompt must pre-load Identity fact");
+    assert!(
+        sys_content.contains("<user_profile>"),
+        "System prompt must contain user_profile block"
+    );
+    assert!(
+        sys_content.contains("User is Alex"),
+        "System prompt must pre-load Identity fact"
+    );
 
     // 3. Test User scope RAG -> must contain Profile vector seed
-    let user_res = retrieve_personal_context_v7(&conn, &norm_vec, MemoryScope::User, &settings, 4096).await?;
-    assert!(user_res.contains("User prefers dark mode"), "User scope must contain Profile vector match");
+    let user_res =
+        retrieve_personal_context_v7(&conn, &norm_vec, MemoryScope::User, &settings, 4096).await?;
+    assert!(
+        user_res.contains("User prefers dark mode"),
+        "User scope must contain Profile vector match"
+    );
 
     // 4. Test Domain scope RAG -> Directives now vector-searched (in semantic_graph), Entities vector seed + BFS child relation
-    let domain_res = retrieve_personal_context_v7(&conn, &norm_vec, MemoryScope::Domain, &settings, 4096).await?;
-    assert!(domain_res.contains("GitHub Markdown"), "Domain scope must contain Directives fact in semantic graph");
-    assert!(domain_res.contains("Vox is a real-time voice AI app"), "Domain scope must contain Entities vector match");
+    let domain_res =
+        retrieve_personal_context_v7(&conn, &norm_vec, MemoryScope::Domain, &settings, 4096)
+            .await?;
+    assert!(
+        domain_res.contains("GitHub Markdown"),
+        "Domain scope must contain Directives fact in semantic graph"
+    );
+    assert!(
+        domain_res.contains("Vox is a real-time voice AI app"),
+        "Domain scope must contain Entities vector match"
+    );
 
     // 4. Verify context budget ceiling (< 15% of 4096 tokens = ~614 tokens)
     let total_tokens = vox_lib::services::memory::estimate_tokens(&domain_res);
     let token_ceiling = (4096.0 * 0.15) as usize;
-    assert!(total_tokens <= token_ceiling, "Context tokens ({}) must not exceed 15% budget cap ({})", total_tokens, token_ceiling);
+    assert!(
+        total_tokens <= token_ceiling,
+        "Context tokens ({}) must not exceed 15% budget cap ({})",
+        total_tokens,
+        token_ceiling
+    );
 
     println!("[Integration Test Success] v7 MemoryScope Retrieval Pipeline passed with BFS graph expansion & budget cap verification!");
     Ok(())

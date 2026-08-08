@@ -1,8 +1,10 @@
+use crate::core::constants::{
+    PM_RELATION_CONFLICTS, PM_RELATION_SUPERSEDES, PM_RELATION_SUPPORTS, PM_SOURCE_USER,
+};
 use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
 use serde::Serialize;
 use tauri::State;
-use crate::core::constants::{PM_RELATION_SUPERSEDES, PM_RELATION_CONFLICTS, PM_RELATION_SUPPORTS, PM_SOURCE_USER};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryFactEntry {
@@ -125,20 +127,36 @@ pub async fn get_memory_graph(
     let mut graph_entries = Vec::new();
     while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
         let id: String = row.get(0).map_err(|e| e.to_string())?;
-        
+
         let is_superseded = {
-            let mut s_rows = conn.query("SELECT 1 FROM memory_relations WHERE to_id = ? AND relation = ?", (id.clone(), PM_RELATION_SUPERSEDES.to_string())).await.map_err(|e| e.to_string())?;
+            let mut s_rows = conn
+                .query(
+                    "SELECT 1 FROM memory_relations WHERE to_id = ? AND relation = ?",
+                    (id.clone(), PM_RELATION_SUPERSEDES.to_string()),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
             s_rows.next().await.map_err(|e| e.to_string())?.is_some()
         };
 
         let conflict_count = {
             let mut c_rows = conn.query("SELECT count(*) FROM memory_relations WHERE (from_id = ? OR to_id = ?) AND relation = ?", (id.clone(), id.clone(), PM_RELATION_CONFLICTS.to_string())).await.map_err(|e| e.to_string())?;
-            c_rows.next().await.map_err(|e| e.to_string())?.map(|r| r.get::<i64>(0).unwrap_or(0) as u32).unwrap_or(0)
+            c_rows
+                .next()
+                .await
+                .map_err(|e| e.to_string())?
+                .map(|r| r.get::<i64>(0).unwrap_or(0) as u32)
+                .unwrap_or(0)
         };
 
         let supports_count = {
             let mut s_rows = conn.query("SELECT count(*) FROM memory_relations WHERE (from_id = ? OR to_id = ?) AND relation = ?", (id.clone(), id.clone(), PM_RELATION_SUPPORTS.to_string())).await.map_err(|e| e.to_string())?;
-            s_rows.next().await.map_err(|e| e.to_string())?.map(|r| r.get::<i64>(0).unwrap_or(0) as u32).unwrap_or(0)
+            s_rows
+                .next()
+                .await
+                .map_err(|e| e.to_string())?
+                .map(|r| r.get::<i64>(0).unwrap_or(0) as u32)
+                .unwrap_or(0)
         };
 
         graph_entries.push(MemoryFactEntry {
@@ -172,7 +190,11 @@ pub async fn get_memory_conflicts(
              WHERE relation = ? 
              AND from_id NOT IN (SELECT to_id FROM memory_relations WHERE relation = ?)
              AND to_id NOT IN (SELECT to_id FROM memory_relations WHERE relation = ?)",
-            (PM_RELATION_CONFLICTS.to_string(), PM_RELATION_SUPERSEDES.to_string(), PM_RELATION_SUPERSEDES.to_string()),
+            (
+                PM_RELATION_CONFLICTS.to_string(),
+                PM_RELATION_SUPERSEDES.to_string(),
+                PM_RELATION_SUPERSEDES.to_string(),
+            ),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -182,7 +204,10 @@ pub async fn get_memory_conflicts(
         let from_id: String = row.get(0).map_err(|e| e.to_string())?;
         let to_id: String = row.get(1).map_err(|e| e.to_string())?;
 
-        if let (Some(fact_a), Some(fact_b)) = (fetch_fact_entry(&conn, &from_id).await, fetch_fact_entry(&conn, &to_id).await) {
+        if let (Some(fact_a), Some(fact_b)) = (
+            fetch_fact_entry(&conn, &from_id).await,
+            fetch_fact_entry(&conn, &to_id).await,
+        ) {
             conflicts.push(MemoryConflict { fact_a, fact_b });
         }
     }
@@ -191,7 +216,13 @@ pub async fn get_memory_conflicts(
 }
 
 async fn fetch_fact_entry(conn: &turso::Connection, id: &str) -> Option<MemoryFactEntry> {
-    let mut r = conn.query("SELECT id, collection, fact, source, created_at FROM memory_facts WHERE id = ?", (id.to_string(),)).await.ok()?;
+    let mut r = conn
+        .query(
+            "SELECT id, collection, fact, source, created_at FROM memory_facts WHERE id = ?",
+            (id.to_string(),),
+        )
+        .await
+        .ok()?;
     let row = r.next().await.ok()??;
     Some(MemoryFactEntry {
         id: row.get(0).ok()?,
@@ -277,7 +308,6 @@ pub async fn resolve_memory_conflict(
     Ok(())
 }
 
-
 #[tauri::command]
 pub async fn get_memory_stats(
     _state: State<'_, std::sync::Arc<AppState>>,
@@ -298,7 +328,10 @@ pub async fn get_memory_stats(
     };
 
     let mut rows = conn
-        .query("SELECT count(*) FROM sessions WHERE ended_at IS NOT NULL", ())
+        .query(
+            "SELECT count(*) FROM sessions WHERE ended_at IS NOT NULL",
+            (),
+        )
         .await
         .map_err(|e| e.to_string())?;
     let embedded_sessions = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
@@ -308,7 +341,10 @@ pub async fn get_memory_stats(
     };
 
     let mut rows = conn
-        .query("SELECT count(*) FROM memory_facts WHERE collection = 'Context'", ())
+        .query(
+            "SELECT count(*) FROM memory_facts WHERE collection = 'Context'",
+            (),
+        )
         .await
         .map_err(|e| e.to_string())?;
     let total_episodes = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
@@ -356,7 +392,7 @@ pub async fn trigger_memory_consolidation(
         .map_err(|e| format!("DB open failed: {}", e))?;
 
     let mut compacted_count = 0;
-    
+
     let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     loop {
         match crate::services::memory::pipeline::run_pipeline_cycle(&conn, &cancel_flag).await {
@@ -371,6 +407,6 @@ pub async fn trigger_memory_consolidation(
             }
         }
     }
-    
+
     Ok(compacted_count as u32)
 }
