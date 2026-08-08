@@ -64,8 +64,14 @@ pub fn check_setup_health() -> bool {
     }
 
     // 6. MemoryScope Classifier & NLI
-    let memory_scope_ok = p.models.join("classifier/modernbert_memory_scope/model_quantized.onnx").exists();
-    let nli_ok = p.models.join("nli/nli-deberta-v3-base/model_quantized.onnx").exists();
+    let memory_scope_ok = p
+        .models
+        .join("classifier/modernbert_memory_scope/model_quantized.onnx")
+        .exists();
+    let nli_ok = p
+        .models
+        .join("nli/nli-deberta-v3-base/model_quantized.onnx")
+        .exists();
     if !memory_scope_ok || !nli_ok {
         log::warn!("[Health] MemoryScope classifier or NLI model missing on disk");
     }

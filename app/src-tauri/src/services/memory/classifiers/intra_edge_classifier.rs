@@ -90,8 +90,15 @@ pub fn init_nli_engine(model_dir: &Path) -> Result<bool> {
         .commit_from_file(&model_path)
         .map_err(|e| anyhow!("Failed to commit NLI session: {:?}", e))?;
 
-    let has_token_type_ids = session.inputs().iter().any(|i| i.name() == "token_type_ids");
-    let class_mapping = [NliLabel::Contradiction, NliLabel::Entailment, NliLabel::Neutral];
+    let has_token_type_ids = session
+        .inputs()
+        .iter()
+        .any(|i| i.name() == "token_type_ids");
+    let class_mapping = [
+        NliLabel::Contradiction,
+        NliLabel::Entailment,
+        NliLabel::Neutral,
+    ];
 
     let mut engine = NliEngine {
         session: parking_lot::Mutex::new(session),
@@ -141,7 +148,11 @@ impl NliEngine {
 
         if ent_idx == con_idx {
             log::warn!("[NliEngine] Calibration collision. Falling back to default label order.");
-            self.class_mapping = [NliLabel::Contradiction, NliLabel::Entailment, NliLabel::Neutral];
+            self.class_mapping = [
+                NliLabel::Contradiction,
+                NliLabel::Entailment,
+                NliLabel::Neutral,
+            ];
         } else {
             let mut indices = vec![0, 1, 2];
             indices.retain(|&x| x != ent_idx && x != con_idx);
@@ -164,7 +175,10 @@ impl NliEngine {
 
     fn raw_predict(&self, premise: &str, hypothesis: &str) -> Result<Vec<f32>> {
         let batch = self.raw_predict_batch(&[(premise, hypothesis)])?;
-        batch.into_iter().next().ok_or_else(|| anyhow!("Empty prediction output"))
+        batch
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("Empty prediction output"))
     }
 
     fn raw_predict_batch(&self, pairs: &[(&str, &str)]) -> Result<Vec<Vec<f32>>> {
@@ -211,7 +225,8 @@ impl NliEngine {
         }
 
         let input_ids_arr = Array2::<i64>::from_shape_vec((batch_size, max_seq_len), input_ids)?;
-        let attention_mask_arr = Array2::<i64>::from_shape_vec((batch_size, max_seq_len), attention_mask)?;
+        let attention_mask_arr =
+            Array2::<i64>::from_shape_vec((batch_size, max_seq_len), attention_mask)?;
 
         let input_ids_tensor = ort::value::Tensor::from_array(input_ids_arr)
             .map_err(|e| anyhow!("Failed to create NLI input_ids tensor: {:?}", e))?;
@@ -221,20 +236,25 @@ impl NliEngine {
         let mut session_guard = self.session.lock();
 
         let outputs = if self.has_token_type_ids {
-            let type_ids_arr = Array2::<i64>::from_shape_vec((batch_size, max_seq_len), token_type_ids)?;
+            let type_ids_arr =
+                Array2::<i64>::from_shape_vec((batch_size, max_seq_len), token_type_ids)?;
             let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
                 .map_err(|e| anyhow!("Failed to create NLI type_ids tensor: {:?}", e))?;
 
-            session_guard.run(ort::inputs![
-                "input_ids" => input_ids_tensor,
-                "attention_mask" => attention_mask_tensor,
-                "token_type_ids" => type_ids_tensor
-            ]).map_err(|e| anyhow!("NLI ONNX inference error: {:?}", e))?
+            session_guard
+                .run(ort::inputs![
+                    "input_ids" => input_ids_tensor,
+                    "attention_mask" => attention_mask_tensor,
+                    "token_type_ids" => type_ids_tensor
+                ])
+                .map_err(|e| anyhow!("NLI ONNX inference error: {:?}", e))?
         } else {
-            session_guard.run(ort::inputs![
-                "input_ids" => input_ids_tensor,
-                "attention_mask" => attention_mask_tensor
-            ]).map_err(|e| anyhow!("NLI ONNX inference error: {:?}", e))?
+            session_guard
+                .run(ort::inputs![
+                    "input_ids" => input_ids_tensor,
+                    "attention_mask" => attention_mask_tensor
+                ])
+                .map_err(|e| anyhow!("NLI ONNX inference error: {:?}", e))?
         };
 
         let output_key = outputs
@@ -249,7 +269,8 @@ impl NliEngine {
         if shape.len() < 2 || shape[0] < batch_size || shape[1] < 3 {
             return Err(anyhow!(
                 "Invalid output logits tensor dimensions. Expected [{}, >=3], received: {:?}",
-                batch_size, shape
+                batch_size,
+                shape
             ));
         }
 
@@ -280,7 +301,10 @@ pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {
     let models_dir = if let Some(p) = crate::utils::paths::try_get() {
         p.models.clone()
     } else {
-        dirs::home_dir().unwrap_or_default().join(".vox").join("models")
+        dirs::home_dir()
+            .unwrap_or_default()
+            .join(".vox")
+            .join("models")
     };
 
     let target_dir = if model_name.is_empty()
@@ -300,7 +324,9 @@ pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {
 /// Returns the softmax probabilities mapped to the output struct.
 pub fn classify_pair(premise: &str, hypothesis: &str) -> Result<NliResult> {
     let mut results = classify_batch(&[(premise, hypothesis)])?;
-    results.pop().ok_or_else(|| anyhow!("Empty prediction result"))
+    results
+        .pop()
+        .ok_or_else(|| anyhow!("Empty prediction result"))
 }
 
 /// Performs batched NLI classification for a slice of (premise, hypothesis) pairs.
@@ -310,7 +336,9 @@ pub fn classify_batch(pairs: &[(&str, &str)]) -> Result<Vec<NliResult>> {
         return Ok(Vec::new());
     }
 
-    let engine = NLI_ENGINE.get().ok_or_else(|| anyhow!("NLI Engine is not loaded."))?;
+    let engine = NLI_ENGINE
+        .get()
+        .ok_or_else(|| anyhow!("NLI Engine is not loaded."))?;
     let batch_logits = engine.raw_predict_batch(pairs)?;
 
     let mut results = Vec::with_capacity(batch_logits.len());
@@ -372,4 +400,3 @@ pub fn get_calibrated_class_mapping_strings() -> Option<Vec<&'static str>> {
             .collect()
     })
 }
-

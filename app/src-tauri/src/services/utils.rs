@@ -675,11 +675,7 @@ mod tests {
             res_complex.contains("100%"),
             "Percentage and numbers must be preserved"
         );
-        assert!(
-            res_complex.contains("!"),
-            "Punctuation must be preserved"
-        );
+        assert!(res_complex.contains("!"), "Punctuation must be preserved");
         assert!(res_complex.contains("👍"), "Emoji must be preserved");
     }
 }
-

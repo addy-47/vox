@@ -16,11 +16,12 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{GeminiRealtimeConfig, DeepgramVoiceAgentConfig, InteractionMode, VoxSettings};
+use vox_lib::core::settings::{
+    DeepgramVoiceAgentConfig, GeminiRealtimeConfig, InteractionMode, VoxSettings,
+};
 use vox_lib::services::realtime::{
-    providers::gemini_live::GeminiLiveProvider,
     providers::deepgram_live::DeepgramVoiceAgentProvider,
-    RealtimeVoiceProvider,
+    providers::gemini_live::GeminiLiveProvider, RealtimeVoiceProvider,
 };
 
 #[derive(Parser)]
@@ -62,7 +63,11 @@ struct Cli {
 }
 
 fn load_api_key(provider: &str) -> Option<String> {
-    let env_var = if provider == "deepgram" { "DEEPGRAM_API_KEY" } else { "GEMINI_API_KEY" };
+    let env_var = if provider == "deepgram" {
+        "DEEPGRAM_API_KEY"
+    } else {
+        "GEMINI_API_KEY"
+    };
     if let Ok(key) = std::env::var(env_var) {
         return Some(key);
     }
@@ -126,7 +131,8 @@ fn resolve_english_wav(cli_wav: Option<&str>) -> PathBuf {
             }
         }
     }
-    PathBuf::from("../../temp/data/benchmark_clips/hiacc_children_test_CH24036.wav") // Fallback
+    PathBuf::from("../../temp/data/benchmark_clips/hiacc_children_test_CH24036.wav")
+    // Fallback
 }
 
 struct BenchmarkMetrics {
@@ -231,7 +237,10 @@ async fn run_benchmark_for_clip(
 
                 match evt {
                     VoxEvent::TranscriptFinal { text, .. } => {
-                        println!("      \x1b[36m[Event] ASR Transcript (User): {:?}\x1b[0m", text);
+                        println!(
+                            "      \x1b[36m[Event] ASR Transcript (User): {:?}\x1b[0m",
+                            text
+                        );
                         let mut m = metrics_clone.lock().unwrap();
                         if m.first_input_text.is_none() {
                             m.first_input_text = Some(text.clone());
@@ -243,7 +252,10 @@ async fn run_benchmark_for_clip(
                     VoxEvent::LlmToken { token, .. } => {
                         let mut m = metrics_clone.lock().unwrap();
                         if m.first_output_text.is_none() {
-                            println!("      \x1b[35m[Event] LLM Output Token (Assistant): {:?}\x1b[0m", token);
+                            println!(
+                                "      \x1b[35m[Event] LLM Output Token (Assistant): {:?}\x1b[0m",
+                                token
+                            );
                             m.first_output_text = Some(token.clone());
                             if let Some(end_time) = end_time_opt {
                                 m.ttft_output = Some(now.duration_since(end_time));
@@ -310,7 +322,8 @@ async fn run_benchmark_for_clip(
     } else {
         // Continuous VAD: stream silence chunks to let server detect end of speech
         let silence_chunk = vec![0i16; chunk_size];
-        for _ in 0..75 { // up to 1.5 seconds of silence
+        for _ in 0..75 {
+            // up to 1.5 seconds of silence
             if metrics.lock().unwrap().ttfa.is_some() {
                 break;
             }
@@ -324,7 +337,8 @@ async fn run_benchmark_for_clip(
     // Handle Barge-In test if requested
     if barge_in {
         let mut first_audio_received = false;
-        for _ in 0..100 { // 5 seconds timeout
+        for _ in 0..100 {
+            // 5 seconds timeout
             tokio::time::sleep(Duration::from_millis(50)).await;
             if metrics.lock().unwrap().ttfa.is_some() {
                 first_audio_received = true;
@@ -393,7 +407,10 @@ async fn run_benchmark_for_clip(
             writer.write_sample(sample)?;
         }
         writer.finalize()?;
-        println!("      \x1b[32m[WAV Output] Saved response audio to {:?}\x1b[0m", output_wav_path);
+        println!(
+            "      \x1b[32m[WAV Output] Saved response audio to {:?}\x1b[0m",
+            output_wav_path
+        );
     }
 
     Ok(BenchmarkMetrics {
@@ -413,7 +430,9 @@ async fn run_benchmark_for_clip(
 async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."));
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
     let root = home.join(".vox");
     vox_lib::utils::paths::init_with_root(root.clone());
     let settings = VoxSettings::load();
@@ -422,14 +441,20 @@ async fn main() -> anyhow::Result<()> {
 
     let provider_name = cli.provider.to_lowercase();
     if provider_name != "gemini" && provider_name != "deepgram" {
-        eprintln!("\x1b[31mError: Unsupported provider '{}'. Use 'gemini' or 'deepgram'.\x1b[0m", provider_name);
+        eprintln!(
+            "\x1b[31mError: Unsupported provider '{}'. Use 'gemini' or 'deepgram'.\x1b[0m",
+            provider_name
+        );
         std::process::exit(1);
     }
 
     let api_key = match load_api_key(&provider_name) {
         Some(key) => key,
         None => {
-            eprintln!("\x1b[31mError: API key for provider '{}' not found in env or temp/.env\x1b[0m", provider_name);
+            eprintln!(
+                "\x1b[31mError: API key for provider '{}' not found in env or temp/.env\x1b[0m",
+                provider_name
+            );
             std::process::exit(1);
         }
     };
@@ -438,7 +463,9 @@ async fn main() -> anyhow::Result<()> {
         "passive" => InteractionMode::Passive,
         "ptt" => InteractionMode::PTT,
         _ => {
-            eprintln!("\x1b[31mError: Invalid mode. Supported modes are 'passive' and 'ptt'\x1b[0m");
+            eprintln!(
+                "\x1b[31mError: Invalid mode. Supported modes are 'passive' and 'ptt'\x1b[0m"
+            );
             std::process::exit(1);
         }
     };
@@ -459,13 +486,26 @@ async fn main() -> anyhow::Result<()> {
     // 1. Run Hindi prompt evaluation
     println!("\x1b[34m[Realtime-Bench]\x1b[0m === RUNNING HINDI CLIP EVALUATION ===");
     let out_hindi_path = PathBuf::from(format!("outputs/{}_response_hindi.wav", provider_name));
-    let hindi_res = match run_benchmark_for_clip(&provider_name, &api_key, &hindi_wav_path, interaction_mode.clone(), cli.barge_in, system_prompt.clone(), &out_hindi_path).await {
+    let hindi_res = match run_benchmark_for_clip(
+        &provider_name,
+        &api_key,
+        &hindi_wav_path,
+        interaction_mode.clone(),
+        cli.barge_in,
+        system_prompt.clone(),
+        &out_hindi_path,
+    )
+    .await
+    {
         Ok(res) => {
             println!("\x1b[32m[Realtime-Bench] Hindi prompt evaluation run completed successfully.\x1b[0m");
             Some(res)
         }
         Err(e) => {
-            eprintln!("\x1b[31m[Realtime-Bench] Hindi evaluation failed: {:?}\x1b[0m", e);
+            eprintln!(
+                "\x1b[31m[Realtime-Bench] Hindi evaluation failed: {:?}\x1b[0m",
+                e
+            );
             None
         }
     };
@@ -474,13 +514,26 @@ async fn main() -> anyhow::Result<()> {
     // 2. Run English prompt evaluation
     println!("\x1b[34m[Realtime-Bench]\x1b[0m === RUNNING ENGLISH CLIP EVALUATION ===");
     let out_english_path = PathBuf::from(format!("outputs/{}_response_english.wav", provider_name));
-    let english_res = match run_benchmark_for_clip(&provider_name, &api_key, &english_wav_path, interaction_mode.clone(), cli.barge_in, system_prompt.clone(), &out_english_path).await {
+    let english_res = match run_benchmark_for_clip(
+        &provider_name,
+        &api_key,
+        &english_wav_path,
+        interaction_mode.clone(),
+        cli.barge_in,
+        system_prompt.clone(),
+        &out_english_path,
+    )
+    .await
+    {
         Ok(res) => {
             println!("\x1b[32m[Realtime-Bench] English prompt evaluation run completed successfully.\x1b[0m");
             Some(res)
         }
         Err(e) => {
-            eprintln!("\x1b[31m[Realtime-Bench] English evaluation failed: {:?}\x1b[0m", e);
+            eprintln!(
+                "\x1b[31m[Realtime-Bench] English evaluation failed: {:?}\x1b[0m",
+                e
+            );
             None
         }
     };
@@ -488,12 +541,19 @@ async fn main() -> anyhow::Result<()> {
 
     // 3. Print side-by-side comparison report
     println!("\n\x1b[1;32m========================= COMPARATIVE S2S BENCHMARK REPORT =========================\x1b[0m");
-    println!("  {:<26} | {:<22} | {:<22}", "Metric", "Hindi Prompt", "English Prompt");
+    println!(
+        "  {:<26} | {:<22} | {:<22}",
+        "Metric", "Hindi Prompt", "English Prompt"
+    );
     println!("  ---------------------------+------------------------+-----------------------");
 
     let print_row_dur = |label: &str, d_hin: Option<Duration>, d_eng: Option<Duration>| {
-        let h_str = d_hin.map(|d| format!("{} ms", d.as_millis())).unwrap_or_else(|| "N/A".to_string());
-        let e_str = d_eng.map(|d| format!("{} ms", d.as_millis())).unwrap_or_else(|| "N/A".to_string());
+        let h_str = d_hin
+            .map(|d| format!("{} ms", d.as_millis()))
+            .unwrap_or_else(|| "N/A".to_string());
+        let e_str = d_eng
+            .map(|d| format!("{} ms", d.as_millis()))
+            .unwrap_or_else(|| "N/A".to_string());
         println!("  {:<26} | {:<22} | {:<22}", label, h_str, e_str);
     };
 
@@ -539,28 +599,52 @@ async fn main() -> anyhow::Result<()> {
     );
     print_row_val(
         "Audio Chunks Received",
-        &hindi_res.as_ref().map(|r| r.audio_chunks_received.to_string()).unwrap_or_else(|| "N/A".to_string()),
-        &english_res.as_ref().map(|r| r.audio_chunks_received.to_string()).unwrap_or_else(|| "N/A".to_string()),
+        &hindi_res
+            .as_ref()
+            .map(|r| r.audio_chunks_received.to_string())
+            .unwrap_or_else(|| "N/A".to_string()),
+        &english_res
+            .as_ref()
+            .map(|r| r.audio_chunks_received.to_string())
+            .unwrap_or_else(|| "N/A".to_string()),
     );
     print_row_val(
         "Total Audio Bytes Recv",
-        &hindi_res.as_ref().map(|r| r.total_audio_bytes.to_string()).unwrap_or_else(|| "N/A".to_string()),
-        &english_res.as_ref().map(|r| r.total_audio_bytes.to_string()).unwrap_or_else(|| "N/A".to_string()),
+        &hindi_res
+            .as_ref()
+            .map(|r| r.total_audio_bytes.to_string())
+            .unwrap_or_else(|| "N/A".to_string()),
+        &english_res
+            .as_ref()
+            .map(|r| r.total_audio_bytes.to_string())
+            .unwrap_or_else(|| "N/A".to_string()),
     );
     print_row_opt_str(
         "First Input Text Segment",
         hindi_res.as_ref().and_then(|r| r.first_input_text.as_ref()),
-        english_res.as_ref().and_then(|r| r.first_input_text.as_ref()),
+        english_res
+            .as_ref()
+            .and_then(|r| r.first_input_text.as_ref()),
     );
     print_row_opt_str(
         "First Output Text Segment",
-        hindi_res.as_ref().and_then(|r| r.first_output_text.as_ref()),
-        english_res.as_ref().and_then(|r| r.first_output_text.as_ref()),
+        hindi_res
+            .as_ref()
+            .and_then(|r| r.first_output_text.as_ref()),
+        english_res
+            .as_ref()
+            .and_then(|r| r.first_output_text.as_ref()),
     );
     print_row_val(
         "Server Interrupted",
-        &hindi_res.as_ref().map(|r| r.interrupted.to_string()).unwrap_or_else(|| "N/A".to_string()),
-        &english_res.as_ref().map(|r| r.interrupted.to_string()).unwrap_or_else(|| "N/A".to_string()),
+        &hindi_res
+            .as_ref()
+            .map(|r| r.interrupted.to_string())
+            .unwrap_or_else(|| "N/A".to_string()),
+        &english_res
+            .as_ref()
+            .map(|r| r.interrupted.to_string())
+            .unwrap_or_else(|| "N/A".to_string()),
     );
     println!("\x1b[1;32m====================================================================================\x1b[0m\n");
 

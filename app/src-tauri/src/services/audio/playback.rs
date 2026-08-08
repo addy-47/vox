@@ -151,7 +151,8 @@ impl PlaybackEngine {
         }
 
         self.buffer_samples.fetch_add(pushed, Ordering::SeqCst);
-        self.total_samples_ingested.fetch_add(pushed, Ordering::SeqCst);
+        self.total_samples_ingested
+            .fetch_add(pushed, Ordering::SeqCst);
     }
 
     /// Explicitly trigger CPAL playback.
@@ -532,4 +533,3 @@ mod tests {
         assert_eq!(engine.total_samples_ingested(), 0);
     }
 }
-

@@ -8,7 +8,7 @@ interface EngineBadgeProps {
   icon: React.ReactNode;
 }
 
-export const EngineBadge: React.FC<EngineBadgeProps> = memo(({ label, active, icon }) => (
+export const EngineBadge = memo(({ label, active, icon }: EngineBadgeProps) => (
   <div
     className={cn(
       "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all duration-500",

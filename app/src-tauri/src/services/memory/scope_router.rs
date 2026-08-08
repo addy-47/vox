@@ -1,5 +1,5 @@
-use query_sieve::MemoryScope;
 use crate::core::constants::MemoryCollection;
+use query_sieve::MemoryScope;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeRouting {
@@ -48,7 +48,10 @@ mod tests {
     fn test_user_scope_routing() {
         let routing = route_scope(MemoryScope::User);
         assert!(routing.sql_collections.is_empty());
-        assert_eq!(routing.vector_collections, vec![MemoryCollection::Profile, MemoryCollection::Constraints]);
+        assert_eq!(
+            routing.vector_collections,
+            vec![MemoryCollection::Profile, MemoryCollection::Constraints]
+        );
     }
 
     #[test]
@@ -57,14 +60,24 @@ mod tests {
         assert!(routing.sql_collections.is_empty());
         assert_eq!(
             routing.vector_collections,
-            vec![MemoryCollection::Entities, MemoryCollection::Directives, MemoryCollection::Constraints]
+            vec![
+                MemoryCollection::Entities,
+                MemoryCollection::Directives,
+                MemoryCollection::Constraints
+            ]
         );
     }
 
     #[test]
     fn test_temporal_scope_routing() {
         let routing = route_scope(MemoryScope::Temporal);
-        assert_eq!(routing.sql_collections, vec![MemoryCollection::Directives, MemoryCollection::Narrative]);
-        assert_eq!(routing.vector_collections, vec![MemoryCollection::Constraints]);
+        assert_eq!(
+            routing.sql_collections,
+            vec![MemoryCollection::Directives, MemoryCollection::Narrative]
+        );
+        assert_eq!(
+            routing.vector_collections,
+            vec![MemoryCollection::Constraints]
+        );
     }
 }

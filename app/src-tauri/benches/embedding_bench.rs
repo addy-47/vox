@@ -106,7 +106,10 @@ impl ModelInstance {
             .commit_from_file(&model_path)
             .map_err(|e| anyhow!("{:?}", e))?;
 
-        let has_token_type_ids = session.inputs().iter().any(|i| i.name() == "token_type_ids");
+        let has_token_type_ids = session
+            .inputs()
+            .iter()
+            .any(|i| i.name() == "token_type_ids");
 
         Ok(Self {
             name: name.to_string(),
@@ -281,7 +284,9 @@ fn fetch_nvidia_embeddings(api_key: &str, texts: &[&str]) -> Result<Vec<Vec<f32>
         }
     }
     if result.is_empty() {
-        return Err(anyhow!("Failed to retrieve NVIDIA embeddings from API response"));
+        return Err(anyhow!(
+            "Failed to retrieve NVIDIA embeddings from API response"
+        ));
     }
     Ok(result)
 }
@@ -311,9 +316,15 @@ fn main() -> Result<()> {
 
     let nv_api_key = get_nvidia_api_key();
 
-    println!("=========================================================================================");
-    println!("     VOX V7 COGNITIVE MEMORY EMBEDDING BASELINE EVALUATION SCORECARD                    ");
-    println!("=========================================================================================");
+    println!(
+        "========================================================================================="
+    );
+    println!(
+        "     VOX V7 COGNITIVE MEMORY EMBEDDING BASELINE EVALUATION SCORECARD                    "
+    );
+    println!(
+        "========================================================================================="
+    );
     println!(
         "Dataset Loaded: {:?} | Total Samples: {}",
         dataset_path.file_name().unwrap(),
@@ -552,7 +563,12 @@ fn main() -> Result<()> {
 
         println!(
             "  {:<26} | RAG {:<10} | Top-3 Recall: {:.1}% ({}/{}) | Avg Cosine Margin: +{:.4}",
-            minilm.name, label, acc, hits_at_3, samples.len(), avg_margin
+            minilm.name,
+            label,
+            acc,
+            hits_at_3,
+            samples.len(),
+            avg_margin
         );
         Ok(())
     };

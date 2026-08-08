@@ -6,11 +6,11 @@
 
 use crate::persistence::voices::{self, VoiceEntry};
 use crate::services::tts::providers::TtsProvider;
-use serde::Serialize;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::sync::Arc;
-use once_cell::sync::Lazy;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use once_cell::sync::Lazy;
+use serde::Serialize;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // ─── DTO ─────────────────────────────────────────────────────────────────────
 
@@ -41,7 +41,9 @@ impl From<VoiceEntry> for VoiceEntryDto {
 
 async fn open_db() -> Result<turso::Connection, String> {
     let db_path = crate::utils::paths::db_path();
-    crate::persistence::db::VoxDb::open(&db_path).await.map_err(|e| format!("DB open failed: {}", e))
+    crate::persistence::db::VoxDb::open(&db_path)
+        .await
+        .map_err(|e| format!("DB open failed: {}", e))
 }
 
 fn now_epoch() -> i64 {
@@ -100,25 +102,33 @@ pub async fn list_voices() -> Result<Vec<VoiceEntryDto>, String> {
 /// Decodes any supported audio format (MP3, FLAC, M4A, WAV, etc.) to a standard mono f32 24kHz WAV file.
 /// If duration exceeds 30.0 seconds, it truncates the input audio.
 fn convert_and_validate_audio(src_path: &str, dest_path: &std::path::Path) -> Result<(), String> {
-    use std::fs::File;
     use crate::symphonia_core::audio::Audio;
     use crate::symphonia_core::codecs::audio::AudioDecoderOptions;
     use crate::symphonia_core::errors::Error;
-    use crate::symphonia_core::formats::FormatOptions;
     use crate::symphonia_core::formats::probe::Hint;
+    use crate::symphonia_core::formats::FormatOptions;
     use crate::symphonia_core::io::MediaSourceStream;
     use crate::symphonia_core::meta::MetadataOptions;
+    use std::fs::File;
 
     let file = File::open(src_path).map_err(|e| format!("Failed to open file: {}", e))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
     let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(src_path).extension().and_then(|os| os.to_str()) {
+    if let Some(ext) = std::path::Path::new(src_path)
+        .extension()
+        .and_then(|os| os.to_str())
+    {
         hint.with_extension(ext);
     }
 
     let mut format = symphonia::default::get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
         .map_err(|e| format!("Unsupported audio format: {}", e))?;
 
     let track = format
@@ -236,7 +246,10 @@ fn convert_and_validate_audio(src_path: &str, dest_path: &std::path::Path) -> Re
 
     // Resample to 24000 Hz if necessary
     let resampled = if input_sample_rate != 24000 {
-        log::info!("[Voices] Resampling from {}Hz to 24000Hz", input_sample_rate);
+        log::info!(
+            "[Voices] Resampling from {}Hz to 24000Hz",
+            input_sample_rate
+        );
         let mut out = Vec::new();
         let ratio = input_sample_rate as f64 / 24000.0;
         let num_resampled_samples = (raw_samples.len() as f64 / ratio) as usize;
@@ -245,7 +258,8 @@ fn convert_and_validate_audio(src_path: &str, dest_path: &std::path::Path) -> Re
             let idx_floor = src_idx.floor() as usize;
             let idx_ceil = (idx_floor + 1).min(raw_samples.len() - 1);
             let frac = src_idx - idx_floor as f64;
-            let sample = (1.0 - frac) as f32 * raw_samples[idx_floor] + frac as f32 * raw_samples[idx_ceil];
+            let sample =
+                (1.0 - frac) as f32 * raw_samples[idx_floor] + frac as f32 * raw_samples[idx_ceil];
             out.push(sample);
         }
         out
@@ -263,7 +277,10 @@ fn convert_and_validate_audio(src_path: &str, dest_path: &std::path::Path) -> Re
 
     // Auto-stitch/loop short audio to reach exactly 30.0 seconds, or truncate if longer
     let final_samples = if duration_secs < 30.0 {
-        log::info!("[Voices] Audio is only {:.1}s — auto-stitching to 30.0s for better cloning", duration_secs);
+        log::info!(
+            "[Voices] Audio is only {:.1}s — auto-stitching to 30.0s for better cloning",
+            duration_secs
+        );
         resampled
             .iter()
             .copied()
@@ -271,12 +288,14 @@ fn convert_and_validate_audio(src_path: &str, dest_path: &std::path::Path) -> Re
             .take(30 * 24000)
             .collect::<Vec<f32>>()
     } else if duration_secs > 30.0 {
-        log::info!("[Voices] Truncating audio from {:.1}s to 30.0s", duration_secs);
+        log::info!(
+            "[Voices] Truncating audio from {:.1}s to 30.0s",
+            duration_secs
+        );
         resampled[0..(30 * 24000)].to_vec()
     } else {
         resampled
     };
-
 
     // Write final samples to destination WAV (24000Hz mono float32)
     let spec = hound::WavSpec {
@@ -292,7 +311,9 @@ fn convert_and_validate_audio(src_path: &str, dest_path: &std::path::Path) -> Re
             .write_sample(sample)
             .map_err(|e| format!("Failed to write sample: {}", e))?;
     }
-    writer.finalize().map_err(|e| format!("Failed to finalize WAV file: {}", e))?;
+    writer
+        .finalize()
+        .map_err(|e| format!("Failed to finalize WAV file: {}", e))?;
 
     Ok(())
 }
@@ -300,7 +321,7 @@ fn convert_and_validate_audio(src_path: &str, dest_path: &std::path::Path) -> Re
 /// Helper that pre-bakes speaker embeddings using a temporary cold Chatterbox engine.
 fn pre_bake_voice(source_wav: &std::path::Path, baked_dir: &std::path::Path) -> Result<(), String> {
     use chatterbox_rs::{Engine, EngineOptions};
-    
+
     std::fs::create_dir_all(baked_dir)
         .map_err(|e| format!("Failed to create baked voice directory: {}", e))?;
 
@@ -329,7 +350,10 @@ fn pre_bake_voice(source_wav: &std::path::Path, baked_dir: &std::path::Path) -> 
         .save_voice(baked_dir)
         .map_err(|e| format!("Failed to save pre-baked voice tensors: {}", e))?;
 
-    log::info!("[Voices] Speaker tensors successfully pre-baked to {:?}", baked_dir);
+    log::info!(
+        "[Voices] Speaker tensors successfully pre-baked to {:?}",
+        baked_dir
+    );
     Ok(())
 }
 
@@ -359,21 +383,17 @@ pub async fn add_voice_from_file(name: String, file_path: String) -> Result<Voic
     let dest = voice_dir.join("source.wav");
     let file_path_clone = file_path.clone();
     let dest_clone = dest.clone();
-    tokio::task::spawn_blocking(move || {
-        convert_and_validate_audio(&file_path_clone, &dest_clone)
-    })
-    .await
-    .map_err(|e| format!("Task panicked: {}", e))??;
+    tokio::task::spawn_blocking(move || convert_and_validate_audio(&file_path_clone, &dest_clone))
+        .await
+        .map_err(|e| format!("Task panicked: {}", e))??;
 
     // 2. Pre-bake speaker tensors (Option B)
     let baked_dir = voice_dir.join("baked");
     let dest_clone2 = dest.clone();
     let baked_dir_clone = baked_dir.clone();
-    tokio::task::spawn_blocking(move || {
-        pre_bake_voice(&dest_clone2, &baked_dir_clone)
-    })
-    .await
-    .map_err(|e| format!("Task panicked: {}", e))??;
+    tokio::task::spawn_blocking(move || pre_bake_voice(&dest_clone2, &baked_dir_clone))
+        .await
+        .map_err(|e| format!("Task panicked: {}", e))??;
 
     // 3. Insert into DB
     let entry = VoiceEntry {
@@ -391,7 +411,11 @@ pub async fn add_voice_from_file(name: String, file_path: String) -> Result<Voic
         .await
         .map_err(|e| format!("Failed to save voice: {}", e))?;
 
-    log::info!("[Voices] Added voice '{}' (id={}) with pre-baked tensors", name, id);
+    log::info!(
+        "[Voices] Added voice '{}' (id={}) with pre-baked tensors",
+        name,
+        id
+    );
     Ok(VoiceEntryDto::from(entry))
 }
 
@@ -434,7 +458,10 @@ pub async fn add_voice_from_recording(
     // 1. Write PCM as WAV
     let final_samples_len = tokio::task::spawn_blocking(move || {
         let final_samples = if duration < 30.0 {
-            log::info!("[Voices] Recording is only {:.1}s — auto-stitching to 30.0s for better cloning", duration);
+            log::info!(
+                "[Voices] Recording is only {:.1}s — auto-stitching to 30.0s for better cloning",
+                duration
+            );
             let limit = (30.0 * sample_rate as f32) as usize;
             pcm_f32_clone
                 .iter()
@@ -443,7 +470,10 @@ pub async fn add_voice_from_recording(
                 .take(limit)
                 .collect::<Vec<f32>>()
         } else if duration > 30.0 {
-            log::info!("[Voices] Truncating recording from {:.1}s to 30.0s", duration);
+            log::info!(
+                "[Voices] Truncating recording from {:.1}s to 30.0s",
+                duration
+            );
             let limit = (30.0 * sample_rate as f32) as usize;
             pcm_f32_clone[0..limit].to_vec()
         } else {
@@ -477,11 +507,9 @@ pub async fn add_voice_from_recording(
     let baked_dir = voice_dir.join("baked");
     let dest_clone2 = dest.clone();
     let baked_dir_clone = baked_dir.clone();
-    tokio::task::spawn_blocking(move || {
-        pre_bake_voice(&dest_clone2, &baked_dir_clone)
-    })
-    .await
-    .map_err(|e| format!("Task panicked: {}", e))??;
+    tokio::task::spawn_blocking(move || pre_bake_voice(&dest_clone2, &baked_dir_clone))
+        .await
+        .map_err(|e| format!("Task panicked: {}", e))??;
 
     // 3. Insert into DB
     let entry = VoiceEntry {
@@ -596,8 +624,8 @@ pub async fn preview_voice(id: String) -> Result<String, String> {
         let engine = ChatterboxEngine::new(
             &chatterbox_path,
             "en",
-            8,    // quality_steps — balanced
-            1.0,  // normal speed
+            8,   // quality_steps — balanced
+            1.0, // normal speed
             Some(&wav_path),
         )
         .map_err(|e| format!("Failed to create preview engine: {}", e))?;
@@ -722,7 +750,10 @@ pub async fn start_backend_recording() -> Result<(), String> {
         sample_rate,
     });
 
-    log::info!("[Voices] Backend recording started successfully at {} Hz", sample_rate);
+    log::info!(
+        "[Voices] Backend recording started successfully at {} Hz",
+        sample_rate
+    );
     Ok(())
 }
 
@@ -812,4 +843,3 @@ pub async fn fetch_edge_tts_voices() -> Result<Vec<EdgeTtsVoiceDto>, String> {
 
     Ok(voices)
 }
-

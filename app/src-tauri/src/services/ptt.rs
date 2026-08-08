@@ -29,14 +29,19 @@ pub async fn ptt_start(
         match actual_owner {
             crate::core::state::InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
             crate::core::state::InteractionOwner::MainWindow
-            | crate::core::state::InteractionOwner::Ptt => settings.interaction.main_app_mode.clone(),
+            | crate::core::state::InteractionOwner::Ptt => {
+                settings.interaction.main_app_mode.clone()
+            }
             crate::core::state::InteractionOwner::Wizard => {
                 crate::core::settings::InteractionMode::Passive
             }
         }
     };
     if interaction_mode != crate::core::settings::InteractionMode::PTT {
-        log::warn!("[PTT] Cannot start PTT recording in {:?} mode", interaction_mode);
+        log::warn!(
+            "[PTT] Cannot start PTT recording in {:?} mode",
+            interaction_mode
+        );
         return Err("Cannot start PTT in Passive mode".to_string());
     }
 
@@ -152,11 +157,7 @@ pub async fn ptt_stop(
         log::info!("[PTT] Silence only detected. Discarding PTT hold.");
         discard_ptt_hold_inner(&state.ptt);
 
-        let _ = app.emit_to(
-            target,
-            "ptt_status",
-            json!({ "state": "IDLE" }),
-        );
+        let _ = app.emit_to(target, "ptt_status", json!({ "state": "IDLE" }));
         state.pipeline.update_interaction_state(
             crate::core::state::InteractionState::Idle,
             owner,
@@ -509,4 +510,3 @@ mod tests {
         assert_eq!(ptt.audio_buffer.lock().len(), 0);
     }
 }
-

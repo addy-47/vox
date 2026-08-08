@@ -1,13 +1,12 @@
 use super::LlmProvider;
 use crate::core::events::VoxEvent;
+use crate::services::llm::types::GenerationRequest;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::services::memory::ConversationContext;
-
 pub enum LlmCommand {
     Generate {
-        ctx: ConversationContext,
+        request: GenerationRequest,
         turn_id: u32,
         cancel_flag: Arc<AtomicBool>,
     },
@@ -32,13 +31,23 @@ pub fn spawn_llm_worker(
     while let Ok(cmd) = rx.recv() {
         match cmd {
             LlmCommand::Generate {
-                ctx,
+                request,
                 turn_id,
                 cancel_flag,
             } => {
-                if let Err(e) =
-                    provider.generate(&ctx, turn_id, &cancel_flag, &event_tx)
-                {
+                let handle = tokio::runtime::Handle::try_current();
+                let res = match handle {
+                    Ok(h) => {
+                        h.block_on(provider.generate(request, turn_id, &cancel_flag, &event_tx))
+                    }
+                    Err(_) => tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("Failed to build temporary tokio runtime")
+                        .block_on(provider.generate(request, turn_id, &cancel_flag, &event_tx)),
+                };
+
+                if let Err(e) = res {
                     log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
                     let _ = event_tx.send(VoxEvent::Error {
                         turn_id,
@@ -52,7 +61,6 @@ pub fn spawn_llm_worker(
             }
         }
     }
-
 
     is_loaded.store(false, Ordering::Relaxed);
     log::info!("[LLM Worker] Loop exited. Provider will be dropped.");

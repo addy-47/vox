@@ -1,12 +1,11 @@
+use crate::core::constants::COMPACTION_SYSTEM_PROMPT;
+use crate::core::events::VoxEvent;
+use crate::services::llm::LlmProvider;
+use crate::services::memory::working_memory::{ChatMessage, Role};
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use crate::services::llm::LlmProvider;
-use crate::services::memory::working_memory::{ChatMessage, ConversationContext, Role};
-use crate::services::memory::estimate_tokens;
-use crate::core::constants::COMPACTION_SYSTEM_PROMPT;
-use crate::core::events::VoxEvent;
 
 #[derive(Debug, Clone)]
 pub struct CompactionResult {
@@ -22,12 +21,16 @@ pub fn run_compaction(
     history_messages: &[ChatMessage],
     _last_user_turn: &ChatMessage,
     _last_context_summary: Option<&str>,
+    settings: Option<&crate::core::settings::LlmSettings>,
 ) -> Result<CompactionResult> {
     if history_messages.is_empty() {
         return Err(anyhow!("No history turns to compact."));
     }
 
-    log::info!("[MemoryIngestion] Running LLM Context Compaction via {:?}", provider.kind());
+    log::info!(
+        "[MemoryIngestion] Running LLM Context Compaction via {:?}",
+        provider.kind()
+    );
 
     let mut history_text = String::new();
     for msg in history_messages {
@@ -48,24 +51,27 @@ pub fn run_compaction(
         .unwrap_or_default()
         .as_millis() as u64;
 
-    let temp_ctx = ConversationContext {
-        messages: vec![
-            ChatMessage {
-                role: Role::System,
-                content: COMPACTION_SYSTEM_PROMPT.to_string(),
-                timestamp_ms: now_ms,
-            },
-            ChatMessage {
-                role: Role::User,
-                content: user_content,
-                timestamp_ms: now_ms,
-            },
-        ],
-        token_count: estimate_tokens(&history_text)
-            + estimate_tokens(COMPACTION_SYSTEM_PROMPT)
-            + 150,
-        kv_cache_index: 0,
-    };
+    let default_settings = crate::core::settings::LlmSettings::default();
+    let effective_settings = settings.unwrap_or(&default_settings);
+    let policy = crate::services::llm::GenerationPolicy::from_settings(effective_settings);
+
+    let request = policy.build_request(
+        crate::services::llm::GenerationPurpose::MemoryCompaction,
+        crate::services::llm::ConversationInput {
+            messages: vec![
+                ChatMessage {
+                    role: Role::System,
+                    content: COMPACTION_SYSTEM_PROMPT.to_string(),
+                    timestamp_ms: now_ms,
+                },
+                ChatMessage {
+                    role: Role::User,
+                    content: user_content,
+                    timestamp_ms: now_ms,
+                },
+            ],
+        },
+    );
 
     let mut summary_content = String::new();
     let mut personal_memory = HashMap::new();
@@ -78,8 +84,39 @@ pub fn run_compaction(
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let (tx, rx) = std::sync::mpsc::channel();
 
-        log::info!("[MemoryIngestion] Compaction attempt {}/{}...", attempts, max_attempts);
-        if provider.generate(&temp_ctx, 999_999, &cancel_flag, &tx).is_ok() {
+        log::info!(
+            "[MemoryIngestion] Compaction attempt {}/{}...",
+            attempts,
+            max_attempts
+        );
+
+        let fut = provider.generate(request.clone(), 999_999, &cancel_flag, &tx);
+        let res = match tokio::runtime::Handle::try_current() {
+            Ok(h) => {
+                if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
+                    tokio::task::block_in_place(|| h.block_on(fut))
+                } else {
+                    std::thread::scope(|s| {
+                        s.spawn(|| {
+                            tokio::runtime::Builder::new_current_thread()
+                                .enable_all()
+                                .build()
+                                .expect("Failed to build worker runtime")
+                                .block_on(fut)
+                        })
+                        .join()
+                        .unwrap()
+                    })
+                }
+            }
+            Err(_) => tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build temporary tokio runtime")
+                .block_on(fut),
+        };
+
+        if res.is_ok() {
             while let Ok(event) = rx.recv_timeout(std::time::Duration::from_secs(45)) {
                 match event {
                     VoxEvent::LlmToken { token, .. } => {
@@ -94,10 +131,17 @@ pub fn run_compaction(
         if !summary_content.trim().is_empty() {
             if let Some(resp) = crate::utils::json::parse_compaction_json(&summary_content) {
                 personal_memory = resp;
-                log::info!("[MemoryIngestion] Compaction JSON parsed successfully on attempt {}.", attempts);
+                log::info!(
+                    "[MemoryIngestion] Compaction JSON parsed successfully on attempt {}.",
+                    attempts
+                );
                 break;
             } else {
-                log::warn!("[MemoryIngestion] Compaction JSON parsing failed on attempt {}/{}.", attempts, max_attempts);
+                log::warn!(
+                    "[MemoryIngestion] Compaction JSON parsing failed on attempt {}/{}.",
+                    attempts,
+                    max_attempts
+                );
             }
         }
     }
@@ -139,17 +183,31 @@ mod tests {
             fn health_check(&self) -> bool {
                 true
             }
-            fn list_models(&self) -> Result<Vec<crate::core::settings::LlmModelInfo>> {
+            fn capabilities(&self) -> &crate::services::llm::types::ProviderCapabilities {
+                static CAPS: std::sync::OnceLock<
+                    crate::services::llm::types::ProviderCapabilities,
+                > = std::sync::OnceLock::new();
+                CAPS.get_or_init(crate::services::llm::types::ProviderCapabilities::default)
+            }
+            fn list_models(
+                &self,
+            ) -> Result<
+                Vec<crate::core::settings::LlmModelInfo>,
+                crate::services::llm::types::LlmError,
+            > {
                 Ok(vec![])
             }
-            fn generate(
-                &self,
-                _context: &ConversationContext,
-                _max_tokens: u32,
-                _cancel_flag: &Arc<AtomicBool>,
-                _event_tx: &std::sync::mpsc::Sender<VoxEvent>,
-            ) -> Result<()> {
-                Ok(())
+            fn generate<'a>(
+                &'a self,
+                _request: crate::services::llm::types::GenerationRequest,
+                _turn_id: u32,
+                _cancel_flag: &'a Arc<AtomicBool>,
+                _event_tx: &'a std::sync::mpsc::Sender<VoxEvent>,
+            ) -> futures_util::future::BoxFuture<
+                'a,
+                Result<(), crate::services::llm::types::LlmError>,
+            > {
+                Box::pin(async { Ok(()) })
             }
         }
 
@@ -160,7 +218,10 @@ mod tests {
             content: "Hello".to_string(),
             timestamp_ms: 0,
         };
-        let res = run_compaction(&provider, &history, &last_user_turn, None);
-        assert!(res.is_err(), "run_compaction should return Err when history is empty");
+        let res = run_compaction(&provider, &history, &last_user_turn, None, None);
+        assert!(
+            res.is_err(),
+            "run_compaction should return Err when history is empty"
+        );
     }
 }

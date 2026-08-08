@@ -137,7 +137,8 @@ impl PipelineMetrics {
                 let ttfa = diff_sec(self.final_transcript, self.first_audio).map(round);
 
                 // Step durations
-                let stt_duration = diff_sec(self.speech_start, self.final_transcript).unwrap_or(0.0);
+                let stt_duration =
+                    diff_sec(self.speech_start, self.final_transcript).unwrap_or(0.0);
                 let llm_duration = diff_sec(self.llm_start, self.llm_end).unwrap_or(0.0);
                 let tts_duration = diff_sec(self.tts_start, self.tts_end).unwrap_or(0.0);
 
@@ -158,7 +159,8 @@ impl PipelineMetrics {
                     0.0
                 };
 
-                let total_mem = if self.stt_mem_mb > 0 || self.llm_mem_mb > 0 || self.tts_mem_mb > 0 {
+                let total_mem = if self.stt_mem_mb > 0 || self.llm_mem_mb > 0 || self.tts_mem_mb > 0
+                {
                     self.stt_mem_mb + self.llm_mem_mb + self.tts_mem_mb
                 } else {
                     mem.rss_mb

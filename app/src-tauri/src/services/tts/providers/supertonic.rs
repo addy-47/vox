@@ -1,11 +1,11 @@
-use crate::core::events::VoxEvent;
 use super::{TtsProvider, TtsProviderKind};
+use crate::core::events::VoxEvent;
 use anyhow::{anyhow, Result};
+use parking_lot::Mutex;
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
     OfflineTtsSupertonicModelConfig,
 };
-use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -132,9 +132,7 @@ impl TtsEngine {
                     duration_predictor: Some(mp(
                         crate::services::tts::MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR,
                     )),
-                    text_encoder: Some(mp(
-                        crate::services::tts::MODEL_FILE_TTS_SUPER_TEXT_ENCODER,
-                    )),
+                    text_encoder: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_TEXT_ENCODER)),
                     vector_estimator: Some(mp(
                         crate::services::tts::MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR,
                     )),
@@ -161,7 +159,9 @@ impl TtsEngine {
 
         Ok(Self {
             tts: Mutex::new(tts),
-            quality_steps: AtomicU32::new(quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS)),
+            quality_steps: AtomicU32::new(
+                quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS),
+            ),
             speed: AtomicF32::new(speed.clamp(MIN_SPEED, MAX_SPEED)),
             voice: voice.clamp(0, 9),
         })
@@ -170,12 +170,15 @@ impl TtsEngine {
 
 impl TtsProvider for TtsEngine {
     fn set_quality_steps(&self, steps: u32) {
-        self.quality_steps
-            .store(steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS), Ordering::Relaxed);
+        self.quality_steps.store(
+            steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS),
+            Ordering::Relaxed,
+        );
     }
 
     fn set_speed(&self, speed: f32) {
-        self.speed.store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
+        self.speed
+            .store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
     }
 
     fn kind(&self) -> TtsProviderKind {

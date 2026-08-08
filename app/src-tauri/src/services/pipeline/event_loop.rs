@@ -2,8 +2,8 @@
 //! src/services/pipeline/event_loop.rs — Main pipeline event loop processor
 //! ============================================================================
 
-use super::PipelineOrchestrator;
 use super::types::TranslitTask;
+use super::PipelineOrchestrator;
 use crate::core::events::VoxEvent;
 use crate::core::metrics::{MetricField, PipelineMetrics};
 use crate::core::state::InteractionOwner;
@@ -225,7 +225,9 @@ impl PipelineOrchestrator {
                         if metrics.first_audio.is_none() {
                             metrics.mark(MetricField::FirstAudio);
                             metrics.mark(MetricField::PlaybackStart);
-                            if let (Some(s), Some(p)) = (metrics.speech_start, metrics.playback_start) {
+                            if let (Some(s), Some(p)) =
+                                (metrics.speech_start, metrics.playback_start)
+                            {
                                 let ms = p.duration_since(s).as_millis() as u32;
                                 self.latest_playback_start_ms.store(ms, Ordering::Relaxed);
                                 self.latest_voice_latency_ms.store(ms, Ordering::Relaxed);
@@ -243,17 +245,21 @@ impl PipelineOrchestrator {
                 }
 
                 // Check for UserSpeaking timeout recovery (Passive mode only)
-                if current_state == crate::core::state::InteractionState::UserSpeaking && owner != InteractionOwner::Ptt {
+                if current_state == crate::core::state::InteractionState::UserSpeaking
+                    && owner != InteractionOwner::Ptt
+                {
                     if let Some(silence_start) = local_silence_time {
                         if silence_start.elapsed() > std::time::Duration::from_secs(10) {
                             log::info!("[Pipeline] UserSpeaking state timeout (10s since local silence). Triggering Automatic Pause Recovery.");
-                            
+
                             self.is_paused.store(true, Ordering::SeqCst);
                             self.cancel_flag.store(true, Ordering::SeqCst);
                             playback_engine.cancel();
 
-                            let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                                app_handle.state();
+                            let state: tauri::State<
+                                '_,
+                                std::sync::Arc<crate::core::state::AppState>,
+                            > = app_handle.state();
                             if let Ok(rt_guard) = state.realtime_engine.try_lock() {
                                 if let Some(rt_engine) = &*rt_guard {
                                     let _ = rt_engine.activity_end();
@@ -267,8 +273,17 @@ impl PipelineOrchestrator {
                                 crate::core::state::InteractionOwner::Wizard => "wizard",
                             };
                             let _ = app_handle.emit_to(target, "pipeline_paused", ());
-                            let _ = app_handle.emit_to(target, "pipeline_error", "Speech detection timeout: No response from server. Paused.".to_string());
-                            self.update_interaction_state(crate::core::state::InteractionState::Idle, owner, &app_handle);
+                            let _ = app_handle.emit_to(
+                                target,
+                                "pipeline_error",
+                                "Speech detection timeout: No response from server. Paused."
+                                    .to_string(),
+                            );
+                            self.update_interaction_state(
+                                crate::core::state::InteractionState::Idle,
+                                owner,
+                                &app_handle,
+                            );
                             local_silence_time = None;
                         }
                     }
@@ -326,10 +341,13 @@ impl PipelineOrchestrator {
                                     }
 
                                     // Trigger Memory SessionEnd consolidation
-                                    if let Some(app_state) = app_handle.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
+                                    if let Some(app_state) = app_handle
+                                        .try_state::<std::sync::Arc<crate::core::state::AppState>>()
+                                    {
                                         let memory_tx = app_state.memory_tx.lock();
                                         if let Some(ref tx) = *memory_tx {
-                                            let summary = self.conversation_manager.lock().latest_summary();
+                                            let summary =
+                                                self.conversation_manager.lock().latest_summary();
                                             let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
                                                 session_id: conv_id.to_string(),
                                                 summary,
@@ -352,7 +370,8 @@ impl PipelineOrchestrator {
                         metrics.mark(MetricField::PlaybackFinish);
                         let owner = current_turn_owner;
                         let input_duration = (count_words(&turn_user_text) as f64 / 2.5).max(0.5);
-                        let output_duration = playback_engine.total_samples_ingested() as f64 / 48000.0;
+                        let output_duration =
+                            playback_engine.total_samples_ingested() as f64 / 48000.0;
                         let report = metrics.latency_report(
                             input_duration,
                             output_duration,
@@ -404,12 +423,12 @@ impl PipelineOrchestrator {
                     log::info!("[Pipeline] WarmUp: workers started in background.");
                 }
                 VoxEvent::SpeechStart { turn_id, owner } => {
-                    self.conversation_manager
-                        .lock()
-                        .on_speech_start();
+                    self.conversation_manager.lock().on_speech_start();
                     let is_engaged = self.is_engaged.load(Ordering::Relaxed);
 
-                    if !is_engaged && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt) {
+                    if !is_engaged
+                        && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt)
+                    {
                         continue;
                     }
                     current_turn_owner = owner;
@@ -483,7 +502,9 @@ impl PipelineOrchestrator {
                     text,
                 } => {
                     let is_engaged = self.is_engaged.load(Ordering::Relaxed);
-                    if !is_engaged && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt) {
+                    if !is_engaged
+                        && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt)
+                    {
                         continue;
                     }
                     if turn_id < current_tid {
@@ -514,7 +535,9 @@ impl PipelineOrchestrator {
                     text,
                 } => {
                     let is_engaged = self.is_engaged.load(Ordering::Relaxed);
-                    if !is_engaged && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt) {
+                    if !is_engaged
+                        && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt)
+                    {
                         continue;
                     }
                     if turn_id < current_tid
@@ -809,7 +832,9 @@ impl PipelineOrchestrator {
 
                 VoxEvent::SpeechEnd { turn_id: _, owner } => {
                     let is_engaged = self.is_engaged.load(Ordering::Relaxed);
-                    if !is_engaged && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt) {
+                    if !is_engaged
+                        && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt)
+                    {
                         continue;
                     }
                     current_turn_owner = owner;
@@ -914,9 +939,7 @@ impl PipelineOrchestrator {
 
                 VoxEvent::Cancelled { turn_id } => {
                     log::info!("[Pipeline] Cancelled (turn {})", turn_id);
-                    self.conversation_manager
-                        .lock()
-                        .pop_last_user_turn();
+                    self.conversation_manager.lock().pop_last_user_turn();
 
                     // Only cancel playback if it's actually active — avoid phantom
                     // "Playback Cancelled" logs when there's nothing playing.
@@ -947,7 +970,9 @@ impl PipelineOrchestrator {
                     }
 
                     let owner = current_turn_owner;
-                    if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime && owner != InteractionOwner::Ptt {
+                    if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime
+                        && owner != InteractionOwner::Ptt
+                    {
                         // In Realtime Passive mode, an interruption means the user has started speaking.
                         // Transition state directly to UserSpeaking.
                         self.update_interaction_state(
@@ -990,7 +1015,11 @@ impl PipelineOrchestrator {
                         }
 
                         let _ = app_handle.emit_to(target, "pipeline_paused", ());
-                        self.update_interaction_state(crate::core::state::InteractionState::Idle, owner, &app_handle);
+                        self.update_interaction_state(
+                            crate::core::state::InteractionState::Idle,
+                            owner,
+                            &app_handle,
+                        );
                     } else {
                         self.update_interaction_state(self.get_idle_state(), owner, &app_handle);
                     }
@@ -1055,10 +1084,9 @@ impl PipelineOrchestrator {
                         local_quality_steps = new_settings.tts.quality_steps;
                         let lock = self.tts_tx.lock();
                         if let Some(tx) = lock.as_ref() {
-                            let _ =
-                                tx.send(crate::services::tts::TtsCommand::UpdateQualitySteps(
-                                    local_quality_steps,
-                                ));
+                            let _ = tx.send(crate::services::tts::TtsCommand::UpdateQualitySteps(
+                                local_quality_steps,
+                            ));
                             log::debug!(
                                 "[Pipeline] Dispatched UpdateQualitySteps({}) to TTS worker",
                                 local_quality_steps
@@ -1069,9 +1097,8 @@ impl PipelineOrchestrator {
                         local_speed = new_settings.tts.speed;
                         let lock = self.tts_tx.lock();
                         if let Some(tx) = lock.as_ref() {
-                            let _ = tx.send(crate::services::tts::TtsCommand::UpdateSpeed(
-                                local_speed,
-                            ));
+                            let _ =
+                                tx.send(crate::services::tts::TtsCommand::UpdateSpeed(local_speed));
                             log::debug!(
                                 "[Pipeline] Dispatched UpdateSpeed({:.2}) to TTS worker",
                                 local_speed

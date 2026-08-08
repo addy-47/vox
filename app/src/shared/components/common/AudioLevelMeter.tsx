@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 
 export interface AudioLevelMeterProps {
@@ -8,12 +8,12 @@ export interface AudioLevelMeterProps {
   className?: string;
 }
 
-export const AudioLevelMeter: React.FC<AudioLevelMeterProps> = memo(({
+export const AudioLevelMeter = memo(({
   level = 0,
   bars = 4,
   active = true,
   className,
-}) => {
+}: AudioLevelMeterProps) => {
   return (
     <div className={cn("flex items-end gap-[2px] h-4 shrink-0", className)}>
       {Array.from({ length: bars }).map((_, i) => {

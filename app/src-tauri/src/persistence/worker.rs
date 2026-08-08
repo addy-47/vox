@@ -1,7 +1,7 @@
 use crossbeam_channel::{bounded, Sender};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Arc;
 
 use crate::persistence::db::VoxDb;
 use crate::persistence::events::PersistenceEvent;
@@ -249,7 +249,9 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
 
 /// Deletes sessions where the user engaged but never completed a turn.
 async fn cleanup_zero_turn_sessions(conn: &turso::Connection) -> anyhow::Result<()> {
-    let deleted = conn.execute("DELETE FROM sessions WHERE turn_count = 0", ()).await?;
+    let deleted = conn
+        .execute("DELETE FROM sessions WHERE turn_count = 0", ())
+        .await?;
     if deleted > 0 {
         tracing::info!(
             "[Persistence] Startup cleanup: removed {} zero-activity session(s)",
@@ -261,9 +263,17 @@ async fn cleanup_zero_turn_sessions(conn: &turso::Connection) -> anyhow::Result<
 
 /// Resets memory queue items stuck in 'processing' status to 'pending' (Bug #3).
 async fn cleanup_stuck_queue_items(conn: &turso::Connection) -> anyhow::Result<()> {
-    let reset = conn.execute("UPDATE personal_memory_queue SET status = 'pending' WHERE status = 'processing'", ()).await?;
+    let reset = conn
+        .execute(
+            "UPDATE personal_memory_queue SET status = 'pending' WHERE status = 'processing'",
+            (),
+        )
+        .await?;
     if reset > 0 {
-        tracing::info!("[Persistence] Startup cleanup: reset {} stuck memory queue item(s) to pending", reset);
+        tracing::info!(
+            "[Persistence] Startup cleanup: reset {} stuck memory queue item(s) to pending",
+            reset
+        );
     }
     Ok(())
 }

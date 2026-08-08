@@ -18,7 +18,9 @@ use sysinfo::{ProcessRefreshKind, System};
 use vox_lib::core::settings::MemorySettings;
 use vox_lib::persistence::schema;
 use vox_lib::services::memory::deduplication::{is_exact_duplicate, jaccard_similarity};
-use vox_lib::services::memory::embedder::{cosine_similarity, ensure_embedder_loaded, generate_embedding};
+use vox_lib::services::memory::embedder::{
+    cosine_similarity, ensure_embedder_loaded, generate_embedding,
+};
 use vox_lib::services::memory::orchestrator::{process_one_queue_item, PipelineOutcome};
 
 #[derive(Parser, Debug)]
@@ -95,7 +97,9 @@ async fn main() -> Result<()> {
 
             if ensure_embedder_loaded(true).is_ok() {
                 emb_loaded = true;
-                if let (Ok(Some(emb1)), Ok(Some(emb2))) = (generate_embedding(&fact1), generate_embedding(&fact2)) {
+                if let (Ok(Some(emb1)), Ok(Some(emb2))) =
+                    (generate_embedding(&fact1), generate_embedding(&fact2))
+                {
                     cos_sim = cosine_similarity(&emb1, &emb2);
                 }
             }
@@ -116,10 +120,20 @@ async fn main() -> Result<()> {
             } else {
                 println!("Embedding Model: Not loaded / Fallback mode");
             }
-            println!("Phase 1 Hard Merge Triggered (is_exact_duplicate): {}", is_exact);
+            println!(
+                "Phase 1 Hard Merge Triggered (is_exact_duplicate): {}",
+                is_exact
+            );
             println!("----------------");
-            println!("Execution Latency: {:.2} ms", elapsed.as_secs_f64() * 1000.0);
-            println!("RAM Memory Delta: {:.2} MB (Current Peak: {:.2} MB)", end_mem_mb - start_mem_mb, end_mem_mb);
+            println!(
+                "Execution Latency: {:.2} ms",
+                elapsed.as_secs_f64() * 1000.0
+            );
+            println!(
+                "RAM Memory Delta: {:.2} MB (Current Peak: {:.2} MB)",
+                end_mem_mb - start_mem_mb,
+                end_mem_mb
+            );
         }
 
         Commands::Json { input, output } => {
@@ -161,7 +175,10 @@ async fn main() -> Result<()> {
             println!("Total Raw Extracted Facts: {}\n", extracted_facts.len());
 
             // Initialize in-memory Turso SQLite database
-            let db = turso::Builder::new_local(":memory:").experimental_index_method(true).build().await?;
+            let db = turso::Builder::new_local(":memory:")
+                .experimental_index_method(true)
+                .build()
+                .await?;
             let conn = db.connect()?;
             schema::run_migrations(&conn).await?;
 
@@ -192,7 +209,10 @@ async fn main() -> Result<()> {
                 let outcome = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
                 match outcome {
                     PipelineOutcome::NoWork => break,
-                    PipelineOutcome::Merged { fact_id, merged_into } => {
+                    PipelineOutcome::Merged {
+                        fact_id,
+                        merged_into,
+                    } => {
                         merged_events.push((fact_id, merged_into));
                     }
                     PipelineOutcome::Ingested { fact_id, relations } => {
@@ -205,7 +225,10 @@ async fn main() -> Result<()> {
 
             // Query final state from active memory_facts table
             let mut rows = conn
-                .query("SELECT id, fact, collection FROM memory_facts WHERE status = 'active'", ())
+                .query(
+                    "SELECT id, fact, collection FROM memory_facts WHERE status = 'active'",
+                    (),
+                )
                 .await?;
 
             let mut final_db_facts = Vec::new();
@@ -225,12 +248,23 @@ async fn main() -> Result<()> {
             println!("=================================================================");
             println!(" NATIVE RUST PIPELINE METRICS & RESULTS");
             println!("=================================================================");
-            println!(" Total Incoming Facts Enqueued:    {}", extracted_facts.len());
-            println!(" Phase 1 Hard-Merged / Intercepted: {}", merged_events.len());
-            println!(" Final Active Unique Memory Facts:  {}", final_db_facts.len());
-            println!(" Pipeline Execution Latency:        {:.2} ms ({:.2} ms/fact)", 
-                     pipeline_duration.as_secs_f64() * 1000.0,
-                     (pipeline_duration.as_secs_f64() * 1000.0) / extracted_facts.len().max(1) as f64);
+            println!(
+                " Total Incoming Facts Enqueued:    {}",
+                extracted_facts.len()
+            );
+            println!(
+                " Phase 1 Hard-Merged / Intercepted: {}",
+                merged_events.len()
+            );
+            println!(
+                " Final Active Unique Memory Facts:  {}",
+                final_db_facts.len()
+            );
+            println!(
+                " Pipeline Execution Latency:        {:.2} ms ({:.2} ms/fact)",
+                pipeline_duration.as_secs_f64() * 1000.0,
+                (pipeline_duration.as_secs_f64() * 1000.0) / extracted_facts.len().max(1) as f64
+            );
             println!(" Process RAM Memory Usage:          {:.2} MB", end_mem_mb);
             println!("=================================================================\n");
 
@@ -332,19 +366,26 @@ async fn main() -> Result<()> {
 
             fs::write(&output, serde_json::to_string_pretty(&output_json)?)?;
             println!("\nSuccessfully completed scoring!");
-            println!("Total time: {:.2}s ({:.2} ms/pair)", 
-                     total_duration.as_secs_f64(), 
-                     total_duration.as_secs_f64() * 1000.0 / items.len().max(1) as f64);
+            println!(
+                "Total time: {:.2}s ({:.2} ms/pair)",
+                total_duration.as_secs_f64(),
+                total_duration.as_secs_f64() * 1000.0 / items.len().max(1) as f64
+            );
             println!("Raw output persisted to: {:?}", output);
         }
 
         Commands::Db { db_path } => {
             println!("Connecting to SQLite database at {:?}", db_path);
-            let db = turso::Builder::new_local(db_path.to_str().unwrap()).build().await?;
+            let db = turso::Builder::new_local(db_path.to_str().unwrap())
+                .build()
+                .await?;
             let conn = db.connect()?;
 
             let mut rows = conn
-                .query("SELECT COUNT(*) FROM memory_facts WHERE status = 'active'", ())
+                .query(
+                    "SELECT COUNT(*) FROM memory_facts WHERE status = 'active'",
+                    (),
+                )
                 .await?;
 
             let count: i64 = if let Some(row) = rows.next().await? {

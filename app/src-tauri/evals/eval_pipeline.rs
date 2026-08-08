@@ -14,15 +14,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use std::sync::Arc;
 use turso::Builder;
-use vox_lib::core::constants::{
-    inter_collection_edge, PM_SEMANTIC_GRAPH_COLLECTIONS,
-};
+use vox_lib::core::constants::{inter_collection_edge, PM_SEMANTIC_GRAPH_COLLECTIONS};
 use vox_lib::persistence::{decode_f32_blob, mutations, queries};
 use vox_lib::services::memory::pipeline::batch_result::{CandidateAuditLog, DedupAuditLog};
+use vox_lib::services::memory::pipeline::drain_pipeline_queue_with_run_id;
 use vox_lib::services::memory::pipeline::stage3_eval::{
     INTER_COLLECTION_CANDIDATE_SEARCH, SAME_COLLECTION_CANDIDATE_SEARCH, SUBFLOOR_CANDIDATE_FLOOR,
 };
-use vox_lib::services::memory::pipeline::drain_pipeline_queue_with_run_id;
 
 pub const EVAL_JUDGE_MODEL: &str = "meta/llama-3.1-70b-instruct";
 pub const EVAL_JUDGE_TIMEOUT_SECS: u64 = 300;
@@ -60,7 +58,6 @@ fn get_nvidia_api_key() -> String {
 }
 
 fn format_stage3_batch_toon(
-
     batch_num: usize,
     chunk: &[(i64, String, String, Vec<CandidateAuditLog>)],
 ) -> String {
@@ -129,9 +126,7 @@ fn format_stage3_batch_toon(
     out
 }
 
-
 async fn run_llm_judge_prompt(
-
     client: &reqwest::Client,
     api_key: &str,
     prompt: &str,
@@ -162,7 +157,9 @@ async fn run_llm_judge_prompt(
                     let json_body: serde_json::Value = resp.json().await?;
                     let content = json_body["choices"][0]["message"]["content"]
                         .as_str()
-                        .ok_or_else(|| anyhow::anyhow!("Invalid response structure from Nvidia API"))?;
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Invalid response structure from Nvidia API")
+                        })?;
 
                     let cleaned = content
                         .trim()
@@ -174,7 +171,8 @@ async fn run_llm_judge_prompt(
                     return Ok(cleaned.to_string());
                 } else {
                     let err_text = resp.text().await.unwrap_or_default();
-                    last_err = anyhow::anyhow!("Nvidia API returned status {}: {}", status, err_text);
+                    last_err =
+                        anyhow::anyhow!("Nvidia API returned status {}: {}", status, err_text);
                 }
             }
             Err(e) => {
@@ -183,12 +181,19 @@ async fn run_llm_judge_prompt(
         }
 
         if attempt < EVAL_JUDGE_RETRY_COUNT {
-            println!("  [LLM Judge] Attempt {} failed ({}). Retrying in 5s...", attempt, last_err);
+            println!(
+                "  [LLM Judge] Attempt {} failed ({}). Retrying in 5s...",
+                attempt, last_err
+            );
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     }
 
-    Err(anyhow::anyhow!("LLM Judge API failed after {} attempts. Last error: {}", EVAL_JUDGE_RETRY_COUNT, last_err))
+    Err(anyhow::anyhow!(
+        "LLM Judge API failed after {} attempts. Last error: {}",
+        EVAL_JUDGE_RETRY_COUNT,
+        last_err
+    ))
 }
 
 #[tokio::main]
@@ -211,7 +216,6 @@ async fn main() -> Result<()> {
         ));
     }
 
-
     if output_db_path.exists() {
         let _ = std::fs::remove_file(&output_db_path);
         let _ = std::fs::remove_file(reports_dir.join("../stage_2_pipeline.db-wal"));
@@ -228,9 +232,11 @@ async fn main() -> Result<()> {
     let conn = db.connect()?;
     vox_lib::persistence::schema::run_migrations(&conn).await?;
 
-
     let run_id = uuid::Uuid::new_v4().to_string();
-    println!("[Eval 2] Running 4-stage memory pipeline (run_id={}) on {:?}", run_id, output_db_path);
+    println!(
+        "[Eval 2] Running 4-stage memory pipeline (run_id={}) on {:?}",
+        run_id, output_db_path
+    );
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let start_time = std::time::Instant::now();
@@ -238,18 +244,28 @@ async fn main() -> Result<()> {
     let mut processed_count = 0;
     let mut stage3_seq = 0;
     loop {
-        if cancel_flag.load(Ordering::Relaxed) { break; }
+        if cancel_flag.load(Ordering::Relaxed) {
+            break;
+        }
         let n1 = vox_lib::services::memory::pipeline::run_stage1_dedup(&conn).await?;
         let n2 = vox_lib::services::memory::pipeline::run_stage2_embed(&conn).await?;
-        let n3 = vox_lib::services::memory::pipeline::stage3_eval::run_stage3_eval_with_metrics_seq(&conn, &run_id, stage3_seq).await?;
-        if n1 == 0 && n2 == 0 && n3 == 0 { break; }
+        let n3 =
+            vox_lib::services::memory::pipeline::stage3_eval::run_stage3_eval_with_metrics_seq(
+                &conn, &run_id, stage3_seq,
+            )
+            .await?;
+        if n1 == 0 && n2 == 0 && n3 == 0 {
+            break;
+        }
         processed_count += n1 + n2 + n3;
         stage3_seq += 1;
     }
     let total_duration = start_time.elapsed();
 
-    println!("[Eval 2] Stages 1-3 execution complete. Processed {} items across stages in {:?}", processed_count, total_duration);
-
+    println!(
+        "[Eval 2] Stages 1-3 execution complete. Processed {} items across stages in {:?}",
+        processed_count, total_duration
+    );
 
     // =========================================================================
     // Phase A: Post-Pipeline Sub-Floor Candidate Audit Pass (0.25 <= sim < threshold)
@@ -270,7 +286,13 @@ async fn main() -> Result<()> {
         let collection: String = row.get(2)?;
         let vec_blob: Vec<u8> = row.get(3)?;
         let audit_json_raw: Option<String> = row.get(4)?;
-        subfloor_scan_items.push((id, fact, collection, decode_f32_blob(&vec_blob), audit_json_raw));
+        subfloor_scan_items.push((
+            id,
+            fact,
+            collection,
+            decode_f32_blob(&vec_blob),
+            audit_json_raw,
+        ));
     }
 
     let mut total_subfloor_candidates_found = 0;
@@ -312,10 +334,13 @@ async fn main() -> Result<()> {
             Vec::new()
         };
 
-
         let mut added_count = 0;
         for (cand_id, cand_fact, sim) in intra_subfloor {
-            let cand_source = if cand_id.starts_with("item_") { "queue_in_flight".to_string() } else { "memory_facts".to_string() };
+            let cand_source = if cand_id.starts_with("item_") {
+                "queue_in_flight".to_string()
+            } else {
+                "memory_facts".to_string()
+            };
             existing_logs.push(CandidateAuditLog {
                 item_id,
                 item_fact: item_fact.clone(),
@@ -335,7 +360,11 @@ async fn main() -> Result<()> {
         }
 
         for (cand_id, cand_fact, cand_coll, sim) in inter_subfloor {
-            let cand_source = if cand_id.starts_with("item_") { "queue_in_flight".to_string() } else { "memory_facts".to_string() };
+            let cand_source = if cand_id.starts_with("item_") {
+                "queue_in_flight".to_string()
+            } else {
+                "memory_facts".to_string()
+            };
             existing_logs.push(CandidateAuditLog {
                 item_id,
                 item_fact: item_fact.clone(),
@@ -359,7 +388,10 @@ async fn main() -> Result<()> {
             mutations::write_candidate_audit(&conn, item_id, &existing_logs).await?;
         }
     }
-    println!("  Identified & Logged {} sub-floor candidate pairs.", total_subfloor_candidates_found);
+    println!(
+        "  Identified & Logged {} sub-floor candidate pairs.",
+        total_subfloor_candidates_found
+    );
 
     // =========================================================================
     // Stage Observability & Metrics Summary
@@ -476,14 +508,21 @@ async fn main() -> Result<()> {
         }
     }
 
-    let chunks: Vec<&[(i64, String, String, Vec<CandidateAuditLog>)]> = batch_items.chunks(16).collect();
-    println!("  Total Stage 3 Evaluation Batches to process: {}", chunks.len());
+    let chunks: Vec<&[(i64, String, String, Vec<CandidateAuditLog>)]> =
+        batch_items.chunks(16).collect();
+    println!(
+        "  Total Stage 3 Evaluation Batches to process: {}",
+        chunks.len()
+    );
     let mut generated_batch_reports = Vec::new();
-
 
     for (batch_idx, chunk) in chunks.iter().enumerate() {
         let batch_num = batch_idx + 1;
-        println!("  Generating Judge Report for Stage 3 Batch {:02}/{}", batch_num, chunks.len());
+        println!(
+            "  Generating Judge Report for Stage 3 Batch {:02}/{}",
+            batch_num,
+            chunks.len()
+        );
 
         let batch_toon = format_stage3_batch_toon(batch_num, chunk);
         let batch_prompt = format!(
@@ -534,15 +573,26 @@ async fn main() -> Result<()> {
             batch_num
         );
 
-        let debug_log_path = reports_dir.join(format!("stage3_batch_{:02}_raw_vs_toon.log", batch_num));
+        let debug_log_path =
+            reports_dir.join(format!("stage3_batch_{:02}_raw_vs_toon.log", batch_num));
 
         let mut debug_content = String::new();
-        debug_content.push_str(&format!("=========================================================================\n"));
-        debug_content.push_str(&format!("STAGE 3 BATCH {:02} RAW INPUT vs TOON FORMAT AUDIT LOG\n", batch_num));
-        debug_content.push_str(&format!("=========================================================================\n\n"));
+        debug_content.push_str(&format!(
+            "=========================================================================\n"
+        ));
+        debug_content.push_str(&format!(
+            "STAGE 3 BATCH {:02} RAW INPUT vs TOON FORMAT AUDIT LOG\n",
+            batch_num
+        ));
+        debug_content.push_str(&format!(
+            "=========================================================================\n\n"
+        ));
         debug_content.push_str("--- SECTION 1: RAW CandidateAuditLog STRUCTS (JSON) ---\n");
         for (item_id, item_fact, item_coll, logs) in chunk.iter() {
-            debug_content.push_str(&format!("\nQueue Item #{} [{}] {}\n", item_id, item_coll, item_fact));
+            debug_content.push_str(&format!(
+                "\nQueue Item #{} [{}] {}\n",
+                item_id, item_coll, item_fact
+            ));
             debug_content.push_str(&serde_json::to_string_pretty(logs).unwrap_or_default());
             debug_content.push_str("\n");
         }
@@ -558,13 +608,15 @@ async fn main() -> Result<()> {
         match run_llm_judge_prompt(&client, &api_key, &batch_prompt).await {
             Ok(content) => {
                 std::fs::write(&report_b_path, &content)?;
-                println!("    Saved Batch Report {:02} To: {:?}", batch_num, report_b_path);
+                println!(
+                    "    Saved Batch Report {:02} To: {:?}",
+                    batch_num, report_b_path
+                );
                 generated_batch_reports.push(content);
             }
             Err(e) => println!("    [Batch {:02} Warning] Failed: {}", batch_num, e),
         }
     }
-
 
     // =========================================================================
     // Phase D: Master Report C — LLM Synthesis across Stages 1-3 & Batch Reports
@@ -574,7 +626,11 @@ async fn main() -> Result<()> {
     let dedup_report_text = std::fs::read_to_string(&report_a_path).unwrap_or_default();
     let mut combined_batch_reports = String::new();
     for (idx, r) in generated_batch_reports.iter().enumerate() {
-        combined_batch_reports.push_str(&format!("<stage3_batch_report num=\"{:02}\">\n{}\n</stage3_batch_report>\n\n", idx + 1, r));
+        combined_batch_reports.push_str(&format!(
+            "<stage3_batch_report num=\"{:02}\">\n{}\n</stage3_batch_report>\n\n",
+            idx + 1,
+            r
+        ));
     }
 
     let report_c_prompt = format!(
@@ -600,14 +656,23 @@ async fn main() -> Result<()> {
     match run_llm_judge_prompt(&client, &api_key, &report_c_prompt).await {
         Ok(content) => {
             std::fs::write(&report_c_path, &content)?;
-            println!("  [Report C] Saved Master Synthesis Report To: {:?}", report_c_path);
+            println!(
+                "  [Report C] Saved Master Synthesis Report To: {:?}",
+                report_c_path
+            );
         }
         Err(e) => println!("  [Report C Error] Master synthesis failed: {}", e),
     }
 
     // Run Stage 4 Commit & Prune post-reporting
-    let n4 = vox_lib::services::memory::pipeline::stage4_commit::run_stage4_commit_with_metrics(&conn, &run_id).await?;
-    println!("  [Stage 4 Commit] Finalized and pruned {} facts into memory_facts DB.", n4);
+    let n4 = vox_lib::services::memory::pipeline::stage4_commit::run_stage4_commit_with_metrics(
+        &conn, &run_id,
+    )
+    .await?;
+    println!(
+        "  [Stage 4 Commit] Finalized and pruned {} facts into memory_facts DB.",
+        n4
+    );
 
     println!("\n=========================================================================");
     println!("[Eval 2 Execution Complete]");

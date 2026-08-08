@@ -93,9 +93,13 @@ pub async fn engage(
         // Offload ONNX classifier asset loading and warmup inference off Tokio worker threads
         let scope_load_res = tokio::task::spawn_blocking(|| {
             crate::services::memory::ensure_scope_classifier_loaded()
-        }).await;
+        })
+        .await;
         if let Err(e) = scope_load_res.unwrap_or(Ok(false)) {
-            log::warn!("[QueryScopeClassifier] Lazy load on pipeline engage skipped/failed: {}", e);
+            log::warn!(
+                "[QueryScopeClassifier] Lazy load on pipeline engage skipped/failed: {}",
+                e
+            );
         }
 
         // Ensure engine is launched
@@ -161,7 +165,10 @@ pub async fn engage(
         let remote_tts_info = {
             let s = state.settings.read().ok();
             s.and_then(|settings| {
-                if let crate::core::settings::TtsProviderConfig::ChatterboxRemote { endpoint, .. } = &settings.tts.provider {
+                if let crate::core::settings::TtsProviderConfig::ChatterboxRemote {
+                    endpoint, ..
+                } = &settings.tts.provider
+                {
                     Some(endpoint.clone())
                 } else {
                     None
@@ -171,11 +178,17 @@ pub async fn engage(
 
         if let Some(endpoint) = remote_tts_info {
             tauri::async_runtime::spawn(async move {
-                log::info!("[Pipeline] Disengaged: Unloading remote Chatterbox models from {}", endpoint);
+                log::info!(
+                    "[Pipeline] Disengaged: Unloading remote Chatterbox models from {}",
+                    endpoint
+                );
                 let client = reqwest::Client::new();
                 let url = format!("{}/models/unload", endpoint.trim_end_matches('/'));
                 if let Err(e) = client.post(&url).send().await {
-                    log::warn!("[Pipeline] Failed to send unload command to remote server: {}", e);
+                    log::warn!(
+                        "[Pipeline] Failed to send unload command to remote server: {}",
+                        e
+                    );
                 }
             });
         }
@@ -232,10 +245,12 @@ pub async fn engage(
                 let memory_tx = state.memory_tx.lock();
                 if let Some(ref tx) = *memory_tx {
                     let summary = state.conversation_manager.lock().latest_summary();
-                    let _ = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
-                        session_id: conv_id.to_string(),
-                        summary,
-                    });
+                    let _ = tx.try_send(
+                        crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
+                            session_id: conv_id.to_string(),
+                            summary,
+                        },
+                    );
                 }
             }
         }
@@ -303,7 +318,9 @@ pub async fn pause_pipeline(
     };
     let _ = app.emit_to(target, "pipeline_paused", ());
 
-    state.pipeline.update_interaction_state(InteractionState::Idle, owner, &app);
+    state
+        .pipeline
+        .update_interaction_state(InteractionState::Idle, owner, &app);
 
     Ok(())
 }
@@ -327,14 +344,12 @@ pub async fn resume_pipeline(
         let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
         let mode = match owner {
             InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
-            InteractionOwner::MainWindow | InteractionOwner::Ptt => settings.interaction.main_app_mode.clone(),
+            InteractionOwner::MainWindow | InteractionOwner::Ptt => {
+                settings.interaction.main_app_mode.clone()
+            }
             InteractionOwner::Wizard => crate::core::settings::InteractionMode::Passive,
         };
-        (
-            settings.interaction.pipeline_mode.clone(),
-            mode,
-            owner,
-        )
+        (settings.interaction.pipeline_mode.clone(), mode, owner)
     };
 
     if pipeline_mode == crate::core::settings::PipelineMode::Modular {
@@ -373,7 +388,9 @@ pub async fn resume_pipeline(
         crate::core::settings::InteractionMode::PTT => InteractionState::Idle,
         crate::core::settings::InteractionMode::Passive => InteractionState::Listening,
     };
-    state.pipeline.update_interaction_state(next_state, owner, &app);
+    state
+        .pipeline
+        .update_interaction_state(next_state, owner, &app);
 
     Ok(())
 }

@@ -265,8 +265,7 @@ fn run_compare(tts_voice: Option<&str>) -> anyhow::Result<()> {
 
     println!("\x1b[32m[TTS-Compare]\x1b[0m Loading Supertonic 3...");
     let super_model_path = models_dir.join("tts/supertonic-3");
-    let mut supertonic =
-        vox_lib::services::tts::TtsEngine::new(&super_model_path, 0, 8, 1.05)?;
+    let mut supertonic = vox_lib::services::tts::TtsEngine::new(&super_model_path, 0, 8, 1.05)?;
     run_tts("Supertonic 3", text, &mut supertonic)?;
 
     println!("\x1b[32m[TTS-Compare]\x1b[0m Loading Chatterbox...");

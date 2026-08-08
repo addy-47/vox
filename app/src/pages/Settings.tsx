@@ -127,7 +127,7 @@ interface SettingsCardWrapperProps {
   layoutMode: "full-max" | "full-min" | "small";
 }
 
-const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, isActive, layoutMode }) => {
+const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCardWrapperProps) => {
   const { settings, draftSettings, commitChanges } = useSettings();
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   
@@ -143,10 +143,10 @@ const SettingsCardWrapper: React.FC<SettingsCardWrapperProps> = memo(({ domain, 
       return (
         settings.vad.vad_backend !== draftSettings.vad.vad_backend ||
         settings.asr.model !== draftSettings.asr.model ||
+        settings.asr.provider?.kind !== draftSettings.asr.provider?.kind ||
         settings.llm.model !== draftSettings.llm.model ||
         settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
         settings.llm.threads !== draftSettings.llm.threads ||
-        settings.tts.voice !== draftSettings.tts.voice ||
         settings.tts.provider?.kind !== draftSettings.tts.provider?.kind ||
         settings.llm.provider?.kind !== draftSettings.llm.provider?.kind ||
         settings.llm.provider?.model !== draftSettings.llm.provider?.model

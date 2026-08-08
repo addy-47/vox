@@ -162,7 +162,10 @@ async fn main() -> anyhow::Result<()> {
     // Open database using library's persistence wrapper
     let db_path = home.join(".vox/vox.db");
     if !db_path.exists() {
-        anyhow::bail!("Database file does not exist at {:?}. Run 'seed-embeddings' first.", db_path);
+        anyhow::bail!(
+            "Database file does not exist at {:?}. Run 'seed-embeddings' first.",
+            db_path
+        );
     }
 
     let start_query = Instant::now();
@@ -178,10 +181,13 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
 
-    println!("\n\x1b[34m[Query-Embeddings]\x1b[0m Query: \"{}\"", query_text);
+    println!(
+        "\n\x1b[34m[Query-Embeddings]\x1b[0m Query: \"{}\"",
+        query_text
+    );
     println!("  Model Load time:   {}ms", load_dur.as_millis());
     println!("  Embedding time:    {}ms", embed_dur.as_millis());
-    
+
     let mut count = 0;
     while let Some(row) = rows.next().await? {
         let content: String = row.get(0)?;
@@ -194,8 +200,11 @@ async fn main() -> anyhow::Result<()> {
             count, similarity, distance, content
         );
     }
-    
-    println!("  Database Query:    {}ms", start_query.elapsed().as_millis());
+
+    println!(
+        "  Database Query:    {}ms",
+        start_query.elapsed().as_millis()
+    );
     println!("  Total retrieved:   {} results\n", count);
 
     Ok(())

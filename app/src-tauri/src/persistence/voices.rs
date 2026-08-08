@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
-use turso::Connection;
 use serde::{Deserialize, Serialize};
+use turso::Connection;
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 

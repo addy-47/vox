@@ -1,14 +1,16 @@
-use anyhow::Result;
-use turso::Connection;
+use super::batch_result::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
 use crate::core::constants::{
-    inter_collection_edge, PM_QUEUE_STATUS_EMBEDDED, PM_QUEUE_STATUS_EVALUATED, PM_QUEUE_STATUS_PROCESSING_EVAL,
-    PM_QUEUE_STATUS_SUPERSEDED, PM_RELATION_CONFLICTS, PM_RELATION_SUPERSEDES, PM_RELATION_SUPPORTS,
-    PM_SEMANTIC_GRAPH_COLLECTIONS,
+    inter_collection_edge, PM_QUEUE_STATUS_EMBEDDED, PM_QUEUE_STATUS_EVALUATED,
+    PM_QUEUE_STATUS_PROCESSING_EVAL, PM_QUEUE_STATUS_SUPERSEDED, PM_RELATION_CONFLICTS,
+    PM_RELATION_SUPERSEDES, PM_RELATION_SUPPORTS, PM_SEMANTIC_GRAPH_COLLECTIONS,
 };
 use crate::persistence::{decode_f32_blob, queries};
 use crate::services::memory::classifiers::inter_edge_classifier;
-use crate::services::memory::classifiers::intra_edge_classifier::{classify_batch, ensure_nli_loaded, relation_from_result, NliRelation, NLI_MODEL_DIR};
-use super::batch_result::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
+use crate::services::memory::classifiers::intra_edge_classifier::{
+    classify_batch, ensure_nli_loaded, relation_from_result, NliRelation, NLI_MODEL_DIR,
+};
+use anyhow::Result;
+use turso::Connection;
 
 pub const STAGE3_BATCH_SIZE: usize = 16;
 pub const SAME_COLLECTION_CANDIDATE_SEARCH: f32 = 0.40;
@@ -72,15 +74,18 @@ fn eval_subbranch_a_nli_sync(
 
         match relation {
             NliRelation::Conflicts => {
-                let confident_score = nli_res.contradiction >= NLI_CONTRADICTION_CONFIDENCE_THRESHOLD
-                    && (nli_res.contradiction - nli_res.neutral) >= NLI_CONTRADICTION_MARGIN_THRESHOLD;
+                let confident_score = nli_res.contradiction
+                    >= NLI_CONTRADICTION_CONFIDENCE_THRESHOLD
+                    && (nli_res.contradiction - nli_res.neutral)
+                        >= NLI_CONTRADICTION_MARGIN_THRESHOLD;
 
                 if confident_score {
-                    let (fwd, inv) = if item.collection == "Identity" || item.collection == "Directives" {
-                        (PM_RELATION_SUPERSEDES, "superseded_by")
-                    } else {
-                        (PM_RELATION_CONFLICTS, "conflicts_with")
-                    };
+                    let (fwd, inv) =
+                        if item.collection == "Identity" || item.collection == "Directives" {
+                            (PM_RELATION_SUPERSEDES, "superseded_by")
+                        } else {
+                            (PM_RELATION_CONFLICTS, "conflicts_with")
+                        };
                     decision = fwd.to_string();
                     relations.push(RelationEdge {
                         from_id: format!("item_{}", item.id),
@@ -160,7 +165,9 @@ fn eval_subbranch_b_edges_sync(
     }
 
     for (cand_id, cand_fact, cand_coll, sim) in edge_candidates {
-        if let Some((forward_edge, inverse_edge)) = inter_collection_edge(&item.collection, cand_coll) {
+        if let Some((forward_edge, inverse_edge)) =
+            inter_collection_edge(&item.collection, cand_coll)
+        {
             let mut decision = "NONE".to_string();
             let mut rejection_reason = None;
             let mut edge_score_val = None;
@@ -226,7 +233,6 @@ fn eval_subbranch_b_edges_sync(
     (relations, logs)
 }
 
-
 /// Stage 3: Unified Edge & State Evaluation Stage (Batch Size 16)
 /// Atomically claims `embedded` items, offloads CPU ONNX tasks to `spawn_blocking` threads,
 /// runs Sub-Branch A (NLI) and Sub-Branch B (Edge Classifier) concurrently via `tokio::join!`,
@@ -239,7 +245,11 @@ pub async fn run_stage3_eval_with_metrics(conn: &Connection, run_id: &str) -> Re
     run_stage3_eval_with_metrics_seq(conn, run_id, 0).await
 }
 
-pub async fn run_stage3_eval_with_metrics_seq(conn: &Connection, run_id: &str, batch_seq: usize) -> Result<usize> {
+pub async fn run_stage3_eval_with_metrics_seq(
+    conn: &Connection,
+    run_id: &str,
+    batch_seq: usize,
+) -> Result<usize> {
     let start_time = std::time::Instant::now();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -290,7 +300,10 @@ pub async fn run_stage3_eval_with_metrics_seq(conn: &Connection, run_id: &str, b
     }
 
     let items_claimed = items.len();
-    let session_id = items.first().map(|i| i.session_id.clone()).unwrap_or_default();
+    let session_id = items
+        .first()
+        .map(|i| i.session_id.clone())
+        .unwrap_or_default();
 
     let mut processed_count = 0;
 
@@ -329,11 +342,13 @@ pub async fn run_stage3_eval_with_metrics_seq(conn: &Connection, run_id: &str, b
         // Offload CPU inference to spawn_blocking threads for true concurrency
         let item_a = item.clone();
         let cand_a = nli_candidates.clone();
-        let handle_a = tokio::task::spawn_blocking(move || eval_subbranch_a_nli_sync(&item_a, &cand_a));
+        let handle_a =
+            tokio::task::spawn_blocking(move || eval_subbranch_a_nli_sync(&item_a, &cand_a));
 
         let item_b = item.clone();
         let cand_b = edge_candidates.clone();
-        let handle_b = tokio::task::spawn_blocking(move || eval_subbranch_b_edges_sync(&item_b, &cand_b));
+        let handle_b =
+            tokio::task::spawn_blocking(move || eval_subbranch_b_edges_sync(&item_b, &cand_b));
 
         let (res_a, res_b) = tokio::join!(handle_a, handle_b);
 
@@ -347,7 +362,9 @@ pub async fn run_stage3_eval_with_metrics_seq(conn: &Connection, run_id: &str, b
         candidate_logs.extend(edge_logs);
 
         let item_target_id = format!("item_{}", item.id);
-        let is_superseded = all_relations.iter().any(|rel| rel.to_id == item_target_id && rel.relation == PM_RELATION_SUPERSEDES);
+        let is_superseded = all_relations
+            .iter()
+            .any(|rel| rel.to_id == item_target_id && rel.relation == PM_RELATION_SUPERSEDES);
 
         let eval_result = BatchEvaluationResult {
             item_id: item.id,
@@ -357,7 +374,8 @@ pub async fn run_stage3_eval_with_metrics_seq(conn: &Connection, run_id: &str, b
             candidate_logs,
         };
 
-        let json_str = serde_json::to_string(&eval_result.relations).unwrap_or_else(|_| "[]".to_string());
+        let json_str =
+            serde_json::to_string(&eval_result.relations).unwrap_or_else(|_| "[]".to_string());
         let new_status = if eval_result.is_superseded {
             PM_QUEUE_STATUS_SUPERSEDED
         } else {
@@ -371,7 +389,12 @@ pub async fn run_stage3_eval_with_metrics_seq(conn: &Connection, run_id: &str, b
         .await?;
 
         if !eval_result.candidate_logs.is_empty() {
-            let _ = crate::persistence::mutations::write_candidate_audit(conn, item.id, &eval_result.candidate_logs).await;
+            let _ = crate::persistence::mutations::write_candidate_audit(
+                conn,
+                item.id,
+                &eval_result.candidate_logs,
+            )
+            .await;
         }
 
         processed_count += 1;

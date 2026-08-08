@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
 
@@ -10,7 +10,7 @@ interface RadialNodeProps {
   radiusY: number;
 }
 
-export const RadialNode: React.FC<RadialNodeProps> = memo(({ domain, isActive, onSelect, radiusX, radiusY }) => {
+export const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }: RadialNodeProps) => {
   const rad = (domain.angle * Math.PI) / 180;
   const pos = {
     x: radiusX * Math.cos(rad),
@@ -56,7 +56,7 @@ interface HubConnectorsProps {
   radiusY: number;
 }
 
-export const HubConnectors: React.FC<HubConnectorsProps> = memo(({ activeDomains, radiusX, radiusY }) => {
+export const HubConnectors = memo(({ activeDomains, radiusX, radiusY }: HubConnectorsProps) => {
   const maxRadius = Math.max(radiusX, radiusY);
   const size = maxRadius * 2 + 120;
   const cx = size / 2;

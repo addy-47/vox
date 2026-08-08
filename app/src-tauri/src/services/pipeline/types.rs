@@ -45,12 +45,13 @@ pub(crate) fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> 
     let rt = crate::persistence::db::get_tokio_handle();
 
     let conn = rt.block_on(async {
-        crate::persistence::db::VoxDb::open_readonly(&db_path).await.ok()
+        crate::persistence::db::VoxDb::open_readonly(&db_path)
+            .await
+            .ok()
     })?;
 
-    let entry = rt.block_on(async {
-        crate::persistence::voices::get_voice(&conn, id).await.ok()
-    })??;
+    let entry =
+        rt.block_on(async { crate::persistence::voices::get_voice(&conn, id).await.ok() })??;
 
     // Prefer pre-baked voice_dir if it exists and contains speaker_emb.npy
     if let Some(ref dir) = entry.voice_dir {
@@ -64,7 +65,8 @@ pub(crate) fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> 
     if !std::path::Path::new(&wav).exists() {
         log::warn!(
             "[Pipeline] Voice {} wav_path not found on disk: {}. Using built-in voice.",
-            id, wav
+            id,
+            wav
         );
         return None;
     }

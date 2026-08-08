@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { Network, Info, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
@@ -14,7 +14,7 @@ export interface RemoteServerSetupProps {
   isRemoteTtsHealthy: boolean | null;
 }
 
-export const RemoteServerSetup: React.FC<RemoteServerSetupProps> = memo(({
+export const RemoteServerSetup = memo(({
   sshConnectionString,
   setSshConnectionString,
   sshPort,
@@ -24,7 +24,7 @@ export const RemoteServerSetup: React.FC<RemoteServerSetupProps> = memo(({
   setupStatus,
   triggerRemoteSetup,
   isRemoteTtsHealthy,
-}) => {
+}: RemoteServerSetupProps) => {
   return (
     <div className="space-y-4">
       {/* Description Banner */}

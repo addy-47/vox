@@ -110,8 +110,12 @@ impl ConversationManager {
         }
     }
 
-    pub async fn load_identity_into_system_prompt(&mut self, conn: &turso::Connection) -> anyhow::Result<()> {
-        let active_identities = crate::persistence::queries::fetch_all_active_identity(conn).await?;
+    pub async fn load_identity_into_system_prompt(
+        &mut self,
+        conn: &turso::Connection,
+    ) -> anyhow::Result<()> {
+        let active_identities =
+            crate::persistence::queries::fetch_all_active_identity(conn).await?;
         if !active_identities.is_empty() {
             // Strip any existing <user_profile> block for idempotency
             let mut base_prompt = self.system_prompt.content.clone();
@@ -121,15 +125,24 @@ impl ConversationManager {
                 base_prompt.truncate(start_idx);
             }
 
-            let identity_lines: Vec<String> = active_identities.iter().map(|f| format!("- {}", f.fact)).collect();
-            let user_profile_block = format!("\n\n<user_profile>\n{}\n</user_profile>", identity_lines.join("\n"));
+            let identity_lines: Vec<String> = active_identities
+                .iter()
+                .map(|f| format!("- {}", f.fact))
+                .collect();
+            let user_profile_block = format!(
+                "\n\n<user_profile>\n{}\n</user_profile>",
+                identity_lines.join("\n")
+            );
             let updated_content = format!("{}{}", base_prompt.trim_end(), user_profile_block);
             self.system_prompt.content = updated_content.clone();
             if !self.messages.is_empty() && self.messages[0].role == Role::System {
                 self.messages[0].content = updated_content;
             }
             self.total_token_count = estimate_tokens(&self.system_prompt.content);
-            log::info!("[WorkingMemory] Successfully preloaded {} Identity facts into System Prompt.", active_identities.len());
+            log::info!(
+                "[WorkingMemory] Successfully preloaded {} Identity facts into System Prompt.",
+                active_identities.len()
+            );
         }
         Ok(())
     }
@@ -183,7 +196,8 @@ impl ConversationManager {
             self.system_prompt.content = new_system_prompt.to_string();
             if !self.messages.is_empty() && self.messages[0].role == Role::System {
                 self.messages[0].content = new_system_prompt.to_string();
-                self.total_token_count = self.total_token_count.saturating_sub(old_sys_tokens) + sys_tokens;
+                self.total_token_count =
+                    self.total_token_count.saturating_sub(old_sys_tokens) + sys_tokens;
             }
             self.kv_synced_index = 0;
         }
@@ -263,7 +277,12 @@ impl ConversationManager {
         provider_kind: ProviderKind,
         is_devanagari: bool,
         llm_provider: Option<&dyn LlmProvider>,
-    ) -> (ConversationContext, Option<String>, std::collections::HashMap<String, Vec<String>>) {
+        settings: Option<&crate::core::settings::LlmSettings>,
+    ) -> (
+        ConversationContext,
+        Option<String>,
+        std::collections::HashMap<String, Vec<String>>,
+    ) {
         self.cancel_opportunistic();
 
         let mut transition_speech = None;
@@ -293,7 +312,7 @@ impl ConversationManager {
             if use_fifo || llm_provider.is_none() {
                 self.perform_fifo_maintenance();
             } else if let Some(provider) = llm_provider {
-                match self.perform_compaction_maintenance(provider) {
+                match self.perform_compaction_maintenance(provider, settings) {
                     Ok(updates) => {
                         personal_memory = updates;
                     }
@@ -336,7 +355,10 @@ impl ConversationManager {
         }
 
         // Consolidate into single System Message at messages[0]
-        if !session_history.is_empty() && !self.messages.is_empty() && self.messages[0].role == Role::System {
+        if !session_history.is_empty()
+            && !self.messages.is_empty()
+            && self.messages[0].role == Role::System
+        {
             let base_prompt = &self.system_prompt.content;
             let consolidated_prompt = if let Some(idx) = base_prompt.find("<user_profile>") {
                 let (prefix, suffix) = base_prompt.split_at(idx);
@@ -348,7 +370,8 @@ impl ConversationManager {
             let old_sys_tokens = estimate_tokens(&self.messages[0].content);
             let new_sys_tokens = estimate_tokens(&consolidated_prompt);
             self.messages[0].content = consolidated_prompt;
-            self.total_token_count = self.total_token_count.saturating_sub(old_sys_tokens) + new_sys_tokens;
+            self.total_token_count =
+                self.total_token_count.saturating_sub(old_sys_tokens) + new_sys_tokens;
         }
 
         let kv_idx = if provider_kind == ProviderKind::Embedded {
@@ -404,13 +427,17 @@ impl ConversationManager {
     fn perform_compaction_maintenance(
         &mut self,
         provider: &dyn LlmProvider,
+        settings: Option<&crate::core::settings::LlmSettings>,
     ) -> anyhow::Result<std::collections::HashMap<String, Vec<String>>> {
         if self.messages.len() <= 3 {
             self.perform_fifo_maintenance();
             return Ok(std::collections::HashMap::new());
         }
 
-        let last_user_turn = self.messages.pop().ok_or_else(|| anyhow::anyhow!("No user turn"))?;
+        let last_user_turn = self
+            .messages
+            .pop()
+            .ok_or_else(|| anyhow::anyhow!("No user turn"))?;
         let history_slice = &self.messages[1..];
         let last_context_summary = self.session_compaction_contexts.last().map(|s| s.as_str());
 
@@ -419,6 +446,7 @@ impl ConversationManager {
             history_slice,
             &last_user_turn,
             last_context_summary,
+            settings,
         ) {
             Ok(result) => {
                 let context_summary = result.context_summary.trim().to_string();
@@ -436,10 +464,7 @@ impl ConversationManager {
                 let user_tokens = estimate_tokens(&last_user_turn.content);
 
                 // Single System Message Architecture: All compaction state lives inside messages[0]
-                self.messages = vec![
-                    self.system_prompt.clone(),
-                    last_user_turn,
-                ];
+                self.messages = vec![self.system_prompt.clone(), last_user_turn];
 
                 self.total_token_count = sys_tokens + user_tokens;
                 self.kv_synced_index = 0;
@@ -454,7 +479,10 @@ impl ConversationManager {
                 Ok(result.diff_to_enqueue)
             }
             Err(e) => {
-                log::warn!("[WorkingMemory] Ingestion compaction failed: {}. Falling back to FIFO shift.", e);
+                log::warn!(
+                    "[WorkingMemory] Ingestion compaction failed: {}. Falling back to FIFO shift.",
+                    e
+                );
                 self.messages.push(last_user_turn);
                 self.perform_fifo_maintenance();
                 Ok(std::collections::HashMap::new())
@@ -462,7 +490,9 @@ impl ConversationManager {
         }
     }
 
-    pub fn try_trigger_opportunistic(&mut self) -> Option<(usize, Vec<ChatMessage>, Arc<AtomicBool>)> {
+    pub fn try_trigger_opportunistic(
+        &mut self,
+    ) -> Option<(usize, Vec<ChatMessage>, Arc<AtomicBool>)> {
         if self.context_utilization() > self.soft_threshold
             && self.context_utilization() < self.critical_threshold
             && !self.opportunistic_active
@@ -511,11 +541,7 @@ impl ConversationManager {
             timestamp_ms: current_timestamp_ms(),
         };
 
-        self.messages = vec![
-            self.system_prompt.clone(),
-            summary_msg,
-            last_user_turn,
-        ];
+        self.messages = vec![self.system_prompt.clone(), summary_msg, last_user_turn];
 
         let mut count = 0;
         for msg in &self.messages {
@@ -564,7 +590,6 @@ impl ConversationManager {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,13 +601,16 @@ mod tests {
 
         // Push enough long turns to cross 85% threshold
         for i in 0..15 {
-            mgr.push_user_turn(format!("User question turn {} with significant padding text to build token count...", i));
+            mgr.push_user_turn(format!(
+                "User question turn {} with significant padding text to build token count...",
+                i
+            ));
             mgr.push_assistant_turn(format!("Assistant detailed answer turn {} with extra explanation words to fill context budget...", i));
         }
 
         assert!(mgr.needs_threshold_maintenance());
 
-        let (ctx, speech, _) = mgr.build_context(ProviderKind::Embedded, false, None);
+        let (ctx, speech, _) = mgr.build_context(ProviderKind::Embedded, false, None, None);
 
         assert!(speech.is_some());
         assert!(!mgr.needs_threshold_maintenance());
@@ -593,34 +621,47 @@ mod tests {
         response_text: String,
     }
 
-    use crate::services::llm::providers::LlmProvider;
     use crate::core::events::VoxEvent;
-    use crate::services::llm::ProviderKind;
     use crate::core::settings::LlmModelInfo;
-    use std::sync::mpsc;
+    use crate::services::llm::providers::LlmProvider;
+    use crate::services::llm::ProviderKind;
     use std::sync::atomic::AtomicBool;
+    use std::sync::mpsc;
 
     impl LlmProvider for MockProvider {
-        fn generate(
-            &self,
-            _ctx: &ConversationContext,
+        fn generate<'a>(
+            &'a self,
+            _request: crate::services::llm::types::GenerationRequest,
             turn_id: u32,
-            _cancel_flag: &Arc<AtomicBool>,
-            tx: &mpsc::Sender<VoxEvent>,
-        ) -> anyhow::Result<()> {
-            let _ = tx.send(VoxEvent::LlmToken {
-                turn_id,
-                token: self.response_text.clone(),
-            });
-            let _ = tx.send(VoxEvent::LlmFinished {
-                turn_id,
-            });
-            Ok(())
+            _cancel_flag: &'a Arc<AtomicBool>,
+            tx: &'a mpsc::Sender<VoxEvent>,
+        ) -> futures_util::future::BoxFuture<'a, Result<(), crate::services::llm::types::LlmError>>
+        {
+            Box::pin(async move {
+                let _ = tx.send(VoxEvent::LlmToken {
+                    turn_id,
+                    token: self.response_text.clone(),
+                });
+                let _ = tx.send(VoxEvent::LlmFinished { turn_id });
+                Ok(())
+            })
         }
 
-        fn health_check(&self) -> bool { true }
-        fn list_models(&self) -> anyhow::Result<Vec<LlmModelInfo>> { Ok(Vec::new()) }
-        fn kind(&self) -> ProviderKind { ProviderKind::Embedded }
+        fn capabilities(&self) -> &crate::services::llm::types::ProviderCapabilities {
+            static CAPS: std::sync::OnceLock<crate::services::llm::types::ProviderCapabilities> =
+                std::sync::OnceLock::new();
+            CAPS.get_or_init(crate::services::llm::types::ProviderCapabilities::default)
+        }
+
+        fn health_check(&self) -> bool {
+            true
+        }
+        fn list_models(&self) -> Result<Vec<LlmModelInfo>, crate::services::llm::types::LlmError> {
+            Ok(Vec::new())
+        }
+        fn kind(&self) -> ProviderKind {
+            ProviderKind::Embedded
+        }
     }
 
     #[test]
@@ -635,10 +676,13 @@ mod tests {
             "Identity": ["Works as a software engineer.", "User's name is Alex."],
             "Profile": ["User loves coding in Rust."],
             "Narrative": ["The user introduced himself as Alex and expressed his love for Rust."]
-        }"#.to_string();
+        }"#
+        .to_string();
 
-        let provider = MockProvider { response_text: mock_response };
-        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
+        let provider = MockProvider {
+            response_text: mock_response,
+        };
+        let updates = mgr.perform_compaction_maintenance(&provider, None).unwrap();
 
         assert_eq!(updates.values().filter(|v| !v.is_empty()).count(), 3);
         assert_eq!(updates.get("Identity").unwrap().len(), 2);
@@ -659,10 +703,13 @@ mod tests {
             "Identity": ["User's name is Alex."],
             "Context": ["Alex introduced himself."]
         }
-        ```"#.to_string();
+        ```"#
+            .to_string();
 
-        let provider = MockProvider { response_text: mock_response };
-        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
+        let provider = MockProvider {
+            response_text: mock_response,
+        };
+        let updates = mgr.perform_compaction_maintenance(&provider, None).unwrap();
 
         assert_eq!(updates.values().filter(|v| !v.is_empty()).count(), 2);
         assert_eq!(updates.get("Identity").unwrap()[0], "User's name is Alex.");
@@ -679,8 +726,10 @@ mod tests {
         // Plain prose instead of JSON
         let mock_response = "The user is Alex. He loves system programming.".to_string();
 
-        let provider = MockProvider { response_text: mock_response };
-        let updates = mgr.perform_compaction_maintenance(&provider).unwrap();
+        let provider = MockProvider {
+            response_text: mock_response,
+        };
+        let updates = mgr.perform_compaction_maintenance(&provider, None).unwrap();
 
         // Should fall back to prose, return no profile updates, but successfully compact the conversation
         assert_eq!(updates.len(), 0);
@@ -688,7 +737,8 @@ mod tests {
         assert_eq!(mgr.messages[0].role, Role::System);
         assert_eq!(mgr.messages[1].role, Role::User);
         assert_eq!(mgr.session_compaction_contexts.len(), 1);
-        assert!(mgr.session_compaction_contexts[0].contains("The user is Alex. He loves system programming."));
+        assert!(mgr.session_compaction_contexts[0]
+            .contains("The user is Alex. He loves system programming."));
     }
 
     #[test]
@@ -704,7 +754,8 @@ mod tests {
             ]
         }"#;
         let fixed = crate::utils::json::fix_missing_commas_in_json(bad_json);
-        let parsed: serde_json::Value = serde_json::from_str(&fixed).expect("Failed to parse fixed JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&fixed).expect("Failed to parse fixed JSON");
         assert_eq!(parsed["summary"], "This is a summary");
     }
 
@@ -722,7 +773,8 @@ mod tests {
             summary: String,
             personal_memory: std::collections::HashMap<String, Vec<String>>,
         }
-        let resp: UnifiedCompactionPayload = serde_json::from_str(json_data).expect("Failed to deserialize compaction response");
+        let resp: UnifiedCompactionPayload =
+            serde_json::from_str(json_data).expect("Failed to deserialize compaction response");
         assert_eq!(resp.summary, "User codes in Rust.");
         assert_eq!(resp.personal_memory.get("Identity").unwrap()[0], "Alex");
         assert_eq!(resp.personal_memory.get("Preferences").unwrap()[0], "Rust");
@@ -731,7 +783,9 @@ mod tests {
     #[test]
     fn test_single_system_message_and_9_collection_session_history() {
         let mut mgr = ConversationManager::new(1024);
-        mgr.new_session("<persona>Vox</persona>\n<user_profile>[Identity]\n- User is Alex</user_profile>");
+        mgr.new_session(
+            "<persona>Vox</persona>\n<user_profile>[Identity]\n- User is Alex</user_profile>",
+        );
         mgr.push_user_turn("Hi, I am setting up Symphonia for MP3 decoding.".to_string());
         mgr.push_assistant_turn("Got it! Symphonia is great.".to_string());
         mgr.push_user_turn("Add Symphonia to Cargo.toml.".to_string());
@@ -740,12 +794,15 @@ mod tests {
             "Directives": ["Add Symphonia dependency to Cargo.toml"],
             "Entities": ["Setting up Symphonia Rust crate"],
             "Narrative": ["User is configuring Symphonia for MP3 decoding"]
-        }"#.to_string();
+        }"#
+        .to_string();
 
-        let provider = MockProvider { response_text: mock_response };
-        let _ = mgr.perform_compaction_maintenance(&provider).unwrap();
+        let provider = MockProvider {
+            response_text: mock_response,
+        };
+        let _ = mgr.perform_compaction_maintenance(&provider, None).unwrap();
 
-        let (ctx, _, _) = mgr.build_context(ProviderKind::Embedded, false, Some(&provider));
+        let (ctx, _, _) = mgr.build_context(ProviderKind::Embedded, false, Some(&provider), None);
 
         // 1. Single System Message
         assert_eq!(ctx.messages.len(), 2);

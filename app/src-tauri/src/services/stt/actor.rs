@@ -131,13 +131,11 @@ pub fn spawn_stt_worker(
 
                                     if !text.is_empty() && text != last_transcript {
                                         if let Some(ref pipeline_tx) = pipeline_event_tx {
-                                            let _ = pipeline_tx.send(
-                                                VoxEvent::TranscriptPartial {
-                                                    turn_id: tid,
-                                                    owner,
-                                                    text: text.clone(),
-                                                },
-                                            );
+                                            let _ = pipeline_tx.send(VoxEvent::TranscriptPartial {
+                                                turn_id: tid,
+                                                owner,
+                                                text: text.clone(),
+                                            });
                                         }
                                         last_transcript = text;
                                     }

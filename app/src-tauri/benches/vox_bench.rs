@@ -15,13 +15,13 @@ use std::time::Duration;
 
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::metrics::{MetricField, PipelineMetrics};
+use vox_lib::core::settings::SttProviderConfig;
 use vox_lib::core::state::InteractionOwner;
 use vox_lib::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
-use vox_lib::core::settings::SttProviderConfig;
 use vox_lib::services::stt::providers::{create_stt_provider, SttProvider};
-use vox_lib::services::vad::VadEngine as _;
 use vox_lib::services::utils::{count_words, is_devanagari, should_flush, transliterate_if_hi};
 use vox_lib::services::vad::ten_onnx::VadEngine;
+use vox_lib::services::vad::VadEngine as _;
 use vox_lib::utils::bench_reporter::BenchReporter;
 
 #[derive(Parser, Debug)]
@@ -118,9 +118,11 @@ fn main() -> anyhow::Result<()> {
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
     // Default prompt for KV cache warmup (English — no text to detect language from yet)
-    let system_prompt = args
-        .prompt
-        .unwrap_or_else(|| vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.replace("<lang>", "English").replace("<script>", "Latin"));
+    let system_prompt = args.prompt.unwrap_or_else(|| {
+        vox_lib::core::constants::SYSTEM_PROMPT_MODULAR
+            .replace("<lang>", "English")
+            .replace("<script>", "Latin")
+    });
 
     // 3. Load Models Sequentially (to avoid ONNX environment conflicts and improve memory tracking)
     println!("\x1b[32m[Bench]\x1b[0m Loading STT ({})...", args.asr);
@@ -138,8 +140,8 @@ fn main() -> anyhow::Result<()> {
     let stt_provider_config = SttProviderConfig::Embedded {
         model_type: args.asr.clone(),
     };
-    let stt_provider: Box<dyn SttProvider> = create_stt_provider(&stt_provider_config, &stt_path)
-        .expect("Failed to load STT provider");
+    let stt_provider: Box<dyn SttProvider> =
+        create_stt_provider(&stt_provider_config, &stt_path).expect("Failed to load STT provider");
     let snap_2 = BenchReporter::get_memory_snapshot();
     let stt_mem_mb = snap_2.rss_mb.saturating_sub(snap_1.rss_mb);
     metrics.lock().unwrap().stt_mem_mb = stt_mem_mb;
@@ -202,39 +204,46 @@ fn main() -> anyhow::Result<()> {
     );
 
     let snap_5 = BenchReporter::get_memory_snapshot();
-    let tts_engine: Box<dyn vox_lib::services::tts::providers::TtsProvider> = if args.tts == "chatterbox_remote" {
-        println!("\x1b[32m[Bench]\x1b[0m Loading TTS (ChatterboxRemote)...");
-        Box::new(
-            vox_lib::services::tts::ChatterboxRemoteProvider::new("http://100.86.62.14:7860", "en", 10, 1.0, "/home/hypr4/.vox")
+    let tts_engine: Box<dyn vox_lib::services::tts::providers::TtsProvider> =
+        if args.tts == "chatterbox_remote" {
+            println!("\x1b[32m[Bench]\x1b[0m Loading TTS (ChatterboxRemote)...");
+            Box::new(
+                vox_lib::services::tts::ChatterboxRemoteProvider::new(
+                    "http://100.86.62.14:7860",
+                    "en",
+                    10,
+                    1.0,
+                    "/home/hypr4/.vox",
+                )
                 .expect("Failed to load ChatterboxRemote TTS"),
-        )
-    } else if args.tts == "chatterbox" {
-        println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Chatterbox)...");
-        let cb_path = vox_lib::utils::paths::model_dir("tts").join("chatterbox");
-        let resolved_voice = args.tts_voice.as_ref().map(|v| resolve_voice_path(v));
-        Box::new(
-            vox_lib::services::tts::ChatterboxEngine::new(
-                &cb_path,
-                "en",
-                10,
-                1.0,
-                resolved_voice.as_deref(),
             )
-            .expect("Failed to load Chatterbox TTS"),
-        )
-    } else if args.tts == "edge_tts" || args.tts == "edge-tts" || args.tts == "edge" {
-        println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Edge TTS)...");
-        Box::new(vox_lib::services::tts::EdgeTtsProvider::new(
-            args.tts_voice.as_deref(),
-        ))
-    } else {
-        println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Supertonic 3)...");
-        let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
-        Box::new(
-            vox_lib::services::tts::TtsEngine::new(&super_tts_path, 0, 12, 1.05)
-                .expect("Failed to load TTS"),
-        )
-    };
+        } else if args.tts == "chatterbox" {
+            println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Chatterbox)...");
+            let cb_path = vox_lib::utils::paths::model_dir("tts").join("chatterbox");
+            let resolved_voice = args.tts_voice.as_ref().map(|v| resolve_voice_path(v));
+            Box::new(
+                vox_lib::services::tts::ChatterboxEngine::new(
+                    &cb_path,
+                    "en",
+                    10,
+                    1.0,
+                    resolved_voice.as_deref(),
+                )
+                .expect("Failed to load Chatterbox TTS"),
+            )
+        } else if args.tts == "edge_tts" || args.tts == "edge-tts" || args.tts == "edge" {
+            println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Edge TTS)...");
+            Box::new(vox_lib::services::tts::EdgeTtsProvider::new(
+                args.tts_voice.as_deref(),
+            ))
+        } else {
+            println!("\x1b[32m[Bench]\x1b[0m Loading TTS (Supertonic 3)...");
+            let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
+            Box::new(
+                vox_lib::services::tts::TtsEngine::new(&super_tts_path, 0, 12, 1.05)
+                    .expect("Failed to load TTS"),
+            )
+        };
     let snap_6 = BenchReporter::get_memory_snapshot();
     let tts_mem_mb = snap_6.rss_mb.saturating_sub(snap_5.rss_mb);
     metrics.lock().unwrap().tts_mem_mb = tts_mem_mb;
@@ -438,9 +447,13 @@ fn main() -> anyhow::Result<()> {
 
                     // Language detection: route to Hindi or English prompt (mirrors real pipeline)
                     let base_prompt = if is_devanagari(&text) {
-                        vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.replace("<lang>", "Hindi").replace("<script>", "Devanagari")
+                        vox_lib::core::constants::SYSTEM_PROMPT_MODULAR
+                            .replace("<lang>", "Hindi")
+                            .replace("<script>", "Devanagari")
                     } else {
-                        vox_lib::core::constants::SYSTEM_PROMPT_MODULAR.replace("<lang>", "English").replace("<script>", "Latin")
+                        vox_lib::core::constants::SYSTEM_PROMPT_MODULAR
+                            .replace("<lang>", "English")
+                            .replace("<script>", "Latin")
                     };
                     // Inject expression tag instructions (Supertonic supports <laugh>, <breath>, <sigh>)
                     let prompt = format!(
@@ -617,11 +630,16 @@ fn resolve_voice_path(voice_arg: &str) -> String {
     let db_path = vox_lib::utils::paths::db_path();
     if let Ok(rt) = tokio::runtime::Runtime::new() {
         let res = rt.block_on(async {
-            let conn = vox_lib::persistence::db::VoxDb::open_readonly(&db_path).await.ok()?;
-            let mut rows = conn.query(
-                "SELECT voice_dir, wav_path FROM voices WHERE id = ? OR name = ?",
-                (voice_arg.to_string(), voice_arg.to_string()),
-            ).await.ok()?;
+            let conn = vox_lib::persistence::db::VoxDb::open_readonly(&db_path)
+                .await
+                .ok()?;
+            let mut rows = conn
+                .query(
+                    "SELECT voice_dir, wav_path FROM voices WHERE id = ? OR name = ?",
+                    (voice_arg.to_string(), voice_arg.to_string()),
+                )
+                .await
+                .ok()?;
             if let Some(row) = rows.next().await.ok()? {
                 let voice_dir: Option<String> = row.get(0).ok();
                 let wav_path: Option<String> = row.get(1).ok();
@@ -632,7 +650,10 @@ fn resolve_voice_path(voice_arg: &str) -> String {
         });
         if let Some(path) = res {
             if std::path::Path::new(&path).exists() {
-                println!("\x1b[32m[Bench]\x1b[0m Resolved voice '{}' to {:?}", voice_arg, path);
+                println!(
+                    "\x1b[32m[Bench]\x1b[0m Resolved voice '{}' to {:?}",
+                    voice_arg, path
+                );
                 return path;
             }
         }
@@ -649,4 +670,3 @@ fn resolve_voice_path(voice_arg: &str) -> String {
 
     voice_arg.to_string()
 }
-

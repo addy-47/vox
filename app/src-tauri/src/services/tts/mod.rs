@@ -1,7 +1,7 @@
 pub mod actor;
 pub mod providers;
-pub use actor::{spawn_tts_worker, TtsClauseChunker, TtsCommand};
 pub use crate::core::error::TtsError;
+pub use actor::{spawn_tts_worker, TtsClauseChunker, TtsCommand};
 pub use providers::chatterbox::ChatterboxEngine;
 pub use providers::chatterbox_remote::ChatterboxRemoteProvider;
 pub use providers::edge_tts::EdgeTtsProvider;

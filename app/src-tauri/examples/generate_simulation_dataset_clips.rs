@@ -49,7 +49,10 @@ fn main() -> Result<()> {
 
     let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
     if !super_tts_path.exists() {
-        return Err(anyhow!("Supertonic 3 model path missing at {:?}", super_tts_path));
+        return Err(anyhow!(
+            "Supertonic 3 model path missing at {:?}",
+            super_tts_path
+        ));
     }
 
     println!("[Generator] Loading Supertonic 3 TTS Engine...");
@@ -57,16 +60,46 @@ fn main() -> Result<()> {
 
     // We will generate audio clips for all 10 sessions
     let sessions = vec![
-        ("tests/dataset_session1.json", "tests/simulation_clips_session1"),
-        ("tests/dataset_session2.json", "tests/simulation_clips_session2"),
-        ("tests/dataset_session3.json", "tests/simulation_clips_session3"),
-        ("tests/dataset_session4.json", "tests/simulation_clips_session4"),
-        ("tests/dataset_session5.json", "tests/simulation_clips_session5"),
-        ("tests/dataset_session6.json", "tests/simulation_clips_session6"),
-        ("tests/dataset_session7.json", "tests/simulation_clips_session7"),
-        ("tests/dataset_session8.json", "tests/simulation_clips_session8"),
-        ("tests/dataset_session9.json", "tests/simulation_clips_session9"),
-        ("tests/dataset_session10.json", "tests/simulation_clips_session10"),
+        (
+            "tests/dataset_session1.json",
+            "tests/simulation_clips_session1",
+        ),
+        (
+            "tests/dataset_session2.json",
+            "tests/simulation_clips_session2",
+        ),
+        (
+            "tests/dataset_session3.json",
+            "tests/simulation_clips_session3",
+        ),
+        (
+            "tests/dataset_session4.json",
+            "tests/simulation_clips_session4",
+        ),
+        (
+            "tests/dataset_session5.json",
+            "tests/simulation_clips_session5",
+        ),
+        (
+            "tests/dataset_session6.json",
+            "tests/simulation_clips_session6",
+        ),
+        (
+            "tests/dataset_session7.json",
+            "tests/simulation_clips_session7",
+        ),
+        (
+            "tests/dataset_session8.json",
+            "tests/simulation_clips_session8",
+        ),
+        (
+            "tests/dataset_session9.json",
+            "tests/simulation_clips_session9",
+        ),
+        (
+            "tests/dataset_session10.json",
+            "tests/simulation_clips_session10",
+        ),
     ];
 
     for (dpath_str, outdir_str) in sessions {
@@ -79,7 +112,10 @@ fn main() -> Result<()> {
         };
 
         if !target_dataset_path.exists() {
-            println!("[Generator] Skipping missing dataset {:?}", target_dataset_path);
+            println!(
+                "[Generator] Skipping missing dataset {:?}",
+                target_dataset_path
+            );
             continue;
         }
 
@@ -95,11 +131,18 @@ fn main() -> Result<()> {
         };
         fs::create_dir_all(&clips_dir)?;
 
-        println!("[Generator] Generating {} audio clips for {:?}...", turns.len(), clips_dir);
+        println!(
+            "[Generator] Generating {} audio clips for {:?}...",
+            turns.len(),
+            clips_dir
+        );
 
         for turn_item in &turns {
             let clip_path = clips_dir.join(format!("clip_{:02}.wav", turn_item.turn));
-            print!("  Synthesizing turn {:02} -> {:?}... ", turn_item.turn, clip_path);
+            print!(
+                "  Synthesizing turn {:02} -> {:?}... ",
+                turn_item.turn, clip_path
+            );
 
             let cancel = Arc::new(AtomicBool::new(false));
             let (tx, rx) = channel();

@@ -1,4 +1,4 @@
-import React, { useState, memo } from "react";
+import { useState, memo } from "react";
 import { Eye, EyeOff, CheckCircle2, AlertCircle, RefreshCw, Key } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
@@ -14,7 +14,7 @@ interface ApiKeyFieldProps {
   className?: string;
 }
 
-export const ApiKeyField: React.FC<ApiKeyFieldProps> = memo(
+export const ApiKeyField = memo(
   ({
     label = "API Key",
     value,
@@ -25,7 +25,7 @@ export const ApiKeyField: React.FC<ApiKeyFieldProps> = memo(
     statusMessage,
     onTestConnection,
     className,
-  }) => {
+  }: ApiKeyFieldProps) => {
     const [showKey, setShowKey] = useState(false);
 
     return (
