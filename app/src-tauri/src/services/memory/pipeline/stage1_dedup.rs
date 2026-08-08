@@ -181,12 +181,34 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
                     item_collection: item.collection.clone(),
                     stage: "stage1_jaccard".to_string(),
                     action: "duplicate_dropped".to_string(),
-                    matched_fact_id: matched_id,
-                    matched_fact_coll: matched_coll,
-                    matched_fact: matched_fact,
+                    matched_fact_id: matched_id.clone(),
+                    matched_fact_coll: matched_coll.clone(),
+                    matched_fact: matched_fact.clone(),
                     score: jacc_sim,
                 };
                 let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+
+                let cand_source = if matched_id.starts_with("item_") {
+                    "queue_in_flight".to_string()
+                } else {
+                    "memory_facts".to_string()
+                };
+                let cand_log = super::batch_result::CandidateAuditLog {
+                    item_id: item.id,
+                    item_fact: item.fact.clone(),
+                    item_collection: item.collection.clone(),
+                    cand_id: matched_id,
+                    cand_fact: matched_fact,
+                    cand_collection: matched_coll,
+                    candidate_source: cand_source,
+                    cosine_sim: jacc_sim,
+                    engine: "jaccard_exact".to_string(),
+                    nli_scores: None,
+                    edge_score: None,
+                    decision: "duplicate_dropped".to_string(),
+                    rejection_reason: Some("exact_jaccard_match".to_string()),
+                };
+                let _ = crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log]).await;
             } else {
                 // Higher priority incoming item supersedes existing lower-priority DB fact
                 if !matched_id.starts_with("item_") {
@@ -204,12 +226,34 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
                     item_collection: item.collection.clone(),
                     stage: "stage1_jaccard".to_string(),
                     action: "superseded_existing".to_string(),
-                    matched_fact_id: matched_id,
-                    matched_fact_coll: matched_coll,
-                    matched_fact: matched_fact,
+                    matched_fact_id: matched_id.clone(),
+                    matched_fact_coll: matched_coll.clone(),
+                    matched_fact: matched_fact.clone(),
                     score: jacc_sim,
                 };
                 let _ = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+
+                let cand_source = if matched_id.starts_with("item_") {
+                    "queue_in_flight".to_string()
+                } else {
+                    "memory_facts".to_string()
+                };
+                let cand_log = super::batch_result::CandidateAuditLog {
+                    item_id: item.id,
+                    item_fact: item.fact.clone(),
+                    item_collection: item.collection.clone(),
+                    cand_id: matched_id,
+                    cand_fact: matched_fact,
+                    cand_collection: matched_coll,
+                    candidate_source: cand_source,
+                    cosine_sim: jacc_sim,
+                    engine: "jaccard_exact".to_string(),
+                    nli_scores: None,
+                    edge_score: None,
+                    decision: "superseded_existing".to_string(),
+                    rejection_reason: None,
+                };
+                let _ = crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log]).await;
 
                 active_facts_map
                     .entry(item.collection.clone())

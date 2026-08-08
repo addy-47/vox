@@ -89,12 +89,23 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                     conn,
                     &vec,
                     SOFT_VECTOR_DEDUP_THRESHOLD,
-                    Some(1),
+                    None, // Fetch ALL matching candidates >= 0.95 to perform global priority resolution
                 )
                 .await
                 .unwrap_or_default();
 
-                if let Some((match_id, match_fact, match_coll, sim)) = soft_dups.first() {
+                // Select candidate with the HIGHEST collection priority (breaking ties with cosine similarity)
+                let best_match = soft_dups.iter().max_by(|a, b| {
+                    let prio_a = crate::core::constants::MemoryCollection::parse(&a.2)
+                        .map(|c| c.priority())
+                        .unwrap_or(0);
+                    let prio_b = crate::core::constants::MemoryCollection::parse(&b.2)
+                        .map(|c| c.priority())
+                        .unwrap_or(0);
+                    prio_a.cmp(&prio_b).then_with(|| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal))
+                });
+
+                if let Some((match_id, match_fact, match_coll, sim)) = best_match {
                     let incoming_priority =
                         crate::core::constants::MemoryCollection::parse(&item.collection)
                             .map(|c| c.priority())
@@ -136,12 +147,17 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                             crate::persistence::mutations::write_dedup_audit(conn, item.id, &log)
                                 .await;
                     } else {
-                        // Higher priority incoming item supersedes existing lower priority DB fact
-                        conn.execute(
-                            "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
-                            (match_id.as_str(),),
-                        )
-                        .await?;
+                        // Higher priority incoming item supersedes ALL lower priority matching DB facts
+                        for (m_id, _, _, _) in &soft_dups {
+                            if !m_id.starts_with("item_") {
+                                let _ = conn
+                                    .execute(
+                                        "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
+                                        (m_id.as_str(),),
+                                    )
+                                    .await;
+                            }
+                        }
                         conn.execute(
                             "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
                             (PM_QUEUE_STATUS_EMBEDDED, blob_bytes, item.id),

@@ -126,94 +126,133 @@ fn format_stage3_batch_toon(
     out
 }
 
-async fn run_llm_judge_prompt(
+const OLLAMA_GPU_SERVER_URL: &str = "http://100.86.62.14:11434/v1/chat/completions";
+
+
+async fn run_llm_judge_prompt_with_model(
     client: &reqwest::Client,
     api_key: &str,
+    model: &str,
     prompt: &str,
 ) -> Result<String> {
     let payload = serde_json::json!({
-        "model": EVAL_JUDGE_MODEL,
+        "model": model,
         "messages": [
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.2,
+        "temperature": 0.5,
         "max_tokens": 3000
     });
 
-    let mut last_err = anyhow::anyhow!("Unknown error");
-
-    for attempt in 1..=EVAL_JUDGE_RETRY_COUNT {
-        match client
-            .post("https://integrate.api.nvidia.com/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                let status = resp.status();
-                if status.is_success() {
-                    let json_body: serde_json::Value = resp.json().await?;
-                    let content = json_body["choices"][0]["message"]["content"]
-                        .as_str()
-                        .ok_or_else(|| {
-                            anyhow::anyhow!("Invalid response structure from Nvidia API")
-                        })?;
-
+    if let Ok(resp) = client
+        .post(OLLAMA_GPU_SERVER_URL)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(json_body) = resp.json::<serde_json::Value>().await {
+                if let Some(content) = json_body["choices"][0]["message"]["content"].as_str() {
                     let cleaned = content
                         .trim()
                         .trim_start_matches("```markdown")
                         .trim_start_matches("```")
                         .trim_end_matches("```")
                         .trim();
-
                     return Ok(cleaned.to_string());
-                } else {
-                    let err_text = resp.text().await.unwrap_or_default();
-                    last_err =
-                        anyhow::anyhow!("Nvidia API returned status {}: {}", status, err_text);
                 }
             }
-            Err(e) => {
-                last_err = anyhow::anyhow!("Request to Nvidia API failed: {}", e);
-            }
-        }
-
-        if attempt < EVAL_JUDGE_RETRY_COUNT {
-            println!(
-                "  [LLM Judge] Attempt {} failed ({}). Retrying in 5s...",
-                attempt, last_err
-            );
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     }
 
-    Err(anyhow::anyhow!(
-        "LLM Judge API failed after {} attempts. Last error: {}",
-        EVAL_JUDGE_RETRY_COUNT,
-        last_err
-    ))
+    if !api_key.is_empty() {
+        let fallback_model = if model.contains("gemma") {
+            "google/gemma-2-27b-it"
+        } else {
+            "meta/llama-3.1-70b-instruct"
+        };
+        let fallback_payload = serde_json::json!({
+            "model": fallback_model,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.5,
+            "max_tokens": 3000
+        });
+
+
+        if let Ok(resp) = client
+            .post("https://integrate.api.nvidia.com/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&fallback_payload)
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(json_body) = resp.json::<serde_json::Value>().await {
+                    if let Some(content) = json_body["choices"][0]["message"]["content"].as_str() {
+                        let cleaned = content
+                            .trim()
+                            .trim_start_matches("```markdown")
+                            .trim_start_matches("```")
+                            .trim_end_matches("```")
+                            .trim();
+                        return Ok(cleaned.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!("LLM Judge API call failed on both Ollama GPU server and Nvidia API"))
+}
+
+async fn run_llm_judge_prompt(
+    client: &reqwest::Client,
+    api_key: &str,
+    prompt: &str,
+) -> Result<String> {
+    run_llm_judge_prompt_with_model(client, api_key, "llama3.1:8b", prompt).await
 }
 
 #[tokio::main]
+
 async fn main() -> Result<()> {
     println!("=== Vox Memory Subsystem: Ladder Eval 2 (4-Stage Pipeline & Ingestion) ===");
 
-    let staged_db_path = resolve_path("evals/results/stage_1_compaction_staged.db");
-    let input_db_path = if staged_db_path.exists() {
-        staged_db_path
+    let cli_arg = std::env::args().nth(1);
+    let input_db_path = if let Some(ref db_path) = cli_arg {
+        resolve_path(db_path.trim_start_matches("--db=").trim_start_matches("--db"))
     } else {
-        resolve_path("evals/results/stage_1_compaction.db")
+        let primary = resolve_path("evals/results/stage_1_compaction.db");
+        if primary.exists() {
+            primary
+        } else {
+            resolve_path("evals/results/stage_1_compaction_staged.db")
+        }
     };
     let output_db_path = resolve_path("evals/results/stage_2_pipeline.db");
     let reports_dir = resolve_path("evals/results/reports");
+
 
     if !input_db_path.exists() {
         return Err(anyhow::anyhow!(
             "Input DB at {:?} not found. Please run eval_compaction first.",
             input_db_path
         ));
+    }
+
+    // Flush WAL pages on input DB before copying
+    if let Ok(abs_in) = std::fs::canonicalize(&input_db_path) {
+        if let Some(in_str) = abs_in.to_str() {
+            if let Ok(db_in) = Builder::new_local(in_str).build().await {
+                if let Ok(conn_in) = db_in.connect() {
+                    let _ = conn_in.execute("PRAGMA wal_checkpoint(FULL);", ()).await;
+                }
+            }
+        }
     }
 
     if output_db_path.exists() {
@@ -223,6 +262,7 @@ async fn main() -> Result<()> {
     }
 
     let _ = std::fs::copy(&input_db_path, &output_db_path)?;
+
 
     let abs_db_path = std::fs::canonicalize(&output_db_path)?;
     let db_path_str = abs_db_path
@@ -653,8 +693,9 @@ async fn main() -> Result<()> {
     );
 
     let report_c_path = reports_dir.join("stage3_master_report_c.md");
-    match run_llm_judge_prompt(&client, &api_key, &report_c_prompt).await {
+    match run_llm_judge_prompt_with_model(&client, &api_key, "gemma4:e4b", &report_c_prompt).await {
         Ok(content) => {
+
             std::fs::write(&report_c_path, &content)?;
             println!(
                 "  [Report C] Saved Master Synthesis Report To: {:?}",

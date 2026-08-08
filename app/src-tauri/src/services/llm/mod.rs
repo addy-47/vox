@@ -18,7 +18,9 @@ pub use probe::ActiveProbeEngine;
 pub use providers::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, ProviderKind};
 pub use types::*;
 
-// ─── LLM Model Constants ───────────────────────────────────────────────────
+// ─── LLM Model & Context Constants ───────────────────────────────────────────────────
+pub const CTX_FLOOR_NON_EMBEDDED: u32 = 8_192;
+pub const DEFAULT_CLOUD_MODEL_CTX: u32 = 1_000_000;
 pub const MODEL_DIR_LLM: &str = "llm/llama";
 pub const MODEL_FILE_LLM_GGUF: &str = "llama-3.2-1b-q4_k_m.gguf";
 pub const MODEL_DIR_LLM_GEMMA: &str = "llm/gemma4";

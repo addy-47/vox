@@ -3,6 +3,24 @@ use crate::services::llm::types::{
     ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest, OutputConstraint,
 };
 
+/// Calculates dynamic max compaction output tokens based on context window size.
+/// - Baseline (8192 ctx): 15% ratio (~1228 tokens)
+/// - Small ctx (<=8192): scales up to 30% (e.g. 2048 ctx -> 30% = 614 tokens)
+/// - Large ctx (>8192): scales down toward 10%, capped at 16,384 tokens maximum.
+pub fn calculate_compaction_max_tokens(ctx_size: u32) -> u32 {
+    let ctx = ctx_size as f32;
+    let ratio = if ctx <= 8192.0 {
+        let t = ((ctx - 2048.0) / (8192.0 - 2048.0)).clamp(0.0, 1.0);
+        0.30 - t * (0.30 - 0.15)
+    } else {
+        let t = ((ctx - 8192.0) / (1_000_000.0 - 8192.0)).clamp(0.0, 1.0);
+        0.15 - t * (0.15 - 0.10)
+    };
+
+    let raw = (ctx * ratio) as u32;
+    raw.clamp(256, 16_384)
+}
+
 /// Policy defaults for a given generation purpose.
 #[derive(Debug, Clone)]
 pub struct GenerationDefaults {
@@ -21,8 +39,8 @@ pub struct GenerationPolicy {
 impl GenerationPolicy {
     /// Constructs policy from current `LlmSettings`.
     pub fn from_settings(settings: &LlmSettings) -> Self {
-        // Dynamic compaction budget: 25% of configured context window
-        let compaction_max_tokens = (settings.ctx_size as f32 * 0.25) as u32;
+        let eff_ctx = settings.effective_ctx_size();
+        let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx);
 
         Self {
             conversation: GenerationDefaults {
@@ -63,3 +81,32 @@ impl GenerationPolicy {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::settings::LlmProviderConfig;
+
+    #[test]
+    fn test_dynamic_compaction_scaling() {
+        assert_eq!(calculate_compaction_max_tokens(2048), 614);
+        assert_eq!(calculate_compaction_max_tokens(8192), 1228);
+        assert!(calculate_compaction_max_tokens(1_000_000) <= 16_384);
+    }
+
+    #[test]
+    fn test_policy_compaction_budget_clamped_for_cloud() {
+        let mut settings = LlmSettings::default();
+        settings.ctx_size = 1_000_000;
+        settings.provider = LlmProviderConfig::OpenAiCompat {
+            base_url: "https://api.openai.com".to_string(),
+            model: "gpt-4o".to_string(),
+            api_key: None,
+            provider_name: Some("openai".to_string()),
+        };
+
+        let policy = GenerationPolicy::from_settings(&settings);
+        assert!(policy.compaction.max_output_tokens <= 16_384);
+    }
+}
+

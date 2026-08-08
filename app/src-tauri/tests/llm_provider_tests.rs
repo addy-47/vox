@@ -229,3 +229,97 @@ fn test_embedded_provider_list_models_in_dir() {
     assert_eq!(llama.family, Some("Llama".to_string()));
     assert_eq!(llama.provider_kind, "embedded");
 }
+
+#[test]
+fn test_anthropic_header_injection_no_bearer() {
+    let provider = OpenAiCompatProvider::new(
+        "https://api.anthropic.com",
+        "claude-3-5-sonnet-20241022",
+        Some("test-key-123"),
+        Some("anthropic"),
+    );
+
+    let req = reqwest::Client::new().get("https://api.anthropic.com");
+    let injected = provider.inject_headers(req).build().unwrap();
+
+    let headers = injected.headers();
+    assert_eq!(headers.get("x-api-key").unwrap(), "test-key-123");
+    assert_eq!(headers.get("anthropic-version").unwrap(), "2023-06-01");
+    assert!(
+        headers.get("authorization").is_none(),
+        "Anthropic requests MUST NOT contain Authorization header!"
+    );
+}
+
+#[test]
+fn test_openai_compat_cancellation() {
+    let sse_body = "data: {\"choices\":[{\"delta\":{\"content\":\"Token1\"}}]}\r\n\r\n\
+                    data: {\"choices\":[{\"delta\":{\"content\":\"Token2\"}}]}\r\n\r\n";
+    let url = spawn_mock_server(200, "Content-Type: text/event-stream\r\n".to_string(), sse_body);
+
+    let provider = OpenAiCompatProvider::new(&url, "test-model", None, None);
+    let cancel_flag = Arc::new(AtomicBool::new(true)); // Pre-cancelled
+    let (tx, rx) = mpsc::channel();
+
+    use vox_lib::services::llm::types::{
+        ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest,
+        OutputConstraint,
+    };
+
+    let request = GenerationRequest {
+        input: ConversationInput {
+            messages: vec![ChatMessage {
+                role: Role::User,
+                content: "test".to_string(),
+                timestamp_ms: 0,
+            }],
+        },
+        options: GenerationOptions::default(),
+        output: OutputConstraint::Text,
+        purpose: GenerationPurpose::Conversation,
+    };
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(provider.generate(request, 1, &cancel_flag, &tx))
+        .unwrap();
+
+    let mut cancelled = false;
+    while let Ok(event) = rx.recv_timeout(Duration::from_millis(200)) {
+        if let VoxEvent::Cancelled { turn_id } = event {
+            assert_eq!(turn_id, 1);
+            cancelled = true;
+        }
+    }
+    assert!(cancelled, "Expected VoxEvent::Cancelled event when cancel_flag is set");
+}
+
+#[test]
+fn test_cloud_provider_nvidia_live() {
+    let env_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../temp/.env");
+    if !env_path.exists() {
+        return;
+    }
+
+    let dotenv_content = std::fs::read_to_string(env_path).unwrap_or_default();
+    let api_key = dotenv_content
+        .lines()
+        .find(|l| l.starts_with("NVIDIA_API_KEY="))
+        .and_then(|l| l.split('=').nth(1))
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+
+    if let Some(key) = api_key {
+        let provider = OpenAiCompatProvider::new(
+            "https://integrate.api.nvidia.com/v1",
+            "meta/llama-3.1-8b-instruct",
+            Some(key),
+            Some("nvidia"),
+        );
+
+        assert!(provider.health_check(), "NVIDIA API health check failed");
+    }
+}
+

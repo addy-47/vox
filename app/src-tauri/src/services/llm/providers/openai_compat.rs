@@ -25,7 +25,7 @@ pub struct OpenAiCompatProvider {
     api_key: Option<String>,
     provider_name: Option<String>,
     async_client: reqwest::Client,
-    backend_kind: Arc<std::sync::RwLock<Option<LocalBackendKind>>>,
+    backend_kind: std::sync::OnceLock<LocalBackendKind>,
     capabilities: ProviderCapabilities,
 }
 
@@ -72,11 +72,11 @@ impl OpenAiCompatProvider {
             api_key: api_key.map(|s| s.trim_matches(|c| c == '"' || c == '\'').to_string()),
             provider_name: provider_name.map(|s| s.to_string()),
             async_client,
-            backend_kind: Arc::new(std::sync::RwLock::new(None)),
+            backend_kind: std::sync::OnceLock::new(),
             capabilities: ProviderCapabilities {
                 temperature: Support::Supported,
                 top_p: Support::Supported,
-                top_k: Support::Supported,
+                top_k: Support::Unknown,
                 max_output_tokens: Support::Supported,
                 json_object: Support::Supported,
                 json_schema: Support::Supported,
@@ -86,14 +86,13 @@ impl OpenAiCompatProvider {
         }
     }
 
-    fn inject_headers(&self, mut builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    pub fn inject_headers(&self, mut builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if let Some(ref name) = self.provider_name {
             let name_lower = name.to_lowercase();
             if name_lower == "anthropic" {
                 builder = builder.header("anthropic-version", "2023-06-01");
                 if let Some(ref key) = self.api_key {
                     builder = builder.header("x-api-key", key);
-                    builder = builder.bearer_auth(key);
                 }
                 return builder;
             }
@@ -105,71 +104,62 @@ impl OpenAiCompatProvider {
     }
 
     pub fn detect_backend_kind(&self) -> LocalBackendKind {
-        let cached = {
-            let read_guard = self.backend_kind.read().unwrap();
-            *read_guard
-        };
+        *self.backend_kind.get_or_init(|| {
+            let mut detected = LocalBackendKind::StandardOpenAi;
 
-        if let Some(kind) = cached {
-            return kind;
-        }
-
-        let mut detected = LocalBackendKind::StandardOpenAi;
-
-        // Try to probe Ollama
-        let ollama_url = format!("{}/api/tags", self.base_url);
-        let mut builder = self
-            .async_client
-            .get(&ollama_url)
-            .timeout(Duration::from_secs(2));
-        builder = self.inject_headers(builder);
-
-        let is_ollama = block_on(async {
-            match builder.send().await {
-                Ok(resp) => resp.status().is_success(),
-                Err(_) => false,
-            }
-        });
-
-        if is_ollama {
-            log::info!(
-                "[OpenAiCompat] Detected Ollama native backend at {}",
-                self.base_url
-            );
-            detected = LocalBackendKind::Ollama;
-        } else {
-            // Try to probe LM Studio
-            let lms_url = format!("{}/api/v1/models", self.base_url);
+            // Try to probe Ollama
+            let ollama_url = format!("{}/api/tags", self.base_url);
             let mut builder = self
                 .async_client
-                .get(&lms_url)
+                .get(&ollama_url)
                 .timeout(Duration::from_secs(2));
             builder = self.inject_headers(builder);
 
-            let is_lms = block_on(async {
+            let is_ollama = block_on(async {
                 match builder.send().await {
                     Ok(resp) => resp.status().is_success(),
                     Err(_) => false,
                 }
             });
 
-            if is_lms {
+            if is_ollama {
                 log::info!(
-                    "[OpenAiCompat] Detected LM Studio native backend at {}",
+                    "[OpenAiCompat] Detected Ollama native backend at {}",
                     self.base_url
                 );
-                detected = LocalBackendKind::LmStudio;
+                detected = LocalBackendKind::Ollama;
             } else {
-                log::info!(
-                    "[OpenAiCompat] Fallback to standard OpenAI compatibility at {}",
-                    self.base_url
-                );
-            }
-        }
+                // Try to probe LM Studio
+                let lms_url = format!("{}/v1/models", self.base_url);
+                let mut builder = self
+                    .async_client
+                    .get(&lms_url)
+                    .timeout(Duration::from_secs(2));
+                builder = self.inject_headers(builder);
 
-        let mut write_guard = self.backend_kind.write().unwrap();
-        *write_guard = Some(detected);
-        detected
+                let is_lms = block_on(async {
+                    match builder.send().await {
+                        Ok(resp) => resp.status().is_success(),
+                        Err(_) => false,
+                    }
+                });
+
+                if is_lms {
+                    log::info!(
+                        "[OpenAiCompat] Detected LM Studio native backend at {}",
+                        self.base_url
+                    );
+                    detected = LocalBackendKind::LmStudio;
+                } else {
+                    log::info!(
+                        "[OpenAiCompat] Fallback to standard OpenAI compatibility at {}",
+                        self.base_url
+                    );
+                }
+            }
+
+            detected
+        })
     }
 }
 
@@ -384,10 +374,20 @@ impl LlmProvider for OpenAiCompatProvider {
             let mut builder = self.async_client.post(&url).json(&req_body);
             builder = self.inject_headers(builder);
 
-            let response = builder
-                .send()
-                .await
-                .map_err(|e| LlmError::Transport(e.to_string()))?;
+            let response = tokio::select! {
+                res = builder.send() => {
+                    res.map_err(|e| LlmError::Transport(e.to_string()))?
+                }
+                _ = async {
+                    while !cancel_flag.load(Ordering::Relaxed) {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                } => {
+                    log::info!("[OpenAiCompat] Generation cancelled during connect phase for turn {}", turn_id);
+                    let _ = tx.send(VoxEvent::Cancelled { turn_id });
+                    return Ok(());
+                }
+            };
 
             if !response.status().is_success() {
                 let status = response.status();

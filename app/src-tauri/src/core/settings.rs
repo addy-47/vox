@@ -530,6 +530,20 @@ pub struct LlmSettings {
     pub max_output_tokens: u32,
 }
 
+impl LlmSettings {
+    /// Returns the effective context window token limit based on provider type.
+    /// Embedded llama.cpp uses the explicit user-configured value (e.g. 2048, 4096).
+    /// Non-embedded (Server & Cloud) models enforce a hard floor of 8192 tokens.
+    pub fn effective_ctx_size(&self) -> u32 {
+        match self.provider {
+            LlmProviderConfig::Embedded => self.ctx_size,
+            LlmProviderConfig::OpenAiCompat { .. } => {
+                self.ctx_size.max(crate::services::llm::CTX_FLOOR_NON_EMBEDDED)
+            }
+        }
+    }
+}
+
 impl Default for LlmSettings {
     fn default() -> Self {
         Self {
@@ -859,12 +873,7 @@ impl VoxSettings {
 
         if let Ok(content) = fs::read_to_string(&path) {
             // 1. Try current nested format
-            if let Ok(mut settings) = serde_json::from_str::<Self>(&content) {
-                if let LlmProviderConfig::OpenAiCompat { .. } = settings.llm.provider {
-                    if settings.llm.ctx_size < 8192 {
-                        settings.llm.ctx_size = 8192;
-                    }
-                }
+            if let Ok(settings) = serde_json::from_str::<Self>(&content) {
                 log::info!("[Settings] Loaded configuration from {:?}", path);
                 return settings;
             }
@@ -878,12 +887,7 @@ impl VoxSettings {
                         .unwrap_or(false)
                 {
                     log::warn!("[Settings] Phase 6.0 legacy config detected. Migrating...");
-                    let mut settings = Self::migrate_from_v6_0(legacy);
-                    if let LlmProviderConfig::OpenAiCompat { .. } = settings.llm.provider {
-                        if settings.llm.ctx_size < 8192 {
-                            settings.llm.ctx_size = 8192;
-                        }
-                    }
+                    let settings = Self::migrate_from_v6_0(legacy);
                     return settings;
                 }
             }
@@ -898,12 +902,7 @@ impl VoxSettings {
         }
 
         log::info!("[Settings] No valid settings.json found. Using system defaults.");
-        let mut settings = Self::default();
-        if let LlmProviderConfig::OpenAiCompat { .. } = settings.llm.provider {
-            if settings.llm.ctx_size < 8192 {
-                settings.llm.ctx_size = 8192;
-            }
-        }
+        let settings = Self::default();
         let _ = settings.save();
         settings
     }
