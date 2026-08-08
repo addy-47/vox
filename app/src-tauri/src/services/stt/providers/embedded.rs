@@ -76,31 +76,27 @@ impl SttProvider for EmbeddedSttProvider {
     fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String> {
         let mut inner = self.inner.lock();
 
-        if inner.nemotron_engine.is_some() {
-            inner.stt_audio_buffer.extend_from_slice(chunk);
-
+        if let Some(ref engine) = inner.nemotron_engine {
+            let transcript = engine.transcribe(chunk)?;
+            if !transcript.is_empty() {
+                inner.stitched_transcript = transcript;
+            }
             if is_final {
-                let full_audio = std::mem::take(&mut inner.stt_audio_buffer);
-                let full_transcript = if let Some(ref engine) = inner.nemotron_engine {
-                    engine.transcribe(&full_audio)?
-                } else {
-                    String::new()
-                };
-                inner.stitched_transcript = full_transcript.clone();
-                Ok(full_transcript)
+                let result = std::mem::take(&mut inner.stitched_transcript);
+                inner.stt_audio_buffer.clear();
+                Ok(result)
             } else {
-                // Return accumulated transcript so far during streaming
                 Ok(inner.stitched_transcript.clone())
             }
         } else if let Some(ref engine) = inner.qwen_engine {
             // Qwen3-ASR stitching logic
             let transcript = engine.transcribe(chunk)?;
             if !transcript.is_empty() {
-                inner.stitched_transcript = transcript.clone();
+                inner.stitched_transcript = transcript;
             }
             if is_final {
-                let result = inner.stitched_transcript.clone();
-                inner.stitched_transcript.clear();
+                let result = std::mem::take(&mut inner.stitched_transcript);
+                inner.stt_audio_buffer.clear();
                 Ok(result)
             } else {
                 Ok(inner.stitched_transcript.clone())
