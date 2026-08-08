@@ -3,9 +3,28 @@ trigger: manual
 description: Comprehensive Vox code style guide and engineering standards for Rust (backend) and TypeScript/React (frontend).
 ---
 
-# Vox Code Style Guide & Engineering Standards
+---
+description: Vox Code Style Guide & Engineering Standardsfor with tier-mapping as well
+---
 
 This document contains the durable coding standards for Vox. **Agents doing write operations must read this file before modifying code.**
+
+---
+
+## The Hardware Mapping for Vox 
+
+- Architecture decisons are decided based on feasibility with recommended tiers - hence vox must suport dynamic degrade and upgrade of architecture based on tier
+where Tier 2 is recommended for users
+
+* **Tier 1A: 8GB Pure Local (no gpu):** Working Memory FIFO variation only (Simple buffer to manage context window)
+
+* **Tier 1B: [RECOMMENDED] Pure Local (with gpu):** Working Memory + Personal Memory + Semantic Memory.
+
+* **Tier 2A: [RECOMMENDED/NO-COST] Hybrid Stack ( Remote LLM + Local Audio ):** Working Memory + Episodic + Semantic .
+
+* **Tier 2B: [RECOMMENDED/DEFAULT] Hybrid Stack ( Cloud LLM + Local Audio ):** Working Memory + Episodic + Semantic. 
+
+* **Tier 3: [BEST-PERFORMANCE] Realtime S2S (WebSocket):** Provider-managed Working Memory + Episodic & Semantic (managed via early tool calls) . 
 
 ---
 
@@ -70,10 +89,22 @@ Every evaluation capability suite lives in its own dedicated subdirectory under 
 - **Strict Service Layer Boundary:** Banned raw `@tauri-apps/api` invoke calls or direct fetches inside React components. All IPC/API calls MUST pass through dedicated service modules in `src/services/` (e.g. `pipelineService.ts`, `settingsService.ts`).
 - **Page Responsibility (Layout Only):** Files in `src/pages/` MUST only define visual structure, routing, and layout composition. Heavy business logic, state sync, and data transformations belong in `src/services/`, `src/hooks/`, or `src/store/`.
 - **Modular Component Subdirectories:** `src/shared/components/` must be structured into logical feature/domain subdirectories (e.g., `layout/`, `home/`, `history/`, `settings/`, `monitoring/`, `common/`). Banned flat, uncategorized component directories.
+- **Shared state:** `src/context/` or Zustand `src/store/` for low-frequency global state. Never context for fast-changing animation values — those belong in local state or refs.
+- **Reusable stateful logic:** `src/hooks/` when the same logic appears in 2+ components.
 - **Component Consolidation & Deduplication:** Audit and merge components performing identical or near-identical visual/functional tasks into clean, configurable shared primitives.
 - **Type Safety:** Strict TypeScript. `any` is strictly prohibited — define explicit interfaces/types for all props and service returns.
 - **State Management:** Transient UI state in local component state/refs. Low-frequency app configuration in React Context or Zustand (`src/store/`). Shared stateful logic extracted to custom hooks (`src/hooks/`).
 - **Verification:** Run `pnpm lint` and `pnpm build` after every modification. Zero warnings/errors permitted.
+
+
+### Layout Rules
+
+- Desktop: floating bottom `EdgeNav` capsule, monitoring as popover panel bottom-left.
+- Mobile: monitoring moves to `/monitoring` route with solid background. Nav capsule gets a 4th tab.
+- Viewport transitions are handled — mobile→desktop redirects from `/monitoring` to `/` and relaunches popover. Desktop→mobile closes popover and routes to `/monitoring`. Never break this.
+- Mobile Orb scales to `min(92vw, 85vh)`. Desktop is `min(70vw, 65vh)`. Do not change these without design review.
+
+
 
 ---
 
