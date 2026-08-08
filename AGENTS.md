@@ -58,10 +58,8 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 | Backend Engineer | `.agents/rules/backend-engineer.md` | `app/src-tauri/src/` implementation |
 | Frontend Engineer | `.agents/rules/frontend-engineer.md` | `app/src/` implementation |
 | QA Engineer | `.agents/rules/qa-engineer.md` | Test audit, benchmark validation |
-
-**Subagent reuse rule:** Re-use existing subagent conversation IDs via `send_message`. Do not spawn duplicate subagents per turn.
-
----
+| ML Research Engineer | `.agents/rules/ml-research-engineer.md` | ML model research, evaluation, and fine-tuning dataset curation |
+| Test Engineer | `.agents/rules/test-engineer.md` | Test case design, benchmark validation, and performance analysis |
 
 ---
 

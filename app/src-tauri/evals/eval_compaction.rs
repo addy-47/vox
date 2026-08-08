@@ -156,7 +156,7 @@ async fn extract_facts_via_nvidia_llm(
         "<conversation_history>\n{}\n</conversation_history>\n\n\
          <task>\n\
          Analyze the <conversation_history> above and extract all stated facts into the 6 collections from the <schema>.\n\
-         Follow every rule in <rules>. Absolute Rule: NEVER extract bare entity names or single-word labels (e.g. 'Alex', 'Intolerance'). Every extracted statement MUST be a complete, self-contained declarative sentence.\n\
+         Follow every rule in <rules>\n\
          Output ONLY the JSON object starting with {{ and ending with }}.\n\
          </task>",
         history_text
@@ -213,7 +213,7 @@ async fn run_llm_subbatch_judge_report(
          Write a comprehensive Markdown Evaluation Report auditing compaction performance in this sub-batch across the following 5 mandatory criteria:\n\n\
          1. Fact Quality & Self-Containment Audit (CRITICAL):\n\
             - Audit every extracted fact string. Check if facts are complete, grammatically whole, self-contained declarative statements.\n\
-            - Explicitly flag any LOW-QUALITY EXTRACTIONS, such as bare entity names, single-word labels, or incomplete fragments (e.g. 'Alex', 'Intolerance', 'Fintech', 'Budget').\n\
+            - Explicitly flag any LOW-QUALITY EXTRACTIONS, such as bare entity names, single-word labels, or incomplete fragments.\n\
             - Count exact number of bare-entity/single-word extractions vs self-contained declarative statements.\n\n\
          2. Information Coverage & Detail Density Audit:\n\
             - Compare <extracted_facts> against <raw_dialogue> for Turns {}-{}.\n\
