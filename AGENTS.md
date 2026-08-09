@@ -118,8 +118,11 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
 > 3. **Deep Semantic Audit**: The subagent must act as a mini QA Lead, inspecting raw database rows (`audit_json`, `dedup_match_json`) and verifying output matching our goals rather than just checking exit codes.
 > 4. **HITL User Approval Gate**: After the QA Subagent completes its report for a phase, execution MUST STOP. Present the audit findings to the user and wait for explicit HITL user approval before starting the next evaluation phase.
 
-**Phase 11 Goal:** Produce a 100% evidence-backed, un-truncated diagnostic report and dataset curation specification for `@ml-research-engineer.md` using the multi-dataset GPU judge pipeline.
+### 5.4 Memory Graph UI Page & Pipeline Monitor (`app/src/pages/Memory.tsx`)
 
-
-
-
+- **Interactive Distributed Knowledge Graph**: WebGL/Canvas force-directed graph visualizer powered by `react-force-graph-2d` (`MemoryGraph.tsx`) with transparent background, placing the graph directly on top of the main ambient page background (`AmbientBackground`). Renders real memory facts and relationships dynamically categorized by distinct collection accent colors (`Identity`: Cyan `#00f2fe`, `Profile`: Emerald `#10b981`, `Directives`: Purple `#a855f7`, `Constraints`: Amber `#f59e0b`, `Entities`: Rose `#ef4444`).
+- **Decoupled Search Bar**: Top-center floating glass pill bar (`Search`) with smooth focus expanding animation.
+- **Top-Left Collections Legend**: Compact floating glass card on top-left displaying collection legend filters with glowing status dots.
+- **Floating Node Detail Tooltip**: Contextual floating tooltip card (`MemoryNodeTooltip.tsx`) anchored directly to graph nodes on click, featuring inline fact editing (`editMemoryFact`) and tombstone soft deletion (`deleteMemoryFact`).
+- **Compact Pipeline Monitor HUD**: Ultra-compact glass HUD popover (`PipelineMonitor.tsx`) with `Cpu` floating circular button on bottom-right, featuring stage metrics (`DEDUP`, `EMBED`, `EVAL`, `COMMIT`) and manual consolidation controls (`triggerMemoryConsolidation`).
+- **Rust Backend IPC Handlers**: Registered `get_memory_relations` and `get_memory_queue_status` in `app/src-tauri/src/ipc/memory.rs` and `lib.rs`.

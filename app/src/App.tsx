@@ -10,6 +10,7 @@ import { ErrorBoundary } from "@/shared/components/common";
 // Lazy load pages for performance
 const Home = lazy(() => import("@/pages/Home").then(m => ({ default: m.Home })));
 const History = lazy(() => import("@/pages/History").then(m => ({ default: m.History })));
+const Memory = lazy(() => import("@/pages/Memory").then(m => ({ default: m.Memory })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
 
@@ -94,6 +95,7 @@ const App: React.FC = () => {
             <Route element={<ResponsiveLayout />}>
               <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
               <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
+              <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
               <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
               <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
               <Route path="/wizard" element={<Navigate to="/" replace />} />
