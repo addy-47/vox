@@ -31,7 +31,7 @@ use vox_lib::utils::bench_reporter::BenchReporter;
 )]
 struct Args {
     /// Path to input WAV file (16kHz mono)
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "test-clips/short_en.wav")]
     input: String,
 
     /// System prompt (overrides constants)
@@ -46,15 +46,15 @@ struct Args {
     #[arg(short, long)]
     llm: Option<String>,
 
-    /// STT engine to use: qwen (default) or nemotron
-    #[arg(short, long, default_value = "qwen")]
+    /// STT engine to use: nemotron (default) or qwen
+    #[arg(short, long, default_value = "nemotron")]
     asr: String,
 
     /// Prefix for output run directory (e.g. 'q6' → outputs/q6_run_20260609_...)
     #[arg(short, long)]
     output: Option<String>,
 
-    /// LLM provider: embedded or openai_compat
+    /// LLM provider: embedded (default) or openai_compat
     #[arg(long, default_value = "embedded")]
     llm_provider: String,
 
@@ -159,10 +159,24 @@ fn main() -> anyhow::Result<()> {
             None,
         ))
     } else {
-        let llm_filename = args
-            .llm
-            .clone()
-            .unwrap_or_else(|| "llama/Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string());
+        let llm_filename = if let Some(custom) = args.llm.clone() {
+            custom
+        } else {
+            let candidate_paths = [
+                "gemma4/gemma-4-e2b-q4_k_m.gguf",
+                "gemma4/Gemma-4-E2B-Uncensored-HauhauCS-Aggressive-Q2_K_P.gguf",
+                "LFM2.5-230M-Q4_K_M.gguf",
+                "llama/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+            ];
+            let mut chosen = "gemma4/gemma-4-e2b-q4_k_m.gguf".to_string();
+            for cand in &candidate_paths {
+                if vox_lib::utils::paths::model_dir("llm").join(cand).exists() {
+                    chosen = cand.to_string();
+                    break;
+                }
+            }
+            chosen
+        };
         println!(
             "\x1b[32m[Bench]\x1b[0m Loading Embedded LLM ({})...",
             llm_filename
@@ -186,18 +200,27 @@ fn main() -> anyhow::Result<()> {
     let warmup_cancel = Arc::new(AtomicBool::new(false));
     let (warmup_tx, _) = channel();
     let warmup_start = std::time::Instant::now();
-    let warmup_ctx = vox_lib::services::memory::ConversationContext {
-        messages: vec![vox_lib::services::memory::ChatMessage {
-            role: vox_lib::services::memory::Role::System,
-            content: system_prompt.clone(),
-            timestamp_ms: 0,
-        }],
-        token_count: 0,
-        kv_cache_index: 0,
-    };
-    llm_engine
-        .generate(&warmup_ctx, 0, &warmup_cancel, &warmup_tx)
-        .expect("Failed to warm up LLM provider");
+
+    let bench_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime for bench");
+
+    let warmup_policy = vox_lib::services::llm::policy::GenerationPolicy::from_settings(
+        &vox_lib::core::settings::LlmSettings::default(),
+    );
+    let warmup_req = warmup_policy.build_request(
+        vox_lib::services::llm::types::GenerationPurpose::Conversation,
+        vox_lib::services::llm::types::ConversationInput {
+            messages: vec![vox_lib::services::memory::ChatMessage {
+                role: vox_lib::services::memory::Role::System,
+                content: system_prompt.clone(),
+                timestamp_ms: 0,
+            }],
+        },
+    );
+
+    let _ = bench_rt.block_on(llm_engine.generate(warmup_req, 0, &warmup_cancel, &warmup_tx));
     println!(
         "\x1b[32m[Bench]\x1b[0m LLM provider warmed up in {:?}",
         warmup_start.elapsed()
@@ -308,27 +331,36 @@ fn main() -> anyhow::Result<()> {
     let llm_cancel = Arc::clone(&cancel_flag);
     let llm_handle = std::thread::spawn(move || {
         let engine = llm_engine; // Move initialized engine
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create tokio runtime for LLM bench worker");
+
         while let Ok(cmd) = llm_rx.recv() {
             match cmd {
                 BenchCommand::Llm(text, prompt) => {
                     println!("\x1b[34m[LLM]\x1b[0m Starting generation for: \"{}\"", text);
-                    let ctx = vox_lib::services::memory::ConversationContext {
-                        messages: vec![
-                            vox_lib::services::memory::ChatMessage {
-                                role: vox_lib::services::memory::Role::System,
-                                content: prompt,
-                                timestamp_ms: 0,
-                            },
-                            vox_lib::services::memory::ChatMessage {
-                                role: vox_lib::services::memory::Role::User,
-                                content: text,
-                                timestamp_ms: 0,
-                            },
-                        ],
-                        token_count: 0,
-                        kv_cache_index: 0,
-                    };
-                    let _ = engine.generate(&ctx, 1, &llm_cancel, &llm_event_tx);
+                    let policy = vox_lib::services::llm::policy::GenerationPolicy::from_settings(
+                        &vox_lib::core::settings::LlmSettings::default(),
+                    );
+                    let req = policy.build_request(
+                        vox_lib::services::llm::types::GenerationPurpose::Conversation,
+                        vox_lib::services::llm::types::ConversationInput {
+                            messages: vec![
+                                vox_lib::services::memory::ChatMessage {
+                                    role: vox_lib::services::memory::Role::System,
+                                    content: prompt,
+                                    timestamp_ms: 0,
+                                },
+                                vox_lib::services::memory::ChatMessage {
+                                    role: vox_lib::services::memory::Role::User,
+                                    content: text,
+                                    timestamp_ms: 0,
+                                },
+                            ],
+                        },
+                    );
+                    let _ = rt.block_on(engine.generate(req, 1, &llm_cancel, &llm_event_tx));
                 }
                 BenchCommand::Shutdown => break,
                 _ => {}
@@ -359,11 +391,53 @@ fn main() -> anyhow::Result<()> {
     });
 
     // 4. Start Streaming Ingestion (Production simulation)
-    let mut reader = hound::WavReader::open(&args.input)?;
-    let all_samples: Vec<f32> = reader
-        .samples::<i16>()
-        .map(|s| s.unwrap() as f32 / 32768.0)
-        .collect();
+    let input_path = std::path::Path::new(&args.input);
+    let resolved_input = if input_path.exists() {
+        input_path.to_path_buf()
+    } else {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(&args.input)
+    };
+
+    let mut reader = hound::WavReader::open(&resolved_input)
+        .unwrap_or_else(|e| panic!("Failed to open WAV file {:?}: {}", resolved_input, e));
+    let spec = reader.spec();
+    println!(
+        "\x1b[32m[Bench]\x1b[0m Ingesting WAV {:?} ({} channels, {} Hz, {:?})...",
+        resolved_input, spec.channels, spec.sample_rate, spec.sample_format
+    );
+
+    let raw_samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => reader.samples::<f32>().filter_map(|s| s.ok()).collect(),
+        hound::SampleFormat::Int => match spec.bits_per_sample {
+            16 => reader
+                .samples::<i16>()
+                .filter_map(|s| s.ok())
+                .map(|s| s as f32 / 32768.0)
+                .collect(),
+            32 => reader
+                .samples::<i32>()
+                .filter_map(|s| s.ok())
+                .map(|s| s as f32 / 2147483648.0)
+                .collect(),
+            _ => {
+                let max_val = (2u64.pow(spec.bits_per_sample as u32) / 2 - 1) as f64;
+                reader
+                    .samples::<i32>()
+                    .filter_map(|s| s.ok())
+                    .map(|s| (s as f64 / max_val) as f32)
+                    .collect()
+            }
+        },
+    };
+
+    let all_samples: Vec<f32> = if spec.channels > 1 {
+        raw_samples
+            .chunks(spec.channels as usize)
+            .map(|chunk| chunk.iter().sum::<f32>() / chunk.len() as f32)
+            .collect()
+    } else {
+        raw_samples
+    };
 
     let vad_path = vox_lib::utils::paths::model_dir("vad").join("ten_vad.onnx");
     let mut vad = VadEngine::new(&vad_path, 0.5).expect("Failed to load VAD");
@@ -372,6 +446,13 @@ fn main() -> anyhow::Result<()> {
     let mut turn_id = 0;
 
     let input_duration = all_samples.len() as f64 / 16000.0;
+    let max_amp = all_samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    println!(
+        "\x1b[32m[Bench]\x1b[0m Loaded {} audio samples ({:.2}s duration). Max amplitude: {:.4}",
+        all_samples.len(),
+        input_duration,
+        max_amp
+    );
 
     // Spawn memory tracker for PEAK RSS (total process)
     let mem_cancel = Arc::clone(&cancel_flag);
@@ -432,8 +513,8 @@ fn main() -> anyhow::Result<()> {
     let mut first_token_time: Option<std::time::Instant> = None;
 
     while !llm_done || tts_finished_count < tts_started_count {
-        if let Ok(event) = event_rx.recv_timeout(Duration::from_secs(120)) {
-            match event {
+        match event_rx.recv_timeout(Duration::from_secs(120)) {
+            Ok(event) => match event {
                 VoxEvent::TranscriptPartial { text, .. } => {
                     println!("\x1b[30m[STT]\x1b[0m Partial: \"{}\"", text);
                 }
@@ -538,9 +619,11 @@ fn main() -> anyhow::Result<()> {
                     println!("\x1b[31m[Pipeline Error]\x1b[0m {}", message);
                 }
                 _ => {}
+            },
+            Err(e) => {
+                println!("\x1b[31m[Bench Event Loop]\x1b[0m recv_timeout error: {:?}", e);
+                break;
             }
-        } else {
-            break;
         }
     }
 

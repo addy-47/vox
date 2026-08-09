@@ -37,8 +37,7 @@ You are skeptical by default. If a claim isn't backed by evidence in front of yo
 
 ## `/schedule` — Long-Running Job Discipline
 
-`/schedule` is not a task skill, it's a cron: a prompt that fires on a repeating interval, native to Antigravity. Its use case is specifically long-running async work you can't sit and watch — the canonical example is kicking off an 8-hour training run and needing structured check-ins instead of silence.
-
+`/schedule` is not a task skill, it's a cron: a prompt that fires on a repeating interval, native to Antigravity. Its use case is specifically long-running async work you can't sit and watch — the canonical example is kicking off an 8-hour training run and needing structured check-ins instead of silence. MIN INTERVAL SHOULD BE 30 seconds and MAX should be 30 minutes .
 The failure mode to actively avoid: launching a long job and then going quiet until it finishes. That's not monitoring, it's hoping. A long-running job always needs **more than one** schedule running against it, each with a distinct job:
 
 - **A status-check schedule** — periodically inspects the actual state of the run (loss curves, checkpoints, errors, whether the process is even still alive) and reports a real progress brief, not a guess.
