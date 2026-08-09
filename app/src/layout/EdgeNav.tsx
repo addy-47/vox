@@ -33,7 +33,7 @@ export const EdgeNav: React.FC = () => {
               />
               
               {/* Tooltip */}
-              <span className="absolute bottom-14 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg">
+              <span className="absolute bottom-14 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[12px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg">
                 {item.label}
               </span>
 
@@ -65,7 +65,7 @@ export const EdgeNav: React.FC = () => {
               className={cn("transition-transform duration-500", !isActive && "group-hover:scale-110")}
             />
             {/* Tooltip */}
-            <span className="absolute bottom-14 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg">
+            <span className="absolute bottom-14 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[12px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg">
               Monitor
             </span>
             {/* Active Indicator dot */}

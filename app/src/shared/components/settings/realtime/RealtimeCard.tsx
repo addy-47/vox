@@ -77,7 +77,7 @@ const PipelineFlow = ({
           </div>
           <span
             className={cn(
-              "text-[8px] font-bold uppercase transition-colors",
+              "text-[9px] font-bold uppercase transition-colors",
               active
                 ? "text-[rgb(var(--accent))]/80"
                 : "text-[rgb(var(--foreground-muted))]/40",
@@ -167,7 +167,7 @@ const PipelineFlow = ({
           </div>
           <span
             className={cn(
-              "text-[8px] font-bold uppercase transition-colors",
+              "text-[9px] font-bold uppercase transition-colors",
               active
                 ? "text-[rgb(var(--accent))]"
                 : "text-[rgb(var(--foreground-muted))]/40",
@@ -257,7 +257,7 @@ const PipelineFlow = ({
           </div>
           <span
             className={cn(
-              "text-[8px] font-bold uppercase transition-colors",
+              "text-[9px] font-bold uppercase transition-colors",
               active
                 ? "text-[rgb(var(--accent))]/80"
                 : "text-[rgb(var(--foreground-muted))]/40",
@@ -271,7 +271,7 @@ const PipelineFlow = ({
       {/* Provider label */}
       {active && (
         <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2">
-          <span className="text-[7px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/25 uppercase">
+          <span className="text-[9px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/25 uppercase">
             {providerName} · duplex
           </span>
         </div>
@@ -314,7 +314,7 @@ function Input({
       )}
     >
       {label && (
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 block leading-none">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 block leading-none">
           {label}
         </span>
       )}
@@ -325,7 +325,7 @@ function Input({
         placeholder={placeholder}
         disabled={disabled}
         className={cn(
-          "w-full bg-transparent border-none outline-none text-[12px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25",
+          "w-full bg-transparent border-none outline-none text-[13px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25",
           disabled ? "cursor-not-allowed" : "",
         )}
       />
@@ -353,11 +353,11 @@ function TemperatureSlider({
     >
       <div className="flex items-center justify-between">
         {label && (
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 leading-none">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 leading-none">
             {label}
           </span>
         )}
-        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] leading-none">
+        <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] leading-none">
           {value.toFixed(2)}
         </span>
       </div>
@@ -404,12 +404,12 @@ function ToggleRow({
       )}
     >
       <div className="flex flex-col gap-0.5">
-        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 text-[rgb(var(--foreground))]/90">
+        <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 text-[rgb(var(--foreground))]/90">
           {icon}
           {label}
         </span>
         {sub && (
-          <span className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-tight">
+          <span className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-tight">
             {sub}
           </span>
         )}
@@ -519,7 +519,7 @@ function VoiceCarousel({
       )}
     >
       {/* Voice Title */}
-      <span className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 block leading-none">
+      <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 block leading-none">
         Voice
       </span>
 
@@ -538,7 +538,7 @@ function VoiceCarousel({
         <div className="flex-1 text-center min-w-0">
           <span
             className={cn(
-              "text-[14px] font-black tracking-wide block truncate text-[rgb(var(--foreground))]",
+              "text-[15px] font-black tracking-wide block truncate text-[rgb(var(--foreground))]",
             )}
           >
             {currentVoice}
@@ -546,7 +546,7 @@ function VoiceCarousel({
           {info && (
             <span
               className={cn(
-                "text-[10px] block leading-normal mt-0.5 truncate text-[rgb(var(--foreground-muted))]/70",
+                "text-[11px] block leading-normal mt-0.5 truncate text-[rgb(var(--foreground-muted))]/70",
               )}
             >
               {info.desc}
@@ -762,7 +762,7 @@ export const RealtimeCard = memo(
     return (
       <div
         className={cn(
-          "w-full h-auto flex flex-col text-[13px] gap-3 leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
+          "w-full h-auto flex flex-col text-[14px] gap-3 leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
           layoutMode === "small"
             ? "bg-transparent p-0"
             : cn(
@@ -778,11 +778,11 @@ export const RealtimeCard = memo(
           <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <Cpu className="text-[rgb(var(--accent))]" size={16} />
-              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+              <span className="text-[12px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
                 Realtime Hub
               </span>
             </div>
-            <span className="text-[10px] font-bold uppercase text-[rgb(var(--foreground-muted))]/60">
+            <span className="text-[11px] font-bold uppercase text-[rgb(var(--foreground-muted))]/60">
               v0.8.6
             </span>
           </div>
@@ -798,11 +798,11 @@ export const RealtimeCard = memo(
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[rgba(var(--border),0.06)] shrink-0">
           <div className="flex-1 flex items-center gap-2 min-w-0">
             <Globe size={12} className="text-[rgb(var(--accent))] shrink-0" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 truncate">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 truncate">
               {providerDisplayName(providerId)}
             </span>
           </div>
-          <span className="text-[9px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-full shrink-0 border border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))]">
+          <span className="text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-full shrink-0 border border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))]">
             Duplex
           </span>
         </div>

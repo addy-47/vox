@@ -35,16 +35,18 @@ export const SliderField: React.FC<SliderFieldProps> = ({
     ? `${value} ${unit}`
     : `${value}`;
 
+  const pct = Math.min(100, Math.max(0, ((value - min) / (max - min || 1)) * 100));
+
   return (
     <div className={cn("space-y-1.5 w-full", className)}>
       <div className="flex justify-between items-center">
         <div className="flex flex-col">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 flex items-center gap-1.5">
+          <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 flex items-center gap-1.5">
             {Icon && <Icon size={12} className="text-[rgb(var(--accent))]" />}
             {label}
           </span>
           {sublabel && (
-            <span className="text-[10px] text-[rgb(var(--foreground-muted))]/55">
+            <span className="text-[11px] text-[rgb(var(--foreground-muted))]/55">
               {sublabel}
             </span>
           )}
@@ -60,7 +62,12 @@ export const SliderField: React.FC<SliderFieldProps> = ({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full mt-1 cursor-pointer accent-[rgb(var(--accent))]"
+        style={{
+          background: `linear-gradient(to right, rgba(var(--accent), 0.85) ${pct}%, rgba(var(--foreground), 0.12) ${pct}%)`,
+          height: "4px",
+          borderRadius: "9999px",
+        }}
+        className="w-full mt-1 cursor-pointer"
       />
     </div>
   );

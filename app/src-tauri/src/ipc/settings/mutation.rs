@@ -77,10 +77,20 @@ pub async fn update_setting(
         }
 
         if !enabled {
-            // Disable Tray: Hide window and check if we can stop engine
+            // Disable Tray: Revert interaction owner to MainWindow, hide window, and evaluate engine offload
             log::info!(
-                "[Settings] Disabling Tray HUD: Hiding window and evaluating engine offload..."
+                "[Settings] Disabling Tray HUD: Reverting owner to MainWindow, hiding window, and evaluating engine offload..."
             );
+            state.owner.store(
+                crate::core::state::InteractionOwner::MainWindow as u32,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            if let Some(engine) = state.engine.lock().await.as_ref() {
+                let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(
+                    crate::core::state::InteractionOwner::MainWindow,
+                ));
+            }
+
             if let Some(tray_win) = app.get_webview_window("tray") {
                 let _ = tray_win.hide();
             }
@@ -354,6 +364,9 @@ pub(crate) fn apply_setting_mutation(
             let prov: crate::core::settings::LlmProviderConfig =
                 serde_json::from_value(value.clone())
                     .map_err(|e| format!("Invalid provider: {}", e))?;
+            if settings.llm.provider == prov {
+                return Ok(false);
+            }
             if let crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } = prov {
                 if settings.llm.ctx_size < 8192 {
                     settings.llm.ctx_size = 8192;
@@ -407,18 +420,6 @@ pub(crate) fn apply_setting_mutation(
         ("persistence", "private_mode") => {
             settings.persistence.private_mode =
                 value.as_bool().ok_or("private_mode must be a boolean")?;
-        }
-        ("persistence", "max_sessions") => {
-            settings.persistence.max_sessions = value
-                .as_u64()
-                .ok_or("max_sessions must be a positive integer")?
-                as u32;
-        }
-        ("persistence", "retention_days") => {
-            settings.persistence.retention_days = value
-                .as_u64()
-                .ok_or("retention_days must be a positive integer")?
-                as u32;
         }
         ("assistant", "modular_prompt") => {
             settings.assistant.modular_prompt = value

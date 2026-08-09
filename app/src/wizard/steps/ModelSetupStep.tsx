@@ -237,12 +237,12 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                 description="Customize your local AI stack. Mandatory core ensures functional interaction, while optional layers unlock deep reasoning."
                 rightContent={
                     <div className="flex flex-col items-end">
-                        <span className="text-[13px] font-bold text-white/80  tracking-tight mb-1">
+                        <span className="text-[14px] font-bold text-white/80  tracking-tight mb-1">
                             {installPath}
                         </span>
                         <div className="flex items-center gap-2">
                             <div className="h-1.5 w-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" />
-                            <span className="text-[12px] font-black text-[rgb(var(--accent))]  tracking-widest">
+                            <span className="text-[13px] font-black text-[rgb(var(--accent))]  tracking-widest">
                                 {formatSize(totalSize)} Total
                             </span>
                         </div>
@@ -256,7 +256,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     <button 
                         type="button"
                         onClick={() => window.location.reload()} 
-                        className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-[10px] font-bold uppercase tracking-wider transition-all"
+                        className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-[11px] font-bold uppercase tracking-wider transition-all"
                     >
                         Retry Load
                     </button>
@@ -286,7 +286,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
 
             <div className="mt-8 pt-8 border-t border-white/10">
                 <div className="flex gap-4">
-                    <button onClick={onBack} className="px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors">
+                    <button onClick={onBack} className="px-8 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors">
                         Back
                     </button>
                     <button 
@@ -295,7 +295,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                         className="group relative flex-1 py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
+                        <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[12px]">
                             {isFetching ? 'Fetching Catalog...' : 'Begin Synchronization'}
                             <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />
                         </span>
@@ -344,13 +344,13 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                                         {cat.icon}
                                     </div>
                                     <div className="flex flex-col">
-                                        <span className="text-[11px] font-black text-white uppercase tracking-wider">{cat.label}</span>
-                                        <span className="text-[11px] text-[rgb(var(--accent))]/60 font-bold uppercase tracking-tighter">
+                                        <span className="text-[12px] font-black text-white uppercase tracking-wider">{cat.label}</span>
+                                        <span className="text-[12px] text-[rgb(var(--accent))]/60 font-bold uppercase tracking-tighter">
                                             {activeStep}
                                         </span>
                                     </div>
                                 </div>
-                                <span className="text-[11px] font-mono text-white/60">
+                                <span className="text-[12px] font-mono text-white/60">
                                     {Math.round(groupProgress)}%
                                 </span>
                             </div>

@@ -77,7 +77,7 @@ export const VadWorkspace = memo(
         ) : (
           <div className="space-y-4 p-1">
             <div className="space-y-2">
-              <span className="text-[12px] text-[rgb(var(--foreground))] font-bold block">
+              <span className="text-[13px] text-[rgb(var(--foreground))] font-bold block">
                 Silence Threshold
               </span>
               <div className="flex gap-1">
@@ -92,7 +92,7 @@ export const VadWorkspace = memo(
                     key={value}
                     onClick={() => updateDraft("vad", "threshold", value)}
                     className={cn(
-                      "flex-1 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer",
+                      "flex-1 py-1.5 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer",
                       Math.abs(draftSettings.vad.threshold - value) < 0.01
                         ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                         : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"

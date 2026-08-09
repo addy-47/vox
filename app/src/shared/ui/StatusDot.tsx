@@ -69,7 +69,7 @@ export const StatusDot: React.FC<StatusDotProps> = ({
         <span className={cn("rounded-full transition-colors", getStatusColor().split(" ")[0], getSizeClass())} />
       </span>
       {label && (
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/80 leading-none">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/80 leading-none">
           {label}
         </span>
       )}

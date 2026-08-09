@@ -1,7 +1,8 @@
 import { useState, useEffect, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { Sliders } from "lucide-react";
+import { Sliders, Eye, EyeOff, Activity, Radio } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { SegmentedControl, ToggleTile } from "@/shared/ui";
 import { TriggerModeCard } from "./TriggerModeCard";
 import { PipelineModeCard } from "./PipelineModeCard";
 import { CategorySelector } from "./CategorySelector";
@@ -12,18 +13,27 @@ interface InteractionCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
+const VIEW_OPTIONS = [
+  { id: "main" as const, label: "Main" },
+  { id: "tray" as const, label: "Tray" },
+];
+
 export const InteractionCard = memo(
   ({ layoutMode = "full-max" }: InteractionCardProps) => {
     const settings = useSettingsStore((s) => s.settings);
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
 
+    const [activeView, setActiveView] = useState<"main" | "tray">("main");
     const [activeCategory, setActiveCategory] = useState<"STT" | "LLM" | "TTS">("LLM");
     const [sttPillOverride, setSttPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
     const [ttsPillOverride, setTtsPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
 
     if (!draftSettings || !settings) return null;
-    const { interaction, llm } = draftSettings;
+    const { interaction, llm, ui } = draftSettings;
+
+    const trayEnabled = ui.tray_enabled ?? true;
+    const trayMode = interaction.tray_mode ?? "Passive";
 
     const currentProvider = llm.provider || { kind: "embedded" };
     const isCloudUrl = checkIfCloudUrl(currentProvider.base_url || "");
@@ -78,7 +88,8 @@ export const InteractionCard = memo(
 
     const handleLlmPillChange = (value: string) => {
       if (value === "local") {
-        updateDraft("llm", "provider", { kind: "embedded" });
+        const savedModel = settings.llm.provider.kind === "embedded" ? settings.llm.provider.model : "";
+        updateDraft("llm", "provider", { kind: "embedded", model: savedModel });
       } else if (value === "remote") {
         const savedRemote =
           settings.llm.provider.kind === "open_ai_compat" &&
@@ -140,7 +151,7 @@ export const InteractionCard = memo(
     return (
       <div
         className={cn(
-          "w-full flex flex-col text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none justify-between",
+          "w-full flex flex-col text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none justify-between",
           layoutMode === "small"
             ? "bg-transparent p-0 h-auto"
             : cn(
@@ -156,26 +167,60 @@ export const InteractionCard = memo(
           <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
             <div className="flex items-center gap-2">
               <Sliders className="text-[rgb(var(--accent))]" size={18} />
-              <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+              <span className="text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
                 Interaction Console
               </span>
             </div>
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40">
-              v0.8.6
-            </span>
+            {/* Top Right Main / Tray Switcher */}
+            <SegmentedControl
+              options={VIEW_OPTIONS}
+              value={activeView}
+              onChange={setActiveView}
+              size="sm"
+            />
           </div>
         )}
 
         <div className="flex flex-col gap-3 flex-1">
-          {/* Core Controls Dashboard Grid (2 Card Subcomponents) */}
+          {/* Core Controls Dashboard Grid */}
           <div
             className={cn(
               "grid gap-2 shrink-0",
               layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
             )}
           >
-            <TriggerModeCard layoutMode={layoutMode} />
-            <PipelineModeCard layoutMode={layoutMode} />
+            {activeView === "main" ? (
+              <>
+                <TriggerModeCard layoutMode={layoutMode} />
+                <PipelineModeCard layoutMode={layoutMode} />
+              </>
+            ) : (
+              <>
+                <ToggleTile
+                  title="HUD Window"
+                  active={trayEnabled}
+                  activeLabel="Enabled"
+                  inactiveLabel="Disabled"
+                  activeSublabel="Overlay Active"
+                  inactiveSublabel="Background Run"
+                  icon={trayEnabled ? Eye : EyeOff}
+                  onToggle={() => updateDraft("ui", "tray_enabled", !trayEnabled)}
+                  layoutMode={layoutMode}
+                />
+
+                <ToggleTile
+                  title="Tray Mode"
+                  active={trayMode === "Passive"}
+                  activeLabel={trayMode === "Passive" ? "Continuous" : "Push-To-Talk"}
+                  inactiveLabel="Push-To-Talk"
+                  activeSublabel={trayMode === "Passive" ? "Passive Sense" : "Manual Trigger"}
+                  inactiveSublabel="Manual Trigger"
+                  icon={trayMode === "Passive" ? Activity : Radio}
+                  onToggle={() => updateDraft("interaction", "tray_mode", trayMode === "Passive" ? "PTT" : "Passive")}
+                  layoutMode={layoutMode}
+                />
+              </>
+            )}
           </div>
 
           {/* Category & Provider Selector Subcomponent */}
