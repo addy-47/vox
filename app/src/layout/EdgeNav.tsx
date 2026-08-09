@@ -1,11 +1,12 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Settings, Monitor, Activity, Clock } from "lucide-react";
+import { Settings, Monitor, Activity, Clock, Database } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
 const navItems = [
   { icon: Monitor, label: "Home", path: "/" },
   { icon: Clock, label: "History", path: "/history" },
+  { icon: Database, label: "Memory", path: "/memory" },
   { icon: Settings, label: "System", path: "/settings" },
 ];
 

@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-The Vox v7 memory subsystem is a database-backed, 4-stage pipeline that transforms raw LLM-extracted facts into active, graph-linked memory records in Turso (SQLite). A pre-retrieval scope classifier (`query-sieve-rs`) prunes irrelevant collections before vector search, and a 4-step dynamic waterfall budgets token usage at retrieval time.
+The Vox v7 memory subsystem is a database-backed, 4-stage pipeline that transforms raw LLM-extracted facts into active, graph-linked memory records in Turso (SQLite). A pre-retrieval scope classifier (`query-sieve-rs`) prunes irrelevant collections before vector search, and a 4-step dynamic waterfall budgets token usage at retrieval time. A full-screen interactive 2D Force-Directed Cognitive Memory Graph (`Memory.tsx`) visualizes 1,100+ memory nodes, 250+ inter-fact graph edges, and real-time background pipeline ingestion monitoring.
 
 ---
 

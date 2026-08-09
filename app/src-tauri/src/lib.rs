@@ -517,6 +517,8 @@ pub fn run() {
             crate::ipc::memory::user_edit_memory,
             crate::ipc::memory::user_delete_memory,
             crate::ipc::memory::resolve_memory_conflict,
+            crate::ipc::memory::get_memory_relations,
+            crate::ipc::memory::get_memory_queue_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
