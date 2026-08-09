@@ -8,7 +8,6 @@
 //! Default: 1000 vectors, 384-dim (MiniLM-L12 — matches production)
 
 use anyhow::Result;
-use std::path::PathBuf;
 use std::time::Instant;
 use turso::{Builder, Connection};
 
@@ -60,7 +59,7 @@ fn random_unit_vector(rng: &mut XorShift64, dim: usize) -> Vec<f32> {
     v
 }
 
-async fn setup_db(db_path: &PathBuf, dim: usize) -> Result<Connection> {
+async fn setup_db(db_path: &std::path::Path, dim: usize) -> Result<Connection> {
     let path_str = db_path.to_string_lossy();
     let db = Builder::new_local(&path_str)
         .experimental_index_method(true)
@@ -165,7 +164,7 @@ async fn main() -> Result<()> {
         )
         .await?;
     let mut warm_count = 0;
-    while let Some(_) = warm_rows.next().await? {
+    while warm_rows.next().await?.is_some() {
         warm_count += 1;
     }
     let _ = conn

@@ -62,6 +62,7 @@ pub struct PipelineOrchestrator {
 }
 
 impl PipelineOrchestrator {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         cancel_flag: Arc<AtomicBool>,
         is_paused: Arc<AtomicBool>,

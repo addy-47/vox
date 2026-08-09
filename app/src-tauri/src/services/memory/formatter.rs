@@ -1,5 +1,5 @@
-/// Pure XML Prompt Context Tree Formatter & Relative Timestamp Helper.
-/// Formats retrieved personal context into standard <user_profile> structure with zero fact_id leaks.
+//! Pure XML Prompt Context Tree Formatter & Relative Timestamp Helper.
+//! Formats retrieved personal context into standard <user_profile> structure with zero fact_id leaks.
 
 /// Formats a millisecond epoch timestamp as a human-readable relative time label.
 pub fn format_relative_timestamp(created_at_ms: i64) -> String {
@@ -40,6 +40,7 @@ pub fn format_relative_timestamp(created_at_ms: i64) -> String {
 }
 
 /// Assembles memory section blocks into clean <user_profile> XML string.
+#[allow(clippy::too_many_arguments)]
 pub fn format_user_profile_context(
     manifest_header: &str,
     conflict_block: &str,

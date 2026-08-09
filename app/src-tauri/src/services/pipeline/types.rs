@@ -76,13 +76,10 @@ pub(crate) fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> 
 // ─── Pipeline Orchestrator State ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum PipelineState {
+    #[default]
     Cold,
     Warm,
 }
 
-impl Default for PipelineState {
-    fn default() -> Self {
-        PipelineState::Cold
-    }
-}

@@ -98,7 +98,7 @@ pub async fn list_voices() -> Result<Vec<VoiceEntryDto>, String> {
 /// 1. Validate WAV (≥5s duration)
 /// 2. Generate UUID, create `~/.vox/voices/{uuid}/` dir
 /// 3. Copy source to `~/.vox/voices/{uuid}/source.wav`
-/// 4. Insert DB row
+///
 /// Decodes any supported audio format (MP3, FLAC, M4A, WAV, etc.) to a standard mono f32 24kHz WAV file.
 /// If duration exceeds 30.0 seconds, it truncates the input audio.
 fn convert_and_validate_audio(src_path: &str, dest_path: &std::path::Path) -> Result<(), String> {

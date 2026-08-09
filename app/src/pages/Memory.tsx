@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Search, X, Cpu } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AmbientBackground } from "@/shared/components/common";
-import { MemoryGraph, COLLECTION_COLORS } from "@/shared/components/memory/MemoryGraph";
+import { MemoryGraph } from "@/shared/components/memory/MemoryGraph";
+import { MemoryLegendCard } from "@/shared/components/memory/MemoryLegendCard";
 import { MemoryNodeTooltip } from "@/shared/components/memory/MemoryNodeTooltip";
 import { PipelineMonitorPopover } from "@/shared/components/memory/PipelineMonitor";
 import {
@@ -15,9 +16,6 @@ import {
 } from "@/services/memoryService";
 import { cn } from "@/shared/lib/utils";
 
-const COLLECTIONS = ["all", "Identity", "Profile", "Directives", "Constraints", "Entities"] as const;
-type CollectionFilter = typeof COLLECTIONS[number];
-
 export const Memory: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerBtnRef = useRef<HTMLButtonElement>(null);
@@ -28,7 +26,8 @@ export const Memory: React.FC = () => {
   const [queueSummary, setQueueSummary] = useState<MemoryQueueSummary | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCollection, setSelectedCollection] = useState<CollectionFilter>("all");
+  const [selectedCollection, setSelectedCollection] = useState<string>("all");
+  const [selectedRelation, setSelectedRelation] = useState<string>("all");
   const [selectedFact, setSelectedFact] = useState<MemoryFactEntry | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [pipelineOpen, setPipelineOpen] = useState(false);
@@ -75,7 +74,6 @@ export const Memory: React.FC = () => {
     }
   }, []);
 
-  const activeCount = facts.filter((f) => !f.is_superseded).length;
   const totalPending = queueSummary
     ? (queueSummary.staged_pending ?? 0) +
       (queueSummary.dedup_pass ?? 0) +
@@ -85,7 +83,7 @@ export const Memory: React.FC = () => {
 
   return (
     <div className="flex-1 relative overflow-hidden select-none w-full h-full bg-[rgb(var(--background))]">
-      {/* Reactive ambient background effect — preserved on main page */}
+      {/* Ambient background effect directly on page */}
       <AmbientBackground mood="calm" originX="50%" originY="50%" />
 
       {/* Main graph canvas directly in main div on top of background */}
@@ -98,6 +96,7 @@ export const Memory: React.FC = () => {
             height={dims.h}
             searchQuery={searchQuery}
             selectedCollection={selectedCollection}
+            selectedRelation={selectedRelation}
             onSelectFact={(fact, pos) => handleSelectFact(fact, pos)}
             selectedFactId={selectedFact?.id ?? null}
           />
@@ -131,49 +130,21 @@ export const Memory: React.FC = () => {
         </div>
       </div>
 
-      {/* Top-Left: Decoupled Small Legend Card */}
+      {/* Top-Left: Two-Column Collections & Relations Legend Card */}
       <div className="absolute top-4 left-4 z-20 pointer-events-auto">
-        <div className="glass-card p-3 rounded-2xl border border-[rgba(var(--accent),0.12)] bg-[rgba(10,12,14,0.60)] backdrop-blur-xl flex flex-col gap-2 shadow-2xl min-w-[170px]">
-          <div className="flex items-center justify-between gap-2 border-b border-[rgba(var(--accent),0.08)] pb-1.5">
-            <span className="text-[9px] font-mono font-bold tracking-[0.2em] uppercase text-[rgb(var(--foreground-muted))]/70">
-              COLLECTIONS
-            </span>
-            <span className="text-[10px] font-mono text-[rgb(var(--accent))]/80 font-bold">
-              {activeCount}
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            {COLLECTIONS.map((col) => {
-              const colPalette = col === "all" ? null : COLLECTION_COLORS[col];
-              const isSelected = selectedCollection === col;
-
-              return (
-                <button
-                  key={col}
-                  onClick={() => setSelectedCollection(col)}
-                  className={cn(
-                    "flex items-center gap-2 px-2 py-1 rounded-xl text-[10px] font-mono font-bold tracking-wider uppercase transition-all duration-200 cursor-pointer border text-left",
-                    isSelected
-                      ? "bg-[rgb(var(--accent))]/15 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
-                      : "bg-transparent border-transparent text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:bg-white/[0.04]"
-                  )}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: colPalette ? colPalette.main : "rgb(var(--accent))" }}
-                  />
-                  <span>{col === "all" ? "ALL FACTS" : col}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <MemoryLegendCard
+          selectedCollection={selectedCollection}
+          onSelectCollection={setSelectedCollection}
+          selectedRelation={selectedRelation}
+          onSelectRelation={setSelectedRelation}
+        />
       </div>
 
-      {/* Floating Memory Node Tooltip */}
+      {/* Floating Memory Node Tooltip with Connected Edges Details */}
       <MemoryNodeTooltip
         fact={selectedFact}
+        allFacts={facts}
+        allRelations={relations}
         pos={tooltipPos}
         onClose={() => handleSelectFact(null)}
         onRefresh={loadData}

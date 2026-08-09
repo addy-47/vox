@@ -158,7 +158,7 @@ pub async fn start_realtime_session_internal(
     let _ = engine
         .pipeline_tx
         .send(crate::core::events::VoxEvent::SettingsUpdated(
-            current_settings,
+            Box::new(current_settings),
         ));
 
     // 7. Tell VAD to start routing chunks — pass is_ptt so it applies the

@@ -51,7 +51,7 @@ async fn test_layer2_memory_pipeline_4stage_rigorous() -> Result<()> {
     ).await?;
 
     // 2. Enqueue synthetic facts into personal_memory_queue
-    let facts = vec![
+    let facts = [
         (
             "User is a Senior AI Engineer specializing in Rust.",
             "Identity",

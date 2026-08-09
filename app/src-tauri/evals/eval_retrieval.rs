@@ -4,14 +4,11 @@
 //! Category     : Evaluation Script
 //! Component    : services::memory / evals
 //! Prerequisites: evals/results/stage_2_pipeline.db & evals/datasets/retrieval_queries.json
-//! Execution    : cargo run --example eval_retrieval
+//! Execution    : cargo run --release --example eval_retrieval
 //! Metrics      : Precision, Recall, ChitChat Overhead (ms), Budget Cap Compliance, LLM Judge Score
 //! ============================================================================
 
-mod llm_judge;
-
 use anyhow::Result;
-use llm_judge::{evaluate_semantic_quality, JudgeProvider};
 use query_sieve::MemoryScope;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -20,6 +17,119 @@ use vox_lib::core::settings::MemorySettings;
 use vox_lib::services::memory::embedder::l2_normalize;
 use vox_lib::services::memory::estimate_tokens;
 use vox_lib::services::memory::retrieval::retrieve_personal_context_v7;
+
+const OLLAMA_GPU_SERVER_URL: &str = "http://100.86.62.14:11434/v1/chat/completions";
+
+fn get_nvidia_api_key() -> String {
+    if let Ok(k) = std::env::var("NVIDIA_API_KEY") {
+        if !k.trim().is_empty() {
+            return k.trim().to_string();
+        }
+    }
+    let paths = ["temp/.env", "../../temp/.env", "../temp/.env"];
+    for p in paths {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            for line in content.lines() {
+                if let Some(rest) = line.strip_prefix("NVIDIA_API_KEY=") {
+                    let val = rest.trim();
+                    if !val.is_empty() {
+                        return val.to_string();
+                    }
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+async fn run_retrieval_judge(
+    client: &reqwest::Client,
+    api_key: &str,
+    sample_output: &str,
+) -> Result<String> {
+    let judge_prompt = format!(
+        "<retrieval_audit_evaluation>\n\
+         <retrieval_results>\n{}\n</retrieval_results>\n\n\
+         <task>\n\
+         Act as a Senior AI Retrieval Systems Architect auditing Ladder Eval 3 (Scope-Pruned RAG Retrieval).\n\
+         Audit the rendered context outputs across the 4 MemoryScope categories:\n\
+         1. ChitChat Scope: Verify zero RAG output and 0ms overhead.\n\
+         2. User Scope: Verify rendered context includes core Profile/Identity facts.\n\
+         3. Domain Scope: Verify rendered context includes relevant Entities & Directives.\n\
+         4. Budget Cap Compliance: Verify total rendered tokens never exceed the 15% context window cap.\n\n\
+         Format output as clean Markdown starting with '# Eval 3 Retrieval Evaluation Report'.\n\
+         </task>\n\
+         </retrieval_audit_evaluation>",
+        sample_output
+    );
+
+    let payload = serde_json::json!({
+        "model": "gemma4:e4b",
+        "messages": [
+            {"role": "user", "content": judge_prompt}
+        ],
+        "temperature": 0.5,
+        "max_tokens": 2500
+    });
+
+    if let Ok(resp) = client
+        .post(OLLAMA_GPU_SERVER_URL)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(json_body) = resp.json::<serde_json::Value>().await {
+                if let Some(content) = json_body["choices"][0]["message"]["content"].as_str() {
+                    let cleaned = content
+                        .trim()
+                        .trim_start_matches("```markdown")
+                        .trim_start_matches("```")
+                        .trim_end_matches("```")
+                        .trim();
+                    return Ok(cleaned.to_string());
+                }
+            }
+        }
+    }
+
+    if !api_key.is_empty() {
+        let fallback_payload = serde_json::json!({
+            "model": "google/gemma-2-27b-it",
+            "messages": [
+                {"role": "user", "content": judge_prompt}
+            ],
+            "temperature": 0.5,
+            "max_tokens": 2500
+        });
+
+        if let Ok(resp) = client
+            .post("https://integrate.api.nvidia.com/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&fallback_payload)
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(json_body) = resp.json::<serde_json::Value>().await {
+                    if let Some(content) = json_body["choices"][0]["message"]["content"].as_str() {
+                        let cleaned = content
+                            .trim()
+                            .trim_start_matches("```markdown")
+                            .trim_start_matches("```")
+                            .trim_end_matches("```")
+                            .trim();
+                        return Ok(cleaned.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok("LLM Judge unavailable.".to_string())
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -54,15 +164,19 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let db_path_str = db_path
+    let abs_db_path = std::fs::canonicalize(&db_path)?;
+    let db_path_str = abs_db_path
         .to_str()
-        .ok_or_else(|| anyhow::anyhow!("Invalid pipeline DB path {:?}", db_path))?;
-    let db_str = format!("file:{}", db_path_str);
-    let db = Builder::new_local(&db_str).build().await?;
+        .ok_or_else(|| anyhow::anyhow!("Invalid pipeline DB path {:?}", abs_db_path))?;
+    let db = Builder::new_local(db_path_str).build().await?;
     let conn = db.connect()?;
 
-    let queries_bytes = std::fs::read(&queries_path)?;
-    let queries: Vec<RetrievalQueryItem> = serde_json::from_slice(&queries_bytes)?;
+    let queries: Vec<RetrievalQueryItem> = if queries_path.exists() {
+        let queries_bytes = std::fs::read(&queries_path)?;
+        serde_json::from_slice(&queries_bytes)?
+    } else {
+        Vec::new()
+    };
 
     println!("[Eval 3] Loaded {} test queries from {:?}", queries.len(), queries_path);
 
@@ -116,28 +230,20 @@ async fn main() -> Result<()> {
         });
     }
 
-    // Run Inline LLM-as-a-Judge evaluation on rendered context outputs
-    let sample_input = "Retrieval query test set across 4 MemoryScope categories";
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()?;
+    let api_key = get_nvidia_api_key();
+
     let sample_output = serde_json::to_string_pretty(&query_results)?;
-    let rubric = "Verify that ChitChat scope produces zero RAG output, User scope includes Profile traits, Domain scope includes Entities & Directives, and total rendered context never exceeds the 15% budget cap.";
+    let judge_report = run_retrieval_judge(&client, &api_key, &sample_output).await?;
 
-    let judge_res = evaluate_semantic_quality(
-        JudgeProvider::LocalOllama,
-        "Scope-Pruned RAG Retrieval",
-        sample_input,
-        &sample_output,
-        rubric,
-    )
-    .await?;
+    let report_path = PathBuf::from("evals/results/eval_retrieval_report.md");
+    if let Some(parent) = report_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&report_path, &judge_report)?;
 
-    let report_path = PathBuf::from("evals/results/eval_retrieval_results.json");
-    let report = serde_json::json!({
-        "query_results": query_results,
-        "llm_judge_score": judge_res.score,
-        "llm_judge_reasoning": judge_res.reasoning,
-    });
-    std::fs::write(&report_path, serde_json::to_string_pretty(&report)?)?;
-
-    println!("\n[Eval 3 Completed] Score: {}/100 | Report saved to {:?}", judge_res.score, report_path);
+    println!("\n[Eval 3 Completed] Report saved to {:?}", report_path);
     Ok(())
 }
