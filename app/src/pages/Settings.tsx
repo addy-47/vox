@@ -9,7 +9,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { PersonaCard } from "@/shared/components/settings/persona/PersonaCard";
 import { ModelsCard } from "@/shared/components/settings/models/ModelsCard";
 import { RealtimeCard } from "@/shared/components/settings/realtime/RealtimeCard";
-import { TrayCard } from "@/shared/components/settings/tray/TrayCard";
+import { HistoryCard } from "@/shared/components/settings/history/HistoryCard";
 import { MemoryCard } from "@/shared/components/settings/memory/MemoryCard";
 import { AppearanceCard } from "@/shared/components/settings/appearance/AppearanceCard";
 import { InteractionCard } from "@/shared/components/settings/interaction/InteractionCard";
@@ -31,8 +31,8 @@ const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMo
             return <PersonaCard layoutMode={layoutMode} />;
           case "models":
             return isRealtime ? <RealtimeCard layoutMode={layoutMode} /> : <ModelsCard layoutMode={layoutMode} />;
-          case "tray":
-            return <TrayCard layoutMode={layoutMode} />;
+          case "history":
+            return <HistoryCard layoutMode={layoutMode} />;
           case "memory":
             return <MemoryCard layoutMode={layoutMode} />;
           case "appearance":
@@ -198,7 +198,7 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
                 initial={{ opacity: 0, height: 0, y: -4 }}
                 animate={{ opacity: 1, height: "auto", y: 0 }}
                 exit={{ opacity: 0, height: 0, y: -4 }}
-                className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none glass-card border-t-0 flex items-center justify-between overflow-hidden text-[11px]"
+                className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none glass-card border-t-0 flex items-center justify-between overflow-hidden text-[12px]"
               >
                 {showRestartConfirm ? (
                   <>
@@ -206,13 +206,13 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
                     <div className="flex gap-2">
                       <button
                         onClick={handleSave}
-                        className="px-3.5 py-1 rounded-lg bg-yellow-500 text-black text-[11px] font-black uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all"
+                        className="px-3.5 py-1 rounded-lg bg-yellow-500 text-black text-[12px] font-black uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all"
                       >
                         Yes
                       </button>
                       <button
                         onClick={() => setShowRestartConfirm(false)}
-                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
+                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
                       >
                         No
                       </button>
@@ -224,13 +224,13 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
                     <div className="flex gap-2">
                       <button
                         onClick={handleSave}
-                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all"
+                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-bold uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all"
                       >
                         Save
                       </button>
                       <button
                         onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[11px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
+                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
                       >
                         Discard
                       </button>
@@ -298,7 +298,7 @@ export const Settings: React.FC = () => {
 
               if (!isVertical) {
                 const dx_mid = Math.abs(line.y2 - line.y1);
-                if (domain.id === "models" || domain.id === "tray") {
+                if (domain.id === "models" || domain.id === "history") {
                   // Card is on the right
                   nextX = Math.min(line.x2, line.x1 + dx_mid);
                 } else {
@@ -393,9 +393,9 @@ export const Settings: React.FC = () => {
             </div>
           </div>
 
-          {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Tray Card) */}
+          {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (History Card) */}
           <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("tray")} layoutMode={layoutMode} />
+            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("history")} layoutMode={layoutMode} />
           </div>
 
           {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Appearance Card) */}
@@ -409,7 +409,7 @@ export const Settings: React.FC = () => {
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full">
           {/* Sticky Header - Always Visible */}
           <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--accent),0.12)] mb-4 px-1 shrink-0">
-            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-[rgb(var(--foreground))]/75">
+            <span className="text-[11px] font-black uppercase tracking-[0.15em] text-[rgb(var(--foreground))]/75">
               System Settings
             </span>
             <div className="flex gap-2 items-center">
@@ -417,7 +417,7 @@ export const Settings: React.FC = () => {
                 onClick={() => commitChanges()}
                 disabled={!hasChanges}
                 className={cn(
-                  "px-3.5 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                  "px-3.5 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                   hasChanges
                     ? "hover:scale-[1.02] active:scale-95 cursor-pointer"
                     : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
@@ -437,7 +437,7 @@ export const Settings: React.FC = () => {
                 onClick={() => discardChanges()}
                 disabled={!hasChanges}
                 className={cn(
-                  "px-3.5 py-1.5 rounded-xl border text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
+                  "px-3.5 py-1.5 rounded-xl border text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                   hasChanges
                     ? "bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/10 cursor-pointer"
                     : "bg-[rgb(var(--foreground))]/5 border-[rgba(var(--border),0.04)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
@@ -453,7 +453,7 @@ export const Settings: React.FC = () => {
                 >
                   <RotateCcw size={14} />
                 </button>
-                <div className="absolute bottom-full mb-2 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--background))]/95 dark:bg-zinc-950/95 backdrop-blur-md text-[rgb(var(--accent))] shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] text-[10px] font-bold tracking-wide uppercase z-50">
+                <div className="absolute bottom-full mb-2 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--background))]/95 dark:bg-zinc-950/95 backdrop-blur-md text-[rgb(var(--accent))] shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] text-[11px] font-bold tracking-wide uppercase z-50">
                   Restore Defaults
                 </div>
               </div>
@@ -461,10 +461,10 @@ export const Settings: React.FC = () => {
           </div>
 
            <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-3 py-4 pb-[85px] space-y-7 animate-fade-in">
-             {[...DOMAINS].sort((a, b) => {
-               const order = ["interaction", "tray", "models", "appearance", "memory", "persona"];
-               return order.indexOf(a.id) - order.indexOf(b.id);
-             }).map((domain) => {
+            {[...DOMAINS].sort((a, b) => {
+              const order = ["interaction", "history", "models", "appearance", "memory", "persona"];
+              return order.indexOf(a.id) - order.indexOf(b.id);
+            }).map((domain) => {
                const Icon = domain.icon;
                return (
                  <div key={domain.id} className="w-full glass rounded-2xl p-4 md:p-5 space-y-4">
@@ -474,10 +474,10 @@ export const Settings: React.FC = () => {
                       <Icon size={18} />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[15px] font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
+                      <span className="text-[16px] font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
                         {domain.label}
                       </span>
-                      <span className="text-[10px] font-semibold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+                      <span className="text-[11px] font-semibold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
                         {domain.sublabel}
                       </span>
                     </div>

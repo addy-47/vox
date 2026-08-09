@@ -167,21 +167,21 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
     if (providerPill === "local") return null;
     if (checkingHealth) {
       return (
-        <span className="text-[11px] font-bold text-yellow-400 animate-pulse flex items-center gap-1">
+        <span className="text-[12px] font-bold text-yellow-400 animate-pulse flex items-center gap-1">
           <RefreshCw size={14} className="animate-spin" /> Ping
         </span>
       );
     }
     if (isHealthy === true) {
       return (
-        <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md">
+        <span className="text-[12px] font-bold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Online
         </span>
       );
     }
     if (isHealthy === false) {
       return (
-        <span className="text-[11px] font-bold text-rose-400 flex items-center gap-1 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded-md">
+        <span className="text-[12px] font-bold text-rose-400 flex items-center gap-1 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded-md">
           <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
         </span>
       );
@@ -213,14 +213,14 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
           </div>
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
                 Embedded STT Engine
               </span>
-              <span className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase font-mono">
+              <span className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase font-mono">
                 {draftSettings.asr?.model || "Whisper Medium"}
               </span>
             </div>
-            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
               On-device voice transcription powered by whisper.cpp with streaming INT8 quantization.
             </p>
           </div>
@@ -236,14 +236,14 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
           </div>
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
                 Remote Whisper Server
               </span>
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-mono">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-mono">
                 Coming Soon
               </span>
             </div>
-            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
               Remote WebSocket streaming STT server integration is scheduled for an upcoming release.
             </p>
           </div>
@@ -259,14 +259,14 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
           </div>
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
                 Cloud Transcription
               </span>
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-mono">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-mono">
                 Coming Soon
               </span>
             </div>
-            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
               Ultra-fast Groq & Deepgram cloud speech-to-text integration is in active development.
             </p>
           </div>
@@ -288,27 +288,27 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse" />
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
                 Local Core Ready
               </span>
             </div>
-            <div className="space-y-0.5 text-[11px] text-[rgb(var(--foreground-muted))]/70 font-medium">
-              <div className="flex justify-between border-b border-[rgba(var(--border),0.04)] pb-0.5">
-                <span>PIPELINE</span>
-                <span className="font-mono text-[11px] text-[rgb(var(--accent))]">
-                  LOW-LATENCY HYBRID
+            <div className="space-y-0.5 text-[12px] text-[rgb(var(--foreground-muted))]/70 font-medium">
+              <div className="flex justify-between items-center border-b border-[rgba(var(--border),0.04)] pb-0.5">
+                <span className="shrink-0">PIPELINE</span>
+                <span className="font-mono text-[12px] text-[rgb(var(--accent))] text-right whitespace-nowrap">
+                  low-latency
                 </span>
               </div>
-              <div className="flex justify-between border-b border-[rgba(var(--border),0.04)] pb-0.5">
-                <span>VAD SENSE</span>
-                <span className="font-mono text-[11px] text-[rgb(var(--accent))]">
-                  EARSHOT RUST
+              <div className="flex justify-between items-center border-b border-[rgba(var(--border),0.04)] pb-0.5">
+                <span className="shrink-0">VAD SENSE</span>
+                <span className="font-mono text-[12px] text-[rgb(var(--accent))] text-right whitespace-nowrap">
+                  earshot rust
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span>LLM ENGINE</span>
-                <span className="font-mono text-[11px] text-[rgb(var(--accent))]">
-                  LOCAL GGUF
+              <div className="flex justify-between items-center">
+                <span className="shrink-0">LLM ENGINE</span>
+                <span className="font-mono text-[12px] text-[rgb(var(--accent))] text-right whitespace-nowrap">
+                  local gguf
                 </span>
               </div>
             </div>
@@ -319,7 +319,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
       {isModular && activeCategory === "LLM" && activePill === "remote" && (
         <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
           <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
-            <span className="font-bold text-[11px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
+            <span className="font-bold text-[12px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
               <Network size={16} className="text-[rgb(var(--accent))]" />
               Server Connection Settings
             </span>
@@ -333,7 +333,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             )}
           >
             <div className="space-y-1">
-              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
+              <label className="text-[12px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
                 Server URL
               </label>
               <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
@@ -342,7 +342,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
                   value={url}
                   onChange={(e) => handleUrlChange(e.target.value)}
                   placeholder="http://127.0.0.1:11434"
-                  className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
+                  className="w-full bg-transparent border-none outline-none text-[12px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
                 />
               </div>
             </div>
@@ -355,7 +355,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
           </div>
 
           {modelsError && (
-            <span className="text-[11px] text-red-400/80 flex items-center gap-1 ml-0.5 shrink-0">
+            <span className="text-[12px] text-red-400/80 flex items-center gap-1 ml-0.5 shrink-0">
               <AlertCircle size={14} /> {modelsError}
             </span>
           )}
@@ -365,7 +365,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
       {isModular && activeCategory === "LLM" && activePill === "cloud" && (
         <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
           <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
-            <span className="font-bold text-[11px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
+            <span className="font-bold text-[12px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
               <Cloud size={16} className="text-[rgb(var(--accent))]" />
               Cloud API Settings
             </span>
@@ -374,7 +374,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
           <div className="grid grid-cols-2 gap-3 flex-1 min-h-0 items-center">
             <div className="space-y-1">
-              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
+              <label className="text-[12px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
                 Cloud Provider
               </label>
               <div className="flex items-center justify-between bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.15)] rounded-lg h-[26px] px-1.5">
@@ -384,7 +384,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
                 >
                   <ChevronLeft size={18} />
                 </button>
-                <span className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase tracking-wider">
+                <span className="text-[12px] font-bold text-[rgb(var(--accent))] uppercase tracking-wider">
                   {CLOUD_PROVIDERS[cloudIndex].name}
                 </span>
                 <button
@@ -405,7 +405,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
           </div>
 
           {modelsError && (
-            <span className="text-[11px] text-red-400/80 flex items-center gap-1 ml-0.5 shrink-0">
+            <span className="text-[12px] text-red-400/80 flex items-center gap-1 ml-0.5 shrink-0">
               <AlertCircle size={14} /> {modelsError}
             </span>
           )}
@@ -424,14 +424,14 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
                 Local TTS Config
               </span>
-              <span className="text-[10px] font-bold text-[rgb(var(--accent))] uppercase">
+              <span className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase">
                 {currentTtsProvider.kind === "chatterbox" ? "Chatterbox Local" : "Supertonic 3"}
               </span>
             </div>
-            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
               Synthesis voice, speed and quality can be configured in the Models panel.
             </p>
           </div>
@@ -441,7 +441,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
       {isModular && activeCategory === "TTS" && activePill === "remote" && (
         <div className="flex flex-col gap-2.5 h-full justify-center animate-fade-in py-1">
           <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
-            <span className="font-bold text-[11px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
+            <span className="font-bold text-[12px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
               <Network size={16} className="text-[rgb(var(--accent))]" />
               Chatterbox GPU Server Endpoint
             </span>
@@ -449,7 +449,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
           <div className="grid grid-cols-2 gap-2.5">
             <div className="space-y-1">
-              <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
+              <label className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
                 Server HTTP URL
               </label>
               <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
@@ -458,12 +458,12 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
                   value={remoteTtsEndpoint}
                   onChange={(e) => handleRemoteTtsEndpointChange(e.target.value)}
                   placeholder="http://127.0.0.1:7860"
-                  className="w-full bg-transparent border-none outline-none text-[11px] font-mono text-[rgb(var(--foreground))]"
+                  className="w-full bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))]"
                 />
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
+              <label className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
                 Remote Path
               </label>
               <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
@@ -472,7 +472,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
                   value={remoteTtsPath}
                   onChange={(e) => handleRemoteTtsPathChange(e.target.value)}
                   placeholder="~/.vox"
-                  className="w-full bg-transparent border-none outline-none text-[11px] font-mono text-[rgb(var(--foreground))]"
+                  className="w-full bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))]"
                 />
               </div>
             </div>
@@ -491,14 +491,14 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
                 Microsoft Edge Neural TTS
               </span>
-              <span className="text-[10px] font-bold text-emerald-400 uppercase font-mono">
+              <span className="text-[11px] font-bold text-emerald-400 uppercase font-mono">
                 Zero Config
               </span>
             </div>
-            <p className="text-[10px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
               Free, high-fidelity neural voices streamed directly over Edge WebSockets.
             </p>
           </div>

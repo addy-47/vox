@@ -323,8 +323,8 @@
         {
           "id": "embedding_minilm_l12_tokenizer",
           "path": "embedding/minilm-l12-v2/tokenizer.json",
-          "size": 17082821,
-          "sha256": "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790",
+          "size": 17082913,
+          "sha256": "b60b6b43406a48bf3638526314f3d232d97058bc93472ff2de930d43686fa441",
           "required": true
         }
       ]

@@ -33,10 +33,10 @@ export const DetailPanel = memo(
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-[rgba(var(--accent),0.06)] shrink-0">
           <div>
-            <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))]/80">
+            <span className="text-[12px] font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))]/80">
               Session #{session.id}
             </span>
-            <div className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40 mt-0.5">
+            <div className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40 mt-0.5">
               {formatDateTime(session.started_at)} · {session.turn_count} turns
             </div>
           </div>
@@ -68,33 +68,33 @@ export const DetailPanel = memo(
                 <div key={turn.id} className="space-y-4">
                   {/* User bubble */}
                   <div className="flex flex-col items-end w-full">
-                    <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]/40 uppercase tracking-widest mb-1 mr-2">
+                    <span className="text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))]/40 uppercase tracking-widest mb-1 mr-2">
                       you
                     </span>
-                    <div className="glass rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))]/85 leading-relaxed break-words prose prose-invert select-text">
+                    <div className="glass rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%] text-[15px] text-[rgb(var(--foreground))]/85 leading-relaxed break-words prose prose-invert select-text">
                       <ReactMarkdown>{turn.user_text}</ReactMarkdown>
                     </div>
                   </div>
 
                   {/* Assistant bubble */}
                   <div className="flex flex-col items-start w-full">
-                    <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))]/70 uppercase tracking-widest mb-1 ml-2">
+                    <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]/70 uppercase tracking-widest mb-1 ml-2">
                       vox
                     </span>
-                    <div className="glass rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words prose prose-invert select-text">
+                    <div className="glass rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%] text-[15px] text-[rgb(var(--foreground))] leading-relaxed break-words prose prose-invert select-text">
                       <ReactMarkdown>{turn.assistant_text}</ReactMarkdown>
                       <div className="flex gap-3 mt-2 border-t border-[rgba(var(--accent),0.06)] pt-1.5 shrink-0">
                         {turn.stt_latency_ms !== null && (
-                          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30">
+                          <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/30">
                             STT {turn.stt_latency_ms}ms
                           </span>
                         )}
                         {turn.ttft_ms !== null && (
-                          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30">
+                          <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/30">
                             TTFT {turn.ttft_ms}ms
                           </span>
                         )}
-                        <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/30 ml-auto">
+                        <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/30 ml-auto">
                           {formatTime(turn.created_at)}
                         </span>
                       </div>

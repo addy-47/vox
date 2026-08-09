@@ -39,7 +39,7 @@ export const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }
       <Icon size={20} strokeWidth={isActive ? 2.5 : 1.5} />
       <span 
         className={cn(
-          "absolute left-1/2 -translate-x-1/2 text-[11px] font-bold uppercase tracking-[0.15em] leading-none whitespace-nowrap pointer-events-none text-center transition-all duration-400",
+          "absolute left-1/2 -translate-x-1/2 text-[12px] font-bold uppercase tracking-[0.15em] leading-none whitespace-nowrap pointer-events-none text-center transition-all duration-400",
           isUpper ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
         )}
       >

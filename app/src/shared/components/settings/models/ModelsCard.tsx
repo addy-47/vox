@@ -18,6 +18,7 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { Database } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { SegmentedControl } from "@/shared/ui";
 import { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
 
 import { ModelsTopologyMap } from "./ModelsTopologyMap";
@@ -360,16 +361,17 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       ? isRemoteTtsHealthy === true
       : !!(modelPresence["chatterbox_turbo"] || modelPresence["supertonic"]);
   const isAuxiliaryVerified = !!(
-    modelPresence["distilbert_query_classifier"] &&
+    modelPresence["modernbert_memory_scope"] &&
+    modelPresence["modernbert_edge_creation"] &&
     modelPresence["minilm_l12_v2"] &&
-    modelPresence["deberta_v3_xsmall_nli"] &&
+    modelPresence["nli_deberta_v3_base"] &&
     modelPresence["vox_translit_rnn"]
   );
 
   return (
     <div
       className={cn(
-        "w-full h-auto flex flex-col text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
+        "w-full h-auto flex flex-col text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
         layoutMode === "small"
           ? "bg-transparent p-0"
           : cn(
@@ -383,7 +385,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
             <Database className="text-[rgb(var(--accent))]" size={18} />
-            <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+            <span className="text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
               Model Hub
             </span>
           </div>
@@ -400,32 +402,15 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             }
 
             return (
-              <div className="flex glass p-0.5 rounded-lg border border-[rgba(var(--accent),0.08)]">
-                <button
-                  onClick={() => setActiveCategoryTab("model")}
-                  className={cn(
-                    "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                    activeCategoryTab === "model"
-                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                      : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  Model
-                </button>
-                {!isRemoteTtsSetupNotDone && (
-                  <button
-                    onClick={() => setActiveCategoryTab("settings")}
-                    className={cn(
-                      "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-300",
-                      activeCategoryTab === "settings"
-                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                        : "text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                    )}
-                  >
-                    Settings
-                  </button>
-                )}
-              </div>
+              <SegmentedControl
+                options={[
+                  { id: "model", label: "Model" },
+                  { id: "settings", label: "Settings" },
+                ]}
+                value={activeCategoryTab}
+                onChange={(val) => setActiveCategoryTab(val as "model" | "settings")}
+                size="sm"
+              />
             );
           })()}
         </div>

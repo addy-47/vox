@@ -35,8 +35,8 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
         <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3">
           <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
           <div className="flex flex-col">
-            <span className="text-[11px] font-black text-red-500 uppercase tracking-widest mb-0.5">{errorLabel}</span>
-            <p className="text-[11px] text-red-400 font-medium uppercase tracking-wider">{error}</p>
+            <span className="text-[12px] font-black text-red-500 uppercase tracking-widest mb-0.5">{errorLabel}</span>
+            <p className="text-[12px] text-red-400 font-medium uppercase tracking-wider">{error}</p>
           </div>
         </div>
       )}
@@ -45,7 +45,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
         {showBack && (
           <button
             onClick={onBack}
-            className="px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+            className="px-8 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
           >
             Back
           </button>
@@ -54,7 +54,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
         {showSkip && onSkip && (
           <button
             onClick={onSkip}
-            className="px-6 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors border border-dashed border-[rgba(var(--border),0.08)] hover:border-[rgb(var(--accent))]/30 rounded-2xl glass transition-all duration-300"
+            className="px-6 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors border border-dashed border-[rgba(var(--border),0.08)] hover:border-[rgb(var(--accent))]/30 rounded-2xl glass transition-all duration-300"
           >
             Skip
           </button>
@@ -69,7 +69,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
           )}
         >
           <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
+          <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[12px]">
             {isNextLoading ? 'Processing...' : nextLabel}
             {!isNextLoading && <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />}
           </span>

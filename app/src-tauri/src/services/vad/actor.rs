@@ -365,15 +365,20 @@ where
                 continue;
             }
 
-            // ── Phase 4: Speaker-mode mic ducking ────────────────────────────
-            // Drop mic frames while playback is active in Speaker mode.
-            // Prevents TTS audio from looping back through the mic and re-triggering VAD.
-            // In Headset mode, mic stays live for barge-in (pipeline cancellation handles it).
-            // In Realtime S2S mode, bypass entirely — cloud providers handle their own
-            // echo cancellation and barge-in internally.
+            // ── Phase 4: Speaker-mode mic ducking & Tray disabled gating ─────────
             {
                 let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
                     app.state();
+                
+                // If VAD is owned by Tray but tray_enabled is false, bypass speech detection
+                let tray_enabled = match state.settings.read() {
+                    Ok(s) => s.ui.tray_enabled,
+                    Err(_) => true,
+                };
+                if owner == InteractionOwner::Tray && !tray_enabled {
+                    continue;
+                }
+
                 let is_playing = state
                     .pipeline
                     .playback_active

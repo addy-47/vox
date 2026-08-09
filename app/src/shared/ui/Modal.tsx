@@ -73,7 +73,7 @@ export const Modal: React.FC<ModalProps> = ({
               {/* Top Header */}
               <div className="flex items-center justify-between mb-4 border-b border-[rgba(var(--accent),0.08)] pb-3">
                 {title ? (
-                  <h3 className="text-[14px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]">
+                  <h3 className="text-[15px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]">
                     {title}
                   </h3>
                 ) : (

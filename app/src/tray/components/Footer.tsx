@@ -33,15 +33,15 @@ export const Footer: React.FC<FooterProps> = React.memo(({
             <>
               <div className="flex items-center gap-2" aria-label="Vox CPU Usage">
                 <Cpu size={12} className="text-[rgb(var(--accent))]" />
-                <span className="text-[11px] font-mono text-[rgb(var(--foreground))]/90 font-bold">{stats.vox_cpu.toFixed(1)}%</span>
+                <span className="text-[12px] font-mono text-[rgb(var(--foreground))]/90 font-bold">{stats.vox_cpu.toFixed(1)}%</span>
               </div>
               <div className="flex items-center gap-2" aria-label="Vox RAM Usage">
                 <Zap size={12} className="text-[rgb(var(--accent))]" />
-                <span className="text-[11px] font-mono text-[rgb(var(--foreground))]/90 font-bold">{stats.vox_ram_mb}MB</span>
+                <span className="text-[12px] font-mono text-[rgb(var(--foreground))]/90 font-bold">{stats.vox_ram_mb}MB</span>
               </div>
             </>
           ) : (
-            <span className="text-[11px] font-mono text-[rgb(var(--foreground))]/60 uppercase tracking-widest">System Ready</span>
+            <span className="text-[12px] font-mono text-[rgb(var(--foreground))]/60 uppercase tracking-widest">System Ready</span>
           )}
        </div>
         

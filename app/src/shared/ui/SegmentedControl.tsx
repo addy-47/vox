@@ -43,8 +43,8 @@ export function SegmentedControl<T extends string = string>({
             aria-label={opt.title || opt.label || opt.id}
             className={cn(
               "transition-all duration-300 cursor-pointer border flex items-center justify-center font-bold",
-              size === "sm" && "px-2.5 py-0.5 text-[10px] rounded-lg min-h-[26px]",
-              size === "md" && "px-3 py-1 text-[11px] rounded-lg min-h-[30px]",
+              size === "sm" && "px-2.5 py-0.5 text-[11px] rounded-lg min-h-[26px]",
+              size === "md" && "px-3 py-1 text-[12px] rounded-lg min-h-[30px]",
               isActive
                 ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.1)] font-extrabold"
                 : "bg-transparent border-transparent text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"

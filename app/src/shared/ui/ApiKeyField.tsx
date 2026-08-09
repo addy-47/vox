@@ -41,7 +41,7 @@ export const ApiKeyField = memo(
                 type="button"
                 onClick={onTestConnection}
                 disabled={testing || !value.trim()}
-                className="flex items-center gap-1 text-[11px] font-medium text-[rgb(var(--accent))] hover:underline disabled:opacity-40 transition-opacity"
+                className="flex items-center gap-1 text-[12px] font-medium text-[rgb(var(--accent))] hover:underline disabled:opacity-40 transition-opacity"
               >
                 {testing ? (
                   <RefreshCw size={12} className="animate-spin" />
@@ -74,7 +74,7 @@ export const ApiKeyField = memo(
         {statusMessage && (
           <div
             className={cn(
-              "flex items-center gap-1.5 text-[11px] font-medium transition-all",
+              "flex items-center gap-1.5 text-[12px] font-medium transition-all",
               status === "success" && "text-emerald-400",
               status === "error" && "text-rose-400",
               status === "idle" && "text-[rgb(var(--foreground-muted))]"

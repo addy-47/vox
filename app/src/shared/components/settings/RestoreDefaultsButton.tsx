@@ -41,7 +41,7 @@ export const RestoreDefaultsButton = memo(() => {
       {/* Tooltip */}
       <div 
         className={cn(
-          "absolute bottom-14 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-md text-[10px] font-bold tracking-wide uppercase z-50",
+          "absolute bottom-14 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-md text-[11px] font-bold tracking-wide uppercase z-50",
           isConfirming
             ? "bg-red-50/95 dark:bg-red-950/95 border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-200 shadow-[0_0_20px_rgba(239,68,68,0.1)] dark:shadow-[0_0_20px_rgba(239,68,68,0.2)]"
             : "bg-[rgb(var(--background))]/95 dark:bg-zinc-950/95 border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))]"

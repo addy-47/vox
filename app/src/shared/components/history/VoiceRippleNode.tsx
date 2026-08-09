@@ -71,16 +71,16 @@ export const VoiceRippleNode = memo(
 
         {/* Top Info */}
         <div className="flex items-center justify-between mb-2 pl-4">
-          <span className="text-[10px] font-mono text-[rgb(var(--accent))]/80 font-bold">
+          <span className="text-[11px] font-mono text-[rgb(var(--accent))]/80 font-bold">
             {formatTime(session.started_at)}
           </span>
-          <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40">
+          <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40">
             {session.turn_count} {session.turn_count === 1 ? "turn" : "turns"}
           </span>
         </div>
 
         {/* Snippet */}
-        <p className="text-[13px] font-light leading-relaxed italic text-[rgb(var(--foreground))]/75 pl-4">
+        <p className="text-[14px] font-light leading-relaxed italic text-[rgb(var(--foreground))]/75 pl-4">
           "{previewText}"
         </p>
 

@@ -1,191 +1,297 @@
 import { useState, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { Database, ShieldAlert, Brain, Cpu } from "lucide-react";
+import { Database, Brain, Cpu, Plus, Minus, Clock, PieChart, GitFork } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Card, SegmentedControl, ToggleTile, SliderField } from "@/shared/ui";
+import { Card, ToggleTile, RotaryKnob, SegmentedControl } from "@/shared/ui";
 
 interface MemoryCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
-const MODE_OPTIONS = [
-  { id: "history" as const, label: "History" },
-  { id: "memory" as const, label: "Memory" },
+const VIEW_OPTIONS = [
+  { id: "retrieval" as const, label: "Retrieval" },
+  { id: "pipeline" as const, label: "Pipeline" },
 ];
 
 export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) => {
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
-  const [activeMode, setActiveMode] = useState<"history" | "memory">("history");
+
+  const [activeTab, setActiveTab] = useState<"retrieval" | "pipeline">("retrieval");
 
   if (!draftSettings) return null;
-  const { persistence, memory } = draftSettings;
+  const { memory } = draftSettings;
 
   const isSmall = layoutMode === "small";
   const isMin = layoutMode === "full-min";
 
+  // All 7 backend memory settings fields
+  const contextRetrievalEnabled = memory.context_retrieval_enabled ?? true;
+  const pipelineProcessingEnabled = memory.pipeline_processing_enabled ?? true;
+  const maxPersonalMemoryShare = memory.max_personal_memory_share ?? 0.15;
+  const contextChainingWindowHours = memory.context_chaining_window_hours ?? 12;
+  const topKFacts = memory.top_k_facts ?? 5;
+  const maxHops = memory.max_hops ?? 2;
+  const semanticSimilarityCutoff = memory.semantic_similarity_cutoff ?? 0.40;
+
   return (
-    <Card 
+    <Card
       layoutMode={layoutMode}
       elevation="card"
       className={cn(
-        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between select-none",
+        "text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between select-none transform-gpu",
         !isSmall && cn(
-          "p-5 min-h-[310px] h-full justify-between transition-all duration-300",
+          "p-5 lg:h-[340px] justify-between transition-all duration-300",
           isMin ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
         )
       )}
     >
-      {/* Consolidated Header (Hidden on Mobile) */}
+      {/* Header with Top-Right Sub-Desk Switcher */}
       {!isSmall ? (
-        <div className="flex items-center justify-between mb-2 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-1.5 w-full">
+        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
-            <Database className="text-[rgb(var(--accent))]" size={15} />
-            <span className="text-[11px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
-              Memory & Privacy
+            <Database className="text-[rgb(var(--accent))]" size={18} />
+            <span className="text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+              Memory & Cognitive RAG
             </span>
           </div>
 
-          {/* Mode Switcher in Header */}
-          <SegmentedControl options={MODE_OPTIONS} value={activeMode} onChange={setActiveMode} size="sm" />
+          <SegmentedControl
+            options={VIEW_OPTIONS}
+            value={activeTab}
+            onChange={setActiveTab}
+            size="sm"
+          />
         </div>
       ) : (
-        /* Mobile Layout Header */
         <div className="flex items-center justify-between mb-4 w-full shrink-0">
-          <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
-            {activeMode === "history" ? "History Settings" : "Memory settings"}
+          <span className="text-[13px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+            Memory Settings
           </span>
-          <SegmentedControl options={MODE_OPTIONS} value={activeMode} onChange={setActiveMode} size="sm" />
+          <SegmentedControl
+            options={VIEW_OPTIONS}
+            value={activeTab}
+            onChange={setActiveTab}
+            size="sm"
+          />
         </div>
       )}
 
-      {/* Decoupled Panel Contents */}
-      <div className="flex-1 flex flex-col justify-between min-h-0 pt-1">
-        {activeMode === "history" ? (
-          /* HISTORY & STORAGE MODE */
-          <div key="history-panel" className="flex-1 flex flex-col justify-between min-h-0 py-0.5 gap-2.5">
-            {/* Hover slide-out button for Private mode */}
-            <div key="private-wrapper-box" className="group flex items-center w-full h-[58px] relative shrink-0">
-              <div 
-                onClick={() => updateDraft("persistence", "private_mode", !persistence.private_mode)}
-                className={cn(
-                  "flex-1 p-2.5 rounded-xl group-hover:rounded-r-none border transition-all duration-300 flex flex-col justify-between h-full cursor-pointer min-w-0",
-                  persistence.private_mode 
-                    ? "border-rose-500/25 bg-rose-500/5 hover:border-rose-500/35 hover:bg-rose-500/10"
-                    : "border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] hover:border-[rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.02)]"
-                )}
-              >
-                <div className="flex items-center justify-between gap-1.5 leading-none">
-                  <span className="text-[10px] font-black tracking-widest text-[rgb(var(--foreground-muted))]/60 whitespace-nowrap uppercase">
-                    Incognito Mode
-                  </span>
-                  <ShieldAlert size={13} className={persistence.private_mode ? "text-rose-400 animate-pulse" : "text-[rgb(var(--foreground-muted))]/40"} />
+      {/* Main Body */}
+      <div className="flex-1 flex flex-col justify-between min-h-0 pt-1 gap-3 overflow-y-auto custom-scrollbar">
+        {activeTab === "retrieval" ? (
+          /* TAB 1: RETRIEVAL (Readable Glass Chips on Left | Radial Knob on Right) */
+          <div key="retrieval-tab" className="flex-1 flex flex-col justify-between min-h-0 gap-3">
+            {/* Toggle 1: Context Retrieval */}
+            <ToggleTile
+              title="Episodic RAG Recall"
+              active={contextRetrievalEnabled}
+              activeLabel="Recall Active"
+              inactiveLabel="Recall Disabled"
+              activeSublabel="Context Injected"
+              inactiveSublabel="Turn Bypassed"
+              icon={Brain}
+              onToggle={() =>
+                updateDraft("memory", "context_retrieval_enabled", !contextRetrievalEnabled)
+              }
+              layoutMode={layoutMode}
+            />
+
+            {/* Lower Section: Stacked Tiles on Left, Radial Knob on Right (Stacked in small screens) */}
+            <div className={cn(
+              "flex-1 flex min-w-0 pt-1 gap-4",
+              isSmall ? "flex-col items-stretch" : "flex-row items-center justify-between gap-5"
+            )}>
+              {/* LEFT SIDE: Stacked Sections for Recall Depth & Max Hops */}
+              <div className={cn(
+                "flex-1 flex flex-col justify-center gap-3.5 min-w-0",
+                !isSmall && "pr-2"
+              )}>
+                {/* 1. Recall Depth (Top-K) Tile */}
+                <div className="p-3 rounded-xl border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.01)] flex flex-col gap-2">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] whitespace-nowrap">
+                      Recall Depth
+                    </span>
+                    <span className="text-[12px] font-mono font-black text-[rgb(var(--accent))] whitespace-nowrap">
+                      {topKFacts} facts
+                    </span>
+                  </div>
+                  <div className="flex gap-2 justify-between">
+                    {[3, 5, 8, 12].map((k) => (
+                      <button
+                        key={k}
+                        onClick={() => updateDraft("memory", "top_k_facts", k)}
+                        className={cn(
+                          "flex-1 py-1.5 rounded-lg border text-[13px] font-mono font-bold transition-all duration-200 cursor-pointer flex items-center justify-center",
+                          topKFacts === k
+                            ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                            : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
+                        )}
+                      >
+                        {k}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                
-                <div className="flex items-end justify-between leading-none mt-1">
-                  <span className={cn("text-[12px] font-black transition-colors truncate capitalize", persistence.private_mode ? "text-rose-400" : "text-[rgb(var(--foreground))]/90 group-hover:text-[rgb(var(--accent))]" )}>
-                    {persistence.private_mode ? "Incognito Active" : "Logging Active"}
-                  </span>
-                  
-                  <div className="w-2.5 h-2.5 rounded-full border border-[rgb(var(--accent))]/40 flex items-center justify-center relative shrink-0">
-                    {persistence.private_mode && (
-                      <span className="absolute inset-0 rounded-full border border-rose-500 animate-ping opacity-60" />
-                    )}
-                    <span className={cn("w-1 h-1 rounded-full", persistence.private_mode ? "bg-rose-400" : "bg-[rgb(var(--foreground-muted))]/40")} />
+
+                {/* 2. Max Hops Expansion Tile */}
+                <div className="p-3 rounded-xl border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.01)] flex flex-col gap-2">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <GitFork size={13} className="text-[rgb(var(--accent))]" />
+                      <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] whitespace-nowrap">
+                        Max Graph Hops
+                      </span>
+                    </div>
+                    <span className="text-[12px] font-mono font-black text-[rgb(var(--accent))] whitespace-nowrap">
+                      {maxHops} {maxHops === 1 ? "Hop" : "Hops"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 justify-between">
+                    {[1, 2, 3, 4].map((h) => (
+                      <button
+                        key={h}
+                        onClick={() => updateDraft("memory", "max_hops", h)}
+                        className={cn(
+                          "flex-1 py-1.5 rounded-lg border text-[12px] font-mono font-bold transition-all duration-200 cursor-pointer flex items-center justify-center gap-1",
+                          maxHops === h
+                            ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                            : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
+                        )}
+                      >
+                        <span>{h}</span>
+                        <span className="text-[11px] font-normal uppercase opacity-75">{h === 1 ? "Hop" : "Hops"}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div 
-                onClick={() => updateDraft("persistence", "private_mode", !persistence.private_mode)}
-                className="h-full w-0 group-hover:w-[32px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent border-l-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden cursor-pointer select-none shrink-0"
-              >
-                <span className="text-[7.5px] font-black uppercase tracking-[0.15em] text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
-                  TOGGLE
-                </span>
+              {/* RIGHT SIDE: Dedicated Radial Knob for Similarity Cutoff */}
+              <div className={cn(
+                "shrink-0 flex items-center justify-center",
+                isSmall
+                  ? "pt-3 border-t border-[rgba(var(--accent),0.08)] w-full"
+                  : "pl-3 border-l border-[rgba(var(--accent),0.08)]"
+              )}>
+                <RotaryKnob
+                  label="Similarity Floor"
+                  value={semanticSimilarityCutoff}
+                  min={0.10}
+                  max={0.90}
+                  step={0.05}
+                  defaultValue={0.40}
+                  formatValue={(v) => `${Math.round(v * 100)}%`}
+                  formatPreset={(v) => `${Math.round(v * 100)}%`}
+                  presetSteps={[0.25, 0.40, 0.60, 0.75]}
+                  onChange={(v) => updateDraft("memory", "semantic_similarity_cutoff", v)}
+                />
               </div>
-            </div>
-
-            {/* Sliders */}
-            <div className="flex-1 flex flex-col justify-end gap-2.5 pb-0.5">
-              <SliderField
-                label="Capacity limit"
-                value={persistence.max_sessions}
-                min={5}
-                max={500}
-                step={5}
-                onChange={(v) => updateDraft("persistence", "max_sessions", v)}
-              />
-              <SliderField
-                label="Retention days"
-                value={persistence.retention_days}
-                min={1}
-                max={365}
-                step={1}
-                formatValue={(v) => `${v}d`}
-                onChange={(v) => updateDraft("persistence", "retention_days", v)}
-              />
             </div>
           </div>
         ) : (
-          /* COGNITIVE RAG & MEMORY MODE */
-          <div key="memory-panel" className="flex-1 flex flex-col justify-between min-h-0 py-0.5 gap-2.5">
-            {/* Toggles Side-by-Side (Episodic Recall & Auto Sweeper) */}
-            <div key="cognitive-toggles-row" className="flex gap-2.5 w-full shrink-0">
-              <ToggleTile
-                title="Episodic RAG"
-                active={memory.episodic_enabled}
-                activeLabel="Recall"
-                inactiveLabel="Disabled"
-                icon={Brain}
-                onToggle={() => updateDraft("memory", "episodic_enabled", !memory.episodic_enabled)}
-                layoutMode={layoutMode}
-                className="h-[56px] flex-1"
-              />
+          /* TAB 2: PIPELINE (Responsive Side-by-Side or Stacked Cards) */
+          <div key="pipeline-tab" className="flex-1 flex flex-col justify-between min-h-0 gap-3">
+            {/* Toggle 2: Background Worker */}
+            <ToggleTile
+              title="Auto Sweep Pipeline"
+              active={pipelineProcessingEnabled}
+              activeLabel="Sweeper Running"
+              inactiveLabel="Sweeper Stopped"
+              activeSublabel="4-Stage Deduplication & NLI"
+              inactiveSublabel="Queue Staged Only"
+              icon={Cpu}
+              onToggle={() =>
+                updateDraft("memory", "pipeline_processing_enabled", !pipelineProcessingEnabled)
+              }
+              layoutMode={layoutMode}
+            />
 
-              <ToggleTile
-                title="Auto Sweep"
-                active={memory.bg_worker_enabled}
-                activeLabel="Sweeping"
-                inactiveLabel="Stopped"
-                icon={Cpu}
-                onToggle={() => updateDraft("memory", "bg_worker_enabled", !memory.bg_worker_enabled)}
-                layoutMode={layoutMode}
-                className="h-[56px] flex-1"
-              />
-            </div>
+            {/* Lower Section: Side-by-Side in Desktop, Stacked in Small Screen */}
+            <div className={cn(
+              "flex-1 flex min-w-0 pt-1 gap-4",
+              isSmall ? "flex-col items-stretch" : "flex-row items-stretch"
+            )}>
+              {/* Left Card: Context Budget Glass Pills */}
+              <div className="flex-1 p-3.5 rounded-xl border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.01)] flex flex-col justify-between min-w-0">
+                <div className="flex items-center justify-between pb-1 border-b border-[rgba(var(--accent),0.05)]">
+                  <div className="flex items-center gap-1.5">
+                    <PieChart size={14} className="text-[rgb(var(--accent))]" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] whitespace-nowrap">
+                      Context Budget
+                    </span>
+                  </div>
+                  <span className="text-[13px] font-mono font-black text-[rgb(var(--accent))]">
+                    {Math.round(maxPersonalMemoryShare * 100)}%
+                  </span>
+                </div>
 
-            {/* Sliders Column */}
-            <div className="flex-1 flex flex-col justify-end gap-2.5 pb-0.5">
-              <SliderField
-                label="Recall depth"
-                value={memory.top_k}
-                min={1}
-                max={10}
-                step={1}
-                onChange={(v) => updateDraft("memory", "top_k", v)}
-              />
-              <div className="flex gap-4 min-w-0">
-                <SliderField
-                  label="Min Sim"
-                  value={memory.similarity_threshold}
-                  min={0.10}
-                  max={0.95}
-                  step={0.05}
-                  formatValue={(v) => `${Math.round(v * 100)}%`}
-                  onChange={(v) => updateDraft("memory", "similarity_threshold", v)}
-                  className="flex-1 min-w-0"
-                />
-                <SliderField
-                  label="Budget"
-                  value={memory.max_context_share}
-                  min={0.05}
-                  max={0.80}
-                  step={0.05}
-                  formatValue={(v) => `${Math.round(v * 100)}%`}
-                  onChange={(v) => updateDraft("memory", "max_context_share", v)}
-                  className="flex-1 min-w-0"
-                />
+                <div className="grid grid-cols-2 gap-2 my-2">
+                  {[0.10, 0.15, 0.25, 0.35].map((share) => (
+                    <button
+                      key={share}
+                      onClick={() => updateDraft("memory", "max_personal_memory_share", share)}
+                      className={cn(
+                        "py-1.5 rounded-lg text-[12px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center",
+                        Math.abs(maxPersonalMemoryShare - share) < 0.01
+                          ? "border border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                          : "border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
+                      )}
+                    >
+                      {Math.round(share * 100)}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right Card: Stepper Ticker Card for Context Chaining Window */}
+              <div className="flex-1 p-3.5 rounded-xl border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.01)] flex flex-col justify-between min-w-0">
+                <div className="flex items-center justify-between pb-1 border-b border-[rgba(var(--accent),0.05)]">
+                  <div className="flex items-center gap-1.5">
+                    <Clock size={14} className="text-[rgb(var(--accent))]" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] whitespace-nowrap">
+                      Chaining Window
+                    </span>
+                  </div>
+                  <span className="text-[13px] font-mono font-black text-[rgb(var(--accent))]">
+                    {contextChainingWindowHours}h
+                  </span>
+                </div>
+
+                {/* Stepper Buttons Row */}
+                <div className="flex items-center justify-between gap-2 my-2">
+                  <button
+                    onClick={() => updateDraft("memory", "context_chaining_window_hours", Math.max(1, contextChainingWindowHours - 1))}
+                    className="flex-1 py-1.5 rounded-lg border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--foreground),0.03)] hover:bg-[rgba(var(--accent),0.15)] hover:border-[rgb(var(--accent))] hover:text-[rgb(var(--accent))] transition-all flex items-center justify-center cursor-pointer text-[12px] font-bold"
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <button
+                    onClick={() => updateDraft("memory", "context_chaining_window_hours", Math.min(72, contextChainingWindowHours + 1))}
+                    className="flex-1 py-1.5 rounded-lg border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--foreground),0.03)] hover:bg-[rgba(var(--accent),0.15)] hover:border-[rgb(var(--accent))] hover:text-[rgb(var(--accent))] transition-all flex items-center justify-center cursor-pointer text-[12px] font-bold"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center justify-between gap-1 pt-0.5">
+                  {[6, 12, 24, 48].map((hours) => (
+                    <button
+                      key={hours}
+                      onClick={() => updateDraft("memory", "context_chaining_window_hours", hours)}
+                      className={cn(
+                        "flex-1 py-1 rounded-md text-[11px] font-mono transition-all cursor-pointer text-center",
+                        contextChainingWindowHours === hours
+                          ? "border border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] font-bold shadow-[0_0_10px_rgba(var(--accent),0.25)]"
+                          : "border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--accent),0.05)] text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgba(var(--accent),0.12)] hover:text-[rgb(var(--foreground))]"
+                      )}
+                    >
+                      {hours}h
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -196,4 +302,3 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
 });
 
 MemoryCard.displayName = "MemoryCard";
-

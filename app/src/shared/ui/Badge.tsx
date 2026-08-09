@@ -38,12 +38,12 @@ export const Badge: React.FC<BadgeProps> = ({
   const getSizeStyles = () => {
     switch (size) {
       case "xs":
-        return "text-[9px] px-1.5 py-0.5 rounded";
+        return "text-[10px] px-1.5 py-0.5 rounded";
       case "md":
-        return "text-[11px] px-2.5 py-1 rounded-lg";
+        return "text-[12px] px-2.5 py-1 rounded-lg";
       case "sm":
       default:
-        return "text-[10px] px-2 py-0.5 rounded-md";
+        return "text-[11px] px-2 py-0.5 rounded-md";
     }
   };
 

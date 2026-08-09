@@ -29,7 +29,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
       layoutMode={layoutMode}
       elevation="card"
       className={cn(
-        "text-[13px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between select-none",
+        "text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between select-none",
         !isSmall && cn(
           "p-5 min-h-[180px] h-full",
           isMin ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]"
@@ -40,7 +40,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
       <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
         <div className="flex items-center gap-2">
           <Palette className="text-[rgb(var(--accent))]" size={16} />
-          <span className="text-[11px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+          <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
             Appearance Settings
           </span>
         </div>

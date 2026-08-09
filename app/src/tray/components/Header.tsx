@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           />
           <div className={`w-2.5 h-2.5 rounded-full z-10 transition-all duration-700 ${isListening ? 'bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)]' : 'bg-[rgb(var(--foreground))]/30'}`} />
         </div>
-        <span className="text-[11px] font-black tracking-[0.4em] text-[rgb(var(--foreground))]/90 uppercase">
+        <span className="text-[12px] font-black tracking-[0.4em] text-[rgb(var(--foreground))]/90 uppercase">
           Vox <span className="text-[rgb(var(--accent))]">Live</span>
         </span>
       </div>

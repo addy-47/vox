@@ -333,11 +333,8 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
 
         // Persistence — limits are hot
         ("persistence", "private_mode") => SettingReloadPolicy::Hot,
-        ("persistence", "max_sessions") => SettingReloadPolicy::Hot,
-        ("persistence", "retention_days") => SettingReloadPolicy::Hot,
 
-        // Memory — personal parameters hot, worker toggle command, model path restart
-        ("memory", "pipeline_processing_enabled") => SettingReloadPolicy::WorkerCommand,
+        // Memory — all personal parameters hot
         ("memory", _) => SettingReloadPolicy::Hot,
 
         // Assistant — hot update
@@ -661,21 +658,16 @@ impl Default for TelemetrySettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct PersistenceSettings {
     /// Disable all database writes for the current session.
     pub private_mode: bool,
-    /// Maximum sessions retained. Older entries pruned at next startup.
-    pub max_sessions: u32,
-    /// Days to retain sessions. 0 = keep forever.
-    pub retention_days: u32,
 }
 
 impl Default for PersistenceSettings {
     fn default() -> Self {
         Self {
             private_mode: false,
-            max_sessions: 500,
-            retention_days: 30,
         }
     }
 }

@@ -214,7 +214,7 @@ async fn run_llm_judge_prompt(
     api_key: &str,
     prompt: &str,
 ) -> Result<String> {
-    run_llm_judge_prompt_with_model(client, api_key, "llama3.1:8b", prompt).await
+    run_llm_judge_prompt_with_model(client, api_key, "gemma4:e4b", prompt).await
 }
 
 #[tokio::main]
@@ -390,11 +390,11 @@ async fn main() -> Result<()> {
                 cand_collection: item_collection.clone(),
                 candidate_source: cand_source,
                 cosine_sim: sim,
-                engine: "subfloor".to_string(),
+                engine: "subfloor-intra".to_string(),
                 nli_scores: None,
                 edge_score: None,
                 decision: "NONE".to_string(),
-                rejection_reason: Some("below_search_threshold".to_string()),
+                rejection_reason: Some("below_intra_nli_search_threshold_0.60".to_string()),
             });
             added_count += 1;
         }
@@ -414,11 +414,11 @@ async fn main() -> Result<()> {
                 cand_collection: cand_coll,
                 candidate_source: cand_source,
                 cosine_sim: sim,
-                engine: "subfloor".to_string(),
+                engine: "subfloor-inter".to_string(),
                 nli_scores: None,
                 edge_score: None,
                 decision: "NONE".to_string(),
-                rejection_reason: Some("below_search_threshold".to_string()),
+                rejection_reason: Some("below_inter_edge_search_threshold_0.40".to_string()),
             });
             added_count += 1;
         }
@@ -693,9 +693,8 @@ async fn main() -> Result<()> {
     );
 
     let report_c_path = reports_dir.join("stage3_master_report_c.md");
-    match run_llm_judge_prompt_with_model(&client, &api_key, "gemma4:e4b", &report_c_prompt).await {
+    match run_llm_judge_prompt_with_model(&client, &api_key, "meta/llama-3.1-70b-instruct", &report_c_prompt).await {
         Ok(content) => {
-
             std::fs::write(&report_c_path, &content)?;
             println!(
                 "  [Report C] Saved Master Synthesis Report To: {:?}",

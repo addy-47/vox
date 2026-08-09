@@ -168,11 +168,11 @@ async fn extract_facts_via_nvidia_llm(
     ]);
 
     println!(
-        "[Eval 1 Chunk {}] Requesting compaction extraction via GPU Ollama Server (llama3.1:8b)...",
+        "[Eval 1 Chunk {}] Requesting compaction extraction via GPU Ollama Server (gemma4:e4b)...",
         chunk_idx + 1
     );
 
-    match post_chat_completion(client, api_key, "llama3.1:8b", messages, 2000).await {
+    match post_chat_completion(client, api_key, "gemma4:e4b", messages, 2000).await {
         Ok(content) => {
             if let Some(parsed) = parse_compaction_json(&content) {
                 let fact_count: usize = parsed.values().map(|v| v.len()).sum();
@@ -236,7 +236,7 @@ async fn run_llm_subbatch_judge_report(
         {"role": "user", "content": judge_prompt}
     ]);
 
-    post_chat_completion(client, api_key, "llama3.1:8b", messages, 2500).await
+    post_chat_completion(client, api_key, "gemma4:e4b", messages, 2500).await
 }
 
 async fn run_llm_compaction_master_synthesis(
@@ -254,32 +254,38 @@ async fn run_llm_compaction_master_synthesis(
         ));
     }
 
-    let synthesis_prompt = format!(
-        "<judge_master_compaction_synthesis>\n\
+    let master_prompt = format!(
+        "<master_compaction_synthesis_evaluation>\n\
+         <full_extracted_facts_json>\n{}\n</full_extracted_facts_json>\n\n\
          <subbatch_reports>\n{}\n</subbatch_reports>\n\n\
-         <full_extracted_facts>\n{}\n</full_extracted_facts>\n\n\
          <task>\n\
-         Act as a Principal AI Systems Architect. Synthesize the sub-batch evaluation reports and full extracted facts above into a Master Compaction Evaluation Report.\n\
-         Evaluate the compaction engine across the following 6 unified sections:\n\
-         1. Executive Summary & Score Breakdown (Overall Compaction Score out of 100, Fact Quality %, Information Coverage %, Redundancy %, Schema Disambiguation %, Precision %).\n\
-         2. Fact Quality & Bare-Entity Audit (Synthesize occurrences of low-quality single-word or bare-entity extractions vs self-contained declarative statements).\n\
-         3. Information Coverage & Context Retention Analysis (Synthesize recall coverage, detail preservation, numbers/amounts retention, and silent context drops).\n\
-         4. Cross-Window Redundancy & Over-Extraction Audit (Identify facts extracted repeatedly across sliding context windows).\n\
-         5. Collection Disambiguation & Category Correctness (Audit placement across Identity, Directives, Profile, Entities, Constraints, Narrative).\n\
-         6. Actionable Engineering Recommendations (Concrete prompt, schema boundary, or token windowing recommendations).\n\n\
-         Format output ONLY as clean Markdown starting with '# Eval 1 Compaction Master Evaluation Report'.\n\
+         Act as the Chief AI Knowledge Graph Architect rendering the Master Evaluation Report for Ladder Eval 1 (Real LLM Compaction).\n\
+         Synthesize the 3 sub-batch audit reports into a final executive master report:\n\n\
+         1. Executive Summary Scorecard:\n\
+            - Overall Compaction Grade (0-100)\n\
+            - Total Facts Extracted across session\n\
+            - Ratio of Complete Declarative Statements vs Low-Quality/Bare Entity Leaks\n\
+            - Overall Information Coverage & Retention Score (%)\n\n\
+         2. Aggregated Error Taxonomy & Breakdown:\n\
+            - Summary table of all flagged bare entities, dropped details, schema misclassifications, and local redundancies across all 3 sub-batches.\n\n\
+         3. Systemic Performance Analysis:\n\
+            - Which collections (Identity, Constraints, Directives, Profile, Entities, Narrative) performed best/worst?\n\
+            - Pattern analysis of silent detail drops and classification boundary confusions.\n\n\
+         4. Actionable ML Research & Prompt Engineering Spec:\n\
+            - Concrete recommendations for system prompt refinement or fine-tuning dataset curation.\n\n\
+         Format your output ONLY as a clean, highly structured Markdown document starting with '# Master Compaction Evaluation Report (Ladder Eval 1)'.\n\
          </task>\n\
-         </judge_master_compaction_synthesis>",
-        combined_subbatch_reports, full_extracted_facts_json
+         </master_compaction_synthesis_evaluation>",
+        full_extracted_facts_json, combined_subbatch_reports
     );
 
     let messages = serde_json::json!([
-        {"role": "user", "content": synthesis_prompt}
+        {"role": "user", "content": master_prompt}
     ]);
 
-    post_chat_completion(client, api_key, "gemma4:e4b", messages, 3000).await
+    // Use 70B Master Judge for Master Synthesis Report
+    post_chat_completion(client, api_key, "meta/llama-3.1-70b-instruct", messages, 3500).await
 }
-
 
 #[tokio::main]
 async fn main() -> Result<()> {

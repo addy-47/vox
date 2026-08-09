@@ -187,7 +187,7 @@ export const TtsVoiceManager = memo(({
               {/* Region Bucket Selector */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
+                  <span className="text-[12px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
                     Region
                   </span>
                   {/* Minimal Live Status Sphere */}
@@ -197,14 +197,14 @@ export const TtsVoiceManager = memo(({
                     <button
                       type="button"
                       onClick={loadEdgeVoices}
-                      className="text-[10px] font-bold text-rose-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] font-bold text-rose-400 hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <RefreshCw size={10} />
                     </button>
                   ) : (
                     <div className="flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)] animate-pulse" />
-                      <span className="text-[9px] font-mono font-bold text-[rgb(var(--foreground-muted))]/70">
+                      <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]/70">
                         {edgeTtsVoices.length > 0 ? `${edgeTtsVoices.length}` : "Live"}
                       </span>
                     </div>
@@ -219,7 +219,7 @@ export const TtsVoiceManager = memo(({
                       type="button"
                       onClick={() => setSelectedRegion(region)}
                       className={cn(
-                        "flex-1 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer text-center",
+                        "flex-1 py-0.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer text-center",
                         selectedRegion === region
                           ? "text-[rgb(var(--accent))] border-b-2 border-[rgb(var(--accent))]"
                           : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
@@ -285,8 +285,8 @@ export const TtsVoiceManager = memo(({
               {/* Supertonic Quality Steps */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">Quality</span>
-                  <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+                  <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Quality</span>
+                  <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">
                     {draftSettings.tts.quality_steps <= 4
                       ? "Speed"
                       : draftSettings.tts.quality_steps <= 8
@@ -301,7 +301,7 @@ export const TtsVoiceManager = memo(({
                       type="button"
                       onClick={() => updateDraft("tts", "quality_steps", step)}
                       className={cn(
-                        "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                        "flex-1 py-1 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all duration-300",
                         draftSettings.tts.quality_steps === step
                           ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                           : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
@@ -333,7 +333,7 @@ export const TtsVoiceManager = memo(({
             type="button"
             onClick={() => setChatterboxIsAdding((prev) => !prev)}
             className={cn(
-              "w-full py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(var(--accent),0.1)]",
+              "w-full py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(var(--accent),0.1)]",
               chatterboxIsAdding
                 ? "bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20"
                 : "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-[1.01] active:scale-95 hover:shadow-[0_0_16px_rgba(var(--accent),0.25)]"

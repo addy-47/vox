@@ -49,12 +49,12 @@ const ResourceBar = memo(
     return (
       <div className="space-y-1.5">
         <div className="flex justify-between items-baseline">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
             {label}
           </span>
           <span
             ref={textRef}
-            className="text-[13px] font-mono font-bold text-[rgb(var(--foreground))]"
+            className="text-[14px] font-mono font-bold text-[rgb(var(--foreground))]"
           >
             0.0%
           </span>
@@ -399,7 +399,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
           <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-[rgba(var(--accent),0.08)]">
             <div className="flex items-center gap-2">
               <Activity size={16} className="text-[rgb(var(--accent))]" />
-              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+              <span className="text-[12px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
                 Engine Monitor
               </span>
             </div>
@@ -522,10 +522,10 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
                   key={m.label}
                   className="flex-1 bg-[rgba(var(--foreground),0.03)] rounded-xl px-2 py-2 flex flex-col items-center gap-0.5"
                 >
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
                     {m.label}
                   </span>
-                  <span className="text-[13px] font-mono font-bold text-[rgb(var(--accent))]">
+                  <span className="text-[14px] font-mono font-bold text-[rgb(var(--accent))]">
                     {m.val}
                   </span>
                 </div>
@@ -550,7 +550,7 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
                     {key === "vad_probability" && (
                       <Zap size={12} className="text-[rgb(var(--accent))]/60" />
                     )}
-                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))]/60">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))]/60">
                       {label}
                     </span>
                   </div>

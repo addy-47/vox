@@ -73,10 +73,10 @@ export const LlmCatalogView = memo(({
         {/* Memory Context Tokens */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">
+            <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">
               Memory Context Tokens
             </span>
-            <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">
               {llmSettings.ctx_size}
             </span>
           </div>
@@ -86,7 +86,7 @@ export const LlmCatalogView = memo(({
                 key={val}
                 onClick={() => updateDraft("llm", "ctx_size", val)}
                 className={cn(
-                  "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                  "flex-1 py-1 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all duration-300",
                   llmSettings.ctx_size === val
                     ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                     : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
@@ -101,10 +101,10 @@ export const LlmCatalogView = memo(({
         {/* Processor Threads */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[12px] text-[rgb(var(--foreground))] font-bold">
+            <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">
               Processor Threads
             </span>
-            <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold">
+            <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">
               {llmSettings.threads}
             </span>
           </div>
@@ -114,7 +114,7 @@ export const LlmCatalogView = memo(({
                 key={val}
                 onClick={() => updateDraft("llm", "threads", val)}
                 className={cn(
-                  "flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                  "flex-1 py-1 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all duration-300",
                   llmSettings.threads === val
                     ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                     : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
@@ -138,26 +138,26 @@ export const LlmCatalogView = memo(({
         {/* Connected Server Header */}
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="font-bold text-[rgb(var(--foreground))]/90 text-[12px] flex items-center gap-1.5">
+            <span className="font-bold text-[rgb(var(--foreground))]/90 text-[13px] flex items-center gap-1.5">
               <Network size={16} className="text-[rgb(var(--accent))]" /> Connected Server
             </span>
-            <span className="text-[10px] text-[rgb(var(--foreground-muted))]/70 font-mono mt-0.5">
+            <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70 font-mono mt-0.5">
               {provider?.base_url || "No server configured"}
             </span>
           </div>
           {loadingRemoteModels ? (
-            <span className="text-[10px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
+            <span className="text-[11px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
               <RefreshCw size={14} className="animate-spin" /> Fetching...
             </span>
           ) : (
-            <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/60">
+            <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/60">
               {remoteModels.length} models available
             </span>
           )}
         </div>
 
         {remoteModelsError && (
-          <div className="text-[11px] font-bold text-red-400/80 bg-red-400/5 border border-red-400/15 rounded-xl px-3 py-2 flex items-center gap-2">
+          <div className="text-[12px] font-bold text-red-400/80 bg-red-400/5 border border-red-400/15 rounded-xl px-3 py-2 flex items-center gap-2">
             <AlertCircle size={16} />
             <span>{remoteModelsError}</span>
           </div>
@@ -171,7 +171,7 @@ export const LlmCatalogView = memo(({
           )}
         >
           {remoteModels.length === 0 ? (
-            <div className="text-center py-6 text-[11px] text-[rgb(var(--foreground-muted))]/70">
+            <div className="text-center py-6 text-[12px] text-[rgb(var(--foreground-muted))]/70">
               No remote models loaded. Ensure the server is online and configured in the Interaction Card.
             </div>
           ) : (
@@ -204,37 +204,37 @@ export const LlmCatalogView = memo(({
                 >
                   <div className="flex-1 space-y-1.5 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-bold text-[rgb(var(--foreground))]/90 text-[11px] truncate">
+                      <span className="font-bold text-[rgb(var(--foreground))]/90 text-[12px] truncate">
                         {model.name}
                       </span>
                       {model.quantization && (
-                        <span className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground))]/70 border border-[rgba(var(--foreground),0.04)] leading-none">
+                        <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground))]/70 border border-[rgba(var(--foreground),0.04)] leading-none">
                           {model.quantization}
                         </span>
                       )}
                       {model.family && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.08)] leading-none">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.08)] leading-none">
                           {model.family}
                         </span>
                       )}
                       {isGpu ? (
                         <span
                           title={probed?.gpu_status || "GPU Offloaded"}
-                          className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 leading-none flex items-center gap-1"
+                          className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 leading-none flex items-center gap-1"
                         >
                           🚀 GPU {probed?.vram_bytes ? `(${(probed.vram_bytes / (1024 * 1024)).toFixed(0)}MB)` : ""}
                         </span>
                       ) : probed?.server_has_gpu ? (
                         <span
                           title="Server has GPU hardware, but model is running in CPU mode"
-                          className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 leading-none flex items-center gap-1"
+                          className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 leading-none flex items-center gap-1"
                         >
                           ⚠️ GPU Server (CPU)
                         </span>
                       ) : null}
                     </div>
 
-                    <div className="flex items-center gap-2 text-[10px] text-[rgb(var(--foreground-muted))]/70">
+                    <div className="flex items-center gap-2 text-[11px] text-[rgb(var(--foreground-muted))]/70">
                       <span className="font-mono truncate">{model.id}</span>
                       {model.size_bytes !== null && model.size_bytes !== undefined && (
                         <>
@@ -247,7 +247,7 @@ export const LlmCatalogView = memo(({
                     {/* Capability Badges & Readouts */}
                     <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                       {isTesting ? (
-                        <span className="text-[9px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
+                        <span className="text-[10px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
                           <Loader2 size={10} className="animate-spin" />
                           Testing capabilities...
                         </span>
@@ -256,7 +256,7 @@ export const LlmCatalogView = memo(({
                           {probed.supports_tools && (
                             <span
                               title="Supports Tool Calling"
-                              className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1"
+                              className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1"
                             >
                               🛠️ Tools
                             </span>
@@ -264,7 +264,7 @@ export const LlmCatalogView = memo(({
                           {probed.supports_latin && (
                             <span
                               title="Latin Script (EN)"
-                              className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                              className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                             >
                               EN
                             </span>
@@ -272,7 +272,7 @@ export const LlmCatalogView = memo(({
                           {probed.supports_devanagari && (
                             <span
                               title="Devanagari Script (Hindi/Hinglish)"
-                              className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                              className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20"
                             >
                               DEV
                             </span>
@@ -280,7 +280,7 @@ export const LlmCatalogView = memo(({
                           {probed.context_window && (
                             <span
                               title="Context Window"
-                              className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-300 border border-zinc-700/50"
+                              className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-300 border border-zinc-700/50"
                             >
                               🧠{" "}
                               {probed.context_window >= 1000000
@@ -291,7 +291,7 @@ export const LlmCatalogView = memo(({
                           {probed.tps && (
                             <span
                               title="Generation Speed"
-                              className="text-[9px] font-mono text-emerald-400 font-bold"
+                              className="text-[10px] font-mono text-emerald-400 font-bold"
                             >
                               ⚡ {probed.tps.toFixed(1)} tps
                             </span>
@@ -304,7 +304,7 @@ export const LlmCatalogView = memo(({
                             e.stopPropagation();
                             handleProbeCapabilities(model.id);
                           }}
-                          className="text-[9px] font-bold text-[rgb(var(--accent))] hover:underline flex items-center gap-1"
+                          className="text-[10px] font-bold text-[rgb(var(--accent))] hover:underline flex items-center gap-1"
                         >
                           <Sparkles size={10} /> Test Capabilities
                         </button>
@@ -327,7 +327,7 @@ export const LlmCatalogView = memo(({
 
         {/* Custom Model ID field */}
         <div className="mt-3 pt-3 border-t border-[rgba(var(--foreground),0.06)] space-y-2">
-          <span className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/80 uppercase tracking-wider block">
+          <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/80 uppercase tracking-wider block">
             Use Custom Model ID
           </span>
           <div className="flex gap-2">
@@ -339,7 +339,7 @@ export const LlmCatalogView = memo(({
                   setCustomModelId(e.target.value);
                 }}
                 placeholder="e.g. gemini-2.5-pro"
-                className="w-full bg-transparent border-none outline-none text-[11px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
+                className="w-full bg-transparent border-none outline-none text-[12px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
               />
             </div>
             <button
@@ -347,7 +347,7 @@ export const LlmCatalogView = memo(({
               onClick={handleValidateCustomModel}
               disabled={!customModelId.trim() || customModelStatus === "checking"}
               className={cn(
-                "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border shrink-0",
+                "px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border shrink-0",
                 customModelStatus === "checking" && "bg-[rgba(var(--foreground),0.05)] border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground-muted))]",
                 customModelStatus === "valid" && "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20",
                 customModelStatus === "invalid" && "bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20",
@@ -361,13 +361,13 @@ export const LlmCatalogView = memo(({
             </button>
           </div>
           {customModelStatus === "invalid" && (
-            <div className="text-[9px] text-amber-400/80 leading-normal flex items-start gap-1">
+            <div className="text-[10px] text-amber-400/80 leading-normal flex items-start gap-1">
               <span>⚠</span>
               <span>Model ID not in standard server list. Selected in draft anyway, but verify spelling.</span>
             </div>
           )}
           {customModelStatus === "valid" && (
-            <div className="text-[9px] text-emerald-400/80 leading-normal flex items-start gap-1">
+            <div className="text-[10px] text-emerald-400/80 leading-normal flex items-start gap-1">
               <span>✓</span>
               <span>Model verified successfully! Selected and ready to save.</span>
             </div>

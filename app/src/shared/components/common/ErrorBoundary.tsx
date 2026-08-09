@@ -65,7 +65,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               <h2 className="text-lg font-black text-[rgb(var(--foreground))] uppercase tracking-tight mb-2">
                 Render Error
               </h2>
-              <p className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em]">
+              <p className="text-[12px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em]">
                 {name}
               </p>
             </div>
@@ -80,10 +80,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             {/* Stack Trace */}
             {this.state.error?.stack && (
               <details className="text-left">
-                <summary className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/50 uppercase tracking-widest cursor-pointer hover:text-[rgb(var(--foreground-muted))] transition-colors">
+                <summary className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/50 uppercase tracking-widest cursor-pointer hover:text-[rgb(var(--foreground-muted))] transition-colors">
                   Stack Trace
                 </summary>
-                <pre className="mt-2 glass p-3 text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60 leading-relaxed overflow-auto max-h-[160px] custom-scrollbar whitespace-pre-wrap">
+                <pre className="mt-2 glass p-3 text-[12px] font-mono text-[rgb(var(--foreground-muted))]/60 leading-relaxed overflow-auto max-h-[160px] custom-scrollbar whitespace-pre-wrap">
                   {this.state.error.stack}
                 </pre>
               </details>
@@ -93,13 +93,13 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             <div className="flex gap-3 pt-2">
               <button
                 onClick={this.handleGoHome}
-                className="flex-1 py-3 text-[11px] font-black uppercase tracking-[0.3em] glass text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+                className="flex-1 py-3 text-[12px] font-black uppercase tracking-[0.3em] glass text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
               >
                 Home
               </button>
               <button
                 onClick={this.handleRetry}
-                className="flex-1 py-3 text-[11px] font-black uppercase tracking-[0.3em] glass-card hover:border-[rgb(var(--accent))]/70 transition-all active:scale-[0.98]"
+                className="flex-1 py-3 text-[12px] font-black uppercase tracking-[0.3em] glass-card hover:border-[rgb(var(--accent))]/70 transition-all active:scale-[0.98]"
               >
                 Retry
               </button>

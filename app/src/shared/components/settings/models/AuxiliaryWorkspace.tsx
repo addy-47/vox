@@ -31,22 +31,22 @@ export const AuxiliaryWorkspace = memo(
           )}
         >
           <SubModelCard
-            id="distilbert_query_classifier"
-            name="DistilBERT Query Classifier"
+            id="modernbert_memory_scope"
+            name="ModernBERT MemoryScope Classifier"
             description="Neural Intent Sieve. Categorizes transcripts in <5ms to skip unnecessary LLM inference."
             parameters="66M ONNX"
             ramUsage="~130 MB"
             tradeoffs="Intent Classification"
-            isDownloaded={!!modelPresence["distilbert_query_classifier"]}
+            isDownloaded={!!modelPresence["modernbert_memory_scope"]}
             isActive={true}
             isRequired={false}
             layoutMode={layoutMode}
             onSelect={() => {}}
             confirmDeleteId={confirmDeleteId}
             setConfirmDeleteId={setConfirmDeleteId}
-            downloadStatus={downloadStatuses["distilbert_query_classifier"]}
-            startDownload={() => startDownload("distilbert_query_classifier")}
-            deleteModel={() => deleteModel("distilbert_query_classifier")}
+            downloadStatus={downloadStatuses["modernbert_memory_scope"]}
+            startDownload={() => startDownload("modernbert_memory_scope")}
+            deleteModel={() => deleteModel("modernbert_memory_scope")}
           />
 
           <SubModelCard
@@ -69,22 +69,22 @@ export const AuxiliaryWorkspace = memo(
           />
 
           <SubModelCard
-            id="deberta_v3_xsmall_nli"
+            id="nli_deberta_v3_base"
             name="DeBERTa-v3 NLI Reranker"
             description="Cross-encoder entailment auditor. Verifies retrieved facts before injecting into LLM context."
             parameters="22M ONNX"
             ramUsage="~90 MB"
             tradeoffs="RAG Fact Verification"
-            isDownloaded={!!modelPresence["deberta_v3_xsmall_nli"]}
+            isDownloaded={!!modelPresence["nli_deberta_v3_base"]}
             isActive={true}
             isRequired={false}
             layoutMode={layoutMode}
             onSelect={() => {}}
             confirmDeleteId={confirmDeleteId}
             setConfirmDeleteId={setConfirmDeleteId}
-            downloadStatus={downloadStatuses["deberta_v3_xsmall_nli"]}
-            startDownload={() => startDownload("deberta_v3_xsmall_nli")}
-            deleteModel={() => deleteModel("deberta_v3_xsmall_nli")}
+            downloadStatus={downloadStatuses["nli_deberta_v3_base"]}
+            startDownload={() => startDownload("nli_deberta_v3_base")}
+            deleteModel={() => deleteModel("nli_deberta_v3_base")}
           />
 
           <SubModelCard
@@ -104,6 +104,24 @@ export const AuxiliaryWorkspace = memo(
             downloadStatus={downloadStatuses["vox_translit_rnn"]}
             startDownload={() => startDownload("vox_translit_rnn")}
             deleteModel={() => deleteModel("vox_translit_rnn")}
+          />
+          <SubModelCard
+            id="modernbert_edge_creation"
+            name="ModernBERT Cognitive Edge Classifier"
+            description="Neural Edge Sieve. Classifies cross-collection inter-fact graph relationships."
+            parameters="66M ONNX"
+            ramUsage="~130 MB"
+            tradeoffs="Edge Graph Topology"
+            isDownloaded={!!modelPresence["modernbert_edge_creation"]}
+            isActive={true}
+            isRequired={false}
+            layoutMode={layoutMode}
+            onSelect={() => {}}
+            confirmDeleteId={confirmDeleteId}
+            setConfirmDeleteId={setConfirmDeleteId}
+            downloadStatus={downloadStatuses["modernbert_edge_creation"]}
+            startDownload={() => startDownload("modernbert_edge_creation")}
+            deleteModel={() => deleteModel("modernbert_edge_creation")}
           />
         </div>
       </div>

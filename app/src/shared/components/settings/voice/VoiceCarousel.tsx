@@ -224,7 +224,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
             value={newVoiceName}
             onChange={(e) => setNewVoiceName(e.target.value)}
             placeholder="Voice Name"
-            className="flex-1 bg-transparent border-none outline-none text-[12px] py-1 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30 font-bold"
+            className="flex-1 bg-transparent border-none outline-none text-[13px] py-1 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30 font-bold"
           />
 
           <div className="flex items-center gap-1.5 shrink-0">
@@ -266,33 +266,33 @@ export const VoiceCarousel = memo(function VoiceCarousel({
 
         <div className="flex-1 flex flex-col justify-center min-h-[40px] my-1">
           {isRecording && (
-            <div className="text-[10px] text-rose-400 font-bold flex items-center justify-center gap-1.5 animate-pulse">
+            <div className="text-[11px] text-rose-400 font-bold flex items-center justify-center gap-1.5 animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
               Recording... {recordingDuration}s / 30s
             </div>
           )}
           {!isRecording && recordedPcm && (
-            <div className="text-[10px] text-emerald-400 font-bold text-center">
+            <div className="text-[11px] text-emerald-400 font-bold text-center">
               ✓ Audio recorded ({recordingDuration}s)
             </div>
           )}
           {!isRecording && selectedFile && (
-            <div className="text-[10px] text-emerald-400 font-bold text-center max-w-full truncate px-2" title={selectedFile}>
+            <div className="text-[11px] text-emerald-400 font-bold text-center max-w-full truncate px-2" title={selectedFile}>
               ✓ Selected: {selectedFile.split(/[/\\]/).pop()}
             </div>
           )}
           {!isRecording && recordedPcm && recordingDuration < 10 && (
-            <div className="text-[9px] text-amber-400 font-medium text-center leading-tight">
+            <div className="text-[10px] text-amber-400 font-medium text-center leading-tight">
               ⚠️ Too short ({recordingDuration}s). Minimum is 10s.
             </div>
           )}
           {recordingError && (
-            <div className="text-[9px] text-rose-400 font-medium text-center leading-tight">
+            <div className="text-[10px] text-rose-400 font-medium text-center leading-tight">
               {recordingError}
             </div>
           )}
           {cloningStatus && (
-            <div className="text-[10px] text-amber-400 font-bold text-center leading-tight">
+            <div className="text-[11px] text-amber-400 font-bold text-center leading-tight">
               {cloningStatus}
             </div>
           )}
@@ -302,7 +302,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
           <button
             type="button"
             onClick={resetAddingState}
-            className="flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgba(var(--foreground),0.05)] transition-all duration-300"
+            className="flex-1 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgba(var(--foreground),0.05)] transition-all duration-300"
           >
             Cancel
           </button>
@@ -316,7 +316,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
               cloningStatus === "Cloning..." ||
               isRecording
             }
-            className="flex-[2] py-2 rounded-xl text-[10px] font-black uppercase tracking-wider bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-[1.01] active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all duration-300"
+            className="flex-[2] py-2 rounded-xl text-[11px] font-black uppercase tracking-wider bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-[1.01] active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all duration-300"
           >
             {cloningStatus === "Cloning..." ? "Processing..." : "Clone"}
           </button>
@@ -349,13 +349,13 @@ export const VoiceCarousel = memo(function VoiceCarousel({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Type voice name or locale..."
-            className="flex-1 bg-transparent border-none outline-none text-[11px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/35"
+            className="flex-1 bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/35"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              className="text-[9px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] px-1 cursor-pointer"
+              className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] px-1 cursor-pointer"
             >
               Clear
             </button>
@@ -405,10 +405,10 @@ export const VoiceCarousel = memo(function VoiceCarousel({
           )}
 
           <div className="flex flex-col items-center justify-center min-w-0 max-w-[70%]">
-            <span className="text-[13px] font-black tracking-wide text-[rgb(var(--foreground))] truncate leading-tight">
+            <span className="text-[14px] font-black tracking-wide text-[rgb(var(--foreground))] truncate leading-tight">
               {currentVoice?.name || "No Voice"}
             </span>
-            <span className="text-[9px] leading-tight font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/40 mt-0.5">
+            <span className="text-[10px] leading-tight font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/40 mt-0.5">
               {currentVoice?.isCustom
                 ? "Custom Clone"
                 : activeList.length > 1

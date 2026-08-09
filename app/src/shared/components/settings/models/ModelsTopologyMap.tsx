@@ -65,7 +65,7 @@ export const ModelsTopologyMap = memo(
                   : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
               )}
             />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">
+            <span className="text-[12px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">
               {label}
             </span>
             <span

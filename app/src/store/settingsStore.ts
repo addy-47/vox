@@ -130,15 +130,15 @@ export interface VoxSettings {
   };
   persistence: {
     private_mode: boolean;
-    max_sessions: number;
-    retention_days: number;
   };
   memory: {
-    episodic_enabled: boolean;
-    bg_worker_enabled: boolean;
-    top_k: number;
-    similarity_threshold: number;
-    max_context_share: number;
+    context_retrieval_enabled: boolean;
+    pipeline_processing_enabled: boolean;
+    max_personal_memory_share: number;
+    context_chaining_window_hours: number;
+    top_k_facts: number;
+    max_hops: number;
+    semantic_similarity_cutoff: number;
   };
   assistant: {
     modular_prompt: string;
@@ -311,13 +311,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           JSON.stringify(settings.llm) !== JSON.stringify(draftSettings.llm)
         );
       }
-      case "tray":
+      case "history":
         return (
-          settings.ui.tray_enabled !== draftSettings.ui.tray_enabled ||
-          settings.ui.tray_blur_density !== draftSettings.ui.tray_blur_density ||
-          settings.ui.tray_glass_tint !== draftSettings.ui.tray_glass_tint ||
-          settings.ui.tray_history_limit !== draftSettings.ui.tray_history_limit ||
-          settings.interaction.tray_mode !== draftSettings.interaction.tray_mode
+          settings.persistence.private_mode !== draftSettings.persistence.private_mode ||
+          settings.ui.tray_history_limit !== draftSettings.ui.tray_history_limit
         );
       case "persona":
         return JSON.stringify(settings.assistant) !== JSON.stringify(draftSettings.assistant);
@@ -394,12 +391,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         }
         break;
       }
-      case "tray":
-        updateDraft("ui", "tray_enabled", settings.ui.tray_enabled);
-        updateDraft("ui", "tray_blur_density", settings.ui.tray_blur_density);
-        updateDraft("ui", "tray_glass_tint", settings.ui.tray_glass_tint);
+      case "history":
+        updateDraft("persistence", "private_mode", settings.persistence.private_mode);
         updateDraft("ui", "tray_history_limit", settings.ui.tray_history_limit);
-        updateDraft("interaction", "tray_mode", settings.interaction.tray_mode);
         break;
       case "persona":
         Object.keys(settings.assistant).forEach(k => updateDraft("assistant", k, (settings.assistant as any)[k]));
@@ -471,7 +465,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     await Promise.all(promises);
-    await get().loadSettings();
+    set({ hasChanges: false });
+    const bootState = await requestBootState();
+    const fetched = bootState.settings;
+    const cloned = structuredClone(fetched);
+    set({ settings: fetched, draftSettings: cloned, hasChanges: false, isLoading: false });
 
     if (restartKeys.length > 0) {
       set({ restartKeys });

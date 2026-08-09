@@ -302,7 +302,7 @@ export const History: React.FC = () => {
         {showLoading ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-50">
             <div className="w-6 h-6 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Loading memories...</span>
+            <span className="text-[11px] font-bold uppercase tracking-widest">Loading memories...</span>
           </div>
         ) : sessions.length === 0 ? (
           <div className="absolute inset-0 flex items-center justify-center p-8">
@@ -335,14 +335,14 @@ export const History: React.FC = () => {
                   )}
                 >
                   <div className="flex items-center justify-between mb-2 pr-10">
-                    <span className="text-[10px] font-mono text-[rgb(var(--accent))]/80 font-bold">
+                    <span className="text-[11px] font-mono text-[rgb(var(--accent))]/80 font-bold">
                       {formatDateTime(session.started_at)}
                     </span>
-                    <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40">
+                    <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40">
                       {session.turn_count} {session.turn_count === 1 ? "turn" : "turns"}
                     </span>
                   </div>
-                  <p className="text-[13px] font-light leading-relaxed italic text-[rgb(var(--foreground))]/75 pr-10">
+                  <p className="text-[14px] font-light leading-relaxed italic text-[rgb(var(--foreground))]/75 pr-10">
                     "{previewText}"
                   </p>
                   <div className="absolute top-4 right-4 z-20">
@@ -397,7 +397,7 @@ export const History: React.FC = () => {
               <ChevronRight size={22} />
             </button>
 
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-[rgb(var(--foreground-muted))]/40 z-30">
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40 z-30">
               {pageIndex + 1} / {totalPages}
             </div>
 
