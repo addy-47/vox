@@ -304,7 +304,7 @@ pub async fn setup_remote_server(
             .arg("-s")
             .arg("--")
             .arg(&remote_path)
-            .arg(&server_port.to_string());
+            .arg(server_port.to_string());
 
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())

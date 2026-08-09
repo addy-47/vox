@@ -9,6 +9,12 @@ pub struct AudioBridge {
     tx: Option<Sender<Vec<i16>>>,
 }
 
+impl Default for AudioBridge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AudioBridge {
     pub fn new() -> Self {
         Self { tx: None }
@@ -71,7 +77,7 @@ impl AudioBridge {
                 match e {
                     tokio::sync::mpsc::error::TrySendError::Full(_) => {
                         let prev = DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-                        if prev % 100 == 0 {
+                        if prev.is_multiple_of(100) {
                             log::warn!(
                                 "[AudioBridge] Channel buffer full, dropping input audio chunk. Dropped {} chunks so far.",
                                 prev + 1

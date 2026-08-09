@@ -4,10 +4,8 @@
 /// They are NOT Tauri IPC events — IPC is a bridge layer above this.
 ///
 /// IMPORTANT — ID semantics (Phase 6.3):
-///   - `turn_id`  — monotonic u32, increments every TranscriptFinal. Used for stale-event
-///                  rejection and cancellation routing. NEVER persisted.
-///   - Conversation session identity lives in `AppState::conversation_id` (AtomicU64).
-///                  Persistence worker reads it at TurnCompleted time.
+/// - `turn_id` — monotonic u32, increments every TranscriptFinal. Used for stale-event rejection and cancellation routing. NEVER persisted.
+/// - Conversation session identity lives in `AppState::conversation_id` (AtomicU64). Persistence worker reads it at TurnCompleted time.
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
     SpeechStart {
@@ -69,5 +67,5 @@ pub enum VoxEvent {
     Shutdown,
 
     /// Propagate global settings updates to the orchestrator's local cache.
-    SettingsUpdated(crate::core::settings::VoxSettings),
+    SettingsUpdated(Box<crate::core::settings::VoxSettings>),
 }

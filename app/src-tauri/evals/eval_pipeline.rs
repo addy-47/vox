@@ -17,7 +17,6 @@ use turso::Builder;
 use vox_lib::core::constants::{inter_collection_edge, PM_SEMANTIC_GRAPH_COLLECTIONS};
 use vox_lib::persistence::{decode_f32_blob, mutations, queries};
 use vox_lib::services::memory::pipeline::batch_result::{CandidateAuditLog, DedupAuditLog};
-use vox_lib::services::memory::pipeline::drain_pipeline_queue_with_run_id;
 use vox_lib::services::memory::pipeline::stage3_eval::{
     INTER_COLLECTION_CANDIDATE_SEARCH, SAME_COLLECTION_CANDIDATE_SEARCH, SUBFLOOR_CANDIDATE_FLOOR,
 };
@@ -548,8 +547,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    let chunks: Vec<&[(i64, String, String, Vec<CandidateAuditLog>)]> =
-        batch_items.chunks(16).collect();
+    let chunks = batch_items.chunks(16).collect::<Vec<_>>();
     println!(
         "  Total Stage 3 Evaluation Batches to process: {}",
         chunks.len()
@@ -617,16 +615,12 @@ async fn main() -> Result<()> {
             reports_dir.join(format!("stage3_batch_{:02}_raw_vs_toon.log", batch_num));
 
         let mut debug_content = String::new();
-        debug_content.push_str(&format!(
-            "=========================================================================\n"
-        ));
+        debug_content.push_str("=========================================================================\n");
         debug_content.push_str(&format!(
             "STAGE 3 BATCH {:02} RAW INPUT vs TOON FORMAT AUDIT LOG\n",
             batch_num
         ));
-        debug_content.push_str(&format!(
-            "=========================================================================\n\n"
-        ));
+        debug_content.push_str("=========================================================================\n\n");
         debug_content.push_str("--- SECTION 1: RAW CandidateAuditLog STRUCTS (JSON) ---\n");
         for (item_id, item_fact, item_coll, logs) in chunk.iter() {
             debug_content.push_str(&format!(
@@ -634,7 +628,7 @@ async fn main() -> Result<()> {
                 item_id, item_coll, item_fact
             ));
             debug_content.push_str(&serde_json::to_string_pretty(logs).unwrap_or_default());
-            debug_content.push_str("\n");
+            debug_content.push('\n');
         }
         debug_content.push_str("\n\n--- SECTION 2: FORMATTED TOON STRING ---\n");
         debug_content.push_str(&batch_toon);

@@ -17,6 +17,12 @@ pub struct BenchReporter {
     pub run_dir: PathBuf,
 }
 
+impl Default for BenchReporter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BenchReporter {
     pub fn new() -> Self {
         Self::new_with_prefix(None)

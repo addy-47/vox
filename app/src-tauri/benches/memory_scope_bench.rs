@@ -173,9 +173,9 @@ fn main() -> Result<()> {
     let calib_tau = 0.81f32;
     let domain_id = ScopeClass::Domain as usize;
 
-    let mut class_counts = vec![0usize; 4];
-    let mut class_correct = vec![0usize; 4];
-    let mut class_pred_counts = vec![0usize; 4];
+    let mut class_counts = [0usize; 4];
+    let mut class_correct = [0usize; 4];
+    let mut class_pred_counts = [0usize; 4];
 
     for sample in eval_samples {
         let expected_scope = ScopeClass::parse(&sample.scope);

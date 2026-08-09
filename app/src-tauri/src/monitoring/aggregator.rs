@@ -54,6 +54,7 @@ pub struct TelemetryAggregator {
 }
 
 impl TelemetryAggregator {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
         latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,

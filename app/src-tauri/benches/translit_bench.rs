@@ -12,6 +12,7 @@ use ort::session::Session;
 use std::collections::HashMap;
 use std::time::Instant;
 
+#[allow(clippy::too_many_arguments)]
 fn run_debug_translit(
     encoder_sess: &mut Session,
     decoder_sess: &mut Session,

@@ -509,7 +509,7 @@ impl LlmProvider for OpenAiCompatProvider {
                             .into_iter()
                             .map(|m| {
                                 let clean_name =
-                                    m.name.replace(':', " ").replace('_', " ").replace('-', " ");
+                                    m.name.replace([':', '_', '-'], " ");
                                 LlmModelInfo {
                                     id: m.name.clone(),
                                     name: clean_name,
@@ -708,7 +708,7 @@ fn parse_heuristic_metadata(id: &str) -> (String, Option<String>, Option<String>
         None
     };
 
-    let clean_name = id.replace(':', " ").replace('_', " ").replace('-', " ");
+    let clean_name = id.replace([':', '_', '-'], " ");
 
     (clean_name, quantization, family)
 }

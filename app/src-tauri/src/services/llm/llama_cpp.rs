@@ -586,13 +586,10 @@ impl LlmEngine for LlmWorker {
             let mut token_str = String::new();
             let mut decoded = false;
 
-            match std::str::from_utf8(&byte_buf) {
-                Ok(s) => {
-                    token_str = s.to_string();
-                    byte_buf.clear();
-                    decoded = true;
-                }
-                Err(_) => {}
+            if let Ok(s) = std::str::from_utf8(&byte_buf) {
+                token_str = s.to_string();
+                byte_buf.clear();
+                decoded = true;
             }
 
             if decoded && !token_str.is_empty() {

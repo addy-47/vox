@@ -216,7 +216,7 @@ pub async fn update_setting(
         let _ = engine
             .pipeline_tx
             .send(crate::core::events::VoxEvent::SettingsUpdated(
-                current_settings,
+                Box::new(current_settings),
             ));
     }
 

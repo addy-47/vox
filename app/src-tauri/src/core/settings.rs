@@ -41,6 +41,7 @@ pub enum PipelineMode {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
+#[derive(Default)]
 pub struct ModelMetadata {
     pub id: String,
     pub name: String,
@@ -50,18 +51,6 @@ pub struct ModelMetadata {
     pub tradeoffs: String,
 }
 
-impl Default for ModelMetadata {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            name: String::new(),
-            description: String::new(),
-            ram_usage: String::new(),
-            parameters: String::new(),
-            tradeoffs: String::new(),
-        }
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VoiceProfile {
@@ -487,7 +476,9 @@ impl Default for AsrSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Default)]
 pub enum LlmProviderConfig {
+    #[default]
     Embedded,
     OpenAiCompat {
         base_url: String,
@@ -498,11 +489,6 @@ pub enum LlmProviderConfig {
     },
 }
 
-impl Default for LlmProviderConfig {
-    fn default() -> Self {
-        LlmProviderConfig::Embedded
-    }
-}
 
 fn default_chat_temperature() -> f32 {
     0.2
@@ -659,18 +645,12 @@ impl Default for TelemetrySettings {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
+#[derive(Default)]
 pub struct PersistenceSettings {
     /// Disable all database writes for the current session.
     pub private_mode: bool,
 }
 
-impl Default for PersistenceSettings {
-    fn default() -> Self {
-        Self {
-            private_mode: false,
-        }
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
@@ -712,15 +692,11 @@ impl Default for MemorySettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Default)]
 pub struct SetupSettings {
     pub completed: bool,
 }
 
-impl Default for SetupSettings {
-    fn default() -> Self {
-        Self { completed: false }
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]

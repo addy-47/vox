@@ -125,7 +125,7 @@ mod tests {
         let mut resampler = AudioResampler::new(16000, 24000, 256).unwrap();
 
         // 1. Pass input smaller than chunk_size (100 < 256) -> output should be empty (buffered)
-        let output_1 = resampler.process_i16(&vec![0i16; 100]).unwrap();
+        let output_1 = resampler.process_i16(&[0i16; 100]).unwrap();
         assert_eq!(output_1.len(), 0);
 
         // 2. Pass 156 samples to complete first chunk of 256 -> outputs 381 samples (initial transient)

@@ -93,7 +93,7 @@ impl AudioRouter {
                                     static OVERFLOW_COUNT: std::sync::atomic::AtomicU32 =
                                         std::sync::atomic::AtomicU32::new(0);
                                     let prev = OVERFLOW_COUNT.fetch_add(1, Ordering::Relaxed);
-                                    if prev % 100 == 0 {
+                                    if prev.is_multiple_of(100) {
                                         log::warn!(
                                             "[AudioRouter] VAD queue overflow! Dropped {} chunks.",
                                             prev + 1

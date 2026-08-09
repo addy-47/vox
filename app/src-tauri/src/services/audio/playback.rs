@@ -82,6 +82,7 @@ unsafe impl Sync for PlaybackEngine {}
 
 impl PlaybackEngine {
     /// Initialise CPAL output stream at 48kHz. Does not start playback yet.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
@@ -204,6 +205,7 @@ impl PlaybackEngine {
 
     // ── Private ───────────────────────────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     fn build_cpal_stream(
         mut consumer: HeapCons<f32>,
         playback_active: Arc<AtomicBool>,

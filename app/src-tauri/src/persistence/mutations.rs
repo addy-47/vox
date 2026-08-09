@@ -75,7 +75,7 @@ pub async fn session_end_consolidation(
         .as_millis() as i64;
 
     conn.execute("BEGIN TRANSACTION;", ()).await?;
-    match (|| async {
+    match async {
         conn.execute(
             "UPDATE personal_memory_queue 
              SET status = 'pending' 
@@ -93,7 +93,7 @@ pub async fn session_end_consolidation(
             tracing::info!("[Repository] Saved session Context memory for session_id={}", session_id);
         }
         anyhow::Ok(())
-    })().await {
+    }.await {
         Ok(_) => {
             conn.execute("COMMIT;", ()).await?;
             Ok(())

@@ -23,7 +23,7 @@ use vox_lib::core::settings::{MemorySettings, SttProviderConfig, VoxSettings};
 use vox_lib::persistence::memory_worker::{spawn_memory_worker, MemoryWorkerEvent};
 use vox_lib::services::llm::{LlmProvider, OpenAiCompatProvider, ProviderKind};
 use vox_lib::services::memory::{
-    classify_query, ensure_classifier_loaded, ensure_embedder_loaded, estimate_tokens, ChatMessage,
+    ensure_embedder_loaded, estimate_tokens, ChatMessage,
     ConversationContext, ConversationManager, Role,
 };
 use vox_lib::services::stt::providers::{create_stt_provider, SttProvider, SttProviderKind};
@@ -295,8 +295,7 @@ fn main() -> Result<()> {
     let memory_settings = MemorySettings {
         context_retrieval_enabled: true,
         pipeline_processing_enabled: true,
-        operational_budget_share: 0.05,
-        semantic_budget_share: 0.10,
+        max_personal_memory_share: 0.15,
         context_chaining_window_hours: 12,
         top_k_facts: 5,
         max_hops: 2,
@@ -388,8 +387,7 @@ fn main() -> Result<()> {
         None
     };
 
-    // 4. Ensure ML Models (Classifier & BGE-M3 Embedder) are ready
-    let _ = ensure_classifier_loaded();
+    // 4. Ensure ML Models (BGE-M3 Embedder) are ready
     let _ = ensure_embedder_loaded(true);
 
     // Dynamic Session Definitions: (dataset_path, audio_clips_dir)
@@ -509,8 +507,8 @@ fn main() -> Result<()> {
             };
 
             // 1. Hot-Path Query Classification
-            let classification = classify_query(&user_prompt);
-            if classification.is_generic() {
+            let scope = query_sieve::MemoryScope::Domain;
+            if scope == query_sieve::MemoryScope::ChitChat {
                 generic_query_count += 1;
             } else {
                 semantic_query_count += 1;
@@ -526,13 +524,12 @@ fn main() -> Result<()> {
                 .unwrap_or_else(|| vec![0.0; 1024]);
 
             let personal_memory_block = tokio_handle.block_on(async {
-                vox_lib::services::memory::retrieval::retrieve_personal_context(
+                vox_lib::services::memory::retrieval::retrieve_personal_context_v7(
                     &conn,
                     &query_vector,
+                    query_sieve::MemoryScope::Domain,
                     &memory_settings,
                     2048,
-                    &session_id.to_string(),
-                    None,
                 )
                 .await
                 .unwrap_or_default()
@@ -548,7 +545,7 @@ fn main() -> Result<()> {
             conv_mgr.update_system_prompt(&full_system_prompt);
 
             let (ctx, speech, personal_memory) =
-                conv_mgr.build_context(provider_kind, false, Some(&*provider));
+                conv_mgr.build_context(provider_kind, false, Some(&*provider), None);
 
             if !personal_memory.is_empty() {
                 let _ = memory_tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
@@ -572,7 +569,7 @@ fn main() -> Result<()> {
                 session_num,
                 turn,
                 user_prompt.chars().take(40).collect::<String>(),
-                if classification.is_generic() { "GENERIC" } else { "SEMANTIC" },
+                if scope == query_sieve::MemoryScope::ChitChat { "CHITCHAT" } else { "DOMAIN" },
                 personal_memory_block.len(),
                 rag_latency
             );
@@ -583,7 +580,15 @@ fn main() -> Result<()> {
             let gen_start = Instant::now();
             let mut assistant_resp = String::new();
 
-            if provider.generate(&ctx, turn as u32, &cancel, &tx).is_ok() {
+            let gen_req = vox_lib::services::llm::GenerationRequest {
+                input: vox_lib::services::llm::ConversationInput {
+                    messages: ctx.messages.clone(),
+                },
+                options: vox_lib::services::llm::GenerationOptions::default(),
+                output: vox_lib::services::llm::OutputConstraint::Text,
+                purpose: vox_lib::services::llm::GenerationPurpose::Conversation,
+            };
+            if tokio_handle.block_on(provider.generate(gen_req, turn as u32, &cancel, &tx)).is_ok() {
                 while let Ok(evt) = rx.recv_timeout(Duration::from_millis(5000)) {
                     match evt {
                         VoxEvent::LlmToken { token, .. } => {
@@ -741,8 +746,16 @@ fn main() -> Result<()> {
                         "  [S{} COMPACTION] Attempt {}/{}...",
                         session_num, attempts, max_attempts
                     );
-                    if provider
-                        .generate(&comp_ctx, 999_999, &comp_cancel, &c_tx)
+                    let gen_req = vox_lib::services::llm::GenerationRequest {
+                        input: vox_lib::services::llm::ConversationInput {
+                            messages: comp_ctx.messages.clone(),
+                        },
+                        options: vox_lib::services::llm::GenerationOptions::default(),
+                        output: vox_lib::services::llm::OutputConstraint::Text,
+                        purpose: vox_lib::services::llm::GenerationPurpose::MemoryCompaction,
+                    };
+                    if tokio_handle
+                        .block_on(provider.generate(gen_req, 999_999, &comp_cancel, &c_tx))
                         .is_ok()
                     {
                         while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(90000)) {
@@ -870,8 +883,16 @@ fn main() -> Result<()> {
                     "  [S{} FINAL COMPACTION] Attempt {}/{}...",
                     session_num, attempts, max_attempts
                 );
-                if provider
-                    .generate(&comp_ctx, 999_999, &comp_cancel, &c_tx)
+                let gen_req = vox_lib::services::llm::GenerationRequest {
+                    input: vox_lib::services::llm::ConversationInput {
+                        messages: comp_ctx.messages.clone(),
+                    },
+                    options: vox_lib::services::llm::GenerationOptions::default(),
+                    output: vox_lib::services::llm::OutputConstraint::Text,
+                    purpose: vox_lib::services::llm::GenerationPurpose::MemoryCompaction,
+                };
+                if tokio_handle
+                    .block_on(provider.generate(gen_req, 999_999, &comp_cancel, &c_tx))
                     .is_ok()
                 {
                     while let Ok(evt) = c_rx.recv_timeout(Duration::from_millis(90000)) {

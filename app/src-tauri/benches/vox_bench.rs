@@ -184,7 +184,7 @@ fn main() -> anyhow::Result<()> {
         let total_cores = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
-        let llm_threads = (total_cores.saturating_sub(2)).min(4).max(2) as u32;
+        let llm_threads = (total_cores.saturating_sub(2)).clamp(2, 4) as u32;
         println!(
             "\x1b[32m[Bench]\x1b[0m System cores: {}, LLM threads: {}",
             total_cores, llm_threads

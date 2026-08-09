@@ -3,6 +3,7 @@
 //! ============================================================================
 
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use super::super::mutation::apply_setting_mutation;
     use crate::core::settings::VoxSettings;

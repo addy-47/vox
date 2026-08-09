@@ -29,7 +29,7 @@
 //! └── pain/ ...
 //! ```
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use clap::Parser;
@@ -192,12 +192,13 @@ fn main() -> anyhow::Result<()> {
 
 // ─── Per-voice processing ───────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn process_one_voice(
     name: &str,
-    source_path: &PathBuf,
-    output_dir: &PathBuf,
-    t3_path: &PathBuf,
-    s3_path: &PathBuf,
+    source_path: &Path,
+    output_dir: &Path,
+    t3_path: &Path,
+    s3_path: &Path,
     language: &str,
     quality_steps: u32,
     _speed: f32,
@@ -408,7 +409,7 @@ fn resolve_model_dir(custom: Option<&PathBuf>) -> anyhow::Result<PathBuf> {
 }
 
 /// Find T3 model file (supports both naming conventions).
-fn find_t3_model(dir: &PathBuf) -> PathBuf {
+fn find_t3_model(dir: &Path) -> PathBuf {
     let candidates = [
         dir.join("t3-q4_0.gguf"),
         dir.join("chatterbox-t3-mtl-q4_0.gguf"),
@@ -424,7 +425,7 @@ fn find_t3_model(dir: &PathBuf) -> PathBuf {
 }
 
 /// Find S3Gen model file (supports both naming conventions).
-fn find_s3_model(dir: &PathBuf) -> PathBuf {
+fn find_s3_model(dir: &Path) -> PathBuf {
     let candidates = [
         dir.join("s3gen-f16.gguf"),
         dir.join("chatterbox-s3gen-mtl-f16.gguf"),

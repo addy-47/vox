@@ -327,7 +327,7 @@ async fn run_benchmark_for_clip(
             if metrics.lock().unwrap().ttfa.is_some() {
                 break;
             }
-            if let Err(_) = session.send_audio(&silence_chunk) {
+            if session.send_audio(&silence_chunk).is_err() {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;

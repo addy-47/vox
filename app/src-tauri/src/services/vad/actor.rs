@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::mpsc;
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_vad_actor<C>(
     mut vad: VadBackend,
     app: tauri::AppHandle,
@@ -251,7 +252,7 @@ where
                         static PASSIVE_DROP: std::sync::atomic::AtomicU64 =
                             std::sync::atomic::AtomicU64::new(0);
                         let cnt = PASSIVE_DROP.fetch_add(1, Ordering::Relaxed);
-                        if cnt % 50 == 0 {
+                        if cnt.is_multiple_of(50) {
                             log::warn!(
                                 "[VAD] [Realtime/Passive] Audio bridge backpressure — dropped {} chunks so far: {:?}",
                                 cnt + 1,
@@ -262,7 +263,7 @@ where
                         static PASSIVE_ROUTE: std::sync::atomic::AtomicU64 =
                             std::sync::atomic::AtomicU64::new(0);
                         let count = PASSIVE_ROUTE.fetch_add(1, Ordering::Relaxed);
-                        if count % 200 == 0 {
+                        if count.is_multiple_of(200) {
                             log::info!(
                                 "[VAD] [Realtime/Passive] Streamed audio chunk #{} to Gemini Live",
                                 count + 1
@@ -340,7 +341,7 @@ where
                             static PTT_ROUTE_COUNT: std::sync::atomic::AtomicU64 =
                                 std::sync::atomic::AtomicU64::new(0);
                             let count = PTT_ROUTE_COUNT.fetch_add(1, Ordering::Relaxed);
-                            if count % 200 == 0 {
+                            if count.is_multiple_of(200) {
                                 log::debug!(
                                     "[VAD] Routing realtime PTT audio chunk (count: {})",
                                     count + 1

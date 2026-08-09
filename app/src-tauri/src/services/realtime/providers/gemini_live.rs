@@ -877,7 +877,7 @@ fn handle_gemini_server_message(
                                         static RECV_COUNT: std::sync::atomic::AtomicU64 =
                                             std::sync::atomic::AtomicU64::new(0);
                                         let count = RECV_COUNT.fetch_add(1, Ordering::Relaxed);
-                                        if count % 100 == 0 {
+                                        if count.is_multiple_of(100) {
                                             log::debug!("[GeminiLive] Received {} model audio response chunks.", count + 1);
                                         }
                                     }

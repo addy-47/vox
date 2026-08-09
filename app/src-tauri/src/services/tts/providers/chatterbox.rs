@@ -136,7 +136,6 @@ impl ChatterboxEngine {
     }
 
     /// Apply time-stretch via linear interpolation.
-
     fn apply_speed(samples: &[f32], speed: f32) -> Vec<f32> {
         if (speed - 1.0).abs() < 0.01 || samples.is_empty() {
             return samples.to_vec();

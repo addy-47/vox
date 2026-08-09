@@ -20,6 +20,7 @@ use vox_lib::core::events::VoxEvent;
 use vox_lib::services::tts::{TtsEngine, TtsProvider};
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct DatasetTurn {
     turn: usize,
     user: String,

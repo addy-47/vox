@@ -59,6 +59,7 @@ enum EdgeLabel {
 }
 
 impl EdgeLabel {
+    #[allow(dead_code)]
     fn as_str(self) -> &'static str {
         match self {
             Self::Shapes => "SHAPES",
@@ -80,6 +81,7 @@ impl EdgeLabel {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 struct InputEdgePair {
     id: usize,
     source_domain: String,

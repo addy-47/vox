@@ -352,8 +352,8 @@ fn resolve_model_dir(override_dir: Option<PathBuf>) -> PathBuf {
         return default_path;
     }
 
-    let fallback_path = PathBuf::from("~/.vox/models/nli/deberta-v3-xsmall");
-    fallback_path
+    
+    PathBuf::from("~/.vox/models/nli/deberta-v3-xsmall")
 }
 
 fn run_batch_nli_score(

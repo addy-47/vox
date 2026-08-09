@@ -20,11 +20,11 @@ use vox_lib::services::llm::CTX_FLOOR_NON_EMBEDDED;
 
 #[test]
 fn test_llm_effective_context_window_calculation() {
-    let mut llm = LlmSettings::default();
-
-    // 1. Embedded provider uses explicit user configured value
-    llm.provider = LlmProviderConfig::Embedded;
-    llm.ctx_size = 2048;
+    let mut llm = LlmSettings {
+        provider: LlmProviderConfig::Embedded,
+        ctx_size: 2048,
+        ..Default::default()
+    };
     assert_eq!(llm.effective_ctx_size(), 2048);
 
     llm.ctx_size = 4096;
