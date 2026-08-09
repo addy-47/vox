@@ -35,6 +35,7 @@ impl SttEngineTrait for SttEngine {
 
         let start = std::time::Instant::now();
         let mut model_lock = self.model.lock();
+        model_lock.reset();
 
         // Nemotron uses a streaming ASR model that expects 8960-sample (560ms) chunks.
         // The internal state persists across transcribe_chunk() calls and must not be
