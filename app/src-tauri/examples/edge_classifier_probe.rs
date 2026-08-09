@@ -40,7 +40,6 @@ use llama_cpp_4::{
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
     model::{params::LlamaModelParams, AddBos, LlamaModel},
-    sampling::LlamaSampler,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -133,7 +132,7 @@ impl EdgeLabel {
         if let Some(start) = t.find('"') {
             if let Some(end) = t[start + 1..].find('"') {
                 let inner = &t[start + 1..start + 1 + end];
-                return Self::parse(&inner.to_string());
+                return Self::parse(inner);
             }
         }
         if t.contains("SHAPES") || t.contains("SHAPE") || t.contains("MODIFIES") {
@@ -255,7 +254,7 @@ fn static_system_prompt() -> &'static str {
 /// prompt_variant: 0 = minimal, 1 = structured, 2 = step-by-step-one-word
 fn build_user_turn(pair: &InputEdgePair, prompt_variant: usize) -> String {
     let allowed = get_allowed_labels(&pair.source_domain, &pair.target_domain);
-    let allowed_str = allowed.join(", ");
+    let _allowed_str = allowed.join(", ");
 
     match prompt_variant {
         0 => format!(
@@ -346,6 +345,7 @@ fn build_user_turn(pair: &InputEdgePair, prompt_variant: usize) -> String {
 }
 
 /// Format full ChatML prompt for a pair (for display / API fallback)
+#[allow(dead_code)]
 fn build_full_prompt(pair: &InputEdgePair, prompt_variant: usize) -> String {
     format!(
         "<|im_start|>system\n{sys}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
@@ -360,6 +360,7 @@ static NATIVE_BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
 
 struct NativeEngine {
     model: LlamaModel,
+    #[allow(dead_code)]
     ctx: parking_lot::Mutex<Option<llama_cpp_4::context::LlamaContext<'static>>>,
     n_threads: u32,
     context_size: u32,
@@ -525,51 +526,43 @@ impl NativeEngine {
             let t1 = self
                 .model
                 .str_to_token("1", AddBos::Never)
-                .unwrap_or_default()
-                .get(0)
+                .unwrap_or_default().first()
                 .copied();
             let t2 = self
                 .model
                 .str_to_token("2", AddBos::Never)
-                .unwrap_or_default()
-                .get(0)
+                .unwrap_or_default().first()
                 .copied();
             let t3 = self
                 .model
                 .str_to_token("3", AddBos::Never)
-                .unwrap_or_default()
-                .get(0)
+                .unwrap_or_default().first()
                 .copied();
             let t4 = self
                 .model
                 .str_to_token("4", AddBos::Never)
-                .unwrap_or_default()
-                .get(0)
+                .unwrap_or_default().first()
                 .copied();
 
             let t1_sp = self
                 .model
                 .str_to_token(" 1", AddBos::Never)
-                .unwrap_or_default()
-                .get(0)
+                .unwrap_or_default().first()
                 .copied();
             let t2_sp = self
                 .model
                 .str_to_token(" 2", AddBos::Never)
-                .unwrap_or_default()
-                .get(0)
+                .unwrap_or_default().first()
                 .copied();
             let t3_sp = self
                 .model
                 .str_to_token(" 3", AddBos::Never)
-                .unwrap_or_default()
-                .get(0)
+                .unwrap_or_default().first()
                 .copied();
             let t4_sp = self
                 .model
                 .str_to_token(" 4", AddBos::Never)
-                .unwrap_or_default()
-                .get(0)
+                .unwrap_or_default().first()
                 .copied();
 
             let get_score = |t_opt: Option<llama_cpp_4::token::LlamaToken>,

@@ -68,8 +68,8 @@ fn cleanup_old_logs(log_dir: &std::path::Path, max_files: usize) {
         files.sort_by_key(|&(_, m)| m);
 
         let to_delete = files.len() - max_files;
-        for i in 0..to_delete {
-            let _ = std::fs::remove_file(&files[i].0);
+        for (path, _) in files.iter().take(to_delete) {
+            let _ = std::fs::remove_file(path);
         }
     }
 }

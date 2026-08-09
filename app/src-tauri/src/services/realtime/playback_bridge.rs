@@ -7,6 +7,12 @@ pub struct PlaybackBridge {
     tx: Option<Sender<Vec<i16>>>,
 }
 
+impl Default for PlaybackBridge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlaybackBridge {
     pub fn new() -> Self {
         Self { tx: None }

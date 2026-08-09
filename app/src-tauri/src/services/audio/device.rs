@@ -141,7 +141,7 @@ impl AudioStream {
                         static DROP_COUNT: std::sync::atomic::AtomicU32 =
                             std::sync::atomic::AtomicU32::new(0);
                         let prev = DROP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        if prev % 100 == 0 {
+                        if prev.is_multiple_of(100) {
                             log::warn!(
                                 "[AUDIO] Ring buffer overflow! Dropped {} chunks so far.",
                                 prev + 1

@@ -111,8 +111,7 @@ impl EmbeddedProvider {
                                 let clean_name = filename
                                     .strip_suffix(".gguf")
                                     .unwrap_or(filename)
-                                    .replace('_', " ")
-                                    .replace('-', " ");
+                                    .replace(['_', '-'], " ");
 
                                 models.push(LlmModelInfo {
                                     id: filename.to_string(),

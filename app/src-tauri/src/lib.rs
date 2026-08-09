@@ -8,6 +8,7 @@ pub mod services;
 pub mod setup;
 pub mod tray;
 pub mod utils;
+pub mod window_customizer;
 pub mod wizard;
 
 use crate::core::state::AppState;
@@ -60,6 +61,7 @@ pub fn run() {
         // .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(window_customizer::PinchZoomDisablePlugin)
         .setup(|app| {
             // Capture the Tokio runtime handle early
             tauri::async_runtime::spawn(async {

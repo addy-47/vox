@@ -174,6 +174,12 @@ pub struct PipelineAtomics {
     pub engine_shutdown: Arc<AtomicBool>,
 }
 
+impl Default for PipelineAtomics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PipelineAtomics {
     pub fn new() -> Self {
         Self {
@@ -324,6 +330,7 @@ pub struct AppState {
 }
 
 impl AppState {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         app_handle: &tauri::AppHandle,
         log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,

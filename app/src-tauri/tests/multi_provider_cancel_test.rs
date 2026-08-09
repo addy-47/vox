@@ -4,10 +4,11 @@
 //! Category     : Integration Test
 //! Component    : LLM Provider Abstraction (`vox_lib::services::llm::providers`)
 //! Prerequisites: Compiles against `vox_lib` public API
-//! Execution    : 
-//!   - Default (Embedded Local) : cargo test --test multi_provider_cancel_test
-//!   - Server & Cloud (Ignored) : cargo test --test multi_provider_cancel_test -- --ignored
-//! Metrics      : Cancellation flag propagation & channel stream interruption
+//! Execution    :
+//! - Default (Embedded Local) : cargo test --test multi_provider_cancel_test
+//! - Server & Cloud (Ignored) : cargo test --test multi_provider_cancel_test -- --ignored
+//!
+//! Metrics: Cancellation flag propagation & channel stream interruption
 //! ============================================================================
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -45,9 +46,8 @@ fn spawn_slow_sse_server() -> String {
     let addr = listener.local_addr().unwrap();
 
     std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            if let Ok(mut stream) = stream {
-                std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            std::thread::spawn(move || {
                     let mut buf = [0u8; 2048];
                     if let Ok(n) = stream.read(&mut buf) {
                         let req_str = String::from_utf8_lossy(&buf[..n]);
@@ -73,7 +73,6 @@ fn spawn_slow_sse_server() -> String {
                         }
                     }
                 });
-            }
         }
     });
 

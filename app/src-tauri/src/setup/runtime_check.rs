@@ -162,10 +162,10 @@ fn check_model_integrity(models_dir: &Path, manifest: Option<&VoxManifest>) -> (
             let is_archive = entry.archive_type.is_some();
             let model_path = if is_archive {
                 let p_str = entry.path.as_str();
-                if p_str.ends_with(".tar.gz") {
-                    models_dir.join(&p_str[..p_str.len() - 7])
-                } else if p_str.ends_with(".zip") || p_str.ends_with(".tgz") {
-                    models_dir.join(&p_str[..p_str.len() - 4])
+                if let Some(stripped) = p_str.strip_suffix(".tar.gz") {
+                    models_dir.join(stripped)
+                } else if let Some(stripped) = p_str.strip_suffix(".zip").or_else(|| p_str.strip_suffix(".tgz")) {
+                    models_dir.join(stripped)
                 } else {
                     models_dir.join(&entry.path)
                 }

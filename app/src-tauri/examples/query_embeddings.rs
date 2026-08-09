@@ -104,8 +104,8 @@ fn get_embeddings(
     }
 
     let divisor = if sum_mask > 0.0 { sum_mask } else { 1.0 };
-    for dim in 0..hidden_size {
-        sum_embeddings[dim] /= divisor;
+    for val in sum_embeddings.iter_mut().take(hidden_size) {
+        *val /= divisor;
     }
 
     Ok(sum_embeddings)
