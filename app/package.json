@@ -31,6 +31,7 @@
     "react-colorful": "^5.7.0",
     "react-dom": "^19.1.0",
     "react-dropzone": "^15.0.0",
+    "react-force-graph-2d": "^1.29.1",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.14.2",
     "recharts": "^3.8.1",
