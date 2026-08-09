@@ -96,13 +96,15 @@ mod tests {
 
     #[test]
     fn test_policy_compaction_budget_clamped_for_cloud() {
-        let mut settings = LlmSettings::default();
-        settings.ctx_size = 1_000_000;
-        settings.provider = LlmProviderConfig::OpenAiCompat {
-            base_url: "https://api.openai.com".to_string(),
-            model: "gpt-4o".to_string(),
-            api_key: None,
-            provider_name: Some("openai".to_string()),
+        let settings = LlmSettings {
+            ctx_size: 1_000_000,
+            provider: LlmProviderConfig::OpenAiCompat {
+                base_url: "https://api.openai.com".to_string(),
+                model: "gpt-4o".to_string(),
+                api_key: None,
+                provider_name: Some("openai".to_string()),
+            },
+            ..Default::default()
         };
 
         let policy = GenerationPolicy::from_settings(&settings);

@@ -212,7 +212,7 @@ impl PipelineOrchestrator {
             // Sync Realtime state changes based on playback activity
             if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                 let playback_active = self._playback_active.load(Ordering::Relaxed);
-                let current_state = self.state.lock().clone();
+                let current_state = *self.state.lock();
                 let owner = self.get_current_owner(&app_handle);
 
                 if playback_active {
@@ -436,7 +436,7 @@ impl PipelineOrchestrator {
                     playback_engine.reset_samples_ingested();
                     if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
                         if owner != InteractionOwner::Ptt {
-                            let current_state = self.state.lock().clone();
+                            let current_state = *self.state.lock();
                             if current_state != crate::core::state::InteractionState::Listening
                                 && current_state != crate::core::state::InteractionState::Idle
                             {
@@ -843,13 +843,12 @@ impl PipelineOrchestrator {
                         if owner != InteractionOwner::Ptt {
                             // Realtime Passive mode: SpeechEnd is a noop for state transition.
                             // Start local_silence_time tracking when silence is detected.
-                            let current_state = self.state.lock().clone();
-                            if current_state == crate::core::state::InteractionState::UserSpeaking {
-                                if local_silence_time.is_none() {
+                            let current_state = *self.state.lock();
+                            if current_state == crate::core::state::InteractionState::UserSpeaking
+                                && local_silence_time.is_none() {
                                     log::info!("[Pipeline] Local VAD detected silence in UserSpeaking state. Starting 10s timeout guard.");
                                     local_silence_time = Some(std::time::Instant::now());
                                 }
-                            }
                         } else {
                             self.update_interaction_state(
                                 crate::core::state::InteractionState::Thinking,
@@ -917,7 +916,7 @@ impl PipelineOrchestrator {
 
                     // Persist Turn
                     if let Some(ref tx) = self.persist_tx {
-                        if let Err(_) = tx.try_send(
+                        if tx.try_send(
                             crate::persistence::events::PersistenceEvent::TurnCompleted {
                                 conversation_id: self.conversation_id.load(Ordering::Relaxed),
                                 turn_id,
@@ -926,7 +925,7 @@ impl PipelineOrchestrator {
                                 stt_latency_ms: turn_stt_ms,
                                 ttft_ms: turn_ttft_ms,
                             },
-                        ) {
+                        ).is_err() {
                             self.dropped_persistence_events
                                 .fetch_add(1, Ordering::Relaxed);
                         }
@@ -958,12 +957,12 @@ impl PipelineOrchestrator {
 
                     // Persist Cancellation
                     if let Some(ref tx) = self.persist_tx {
-                        if let Err(_) = tx.try_send(
+                        if tx.try_send(
                             crate::persistence::events::PersistenceEvent::TurnCancelled {
                                 conversation_id: self.conversation_id.load(Ordering::Relaxed),
                                 turn_id,
                             },
-                        ) {
+                        ).is_err() {
                             self.dropped_persistence_events
                                 .fetch_add(1, Ordering::Relaxed);
                         }

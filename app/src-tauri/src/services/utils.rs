@@ -202,11 +202,11 @@ fn edit_distance(s1: &str, s2: &str) -> usize {
     let len2 = v2.len();
 
     let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
-    for i in 0..=len1 {
-        dp[i][0] = i;
+    for (i, row) in dp.iter_mut().enumerate().take(len1 + 1) {
+        row[0] = i;
     }
-    for j in 0..=len2 {
-        dp[0][j] = j;
+    for (j, cell) in dp[0].iter_mut().enumerate().take(len2 + 1) {
+        *cell = j;
     }
 
     for i in 1..=len1 {
@@ -352,7 +352,7 @@ mod tests {
     use super::*;
 
     fn init_paths_for_testing() {
-        let _ = crate::utils::paths::init_with_root(std::env::temp_dir().join("vox_test"));
+        crate::utils::paths::init_with_root(std::env::temp_dir().join("vox_test"));
     }
 
     #[test]
@@ -523,7 +523,7 @@ mod tests {
         if let Some(home) = dirs::home_dir() {
             let vox_root = home.join(".vox");
             if vox_root.exists() {
-                let _ = crate::utils::paths::init_with_root(vox_root);
+                crate::utils::paths::init_with_root(vox_root);
                 let _ = crate::services::translit::init_transliteration_engine();
             }
         }
@@ -601,7 +601,7 @@ mod tests {
         if let Some(home) = dirs::home_dir() {
             let vox_root = home.join(".vox");
             if vox_root.exists() {
-                let _ = crate::utils::paths::init_with_root(vox_root);
+                crate::utils::paths::init_with_root(vox_root);
                 let _ = crate::services::translit::init_transliteration_engine();
             }
         }

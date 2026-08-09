@@ -17,9 +17,10 @@ impl SttEngine {
     pub fn new(model_dir: &Path) -> Result<Self> {
         log::info!("[STT] >>> Initializing Sherpa-ONNX Qwen3-ASR Engine...");
 
-        let mut config = OfflineRecognizerConfig::default();
-
-        config.decoding_method = Some("greedy_search".to_string());
+        let mut config = OfflineRecognizerConfig {
+            decoding_method: Some("greedy_search".to_string()),
+            ..Default::default()
+        };
 
         config.model_config.qwen3_asr = OfflineQwen3ASRModelConfig {
             conv_frontend: Some(

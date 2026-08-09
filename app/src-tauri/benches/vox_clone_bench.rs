@@ -319,7 +319,7 @@ fn main() -> anyhow::Result<()> {
 
     // Summary table
     println!("\n\x1b[32m[CloneBench]\x1b[0m ═══ Results ═══");
-    println!("  {:<12} {:<8} {}", "Voice", "Status", "Output / Error");
+    println!("  {:<12} {:<8} Output / Error", "Voice", "Status");
     println!("  {}", "─".repeat(70));
     for (name, ok, detail) in &results {
         let status = if *ok {

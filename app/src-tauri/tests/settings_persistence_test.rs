@@ -33,7 +33,7 @@ fn test_settings_default_values_correctness() {
     assert_eq!(s.llm.threads, 4);
 
     // Default UI settings
-    assert_eq!(s.ui.tray_enabled, true);
+    assert!(s.ui.tray_enabled);
 }
 
 // ─── 2. Serde JSON In-Memory Roundtrip Test ──────────────────────────────────
@@ -91,7 +91,7 @@ fn test_settings_disk_save_load_roundtrip_tempfile() {
 
     assert_eq!(loaded.llm.model, "qwen_2_5_custom_q4");
     assert_eq!(loaded.llm.chat_temperature, 0.35);
-    assert_eq!(loaded.ui.tray_enabled, false);
+    assert!(!loaded.ui.tray_enabled);
 
     // Clean up temp file
     let _ = fs::remove_file(&temp_file_path);
@@ -101,12 +101,12 @@ fn test_settings_disk_save_load_roundtrip_tempfile() {
 
 #[test]
 fn test_llm_provider_switch_field_isolation() {
-    let mut llm = LlmSettings::default();
-
-    // 1. Initial embedded setup
-    llm.provider = LlmProviderConfig::Embedded;
-    llm.model = "llama_3_2_reasoning_q4".to_string();
-    llm.ctx_size = 4096;
+    let mut llm = LlmSettings {
+        provider: LlmProviderConfig::Embedded,
+        model: "llama_3_2_reasoning_q4".to_string(),
+        ctx_size: 4096,
+        ..Default::default()
+    };
 
     let embedded_ctx = llm.effective_ctx_size();
     assert_eq!(embedded_ctx, 4096);

@@ -371,7 +371,7 @@ impl ModelManager {
                         let path = entry.path();
                         if path.is_dir() {
                             stack.push(path);
-                        } else if path.extension().map_or(false, |ext| ext == "verified") {
+                        } else if path.extension().is_some_and(|ext| ext == "verified") {
                             verified_files.push(path);
                         }
                     }
@@ -382,10 +382,10 @@ impl ModelManager {
 
         for verified_path in walk_dir(models_dir) {
             if let Ok(marker) = VerifiedMarker::load(&verified_path) {
-                let matches_id = marker.model_id.as_ref().map_or(false, |id| id == model_id)
+                let matches_id = marker.model_id.as_ref().is_some_and(|id| id == model_id)
                     || verified_path
                         .file_stem()
-                        .map_or(false, |stem| stem == model_id); // fallback to filename match
+                        .is_some_and(|stem| stem == model_id); // fallback to filename match
 
                 if matches_id && marker.sha256 != current_sha {
                     log::info!(

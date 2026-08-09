@@ -68,11 +68,7 @@ pub fn spawn_memory_worker(
             let cancel_flag = Arc::new(AtomicBool::new(false));
 
             loop {
-                let timeout = if state.is_idle {
-                    Duration::from_millis(500)
-                } else {
-                    Duration::from_millis(500)
-                };
+                let timeout = Duration::from_millis(500);
 
                 let event = match rx.recv_timeout(timeout) {
                     Ok(e) => Some(e),
@@ -139,7 +135,7 @@ pub fn spawn_memory_worker(
                     }
                 } else if state.is_idle && !is_private_mode.load(Ordering::Relaxed) {
                     // Enforce 30-second minimum continuous idle debounce before executing queue orchestration
-                    let is_debounced = state.idle_since.map_or(false, |since| {
+                    let is_debounced = state.idle_since.is_some_and(|since| {
                         since.elapsed() >= Duration::from_secs(MIN_IDLE_DEBOUNCE_SECS)
                     });
 

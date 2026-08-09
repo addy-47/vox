@@ -11,6 +11,7 @@ pub enum GenerationPurpose {
 
 /// Provider-neutral generation sampling and output length options.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct GenerationOptions {
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
@@ -20,22 +21,12 @@ pub struct GenerationOptions {
     pub seed: Option<u64>,
 }
 
-impl Default for GenerationOptions {
-    fn default() -> Self {
-        Self {
-            temperature: None,
-            top_p: None,
-            top_k: None,
-            max_output_tokens: None,
-            stop: Vec::new(),
-            seed: None,
-        }
-    }
-}
 
 /// Explicit constraint on LLM output format.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum OutputConstraint {
+    #[default]
     Text,
     JsonObject,
     JsonSchema {
@@ -45,11 +36,6 @@ pub enum OutputConstraint {
     },
 }
 
-impl Default for OutputConstraint {
-    fn default() -> Self {
-        Self::Text
-    }
-}
 
 /// Neutral container for input messages.
 #[derive(Debug, Clone)]

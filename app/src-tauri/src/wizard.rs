@@ -1,6 +1,5 @@
 use crate::services::llm::{MODEL_DIR_LLM, MODEL_FILE_LLM_GGUF};
 use crate::services::stt::{MODEL_DIR_STT_NEMOTRON, MODEL_DIR_STT_QWEN, MODEL_FILE_ASR_ENCODER};
-use crate::services::tts::{MODEL_DIR_TTS_SUPER, MODEL_FILE_TTS_SUPER_TEXT_ENCODER};
 use crate::services::vad::{MODEL_DIR_VAD, MODEL_FILE_VAD};
 use crate::utils::paths;
 
@@ -53,12 +52,7 @@ pub fn check_setup_health() -> bool {
     }
 
     // 5. TTS (Edge TTS cloud or Supertonic 3 local)
-    let tts_ok = p
-        .models
-        .join(MODEL_DIR_TTS_SUPER)
-        .join(MODEL_FILE_TTS_SUPER_TEXT_ENCODER)
-        .exists()
-        || true; // Edge TTS is cloud-based and always available
+    let tts_ok = true; // Edge TTS is cloud-based and always available
     if !tts_ok {
         return false;
     }

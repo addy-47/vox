@@ -4,10 +4,11 @@
 //! Category     : Integration Test
 //! Component    : Working Memory & Compaction (`vox_lib::services::memory::working_memory`)
 //! Prerequisites: Compiles against `vox_lib` public API
-//! Execution    : 
-//!   - Default (Embedded Local) : cargo test --test compaction_interruption_test
-//!   - Server & Cloud (Ignored) : cargo test --test compaction_interruption_test -- --ignored
-//! Metrics      : Opportunistic compaction cancellation, race detection, & state preservation
+//! Execution    :
+//! - Default (Embedded Local) : cargo test --test compaction_interruption_test
+//! - Server & Cloud (Ignored) : cargo test --test compaction_interruption_test -- --ignored
+//!
+//! Metrics: Opportunistic compaction cancellation, race detection, & state preservation
 //! ============================================================================
 
 use std::sync::atomic::{AtomicBool, Ordering};

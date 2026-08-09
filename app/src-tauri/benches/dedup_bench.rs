@@ -21,7 +21,10 @@ use vox_lib::services::memory::deduplication::{is_exact_duplicate, jaccard_simil
 use vox_lib::services::memory::embedder::{
     cosine_similarity, ensure_embedder_loaded, generate_embedding,
 };
-use vox_lib::services::memory::orchestrator::{process_one_queue_item, PipelineOutcome};
+use vox_lib::services::memory::pipeline::stage1_dedup::run_stage1_dedup;
+use vox_lib::services::memory::pipeline::stage2_embed::run_stage2_embed;
+use vox_lib::services::memory::pipeline::stage3_eval::run_stage3_eval;
+use vox_lib::services::memory::pipeline::stage4_commit::run_stage4_commit;
 
 #[derive(Parser, Debug)]
 #[command(name = "dedup_test")]
@@ -197,27 +200,20 @@ async fn main() -> Result<()> {
                 .await?;
             }
 
-            let settings = MemorySettings::default();
-            let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let mut merged_events = Vec::new();
-            let mut ingested_events = Vec::new();
+            let _settings = MemorySettings::default();
+            let _cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let merged_events: Vec<(String, String)> = Vec::new();
 
             let pipeline_start = Instant::now();
 
-            // Run process_one_queue_item in a loop until no pending items remain
+            // Run 4-stage pipeline in loop until queue is fully drained
             loop {
-                let outcome = process_one_queue_item(&conn, &settings, &cancel_flag).await?;
-                match outcome {
-                    PipelineOutcome::NoWork => break,
-                    PipelineOutcome::Merged {
-                        fact_id,
-                        merged_into,
-                    } => {
-                        merged_events.push((fact_id, merged_into));
-                    }
-                    PipelineOutcome::Ingested { fact_id, relations } => {
-                        ingested_events.push((fact_id, relations));
-                    }
+                let n1 = run_stage1_dedup(&conn).await?;
+                let n2 = run_stage2_embed(&conn).await?;
+                let n3 = run_stage3_eval(&conn).await?;
+                let n4 = run_stage4_commit(&conn).await?;
+                if n1 == 0 && n2 == 0 && n3 == 0 && n4 == 0 {
+                    break;
                 }
             }
 

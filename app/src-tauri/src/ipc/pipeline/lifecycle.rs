@@ -121,12 +121,12 @@ pub async fn engage(
             {
                 let persist_tx = state.persist_tx.lock();
                 if let Some(ref tx) = *persist_tx {
-                    if let Err(_) = tx.try_send(
+                    if tx.try_send(
                         crate::persistence::events::PersistenceEvent::SessionStarted {
                             id: conv_id,
                             timestamp_ms: conv_id,
                         },
-                    ) {
+                    ).is_err() {
                         state
                             .dropped_persistence_events
                             .fetch_add(1, Ordering::Relaxed);
@@ -229,11 +229,10 @@ pub async fn engage(
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64;
-                    if let Err(_) =
-                        tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                    if tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
                             id: conv_id,
                             timestamp_ms: now,
-                        })
+                        }).is_err()
                     {
                         state
                             .dropped_persistence_events
