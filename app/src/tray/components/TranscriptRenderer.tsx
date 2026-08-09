@@ -56,7 +56,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
               className="w-full"
             />
                 <span className={cn(
-              "text-[11px] font-black uppercase tracking-[0.4em] transition-colors duration-500",
+              "text-[12px] font-black uppercase tracking-[0.4em] transition-colors duration-500",
               pttStatus === 'RECORDING' ? "text-[rgb(var(--accent))]/80 animate-pulse" : "text-[rgb(var(--accent))]/80"
             )}>
               {pttStatus === 'RECORDING' ? "Recording" : "Processing"}
@@ -72,7 +72,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
             animate={{ opacity: 1, y: 0 }}
             className="w-full space-y-2"
           >
-            <div className="text-[17px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 drop-shadow-sm whitespace-pre-wrap">
+            <div className="text-[18px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 drop-shadow-sm whitespace-pre-wrap">
               {displayText}
               {(interactionState === "Listening" || interactionState === "UserSpeaking" || pttStatus === 'PROCESSING') && (
                 <motion.span 
@@ -94,7 +94,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
             className="flex flex-col items-center justify-center px-5 py-6"
           >
             <Activity size={24} className="mb-2 text-[rgb(var(--accent))]/50 animate-pulse " />
-            <p className="text-[11px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/60 ">
+            <p className="text-[12px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/60 ">
               Standby
             </p>
           </motion.div>

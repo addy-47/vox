@@ -32,12 +32,12 @@ const ResourceBar = memo(
     return (
       <div className="space-y-2">
         <div className="flex justify-between items-baseline">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
             {label}
           </span>
           <span
             ref={textRef}
-            className="text-[14px] font-mono font-bold text-[rgb(var(--foreground))]"
+            className="text-[15px] font-mono font-bold text-[rgb(var(--foreground))]"
           >
             0.0%
           </span>
@@ -84,8 +84,8 @@ export const Monitoring = memo(() => {
       {/* Header */}
       <div className="flex items-center justify-between pb-4 shrink-0 border-b border-[rgba(var(--accent),0.06)]">
         <div>
-          <span className="signal-text text-[13px]">Monitoring</span>
-          <p className="text-[10px] text-[rgb(var(--foreground-muted))]/40 font-mono  tracking-[0.2em] mt-1">
+          <span className="signal-text text-[14px]">Monitoring</span>
+          <p className="text-[11px] text-[rgb(var(--foreground-muted))]/40 font-mono  tracking-[0.2em] mt-1">
             System Metrics
           </p>
         </div>
@@ -143,7 +143,7 @@ export const Monitoring = memo(() => {
 
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.12)] glass">
             <Activity size={16} className="text-[rgb(var(--accent))] animate-pulse" />
-            <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase">
+            <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase">
               LIVE MONITOR
             </span>
           </div>
@@ -207,10 +207,10 @@ export const Monitoring = memo(() => {
               key={m.label}
               className="glass px-2 py-3 flex flex-col items-center gap-1"
             >
-              <span className="text-[9px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60">
                 {m.label}
               </span>
-              <span className="text-[14px] font-mono font-bold text-[rgb(var(--accent))]">
+              <span className="text-[15px] font-mono font-bold text-[rgb(var(--accent))]">
                 {m.val}
               </span>
             </div>
@@ -227,7 +227,7 @@ export const Monitoring = memo(() => {
             <div key={key} className="space-y-2">
               <div className="flex items-center gap-2">
                 <Icon size={16} className="text-[rgb(var(--accent))]/70" />
-                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--foreground-muted))]/70">
+                <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--foreground-muted))]/70">
                   {label}
                 </span>
               </div>

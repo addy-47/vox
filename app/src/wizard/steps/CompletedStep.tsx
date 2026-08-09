@@ -62,9 +62,9 @@ export const CompletedStep: React.FC<Props> = ({ onBack }) => {
           <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-50 pointer-events-none" />
           <div className="flex items-center gap-2 mb-2 relative z-10">
             <Zap className="w-3 h-3 text-[rgb(var(--accent))]" />
-            <span className="text-[11px] font-black text-[rgb(var(--accent))] uppercase tracking-[0.3em]">Quick Tip</span>
+            <span className="text-[12px] font-black text-[rgb(var(--accent))] uppercase tracking-[0.3em]">Quick Tip</span>
           </div>
-          <p className="text-[11px] text-white/40 leading-relaxed relative z-10 font-medium">
+          <p className="text-[12px] text-white/40 leading-relaxed relative z-10 font-medium">
             Click the Vox icon in your menu bar or press your shortcut key to start talking.
           </p>
         </div>

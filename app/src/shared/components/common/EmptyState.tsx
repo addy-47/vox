@@ -30,11 +30,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           <Icon size={22} />
         </div>
       )}
-      <h4 className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/90 mb-1">
+      <h4 className="text-[14px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/90 mb-1">
         {title}
       </h4>
       {description && (
-        <p className="text-[11px] text-[rgb(var(--foreground-muted))]/65 max-w-xs leading-relaxed mb-4">
+        <p className="text-[12px] text-[rgb(var(--foreground-muted))]/65 max-w-xs leading-relaxed mb-4">
           {description}
         </p>
       )}

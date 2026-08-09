@@ -20,7 +20,7 @@ export const StatusCapsule: React.FC<StatusCapsuleProps> = ({ label, dotActive, 
         style={dotActive ? { animation: "pulse-slow 2.5s ease-in-out infinite" } : {}}
       />
     )}
-    <span className="text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))] dark:text-[rgb(var(--foreground-muted))]">
+    <span className="text-[11px] font-mono font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))] dark:text-[rgb(var(--foreground-muted))]">
       {testing ? "Testing" : label}
     </span>
   </div>

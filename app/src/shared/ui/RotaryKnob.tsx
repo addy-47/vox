@@ -89,14 +89,14 @@ export const RotaryKnob = memo(({
   return (
     <div className={cn("flex flex-col items-center justify-center select-none will-change-transform transform-gpu", className)}>
       {label && (
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75 mb-1.5 flex items-center gap-1">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75 mb-1.5 flex items-center gap-1">
           {label}
           {value !== defaultValue && (
             <button
               type="button"
               onClick={resetDefault}
               title={`Reset to ${formatValue(defaultValue)}`}
-              className="text-[9px] text-[rgb(var(--accent))] hover:underline font-mono cursor-pointer"
+              className="text-[10px] text-[rgb(var(--accent))] hover:underline font-mono cursor-pointer"
             >
               (reset)
             </button>
@@ -162,7 +162,7 @@ export const RotaryKnob = memo(({
 
           {/* Center Knob Hub with Value Display */}
           <div className="absolute inset-2.5 rounded-full bg-[rgba(var(--surface-bg),0.9)] border border-[rgba(var(--accent),0.25)] group-hover:border-[rgb(var(--accent))] flex items-center justify-center shadow-inner transition-colors">
-            <span className="text-[13px] font-mono font-black text-[rgb(var(--foreground))]">
+            <span className="text-[14px] font-mono font-black text-[rgb(var(--foreground))]">
               {formatValue(value)}
             </span>
           </div>
@@ -189,7 +189,7 @@ export const RotaryKnob = memo(({
               type="button"
               onClick={() => onChange(preset)}
               className={cn(
-                "px-2 py-0.5 rounded-md text-[9px] font-mono font-bold transition-all duration-150 cursor-pointer",
+                "px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all duration-150 cursor-pointer",
                 Math.abs(value - preset) < 0.02
                   ? "bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))] text-[rgb(var(--accent))] font-black shadow-[0_0_8px_rgba(var(--accent),0.35)]"
                   : "bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"

@@ -148,7 +148,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
           {/* Mini footprint HUD — CPU% · RAM MB */}
           {isReady && (
-            <span className="text-[14px] font-mono text-[rgb(var(--foreground-muted))]/80 leading-none select-none tabular-nums pointer-events-none">
+            <span className="text-[15px] font-mono text-[rgb(var(--foreground-muted))]/80 leading-none select-none tabular-nums pointer-events-none">
               {voxCpu.toFixed(1)}% · {Math.round(voxRam)} MB
             </span>
           )}

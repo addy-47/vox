@@ -13,8 +13,8 @@ use anyhow::Result;
 use turso::Connection;
 
 pub const STAGE3_BATCH_SIZE: usize = 16;
-pub const SAME_COLLECTION_CANDIDATE_SEARCH: f32 = 0.40;
-pub const INTER_COLLECTION_CANDIDATE_SEARCH: f32 = 0.55;
+pub const SAME_COLLECTION_CANDIDATE_SEARCH: f32 = 0.60;  // Intra-collection NLI requires high similarity
+pub const INTER_COLLECTION_CANDIDATE_SEARCH: f32 = 0.40; // Inter-collection cross-domain edges have lower similarity
 pub const SUBFLOOR_CANDIDATE_FLOOR: f32 = 0.25;
 
 pub const NLI_CONTRADICTION_CONFIDENCE_THRESHOLD: f32 = 0.85;

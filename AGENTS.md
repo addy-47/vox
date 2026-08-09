@@ -2,6 +2,16 @@
 
 ---
 
+## 0. MANDATORY RULE: Automatic Documentation & AGENTS.md Sync Hook
+
+> 🛑 **MANDATORY POST-TASK DOCUMENTATION HOOK (NON-NEGOTIABLE):**
+> Every time code, architecture, candidate thresholds, system prompts, or LLM judge models are modified, or a task/phase is completed:
+> 1. You **MUST** automatically update `AGENTS.md` to reflect the exact current implementation, model configuration, and threshold matrix.
+> 2. You **MUST** automatically update the relevant feature documentation (e.g. `docs/features/memory-architecture.md` and feature ledgers).
+> 3. This is a **mandatory post-task completion hook** — do NOT wait for the user to explicitly remind you to sync documentation.
+
+---
+
 ## 1. Project Context
 
 Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Constraint: 8GB RAM, CPU-first inference, sub-200ms perceived pipeline latency.
@@ -71,69 +81,40 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-### 5.1 Progress Summary (Completed Architecture & Code Enhancements)
+### 5.1 Calibrated Memory Pipeline Threshold Matrix
 
-1. **Intra-Batch Candidate Self-Fetch Fix (`queries.rs`)**: Scoped candidate queries to `status IN ('embedded', 'evaluated')`, eliminating circular `A <-> B` loops within in-flight batch items.
-2. **Chronological NLI Alignment (`stage3_eval.rs`)**: Passed DB historical fact as `Premise` and incoming item as `Hypothesis` for accurate DeBERTa-v3 state transition evaluation.
-3. **Multi-Pair ONNX Tensor Batching (`nli.rs`)**: Implemented 2D ONNX tensor encoding (`raw_predict_batch`), reducing Stage 3 ONNX inference CPU latency by 5x.
-4. **5-Collection Priority Cross-Collection Dedup (`stage1_dedup.rs` & `stage2_embed.rs`)**: Implemented Priority resolution (`Identity` > `Constraints` > `Directives` > `Profile` > `Entities`) on exact/soft vector collisions.
-5. **Heuristic Stripping & ModernBERT Probability Logging (`stage3_eval.rs`)**: Removed brittle keyword filters; unified NLI threshold (`contradiction >= 0.85`, margin `>= 0.20`); logged ModernBERT relation probabilities as `edge_score`.
-
----
-
-### 5.2 QA Evaluation Purpose, Non-Negotiable Rules & Pitfalls to Avoid
-
-> 🛑 **MANDATORY EVALUATION INVARIANTS:**
-> 1. **No Shallow Summaries / No Narrative Abstractions**: Reports must contain exact failure counts, percentages, un-truncated text pairs, logits, similarity scores, and rejection tags. NEVER accept 2 handpicked examples as a complete analysis.
-> 2. **No Threshold Guessing**: Do NOT tweak constants in `constants.rs` based on superficial observations. Every threshold recommendation must be backed by a full confusion matrix.
-> 3. **Source of Truth for Fine-Tuning**: The primary deliverable is an un-truncated, evidence-backed diagnostic artifact (`memory_architecture_failure_analysis.md`) that `@ml-research-engineer.md` can directly consume to curate fine-tuning datasets (`vox-nli-state-transitions` and `vox-modernbert-graph-edges`).
+| Pipeline Stage & Purpose | Constant Name | Calibrated Code Setting | Rationale & Domain Logic |
+| :--- | :--- | :--- | :--- |
+| **Stage 1 Exact Text Dedup** | Jaccard Sub-word | `0.85` | Verbatim and sub-word exact duplicate filter. |
+| **Stage 2 Paraphrase Vector Merge** | `SOFT_VECTOR_DEDUP_THRESHOLD` | `0.95` | Unlimited candidate search (`None` limit) + collection priority resolution (`Identity` > `Constraints` > `Directives` > `Profile` > `Entities`). |
+| **Stage 3 Intra-Collection NLI Floor** | `SAME_COLLECTION_CANDIDATE_SEARCH` | **`0.60`** | Intra-collection facts (same topic/state) require high similarity for DeBERTa-v3 state replacement evaluation. |
+| **Stage 3 Inter-Collection Edge Floor** | `INTER_COLLECTION_CANDIDATE_SEARCH` | **`0.40`** | Inter-collection cross-domain facts naturally have lower cosine similarity but form valid directed graph edges (`restricted_by`, `DEPENDS_ON`, `SHAPES`). |
+| **Sub-Floor Candidate Audit Floor** | `SUBFLOOR_CANDIDATE_FLOOR` | **`0.25`** | Audit range: `[0.25, 0.60)` (`subfloor-intra`) and `[0.25, 0.40)` (`subfloor-inter`). |
 
 ---
 
-### 5.3 Deterministic Error Taxonomy & Classifier Confusion Matrix
+### 5.2 LLM Judge Model Hierarchy (BANNED: `llama3.1:8b`)
 
-Every evaluation run must track and report exact item counts across these failure modes:
+To eliminate hallucinated reports and fictitious item comparisons, evaluation models are strictly tiered:
 
-| Classifier Stage | Metric / Cell | Failure Type & Definition |
-| :--- | :--- | :--- |
-| **Vector Search Floor** | **Sub-Floor FN** | Valid state update/relation pruned before Stage 3 because $0.25 \le \text{cos\_sim} < \text{threshold}$. |
-| **Intra-Collection NLI** | **False Negative (FN)** | Incoming fact updated/superseded DB fact, but NLI scored `Neutral` or $< 0.85$ `Contradiction`. |
-| **Intra-Collection NLI** | **False Positive (FP)** | Distinct incoming fact incorrectly deleted an existing fact (`Contradiction` $\ge 0.85$). |
-| **Intra-Collection NLI** | **True Positive / TN** | Correctly superseded facts (TP) and correctly retained distinct facts (TN). |
-| **Inter-Collection Edge** | **False Negative (FN)** | Valid cross-collection relation present, but ModernBERT score $< 0.80$ (`below_edge_classifier_confidence`). |
-| **Inter-Collection Edge** | **False Positive (FP)** | Unrelated entities/directives linked with confidence $\ge 0.80$. |
-
----
-
-### 5.4 GPU Server & 3-Tier Ollama Judge Cascade Architecture
-
-To avoid API rate limits and achieve fast, scalable evaluation across large datasets, evaluation uses the remote GPU server (`hypr4@100.86.62.14` RTX 5070 Ti, creds in `temp/server.txt`):
-- **Temperature & Window Config**: Evaluation judge calls use `temperature = 0.0` for deterministic scoring and respect the **8192 token context window cap**.
-
-```mermaid
-flowchart TD
-    Eval[eval_pipeline.rs Run] --> Batches[Atomic Batches of 16 Items]
-    Batches --> Llama[Ollama llama3.1:8b Atomic Batch Judge]
-    Llama --> AtomicReports[Per-Batch Audit Reports (Batch 01..NN)]
-    AtomicReports --> Gemma[Ollama gemma4:e4b Sub-Master Synthesizer]
-    Gemma --> SubMasterReports[Sub-Master Dataset Group Reports]
-    SubMasterReports --> Subagent[Persistent QA Subagent send_message]
-    Subagent --> MasterReport[Report C Master Synthesis & ML Diagnostic Spec]
-```
-
-1. **Atomic Batch Judge (`llama3.1:8b`)**: Evaluates individual 16-item batches from `eval_pipeline.rs`, auditing raw NLI logits, sub-floor candidates, and rejection reasons.
-2. **Sub-Master Batch Synthesizer (`gemma4:e4b`)**: Aggregates 3-4 atomic batch reports into a sub-master report per dataset session.
-3. **Persistent QA Subagent (`.agents/rules/qa-engineer.md`)**: A single QA Subagent is invoked **ONCE** via `invoke_subagent` and reused across all phases via `send_message` to execute deep semantic audits and compile the final master synthesis.
+1. **Master Synthesis Judge (`Report C` & Compaction Master)**:
+   - Model: **`meta/llama-3.1-70b-instruct`** via Nvidia API (`https://integrate.api.nvidia.com/v1/chat/completions`).
+   - Fallback: `gemma4:e4b` on local GPU server if Nvidia API key is unavailable.
+2. **Compaction Extractions & Sub-Batch Audit Reports**:
+   - Model: **`gemma4:e4b`** on local GPU server (`http://100.86.62.14:11434`).
+   - Fallback: `google/gemma-2-27b-it` via Nvidia API.
+3. **BANNED MODEL**:
+   - **`llama3.1:8b` is strictly forbidden** from judge evaluation due to hallucinated facts and fictitious report outputs.
 
 ---
 
-### 5.5 Mandatory Per-Eval Independent Subagent Audit & HITL Gate
+### 5.3 Mandatory Per-Eval Independent Subagent Audit & HITL Gate
 
 > 🛑 **MANDATORY PER-EVAL GATING INVARIANT:**
 > 1. **Single QA Subagent Reuse**: Spawn ONE QA Subagent at Phase 2 using `.agents/rules/qa-engineer.md`. Reuse its conversation ID via `send_message` for ALL subsequent checkpoints. DO NOT spawn duplicate subagents per turn.
 > 2. **2 Checkpoints Per Phase**:
 >    - **Checkpoint A (Post-Compaction)**: QA Subagent audits extracted facts for completeness, schema disambiguation, and context retention.
->    - **Checkpoint B (Post-Pipeline)**: QA Subagent audits Stage 1/2 dedup merges, Stage 3 NLI false positives/negatives, ModernBERT edge calibration, sub-floor near-misses, and Ollama judge reports.
+>    - **Checkpoint B (Post-Pipeline)**: QA Subagent audits Stage 1/2 dedup merges, Stage 3 NLI false positives/negatives, ModernBERT edge calibration, sub-floor near-misses, and report accuracy.
 > 3. **Deep Semantic Audit**: The subagent must act as a mini QA Lead, inspecting raw database rows (`audit_json`, `dedup_match_json`) and verifying output matching our goals rather than just checking exit codes.
 > 4. **HITL User Approval Gate**: After the QA Subagent completes its report for a phase, execution MUST STOP. Present the audit findings to the user and wait for explicit HITL user approval before starting the next evaluation phase.
 

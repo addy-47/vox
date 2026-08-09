@@ -165,7 +165,7 @@ export const WizardRoot: React.FC = () => {
                   </div>
                   <div className="flex flex-col relative w-full">
                     <span className={cn(
-                      "text-[11px] font-bold tracking-widest uppercase mb-0.5 transition-colors",
+                      "text-[12px] font-bold tracking-widest uppercase mb-0.5 transition-colors",
                       status === 'active' ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground-muted))]'
                     )}>
                       {s.label}
@@ -183,7 +183,7 @@ export const WizardRoot: React.FC = () => {
           <div className="mt-auto pt-6 border-t border-[rgba(var(--border),0.05)]">
             <div className="flex items-center gap-2 px-3 py-2 glass">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] tracking-wider uppercase">System Ready</span>
+              <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))] tracking-wider uppercase">System Ready</span>
             </div>
           </div>
         </div>

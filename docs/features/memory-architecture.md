@@ -140,8 +140,9 @@ Note: `Narrative` never originates inter-collection edges. Special state collect
 
 **Constants:**
 - `STAGE3_BATCH_SIZE = 16`
-- `SAME_COLLECTION_CANDIDATE_SEARCH = 0.40`
-- `INTER_COLLECTION_CANDIDATE_SEARCH = 0.55`
+- `SAME_COLLECTION_CANDIDATE_SEARCH = 0.60` (Intra-collection NLI requires high similarity)
+- `INTER_COLLECTION_CANDIDATE_SEARCH = 0.40` (Inter-collection cross-domain edges have lower similarity)
+- `SUBFLOOR_CANDIDATE_FLOOR = 0.25`
 
 ### 3.4 Stage 4 — Commit & Prune (`stage4_commit.rs`)
 

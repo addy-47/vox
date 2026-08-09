@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
-import { Brain, Database, Eye, Palette, Sliders, UserCircle } from "lucide-react";
+import { Brain, Database, History, Palette, Sliders, UserCircle } from "lucide-react";
 
-export type SettingsDomainId = "persona" | "models" | "tray" | "memory" | "appearance" | "interaction";
+export type SettingsDomainId = "persona" | "models" | "history" | "memory" | "appearance" | "interaction";
 
 export interface SettingsDomain {
   id: SettingsDomainId;
@@ -14,13 +14,13 @@ export interface SettingsDomain {
 export const SETTINGS_DOMAINS: SettingsDomain[] = [
   { id: "persona", label: "Persona", sublabel: "Prompts & identity", icon: UserCircle, angle: -90 },
   { id: "models", label: "Models", sublabel: "Intelligence engines", icon: Brain, angle: -30 },
-  { id: "tray", label: "Tray", sublabel: "HUD & overlay settings", icon: Eye, angle: 30 },
+  { id: "history", label: "History", sublabel: "Session history & limits", icon: History, angle: 30 },
   { id: "appearance", label: "Appearance", sublabel: "Visual theme & colors", icon: Palette, angle: 90 },
-  { id: "memory", label: "Memory", sublabel: "Database & retention", icon: Database, angle: 150 },
+  { id: "memory", label: "Memory", sublabel: "Cognitive memory & RAG", icon: Database, angle: 150 },
   { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: Sliders, angle: -150 },
 ];
 
-export const MOBILE_SETTINGS_ORDER = ["interaction", "tray", "models", "appearance", "memory", "persona"] as const;
+export const MOBILE_SETTINGS_ORDER = ["interaction", "history", "models", "appearance", "memory", "persona"] as const;
 
 export const REALTIME_SUBKEYS = ["gemini", "openai", "deepgram", "elevenlabs"] as const;
 
@@ -48,8 +48,8 @@ export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
   tts: ["provider", "voice", "quality_steps", "speed"],
   interaction: ["main_app_mode", "tray_mode", "auto_sleep_timeout", "pipeline_mode"],
   telemetry: ["enabled", "log_level"],
-  persistence: ["private_mode", "max_sessions", "retention_days"],
-  memory: ["episodic_enabled", "bg_worker_enabled", "top_k", "similarity_threshold", "max_context_share"],
+  persistence: ["private_mode"],
+  memory: ["context_retrieval_enabled", "pipeline_processing_enabled", "max_personal_memory_share", "context_chaining_window_hours", "top_k_facts", "max_hops", "semantic_similarity_cutoff"],
   assistant: ["modular_prompt", "realtime_prompt"],
   setup: ["completed"],
   realtime: ["provider", "gemini", "openai", "deepgram", "elevenlabs"],
@@ -69,15 +69,16 @@ export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey
     { scope: "llm", keys: ["model", "ctx_size", "threads"] },
     { scope: "llm", keys: ["provider"], nestedKey: "model" },
   ],
-  tray: [
-    { scope: "ui", keys: ["tray_enabled", "tray_blur_density", "tray_glass_tint", "tray_history_limit"] },
-    { scope: "interaction", keys: ["tray_mode"] },
+  history: [
+    { scope: "persistence" },
+    { scope: "ui", keys: ["tray_history_limit"] },
   ],
   persona: [{ scope: "assistant" }],
-  memory: [{ scope: "persistence" }, { scope: "memory" }],
+  memory: [{ scope: "memory" }],
   appearance: [{ scope: "ui", keys: ["theme", "accent_seed"] }],
   interaction: [
-    { scope: "interaction", keys: ["main_app_mode", "auto_sleep_timeout", "pipeline_mode"] },
+    { scope: "interaction", keys: ["main_app_mode", "tray_mode", "auto_sleep_timeout", "pipeline_mode"] },
+    { scope: "ui", keys: ["tray_enabled"] },
     { scope: "llm", keys: ["provider"] },
     { scope: "realtime", keys: ["provider", "gemini", "openai", "deepgram", "elevenlabs"] },
   ],
