@@ -15,29 +15,29 @@ import {
 import ReactMarkdown from "react-markdown";
 
 const MarkdownComponents = {
-  h1: ({node, ...props}: any) => <h1 className="text-[12px] font-bold mt-1 mb-0.5" {...props} />,
-  h2: ({node, ...props}: any) => <h2 className="text-[12px] font-bold mt-1 mb-0.5" {...props} />,
-  h3: ({node, ...props}: any) => <h3 className="text-[11px] font-bold mt-1 mb-0.5" {...props} />,
+  h1: ({node, ...props}: any) => <h1 className="text-[13px] font-bold mt-1 mb-0.5" {...props} />,
+  h2: ({node, ...props}: any) => <h2 className="text-[13px] font-bold mt-1 mb-0.5" {...props} />,
+  h3: ({node, ...props}: any) => <h3 className="text-[12px] font-bold mt-1 mb-0.5" {...props} />,
   p: ({node, ...props}: any) => <p className="mb-1 last:mb-0 inline-block w-full" {...props} />,
   ul: ({node, ...props}: any) => <ul className="list-disc list-inside mb-1 pl-1" {...props} />,
   ol: ({node, ...props}: any) => <ol className="list-decimal list-inside mb-1 pl-1" {...props} />,
   li: ({node, ...props}: any) => <li className="ml-0" {...props} />,
-  code: ({node, ...props}: any) => <code className="bg-[rgba(var(--foreground),0.06)] px-1 rounded font-mono text-[11px]" {...props} />,
+  code: ({node, ...props}: any) => <code className="bg-[rgba(var(--foreground),0.06)] px-1 rounded font-mono text-[12px]" {...props} />,
 };
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>
     {turn.user && (
-      <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[13px] leading-relaxed opacity-90 prose prose-invert select-text">
-        <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-0.5">
+      <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[14px] leading-relaxed opacity-90 prose prose-invert select-text">
+        <span className="text-[12px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-0.5">
           [USER]
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
       </div>
     )}
     {turn.assistant && (
-      <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed opacity-90 prose prose-invert select-text">
-        <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--accent))]/90 uppercase block mb-0.5">
+      <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[14px] leading-relaxed opacity-90 prose prose-invert select-text">
+        <span className="text-[12px] font-mono tracking-widest text-[rgb(var(--accent))]/90 uppercase block mb-0.5">
           [VOX]
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
@@ -130,7 +130,7 @@ export const Home = memo(() => {
               <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={18} />
               <div className="flex-1 flex flex-col gap-1.5 min-w-0">
                 <span className="text-xs font-bold tracking-wider uppercase text-red-400 text-left">Connection Error</span>
-                <p className="text-[11px] text-[rgb(var(--foreground))]/90 leading-relaxed font-light break-words select-text text-left">
+                <p className="text-[12px] text-[rgb(var(--foreground))]/90 leading-relaxed font-light break-words select-text text-left">
                   {errorAlert}
                 </p>
                 <div className="flex gap-3 mt-1 justify-start">
@@ -139,13 +139,13 @@ export const Home = memo(() => {
                       setErrorAlert(null);
                       navigate("/settings");
                     }}
-                    className="text-[10px] font-black uppercase tracking-wider text-[rgb(var(--accent))] hover:underline cursor-pointer"
+                    className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] hover:underline cursor-pointer"
                   >
                     Configure Settings
                   </button>
                   <button
                     onClick={() => setErrorAlert(null)}
-                    className="text-[10px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
+                    className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
                   >
                     Dismiss
                   </button>
@@ -159,7 +159,7 @@ export const Home = memo(() => {
       {/* ── Top-right: Status Capsule (single, clean, centered on mobile) ── */}
       <div className="absolute top-[10%] md:top-4 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-5 z-30 flex items-center gap-2 pointer-events-none">
         {cpuWarning && (
-          <span className="text-[9px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]/60">
+          <span className="text-[10px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]/60">
             CPU: {cpuWarning.governor}
           </span>
         )}
@@ -196,9 +196,9 @@ export const Home = memo(() => {
                 <motion.div
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/85 font-light text-[11px] leading-relaxed prose prose-invert select-text"
+                  className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/85 font-light text-[12px] leading-relaxed prose prose-invert select-text"
                 >
-                  <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/60 uppercase block mb-0.5">
+                  <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/60 uppercase block mb-0.5">
                     [USER]
                   </span>
                   <ReactMarkdown components={MarkdownComponents}>{streamedTranscript}</ReactMarkdown>
@@ -208,9 +208,9 @@ export const Home = memo(() => {
                 <motion.div
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[11px] leading-relaxed prose prose-invert select-text" style={{ textShadow: "0 0 25px rgba(var(--accent), 0.25)" }}
+                  className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[12px] leading-relaxed prose prose-invert select-text" style={{ textShadow: "0 0 25px rgba(var(--accent), 0.25)" }}
                 >
-                  <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/70 uppercase block mb-0.5">
+                  <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--accent))]/70 uppercase block mb-0.5">
                     [VOX]
                   </span>
                   <ReactMarkdown components={MarkdownComponents}>{streamedAssistantText}</ReactMarkdown>
@@ -296,7 +296,7 @@ export const Home = memo(() => {
           {/* Primary Engage / Disengage Button */}
           <div className="relative flex flex-col items-center">
             {!isEngaged && hasCachedSession && (
-              <span className="absolute -top-7 text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/85 uppercase animate-pulse whitespace-nowrap bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded-full border border-[rgb(var(--accent))]/15">
+              <span className="absolute -top-7 text-[10px] font-mono tracking-widest text-[rgb(var(--accent))]/85 uppercase animate-pulse whitespace-nowrap bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded-full border border-[rgb(var(--accent))]/15">
                 Resume Session
               </span>
             )}
@@ -369,7 +369,7 @@ export const Home = memo(() => {
             className="fixed bottom-16 right-4 w-56 p-2 flex flex-col gap-1 z-50 glass-card no-blur"
           >
             <div className="px-2 py-1 border-b border-[rgba(var(--accent),0.1)] mb-1">
-              <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase block">
+              <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase block">
                 Select Test Input
               </span>
             </div>
@@ -379,10 +379,10 @@ export const Home = memo(() => {
                 onClick={() => handleTestClip(clip.id)}
                 className="w-full text-left p-2 rounded-xl hover:bg-[rgb(var(--accent))]/10 transition-colors border border-transparent hover:border-[rgb(var(--accent))]/15 flex flex-col"
               >
-                <span className="text-[13px] font-semibold text-[rgb(var(--foreground))]">
+                <span className="text-[14px] font-semibold text-[rgb(var(--foreground))]">
                   {clip.name}
                 </span>
-                <span className="text-[11px] text-[rgb(var(--foreground-muted))] mt-0.5">
+                <span className="text-[12px] text-[rgb(var(--foreground-muted))] mt-0.5">
                   {clip.desc} · {clip.duration}
                 </span>
               </button>

@@ -22,7 +22,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-4">
             <div className="h-[1px] w-8 bg-[rgb(var(--accent))]/30" />
-            <span className="text-[11px] font-black tracking-[0.4em] text-[rgb(var(--accent))] uppercase">Step 1.0 • Initialization</span>
+            <span className="text-[12px] font-black tracking-[0.4em] text-[rgb(var(--accent))] uppercase">Step 1.0 • Initialization</span>
           </div>
           
             {/* Sub-step Navigation Controls */}
@@ -167,7 +167,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                         <div className="absolute w-5 h-5 rounded-full bg-[rgb(var(--accent))] blur-md opacity-40 animate-pulse" />
                         <div className="w-2.5 h-2.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)] z-10" />
                       </div>
-                      <span className="text-[11px] font-black tracking-[0.4em] text-white/60 uppercase">
+                      <span className="text-[12px] font-black tracking-[0.4em] text-white/60 uppercase">
                         Vox <span className="text-[rgb(var(--accent))]">Live</span>
                       </span>
                     </div>
@@ -197,7 +197,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                     id="step3-renderer"
                   >
                     <div className="w-full space-y-2">
-                       <div className="text-[17px] leading-snug font-medium tracking-tight text-white/90">
+                       <div className="text-[18px] leading-snug font-medium tracking-tight text-white/90">
                           Live transcriptions in real-time...
                           <motion.span 
                             animate={{ opacity: [0, 1, 0] }}
@@ -217,11 +217,11 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                      <div className="flex items-center gap-6 opacity-60">
                         <div className="flex items-center gap-2">
                            <Activity size={12} className="text-[rgb(var(--accent))]" />
-                           <span className="text-[11px] font-mono text-white/80 font-bold uppercase tracking-widest">Active</span>
+                           <span className="text-[12px] font-mono text-white/80 font-bold uppercase tracking-widest">Active</span>
                         </div>
                         <div className="flex items-center gap-2">
                            <Zap size={12} className="text-[rgb(var(--accent))]" />
-                           <span className="text-[11px] font-mono text-white/80 font-bold">42MB</span>
+                           <span className="text-[12px] font-mono text-white/80 font-bold">42MB</span>
                         </div>
                      </div>
                      <div className="flex items-center gap-1">
@@ -261,7 +261,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                          </h3>
                          <div className="h-[1px] w-4 bg-[rgb(var(--accent))]" />
                       </div>
-                      <p className="text-white/60 text-[13px] leading-relaxed font-medium">
+                      <p className="text-white/60 text-[14px] leading-relaxed font-medium">
                          {tooltips[hoveredElement as keyof typeof tooltips].desc}
                       </p>
                     </motion.div>
@@ -279,7 +279,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                          </h3>
                          <div className="h-[1px] w-4 bg-[rgb(var(--accent))]" />
                       </div>
-                      <p className="text-white/40 text-[11px] italic">
+                      <p className="text-white/40 text-[12px] italic">
                          Hover over HUD elements to explore features...
                       </p>
                     </motion.div>
@@ -329,7 +329,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
             className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[11px]">
+            <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[12px]">
               Begin Setup
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />
             </span>
@@ -345,7 +345,7 @@ const FeatureCard = ({ icon, title, desc }: { icon: React.ReactNode, title: stri
     <div className="mb-3 w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors">
       {icon}
     </div>
-    <div className="text-[11px] font-bold text-[rgb(var(--foreground-muted))] tracking-widest uppercase mb-1">{title}</div>
+    <div className="text-[12px] font-bold text-[rgb(var(--foreground-muted))] tracking-widest uppercase mb-1">{title}</div>
     <div className="text-white text-sm font-medium">{desc}</div>
   </div>
 );

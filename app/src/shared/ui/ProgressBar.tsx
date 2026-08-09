@@ -26,12 +26,12 @@ export const ProgressBar = memo<ProgressBarProps>(
     return (
       <div className={cn("space-y-1.5 w-full", className)}>
         <div className="flex justify-between items-baseline">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
             {label}
           </span>
           <span
             ref={textRef}
-            className="text-[13px] font-mono font-bold text-[rgb(var(--foreground))]"
+            className="text-[14px] font-mono font-bold text-[rgb(var(--foreground))]"
           >
             {initialText}
           </span>

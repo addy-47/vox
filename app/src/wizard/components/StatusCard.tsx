@@ -53,14 +53,14 @@ export const StatusCard: React.FC<StatusCardProps> = ({
     </div>
 
     <div className="relative z-10">
-        <div className="text-[11px] font-bold text-white/80 tracking-widest uppercase mb-1">{label}</div>
+        <div className="text-[12px] font-bold text-white/80 tracking-widest uppercase mb-1">{label}</div>
         <div className={cn(
         "text-sm font-medium leading-none mb-1 transition-colors duration-500",
         loading ? "text-white/20" : "text-white"
         )}>{value}</div>
         {subValue && (
         <div className={cn(
-            "text-[11px] font-medium transition-colors duration-500",
+            "text-[12px] font-medium transition-colors duration-500",
             loading ? "text-white/10" : "text-white/50"
         )}>{subValue}</div>
         )}

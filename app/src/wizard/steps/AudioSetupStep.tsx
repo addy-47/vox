@@ -117,10 +117,10 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     
             <div className="flex-1">
                 <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-black text-white/80 uppercase tracking-widest flex items-center gap-2">
+                <span className="text-[12px] font-black text-white/80 uppercase tracking-widest flex items-center gap-2">
                     <Activity className="w-3 h-3" /> Input Signal
                 </span>
-                <span className="text-[11px] font-bold text-[rgb(var(--accent))] font-mono">{Math.round(energy)}%</span>
+                <span className="text-[12px] font-bold text-[rgb(var(--accent))] font-mono">{Math.round(energy)}%</span>
                 </div>
                 <div className="h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
                 <motion.div 
@@ -134,7 +134,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         </div>
     
         <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
-            <span className="text-[11px] font-bold text-white/30 uppercase tracking-widest px-1">Source Selection</span>
+            <span className="text-[12px] font-bold text-white/30 uppercase tracking-widest px-1">Source Selection</span>
             <div className="space-y-2">
             {devices.map(device => (
                 <button
@@ -149,14 +149,14 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
                 >
                 <div className="flex items-center gap-3">
                     <Volume2 className={cn("w-4 h-4 transition-colors", selected === device.name ? "text-[rgb(var(--accent))]" : "text-white/20")} />
-                    <span className="text-[11px] font-bold truncate max-w-[280px] uppercase tracking-tight">{device.name}</span>
+                    <span className="text-[12px] font-bold truncate max-w-[280px] uppercase tracking-tight">{device.name}</span>
                 </div>
                 {selected === device.name && <Check className="w-4 h-4 text-[rgb(var(--accent))]" />}
                 </button>
             ))}
             {devices.length === 0 && (
                 <div className="p-8 text-center border border-dashed border-[rgba(var(--border),0.08)] rounded-xl glass">
-                <span className="text-[11px] font-bold text-white/40 uppercase tracking-widest">No devices detected</span>
+                <span className="text-[12px] font-bold text-white/40 uppercase tracking-widest">No devices detected</span>
                 </div>
             )}
             </div>

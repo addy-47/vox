@@ -16,7 +16,7 @@ export function useSettingsPage() {
   const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({
     persona: null,
     models: null,
-    tray: null,
+    history: null,
     memory: null,
     appearance: null,
     interaction: null,
@@ -90,7 +90,7 @@ export function useSettingsPage() {
       setLines({
         persona: null,
         models: null,
-        tray: null,
+        history: null,
         memory: null,
         appearance: null,
         interaction: null,
@@ -140,7 +140,7 @@ export function useSettingsPage() {
                 y2 = cardRect.top - containerRect.top;
                 break;
               case "models":
-              case "tray":
+              case "history":
                 x2 = cardRect.left - containerRect.left;
                 y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
                 break;

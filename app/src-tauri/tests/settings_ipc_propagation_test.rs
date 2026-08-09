@@ -165,3 +165,27 @@ fn test_event_channel_propagation_non_blocking() {
     let ev4 = rx.recv().unwrap();
     assert!(matches!(ev4, VoxEvent::Shutdown));
 }
+
+// ─── 5. LLM Provider No-Op Deduplication Contract ───────────────────────────
+
+#[test]
+fn test_llm_provider_deduplication_contract() {
+    let p1 = LlmProviderConfig::Embedded;
+    let p2 = LlmProviderConfig::Embedded;
+    assert_eq!(p1, p2, "Identical Embedded provider configs MUST equal each other!");
+
+    let remote1 = LlmProviderConfig::OpenAiCompat {
+        base_url: "http://localhost:11434".to_string(),
+        model: "llama3.2".to_string(),
+        api_key: None,
+        provider_name: Some("ollama".to_string()),
+    };
+    let remote2 = LlmProviderConfig::OpenAiCompat {
+        base_url: "http://localhost:11434".to_string(),
+        model: "llama3.2".to_string(),
+        api_key: None,
+        provider_name: Some("ollama".to_string()),
+    };
+    assert_eq!(remote1, remote2, "Identical OpenAiCompat provider configs MUST equal each other!");
+}
+

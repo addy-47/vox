@@ -86,7 +86,7 @@ export const ModelStatusOverlay = memo(() => {
 
   return (
     <div
-      className="flex items-center text-[10px] leading-relaxed text-[rgb(var(--foreground-muted))]/60 select-none"
+      className="flex items-center text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/60 select-none"
       style={{ gap: isNarrow ? "clamp(0.25rem, 2vw, 0.75rem)" : "1.5rem" }}
     >
       {/* LLM Status Chip */}
@@ -99,18 +99,18 @@ export const ModelStatusOverlay = memo(() => {
         <div className="min-w-0 overflow-hidden">
           <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
             {llmName}
-            {!llmExists && <span className="text-[7px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
+            {!llmExists && <span className="text-[9px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
           </div>
           {!isNarrow && (
-            <div className="text-[8px] font-mono mt-0.5 leading-none truncate">{activeLlm.parameters} · LLM</div>
+            <div className="text-[9px] font-mono mt-0.5 leading-none truncate">{activeLlm.parameters} · LLM</div>
           )}
         </div>
         {/* Tooltip */}
-        <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
+        <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[12px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
           <p className="font-bold text-[rgb(var(--foreground))] mb-1">{activeLlm.name}</p>
           {activeLlm.description}
-          {activeLlm.tradeoffs && <p className="mt-1.5 pt-1.5 border-t border-[rgba(var(--accent),0.06)] text-[10px] opacity-75">{activeLlm.tradeoffs}</p>}
-          {!llmExists && <p className="mt-1.5 text-yellow-500 font-semibold text-[10px]">⚠️ This model file is not downloaded yet.</p>}
+          {activeLlm.tradeoffs && <p className="mt-1.5 pt-1.5 border-t border-[rgba(var(--accent),0.06)] text-[11px] opacity-75">{activeLlm.tradeoffs}</p>}
+          {!llmExists && <p className="mt-1.5 text-yellow-500 font-semibold text-[11px]">⚠️ This model file is not downloaded yet.</p>}
         </div>
       </div>
 
@@ -124,17 +124,17 @@ export const ModelStatusOverlay = memo(() => {
         <div className="min-w-0 overflow-hidden">
           <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
             {asrName}
-            {!asrExists && <span className="text-[7px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
+            {!asrExists && <span className="text-[9px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
           </div>
           {!isNarrow && (
-            <div className="text-[8px] font-mono mt-0.5 leading-none truncate">ASR Engine</div>
+            <div className="text-[9px] font-mono mt-0.5 leading-none truncate">ASR Engine</div>
           )}
         </div>
         {/* Tooltip */}
-        <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
+        <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[12px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
           <p className="font-bold text-[rgb(var(--foreground))] mb-1">{activeAsr.name}</p>
           {activeAsr.description}
-          {!asrExists && <p className="mt-1.5 text-yellow-500 font-semibold text-[10px]">⚠️ This model file is not downloaded yet.</p>}
+          {!asrExists && <p className="mt-1.5 text-yellow-500 font-semibold text-[11px]">⚠️ This model file is not downloaded yet.</p>}
         </div>
       </div>
 
@@ -148,17 +148,17 @@ export const ModelStatusOverlay = memo(() => {
         <div className="min-w-0 overflow-hidden">
           <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none truncate flex items-center gap-1">
             {isNarrow ? "TTS" : "Supertonic 3"}
-            {!ttsExists && <span className="text-[7px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
+            {!ttsExists && <span className="text-[9px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
           </div>
           {!isNarrow && (
-            <div className="text-[8px] font-mono mt-0.5 leading-none truncate">{activeVoice.name} · Voice</div>
+            <div className="text-[9px] font-mono mt-0.5 leading-none truncate">{activeVoice.name} · Voice</div>
           )}
         </div>
         {/* Tooltip */}
-        <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
+        <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[12px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
           <p className="font-bold text-[rgb(var(--foreground))] mb-1">Supertonic 3: {activeVoice.name}</p>
           Multilingual flow-matching speech synthesizer.
-          {!ttsExists && <p className="mt-1.5 text-yellow-500 font-semibold text-[10px]">⚠️ TTS engine assets are not downloaded yet.</p>}
+          {!ttsExists && <p className="mt-1.5 text-yellow-500 font-semibold text-[11px]">⚠️ TTS engine assets are not downloaded yet.</p>}
         </div>
       </div>
     </div>
