@@ -23,32 +23,66 @@ pub async fn run_pipeline_cycle_with_id_seq(
         return Ok(0);
     }
 
+    // Quick exit if queue is empty to avoid logging and queries
+    let count = match conn.query("SELECT COUNT(*) FROM personal_memory_queue", ()).await {
+        Ok(mut rows) => match rows.next().await {
+            Ok(Some(row)) => row.get::<i64>(0).unwrap_or(0),
+            _ => 0,
+        },
+        Err(_) => 0,
+    };
+    if count == 0 {
+        return Ok(0);
+    }
+
     let mut total_processed = 0;
+
+    tracing::info!("[MemoryPipeline] === Starting consolidation cycle (Run ID: {}) ===", run_id);
 
     // Stage 1: Dedup
     let n1 = run_stage1_dedup_with_metrics(conn, run_id).await?;
     total_processed += n1;
+    if n1 > 0 {
+        tracing::info!("[MemoryPipeline] Stage 1 (Dedup): Processed {} items.", n1);
+    }
     if cancel_flag.load(Ordering::Relaxed) {
+        tracing::info!("[MemoryPipeline] Consolidation canceled after Stage 1.");
         return Ok(total_processed);
     }
 
     // Stage 2: Embed
     let n2 = run_stage2_embed_with_metrics(conn, run_id).await?;
     total_processed += n2;
+    if n2 > 0 {
+        tracing::info!("[MemoryPipeline] Stage 2 (Embed): Processed {} items.", n2);
+    }
     if cancel_flag.load(Ordering::Relaxed) {
+        tracing::info!("[MemoryPipeline] Consolidation canceled after Stage 2.");
         return Ok(total_processed);
     }
 
     // Stage 3: Eval
     let n3 = run_stage3_eval_with_metrics_seq(conn, run_id, stage3_batch_seq).await?;
     total_processed += n3;
+    if n3 > 0 {
+        tracing::info!("[MemoryPipeline] Stage 3 (NLI Eval): Processed {} items.", n3);
+    }
     if cancel_flag.load(Ordering::Relaxed) {
+        tracing::info!("[MemoryPipeline] Consolidation canceled after Stage 3.");
         return Ok(total_processed);
     }
 
     // Stage 4: Commit & Prune
     let n4 = run_stage4_commit_with_metrics(conn, run_id).await?;
     total_processed += n4;
+    if n4 > 0 {
+        tracing::info!("[MemoryPipeline] Stage 4 (Commit & Prune): Committed {} facts.", n4);
+    }
+
+    tracing::info!(
+        "[MemoryPipeline] === Completed consolidation cycle: {} total items processed ===",
+        total_processed
+    );
 
     Ok(total_processed)
 }

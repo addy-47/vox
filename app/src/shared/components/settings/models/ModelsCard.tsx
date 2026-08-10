@@ -38,6 +38,9 @@ interface ModelStatus {
   error?: string;
 }
 
+// Module-level persistent cache for model download statuses across modal open/close
+const globalDownloadStatuses: Record<string, ModelStatus> = {};
+
 interface ModelsCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
@@ -48,11 +51,24 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
-  const [downloadStatuses, setDownloadStatuses] = useState<Record<string, ModelStatus>>({});
+  const [downloadStatuses, setDownloadStatuses] = useState<Record<string, ModelStatus>>(() => ({
+    ...globalDownloadStatuses,
+  }));
   const [modelPresence, setModelPresence] = useState<Record<string, boolean>>({});
   const [activePipelineTab, setActivePipelineTab] = useState<"vad" | "asr" | "llm" | "tts" | "auxiliary">("llm");
   const [activeCategoryTab, setActiveCategoryTab] = useState<"model" | "settings">("model");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const updateDownloadStatus = useCallback((modelId: string, status: Partial<ModelStatus>) => {
+    setDownloadStatuses((prev) => {
+      const updated = {
+        ...(prev[modelId] || { step: "idle", progress: 0, bytesDownloaded: 0, totalBytes: 100 }),
+        ...status,
+      };
+      globalDownloadStatuses[modelId] = updated as ModelStatus;
+      return { ...prev, [modelId]: updated as ModelStatus };
+    });
+  }, []);
 
   const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
   const [chatterboxIsAdding, setChatterboxIsAdding] = useState(false);
@@ -109,14 +125,20 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const refreshPresence = useCallback(async () => {
     try {
       const presence: Record<string, boolean> = {};
-      const allModels = [
-        ...(modelCatalog?.asr || []),
-        ...(modelCatalog?.llm || []),
-        ...(modelCatalog?.tts || []),
+      const allModelIds = [
+        "ten_vad",
+        ...(modelCatalog?.asr?.map((m) => m.id) || []),
+        ...(modelCatalog?.llm?.map((m) => m.id) || []),
+        ...(modelCatalog?.tts?.map((m) => m.id) || []),
+        "modernbert_memory_scope",
+        "minilm_l12_v2",
+        "nli_deberta_v3_base",
+        "vox_translit_rnn",
+        "modernbert_edge_creation",
       ];
 
-      for (const model of allModels) {
-        presence[model.id] = await checkModelExists(model.id);
+      for (const id of allModelIds) {
+        presence[id] = await checkModelExists(id);
       }
       setModelPresence(presence);
     } catch (e) {
@@ -200,6 +222,53 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       unlistenPromise.then((fn) => fn());
     };
   }, [draftSettings?.tts?.provider]);
+
+  // Model download events listener (model_setup_status, optional_model_complete, optional_model_failed)
+  useEffect(() => {
+    const unlisteners: Array<() => void> = [];
+
+    listen<any>("model_setup_status", (event) => {
+      const { model_id, step, progress, bytes_downloaded, total_bytes, error } = event.payload || {};
+      if (!model_id) return;
+
+      const stepLower = String(step || "downloading").toLowerCase() as ModelStatus["step"];
+
+      updateDownloadStatus(model_id, {
+        step: stepLower,
+        progress: typeof progress === "number" ? progress : 0,
+        bytesDownloaded: bytes_downloaded || 0,
+        totalBytes: total_bytes || 100,
+        error: error || undefined,
+      });
+    }).then((fn) => unlisteners.push(fn));
+
+    listen<string>("optional_model_complete", (event) => {
+      const modelGroupId = event.payload;
+      if (!modelGroupId) return;
+
+      updateDownloadStatus(modelGroupId, {
+        step: "completed",
+        progress: 100,
+      });
+      refreshPresence();
+    }).then((fn) => unlisteners.push(fn));
+
+    listen<any>("optional_model_failed", (event) => {
+      const payload = event.payload;
+      const modelGroupId = Array.isArray(payload) ? payload[0] : typeof payload === "string" ? payload : payload?.model_id;
+      const errStr = Array.isArray(payload) ? payload[1] : payload?.error || "Download failed";
+      if (!modelGroupId) return;
+
+      updateDownloadStatus(modelGroupId, {
+        step: "failed",
+        error: String(errStr),
+      });
+    }).then((fn) => unlisteners.push(fn));
+
+    return () => {
+      unlisteners.forEach((fn) => fn());
+    };
+  }, [updateDownloadStatus, refreshPresence]);
 
   useEffect(() => {
     localStorage.setItem("vox_ssh_conn", sshConnectionString);
@@ -325,14 +394,20 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   const startDownload = async (modelId: string) => {
     try {
-      setDownloadStatuses((prev) => ({
-        ...prev,
-        [modelId]: { step: "downloading", progress: 0, bytesDownloaded: 0, totalBytes: 100 },
-      }));
+      updateDownloadStatus(modelId, {
+        step: "downloading",
+        progress: 1,
+        bytesDownloaded: 0,
+        totalBytes: 100,
+        error: undefined,
+      });
       await downloadOptionalModel(modelId);
-      refreshPresence();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to start download:", e);
+      updateDownloadStatus(modelId, {
+        step: "failed",
+        error: String(e),
+      });
     }
   };
 
