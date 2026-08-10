@@ -1,6 +1,6 @@
 import React from "react";
 import { cn } from "@/shared/lib/utils";
-import { Check, ArrowLeft, Trash2, Info } from "lucide-react";
+import { Check, ArrowLeft, Trash2, Info, Lock } from "lucide-react";
 
 interface SubModelCardProps {
   id: string;
@@ -45,7 +45,7 @@ export const SubModelCard: React.FC<SubModelCardProps> = ({
 
   const renderAction = () => {
     if (!isDownloaded) {
-      if (downloadStatus) {
+      if (downloadStatus && downloadStatus.step !== "completed") {
         return (
           <span className="text-[12px] font-mono text-[rgb(var(--accent))] font-bold shrink-0">
             {Math.round(downloadStatus.progress)}%
@@ -58,14 +58,24 @@ export const SubModelCard: React.FC<SubModelCardProps> = ({
             e.stopPropagation();
             startDownload();
           }}
-          className="px-2.5 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-bold uppercase tracking-wider shrink-0 hover:scale-[1.02] active:scale-95 transition-all"
+          className="px-2.5 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-bold uppercase tracking-wider shrink-0 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
         >
           Get
         </button>
       );
     }
 
-    if (isRequired) return null;
+    if (isRequired) {
+      return (
+        <div
+          title="Mandatory core model (cannot be deleted)"
+          className="p-1 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed shrink-0 flex items-center gap-1"
+        >
+          <Lock size={12} className="opacity-60" />
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider">Required</span>
+        </div>
+      );
+    }
 
     if (isConfirmingDelete) {
       return (
@@ -77,7 +87,7 @@ export const SubModelCard: React.FC<SubModelCardProps> = ({
               deleteModel();
               setConfirmDeleteId(null);
             }}
-            className="p-1 rounded-lg bg-red-500/20 text-red-500 hover:bg-red-500/35 transition-colors border border-red-500/30 flex items-center justify-center"
+            className="p-1 rounded-lg bg-red-500/20 text-red-500 hover:bg-red-500/35 transition-colors border border-red-500/30 flex items-center justify-center cursor-pointer"
             aria-label="Confirm Delete"
           >
             <Check size={14} className="font-bold" />
@@ -87,7 +97,7 @@ export const SubModelCard: React.FC<SubModelCardProps> = ({
               e.stopPropagation();
               setConfirmDeleteId(null);
             }}
-            className="p-1 rounded-lg bg-[rgb(var(--foreground))]/[0.05] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/[0.08] transition-colors border border-[rgba(var(--border),0.1)] flex items-center justify-center"
+            className="p-1 rounded-lg bg-[rgb(var(--foreground))]/[0.05] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/[0.08] transition-colors border border-[rgba(var(--border),0.1)] flex items-center justify-center cursor-pointer"
             aria-label="Cancel"
           >
             <ArrowLeft size={14} />
@@ -102,7 +112,7 @@ export const SubModelCard: React.FC<SubModelCardProps> = ({
           e.stopPropagation();
           setConfirmDeleteId(id);
         }}
-        className="p-1.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-colors shrink-0"
+        className="p-1.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-colors shrink-0 cursor-pointer"
         aria-label="Delete weights"
       >
         <Trash2 size={16} />
@@ -175,9 +185,11 @@ export const SubModelCard: React.FC<SubModelCardProps> = ({
       <div className="flex items-center justify-between pt-1.5 border-t border-[rgba(var(--border),0.05)] h-6 shrink-0">
         <span className={cn(
           "text-[12px] font-bold uppercase tracking-wider",
-          isActive ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/70"
+          isDownloaded
+            ? (isActive ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/70")
+            : "text-[rgb(var(--foreground-muted))]/40"
         )}>
-          {isActive ? "Active" : "Ready"}
+          {isDownloaded ? (isActive ? "Active" : "Ready") : null}
         </span>
         {renderAction()}
       </div>

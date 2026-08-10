@@ -134,25 +134,36 @@ pub fn spawn_memory_worker(
                         }
                     }
                 } else if state.is_idle && !is_private_mode.load(Ordering::Relaxed) {
-                    // Enforce 30-second minimum continuous idle debounce before executing queue orchestration
-                    let is_debounced = state.idle_since.is_some_and(|since| {
-                        since.elapsed() >= Duration::from_secs(MIN_IDLE_DEBOUNCE_SECS)
-                    });
+                    let pipeline_enabled = match settings.read() {
+                        Ok(s) => s.memory.pipeline_processing_enabled,
+                        Err(_) => true,
+                    };
 
-                    if is_debounced {
-                        if let Some(ref db_conn) = conn {
-                            loop {
-                                if !state.is_idle || !rx.is_empty() {
-                                    break;
-                                }
+                    if pipeline_enabled {
+                        // Enforce 30-second minimum continuous idle debounce before executing queue orchestration
+                        let is_debounced = state.idle_since.is_some_and(|since| {
+                            since.elapsed() >= Duration::from_secs(MIN_IDLE_DEBOUNCE_SECS)
+                        });
 
-                                let processed_count = handle.block_on(async {
-                                    crate::services::memory::pipeline::run_pipeline_cycle(db_conn, &cancel_flag).await
-                                });
+                        if is_debounced {
+                            if let Some(ref db_conn) = conn {
+                                loop {
+                                    if !state.is_idle || !rx.is_empty() {
+                                        break;
+                                    }
 
-                                match processed_count {
-                                    Ok(n) if n > 0 => continue,
-                                    _ => break,
+                                    let processed_count = handle.block_on(async {
+                                        crate::services::memory::pipeline::run_pipeline_cycle(db_conn, &cancel_flag).await
+                                    });
+
+                                    match processed_count {
+                                        Ok(n) if n > 0 => continue,
+                                        _ => {
+                                            // Reset idle_since timer so empty queue doesn't re-trigger every 500ms
+                                            state.idle_since = Some(Instant::now());
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }

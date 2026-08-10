@@ -75,6 +75,10 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
     }
 
     let items_claimed = items.len();
+    tracing::info!(
+        "[MemoryPipeline] [Stage 1 Dedup] Claimed {} staged_pending items for deduplication",
+        items_claimed
+    );
     let session_id = items
         .first()
         .map(|i| i.session_id.clone())
