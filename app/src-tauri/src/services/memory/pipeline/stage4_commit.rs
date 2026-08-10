@@ -83,6 +83,10 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
     }
 
     let items_claimed = items.len();
+    tracing::info!(
+        "[MemoryPipeline] [Stage 4 Commit] Claimed {} evaluated/superseded items for SQLite commit",
+        items_claimed
+    );
     let session_id = items
         .first()
         .map(|i| i.session_id.clone())
