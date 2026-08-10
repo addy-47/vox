@@ -74,6 +74,10 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
     }
 
     let items_claimed = items.len();
+    tracing::info!(
+        "[MemoryPipeline] [Stage 2 Embed] Claimed {} deduped items for MiniLM embedding generation",
+        items_claimed
+    );
     ensure_embedder_loaded(true)?;
 
     let mut processed_count = 0;

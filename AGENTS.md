@@ -118,13 +118,15 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
 > 3. **Deep Semantic Audit**: The subagent must act as a mini QA Lead, inspecting raw database rows (`audit_json`, `dedup_match_json`) and verifying output matching our goals rather than just checking exit codes.
 > 4. **HITL User Approval Gate**: After the QA Subagent completes its report for a phase, execution MUST STOP. Present the audit findings to the user and wait for explicit HITL user approval before starting the next evaluation phase.
 
-### 5.4 Memory Graph UI Page & Pipeline Monitor (`app/src/pages/Memory.tsx`)
+### 5.4 Memory Graph UI Page & Observability Drawer (`app/src/pages/Memory.tsx`)
 
 - **Interactive Distributed Knowledge Graph**: WebGL/Canvas force-directed graph visualizer powered by `react-force-graph-2d` (`MemoryGraph.tsx`) with transparent background, placing the graph directly on top of the main ambient page background (`AmbientBackground`). Renders real memory facts and relationships dynamically categorized by distinct collection accent colors (`Identity`: Cyan `#00f2fe`, `Profile`: Emerald `#10b981`, `Directives`: Purple `#a855f7`, `Constraints`: Amber `#f59e0b`, `Entities`: Sky Blue `#38bdf8`, `Narrative`: Blue `#3b82f6`, `Inactive`: Slate `#64748b`). Graph coordinates centered around `(0,0)` origin with `forceCenter(0,0)` and automatic `zoomToFit(400, 60)` camera alignment on mount alongside a floating top-right `Recenter` control button.
-- **Decoupled Search Bar**: Top-center floating glass pill bar (`Search`) with smooth focus expanding animation.
-- **Two-Column Collections & Relations Legend Card**: Floating glass card on top-left displaying interactive collection and relation filters (`SUPPORTS`, `SUPERSEDES`, `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `OTHER`) with matching solid and dashed colored edge lines.
+- **Decoupled Search Bar with Quick Filters**: Top-center floating glass pill bar (`Search`) with smooth focus expanding animation and quick collection/status filter popover (`SlidersHorizontal`).
+- **Collapsible Two-Column Legend Card**: Floating glass card on top-left displaying interactive collection and relation filters (`SUPPORTS`, `SUPERSEDES`, `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `OTHER`) with smooth minimize/expand toggles.
 - **Floating Node Tooltip with Connected Edges Details**: Contextual floating tooltip card (`MemoryNodeTooltip.tsx`) anchored directly to graph nodes on click, showing incoming/outgoing connected relations with type badges, direction arrows, and connected fact snippets, alongside inline fact editing (`editMemoryFact`) and tombstone soft deletion (`deleteMemoryFact`).
-- **Live Pipeline Telemetry HUD**: Floating glass popover (`PipelineMonitor.tsx`) with `Cpu` button on bottom-right, displaying live pipeline CPU & RAM resource meters with 60fps EMA interpolation, ingestion stage queue breakdown (`DEDUP`, `EMBED`, `NLI EVAL`, `COMMIT`), live queue stream, and manual consolidation controls (`triggerMemoryConsolidation`).
+- **Bottom-Right Memory Processing Center Panel**: Redesigned glassmorphic slide-out panel (`MemoryPipelineDrawer.tsx`) anchored at the bottom-right edge navigation pill (`Pipeline`). Replaced internal backend jargon (`staged_pending`, `dedup_pass`, `nli_evaluated`) with 4 clean human-readable stages (`1. Deduplication`, `2. Vector Embedding`, `3. Fact Reasoning`, `4. Knowledge Storage`), real-time ingestion status indicators, committed knowledge breakdown by collection, live activity stream, and manual consolidation controls (`Run Memory Consolidation Now`).
+- **Backend Pipeline Logging & Empty Queue Optimization**: Added explicit `tracing::info!` breadcrumbs and an instant empty-queue check in `runner.rs` to avoid log spam and redundant database queries when the queue is clean.
+- **Memory Worker Pipeline Processing Toggle Fix**: Fixed `memory_worker.rs` to respect `s.memory.pipeline_processing_enabled` setting and reset `idle_since` debounce timer when the queue is empty, preventing continuous 500ms execution cycles when disabled or idle.
 - **Rust Backend IPC Handlers**: Registered `get_memory_relations` and `get_memory_queue_status` in `app/src-tauri/src/ipc/memory.rs` and `lib.rs`.
 
 ### 5.5 Linux Window Behavior Fix — Pinch-to-Zoom Disabled (`window_customizer.rs`)
@@ -135,3 +137,10 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
   2. Hooks into GTK `map` signal on `webkit2gtk::WebView` to destroy gesture handlers upon GTK widget realization.
   3. Registers a `notify::zoom-level` property listener on `WebKitWebView` that intercepts any viewport zoom changes and instantly forces `zoom_level` back to `1.0`.
 - **Provenance**: Upstream request [tauri#13115](https://github.com/tauri-apps/tauri/issues/13115); identical workaround shipped in opencode desktop ([PR #5735](https://github.com/anomalyco/opencode/pull/5735), based on [mmvisual](https://github.com/wyzdwdz/mmvisual/blob/131fe1874d6972a2e5548d9397aaa67bd307f4a7/src-tauri/src/lib.rs#L344)).
+
+### 5.6 Model Setup & Download Progress Event Subscriptions (`ModelsCard.tsx`)
+
+- **Fix for Model Cards Stuck on 100% / Mandatory Model Protection**:
+  1. Updated `refreshPresence()` in `ModelsCard.tsx` to explicitly check disk presence for `"ten_vad"` alongside all auxiliary model group IDs (`modernbert_memory_scope`, `minilm_l12_v2`, `nli_deberta_v3_base`, `vox_translit_rnn`, `modernbert_edge_creation`).
+  2. Removed redundant `"Not Downloaded"` text badge on the bottom-left of `SubModelCard.tsx` when `isDownloaded` is `false`.
+  3. Added a locked `Required` badge (`Lock` icon + tooltip `"Mandatory core model (cannot be deleted)"`) for mandatory core models (`isRequired={true}`) instead of showing an active delete button.

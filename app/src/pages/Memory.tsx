@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Search, X, Cpu } from "lucide-react";
+import { Search, X, SlidersHorizontal, Focus, Cpu } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AmbientBackground } from "@/shared/components/common";
-import { MemoryGraph } from "@/shared/components/memory/MemoryGraph";
+import { MemoryGraph, MemoryGraphRef, COLLECTION_COLORS } from "@/shared/components/memory/MemoryGraph";
 import { MemoryLegendCard } from "@/shared/components/memory/MemoryLegendCard";
 import { MemoryNodeTooltip } from "@/shared/components/memory/MemoryNodeTooltip";
-import { PipelineMonitorPopover } from "@/shared/components/memory/PipelineMonitor";
+import { MemoryPipelineDrawer } from "@/shared/components/memory/MemoryPipelineDrawer";
 import {
   MemoryFactEntry,
   MemoryRelationEntry,
@@ -18,9 +18,10 @@ import { cn } from "@/shared/lib/utils";
 
 export const Memory: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const triggerBtnRef = useRef<HTMLButtonElement>(null);
-  const [dims, setDims] = useState({ w: 0, h: 0 });
+  const graphRef = useRef<MemoryGraphRef>(null);
+  const filterBtnRef = useRef<HTMLButtonElement>(null);
 
+  const [dims, setDims] = useState({ w: 0, h: 0 });
   const [facts, setFacts] = useState<MemoryFactEntry[]>([]);
   const [relations, setRelations] = useState<MemoryRelationEntry[]>([]);
   const [queueSummary, setQueueSummary] = useState<MemoryQueueSummary | null>(null);
@@ -30,7 +31,9 @@ export const Memory: React.FC = () => {
   const [selectedRelation, setSelectedRelation] = useState<string>("all");
   const [selectedFact, setSelectedFact] = useState<MemoryFactEntry | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const [pipelineOpen, setPipelineOpen] = useState(false);
+
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
 
   // Measure container
   useEffect(() => {
@@ -90,6 +93,7 @@ export const Memory: React.FC = () => {
       <div ref={containerRef} className="absolute inset-0 z-10">
         {dims.w > 0 && (
           <MemoryGraph
+            ref={graphRef}
             facts={facts}
             relations={relations}
             width={dims.w}
@@ -103,9 +107,9 @@ export const Memory: React.FC = () => {
         )}
       </div>
 
-      {/* Top-Center: Decoupled Search Pill Bar */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
-        <div className="glass-card h-[42px] px-4 rounded-full border border-[rgba(var(--accent),0.18)] bg-[rgba(10,12,14,0.65)] backdrop-blur-xl flex items-center gap-2.5 shadow-2xl w-[320px] focus-within:w-[420px] transition-all duration-300">
+      {/* Top-Center: Decoupled Search Pill Bar with Filter Popover */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2">
+        <div className="glass-card h-[42px] px-3.5 rounded-full border border-[rgba(var(--accent),0.18)] bg-[rgba(10,12,14,0.70)] backdrop-blur-xl flex items-center gap-2.5 shadow-2xl w-[320px] focus-within:w-[400px] transition-all duration-300">
           <Search size={14} className="text-[rgb(var(--accent))] shrink-0" />
           <input
             type="text"
@@ -121,23 +125,138 @@ export const Memory: React.FC = () => {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
                 onClick={() => setSearchQuery("")}
-                className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0"
               >
                 <X size={12} />
               </motion.button>
             )}
           </AnimatePresence>
+
+          <div className="h-4 w-px bg-white/10 shrink-0" />
+
+          {/* Filter Popover Toggle Button */}
+          <div className="relative shrink-0">
+            <button
+              ref={filterBtnRef}
+              onClick={() => setFilterMenuOpen((v) => !v)}
+              className={cn(
+                "p-1.5 rounded-full text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] transition-colors cursor-pointer",
+                (filterMenuOpen || selectedCollection !== "all" || selectedRelation !== "all") &&
+                  "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10"
+              )}
+              title="Filter by Collection or Status"
+            >
+              <SlidersHorizontal size={13} />
+            </button>
+
+            {/* Quick Filter Dropdown */}
+            <AnimatePresence>
+              {filterMenuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 6 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 6 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-10 w-[200px] glass-card p-3 rounded-2xl border border-[rgba(var(--accent),0.15)] bg-[rgba(10,12,14,0.92)] backdrop-blur-2xl shadow-2xl flex flex-col gap-2 z-30"
+                >
+                  <div className="flex items-center justify-between border-b border-white/[0.06] pb-1.5">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70">
+                      Quick Filters
+                    </span>
+                    {(selectedCollection !== "all" || selectedRelation !== "all") && (
+                      <button
+                        onClick={() => {
+                          setSelectedCollection("all");
+                          setSelectedRelation("all");
+                        }}
+                        className="text-[9px] font-mono text-[rgb(var(--accent))] hover:underline cursor-pointer"
+                      >
+                        RESET
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    {["all", "Identity", "Profile", "Directives", "Constraints", "Entities", "Inactive"].map(
+                      (col) => {
+                        const isSelected = selectedCollection === col;
+                        const colStyle = (COLLECTION_COLORS as any)[col];
+                        return (
+                          <button
+                            key={col}
+                            onClick={() => {
+                              setSelectedCollection(selectedCollection === col ? "all" : col);
+                            }}
+                            className={cn(
+                              "flex items-center gap-2 px-2 py-1 rounded-lg text-[10px] font-mono text-left transition-colors cursor-pointer",
+                              isSelected
+                                ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] font-bold"
+                                : "text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:bg-white/[0.04]"
+                            )}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: colStyle ? colStyle.main : "rgb(var(--accent))" }}
+                            />
+                            <span>{col === "all" ? "ALL COLLECTIONS" : col.toUpperCase()}</span>
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
-      {/* Top-Left: Two-Column Collections & Relations Legend Card */}
+      {/* Top-Left: Collapsible Two-Column Collections & Relations Legend Card */}
       <div className="absolute top-4 left-4 z-20 pointer-events-auto">
         <MemoryLegendCard
           selectedCollection={selectedCollection}
           onSelectCollection={setSelectedCollection}
           selectedRelation={selectedRelation}
           onSelectRelation={setSelectedRelation}
+          totalFactsCount={facts.length}
+          totalRelationsCount={relations.length}
         />
+      </div>
+
+      {/* Top-Right: Recenter Graph Camera Button */}
+      <div className="absolute top-4 right-4 z-20 pointer-events-auto">
+        <button
+          onClick={() => graphRef.current?.recenter()}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-full glass-card border border-[rgba(var(--accent),0.15)] bg-[rgba(10,12,14,0.70)] backdrop-blur-xl text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer shadow-xl text-[11px] font-mono font-bold uppercase tracking-wider"
+          title="Recenter Graph View"
+        >
+          <Focus size={13} className="text-[rgb(var(--accent))]" />
+          <span>Recenter</span>
+        </button>
+      </div>
+
+      {/* Bottom Right Edge Nav: Pipeline Processing Center Trigger Pill */}
+      <div className="fixed bottom-4 right-4 z-30 pointer-events-auto">
+        <button
+          onClick={() => setDrawerOpen(true)}
+          className={cn(
+            "flex items-center gap-2.5 px-3.5 py-2.5 rounded-full glass-card border border-[rgba(var(--accent),0.25)] bg-[rgba(10,12,14,0.85)] hover:bg-[rgba(10,12,14,0.95)] backdrop-blur-xl text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.5)] transition-all cursor-pointer shadow-2xl group",
+            drawerOpen && "opacity-0 pointer-events-none"
+          )}
+          title="Open Memory Processing Center"
+        >
+          <div className="relative">
+            <Cpu size={16} className="text-[rgb(var(--accent))] group-hover:scale-110 transition-transform" />
+            {totalPending > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[8px] font-mono font-black text-black animate-pulse">
+                {totalPending}
+              </span>
+            )}
+          </div>
+          <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground))]/90">
+            Pipeline {totalPending > 0 ? `(${totalPending})` : ""}
+          </span>
+        </button>
       </div>
 
       {/* Floating Memory Node Tooltip with Connected Edges Details */}
@@ -150,41 +269,14 @@ export const Memory: React.FC = () => {
         onRefresh={loadData}
       />
 
-      {/* Bottom-Right: Floating Pipeline Monitor Trigger Button */}
-      <div className="fixed bottom-4 right-4 z-50 pointer-events-auto">
-        <div className="relative group">
-          <button
-            ref={triggerBtnRef}
-            onClick={() => setPipelineOpen((v) => !v)}
-            className={cn(
-              "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 cursor-pointer glass-card",
-              pipelineOpen
-                ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60 shadow-[0_0_15px_rgba(var(--accent),0.3)]"
-                : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
-            )}
-            aria-label="Pipeline Monitor"
-          >
-            <Cpu size={20} className={cn(totalPending > 0 && "animate-pulse")} />
-            {totalPending > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[9px] font-mono font-black text-black">
-                {totalPending}
-              </span>
-            )}
-          </button>
-
-          {/* Tooltip */}
-          <span className="absolute bottom-14 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg whitespace-nowrap">
-            Pipeline Monitor
-          </span>
-        </div>
-      </div>
-
-      {/* Bottom-Right: Pipeline Monitor Popover */}
-      <PipelineMonitorPopover
+      {/* Right Slide-Out Pipeline Observability Drawer */}
+      <MemoryPipelineDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
         summary={queueSummary}
+        facts={facts}
+        relations={relations}
         onRefresh={loadData}
-        open={pipelineOpen}
-        onClose={() => setPipelineOpen(false)}
       />
     </div>
   );

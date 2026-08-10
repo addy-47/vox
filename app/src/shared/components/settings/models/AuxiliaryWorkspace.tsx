@@ -38,7 +38,7 @@ export const AuxiliaryWorkspace = memo(
             ramUsage="~130 MB"
             tradeoffs="Intent Classification"
             isDownloaded={!!modelPresence["modernbert_memory_scope"]}
-            isActive={true}
+            isActive={!!modelPresence["modernbert_memory_scope"]}
             isRequired={false}
             layoutMode={layoutMode}
             onSelect={() => {}}
@@ -57,7 +57,7 @@ export const AuxiliaryWorkspace = memo(
             ramUsage="~120 MB"
             tradeoffs="Memory Embeddings"
             isDownloaded={!!modelPresence["minilm_l12_v2"]}
-            isActive={true}
+            isActive={!!modelPresence["minilm_l12_v2"]}
             isRequired={false}
             layoutMode={layoutMode}
             onSelect={() => {}}
@@ -76,7 +76,7 @@ export const AuxiliaryWorkspace = memo(
             ramUsage="~90 MB"
             tradeoffs="RAG Fact Verification"
             isDownloaded={!!modelPresence["nli_deberta_v3_base"]}
-            isActive={true}
+            isActive={!!modelPresence["nli_deberta_v3_base"]}
             isRequired={false}
             layoutMode={layoutMode}
             onSelect={() => {}}
@@ -95,7 +95,7 @@ export const AuxiliaryWorkspace = memo(
             ramUsage="~15 MB"
             tradeoffs="Language Normalization"
             isDownloaded={!!modelPresence["vox_translit_rnn"]}
-            isActive={true}
+            isActive={!!modelPresence["vox_translit_rnn"]}
             isRequired={false}
             layoutMode={layoutMode}
             onSelect={() => {}}
@@ -113,7 +113,7 @@ export const AuxiliaryWorkspace = memo(
             ramUsage="~130 MB"
             tradeoffs="Edge Graph Topology"
             isDownloaded={!!modelPresence["modernbert_edge_creation"]}
-            isActive={true}
+            isActive={!!modelPresence["modernbert_edge_creation"]}
             isRequired={false}
             layoutMode={layoutMode}
             onSelect={() => {}}

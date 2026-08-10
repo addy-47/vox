@@ -300,6 +300,10 @@ pub async fn run_stage3_eval_with_metrics_seq(
     }
 
     let items_claimed = items.len();
+    tracing::info!(
+        "[MemoryPipeline] [Stage 3 NLI/Edge Eval] Claimed {} embedded items for DeBERTa/ModernBERT evaluation",
+        items_claimed
+    );
     let session_id = items
         .first()
         .map(|i| i.session_id.clone())
