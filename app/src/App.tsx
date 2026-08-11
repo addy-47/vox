@@ -70,41 +70,41 @@ const App: React.FC = () => {
     };
   }, []);
 
-  if (setupCompleted === null) return (
-    <div className="flex flex-col h-screen w-full bg-[rgb(var(--background))] overflow-hidden">
-      <TitleBar />
-      <PageLoader />
-    </div>
-  );
-
   return (
     <ErrorBoundary name="App">
-    <Router>
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          {/* If setup not completed, always redirect to wizard */}
-          {!setupCompleted && (
-            <>
-              <Route path="/wizard" element={<WizardRoot />} />
-              <Route path="*" element={<Navigate to="/wizard" replace />} />
-            </>
-          )}
+      <Router>
+        {setupCompleted === null ? (
+          <div className="flex flex-col h-screen w-full bg-[rgb(var(--background))] overflow-hidden">
+            <TitleBar />
+            <PageLoader />
+          </div>
+        ) : (
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              {/* If setup not completed, always redirect to wizard */}
+              {!setupCompleted && (
+                <>
+                  <Route path="/wizard" element={<WizardRoot />} />
+                  <Route path="*" element={<Navigate to="/wizard" replace />} />
+                </>
+              )}
 
-          {/* Main App Routes */}
-          {setupCompleted && (
-            <Route element={<ResponsiveLayout />}>
-              <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
-              <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
-              <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
-              <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
-              <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
-              <Route path="/wizard" element={<Navigate to="/" replace />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          )}
-        </Routes>
-      </Suspense>
-    </Router>
+              {/* Main App Routes */}
+              {setupCompleted && (
+                <Route element={<ResponsiveLayout />}>
+                  <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
+                  <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
+                  <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
+                  <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
+                  <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
+                  <Route path="/wizard" element={<Navigate to="/" replace />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+              )}
+            </Routes>
+          </Suspense>
+        )}
+      </Router>
     </ErrorBoundary>
   );
 };

@@ -47,7 +47,7 @@ export function SegmentedControl<T extends string = string>({
               size === "md" && "px-3 py-1 text-[12px] rounded-lg min-h-[30px]",
               isActive
                 ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.1)] font-extrabold"
-                : "bg-transparent border-transparent text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                : "bg-transparent border-transparent text-[rgb(var(--foreground))] hover:text-[rgb(var(--accent))]"
             )}
           >
             {Icon && <Icon size={size === "sm" ? 14 : 16} className={opt.label ? "mr-1" : ""} />}

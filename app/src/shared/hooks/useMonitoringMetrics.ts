@@ -17,9 +17,13 @@ export function useMonitoringMetrics() {
   const latestRef = useRef<RuntimeSnapshot | null>(latest);
   latestRef.current = latest;
 
+  const inFlightRef = useRef(false);
+
   // Background Polling Loop
   useEffect(() => {
     const poll = async () => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
       try {
         const snap = await getRuntimeSnapshot();
         if (snap) {
@@ -30,6 +34,8 @@ export function useMonitoringMetrics() {
         }
       } catch {
         // silent
+      } finally {
+        inFlightRef.current = false;
       }
     };
 

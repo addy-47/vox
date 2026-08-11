@@ -289,7 +289,8 @@ fn main() -> Result<()> {
     // Spawn Background Memory Worker
     let is_private_mode = Arc::new(AtomicBool::new(false));
     let settings = Arc::new(RwLock::new(VoxSettings::default()));
-    let memory_tx = spawn_memory_worker(db_path.clone(), is_private_mode.clone(), settings);
+    let graph_version = Arc::new(std::sync::atomic::AtomicU64::new(1));
+    let memory_tx = spawn_memory_worker(db_path.clone(), is_private_mode.clone(), settings, graph_version);
 
     // Memory Settings Configuration (MiniLM-L12 384-dim, 0.40 threshold)
     let memory_settings = MemorySettings {

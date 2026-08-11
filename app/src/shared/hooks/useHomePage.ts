@@ -156,8 +156,9 @@ export function useHomePage() {
       } else {
         await engage();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("[Home] Engage failed:", err);
+      setErrorAlert(err?.message || "Voice engagement failed");
       setIsEngaged(false);
     } finally {
       setIsLaunching(false);
@@ -180,8 +181,9 @@ export function useHomePage() {
       } else {
         await pausePipeline();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("[Home] End session failed:", err);
+      setErrorAlert(err?.message || "Ending session failed");
     } finally {
       setIsLaunching(false);
     }
@@ -192,8 +194,9 @@ export function useHomePage() {
     setIsPaused(true);
     try {
       await pausePipeline();
-    } catch (err) {
+    } catch (err: any) {
       console.error("[Home] Pause failed:", err);
+      setErrorAlert(err?.message || "Pausing voice pipeline failed");
       setIsPaused(false);
     }
   }, [isEngaged, isPaused]);
@@ -203,8 +206,9 @@ export function useHomePage() {
     setIsPaused(false);
     try {
       await resumePipeline();
-    } catch (err) {
+    } catch (err: any) {
       console.error("[Home] Resume failed:", err);
+      setErrorAlert(err?.message || "Resuming voice pipeline failed");
       setIsPaused(true);
     }
   }, [isEngaged, isPaused]);
@@ -218,8 +222,9 @@ export function useHomePage() {
       } else {
         await pttStop("MainWindow");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("[Home] PTT toggle failed:", err);
+      setErrorAlert(err?.message || "PTT toggle failed");
     }
   }, [isEngaged, isPaused, pttStatus, archiveCurrentTurn]);
 

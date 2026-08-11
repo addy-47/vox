@@ -118,29 +118,33 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
 > 3. **Deep Semantic Audit**: The subagent must act as a mini QA Lead, inspecting raw database rows (`audit_json`, `dedup_match_json`) and verifying output matching our goals rather than just checking exit codes.
 > 4. **HITL User Approval Gate**: After the QA Subagent completes its report for a phase, execution MUST STOP. Present the audit findings to the user and wait for explicit HITL user approval before starting the next evaluation phase.
 
-### 5.4 Memory Graph UI Page & Observability Drawer (`app/src/pages/Memory.tsx`)
+### 5.4 Consolidated System Notes & Critical Pitfalls
 
-- **Interactive Distributed Knowledge Graph**: WebGL/Canvas force-directed graph visualizer powered by `react-force-graph-2d` (`MemoryGraph.tsx`) with transparent background, placing the graph directly on top of the main ambient page background (`AmbientBackground`). Renders real memory facts and relationships dynamically categorized by distinct collection accent colors (`Identity`: Cyan `#00f2fe`, `Profile`: Emerald `#10b981`, `Directives`: Purple `#a855f7`, `Constraints`: Amber `#f59e0b`, `Entities`: Sky Blue `#38bdf8`, `Narrative`: Blue `#3b82f6`, `Inactive`: Slate `#64748b`). Graph coordinates centered around `(0,0)` origin with `forceCenter(0,0)` and automatic `zoomToFit(400, 60)` camera alignment on mount alongside a floating top-right `Recenter` control button.
-- **Decoupled Search Bar with Quick Filters**: Top-center floating glass pill bar (`Search`) with smooth focus expanding animation and quick collection/status filter popover (`SlidersHorizontal`).
-- **Collapsible Two-Column Legend Card**: Floating glass card on top-left displaying interactive collection and relation filters (`SUPPORTS`, `SUPERSEDES`, `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `OTHER`) with smooth minimize/expand toggles.
-- **Floating Node Tooltip with Connected Edges Details**: Contextual floating tooltip card (`MemoryNodeTooltip.tsx`) anchored directly to graph nodes on click, showing incoming/outgoing connected relations with type badges, direction arrows, and connected fact snippets, alongside inline fact editing (`editMemoryFact`) and tombstone soft deletion (`deleteMemoryFact`).
-- **Bottom-Right Memory Processing Center Panel**: Redesigned glassmorphic slide-out panel (`MemoryPipelineDrawer.tsx`) anchored at the bottom-right edge navigation pill (`Pipeline`). Replaced internal backend jargon (`staged_pending`, `dedup_pass`, `nli_evaluated`) with 4 clean human-readable stages (`1. Deduplication`, `2. Vector Embedding`, `3. Fact Reasoning`, `4. Knowledge Storage`), real-time ingestion status indicators, committed knowledge breakdown by collection, live activity stream, and manual consolidation controls (`Run Memory Consolidation Now`).
-- **Backend Pipeline Logging & Empty Queue Optimization**: Added explicit `tracing::info!` breadcrumbs and an instant empty-queue check in `runner.rs` to avoid log spam and redundant database queries when the queue is clean.
-- **Memory Worker Pipeline Processing Toggle Fix**: Fixed `memory_worker.rs` to respect `s.memory.pipeline_processing_enabled` setting and reset `idle_since` debounce timer when the queue is empty, preventing continuous 500ms execution cycles when disabled or idle.
-- **Rust Backend IPC Handlers**: Registered `get_memory_relations` and `get_memory_queue_status` in `app/src-tauri/src/ipc/memory.rs` and `lib.rs`.
+- **Memory UI Page & Observability (`Memory.tsx` / `MemoryGraph.tsx` / `MemoryMetricsCard.tsx`)**:
+  - WebGL/Canvas 2D force graph (`react-force-graph-2d`) rendering compact Fact IDs (`MEM-1024`) and high-contrast vivid collection badges (`Identity`: `#00f2fe`, `Profile`: `#10b981`, `Directives`: `#c084fc`, `Narrative`: `#fbbf24`, `Entities`: `#f43f5e`, `Constraints`: `#ef4444`, `Inactive`: `#64748b`).
+  - **Versioned Graph Caching**: `Memory.tsx` polls `getGraphVersion()` every 2.5s and re-fetches `getMemoryGraphTopology()` ONLY when `graph_version` or `includeInactive` changes.
+  - **Lazy Fact Details**: Node click calls `getMemoryFactDetail(id)` to load full text, provenance session ID, source, timestamps, and incoming/outgoing relations in `MemoryNodeTooltip.tsx`.
+  - **Decoupled Cards**: Top-Left Collection Legend (`MemoryLegendCard.tsx`), Top-Right Knowledge Base Metrics card (`MemoryMetricsCard.tsx`) with accordion breakdown per distinct collection pair and relation edge counts (`SUPPORTS`, `DEPENDS_ON`, `SHAPES`, `CONFLICTS_WITH`).
+  - **Ingestion Queue Drawer (`MemoryPipelineDrawer.tsx`)**: Renamed to "Memory Ingestion Queue" with live `PROCESSING` vs `READY` status badge, vertical 4-stage timeline, "Retry Failed Items" (`retryFailedQueue()`), and "Pause / Resume Background Pipeline" toggle (`togglePipelineProcessing()`).
+  - **Mutations & Conflicts**: Fact edit (`editFactContent`), collection re-assignment (`reassignFactCollection`), soft delete (`softDeleteFact`), Historical Facts toggle (`includeInactive`), and Unresolved Conflicts Mode toggle with inline resolution (`resolveMemoryConflict`).
 
-### 5.5 Linux Window Behavior Fix — Pinch-to-Zoom Disabled (`window_customizer.rs`)
+- **Linux Window Invariant (`window_customizer.rs`)**:
+  - WebKitGTK trackpad pinch-to-zoom is disabled in `PinchZoomDisablePlugin` by destroying `wk-view-zoom-gesture` handlers on GTK widget realization and forcing `zoom-level` back to `1.0`.
 
-- **Problem**: WebKitGTK handles trackpad/touchscreen pinch natively in the UI process — JS `preventDefault`, viewport meta, and `zoomHotkeysEnabled: false` cannot stop it (upstream issue [tauri-apps/wry#544](https://github.com/tauri-apps/wry/issues/544)), causing the entire app window content to zoom.
-- **Fix**: Multi-layered Linux pinch-to-zoom protection in `PinchZoomDisablePlugin` ([`app/src-tauri/src/window_customizer.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/window_customizer.rs), registered in [`lib.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/lib.rs)):
-  1. Destroys internal `wk-view-zoom-gesture` (`GestureZoom`) signal handlers on webview creation via `webkit2gtk::glib::gobject_ffi::g_signal_handlers_destroy`.
-  2. Hooks into GTK `map` signal on `webkit2gtk::WebView` to destroy gesture handlers upon GTK widget realization.
-  3. Registers a `notify::zoom-level` property listener on `WebKitWebView` that intercepts any viewport zoom changes and instantly forces `zoom_level` back to `1.0`.
-- **Provenance**: Upstream request [tauri#13115](https://github.com/tauri-apps/tauri/issues/13115); identical workaround shipped in opencode desktop ([PR #5735](https://github.com/anomalyco/opencode/pull/5735), based on [mmvisual](https://github.com/wyzdwdz/mmvisual/blob/131fe1874d6972a2e5548d9397aaa67bd307f4a7/src-tauri/src/lib.rs#L344)).
+- **Frontend & Event Safety Standards**:
+  - **Listeners**: Push unlisteners immediately to cleanup array (`TrayApp.tsx`). Direct `listen` promise chains without cleanup are banned.
+  - **Routing**: `TitleBar.tsx` must use `useNavigate()`; manual `window.history.pushState` dispatching is banned.
+  - **State Mutations**: Render-phase state mutations in settings/models components are banned; use `useEffect`.
 
-### 5.6 Model Setup & Download Progress Event Subscriptions (`ModelsCard.tsx`)
+- **Backend Memory Subsystem Architecture (`app/src-tauri/src/ipc/memory/`)**:
+  - **Modular Structure**: `ipc/memory/{mod.rs, graph.rs, ingestion.rs, mutations.rs, conflicts.rs}`.
+  - **Cache Token (`graph_version`)**: Atomic `Arc<AtomicU64>` in `MemoryAppState` (`state.rs`), incremented on mutations, conflict resolutions, and background worker commits.
+  - **Topology Endpoint**: `get_memory_graph_topology` fetches node topology via a single SQL query (`EXISTS(SELECT 1 FROM memory_relations WHERE to_id = f.id AND relation = 'SUPERSEDES') as is_superseded`), avoiding $O(N)$ N+1 subqueries. Full text is lazy-loaded per node via `get_memory_fact_detail`.
+  - **Fact Mutations & Transactions**: Multi-statement operations (`edit_fact_content`, `soft_delete_fact`, `resolve_memory_conflict`) MUST be wrapped in explicit SQLite transactions (`BEGIN TRANSACTION;` ... `COMMIT;` with `ROLLBACK` on error).
+  - **Vector Embedding Synchronization**: `edit_fact_content` updates raw text and executes SQLite `UPSERT` on `memory_facts_vectors(fact_id)` (`ON CONFLICT(fact_id) DO UPDATE SET embedding = excluded.embedding`) to prevent vector drift.
+  - **Status Invariant on Deletes & Conflict Resolution**: `soft_delete_fact` and `resolve_memory_conflict` MUST execute `UPDATE memory_facts SET status = 'superseded' WHERE id = ?` on target/loser nodes. *Pitfall: Omitting this leaves superseded facts as `status = 'active'`, causing vector retrieval (`WHERE status = 'active'`) to inject deleted/loser facts into LLM context windows.*
+  - **Queue Retries**: `retry_failed_queue` resets both `attempts = 0` AND `retry_count = 0`. Worker auto-retries idle items when `retry_count < 3`.
+  - **Database Indexes**: Schema defines `idx_mfv_fact_id` on `memory_facts_vectors(fact_id)` and `idx_pmq_session` on `personal_memory_queue(session_id)` to prevent $O(N)$ full table scans.
+  - **Relation Constants**: Conflict relation string is `PM_RELATION_CONFLICTS` (`"CONFLICTS"`). Using `"CONFLICTS_WITH"` in SQL returns 0 rows.
 
-- **Fix for Model Cards Stuck on 100% / Mandatory Model Protection**:
-  1. Updated `refreshPresence()` in `ModelsCard.tsx` to explicitly check disk presence for `"ten_vad"` alongside all auxiliary model group IDs (`modernbert_memory_scope`, `minilm_l12_v2`, `nli_deberta_v3_base`, `vox_translit_rnn`, `modernbert_edge_creation`).
-  2. Removed redundant `"Not Downloaded"` text badge on the bottom-left of `SubModelCard.tsx` when `isDownloaded` is `false`.
-  3. Added a locked `Required` badge (`Lock` icon + tooltip `"Mandatory core model (cannot be deleted)"`) for mandatory core models (`isRequired={true}`) instead of showing an active delete button.
+

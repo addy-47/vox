@@ -24,6 +24,7 @@ export const useTelemetry = () => {
       try {
         if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
           const { getCurrentWindow } = await import('@tauri-apps/api/window');
+          if (!isMounted) return;
           const appWindow = getCurrentWindow();
           const unlistenFn = await appWindow.listen<TelemetryData>('telemetry', (event) => {
             if (isMounted) {
@@ -37,7 +38,9 @@ export const useTelemetry = () => {
           }
         }
       } catch (err) {
-        console.error('[Telemetry] Failed to setup listener:', err);
+        if (isMounted) {
+          console.error('[Telemetry] Failed to setup listener:', err);
+        }
       }
     };
 

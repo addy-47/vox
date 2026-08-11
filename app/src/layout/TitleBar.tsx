@@ -1,14 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Minus, Square, X, ArrowUpCircle, Copy, Check } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { checkForUpdates, checkForModelUpdates } from "@/services/modelService";
 
-// Navigate without depending on Router context (TitleBar renders before Router)
-function navigateTo(path: string) {
-  window.history.pushState(null, '', path);
-  window.dispatchEvent(new PopStateEvent('popstate'));
-}
-
 export const TitleBar: React.FC = () => {
+  const navigate = useNavigate();
   const [isTauri, setIsTauri] = useState(false);
   const [isCloseHovered, setIsCloseHovered] = useState(false);
   const [appUpdate, setAppUpdate] = useState<any>(null);
@@ -111,14 +107,18 @@ export const TitleBar: React.FC = () => {
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().minimize();
-    } catch (e) {}
+    } catch (e) {
+      console.error("[TitleBar] Minimize window failed:", e);
+    }
   };
 
   const handleMaximize = async () => {
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().toggleMaximize();
-    } catch (e) {}
+    } catch (e) {
+      console.error("[TitleBar] Maximize window failed:", e);
+    }
   };
 
   const handleClose = async () => {
@@ -126,7 +126,9 @@ export const TitleBar: React.FC = () => {
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().close();
-    } catch (e) {}
+    } catch (e) {
+      console.error("[TitleBar] Close window failed:", e);
+    }
   };
 
   if (!isTauri) return null;
@@ -206,7 +208,7 @@ export const TitleBar: React.FC = () => {
               </div>
 
               <button
-                onClick={() => navigateTo('/settings?tab=models')}
+                onClick={() => navigate('/settings?tab=models')}
                 className="text-[12px] font-bold text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))]/80 transition-colors tracking-wide"
               >
                 Manage Models →

@@ -39,3 +39,4 @@ submodules/
 app/src-tauri/tests/simulation_clips*/
 sandbox/scripts
 *db-*
+results/

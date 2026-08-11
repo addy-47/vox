@@ -184,6 +184,7 @@ interface SettingsState {
   isLoading: boolean;
   hasChanges: boolean;
   restartKeys: string[];
+  error: string | null;
 
   loadSettings: () => Promise<void>;
   loadModelCatalog: () => Promise<void>;
@@ -218,6 +219,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isLoading: true,
   hasChanges: false,
   restartKeys: [],
+  error: null,
 
   loadSettings: async () => {
     try {
@@ -235,21 +237,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           draftSettings: state.hasChanges ? state.draftSettings : cloned,
           isLoading: false,
           hasChanges: state.hasChanges,
+          error: null,
         };
       });
       applyAppearance(fetched.ui);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load settings:", err);
-      set({ isLoading: false });
+      set({ isLoading: false, error: err?.message || String(err) || "Failed to load settings" });
     }
   },
 
   loadModelCatalog: async () => {
     try {
       const catalog = await requestModelCatalog();
-      set({ modelCatalog: catalog });
-    } catch (err) {
+      set({ modelCatalog: catalog, error: null });
+    } catch (err: any) {
       console.error("Failed to load model catalog:", err);
+      set({ error: err?.message || String(err) || "Failed to load model catalog" });
     }
   },
 

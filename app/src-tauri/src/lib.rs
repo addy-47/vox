@@ -16,20 +16,20 @@ use crate::ipc::history::{
     commit_session_to_history, delete_session, get_sessions, get_transcript_history, get_turns,
 };
 use crate::ipc::pipeline::{
-    check_engine_status, engage, get_realtime_session_cache, launch_engine, pause_pipeline,
+    engage, get_realtime_session_cache, launch_engine, pause_pipeline,
     resume_pipeline, start_realtime_session, stop_engine, stop_realtime_session, test_clip,
     test_clip_cancel,
 };
 use crate::ipc::settings::{
     check_llm_provider_health, check_stt_provider_health, check_tts_provider_health, get_settings,
     list_llm_models, request_boot_state, request_model_catalog, reset_settings,
-    setup_remote_server, update_setting, update_theme,
+    setup_remote_server, update_setting,
 };
 use crate::ipc::tray::{
     hide_tray_window, set_hud_ignore_cursor, show_main_window, sync_hud_visibility,
     toggle_hud_visibility, update_interaction_mode,
 };
-use crate::services::ptt::{ptt_cancel, ptt_start, ptt_stop};
+use crate::services::ptt::{ptt_start, ptt_stop};
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
 use crate::tray::{position_tray_window, setup_tray_window};
@@ -214,6 +214,7 @@ pub fn run() {
                     crate::utils::paths::get().db.clone(),
                     std::sync::Arc::clone(&is_private_mode),
                     std::sync::Arc::clone(&app_state.settings),
+                    app_state.memory.graph_version.clone(),
                 );
                 app_state.memory_tx = parking_lot::Mutex::new(Some(memory_tx));
                 log::info!("[BOOTSTRAP] Memory Worker spawned on background thread.");
@@ -444,7 +445,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            check_engine_status,
             launch_engine,
             stop_engine,
             engage,
@@ -469,12 +469,10 @@ pub fn run() {
             crate::ipc::settings::probe_model_capabilities,
             setup_remote_server,
             get_settings,
-            update_theme,
             update_setting,
             reset_settings,
             ptt_start,
             ptt_stop,
-            ptt_cancel,
             get_transcript_history,
             commit_session_to_history,
             get_sessions,
@@ -483,14 +481,11 @@ pub fn run() {
             // Voices
             crate::ipc::voices::list_voices,
             crate::ipc::voices::fetch_edge_tts_voices,
-            crate::ipc::voices::validate_wav,
             crate::ipc::voices::add_voice_from_file,
             crate::ipc::voices::add_voice_from_recording,
             crate::ipc::voices::start_backend_recording,
             crate::ipc::voices::stop_backend_recording,
             crate::ipc::voices::delete_voice,
-            crate::ipc::voices::rename_voice,
-            crate::ipc::voices::preview_voice,
             // Monitoring
             crate::ipc::monitoring::get_runtime_snapshot,
             crate::ipc::monitoring::get_runtime_history,
@@ -510,17 +505,23 @@ pub fn run() {
             crate::ipc::setup::delete_model,
             // Audio
             crate::ipc::audio::list_input_devices,
-            crate::ipc::memory::get_personal_profile,
+            // Memory Subsystem
+            crate::ipc::memory::get_graph_version,
+            crate::ipc::memory::get_memory_graph_topology,
+            crate::ipc::memory::get_memory_fact_detail,
             crate::ipc::memory::get_memory_stats,
             crate::ipc::memory::trigger_memory_consolidation,
-            crate::ipc::memory::get_collection_facts,
-            crate::ipc::memory::get_memory_graph,
-            crate::ipc::memory::get_memory_conflicts,
+            crate::ipc::memory::edit_fact_content,
+            crate::ipc::memory::reassign_fact_collection,
+            crate::ipc::memory::soft_delete_fact,
             crate::ipc::memory::user_edit_memory,
             crate::ipc::memory::user_delete_memory,
+            crate::ipc::memory::get_unresolved_conflicts,
             crate::ipc::memory::resolve_memory_conflict,
             crate::ipc::memory::get_memory_relations,
             crate::ipc::memory::get_memory_queue_status,
+            crate::ipc::memory::toggle_pipeline_processing,
+            crate::ipc::memory::retry_failed_queue,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

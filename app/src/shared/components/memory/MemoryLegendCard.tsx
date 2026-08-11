@@ -14,12 +14,12 @@ interface MemoryLegendCardProps {
 
 const COLLECTIONS_LIST = [
   { id: "Identity", label: "Identity", color: COLLECTION_COLORS.Identity.main },
+  { id: "Profile", label: "Profile", color: COLLECTION_COLORS.Profile.main },
   { id: "Directives", label: "Directives", color: COLLECTION_COLORS.Directives.main },
   { id: "Narrative", label: "Narrative", color: COLLECTION_COLORS.Narrative.main },
-  { id: "Profile", label: "Profile", color: COLLECTION_COLORS.Profile.main },
   { id: "Entities", label: "Entities", color: COLLECTION_COLORS.Entities.main },
   { id: "Constraints", label: "Constraints", color: COLLECTION_COLORS.Constraints.main },
-  { id: "Inactive", label: "Inactive / Deleted", color: COLLECTION_COLORS.Inactive.main },
+  { id: "Inactive", label: "Inactive / Historical", color: COLLECTION_COLORS.Inactive.main },
 ];
 
 const RELATIONS_LIST = [
@@ -51,7 +51,7 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
         >
           <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]" />
           <span className="font-bold">
-            {totalFactsCount.toLocaleString()} Facts · {totalRelationsCount} Relations
+            {totalFactsCount.toLocaleString()} Nodes · {totalRelationsCount} Edges
           </span>
           <ChevronDown size={14} className="text-[rgb(var(--accent))]" />
         </button>
@@ -63,7 +63,7 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
             <div className="flex items-center gap-2">
               <Layers size={13} className="text-[rgb(var(--accent))]" />
               <span className="text-[10px] font-mono font-bold tracking-[0.15em] uppercase text-[rgb(var(--foreground))]/90">
-                GRAPH LEGEND
+                COLLECTION LEGEND
               </span>
             </div>
             <button

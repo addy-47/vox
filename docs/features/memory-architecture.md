@@ -474,3 +474,21 @@ Uses `query_sieve::MemoryScopeClassifier` (ModernBERT INT8 ONNX) to classify tur
 | Layer 2 4-stage pipeline | `memory_pipeline_test.rs` | Full pipeline from `staged_pending` → `completed`, queue empty after Stage 4 |
 | Layer 3 retrieval + budget cap | `memory_retrieval_test.rs` | Scope routing, vector search, BFS expansion, 15% token budget |
 | Layer 4 NLI state resolution | `memory_nli_edge_test.rs` | Real DeBERTa NLI inference, SUPERSEDES edge, old fact deactivation |
+
+---
+
+## 15. Memory Subsystem IPC & Data Access Architecture (`app/src-tauri/src/ipc/memory/`)
+
+### 15.1 Module Structure
+- `mod.rs`: Router and command re-exports.
+- `graph.rs`: Lightweight topology retrieval (`get_memory_graph_topology`), atomic `graph_version` token (`get_graph_version`), lazy detail loading (`get_memory_fact_detail`), and combined `get_memory_stats`.
+- `ingestion.rs`: Real-time queue summary (`get_memory_queue_status`), pipeline toggle control (`toggle_pipeline_processing`), queue retry (`retry_failed_queue`), manual consolidation (`trigger_memory_consolidation`).
+- `mutations.rs`: Fact edits (`edit_fact_content`), collection re-assignment (`reassign_fact_collection`), soft deletes (`soft_delete_fact`).
+- `conflicts.rs`: Single JOIN conflict discovery (`get_unresolved_conflicts`) and conflict resolution (`resolve_memory_conflict`).
+
+### 15.2 Invariants & Consistency Rules
+1. **Atomic Revision Token (`graph_version`)**: `MemoryAppState` holds `graph_version: Arc<AtomicU64>`. Incremented whenever fact text is edited, collections reassigned, facts soft deleted, conflicts resolved, or background pipeline cycles commit new facts. Exposed to the frontend for zero-cost cache validation.
+2. **Transaction Boundaries**: All multi-statement mutations (`edit_fact_content`, `soft_delete_fact`, `resolve_memory_conflict`) execute inside explicit SQLite transactions (`BEGIN TRANSACTION;` ... `COMMIT;` with `ROLLBACK` on error).
+3. **Vector Synchronization**: `edit_fact_content` updates raw text and executes an SQLite `UPSERT` on `memory_facts_vectors(fact_id)` (`ON CONFLICT(fact_id) DO UPDATE SET embedding = excluded.embedding`), preventing vector embedding drift.
+4. **Status Invariant on Deletes & Conflicts**: `soft_delete_fact` and `resolve_memory_conflict` execute `UPDATE memory_facts SET status = 'superseded' WHERE id = ?` on target/loser nodes, ensuring retrieval queries (`WHERE status = 'active'`) never pull soft-deleted or conflict-losing facts into context windows.
+5. **Database Indexes**: Schema defines `idx_mfv_fact_id` on `memory_facts_vectors(fact_id)` and `idx_pmq_session` on `personal_memory_queue(session_id)` to prevent $O(N)$ full table scans.

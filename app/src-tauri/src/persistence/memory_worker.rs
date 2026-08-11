@@ -42,6 +42,7 @@ pub fn spawn_memory_worker(
     db_path: PathBuf,
     is_private_mode: Arc<AtomicBool>,
     settings: Arc<RwLock<VoxSettings>>,
+    graph_version: Arc<std::sync::atomic::AtomicU64>,
 ) -> Sender<MemoryWorkerEvent> {
     let (tx, rx) = bounded::<MemoryWorkerEvent>(32);
 
@@ -110,6 +111,8 @@ pub fn spawn_memory_worker(
                                         "[MemoryWorker] Failed consolidation sweep for session_id={}: {}",
                                         session_id, e
                                     );
+                                } else {
+                                    graph_version.fetch_add(1, Ordering::SeqCst);
                                 }
                             }
                         }
@@ -157,8 +160,29 @@ pub fn spawn_memory_worker(
                                     });
 
                                     match processed_count {
-                                        Ok(n) if n > 0 => continue,
+                                        Ok(n) if n > 0 => {
+                                            graph_version.fetch_add(1, Ordering::SeqCst);
+                                            continue;
+                                        }
                                         _ => {
+                                            // Check if any items have status = 'failed' and retry_count < 3 to auto-retry
+                                            let auto_retried = handle.block_on(async {
+                                                db_conn
+                                                    .execute(
+                                                        "UPDATE personal_memory_queue 
+                                                         SET status = 'staged_pending', attempts = attempts + 1, retry_count = retry_count + 1 
+                                                         WHERE status = 'failed' AND retry_count < 3",
+                                                        (),
+                                                    )
+                                                    .await
+                                                    .unwrap_or(0)
+                                            });
+
+                                            if auto_retried > 0 {
+                                                tracing::info!("[MemoryWorker] Auto-retrying {} failed queue items.", auto_retried);
+                                                continue;
+                                            }
+
                                             // Reset idle_since timer so empty queue doesn't re-trigger every 500ms
                                             state.idle_since = Some(Instant::now());
                                             break;
