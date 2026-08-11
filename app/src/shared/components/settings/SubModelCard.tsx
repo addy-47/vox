@@ -142,9 +142,9 @@ export const SubModelCard: React.FC<SubModelCardProps> = ({
           </span>
           
           {hasTooltip && (
-            <div className="relative tooltip-container inline-block shrink-0 mt-0.5">
+            <div className="relative group inline-block shrink-0 mt-0.5">
               <Info size={16} className="text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
-              <div className="absolute right-full top-0 mr-2 hidden tooltip-content w-52 p-2.5 rounded-lg bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.25)] text-[12px] text-[rgb(var(--foreground-muted))]/80 shadow-2xl leading-normal z-50">
+              <div className="absolute right-full top-0 mr-2 hidden group-hover:block group-hover:opacity-100 w-52 p-2.5 rounded-lg bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.25)] text-[12px] text-[rgb(var(--foreground-muted))]/80 shadow-2xl leading-normal z-50 transition-opacity duration-200 pointer-events-none">
                 <div className="space-y-1">
                   <div className="flex justify-between border-b border-[rgba(var(--accent),0.06)] pb-0.5 mb-1 font-bold">
                     <span className="text-[10px] text-[rgb(var(--accent))] uppercase tracking-wider">Specs</span>

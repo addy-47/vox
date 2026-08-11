@@ -15,7 +15,7 @@ import {
   probeModelCapabilities,
   listLlmModels,
 } from "@/services/settingsService";
-import { listen } from "@tauri-apps/api/event";
+import * as eventsService from "@/services/eventsService";
 import { Database } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl } from "@/shared/ui";
@@ -212,23 +212,18 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   }, [draftSettings?.tts?.provider]);
 
   useEffect(() => {
-    const unlistenPromise = listen<any>("remote_setup_status", (event) => {
-      setSetupStatus(event.payload);
-      if (event.payload?.step === "complete" && draftSettings?.tts?.provider) {
+    return eventsService.onRemoteSetupStatus((payload) => {
+      setSetupStatus(payload);
+      if (payload?.step === "complete" && draftSettings?.tts?.provider) {
         checkTtsProviderHealth(draftSettings.tts.provider).then((healthy) => setIsRemoteTtsHealthy(healthy));
       }
     });
-    return () => {
-      unlistenPromise.then((fn) => fn());
-    };
   }, [draftSettings?.tts?.provider]);
 
   // Model download events listener (model_setup_status, optional_model_complete, optional_model_failed)
   useEffect(() => {
-    const unlisteners: Array<() => void> = [];
-
-    listen<any>("model_setup_status", (event) => {
-      const { model_id, step, progress, bytes_downloaded, total_bytes, error } = event.payload || {};
+    const unlistenStatus = eventsService.onModelSetupStatus((payload) => {
+      const { model_id, step, progress, bytes_downloaded, total_bytes, error } = payload || {};
       if (!model_id) return;
 
       const stepLower = String(step || "downloading").toLowerCase() as ModelStatus["step"];
@@ -240,10 +235,9 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         totalBytes: total_bytes || 100,
         error: error || undefined,
       });
-    }).then((fn) => unlisteners.push(fn));
+    });
 
-    listen<string>("optional_model_complete", (event) => {
-      const modelGroupId = event.payload;
+    const unlistenComplete = eventsService.onOptionalModelComplete((modelGroupId) => {
       if (!modelGroupId) return;
 
       updateDownloadStatus(modelGroupId, {
@@ -251,10 +245,9 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         progress: 100,
       });
       refreshPresence();
-    }).then((fn) => unlisteners.push(fn));
+    });
 
-    listen<any>("optional_model_failed", (event) => {
-      const payload = event.payload;
+    const unlistenFailed = eventsService.on<any>("optional_model_failed", (payload) => {
       const modelGroupId = Array.isArray(payload) ? payload[0] : typeof payload === "string" ? payload : payload?.model_id;
       const errStr = Array.isArray(payload) ? payload[1] : payload?.error || "Download failed";
       if (!modelGroupId) return;
@@ -263,10 +256,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         step: "failed",
         error: String(errStr),
       });
-    }).then((fn) => unlisteners.push(fn));
+    });
 
     return () => {
-      unlisteners.forEach((fn) => fn());
+      unlistenStatus();
+      unlistenComplete();
+      unlistenFailed();
     };
   }, [updateDownloadStatus, refreshPresence]);
 
@@ -421,9 +416,28 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
   };
 
-  const isGroupRequired = (id: string) => {
-    return id.includes("required") || id.includes("base");
-  };
+  const MANDATORY_CORE_MODEL_IDS = new Set([
+    "ten_vad",
+    "silero_vad_v5",
+    "whisper_medium",
+    "qwen2_5_0_5b",
+    "chatterbox_turbo",
+  ]);
+
+  const isGroupRequired = useCallback((id: string) => {
+    return MANDATORY_CORE_MODEL_IDS.has(id);
+  }, []);
+
+  useEffect(() => {
+    const isRemoteTtsSetupNotDone =
+      activePipelineTab === "tts" &&
+      draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
+      isRemoteTtsHealthy !== true;
+
+    if (isRemoteTtsSetupNotDone && activeCategoryTab === "settings") {
+      setActiveCategoryTab("model");
+    }
+  }, [activePipelineTab, draftSettings?.tts?.provider?.kind, isRemoteTtsHealthy, activeCategoryTab]);
 
   if (!draftSettings) return null;
 
@@ -466,28 +480,17 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           </div>
 
           {/* Small Category Tabs: Model vs Settings */}
-          {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (() => {
-            const isRemoteTtsSetupNotDone =
-              activePipelineTab === "tts" &&
-              draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
-              isRemoteTtsHealthy !== true;
-
-            if (isRemoteTtsSetupNotDone && activeCategoryTab === "settings") {
-              setTimeout(() => setActiveCategoryTab("model"), 0);
-            }
-
-            return (
-              <SegmentedControl
-                options={[
-                  { id: "model", label: "Model" },
-                  { id: "settings", label: "Settings" },
-                ]}
-                value={activeCategoryTab}
-                onChange={(val) => setActiveCategoryTab(val as "model" | "settings")}
-                size="sm"
-              />
-            );
-          })()}
+          {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
+            <SegmentedControl
+              options={[
+                { id: "model", label: "Model" },
+                { id: "settings", label: "Settings" },
+              ]}
+              value={activeCategoryTab}
+              onChange={(val) => setActiveCategoryTab(val as "model" | "settings")}
+              size="sm"
+            />
+          )}
         </div>
 
         {/* Models Topology Interactive Bar */}
