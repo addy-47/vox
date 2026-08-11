@@ -237,6 +237,28 @@ impl PipelineAtomics {
     }
 }
 
+// ─── MemoryAppState ───────────────────────────────────────────────────────────
+
+pub struct MemoryAppState {
+    pub graph_version: Arc<AtomicU64>,
+    pub pipeline_paused: Arc<AtomicBool>,
+}
+
+impl Default for MemoryAppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MemoryAppState {
+    pub fn new() -> Self {
+        Self {
+            graph_version: Arc::new(AtomicU64::new(1)),
+            pipeline_paused: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
 // ─── AppState ─────────────────────────────────────────────────────────────────
 
 pub struct AppState {
@@ -244,6 +266,7 @@ pub struct AppState {
     pub realtime_engine: Mutex<Option<crate::services::realtime::engine::RealtimeEngine>>,
     pub owner: Arc<AtomicU32>,
     pub hud_visible: Mutex<bool>,
+    pub memory: MemoryAppState,
 
     /// Settings protected by RwLock for concurrent read access.
     ///
@@ -378,6 +401,7 @@ impl AppState {
                 InteractionOwner::Wizard as u32
             })),
             hud_visible: Mutex::new(true),
+            memory: MemoryAppState::new(),
             settings: Arc::new(RwLock::new(settings)),
             hud_menu_item: Mutex::new(None),
             ptt: PttState {
