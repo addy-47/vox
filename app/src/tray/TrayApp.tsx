@@ -201,8 +201,11 @@ export const TrayApp: React.FC = () => {
           setViewingHistory(false);
           stateRef.current.callbacks.startNewInteraction();
         });
-        if (!active) { u1(); return; }
         localUnlisteners.push(u1);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+          return;
+        }
 
         const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
           if (!active) return;
@@ -214,8 +217,11 @@ export const TrayApp: React.FC = () => {
             stateRef.current.callbacks.updatePartial(event.payload.text);
           }
         });
-        if (!active) { u2(); return; }
         localUnlisteners.push(u2);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+          return;
+        }
 
         const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
           if (!active) return;
@@ -226,37 +232,52 @@ export const TrayApp: React.FC = () => {
             stateRef.current.callbacks.commitFinal(event.payload.text);
           }
         });
-        if (!active) { u3(); return; }
         localUnlisteners.push(u3);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+          return;
+        }
 
         const u4 = await appWindow.listen("speech_end", () => {
           if (!active) return;
           stateRef.current.callbacks.endSpeechSegment();
         });
-        if (!active) { u4(); return; }
         localUnlisteners.push(u4);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+          return;
+        }
 
         const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
           if (!active) return;
           setStats(event.payload);
         });
-        if (!active) { u5(); return; }
         localUnlisteners.push(u5);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+          return;
+        }
 
         const u6 = await appWindow.listen("toggle_hud", () => {
           if (!active) return;
           if (stateRef.current.visibilityState === 'HIDDEN') stateRef.current.callbacks.show();
           else stateRef.current.callbacks.hideImmediately();
         });
-        if (!active) { u6(); return; }
         localUnlisteners.push(u6);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+          return;
+        }
 
         const u7 = await appWindow.listen<string>("state_changed", (event) => {
           if (!active) return;
           setInteractionState(event.payload);
         });
-        if (!active) { u7(); return; }
         localUnlisteners.push(u7);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+          return;
+        }
 
         const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
           if (!active) return;
@@ -267,8 +288,11 @@ export const TrayApp: React.FC = () => {
             setViewingHistory(false);
           }
         });
-        if (!active) { u8(); return; }
         localUnlisteners.push(u8);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+          return;
+        }
 
         const u9 = await appWindow.listen<boolean>("auto_sleep_state", (event) => {
           if (!active) return;
@@ -288,11 +312,17 @@ export const TrayApp: React.FC = () => {
             stateRef.current.callbacks.cancelFade();
           }
         });
-        if (!active) { u9(); return; }
         localUnlisteners.push(u9);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+          return;
+        }
 
       } catch (err) {
         console.error("[TrayApp] Failed to setup listeners:", err);
+        if (!active) {
+          localUnlisteners.forEach(u => u());
+        }
       }
     };
 

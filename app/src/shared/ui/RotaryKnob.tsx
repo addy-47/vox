@@ -33,8 +33,14 @@ export const RotaryKnob = memo(({
   const startYRef = useRef<number>(0);
   const startValRef = useRef<number>(value);
 
-  // Clamp helper
-  const clamp = useCallback((v: number) => Math.min(max, Math.max(min, v)), [min, max]);
+  // Clamp & normalize helper (prevents IEEE-754 precision drift)
+  const clamp = useCallback(
+    (v: number) => {
+      const clamped = Math.min(max, Math.max(min, v));
+      return Number(clamped.toFixed(4));
+    },
+    [min, max]
+  );
 
   // Compute percentage (0 to 1)
   const pct = (value - min) / (max - min);
@@ -84,7 +90,7 @@ export const RotaryKnob = memo(({
   // Step adjusters
   const stepDown = () => onChange(clamp(Math.round((value - step) / step) * step));
   const stepUp = () => onChange(clamp(Math.round((value + step) / step) * step));
-  const resetDefault = () => onChange(defaultValue);
+  const resetDefault = () => onChange(clamp(defaultValue));
 
   return (
     <div className={cn("flex flex-col items-center justify-center select-none will-change-transform transform-gpu", className)}>
@@ -187,7 +193,7 @@ export const RotaryKnob = memo(({
             <button
               key={preset}
               type="button"
-              onClick={() => onChange(preset)}
+              onClick={() => onChange(clamp(preset))}
               className={cn(
                 "px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all duration-150 cursor-pointer",
                 Math.abs(value - preset) < 0.02

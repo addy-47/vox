@@ -106,9 +106,11 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_mf_collection_status ON memory_facts(collection, status);",
         "CREATE INDEX IF NOT EXISTS idx_mf_created ON memory_facts(created_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_mfv_collection ON memory_facts_vectors(collection);",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_mfv_fact_id ON memory_facts_vectors(fact_id);",
         "CREATE INDEX IF NOT EXISTS idx_mr_from ON memory_relations(from_id, relation);",
         "CREATE INDEX IF NOT EXISTS idx_mr_to ON memory_relations(to_id, relation);",
         "CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, created_at ASC);",
+        "CREATE INDEX IF NOT EXISTS idx_pmq_session ON personal_memory_queue(session_id);",
         "CREATE INDEX IF NOT EXISTS idx_mpm_run_stage ON memory_pipeline_metrics(run_id, stage_name);",
         "CREATE INDEX IF NOT EXISTS idx_mpm_batch_seq ON memory_pipeline_metrics(run_id, stage_name, batch_seq);",
     ];

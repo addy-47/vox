@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { motion } from "framer-motion";
-import { Ghost, X } from "lucide-react";
+import { Ghost, X, AlertCircle, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { formatDateTime, type SessionRow, type TurnRow } from "@/services/historyService";
 import { EmptyState } from "@/shared/components/common/EmptyState";
@@ -16,11 +16,13 @@ export interface DetailPanelProps {
   session: SessionRow;
   turns: TurnRow[];
   loading: boolean;
+  error?: string | null;
   onClose: () => void;
+  onRetry?: () => void;
 }
 
 export const DetailPanel = memo(
-  ({ session, turns, loading, onClose }: DetailPanelProps) => {
+  ({ session, turns, loading, error, onClose, onRetry }: DetailPanelProps) => {
     return (
       <motion.div
         initial={{ y: "100%" }}
@@ -55,6 +57,20 @@ export const DetailPanel = memo(
           {loading ? (
             <div className="flex justify-center py-12">
               <div className="w-5 h-5 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center py-12 px-4 text-center gap-3">
+              <AlertCircle className="text-red-400 shrink-0" size={24} />
+              <p className="text-[12px] text-red-400 font-medium max-w-xs leading-relaxed">{error}</p>
+              {onRetry && (
+                <button
+                  onClick={onRetry}
+                  className="px-3 py-1.5 rounded-xl glass-card border border-[rgba(var(--accent),0.3)] text-[11px] font-bold text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors flex items-center gap-1.5 cursor-pointer mt-1"
+                >
+                  <RotateCcw size={12} />
+                  Retry
+                </button>
+              )}
             </div>
           ) : turns.length === 0 ? (
             <EmptyState

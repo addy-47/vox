@@ -5,7 +5,7 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import { Ghost, ChevronLeft, ChevronRight, X, Trash2, Check } from "lucide-react";
+import { Ghost, ChevronLeft, ChevronRight, X, Trash2, Check, AlertCircle, RotateCcw } from "lucide-react";
 import {
   forceSimulation,
   forceX,
@@ -29,14 +29,26 @@ import { VoiceRippleNode } from "@/shared/components/history";
 import { DetailPanel } from "@/shared/components/history";
 import { EmptyState } from "@/shared/components/common/EmptyState";
 
+function getErrorMessage(e: unknown, fallback: string): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string") {
+    return (e as { message: string }).message;
+  }
+  return fallback;
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const History: React.FC = () => {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
   const [turns, setTurns] = useState<TurnRow[]>([]);
   const [turnsLoading, setTurnsLoading] = useState(false);
+  const [turnsError, setTurnsError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   // Pagination & Layout states
@@ -67,40 +79,74 @@ export const History: React.FC = () => {
   }, []);
 
   const fetchSessions = useCallback(async () => {
+    setError(null);
     try {
       const data = await getSessions();
       setSessions(data.sort((a, b) => b.started_at - a.started_at));
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Failed to fetch sessions:", e);
+      setError(getErrorMessage(e, "Failed to load history sessions. Please check backend connection."));
     }
   }, []);
 
-  useEffect(() => {
-    const init = async () => {
-      setSessionsLoading(true);
-      await fetchSessions();
-      setSessionsLoading(false);
-    };
-    init();
+  const loadSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    await fetchSessions();
+    setSessionsLoading(false);
   }, [fetchSessions]);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
 
   useEffect(() => {
     if (!selectedSession) {
       setTurns([]);
+      setTurnsError(null);
       return;
     }
+    let isCancelled = false;
     const fetchTurns = async () => {
       setTurnsLoading(true);
+      setTurnsError(null);
       try {
         const data = await getTurns(selectedSession.id);
-        setTurns(data);
-      } catch (e) {
+        if (!isCancelled) {
+          setTurns(data);
+        }
+      } catch (e: unknown) {
         console.error("Failed to fetch turns:", e);
+        if (!isCancelled) {
+          setTurnsError(getErrorMessage(e, "Failed to load session transcript turns."));
+        }
       } finally {
-        setTurnsLoading(false);
+        if (!isCancelled) {
+          setTurnsLoading(false);
+        }
       }
     };
     fetchTurns();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedSession]);
+
+  const retryFetchTurns = useCallback(() => {
+    if (!selectedSession) return;
+    setTurnsLoading(true);
+    setTurnsError(null);
+    getTurns(selectedSession.id)
+      .then((data) => {
+        setTurns(data);
+      })
+      .catch((e: unknown) => {
+        console.error("Failed to fetch turns:", e);
+        setTurnsError(getErrorMessage(e, "Failed to load session transcript turns."));
+      })
+      .finally(() => {
+        setTurnsLoading(false);
+      });
   }, [selectedSession]);
 
   const handleDelete = useCallback(
@@ -110,10 +156,12 @@ export const History: React.FC = () => {
         try {
           await deleteSession(id);
           setConfirmDeleteId(null);
+          setDeleteError(null);
           if (selectedSession?.id === id) setSelectedSession(null);
           fetchSessions();
-        } catch (e) {
-          console.error("Failed to delete session:", e);
+        } catch (err: unknown) {
+          console.error("Failed to delete session:", err);
+          setDeleteError(getErrorMessage(err, "Failed to delete session."));
         }
       } else {
         setConfirmDeleteId(id);
@@ -122,6 +170,12 @@ export const History: React.FC = () => {
     },
     [confirmDeleteId, selectedSession, fetchSessions]
   );
+
+  useEffect(() => {
+    if (!deleteError) return;
+    const timer = setTimeout(() => setDeleteError(null), 5000);
+    return () => clearTimeout(timer);
+  }, [deleteError]);
 
   const handleCancelDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -294,6 +348,34 @@ export const History: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col h-full relative overflow-hidden bg-transparent select-none">
+      {/* Delete error notification feedback */}
+      <AnimatePresence>
+        {deleteError && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-[100] max-w-md w-full px-4 pointer-events-auto"
+          >
+            <div className="glass-card p-3.5 rounded-xl flex items-center justify-between gap-3 border border-red-500/30 shadow-2xl bg-black/60 backdrop-blur-md text-left">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <AlertCircle className="text-red-400 shrink-0" size={16} />
+                <span className="text-[12px] font-medium text-[rgb(var(--foreground))] truncate">
+                  {deleteError}
+                </span>
+              </div>
+              <button
+                onClick={() => setDeleteError(null)}
+                className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-1 rounded-lg transition-colors cursor-pointer"
+                aria-label="Dismiss error"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div
         ref={containerRef}
         className="flex-1 relative z-20 min-h-0 pt-6 flex flex-col"
@@ -303,6 +385,27 @@ export const History: React.FC = () => {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-50">
             <div className="w-6 h-6 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
             <span className="text-[11px] font-bold uppercase tracking-widest">Loading memories...</span>
+          </div>
+        ) : error ? (
+          <div className="absolute inset-0 flex items-center justify-center p-8">
+            <div className="max-w-sm w-full glass-card p-6 rounded-2xl flex flex-col items-center text-center gap-4 border border-red-500/20">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
+                <AlertCircle size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-[14px] font-bold text-[rgb(var(--foreground))]">Failed to load history</h3>
+                <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed">
+                  {error}
+                </p>
+              </div>
+              <button
+                onClick={loadSessions}
+                className="px-4 py-2 rounded-xl glass-card border border-[rgba(var(--accent),0.3)] text-[12px] font-bold text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <RotateCcw size={14} />
+                Retry
+              </button>
+            </div>
           </div>
         ) : sessions.length === 0 ? (
           <div className="absolute inset-0 flex items-center justify-center p-8">
@@ -461,7 +564,9 @@ export const History: React.FC = () => {
             session={selectedSession}
             turns={turns}
             loading={turnsLoading}
+            error={turnsError}
             onClose={() => setSelectedSession(null)}
+            onRetry={retryFetchTurns}
           />
         )}
       </AnimatePresence>

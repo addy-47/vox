@@ -46,23 +46,28 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
   };
   const cloudIndex = getCloudProviderIndex(currentProvider.base_url || "");
 
-  if (currentProvider !== prevLlmProvider) {
-    setPrevLlmProvider(currentProvider);
-    if (currentProvider.kind === "open_ai_compat") {
-      const baseUrl = currentProvider.base_url || "http://127.0.0.1:11434";
-      if (!isCloudUrl) setUrl(baseUrl);
-      setApiKey(currentProvider.api_key || "");
+  useEffect(() => {
+    if (currentProvider !== prevLlmProvider) {
+      setPrevLlmProvider(currentProvider);
+      if (currentProvider.kind === "open_ai_compat") {
+        const baseUrl = currentProvider.base_url || "http://127.0.0.1:11434";
+        if (!isCloudUrl) setUrl(baseUrl);
+        setApiKey(currentProvider.api_key || "");
+      }
     }
-  }
+  }, [currentProvider, prevLlmProvider, isCloudUrl]);
 
   const currentTtsProvider = draftSettings.tts?.provider || { kind: "supertonic" };
-  if (currentTtsProvider !== prevTtsProvider) {
-    setPrevTtsProvider(currentTtsProvider);
-    if (currentTtsProvider.kind === "chatterbox_remote") {
-      setRemoteTtsEndpoint(currentTtsProvider.endpoint || "http://127.0.0.1:7860");
-      setRemoteTtsPath(currentTtsProvider.remote_path || "~/.vox");
+
+  useEffect(() => {
+    if (currentTtsProvider !== prevTtsProvider) {
+      setPrevTtsProvider(currentTtsProvider);
+      if (currentTtsProvider.kind === "chatterbox_remote") {
+        setRemoteTtsEndpoint(currentTtsProvider.endpoint || "http://127.0.0.1:7860");
+        setRemoteTtsPath(currentTtsProvider.remote_path || "~/.vox");
+      }
     }
-  }
+  }, [currentTtsProvider, prevTtsProvider]);
 
   const handleRemoteTtsEndpointChange = (val: string) => {
     setRemoteTtsEndpoint(val);

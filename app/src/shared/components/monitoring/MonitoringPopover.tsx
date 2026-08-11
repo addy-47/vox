@@ -21,6 +21,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { ErrorBoundary } from "@/shared/components/common/ErrorBoundary";
 
 interface MonitoringPopoverProps {
   open: boolean;
@@ -134,86 +135,90 @@ const Sparkline = memo(
       if (!canvas) return;
 
       const render = () => {
-        const ctx = canvas.getContext("2d", { alpha: true });
-        if (!ctx) {
-          animationRef.current = requestAnimationFrame(render);
-          return;
+        try {
+          const ctx = canvas.getContext("2d", { alpha: true });
+          if (!ctx) {
+            animationRef.current = requestAnimationFrame(render);
+            return;
+          }
+
+          const { width, height } = dimensionsRef.current;
+          if (width === 0 || height === 0) {
+            animationRef.current = requestAnimationFrame(render);
+            return;
+          }
+
+          ctx.clearRect(0, 0, width, height);
+
+          const currentHistory = historyRef.current;
+          if (currentHistory.length < 2) {
+            animationRef.current = requestAnimationFrame(render);
+            return;
+          }
+
+          const now = performance.now();
+          const maxAge = MAX_SAMPLES * POLL_MS; // 60s history window
+
+          const points: { x: number; y: number }[] = [];
+          const values = currentHistory.map((h) => h[dataKey] as number);
+          const minVal = 0;
+          const maxVal =
+            dataKey === "vox_ram_mb"
+              ? Math.max(...values, 100)
+              : dataKey === "vox_cpu_usage"
+              ? 100
+              : 1.0;
+
+          for (let i = 0; i < currentHistory.length; i++) {
+            const pt = currentHistory[i];
+            const age = now - pt.localTime;
+            if (age > maxAge) continue;
+
+            // x scales smoothly from left to right based on time age
+            const x = width - (age / maxAge) * width;
+            const val = pt[dataKey] as number;
+            const y = height - ((val - minVal) / (maxVal - minVal)) * (height - 6) - 3;
+            points.push({ x, y });
+          }
+
+          if (points.length < 2) {
+            animationRef.current = requestAnimationFrame(render);
+            return;
+          }
+
+          // Draw area gradient under the curve
+          const accentVal =
+            getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() ||
+            "0, 219, 233";
+          const grad = ctx.createLinearGradient(0, 0, 0, height);
+          grad.addColorStop(0, `rgba(${accentVal}, 0.22)`);
+          grad.addColorStop(1, `rgba(${accentVal}, 0)`);
+
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, height);
+          for (let i = 0; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+          }
+          ctx.lineTo(points[points.length - 1].x, height);
+          ctx.closePath();
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // Draw smooth neon line
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length - 1; i++) {
+            const xc = (points[i].x + points[i + 1].x) / 2;
+            const yc = (points[i].y + points[i + 1].y) / 2;
+            ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+          }
+          ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+          ctx.strokeStyle = `rgb(${accentVal})`;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } catch (err) {
+          console.error("[Sparkline] Canvas render error:", err);
         }
-
-        const { width, height } = dimensionsRef.current;
-        if (width === 0 || height === 0) {
-          animationRef.current = requestAnimationFrame(render);
-          return;
-        }
-
-        ctx.clearRect(0, 0, width, height);
-
-        const currentHistory = historyRef.current;
-        if (currentHistory.length < 2) {
-          animationRef.current = requestAnimationFrame(render);
-          return;
-        }
-
-        const now = performance.now();
-        const maxAge = MAX_SAMPLES * POLL_MS; // 60s history window
-
-        const points: { x: number; y: number }[] = [];
-        const values = currentHistory.map((h) => h[dataKey] as number);
-        const minVal = 0;
-        const maxVal =
-          dataKey === "vox_ram_mb"
-            ? Math.max(...values, 100)
-            : dataKey === "vox_cpu_usage"
-            ? 100
-            : 1.0;
-
-        for (let i = 0; i < currentHistory.length; i++) {
-          const pt = currentHistory[i];
-          const age = now - pt.localTime;
-          if (age > maxAge) continue;
-
-          // x scales smoothly from left to right based on time age
-          const x = width - (age / maxAge) * width;
-          const val = pt[dataKey] as number;
-          const y = height - ((val - minVal) / (maxVal - minVal)) * (height - 6) - 3;
-          points.push({ x, y });
-        }
-
-        if (points.length < 2) {
-          animationRef.current = requestAnimationFrame(render);
-          return;
-        }
-
-        // Draw area gradient under the curve
-        const accentVal =
-          getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() ||
-          "0, 219, 233";
-        const grad = ctx.createLinearGradient(0, 0, 0, height);
-        grad.addColorStop(0, `rgba(${accentVal}, 0.22)`);
-        grad.addColorStop(1, `rgba(${accentVal}, 0)`);
-
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, height);
-        for (let i = 0; i < points.length; i++) {
-          ctx.lineTo(points[i].x, points[i].y);
-        }
-        ctx.lineTo(points[points.length - 1].x, height);
-        ctx.closePath();
-        ctx.fillStyle = grad;
-        ctx.fill();
-
-        // Draw smooth neon line
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length - 1; i++) {
-          const xc = (points[i].x + points[i + 1].x) / 2;
-          const yc = (points[i].y + points[i + 1].y) / 2;
-          ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
-        }
-        ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
-        ctx.strokeStyle = `rgb(${accentVal})`;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
 
         animationRef.current = requestAnimationFrame(render);
       };
@@ -226,9 +231,11 @@ const Sparkline = memo(
     }, [dataKey]);
 
     return (
-      <div className="w-full h-[48px] relative rounded-lg overflow-hidden border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]">
-        <canvas ref={canvasRef} className="block w-full h-full" />
-      </div>
+      <ErrorBoundary name="Sparkline">
+        <div className="w-full h-[48px] relative rounded-lg overflow-hidden border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]">
+          <canvas ref={canvasRef} className="block w-full h-full" />
+        </div>
+      </ErrorBoundary>
     );
   }
 );
@@ -268,11 +275,15 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
   const latestRef = useRef<LocalSnapshot | null>(null);
   latestRef.current = latest;
 
+  const inFlightRef = useRef(false);
+
   // 1Hz Background Polling Loop - runs continuously to keep history populated and fresh
   useEffect(() => {
     if (!open) return;
 
     const poll = async () => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
       try {
         const snap = await getRuntimeSnapshot();
         if (snap) {
@@ -283,6 +294,8 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
         }
       } catch {
         // silent
+      } finally {
+        inFlightRef.current = false;
       }
     };
 
@@ -329,7 +342,8 @@ export const MonitoringPopover: React.FC<MonitoringPopoverProps> = ({
           ramTextRef.current.textContent = `${ramGb.toFixed(2)} GB`;
         }
         if (ramBarRef.current) {
-          const pct = Math.min(100, Math.max(0, (curRam / snap.total_ram_mb) * 100));
+          const totalRam = snap.total_ram_mb > 0 ? snap.total_ram_mb : 8192;
+          const pct = Math.min(100, Math.max(0, (curRam / totalRam) * 100));
           ramBarRef.current.style.width = `${pct}%`;
         }
       } else {

@@ -1,4 +1,4 @@
-import { useState, memo } from "react";
+import { useState, memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { Database, Brain, Cpu, Plus, Minus, Clock, PieChart, GitFork } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -13,14 +13,44 @@ const VIEW_OPTIONS = [
   { id: "pipeline" as const, label: "Pipeline" },
 ];
 
+const SimilarityCutoffKnobSection = memo(() => {
+  const semanticSimilarityCutoff = useSettingsStore(
+    (s) => s.draftSettings?.memory?.semantic_similarity_cutoff ?? 0.40
+  );
+  const updateDraft = useSettingsStore((s) => s.updateDraft);
+
+  const handleChange = useCallback(
+    (v: number) => {
+      updateDraft("memory", "semantic_similarity_cutoff", v);
+    },
+    [updateDraft]
+  );
+
+  return (
+    <RotaryKnob
+      label="Similarity Floor"
+      value={semanticSimilarityCutoff}
+      min={0.10}
+      max={0.90}
+      step={0.05}
+      defaultValue={0.40}
+      formatValue={(v) => `${Math.round(v * 100)}%`}
+      formatPreset={(v) => `${Math.round(v * 100)}%`}
+      presetSteps={[0.25, 0.40, 0.60, 0.75]}
+      onChange={handleChange}
+    />
+  );
+});
+
+SimilarityCutoffKnobSection.displayName = "SimilarityCutoffKnobSection";
+
 export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const memory = useSettingsStore((s) => s.draftSettings?.memory);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   const [activeTab, setActiveTab] = useState<"retrieval" | "pipeline">("retrieval");
 
-  if (!draftSettings) return null;
-  const { memory } = draftSettings;
+  if (!memory) return null;
 
   const isSmall = layoutMode === "small";
   const isMin = layoutMode === "full-min";
@@ -32,7 +62,6 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
   const contextChainingWindowHours = memory.context_chaining_window_hours ?? 12;
   const topKFacts = memory.top_k_facts ?? 5;
   const maxHops = memory.max_hops ?? 2;
-  const semanticSimilarityCutoff = memory.semantic_similarity_cutoff ?? 0.40;
 
   return (
     <Card
@@ -175,18 +204,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
                   ? "pt-3 border-t border-[rgba(var(--accent),0.08)] w-full"
                   : "pl-3 border-l border-[rgba(var(--accent),0.08)]"
               )}>
-                <RotaryKnob
-                  label="Similarity Floor"
-                  value={semanticSimilarityCutoff}
-                  min={0.10}
-                  max={0.90}
-                  step={0.05}
-                  defaultValue={0.40}
-                  formatValue={(v) => `${Math.round(v * 100)}%`}
-                  formatPreset={(v) => `${Math.round(v * 100)}%`}
-                  presetSteps={[0.25, 0.40, 0.60, 0.75]}
-                  onChange={(v) => updateDraft("memory", "semantic_similarity_cutoff", v)}
-                />
+                <SimilarityCutoffKnobSection />
               </div>
             </div>
           </div>

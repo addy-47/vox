@@ -89,7 +89,7 @@ export const LlmCatalogView = memo(({
                   "flex-1 py-1 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all duration-300",
                   llmSettings.ctx_size === val
                     ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                    : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
+                    : "glass text-[rgb(var(--foreground))] border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20 hover:text-[rgb(var(--accent))]"
                 )}
               >
                 {val < 1024 ? val : `${val / 1024}k`}
@@ -117,7 +117,7 @@ export const LlmCatalogView = memo(({
                   "flex-1 py-1 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all duration-300",
                   llmSettings.threads === val
                     ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                    : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
+                    : "glass text-[rgb(var(--foreground))] border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20 hover:text-[rgb(var(--accent))]"
                 )}
               >
                 {val}
@@ -380,36 +380,34 @@ export const LlmCatalogView = memo(({
   // Model Tab: Local GGUF Model Grid
   return (
     <div className={cn("grid gap-2.5", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
-      {[...(modelCatalog?.llm || [])]
-        .sort((a, b) => (selectedLlmId === a.id ? -1 : selectedLlmId === b.id ? 1 : 0))
-        .map((model) => {
-          const isSelected = selectedLlmId === model.id;
-          const isDownloaded = modelPresence[model.id];
-          const status = downloadStatuses[model.id];
+      {(modelCatalog?.llm || []).map((model) => {
+        const isSelected = selectedLlmId === model.id;
+        const isDownloaded = modelPresence[model.id];
+        const status = downloadStatuses[model.id];
 
-          return (
-            <SubModelCard
-              key={model.id}
-              id={model.id}
-              name={model.name}
-              description={model.description}
-              parameters={model.parameters}
-              ramUsage={model.ram_usage}
-              tradeoffs={model.tradeoffs}
-              isDownloaded={isDownloaded}
-              isActive={isSelected}
-              isRequired={isGroupRequired(model.id)}
-              layoutMode={layoutMode}
-              onSelect={() => updateDraft("llm", "model", model.id)}
-              confirmDeleteId={confirmDeleteId}
-              setConfirmDeleteId={setConfirmDeleteId}
-              downloadStatus={status}
-              startDownload={() => startDownload(model.id)}
-              deleteModel={() => handleDeleteModelGroup(model.id)}
-              showTooltip={true}
-            />
-          );
-        })}
+        return (
+          <SubModelCard
+            key={model.id}
+            id={model.id}
+            name={model.name}
+            description={model.description}
+            parameters={model.parameters}
+            ramUsage={model.ram_usage}
+            tradeoffs={model.tradeoffs}
+            isDownloaded={isDownloaded}
+            isActive={isSelected}
+            isRequired={isGroupRequired(model.id)}
+            layoutMode={layoutMode}
+            onSelect={() => updateDraft("llm", "model", model.id)}
+            confirmDeleteId={confirmDeleteId}
+            setConfirmDeleteId={setConfirmDeleteId}
+            downloadStatus={status}
+            startDownload={() => startDownload(model.id)}
+            deleteModel={() => handleDeleteModelGroup(model.id)}
+            showTooltip={true}
+          />
+        );
+      })}
     </div>
   );
 });

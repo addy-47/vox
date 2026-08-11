@@ -1,5 +1,38 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface MemoryNodeTopology {
+  id: string;
+  collection: string;
+  is_superseded: boolean;
+  created_at: number;
+}
+
+export interface MemoryEdgeTopology {
+  id: number;
+  from_id: string;
+  to_id: string;
+  relation: string;
+  created_at: number;
+}
+
+export interface MemoryGraphPayload {
+  version: number;
+  nodes: MemoryNodeTopology[];
+  edges: MemoryEdgeTopology[];
+}
+
+export interface MemoryFactDetail {
+  id: string;
+  collection: string;
+  fact: string;
+  source: string;
+  session_id: string;
+  created_at: number;
+  is_superseded: boolean;
+  incoming_relations: MemoryEdgeTopology[];
+  outgoing_relations: MemoryEdgeTopology[];
+}
+
 export interface MemoryFactEntry {
   id: string;
   collection: string;
@@ -49,12 +82,120 @@ export interface MemoryStats {
   history_entries: number;
 }
 
+export interface MemoryConflict {
+  fact_a: MemoryNodeTopology;
+  fact_b: MemoryNodeTopology;
+}
+
 /**
- * Fetches all memory fact nodes for the memory graph.
+ * Reads current atomic graph version.
+ */
+export async function getGraphVersion(): Promise<number> {
+  try {
+    return await invoke<number>("get_graph_version");
+  } catch (err) {
+    console.error("Failed to get graph version:", err);
+    return 0;
+  }
+}
+
+/**
+ * Fetches lightweight node topology and relation edges.
+ */
+export async function getMemoryGraphTopology(includeInactive = false): Promise<MemoryGraphPayload | null> {
+  try {
+    return await invoke<MemoryGraphPayload>("get_memory_graph_topology", {
+      filter: { include_inactive: includeInactive },
+    });
+  } catch (err) {
+    console.error("Failed to fetch memory graph topology:", err);
+    return null;
+  }
+}
+
+/**
+ * Lazy loads full details for a single memory fact node.
+ */
+export async function getMemoryFactDetail(factId: string): Promise<MemoryFactDetail | null> {
+  try {
+    return await invoke<MemoryFactDetail>("get_memory_fact_detail", { factId });
+  } catch (err) {
+    console.error("Failed to fetch memory fact detail:", err);
+    return null;
+  }
+}
+
+/**
+ * Edits raw fact text in-place (synchronizing vector embeddings).
+ */
+export async function editFactContent(factId: string, newContent: string): Promise<void> {
+  await invoke<void>("edit_fact_content", { factId, newContent });
+}
+
+/**
+ * Reassigns fact to a new collection category via pipeline staging.
+ */
+export async function reassignFactCollection(factId: string, newCollection: string): Promise<void> {
+  await invoke<void>("reassign_fact_collection", { factId, newCollection });
+}
+
+/**
+ * Soft deletes a memory fact.
+ */
+export async function softDeleteFact(factId: string): Promise<void> {
+  await invoke<void>("soft_delete_fact", { factId });
+}
+
+/**
+ * Toggles background pipeline processing pause state.
+ */
+export async function togglePipelineProcessing(): Promise<boolean> {
+  return await invoke<boolean>("toggle_pipeline_processing");
+}
+
+/**
+ * Resets all failed queue items back to staged_pending.
+ */
+export async function retryFailedQueue(): Promise<number> {
+  return await invoke<number>("retry_failed_queue");
+}
+
+/**
+ * Discovers unresolved memory conflicts.
+ */
+export async function getUnresolvedConflicts(): Promise<MemoryConflict[]> {
+  try {
+    return await invoke<MemoryConflict[]>("get_unresolved_conflicts");
+  } catch (err) {
+    console.error("Failed to fetch unresolved conflicts:", err);
+    return [];
+  }
+}
+
+/**
+ * Resolves a memory conflict by superseding the loser node.
+ */
+export async function resolveMemoryConflict(winnerId: string, loserId: string): Promise<void> {
+  await invoke<void>("resolve_memory_conflict", { winnerId, loserId });
+}
+
+/**
+ * Fetches all memory fact nodes for the memory graph (compatibility fallback).
  */
 export async function getMemoryGraph(): Promise<MemoryFactEntry[]> {
   try {
-    return await invoke<MemoryFactEntry[]>("get_memory_graph");
+    const payload = await getMemoryGraphTopology(false);
+    if (!payload) return [];
+    return payload.nodes.map((node) => ({
+      id: node.id,
+      collection: node.collection,
+      fact: "",
+      source: "LLM",
+      created_at: node.created_at,
+      is_superseded: node.is_superseded,
+      conflict_count: 0,
+      supports_count: 0,
+    }));
   } catch (err) {
     console.error("Failed to fetch memory graph:", err);
     return [];
@@ -110,7 +251,7 @@ export async function triggerMemoryConsolidation(): Promise<number> {
 }
 
 /**
- * Edits an existing memory fact (supersedes old fact).
+ * Compatibility wrapper for editing memory facts.
  */
 export async function editMemoryFact(
   oldFactId: string,
@@ -125,7 +266,7 @@ export async function editMemoryFact(
 }
 
 /**
- * Soft deletes a memory fact (creates tombstone).
+ * Compatibility wrapper for deleting memory facts.
  */
 export async function deleteMemoryFact(factId: string): Promise<void> {
   return await invoke<void>("user_delete_memory", { factId });

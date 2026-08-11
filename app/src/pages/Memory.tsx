@@ -1,18 +1,24 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Search, X, SlidersHorizontal, Focus, Cpu } from "lucide-react";
+import { Search, X, SlidersHorizontal, Focus, Cpu, AlertTriangle, ShieldAlert } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AmbientBackground } from "@/shared/components/common";
 import { MemoryGraph, MemoryGraphRef, COLLECTION_COLORS } from "@/shared/components/memory/MemoryGraph";
 import { MemoryLegendCard } from "@/shared/components/memory/MemoryLegendCard";
+import { MemoryMetricsCard } from "@/shared/components/memory/MemoryMetricsCard";
 import { MemoryNodeTooltip } from "@/shared/components/memory/MemoryNodeTooltip";
 import { MemoryPipelineDrawer } from "@/shared/components/memory/MemoryPipelineDrawer";
 import {
-  MemoryFactEntry,
-  MemoryRelationEntry,
+  MemoryNodeTopology,
+  MemoryEdgeTopology,
+  MemoryFactDetail,
   MemoryQueueSummary,
-  getMemoryGraph,
-  getMemoryRelations,
+  MemoryConflict,
+  getGraphVersion,
+  getMemoryGraphTopology,
+  getMemoryFactDetail,
   getMemoryQueueStatus,
+  getUnresolvedConflicts,
+  resolveMemoryConflict,
 } from "@/services/memoryService";
 import { cn } from "@/shared/lib/utils";
 
@@ -22,20 +28,37 @@ export const Memory: React.FC = () => {
   const filterBtnRef = useRef<HTMLButtonElement>(null);
 
   const [dims, setDims] = useState({ w: 0, h: 0 });
-  const [facts, setFacts] = useState<MemoryFactEntry[]>([]);
-  const [relations, setRelations] = useState<MemoryRelationEntry[]>([]);
+
+  // Topology data cache
+  const [nodes, setNodes] = useState<MemoryNodeTopology[]>([]);
+  const [edges, setEdges] = useState<MemoryEdgeTopology[]>([]);
+  const [lastVersion, setLastVersion] = useState<number>(-1);
+
+  // Lazy loaded detail for selected node
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedFactDetail, setSelectedFactDetail] = useState<MemoryFactDetail | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Ingestion Queue Status
   const [queueSummary, setQueueSummary] = useState<MemoryQueueSummary | null>(null);
 
+  // Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCollection, setSelectedCollection] = useState<string>("all");
   const [selectedRelation, setSelectedRelation] = useState<string>("all");
-  const [selectedFact, setSelectedFact] = useState<MemoryFactEntry | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [includeInactive, setIncludeInactive] = useState<boolean>(false);
 
+  // Unresolved Conflicts Mode State
+  const [conflictsMode, setConflictsMode] = useState<boolean>(false);
+  const [conflicts, setConflicts] = useState<MemoryConflict[]>([]);
+
+  // UI Panels
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Measure container
+  // Measure container dimensions
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -49,33 +72,100 @@ export const Memory: React.FC = () => {
     return () => obs.disconnect();
   }, []);
 
-  const loadData = useCallback(async () => {
+  // Fetch graph topology ONLY when graph_version or includeInactive changes
+  const fetchTopology = useCallback(
+    async (force = false) => {
+      try {
+        const currentVersion = await getGraphVersion();
+        if (force || currentVersion !== lastVersion) {
+          setError(null);
+          const payload = await getMemoryGraphTopology(includeInactive);
+          if (payload) {
+            setNodes(payload.nodes);
+            setEdges(payload.edges);
+            setLastVersion(payload.version);
+          }
+        }
+      } catch (e: any) {
+        console.error("Failed to fetch topology:", e);
+        setError(e?.message || "Failed to load memory graph topology");
+      }
+    },
+    [lastVersion, includeInactive]
+  );
+
+  // Fetch queue summary and conflicts status
+  const fetchAuxiliaryData = useCallback(async () => {
     try {
-      const [fData, rData, qData] = await Promise.all([
-        getMemoryGraph(),
-        getMemoryRelations(),
+      const [qData, cData] = await Promise.all([
         getMemoryQueueStatus(),
+        getUnresolvedConflicts(),
       ]);
-      setFacts(fData);
-      setRelations(rData);
       setQueueSummary(qData);
+      setConflicts(cData);
     } catch (e) {
-      console.error("Memory data load failed:", e);
+      console.error("Auxiliary data load failed:", e);
     }
   }, []);
 
+  // Initial load and version polling loop (every 2.5s)
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    fetchTopology(true);
+    fetchAuxiliaryData();
 
-  const handleSelectFact = useCallback((fact: MemoryFactEntry | null, clickPos?: { x: number; y: number }) => {
-    setSelectedFact(fact);
-    if (fact && clickPos) {
-      setTooltipPos(clickPos);
-    } else {
-      setTooltipPos(null);
-    }
-  }, []);
+    const interval = setInterval(() => {
+      fetchTopology(false);
+      fetchAuxiliaryData();
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [fetchTopology, fetchAuxiliaryData]);
+
+  // Re-fetch topology immediately when includeInactive toggle changes
+  useEffect(() => {
+    fetchTopology(true);
+  }, [includeInactive, fetchTopology]);
+
+  // Lazy load full fact detail when a node is selected
+  const handleSelectNode = useCallback(
+    async (nodeId: string | null, pos?: { x: number; y: number }) => {
+      setSelectedNodeId(nodeId);
+      if (!nodeId) {
+        setSelectedFactDetail(null);
+        setTooltipPos(null);
+        return;
+      }
+
+      if (pos) {
+        setTooltipPos(pos);
+      }
+
+      setIsDetailLoading(true);
+      try {
+        const detail = await getMemoryFactDetail(nodeId);
+        setSelectedFactDetail(detail);
+      } catch (e) {
+        console.error("Lazy detail load failed:", e);
+      } finally {
+        setIsDetailLoading(false);
+      }
+    },
+    []
+  );
+
+  // Resolve conflict handler
+  const handleResolveConflict = useCallback(
+    async (winnerId: string, loserId: string) => {
+      try {
+        await resolveMemoryConflict(winnerId, loserId);
+        fetchAuxiliaryData();
+        fetchTopology(true);
+      } catch (e) {
+        console.error("Resolve memory conflict failed:", e);
+      }
+    },
+    [fetchAuxiliaryData, fetchTopology]
+  );
 
   const totalPending = queueSummary
     ? (queueSummary.staged_pending ?? 0) +
@@ -86,34 +176,61 @@ export const Memory: React.FC = () => {
 
   return (
     <div className="flex-1 relative overflow-hidden select-none w-full h-full bg-[rgb(var(--background))]">
-      {/* Ambient background effect directly on page */}
+      {/* Ambient background effect */}
       <AmbientBackground mood="calm" originX="50%" originY="50%" />
 
-      {/* Main graph canvas directly in main div on top of background */}
+      {/* Main Graph Canvas */}
       <div ref={containerRef} className="absolute inset-0 z-10">
         {dims.w > 0 && (
           <MemoryGraph
             ref={graphRef}
-            facts={facts}
-            relations={relations}
+            nodes={nodes}
+            edges={edges}
             width={dims.w}
             height={dims.h}
             searchQuery={searchQuery}
             selectedCollection={selectedCollection}
             selectedRelation={selectedRelation}
-            onSelectFact={(fact, pos) => handleSelectFact(fact, pos)}
-            selectedFactId={selectedFact?.id ?? null}
+            onSelectNode={handleSelectNode}
+            selectedFactId={selectedNodeId}
+            selectedFactDetail={selectedFactDetail}
+            conflictPairs={conflictsMode ? conflicts : []}
           />
         )}
       </div>
 
-      {/* Top-Center: Decoupled Search Pill Bar with Filter Popover */}
+      {/* Error Banner */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-md w-full px-4"
+          >
+            <div className="glass-card p-3 rounded-2xl border border-red-500/30 bg-[rgba(20,10,12,0.9)] backdrop-blur-xl flex items-center justify-between gap-3 shadow-2xl">
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+                <p className="text-[11px] font-mono text-red-200 truncate">{error}</p>
+              </div>
+              <button
+                onClick={() => fetchTopology(true)}
+                className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-colors shrink-0 cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Top-Center Search Bar & Filter Popover */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2">
-        <div className="glass-card h-[42px] px-3.5 rounded-full border border-[rgba(var(--accent),0.18)] bg-[rgba(10,12,14,0.70)] backdrop-blur-xl flex items-center gap-2.5 shadow-2xl w-[320px] focus-within:w-[400px] transition-all duration-300">
+        <div className="glass-card h-[42px] px-3.5 rounded-full border border-[rgba(var(--accent),0.18)] bg-[rgba(10,12,14,0.70)] backdrop-blur-xl flex items-center gap-2.5 shadow-2xl w-[340px] focus-within:w-[420px] transition-all duration-300">
           <Search size={14} className="text-[rgb(var(--accent))] shrink-0" />
           <input
             type="text"
-            placeholder="Search memory facts..."
+            placeholder="Search Fact ID, collection, session, or text..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-transparent text-[12px] font-mono tracking-wide text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 outline-none"
@@ -134,14 +251,14 @@ export const Memory: React.FC = () => {
 
           <div className="h-4 w-px bg-white/10 shrink-0" />
 
-          {/* Filter Popover Toggle Button */}
+          {/* Filter Popover Toggle */}
           <div className="relative shrink-0">
             <button
               ref={filterBtnRef}
               onClick={() => setFilterMenuOpen((v) => !v)}
               className={cn(
                 "p-1.5 rounded-full text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] transition-colors cursor-pointer",
-                (filterMenuOpen || selectedCollection !== "all" || selectedRelation !== "all") &&
+                (filterMenuOpen || selectedCollection !== "all" || includeInactive || conflictsMode) &&
                   "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10"
               )}
               title="Filter by Collection or Status"
@@ -149,7 +266,7 @@ export const Memory: React.FC = () => {
               <SlidersHorizontal size={13} />
             </button>
 
-            {/* Quick Filter Dropdown */}
+            {/* Filter Menu Dropdown */}
             <AnimatePresence>
               {filterMenuOpen && (
                 <motion.div
@@ -157,17 +274,18 @@ export const Memory: React.FC = () => {
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: 6 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-10 w-[200px] glass-card p-3 rounded-2xl border border-[rgba(var(--accent),0.15)] bg-[rgba(10,12,14,0.92)] backdrop-blur-2xl shadow-2xl flex flex-col gap-2 z-30"
+                  className="absolute right-0 top-10 w-[240px] glass-card p-3.5 rounded-2xl border border-[rgba(var(--accent),0.15)] bg-[rgba(10,12,14,0.92)] backdrop-blur-2xl shadow-2xl flex flex-col gap-2.5 z-30"
                 >
                   <div className="flex items-center justify-between border-b border-white/[0.06] pb-1.5">
                     <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70">
-                      Quick Filters
+                      Graph Filters
                     </span>
-                    {(selectedCollection !== "all" || selectedRelation !== "all") && (
+                    {(selectedCollection !== "all" || includeInactive || conflictsMode) && (
                       <button
                         onClick={() => {
                           setSelectedCollection("all");
-                          setSelectedRelation("all");
+                          setIncludeInactive(false);
+                          setConflictsMode(false);
                         }}
                         className="text-[9px] font-mono text-[rgb(var(--accent))] hover:underline cursor-pointer"
                       >
@@ -176,8 +294,41 @@ export const Memory: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="flex flex-col gap-1">
-                    {["all", "Identity", "Profile", "Directives", "Constraints", "Entities", "Inactive"].map(
+                  {/* Toggle: Historical / Inactive Facts */}
+                  <label className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] cursor-pointer">
+                    <span className="text-[10px] font-mono text-[rgb(var(--foreground))]">
+                      Show Historical / Inactive Facts
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={includeInactive}
+                      onChange={(e) => setIncludeInactive(e.target.checked)}
+                      className="accent-[rgb(var(--accent))] cursor-pointer"
+                    />
+                  </label>
+
+                  {/* Toggle: Unresolved Conflicts Mode */}
+                  <label className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] cursor-pointer">
+                    <div className="flex items-center gap-1.5">
+                      <ShieldAlert size={12} className="text-red-400" />
+                      <span className="text-[10px] font-mono text-[rgb(var(--foreground))]">
+                        Unresolved Conflicts Mode ({conflicts.length})
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={conflictsMode}
+                      onChange={(e) => setConflictsMode(e.target.checked)}
+                      className="accent-red-500 cursor-pointer"
+                    />
+                  </label>
+
+                  {/* Collection Picker */}
+                  <div className="flex flex-col gap-1 border-t border-white/[0.06] pt-1.5">
+                    <span className="text-[9px] font-mono font-bold text-[rgb(var(--foreground-muted))]/60 uppercase px-1">
+                      Filter Collection
+                    </span>
+                    {["all", "Identity", "Profile", "Directives", "Constraints", "Entities", "Narrative", "Inactive"].map(
                       (col) => {
                         const isSelected = selectedCollection === col;
                         const colStyle = (COLLECTION_COLORS as any)[col];
@@ -211,31 +362,100 @@ export const Memory: React.FC = () => {
         </div>
       </div>
 
-      {/* Top-Left: Collapsible Two-Column Collections & Relations Legend Card */}
+      {/* Top-Left: Collection Legend Card */}
       <div className="absolute top-4 left-4 z-20 pointer-events-auto">
         <MemoryLegendCard
           selectedCollection={selectedCollection}
           onSelectCollection={setSelectedCollection}
           selectedRelation={selectedRelation}
           onSelectRelation={setSelectedRelation}
-          totalFactsCount={facts.length}
-          totalRelationsCount={relations.length}
+          totalFactsCount={nodes.length}
+          totalRelationsCount={edges.length}
         />
       </div>
 
-      {/* Top-Right: Recenter Graph Camera Button */}
-      <div className="absolute top-4 right-4 z-20 pointer-events-auto">
+      {/* Top-Right: Knowledge Base Metrics Card & Recenter Camera */}
+      <div className="absolute top-4 right-4 z-20 pointer-events-auto flex flex-col items-end gap-2">
+        <MemoryMetricsCard
+          totalFacts={nodes.length}
+          totalRelations={edges.length}
+          nodes={nodes}
+          edges={edges}
+        />
+
         <button
           onClick={() => graphRef.current?.recenter()}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-full glass-card border border-[rgba(var(--accent),0.15)] bg-[rgba(10,12,14,0.70)] backdrop-blur-xl text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer shadow-xl text-[11px] font-mono font-bold uppercase tracking-wider"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-full glass-card border border-[rgba(var(--accent),0.15)] bg-[rgba(10,12,14,0.70)] backdrop-blur-xl text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer shadow-xl text-[10px] font-mono font-bold uppercase tracking-wider"
           title="Recenter Graph View"
         >
           <Focus size={13} className="text-[rgb(var(--accent))]" />
-          <span>Recenter</span>
+          <span>Recenter Camera</span>
         </button>
       </div>
 
-      {/* Bottom Right Edge Nav: Pipeline Processing Center Trigger Pill */}
+      {/* Unresolved Conflicts Floating Resolution Card */}
+      <AnimatePresence>
+        {conflictsMode && conflicts.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -10 }}
+            className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-auto w-[460px] max-w-[92vw]"
+          >
+            <div className="glass-card p-4 rounded-2xl border border-red-500/30 bg-[rgba(20,10,12,0.92)] backdrop-blur-2xl shadow-2xl flex flex-col gap-3">
+              <div className="flex items-center justify-between border-b border-red-500/20 pb-2">
+                <div className="flex items-center gap-2 text-red-400">
+                  <AlertTriangle size={15} />
+                  <span className="text-[11px] font-mono font-bold uppercase tracking-wider">
+                    Unresolved Conflict Resolution ({conflicts.length})
+                  </span>
+                </div>
+                <button
+                  onClick={() => setConflictsMode(false)}
+                  className="text-red-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {/* Conflict Pair Resolution Item */}
+              {conflicts.slice(0, 1).map((conflict) => (
+                <div key={`${conflict.fact_a.id}_${conflict.fact_b.id}`} className="flex flex-col gap-2">
+                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                    <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] flex flex-col justify-between gap-2">
+                      <span className="font-bold text-[rgb(var(--accent))]">{conflict.fact_a.id}</span>
+                      <span className="text-[10px] text-[rgb(var(--foreground-muted))] uppercase">
+                        {conflict.fact_a.collection}
+                      </span>
+                      <button
+                        onClick={() => handleResolveConflict(conflict.fact_a.id, conflict.fact_b.id)}
+                        className="w-full py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase hover:bg-emerald-500/30 transition-colors cursor-pointer"
+                      >
+                        Pick as Winner
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] flex flex-col justify-between gap-2">
+                      <span className="font-bold text-red-400">{conflict.fact_b.id}</span>
+                      <span className="text-[10px] text-[rgb(var(--foreground-muted))] uppercase">
+                        {conflict.fact_b.collection}
+                      </span>
+                      <button
+                        onClick={() => handleResolveConflict(conflict.fact_b.id, conflict.fact_a.id)}
+                        className="w-full py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase hover:bg-emerald-500/30 transition-colors cursor-pointer"
+                      >
+                        Pick as Winner
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Bottom Right Edge Nav: Ingestion Queue Trigger Button */}
       <div className="fixed bottom-4 right-4 z-30 pointer-events-auto">
         <button
           onClick={() => setDrawerOpen(true)}
@@ -243,7 +463,7 @@ export const Memory: React.FC = () => {
             "flex items-center gap-2.5 px-3.5 py-2.5 rounded-full glass-card border border-[rgba(var(--accent),0.25)] bg-[rgba(10,12,14,0.85)] hover:bg-[rgba(10,12,14,0.95)] backdrop-blur-xl text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.5)] transition-all cursor-pointer shadow-2xl group",
             drawerOpen && "opacity-0 pointer-events-none"
           )}
-          title="Open Memory Processing Center"
+          title="Open Memory Ingestion Queue"
         >
           <div className="relative">
             <Cpu size={16} className="text-[rgb(var(--accent))] group-hover:scale-110 transition-transform" />
@@ -254,29 +474,34 @@ export const Memory: React.FC = () => {
             )}
           </div>
           <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground))]/90">
-            Pipeline {totalPending > 0 ? `(${totalPending})` : ""}
+            Ingestion Queue {totalPending > 0 ? `(${totalPending})` : ""}
           </span>
         </button>
       </div>
 
-      {/* Floating Memory Node Tooltip with Connected Edges Details */}
+      {/* Floating Memory Node Tooltip with Lazy Details */}
       <MemoryNodeTooltip
-        fact={selectedFact}
-        allFacts={facts}
-        allRelations={relations}
+        factDetail={selectedFactDetail}
+        isLoading={isDetailLoading}
         pos={tooltipPos}
-        onClose={() => handleSelectFact(null)}
-        onRefresh={loadData}
+        onClose={() => handleSelectNode(null)}
+        onRefresh={() => {
+          fetchTopology(true);
+          fetchAuxiliaryData();
+        }}
       />
 
-      {/* Right Slide-Out Pipeline Observability Drawer */}
+      {/* Ingestion Queue Observability Drawer */}
       <MemoryPipelineDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         summary={queueSummary}
-        facts={facts}
-        relations={relations}
-        onRefresh={loadData}
+        nodes={nodes}
+        edges={edges}
+        onRefresh={() => {
+          fetchTopology(true);
+          fetchAuxiliaryData();
+        }}
       />
     </div>
   );
