@@ -21,26 +21,27 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
 
+  // Ref to track compact state across renders during window resize
+  const wasCompactRef = useRef(window.innerWidth < 1024);
+
   // Bidirectional viewport transition: compact (EdgeNav route) ↔ full-max (corner popover)
   useEffect(() => {
-    let wasCompact = window.innerWidth < 1024;
-
     const handleResize = () => {
       const isCompact = window.innerWidth < 1024;
-      if (wasCompact && !isCompact) {
+      if (wasCompactRef.current && !isCompact) {
         // Compact → Full-max: switch from route page to popover
         if (location.pathname === "/monitoring") {
           navigate("/", { replace: true });
           setMonitorOpen(true);
         }
-      } else if (!wasCompact && isCompact) {
+      } else if (!wasCompactRef.current && isCompact) {
         // Full-max → Compact: switch from popover to route page
         if (monitorOpen) {
           setMonitorOpen(false);
           navigate("/monitoring");
         }
       }
-      wasCompact = isCompact;
+      wasCompactRef.current = isCompact;
     };
 
     window.addEventListener("resize", handleResize);
@@ -65,9 +66,10 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       }
 
       const isCompact = window.innerWidth < 1024;
+      // Match visual sequence in EdgeNav: Home (/) -> History (/history) -> Memory (/memory) -> System (/settings)
       const routes = isCompact
-        ? ["/", "/memory", "/history", "/settings", "/monitoring"]
-        : ["/", "/memory", "/history", "/settings"];
+        ? ["/", "/history", "/memory", "/settings", "/monitoring"]
+        : ["/", "/history", "/memory", "/settings"];
 
       const currentIndex = routes.indexOf(location.pathname);
       if (currentIndex === -1) return;

@@ -48,7 +48,7 @@ export const Monitoring = memo(() => {
       {/* Header */}
       <div className="flex items-center justify-between pb-4 shrink-0 border-b border-[rgba(var(--accent),0.08)]">
         <div>
-          <span className="signal-text text-[14px]">Monitoring</span>
+          <span className="text-[14px] font-mono font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]">Monitoring</span>
           <p className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono font-medium tracking-[0.2em] mt-1">
             {MONITORING_COPY.systemMetrics}
           </p>

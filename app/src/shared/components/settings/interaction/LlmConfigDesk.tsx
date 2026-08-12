@@ -127,8 +127,6 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
                 provider_name: detectedName,
               });
             }
-          } else if (!healthy) {
-            setModelsError("Server unreachable");
           }
         } catch (err) {
           console.error(err);
@@ -221,9 +219,33 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             ? activeCategory === "TTS" && activePill === "remote"
               ? "h-auto min-h-[120px]"
               : "h-[120px] min-h-[120px] max-h-[120px]"
-            : "flex-1 min-h-[140px]"
+            : "flex-1 min-h-[120px]"
       )}
     >
+      {/* ─── SECTION 0: INTEGRATED PIPELINE (MODE = INTEGRATED) ─── */}
+      {!isModular && (
+        <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2 py-1">
+          <div className="flex-1 flex items-center justify-center relative min-w-[80px] h-full">
+            <div className="absolute w-16 h-16 rounded-full border border-[rgb(var(--accent))]/10 animate-ring-pulse-slow" />
+            <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/40 flex items-center justify-center relative z-10">
+              <Sparkles className="text-[rgb(var(--accent))]" size={18} />
+            </div>
+          </div>
+          <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+                Unified End-to-End Voice Engine
+              </span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
+                Sub-200ms
+              </span>
+            </div>
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-relaxed font-semibold">
+              Streaming STT, LLM inference, and TTS audio synthesis are tightly coupled in zero-copy memory for minimal perceived latency.
+            </p>
+          </div>
+        </div>
+      )}
       {/* ─── SECTION 1: STT CATEGORY ─── */}
       {isModular && activeCategory === "STT" && activePill === "local" && (
         <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">

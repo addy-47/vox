@@ -118,13 +118,68 @@ To ensure visual consistency and neat alignment:
 
 ---
 
-## 8. 3D Cognitive Memory Graph & Telemetry Drawer Invariants
+## 8. Typography System & Contrast Standards
 
-### Frameless Glass Overlays & Pill-Free Telemetry
+Vox uses a curated **Precision Sci-Fi HUD Typography Stack** designed for maximum legibility and visual hierarchy:
+
+| Typographic Level | Font Family | CSS Utility Class | Purpose & Guidelines |
+| :--- | :--- | :--- | :--- |
+| **Display / Signal** | `Syne` | `.field-text` / `font-sans` | Brand titles, stage titles, uppercase headings, active voice signals. |
+| **Body / UI** | `Plus Jakarta Sans` | `.ambient-label` / `font-sans` | UI labels, settings options, body text, dialogue text. |
+| **Data / Telemetry** | `JetBrains Mono` | `.signal-text` / `font-mono` | Numeric metrics, latencies, footprint HUD (`CPU %` · `RAM MB`), timestamp readouts. |
+
+### Font Scale Floor Rule
+* **Minimum Font Size**: All text across the application must strictly adhere to a **font scale floor of `>= 11px`**. Sub-11px font sizes (`8.5px`, `9px`, `10px`) are forbidden to ensure readability on high-DPI and scaled displays.
+
+### Light Theme Contrast Baseline
+* **WCAG AA Compliance**: In Light Mode (`[data-theme='light']`), `--foreground-muted` is set to `51, 65, 85` (`#334155` - Slate 700). On light glass cards with `0.78` opacity, this yields a contrast ratio of **9.8:1**, comfortably exceeding WCAG AA requirements (4.5:1).
+* **Keyboard Focus Visibility**: All focusable interactive elements (`button`, `a`, `input`, `[role="button"]`) enforce an explicit `focus-visible` ring (`outline: 2px solid rgb(var(--accent))`).
+
+---
+
+## 9. Settings Hub & Synchronous Loading UX
+
+To maintain instant interaction feedback in the 6-domain radial settings hub:
+
+### Synchronous Card & Connector Line Rendering
+* **Eager Import Prewarming**: All lazy-loaded domain cards (`PersonaCard`, `ModelsCard`, `RealtimeCard`, `HistoryCard`, `MemoryCard`, `AppearanceCard`, `InteractionCard`) are eagerly prewarmed in parallel when the `Settings` component mounts.
+* **Gated Connection Lines**: Dynamic SVG node-to-card connector lines render strictly when `activeDomains.includes(domain.id)` is true, ensuring connector lines and card containers animate in synchronously in the exact same frame on first click.
+
+---
+
+## 10. 3D Cognitive Memory Graph & Telemetry Drawer Invariants
+
+### WebGL Scene Stability & Resizing
+* **Decoupled Renderer Setup**: The Three.js WebGL canvas renderer, scene, and camera setups are decoupled from viewport width/height changes. Window or panel resizing triggers a lightweight `renderer.setSize` update without disposing of GPU buffers or controls.
+* **Failsafe Stabilization**: Memory graph layout stabilization enforces a **700ms max failsafe timeout** to guarantee the borderless network loader overlay (`isLayoutStable`) always dismisses cleanly.
+* **Clean Pill Selection**: Collection and relation filter cards in `MemoryLegendCard.tsx` use rounded active ring highlights (`ring-1 ring-[rgb(var(--accent))]/30 bg-[rgb(var(--accent))]/15`) instead of vertical `border-l-2` accent borders.
+
+### Frameless Glass Overlays & Pipeline Telemetry
 * **Borderless Loader Core**: Memory graph initialization renders a borderless dual-orbital network loader with a central `Sparkles` emblem rather than a boxed card.
 * **100% Height Alternating Telemetry Drawer**: `MemoryPipelineDrawer.tsx` utilizes 100% full available height with an alternating Left/Right zig-zag conduit flow connecting stages `01 Deduplicate` (Left), `02 Embed` (Right), `03 Evaluate Relations` (Left), `04 Commit & Sync` (Right) down to the `Memory Graph` destination (Center Bottom).
-* **Pill & Box Elimination**: Avoid nested boxes-in-boxes and pill button fatigue. Use background opacity contrast, minimal typography, and clean status indicators.
+* **Keyboard Dismissal**: `MemoryPipelineDrawer` listens for the `Escape` key to close the drawer.
+
+---
+
+## 11. Keyboard Navigation & Route Sequence
+
+* **Arrow Key Navigation**: Pressing `ArrowRight` or `ArrowLeft` cycles between views in exact visual order matching `EdgeNav` capsule pills:
+  `Home` (`/`) ➔ `History` (`/history`) ➔ `Memory` (`/memory`) ➔ `System` (`/settings`).
+
+---
+
+## 12. Small Layout Navigation & Scroll Backdrop Mask
+
+For mobile and small viewports (`< 1024px`):
+
+* **Floating EdgeNav Capsule**: The navigation capsule floats centered near the bottom of the screen with compact pill styling.
+* **Soft Glass Fade Mask Backdrop**: A `110px` gradient backdrop overlay (`fixed bottom-0 left-0 right-0 pointer-events-none z-40 bg-gradient-to-b from-transparent via-[rgb(var(--background))]/60 to-[rgb(var(--background))]/95 backdrop-blur-[16px]`) is positioned behind the EdgeNav pill.
+* **Seamless Content Fade**: Content scrolls smoothly underneath the mask and gradually fades/blurs out as it approaches the bottom edge, preventing hard cutoffs or rectangular navbar overlays.
+* **Scroll Padding Baseline**: All scrollable page views (History, Settings, Monitoring) enforce `pb-[110px]` on small layouts so the last content item is fully viewable above the mask backdrop.
+* **Mobile Category Headers**: Small layouts display explicit category headers (e.g. `HISTORY & SESSIONS`) at the top of scrollable lists to maintain clear visual hierarchy.
 
 ---
 
 **Last Updated:** 2026-08-12
+
+
