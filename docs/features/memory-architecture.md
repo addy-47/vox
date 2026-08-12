@@ -92,8 +92,8 @@ The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & 
 **Logic:**
 1. SELECT up to 16 `embedded` rows, claim atomically.
 2. For each item, fetch two candidate sets concurrently:
-   - **Sub-Branch A (NLI):** Intra-collection candidates with cosine ≥ `SAME_COLLECTION_CANDIDATE_SEARCH` (0.40), no K-cap. Only for items in NLI domains: `Identity`, `Directives`, `Constraints`.
-   - **Sub-Branch B (Edge Classifier):** Inter-collection candidates with cosine ≥ `INTER_COLLECTION_CANDIDATE_SEARCH` (0.55), no K-cap. Only for pairs where `inter_collection_edge()` returns a valid policy pair.
+   - **Sub-Branch A (NLI):** Intra-collection candidates with cosine ≥ `SAME_COLLECTION_CANDIDATE_SEARCH` (0.60), no K-cap. Only for items in NLI domains: `Identity`, `Directives`, `Constraints`.
+   - **Sub-Branch B (Edge Classifier):** Inter-collection candidates with cosine ≥ `INTER_COLLECTION_CANDIDATE_SEARCH` (0.40), no K-cap. Only for pairs where `inter_collection_edge_policy()` returns a valid policy pair.
    - **Candidate Resolution Union:** Candidates are fetched by unioning persistent DB active facts from `memory_facts` WITH in-flight queue items in the current batch (`items` in `personal_memory_queue`). This guarantees intra-batch NLI and edge evaluation operates seamlessly on cold starts.
 
 > [!NOTE]
@@ -482,7 +482,7 @@ Uses `query_sieve::MemoryScopeClassifier` (ModernBERT INT8 ONNX) to classify tur
 ### 15.1 Module Structure
 - `mod.rs`: Router and command re-exports.
 - `graph.rs`: Lightweight topology retrieval (`get_memory_graph_topology`), atomic `graph_version` token (`get_graph_version`), lazy detail loading (`get_memory_fact_detail`), and combined `get_memory_stats`.
-- `ingestion.rs`: Real-time queue summary (`get_memory_queue_status`), pipeline toggle control (`toggle_pipeline_processing`), queue retry (`retry_failed_queue`), manual consolidation (`trigger_memory_consolidation`).
+- `ingestion.rs`: Real-time queue summary (`get_memory_queue_status`), pipeline toggle control (`toggle_pipeline_processing`), queue retry (`retry_failed_queue`), selective item retry (`retry_failed_queue_items`), manual consolidation (`trigger_memory_consolidation`).
 - `mutations.rs`: Fact edits (`edit_fact_content`), collection re-assignment (`reassign_fact_collection`), soft deletes (`soft_delete_fact`).
 - `conflicts.rs`: Single JOIN conflict discovery (`get_unresolved_conflicts`) and conflict resolution (`resolve_memory_conflict`).
 
@@ -492,3 +492,31 @@ Uses `query_sieve::MemoryScopeClassifier` (ModernBERT INT8 ONNX) to classify tur
 3. **Vector Synchronization**: `edit_fact_content` updates raw text and executes an SQLite `UPSERT` on `memory_facts_vectors(fact_id)` (`ON CONFLICT(fact_id) DO UPDATE SET embedding = excluded.embedding`), preventing vector embedding drift.
 4. **Status Invariant on Deletes & Conflicts**: `soft_delete_fact` and `resolve_memory_conflict` execute `UPDATE memory_facts SET status = 'superseded' WHERE id = ?` on target/loser nodes, ensuring retrieval queries (`WHERE status = 'active'`) never pull soft-deleted or conflict-losing facts into context windows.
 5. **Database Indexes**: Schema defines `idx_mfv_fact_id` on `memory_facts_vectors(fact_id)` and `idx_pmq_session` on `personal_memory_queue(session_id)` to prevent $O(N)$ full table scans.
+
+---
+
+## 16. ONNX Model Singleton Eviction & Zero Idle RAM Architecture
+
+### 16.1 Design Rationale
+In desktop voice assistant deployment (constrained to 8GB RAM, CPU-first inference), pinning 5 ONNX runtime sessions (`TransliterationEngine`, `QueryScopeClassifier`, `TextEmbedder`, `NliEngine`, `EdgeClassifierEngine`) permanently in static memory consumes ~1.8GB to 3.0GB RAM continuously at app idle.
+
+To eliminate this memory footprint:
+1. All static singletons replace `OnceLock<T>` with `parking_lot::RwLock<Option<T>> = parking_lot::RwLock::new(None)`.
+2. Calling `*SINGLETON.write() = None` drops the `T` struct, destroying the ONNX Runtime `Session` and tokenizer, immediately freeing process memory back to the operating system.
+
+### 16.2 Model Lifecycle & Trigger Matrix
+
+| Model Singleton | ONNX Asset | Lazy Loading Trigger | Eviction / Unload Trigger |
+|---|---|---|---|
+| `TransliterationEngine` | `encoder.onnx` + `decoder.onnx` (~30MB) | `transliterate()` called on Devanagari input | `unload_transliteration_engine()` or `unload_all_onnx_models()` |
+| `QueryScopeClassifier` | `modernbert_memory_scope/model_quantized.onnx` (~140MB) | `engage()` (Voice interaction start) | `unload_scope_classifier()` or `stop_engine()` disengage |
+| `TextEmbedder` | `minilm-l6-v2/model_quantized.onnx` (~90MB) | Stage 2 merge or Stage 3 candidate retrieval | `PipelineActive` (voice start), disengage, or batch completion |
+| `NliEngine` | `deberta-v3-nli/model_quantized.onnx` (~430MB) | Stage 3 intra-collection NLI evaluation | `PipelineActive` (voice start), disengage, or batch completion |
+| `EdgeClassifierEngine` | `modernbert_edge_creation/model_quantized.onnx` (~140MB) | Stage 3 inter-collection edge classification | `PipelineActive` (voice start), disengage, or batch completion |
+
+### 16.3 Idle Debounce & Queue Gating
+During the 30-second continuous idle worker check:
+1. `memory.pipeline_processing_enabled` is checked. If `false`, model loading is skipped.
+2. An SQL query `SELECT COUNT(*) FROM personal_memory_queue WHERE status IN ('staged_pending', 'deduped', 'embedded')` checks for pending facts.
+3. If pending facts count is `0`, **pipeline ONNX models are NOT loaded**, preserving a true **0 MB idle ONNX model memory footprint**.
+4. When pending queue items are processed to completion, `unload_memory_pipeline_onnx_models()` is called automatically to return RAM to the OS.

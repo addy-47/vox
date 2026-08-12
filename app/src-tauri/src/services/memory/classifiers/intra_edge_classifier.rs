@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use ndarray::Array2;
 use std::path::Path;
-use std::sync::OnceLock;
 use tokenizers::Tokenizer;
 
 /// Threshold above which an NLI prediction is classified as Contradiction.
@@ -50,7 +49,7 @@ pub struct NliEngine {
     class_mapping: [NliLabel; 3],
 }
 
-static NLI_ENGINE: OnceLock<NliEngine> = OnceLock::new();
+static NLI_ENGINE: parking_lot::RwLock<Option<NliEngine>> = parking_lot::RwLock::new(None);
 
 /// Loads the NLI model from disk and runs calibration to determine output label indices.
 /// Returns `Ok(true)` if loaded, `Ok(false)` if model assets are missing.
@@ -66,6 +65,11 @@ pub fn init_nli_engine(model_dir: &Path) -> Result<bool> {
             TOKENIZER_FILENAME
         );
         return Ok(false);
+    }
+
+    let mut lock = NLI_ENGINE.write();
+    if lock.is_some() {
+        return Ok(true);
     }
 
     let mut tokenizer = Tokenizer::from_file(&tokenizer_path)
@@ -110,16 +114,22 @@ pub fn init_nli_engine(model_dir: &Path) -> Result<bool> {
     // Run calibration
     engine.calibrate()?;
 
-    if NLI_ENGINE.set(engine).is_err() {
-        log::warn!("[NliEngine] NLI Engine singleton already set.");
-    } else {
-        log::info!(
-            "[NliEngine] Successfully loaded and calibrated NLI model from {:?}",
-            model_dir
-        );
-    }
+    *lock = Some(engine);
+    log::info!(
+        "[NliEngine] Successfully loaded and calibrated NLI model from {:?}",
+        model_dir
+    );
 
     Ok(true)
+}
+
+/// Evicts the NLI engine singleton from process memory.
+pub fn unload_nli_engine() {
+    let mut lock = NLI_ENGINE.write();
+    if lock.is_some() {
+        *lock = None;
+        log::info!("[NliEngine] NLI classifier ONNX model evicted from memory.");
+    }
 }
 
 impl NliEngine {
@@ -288,13 +298,13 @@ impl NliEngine {
 }
 
 pub fn is_nli_loaded() -> bool {
-    NLI_ENGINE.get().is_some()
+    NLI_ENGINE.read().is_some()
 }
 
 /// Lazily loads the NLI engine if not already loaded.
 /// Returns `Ok(true)` if ready, `Ok(false)` if assets are missing.
 pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {
-    if NLI_ENGINE.get().is_some() {
+    if NLI_ENGINE.read().is_some() {
         return Ok(true);
     }
 
@@ -336,8 +346,9 @@ pub fn classify_batch(pairs: &[(&str, &str)]) -> Result<Vec<NliResult>> {
         return Ok(Vec::new());
     }
 
-    let engine = NLI_ENGINE
-        .get()
+    let lock = NLI_ENGINE.read();
+    let engine = lock
+        .as_ref()
         .ok_or_else(|| anyhow!("NLI Engine is not loaded."))?;
     let batch_logits = engine.raw_predict_batch(pairs)?;
 
@@ -387,16 +398,18 @@ pub fn relation_from_result(result: &NliResult) -> NliRelation {
 
 /// Returns the calibrated class mapping ([index 0, index 1, index 2]) if the engine is loaded.
 pub fn get_calibrated_class_mapping() -> Option<[NliLabel; 3]> {
-    NLI_ENGINE.get().map(|engine| engine.class_mapping)
+    let lock = NLI_ENGINE.read();
+    lock.as_ref().map(|engine| engine.class_mapping)
 }
 
 /// Returns the calibrated class mapping as string labels if the engine is loaded.
 pub fn get_calibrated_class_mapping_strings() -> Option<Vec<&'static str>> {
-    NLI_ENGINE.get().map(|engine| {
+    let lock = NLI_ENGINE.read();
+    lock.as_ref().map(|engine| {
         engine
             .class_mapping
             .iter()
-            .map(|label| label.as_str())
+            .map(|label: &NliLabel| label.as_str())
             .collect()
     })
 }

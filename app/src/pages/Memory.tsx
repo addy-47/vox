@@ -1,10 +1,17 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Search, X, SlidersHorizontal, Focus, Cpu, AlertTriangle, ShieldAlert } from "lucide-react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  Search,
+  X,
+  Focus,
+  Eye,
+  EyeOff,
+  GitCompare,
+  Cpu,
+  CornerDownLeft,
+} from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AmbientBackground } from "@/shared/components/common";
-import { MemoryGraph, MemoryGraphRef, COLLECTION_COLORS } from "@/shared/components/memory/MemoryGraph";
+import { MemoryGraph, MemoryGraphRef, getCollectionColor } from "@/shared/components/memory/MemoryGraph";
 import { MemoryLegendCard } from "@/shared/components/memory/MemoryLegendCard";
-import { MemoryMetricsCard } from "@/shared/components/memory/MemoryMetricsCard";
 import { MemoryNodeTooltip } from "@/shared/components/memory/MemoryNodeTooltip";
 import { MemoryPipelineDrawer } from "@/shared/components/memory/MemoryPipelineDrawer";
 import {
@@ -12,83 +19,190 @@ import {
   MemoryEdgeTopology,
   MemoryFactDetail,
   MemoryQueueSummary,
-  MemoryConflict,
-  getGraphVersion,
   getMemoryGraphTopology,
   getMemoryFactDetail,
   getMemoryQueueStatus,
   getUnresolvedConflicts,
-  resolveMemoryConflict,
+  getGraphVersion,
 } from "@/services/memoryService";
 import { cn } from "@/shared/lib/utils";
+
+interface SearchBarProps {
+  nodes: MemoryNodeTopology[];
+  onCommitSearch: (query: string) => void;
+  onSelectNode: (nodeId: string) => void;
+}
+
+const SearchBar: React.FC<SearchBarProps> = React.memo(({ nodes, onCommitSearch, onSelectNode }) => {
+  const [input, setInput] = useState("");
+  const [focused, setFocused] = useState(false);
+
+  const searchResults = useMemo(() => {
+    const q = input.trim().toLowerCase();
+    if (!q) return [];
+    return nodes
+      .filter((n) => n.id.toLowerCase().includes(q) || n.collection.toLowerCase().includes(q))
+      .slice(0, 10);
+  }, [nodes, input]);
+
+  return (
+    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex flex-col items-center">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onCommitSearch(input.trim());
+          setFocused(false);
+        }}
+        className="glass-card h-[42px] px-3.5 rounded-full border border-[rgba(var(--accent),0.2)] bg-[rgb(var(--card))]/90 backdrop-blur-2xl flex items-center gap-2.5 shadow-2xl w-[360px] focus-within:w-[440px] transition-all duration-300 relative"
+      >
+        <Search size={15} className="text-[rgb(var(--accent))] shrink-0" />
+        <input
+          type="text"
+          placeholder="Search memory..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onCommitSearch(input.trim());
+              setFocused(false);
+            }
+          }}
+          className="w-full bg-transparent text-[12px] font-mono tracking-wide text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/50 outline-none"
+        />
+
+        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--foreground))]/10 text-[rgb(var(--foreground-muted))] shrink-0">
+          ⌘K
+        </span>
+
+        <AnimatePresence>
+          {input && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              type="button"
+              onClick={() => {
+                setInput("");
+                onCommitSearch("");
+              }}
+              className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0"
+            >
+              <X size={13} />
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </form>
+
+      {/* Subpanel 4: Search Dropdown Results Popover */}
+      {focused && searchResults.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 6 }}
+          className="mt-2 w-[440px] glass-card p-2 rounded-2xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/95 backdrop-blur-2xl shadow-2xl flex flex-col gap-1 z-30"
+        >
+          <div className="px-3 py-1.5 flex items-center justify-between border-b border-[rgba(var(--border),0.12)] text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+            <span>Results ({searchResults.length})</span>
+            <span>Press Enter to filter graph</span>
+          </div>
+
+          <div className="flex flex-col gap-1 max-h-[220px] overflow-y-auto custom-scrollbar">
+            {searchResults.map((node) => {
+              const colPalette = getCollectionColor(node.collection, node.is_superseded);
+              return (
+                <button
+                  key={node.id}
+                  onClick={() => {
+                    onSelectNode(node.id);
+                    setFocused(false);
+                  }}
+                  className="p-2.5 rounded-xl bg-[rgb(var(--foreground))]/5 hover:bg-[rgb(var(--accent))]/15 border border-[rgba(var(--border),0.12)] flex items-center justify-between text-left transition-colors cursor-pointer group"
+                >
+                  <div className="flex items-center gap-2 overflow-hidden">
+                    <span
+                      className="text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase shrink-0"
+                      style={{ backgroundColor: `${colPalette.main}20`, color: colPalette.main }}
+                    >
+                      {node.collection}
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-[rgb(var(--foreground))] truncate">
+                      {node.id}
+                    </span>
+                  </div>
+                  <CornerDownLeft size={12} className="text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--accent))] shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+});
+
+SearchBar.displayName = "SearchBar";
 
 export const Memory: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<MemoryGraphRef>(null);
-  const filterBtnRef = useRef<HTMLButtonElement>(null);
 
-  const [dims, setDims] = useState({ w: 0, h: 0 });
-
-  // Topology data cache
+  const [dims, setDims] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [nodes, setNodes] = useState<MemoryNodeTopology[]>([]);
   const [edges, setEdges] = useState<MemoryEdgeTopology[]>([]);
-  const [lastVersion, setLastVersion] = useState<number>(-1);
+  const [lastVersion, setLastVersion] = useState<number>(0);
 
-  // Lazy loaded detail for selected node
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedFactDetail, setSelectedFactDetail] = useState<MemoryFactDetail | null>(null);
-  const [isDetailLoading, setIsDetailLoading] = useState(false);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-
-  // Ingestion Queue Status
-  const [queueSummary, setQueueSummary] = useState<MemoryQueueSummary | null>(null);
-
-  // Filter States
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCollection, setSelectedCollection] = useState<string>("all");
-  const [selectedRelation, setSelectedRelation] = useState<string>("all");
-  const [includeInactive, setIncludeInactive] = useState<boolean>(false);
 
-  // Unresolved Conflicts Mode State
-  const [conflictsMode, setConflictsMode] = useState<boolean>(false);
-  const [conflicts, setConflicts] = useState<MemoryConflict[]>([]);
+  const [selectedCollection, setSelectedCollection] = useState("all");
+  const [selectedRelation, setSelectedRelation] = useState("all");
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [conflictsMode, setConflictsMode] = useState(false);
 
-  // UI Panels
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [nodePos, setNodePos] = useState<{ x: number; y: number } | null>(null);
+  const [selectedFactDetail, setSelectedFactDetail] = useState<MemoryFactDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [queueSummary, setQueueSummary] = useState<MemoryQueueSummary | null>(null);
+  const [conflicts, setConflicts] = useState<{ fact_a: MemoryNodeTopology; fact_b: MemoryNodeTopology }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // Measure container dimensions
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver((entries) => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        setDims({ w: entry.contentRect.width, h: entry.contentRect.height });
+        setDims({
+          w: entry.contentRect.width,
+          h: entry.contentRect.height,
+        });
       }
     });
-    obs.observe(el);
-    setDims({ w: el.clientWidth, h: el.clientHeight });
-    return () => obs.disconnect();
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
   }, []);
 
-  // Fetch graph topology ONLY when graph_version or includeInactive changes
+  // Fetch graph topology from backend IPC
   const fetchTopology = useCallback(
     async (force = false) => {
       try {
-        const currentVersion = await getGraphVersion();
-        if (force || currentVersion !== lastVersion) {
-          setError(null);
-          const payload = await getMemoryGraphTopology(includeInactive);
-          if (payload) {
-            setNodes(payload.nodes);
-            setEdges(payload.edges);
-            setLastVersion(payload.version);
-          }
+        const currentVer = await getGraphVersion();
+        if (!force && currentVer === lastVersion && currentVer > 0) {
+          return;
         }
+
+        const data = await getMemoryGraphTopology(includeInactive);
+        if (data) {
+          setNodes(data.nodes);
+          setEdges(data.edges);
+          setLastVersion(currentVer);
+        }
+        setError(null);
       } catch (e: any) {
-        console.error("Failed to fetch topology:", e);
-        setError(e?.message || "Failed to load memory graph topology");
+        console.error("Failed to load memory graph topology:", e);
+        setError(e.message || "Failed to load knowledge graph from local database.");
       }
     },
     [lastVersion, includeInactive]
@@ -108,18 +222,20 @@ export const Memory: React.FC = () => {
     }
   }, []);
 
-  // Initial load and version polling loop (every 2.5s)
+  // Polling loop (every 2.5s) — Paused when drawer is open
   useEffect(() => {
     fetchTopology(true);
     fetchAuxiliaryData();
 
     const interval = setInterval(() => {
-      fetchTopology(false);
+      if (!drawerOpen) {
+        fetchTopology(false);
+      }
       fetchAuxiliaryData();
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [fetchTopology, fetchAuxiliaryData]);
+  }, [fetchTopology, fetchAuxiliaryData, drawerOpen]);
 
   // Re-fetch topology immediately when includeInactive toggle changes
   useEffect(() => {
@@ -132,54 +248,39 @@ export const Memory: React.FC = () => {
       setSelectedNodeId(nodeId);
       if (!nodeId) {
         setSelectedFactDetail(null);
-        setTooltipPos(null);
+        setNodePos(null);
         return;
       }
 
       if (pos) {
-        setTooltipPos(pos);
+        setNodePos(pos);
+      } else {
+        setNodePos({ x: window.innerWidth / 2 - 160, y: window.innerHeight / 2 - 180 });
       }
 
-      setIsDetailLoading(true);
+      setDetailLoading(true);
       try {
         const detail = await getMemoryFactDetail(nodeId);
         setSelectedFactDetail(detail);
       } catch (e) {
-        console.error("Lazy detail load failed:", e);
+        console.error("Failed to load memory fact detail:", e);
+        setSelectedFactDetail(null);
       } finally {
-        setIsDetailLoading(false);
+        setDetailLoading(false);
       }
     },
     []
   );
 
-  // Resolve conflict handler
-  const handleResolveConflict = useCallback(
-    async (winnerId: string, loserId: string) => {
-      try {
-        await resolveMemoryConflict(winnerId, loserId);
-        fetchAuxiliaryData();
-        fetchTopology(true);
-      } catch (e) {
-        console.error("Resolve memory conflict failed:", e);
-      }
-    },
-    [fetchAuxiliaryData, fetchTopology]
-  );
-
   const totalPending = queueSummary
-    ? (queueSummary.staged_pending ?? 0) +
-      (queueSummary.dedup_pass ?? 0) +
-      (queueSummary.nli_evaluated ?? 0) +
-      (queueSummary.paused ?? 0)
+    ? (queueSummary.staged_pending || 0) +
+      (queueSummary.dedup_pass || 0) +
+      (queueSummary.nli_evaluated || 0)
     : 0;
 
   return (
     <div className="flex-1 relative overflow-hidden select-none w-full h-full bg-[rgb(var(--background))]">
-      {/* Ambient background effect */}
-      <AmbientBackground mood="calm" originX="50%" originY="50%" />
-
-      {/* Main Graph Canvas */}
+      {/* Main WebGL GPU Graph Canvas */}
       <div ref={containerRef} className="absolute inset-0 z-10">
         {dims.w > 0 && (
           <MemoryGraph
@@ -208,10 +309,10 @@ export const Memory: React.FC = () => {
             exit={{ opacity: 0, y: -10 }}
             className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-md w-full px-4"
           >
-            <div className="glass-card p-3 rounded-2xl border border-red-500/30 bg-[rgba(20,10,12,0.9)] backdrop-blur-xl flex items-center justify-between gap-3 shadow-2xl">
+            <div className="glass-card p-3 rounded-2xl border border-red-500/30 bg-[rgb(var(--card))]/95 flex items-center justify-between gap-3 shadow-2xl">
               <div className="flex items-center gap-2.5 overflow-hidden">
                 <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
-                <p className="text-[11px] font-mono text-red-200 truncate">{error}</p>
+                <p className="text-[11px] font-mono text-red-400 truncate">{error}</p>
               </div>
               <button
                 onClick={() => fetchTopology(true)}
@@ -224,284 +325,111 @@ export const Memory: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Top-Center Search Bar & Filter Popover */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2">
-        <div className="glass-card h-[42px] px-3.5 rounded-full border border-[rgba(var(--accent),0.18)] bg-[rgba(10,12,14,0.70)] backdrop-blur-xl flex items-center gap-2.5 shadow-2xl w-[340px] focus-within:w-[420px] transition-all duration-300">
-          <Search size={14} className="text-[rgb(var(--accent))] shrink-0" />
-          <input
-            type="text"
-            placeholder="Search Fact ID, collection, session, or text..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent text-[12px] font-mono tracking-wide text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 outline-none"
-          />
-          <AnimatePresence>
-            {searchQuery && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                onClick={() => setSearchQuery("")}
-                className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0"
-              >
-                <X size={12} />
-              </motion.button>
-            )}
-          </AnimatePresence>
+      {/* Subpanel 4: Search Experience Bar & Dropdown Popover */}
+      <SearchBar nodes={nodes} onCommitSearch={setSearchQuery} onSelectNode={handleSelectNode} />
 
-          <div className="h-4 w-px bg-white/10 shrink-0" />
-
-          {/* Filter Popover Toggle */}
-          <div className="relative shrink-0">
-            <button
-              ref={filterBtnRef}
-              onClick={() => setFilterMenuOpen((v) => !v)}
-              className={cn(
-                "p-1.5 rounded-full text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] transition-colors cursor-pointer",
-                (filterMenuOpen || selectedCollection !== "all" || includeInactive || conflictsMode) &&
-                  "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10"
-              )}
-              title="Filter by Collection or Status"
-            >
-              <SlidersHorizontal size={13} />
-            </button>
-
-            {/* Filter Menu Dropdown */}
-            <AnimatePresence>
-              {filterMenuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: 6 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: 6 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-10 w-[240px] glass-card p-3.5 rounded-2xl border border-[rgba(var(--accent),0.15)] bg-[rgba(10,12,14,0.92)] backdrop-blur-2xl shadow-2xl flex flex-col gap-2.5 z-30"
-                >
-                  <div className="flex items-center justify-between border-b border-white/[0.06] pb-1.5">
-                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70">
-                      Graph Filters
-                    </span>
-                    {(selectedCollection !== "all" || includeInactive || conflictsMode) && (
-                      <button
-                        onClick={() => {
-                          setSelectedCollection("all");
-                          setIncludeInactive(false);
-                          setConflictsMode(false);
-                        }}
-                        className="text-[9px] font-mono text-[rgb(var(--accent))] hover:underline cursor-pointer"
-                      >
-                        RESET
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Toggle: Historical / Inactive Facts */}
-                  <label className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] cursor-pointer">
-                    <span className="text-[10px] font-mono text-[rgb(var(--foreground))]">
-                      Show Historical / Inactive Facts
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={includeInactive}
-                      onChange={(e) => setIncludeInactive(e.target.checked)}
-                      className="accent-[rgb(var(--accent))] cursor-pointer"
-                    />
-                  </label>
-
-                  {/* Toggle: Unresolved Conflicts Mode */}
-                  <label className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] cursor-pointer">
-                    <div className="flex items-center gap-1.5">
-                      <ShieldAlert size={12} className="text-red-400" />
-                      <span className="text-[10px] font-mono text-[rgb(var(--foreground))]">
-                        Unresolved Conflicts Mode ({conflicts.length})
-                      </span>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={conflictsMode}
-                      onChange={(e) => setConflictsMode(e.target.checked)}
-                      className="accent-red-500 cursor-pointer"
-                    />
-                  </label>
-
-                  {/* Collection Picker */}
-                  <div className="flex flex-col gap-1 border-t border-white/[0.06] pt-1.5">
-                    <span className="text-[9px] font-mono font-bold text-[rgb(var(--foreground-muted))]/60 uppercase px-1">
-                      Filter Collection
-                    </span>
-                    {["all", "Identity", "Profile", "Directives", "Constraints", "Entities", "Narrative", "Inactive"].map(
-                      (col) => {
-                        const isSelected = selectedCollection === col;
-                        const colStyle = (COLLECTION_COLORS as any)[col];
-                        return (
-                          <button
-                            key={col}
-                            onClick={() => {
-                              setSelectedCollection(selectedCollection === col ? "all" : col);
-                            }}
-                            className={cn(
-                              "flex items-center gap-2 px-2 py-1 rounded-lg text-[10px] font-mono text-left transition-colors cursor-pointer",
-                              isSelected
-                                ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] font-bold"
-                                : "text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:bg-white/[0.04]"
-                            )}
-                          >
-                            <span
-                              className="w-2 h-2 rounded-full shrink-0"
-                              style={{ backgroundColor: colStyle ? colStyle.main : "rgb(var(--accent))" }}
-                            />
-                            <span>{col === "all" ? "ALL COLLECTIONS" : col.toUpperCase()}</span>
-                          </button>
-                        );
-                      }
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-
-      {/* Top-Left: Collection Legend Card */}
+      {/* Top-Left: Card-Style Legend UI */}
       <div className="absolute top-4 left-4 z-20 pointer-events-auto">
         <MemoryLegendCard
           selectedCollection={selectedCollection}
           onSelectCollection={setSelectedCollection}
           selectedRelation={selectedRelation}
           onSelectRelation={setSelectedRelation}
-          totalFactsCount={nodes.length}
-          totalRelationsCount={edges.length}
         />
       </div>
 
-      {/* Top-Right: Knowledge Base Metrics Card & Recenter Camera */}
-      <div className="absolute top-4 right-4 z-20 pointer-events-auto flex flex-col items-end gap-2">
-        <MemoryMetricsCard
-          totalFacts={nodes.length}
-          totalRelations={edges.length}
-          nodes={nodes}
-          edges={edges}
-        />
-
+      {/* Right Action Dock (Vertically Centered & Enlarged) */}
+      <div className="absolute top-1/2 -translate-y-1/2 right-6 z-20 pointer-events-auto flex flex-col gap-3 p-2 rounded-2xl glass-card border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/90 backdrop-blur-2xl shadow-2xl">
+        {/* Button 1: 🎯 Recenter */}
         <button
           onClick={() => graphRef.current?.recenter()}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-full glass-card border border-[rgba(var(--accent),0.15)] bg-[rgba(10,12,14,0.70)] backdrop-blur-xl text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer shadow-xl text-[10px] font-mono font-bold uppercase tracking-wider"
-          title="Recenter Graph View"
+          className="w-10 h-10 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer relative group"
+          title="Recenter Camera View"
         >
-          <Focus size={13} className="text-[rgb(var(--accent))]" />
-          <span>Recenter Camera</span>
+          <Focus size={18} />
+          <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-mono whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
+            Recenter View
+          </span>
         </button>
-      </div>
 
-      {/* Unresolved Conflicts Floating Resolution Card */}
-      <AnimatePresence>
-        {conflictsMode && conflicts.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -10 }}
-            className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-auto w-[460px] max-w-[92vw]"
-          >
-            <div className="glass-card p-4 rounded-2xl border border-red-500/30 bg-[rgba(20,10,12,0.92)] backdrop-blur-2xl shadow-2xl flex flex-col gap-3">
-              <div className="flex items-center justify-between border-b border-red-500/20 pb-2">
-                <div className="flex items-center gap-2 text-red-400">
-                  <AlertTriangle size={15} />
-                  <span className="text-[11px] font-mono font-bold uppercase tracking-wider">
-                    Unresolved Conflict Resolution ({conflicts.length})
-                  </span>
-                </div>
-                <button
-                  onClick={() => setConflictsMode(false)}
-                  className="text-red-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  <X size={14} />
-                </button>
-              </div>
+        {/* Button 2: 👁️ Historical / Inactive Facts Toggle */}
+        <button
+          onClick={() => setIncludeInactive((prev) => !prev)}
+          className={cn(
+            "w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer relative group",
+            includeInactive
+              ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40"
+              : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10"
+          )}
+          title="Toggle Historical / Inactive Facts"
+        >
+          {includeInactive ? <Eye size={18} /> : <EyeOff size={18} />}
+          <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-mono whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
+            {includeInactive ? "Hide Inactive Facts" : "Show Inactive Facts"}
+          </span>
+        </button>
 
-              {/* Conflict Pair Resolution Item */}
-              {conflicts.slice(0, 1).map((conflict) => (
-                <div key={`${conflict.fact_a.id}_${conflict.fact_b.id}`} className="flex flex-col gap-2">
-                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-                    <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] flex flex-col justify-between gap-2">
-                      <span className="font-bold text-[rgb(var(--accent))]">{conflict.fact_a.id}</span>
-                      <span className="text-[10px] text-[rgb(var(--foreground-muted))] uppercase">
-                        {conflict.fact_a.collection}
-                      </span>
-                      <button
-                        onClick={() => handleResolveConflict(conflict.fact_a.id, conflict.fact_b.id)}
-                        className="w-full py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase hover:bg-emerald-500/30 transition-colors cursor-pointer"
-                      >
-                        Pick as Winner
-                      </button>
-                    </div>
+        {/* Button 3: ⚠️ Unresolved Conflicts Mode Toggle */}
+        <button
+          onClick={() => setConflictsMode((prev) => !prev)}
+          className={cn(
+            "w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer relative group",
+            conflictsMode
+              ? "text-red-400 bg-red-500/20 border border-red-500/40"
+              : "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-[rgb(var(--foreground))]/10"
+          )}
+          title={`Unresolved Conflicts Mode (${conflicts.length})`}
+        >
+          <GitCompare size={18} />
+          {conflicts.length > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-mono font-bold text-white shadow-md">
+              {conflicts.length}
+            </span>
+          )}
+          <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-mono whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
+            {`Unresolved Conflicts (${conflicts.length})`}
+          </span>
+        </button>
 
-                    <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] flex flex-col justify-between gap-2">
-                      <span className="font-bold text-red-400">{conflict.fact_b.id}</span>
-                      <span className="text-[10px] text-[rgb(var(--foreground-muted))] uppercase">
-                        {conflict.fact_b.collection}
-                      </span>
-                      <button
-                        onClick={() => handleResolveConflict(conflict.fact_b.id, conflict.fact_a.id)}
-                        className="w-full py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase hover:bg-emerald-500/30 transition-colors cursor-pointer"
-                      >
-                        Pick as Winner
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Bottom Right Edge Nav: Ingestion Queue Trigger Button */}
-      <div className="fixed bottom-4 right-4 z-30 pointer-events-auto">
+        {/* Button 4: ⚙️ Memory Ingestion Queue Trigger */}
         <button
           onClick={() => setDrawerOpen(true)}
           className={cn(
-            "flex items-center gap-2.5 px-3.5 py-2.5 rounded-full glass-card border border-[rgba(var(--accent),0.25)] bg-[rgba(10,12,14,0.85)] hover:bg-[rgba(10,12,14,0.95)] backdrop-blur-xl text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.5)] transition-all cursor-pointer shadow-2xl group",
-            drawerOpen && "opacity-0 pointer-events-none"
+            "w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer relative group",
+            drawerOpen
+              ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40"
+              : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/10"
           )}
-          title="Open Memory Ingestion Queue"
+          title="Memory Ingestion Queue"
         >
-          <div className="relative">
-            <Cpu size={16} className="text-[rgb(var(--accent))] group-hover:scale-110 transition-transform" />
-            {totalPending > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[8px] font-mono font-black text-black animate-pulse">
-                {totalPending}
-              </span>
-            )}
-          </div>
-          <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground))]/90">
-            Ingestion Queue {totalPending > 0 ? `(${totalPending})` : ""}
+          <Cpu size={18} />
+          {totalPending > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[9px] font-mono font-black text-black animate-pulse shadow-md" />
+          )}
+          <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-mono whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
+            Memory Ingestion Queue
           </span>
         </button>
       </div>
 
-      {/* Floating Memory Node Tooltip with Lazy Details */}
-      <MemoryNodeTooltip
-        factDetail={selectedFactDetail}
-        isLoading={isDetailLoading}
-        pos={tooltipPos}
-        onClose={() => handleSelectNode(null)}
-        onRefresh={() => {
-          fetchTopology(true);
-          fetchAuxiliaryData();
-        }}
-      />
+      {/* Subpanel 3: Node Detail Tooltip Popover */}
+      {selectedNodeId && (
+        <MemoryNodeTooltip
+          factDetail={selectedFactDetail}
+          isLoading={detailLoading}
+          pos={nodePos}
+          onClose={() => handleSelectNode(null)}
+          onRefresh={() => fetchTopology(true)}
+        />
+      )}
 
-      {/* Ingestion Queue Observability Drawer */}
+      {/* Subpanel 2: Ingestion Queue Slide-in Drawer */}
       <MemoryPipelineDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         summary={queueSummary}
         nodes={nodes}
-        edges={edges}
-        onRefresh={() => {
-          fetchTopology(true);
-          fetchAuxiliaryData();
-        }}
+        onRefresh={fetchAuxiliaryData}
       />
     </div>
   );

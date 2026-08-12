@@ -1,6 +1,6 @@
 use super::batch_result::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
 use crate::core::constants::{
-    inter_collection_edge, PM_QUEUE_STATUS_EMBEDDED, PM_QUEUE_STATUS_EVALUATED,
+    is_valid_inter_collection_pair, PM_QUEUE_STATUS_EMBEDDED, PM_QUEUE_STATUS_EVALUATED,
     PM_QUEUE_STATUS_PROCESSING_EVAL, PM_QUEUE_STATUS_SUPERSEDED, PM_RELATION_CONFLICTS,
     PM_RELATION_SUPERSEDES, PM_RELATION_SUPPORTS, PM_SEMANTIC_GRAPH_COLLECTIONS,
 };
@@ -165,9 +165,7 @@ fn eval_subbranch_b_edges_sync(
     }
 
     for (cand_id, cand_fact, cand_coll, sim) in edge_candidates {
-        if let Some((forward_edge, inverse_edge)) =
-            inter_collection_edge(&item.collection, cand_coll)
-        {
+        if is_valid_inter_collection_pair(&item.collection, cand_coll) {
             let mut decision = "NONE".to_string();
             let mut rejection_reason = None;
             let mut edge_score_val = None;
@@ -179,21 +177,21 @@ fn eval_subbranch_b_edges_sync(
                 cand_coll,
                 cand_fact,
                 None,
-                forward_edge,
             ) {
                 Ok((Some(pred_edge), score)) => {
                     edge_score_val = Some(score);
-                    decision = pred_edge.to_string();
+                    decision = pred_edge.clone();
+                    let inv_edge = crate::core::constants::inverse_edge_for_relation(&pred_edge);
                     relations.push(RelationEdge {
                         from_id: format!("item_{}", item.id),
                         to_id: cand_id.clone(),
-                        relation: pred_edge.to_string(),
+                        relation: pred_edge,
                         source: "ModernBERT".to_string(),
                     });
                     relations.push(RelationEdge {
                         from_id: cand_id.clone(),
                         to_id: format!("item_{}", item.id),
-                        relation: inverse_edge.to_string(),
+                        relation: inv_edge.to_string(),
                         source: "ModernBERT".to_string(),
                     });
                 }
@@ -267,13 +265,17 @@ pub async fn run_stage3_eval_with_metrics_seq(
 
     let mut candidate_items = Vec::new();
     while let Some(row) = rows.next().await? {
-        let vec_blob: Vec<u8> = row.get(4)?;
+        let vec_blob_opt: Option<Vec<u8>> = row.get(4).unwrap_or(None);
+        let vector = vec_blob_opt
+            .map(|blob| decode_f32_blob(&blob))
+            .unwrap_or_default();
+
         candidate_items.push(Stage3Item {
             id: row.get::<i64>(0)?,
             fact: row.get::<String>(1)?,
             collection: row.get::<String>(2)?,
             session_id: row.get::<String>(3)?,
-            vector: decode_f32_blob(&vec_blob),
+            vector,
         });
     }
 
@@ -326,7 +328,7 @@ pub async fn run_stage3_eval_with_metrics_seq(
         let policy_targets: Vec<&'static str> = PM_SEMANTIC_GRAPH_COLLECTIONS
             .iter()
             .copied()
-            .filter(|&tgt| inter_collection_edge(&item.collection, tgt).is_some())
+            .filter(|&tgt| is_valid_inter_collection_pair(&item.collection, tgt))
             .collect();
 
         let edge_candidates = if !policy_targets.is_empty() {
