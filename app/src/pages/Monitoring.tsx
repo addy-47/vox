@@ -1,10 +1,11 @@
-import React, {
+import {
   useMemo,
   memo,
 } from "react";
 import { stopEngine, launchEngine } from "@/services/pipelineService";
 import { useMonitoringMetrics } from "@/shared/hooks/useMonitoringMetrics";
 import { Sparkline } from "@/shared/components/monitoring/Sparkline";
+import { ResourceBar } from "@/shared/components/monitoring/MonitoringPopover";
 import {
   Activity,
   Cpu,
@@ -18,44 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { EngineBadge } from "@/shared/components/monitoring/EngineBadge";
-
-const ResourceBar = memo(
-  ({
-    label,
-    textRef,
-    barRef,
-  }: {
-    label: string;
-    textRef: React.RefObject<HTMLSpanElement | null>;
-    barRef: React.RefObject<HTMLDivElement | null>;
-  }) => {
-    return (
-      <div className="space-y-2">
-        <div className="flex justify-between items-baseline">
-          <span className="text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
-            {label}
-          </span>
-          <span
-            ref={textRef}
-            className="text-[15px] font-mono font-bold text-[rgb(var(--foreground))]"
-          >
-            0.0%
-          </span>
-        </div>
-        <div className="h-[4px] w-full rounded-full bg-[rgba(var(--foreground),0.06)] overflow-hidden">
-          <div
-            ref={barRef}
-            className="h-full rounded-full bg-[rgb(var(--accent))]"
-            style={{ width: "0%" }}
-          />
-        </div>
-      </div>
-    );
-  }
-);
-ResourceBar.displayName = "ResourceBar";
-
-// ─── Main Page Component ──────────────────────────────────────────────────────
+import { MONITORING_COPY } from "@/data/monitoringData";
 
 export const Monitoring = memo(() => {
   const {
@@ -82,11 +46,11 @@ export const Monitoring = memo(() => {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent px-8 pt-6 z-10 select-none">
       {/* Header */}
-      <div className="flex items-center justify-between pb-4 shrink-0 border-b border-[rgba(var(--accent),0.06)]">
+      <div className="flex items-center justify-between pb-4 shrink-0 border-b border-[rgba(var(--accent),0.08)]">
         <div>
           <span className="signal-text text-[14px]">Monitoring</span>
-          <p className="text-[11px] text-[rgb(var(--foreground-muted))]/40 font-mono  tracking-[0.2em] mt-1">
-            System Metrics
+          <p className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono font-medium tracking-[0.2em] mt-1">
+            {MONITORING_COPY.systemMetrics}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -105,12 +69,12 @@ export const Monitoring = memo(() => {
                 }
               }}
               disabled={togglingEngine}
-              title="Force offload all models immediately from RAM"
+              title={MONITORING_COPY.forceOffloadDesc}
               className={cn(
-                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer",
+                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer shadow-md",
                 togglingEngine
-                  ? "opacity-50 cursor-wait border-white/5 text-white/10 bg-white/2"
-                  : "border-[rgba(239,68,68,0.35)] text-red-500 bg-red-500/10 hover:bg-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.25)]"
+                  ? "opacity-50 cursor-wait border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]"
+                  : "border-[rgba(var(--destructive),0.35)] text-[rgb(var(--destructive))] bg-[rgba(var(--destructive),0.1)] hover:bg-[rgba(var(--destructive),0.2)] shadow-[0_0_12px_rgba(239,68,68,0.25)]"
               )}
             >
               <Skull size={16} />
@@ -129,11 +93,11 @@ export const Monitoring = memo(() => {
                 }
               }}
               disabled={togglingEngine}
-              title="Reload default models"
+              title={MONITORING_COPY.reloadModelsDesc}
               className={cn(
-                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer",
+                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer shadow-md",
                 togglingEngine
-                  ? "opacity-50 cursor-wait border-white/5 text-white/10 bg-white/2"
+                  ? "opacity-50 cursor-wait border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]"
                   : "border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.05)] hover:bg-[rgba(var(--accent),0.15)]"
               )}
             >
@@ -141,10 +105,10 @@ export const Monitoring = memo(() => {
             </button>
           )}
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.12)] glass">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.15)] glass-card">
             <Activity size={16} className="text-[rgb(var(--accent))] animate-pulse" />
-            <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase">
-              LIVE MONITOR
+            <span className="text-[10px] font-mono font-bold tracking-widest text-[rgb(var(--accent))] uppercase">
+              {MONITORING_COPY.liveMonitor}
             </span>
           </div>
         </div>
@@ -153,7 +117,7 @@ export const Monitoring = memo(() => {
       {/* Main Content Pane */}
       <div className="flex-1 overflow-y-auto custom-scrollbar pt-6 pb-10 space-y-6 min-h-0">
         {/* Engine badges */}
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5">
           <EngineBadge
             label="VAD"
             active={latest?.is_vad_loaded ?? false}
@@ -180,14 +144,14 @@ export const Monitoring = memo(() => {
         </div>
 
         {/* Resource bars */}
-        <div className="space-y-4 max-w-lg pt-5 ">
+        <div className="space-y-4 max-w-lg pt-2">
           <ResourceBar
-            label="VOX CPU"
+            label={MONITORING_COPY.voxCpu}
             textRef={cpuTextRef}
             barRef={cpuBarRef}
           />
           <ResourceBar
-            label="VOX RAM"
+            label={MONITORING_COPY.voxRam}
             textRef={ramTextRef}
             barRef={ramBarRef}
           />
@@ -196,18 +160,20 @@ export const Monitoring = memo(() => {
         {/* Latency metrics */}
         <div className="grid grid-cols-3 gap-3 max-w-lg">
           {[
-            { label: "STT", val: formatLatency(latest?.stt_latency_ms ?? null) },
-            { label: "TTFT", val: formatLatency(latest?.ttft_ms ?? null) },
+            { label: "STT", title: MONITORING_COPY.sttTooltip, val: formatLatency(latest?.stt_latency_ms ?? null) },
+            { label: "TTFT", title: MONITORING_COPY.ttftTooltip, val: formatLatency(latest?.ttft_ms ?? null) },
             {
               label: "RTF",
+              title: MONITORING_COPY.rtfTooltip,
               val: latest?.tts_rtf != null ? `${latest.tts_rtf.toFixed(2)}×` : "--",
             },
           ].map((m) => (
             <div
               key={m.label}
-              className="glass px-2 py-3 flex flex-col items-center gap-1"
+              title={m.title}
+              className="glass-card px-3 py-3 flex flex-col items-center gap-1 border border-[rgba(var(--border),0.1)] hover:border-[rgba(var(--accent),0.2)] transition-colors cursor-help"
             >
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
                 {m.label}
               </span>
               <span className="text-[15px] font-mono font-bold text-[rgb(var(--accent))]">
@@ -226,12 +192,12 @@ export const Monitoring = memo(() => {
           ].map(({ label, key, icon: Icon }) => (
             <div key={key} className="space-y-2">
               <div className="flex items-center gap-2">
-                <Icon size={16} className="text-[rgb(var(--accent))]/70" />
-                <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--foreground-muted))]/70">
+                <Icon size={16} className="text-[rgb(var(--accent))]" />
+                <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--foreground-muted))]">
                   {label}
                 </span>
               </div>
-              <Sparkline history={history} dataKey={key} />
+              <Sparkline history={history} dataKey={key} heightPx={64} />
             </div>
           ))}
         </div>
@@ -239,3 +205,5 @@ export const Monitoring = memo(() => {
     </div>
   );
 });
+
+Monitoring.displayName = "Monitoring";

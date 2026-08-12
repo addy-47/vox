@@ -5,6 +5,7 @@ export interface MemoryNodeTopology {
   collection: string;
   is_superseded: boolean;
   created_at: number;
+  fact?: string;
 }
 
 export interface MemoryEdgeTopology {

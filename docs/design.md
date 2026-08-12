@@ -118,4 +118,13 @@ To ensure visual consistency and neat alignment:
 
 ---
 
-**Last Updated:** 2026-06-14
+## 8. 3D Cognitive Memory Graph & Telemetry Drawer Invariants
+
+### Frameless Glass Overlays & Pill-Free Telemetry
+* **Borderless Loader Core**: Memory graph initialization renders a borderless dual-orbital network loader with a central `Sparkles` emblem rather than a boxed card.
+* **100% Height Alternating Telemetry Drawer**: `MemoryPipelineDrawer.tsx` utilizes 100% full available height with an alternating Left/Right zig-zag conduit flow connecting stages `01 Deduplicate` (Left), `02 Embed` (Right), `03 Evaluate Relations` (Left), `04 Commit & Sync` (Right) down to the `Memory Graph` destination (Center Bottom).
+* **Pill & Box Elimination**: Avoid nested boxes-in-boxes and pill button fatigue. Use background opacity contrast, minimal typography, and clean status indicators.
+
+---
+
+**Last Updated:** 2026-08-12

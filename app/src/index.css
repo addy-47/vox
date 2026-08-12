@@ -347,7 +347,10 @@ input[type="range"]:active::-webkit-slider-thumb {
     background: transparent;
 }
 
-[class*="cursor-"]:hover {
+.cursor-ns-resize:hover,
+.cursor-ew-resize:hover,
+.cursor-nwse-resize:hover,
+.cursor-nesw-resize:hover {
     background: rgba(var(--accent), 0.1) !important;
 }
 

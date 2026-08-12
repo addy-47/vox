@@ -57,12 +57,14 @@ pub async fn get_unresolved_conflicts(
                 collection: from_col,
                 is_superseded: false,
                 created_at: from_created,
+                fact: None,
             },
             fact_b: MemoryNodeTopology {
                 id: to_id,
                 collection: to_col,
                 is_superseded: false,
                 created_at: to_created,
+                fact: None,
             },
         });
     }

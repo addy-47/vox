@@ -1,14 +1,14 @@
 # Vox v7 Memory Architecture — Current Implementation
 
-**Last Updated:** 2026-08-01  
+**Last Updated:** 2026-08-12  
 **Scope:** End-to-end description of what the code currently does.  
-**Location:** `app/src-tauri/src/services/memory/` and `app/src-tauri/src/persistence/`
+**Location:** `app/src-tauri/src/services/memory/`, `app/src-tauri/src/persistence/`, and `app/src/shared/components/memory/`
 
 ---
 
 ## 1. Overview
 
-The Vox v7 memory subsystem is a database-backed, 4-stage pipeline that transforms raw LLM-extracted facts into active, graph-linked memory records in Turso (SQLite). A pre-retrieval scope classifier (`query-sieve-rs`) prunes irrelevant collections before vector search, and a 4-step dynamic waterfall budgets token usage at retrieval time. A full-screen interactive 2D Force-Directed Cognitive Memory Graph (`Memory.tsx`) visualizes 1,100+ memory nodes, 250+ inter-fact graph edges, and real-time background pipeline ingestion monitoring.
+The Vox v7 memory subsystem is a database-backed, 4-stage pipeline that transforms raw LLM-extracted facts into active, graph-linked memory records in Turso (SQLite). A pre-retrieval scope classifier (`query-sieve-rs`) prunes irrelevant collections before vector search, and a 4-step dynamic waterfall budgets token usage at retrieval time. A full-screen, ultra-scalable 3D/2.5D Cognitive Memory Graph (`Memory.tsx` + `MemoryGraph.tsx`) built on a **Custom Three.js InstancedMesh WebGL Engine** visualizes personal memory facts, inter-fact graph edges, and real-time background pipeline ingestion monitoring with sub-60fps performance for 10,000+ nodes.
 
 ---
 
@@ -123,20 +123,28 @@ The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & 
 
 **Sub-Branch B — Inter-Collection Edge Classifier (`classifiers/inter_edge_classifier.rs`):**
 
-Classifies cross-domain candidate pairs using ModernBERT INT8 ONNX. Returns `Some(forward_edge)` if calibrated prediction score ≥ `EDGE_CLASSIFIER_THRESHOLD` (0.80) and matches the policy matrix's forward edge label. Otherwise returns `None`.
+Classifies cross-domain candidate pairs using ModernBERT INT8 ONNX sequence classification (spec §4.2).
+
+- **Bidirectional Trigger Routing:** Candidates are fetched for any collection pair having a sanctioned relationship in EITHER direction (`has_inter_collection_relationship(col1, col2)`).
+- **Canonical Prompt Construction:** Prior to model tokenization, candidate pairs are formatted in canonical matrix order `"[Source] <src_fact> [SEP] [Target] <tgt_fact>"` matching the fine-tuned ModernBERT prompt format regardless of which fact reached Stage 3 first.
+- **Symmetrical Edge Persistence:** Writes forward edge (`pred_edge`) and deterministic inverse edge (`inverse_edge_for_relation(pred_edge)`) to `relations_json`.
 
 **Edge classifier threshold:** `EDGE_CLASSIFIER_THRESHOLD = 0.80`  
 **Model:** `~/.vox/models/classifier/modernbert_edge_creation/model_quantized.onnx`
 
-**Inter-collection edge policy matrix** (`inter_collection_edge()` in `constants.rs`):
+**Sanctioned Inter-Collection Policy Matrix** (`is_valid_inter_collection_pair()` in `constants.rs`):
 
-| Source → Target | Forward Edge | Inverse Edge |
+| Semantic Source → Target | Forward Edge | Inverse Edge |
 |---|---|---|
-| `Profile → Entities` | `SHAPES` | `shaped_by` |
-| `Profile → Constraints` | `restricted_by` | `restricts` |
+| `Identity → Profile` | `SHAPES` | `shaped_by` |
+| `Directives → Constraints` | `SHAPES` | `shaped_by` |
+| `Directives → Entities` | `DEPENDS_ON` | `dependency_of` |
 | `Entities → Constraints` | `DEPENDS_ON` | `constrains` |
+| `Entities → Profile` | `SHAPES` | `shaped_by` |
+| `Entities → Entities` | `DEPENDS_ON` | `dependency_of` |
+| `Profile → Profile` | `SHAPES` | `shaped_by` |
 
-Note: `Narrative` never originates inter-collection edges. Special state collections (`Identity`, `Directives`, `Narrative`) do not participate in Sub-Branch B.
+Note: `Narrative` does not originate or target inter-collection edges (Special State context chaining only).
 
 **Constants:**
 - `STAGE3_BATCH_SIZE = 16`

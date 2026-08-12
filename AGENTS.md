@@ -7,7 +7,7 @@
 > 🛑 **MANDATORY POST-TASK DOCUMENTATION HOOK (NON-NEGOTIABLE):**
 > Every time code, architecture, candidate thresholds, system prompts, or LLM judge models are modified, or a task/phase is completed:
 > 1. You **MUST** automatically update `AGENTS.md` to reflect the exact current implementation, model configuration, and threshold matrix. 
-> 2. You **MUST** automatically update the relevant feature documentation (e.g. `docs/features/memory-architecture.md` and feature ledgers).
+> 2. You **MUST** automatically update any relevant feature, component, design, or architecture documentation to match the actual code state.
 > 3. This is a **mandatory post-task completion hook** — do NOT wait for the user to explicitly remind you to sync documentation.
 
 ---
@@ -24,7 +24,7 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 | Path | Purpose | Rules |
 |---|---|---|
-| `app/src-tauri/src/` | Production Rust source | No test logic. No benchmarks. |
+| `app/src-tauri/src/` | Purpose Rust source | No test logic. No benchmarks. |
 | `app/src-tauri/tests/` | Integration tests (`cargo test --tests`) | Named `<feature>_test.rs`. Tests public API only. |
 | `app/src-tauri/benches/` | Performance benchmarks (`cargo test --benches`) | Named `<feature>_bench.rs`. `harness = false` + custom `fn main()`. |
 | `app/src-tauri/examples/` | Utility CLI tools (`cargo run --example <name>`) | Standalone tools. No `#[test]`. No assertions. |
@@ -121,10 +121,16 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
 
 ### 5.4 Consolidated System Invariants & Critical Pitfalls
 
-- **Memory UI & WebGL Invariants (`Memory.tsx` / `MemoryGraph.tsx`)**:
-  - **Strict 2D WebGL View**: `OrbitControls.enableRotate = false` is enforced.
-  - **GPU Uniform Highlights**: Node selection updates GPU uniform material colors without destroying/re-instantiating 1,200 Three.js WebGL Meshes, avoiding 4-5s click lag.
-  - **Isolated Search Input**: Search state is isolated inside `<SearchBar>` to prevent keystroke re-renders of graph VDOM.
+- **Frontend Core & Copy Invariants**:
+  - **Zero Fake Data**: BANNED from introducing fake or mock telemetry. All static copy lives centralized in `src/data/`.
+  - **Model & Manifest SSOT**: `manifests/models_manifest.json` is the SSOT for model specs. Font scale floor is **>= 11px**.
+  - **Explicit Graph Sync**: Memory topology polling is disabled. Explicit refresh control queries `getGraphVersion()` to transition topology without unnecessary canvas repaints.
+
+- **3D Memory Graph & WebGL Invariants (`Memory.tsx` / `MemoryGraph.tsx`)**:
+  - **Custom InstancedMesh Engine**: All 10,000+ nodes rendered in 1 `InstancedMesh` GPU draw call, all edges in 1 `LineSegments` call (<15MB RAM).
+  - **WebGL Scene Stability**: Scene teardown on prop updates is strictly BANNED. Buffer updates use stable `useRef` handles.
+  - **Interaction & Search**: 24px screen-space proximity node selection; smart fly-to centering preserving current zoom (`Math.min(currentZ, 1200)`); search filtering ghosts out non-matching nodes & line edges (`#1e293b`).
+  - **Borderless UI Surfaces**: Borderless orbital network loader with central `Sparkles` emblem; frameless alternating Left/Right zig-zag telemetry drawer (`MemoryPipelineDrawer.tsx`); 2-column legend card (`MemoryLegendCard.tsx`).
 
 - **Linux Window Invariant (`window_customizer.rs`)**:
   - WebKitGTK trackpad pinch-to-zoom is disabled in `PinchZoomDisablePlugin` by destroying `wk-view-zoom-gesture` handlers and setting `zoom-level = 1.0`.
@@ -134,20 +140,4 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
   - **Audio Engine Gating**: `launch_engine()` on startup is strictly gated on `tray_enabled == true`. Opening main window DOES NOT launch engine in passive mode. Models lazy-load on `engage()`.
   - **Memory Pipeline ONNX Lifecycle**: Memory ONNX models load ONLY when `memory.pipeline_processing_enabled == true` AND `personal_memory_queue` has pending items. Skip when queue is empty.
   - **Barge-In Eviction**: On voice engagement (`PipelineActive`), disengage, or batch completion, `unload_all_onnx_models()` evicts pipeline ONNX sessions from RAM.
-
-- **Frontend & Event Safety Standards**:
-  - **Listeners**: Push unlisteners immediately to cleanup array (`TrayApp.tsx`). Direct `listen` promise chains without cleanup are banned.
-  - **Routing**: `TitleBar.tsx` must use `useNavigate()`; `window.history.pushState` is banned.
-  - **State Mutations**: Render-phase state mutations are banned; use `useEffect`.
-  - **Settings Card Sync**: `InteractionCard` and `ModelsCard` sync bidirectionally using `sync_pipeline_tab` and `sync_interaction_category` custom events.
-  - **Manifest-Driven UI**: `LlmConfigDesk.tsx` and workspace cards read titles, descriptions, and flags (`is_cloud`, `is_remote`, `is_built_in`) directly from `modelCatalog` without hardcoded fallback strings.
-  - **Test Clip Invariant (`homeData.ts`)**: `TEST_CLIPS` must match the 5 canonical WAV IDs in `app/src-tauri/test-clips/` (`short_en`, `short_hi`, `hinglish`, `command`, `expressive`).
-
-- **Backend Memory Subsystem Invariants (`app/src-tauri/src/ipc/memory/`)**:
-  - **Cache Token**: `graph_version` (`Arc<AtomicU64>`) incremented on all mutations.
-  - **Transactions**: Multi-statement operations MUST be wrapped in explicit SQLite transactions (`BEGIN TRANSACTION;` ... `COMMIT;`).
-  - **Vector Sync**: `edit_fact_content` executes SQLite `UPSERT` on `memory_facts_vectors(fact_id)`.
-  - **Superseded Status Invariant**: `soft_delete_fact` and `resolve_memory_conflict` MUST execute `UPDATE memory_facts SET status = 'superseded' WHERE id = ?`. *Pitfall: Omitting this injects deleted/loser facts into LLM context windows.*
-  - **Relation Constant**: Conflict relation string is `"CONFLICTS"`. Using `"CONFLICTS_WITH"` in SQL returns 0 rows.
-
-
+  - **Bidirectional Stage 3 Edge Triggering & Canonical Prompt Swapping**: Stage 3 candidate trigger routing is bidirectional (`has_inter_collection_relationship(col1, col2)`). Regardless of whether Source or Target reaches Stage 3 first, candidate search triggers on both directions. Prior to ModernBERT inference, Stage 3 enforces canonical prompt order `[Source] <src_fact> [SEP] [Target] <tgt_fact>` matching the semantic matrix definition, and persists both forward and inverse relations deterministically to `memory_relations`.
