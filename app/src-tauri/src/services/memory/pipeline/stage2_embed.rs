@@ -83,6 +83,18 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
     let mut processed_count = 0;
 
     for item in items {
+        // Spec §2.1 & §4.1: Narrative is a Special State collection (0 vector overhead).
+        // Bypass MiniLM vector embedding and soft deduplication; transition directly to 'embedded'.
+        if item.collection == "Narrative" {
+            conn.execute(
+                "UPDATE personal_memory_queue SET status = ?, vector = NULL WHERE id = ?",
+                (PM_QUEUE_STATUS_EMBEDDED, item.id),
+            )
+            .await?;
+            processed_count += 1;
+            continue;
+        }
+
         let embedding_res = generate_embedding(&item.fact);
         match embedding_res {
             Ok(Some(vec)) => {

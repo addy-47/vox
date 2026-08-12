@@ -86,10 +86,11 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 | Pipeline Stage & Purpose | Constant Name | Calibrated Code Setting | Rationale & Domain Logic |
 | :--- | :--- | :--- | :--- |
 | **Stage 1 Exact Text Dedup** | Jaccard Sub-word | `0.85` | Verbatim and sub-word exact duplicate filter. |
-| **Stage 2 Paraphrase Vector Merge** | `SOFT_VECTOR_DEDUP_THRESHOLD` | `0.95` | Unlimited candidate search (`None` limit) + collection priority resolution (`Identity` > `Constraints` > `Directives` > `Profile` > `Entities`). |
+| **Stage 2 Paraphrase Vector Merge** | `SOFT_VECTOR_DEDUP_THRESHOLD` | `0.95` | Unlimited candidate search (`None` limit) + collection priority resolution (`Identity` > `Constraints` > `Directives` > `Profile` > `Entities`). `Narrative` collection facts bypass Stage 2 vector generation (`vector = NULL`). |
 | **Stage 3 Intra-Collection NLI Floor** | `SAME_COLLECTION_CANDIDATE_SEARCH` | **`0.60`** | Intra-collection facts (same topic/state) require high similarity for DeBERTa-v3 state replacement evaluation. |
 | **Stage 3 Inter-Collection Edge Floor** | `INTER_COLLECTION_CANDIDATE_SEARCH` | **`0.40`** | Inter-collection cross-domain facts naturally have lower cosine similarity but form valid directed graph edges (`restricted_by`, `DEPENDS_ON`, `SHAPES`). |
 | **Sub-Floor Candidate Audit Floor** | `SUBFLOOR_CANDIDATE_FLOOR` | **`0.25`** | Audit range: `[0.25, 0.60)` (`subfloor-intra`) and `[0.25, 0.40)` (`subfloor-inter`). |
+| **Compaction Engine Parameters** | `chunk_size` / `temperature` | **`50 turns` / `0.5`** | 50 conversation turns per extraction chunk; 0.5 temperature for low-variance declarative fact compaction. |
 
 ---
 
@@ -120,16 +121,29 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
 
 ### 5.4 Consolidated System Notes & Critical Pitfalls
 
-- **Memory UI Page & Observability (`Memory.tsx` / `MemoryGraph.tsx` / `MemoryMetricsCard.tsx`)**:
-  - WebGL/Canvas 2D force graph (`react-force-graph-2d`) rendering compact Fact IDs (`MEM-1024`) and high-contrast vivid collection badges (`Identity`: `#00f2fe`, `Profile`: `#10b981`, `Directives`: `#c084fc`, `Narrative`: `#fbbf24`, `Entities`: `#f43f5e`, `Constraints`: `#ef4444`, `Inactive`: `#64748b`).
-  - **Versioned Graph Caching**: `Memory.tsx` polls `getGraphVersion()` every 2.5s and re-fetches `getMemoryGraphTopology()` ONLY when `graph_version` or `includeInactive` changes.
-  - **Lazy Fact Details**: Node click calls `getMemoryFactDetail(id)` to load full text, provenance session ID, source, timestamps, and incoming/outgoing relations in `MemoryNodeTooltip.tsx`.
-  - **Decoupled Cards**: Top-Left Collection Legend (`MemoryLegendCard.tsx`), Top-Right Knowledge Base Metrics card (`MemoryMetricsCard.tsx`) with accordion breakdown per distinct collection pair and relation edge counts (`SUPPORTS`, `DEPENDS_ON`, `SHAPES`, `CONFLICTS_WITH`).
-  - **Ingestion Queue Drawer (`MemoryPipelineDrawer.tsx`)**: Renamed to "Memory Ingestion Queue" with live `PROCESSING` vs `READY` status badge, vertical 4-stage timeline, "Retry Failed Items" (`retryFailedQueue()`), and "Pause / Resume Background Pipeline" toggle (`togglePipelineProcessing()`).
-  - **Mutations & Conflicts**: Fact edit (`editFactContent`), collection re-assignment (`reassignFactCollection`), soft delete (`softDeleteFact`), Historical Facts toggle (`includeInactive`), and Unresolved Conflicts Mode toggle with inline resolution (`resolveMemoryConflict`).
+- **Memory UI Page & Observability (`Memory.tsx` / `MemoryGraph.tsx` / `MemoryPipelineDrawer.tsx`)**:
+  - **WebGL GPU Hardware Acceleration**: Graph geometry rendering is powered by Three.js WebGL GPU instanced buffer geometry (`Three.js` v0.184.0 via `react-force-graph-3d` in 2D WebGL camera mode), offloading node and edge rasterization to GPU fragment shaders for locked 60 FPS performance at 10,000 nodes scale.
+  - **Subpanel 6 Initial WebGL Loader**: Glowing geometric polyhedron icon, ambient radial pulse ring, tracking-widest title `Building memory graph...`, metric pill (`1,299 nodes · 470 edges`), and status text `Optimizing spatial topology layout`.
+  - **Subpanel 1 Landmark Badge Hover Tooltip**: Expanded collection header (`ENTITIES 104`), collection description (`Semantic Graph Collection...`), 2x2 metric stat grid (`Active Facts: 192`, `Total Relations: 387`, `Avg. Connections: 2.01`, `Last Updated: 2m ago`), and connected relation breakdown. Sphere/dot icon removed.
+  - **Subpanel 2 Pipeline Drawer (`MemoryPipelineDrawer.tsx`)**: Slide-in panel (`w-[420px] top-[40px] h-[calc(100vh-40px)]`) aligned below titlebar without clipping or dark backdrop dimming. Pauses background graph topology polling while open. Features `Auto-Ingestion Daemon` status card (`Uptime`, `Total Processed`, `Avg/Fact`, `Success Rate`), 5-stage vertical timeline, Stage 5 expandable failed items with selective retries, and bottom CTA consolidation button.
+  - **Subpanel 3 Detailed Node Tooltip (`MemoryNodeTooltip.tsx`)**: Status tag (`Active Fact`), metadata grid (`Fact ID`, `Created`, `Updated`, `Confidence`, `Source`), quote box, relation summary count pills (`SUPPORTS`, `DEPENDS_ON`, `CONFLICTS_WITH`), and direct connected relations list.
+  - **Right Action Dock**: Vertically centered top-right floating dock (`top-1/2 -translate-y-1/2 right-6`) with 18px icons in `w-10 h-10` button targets matching edge navigation size.
+  - **Strict 2D WebGL Graph View**: OrbitControls rotation is disabled (`controls.enableRotate = false`) to enforce 2D pan and zoom navigation strictly.
+  - **Decoupled Three.js Mesh Instantiation**: Node selection highlights run via GPU uniform material color updates without destroying or re-instantiating 1,200 Three.js WebGL Meshes, eliminating 4-5s click lag.
+  - **Isolated Search Component**: Search bar state is isolated into `<SearchBar>`, preventing typing keystrokes from re-rendering the parent page or triggering graph VDOM passes.
+  - **Dynamic Cluster Badge Tracking**: Attached `change` event listener to OrbitControls so landmark badges glide smoothly over cluster centroids frame-by-frame during camera drag/zoom.
+  - **Cardless Subpanel 6 Initial Loader**: Full-screen centered glass surface with glowing 3D polyhedron wireframe and concentric ambient rings (`bg-radial`), without card box wrapper.
+  - **Vox Semantic Theme CSS Variables**: Zero double-border ghost cards, zero hardcoded dark boxes. Uses Vox semantic CSS tokens (`bg-[rgb(var(--card))]`, `text-[rgb(var(--foreground))]`, `border-[rgba(var(--border),0.15)]`) ensuring 100% WCAG contrast across Light Mode and Dark Mode.
 
 - **Linux Window Invariant (`window_customizer.rs`)**:
   - WebKitGTK trackpad pinch-to-zoom is disabled in `PinchZoomDisablePlugin` by destroying `wk-view-zoom-gesture` handlers on GTK widget realization and forcing `zoom-level` back to `1.0`.
+
+- **Backend ONNX Model Memory Footprint & Eviction Lifecycle**:
+  - **Zero Idle ONNX Model RAM Baseline**: 0 ONNX models are loaded on application boot.
+  - **Singleton Eviction Pattern**: Replaced static `OnceLock<T>` with thread-safe `parking_lot::RwLock<Option<T>>` for all 5 ONNX singletons (`TransliterationEngine`, `QueryScopeClassifier`, `TextEmbedder`, `NliEngine`, `EdgeClassifierEngine`). Calling `*SINGLETON.write() = None` drops the ORT Session and tokenizer, immediately returning process memory back to the OS.
+  - **Audio Engine Gating**: `launch_engine()` on startup is strictly gated on `tray_enabled == true`. Opening the Main App window (`show_main_window`) DOES NOT trigger `launch_engine()` in passive mode. Engine STT/VAD models are lazy-loaded on-demand when the user clicks engage (`engage()`).
+  - **Memory Pipeline ONNX Lifecycle**: The 3 memory pipeline ONNX models (Embedder, NLI Engine, Edge Classifier) are lazy-loaded only when `memory.pipeline_processing_enabled == true` AND `personal_memory_queue` has pending items (`status IN ('staged_pending', 'deduped', 'embedded')`). When the queue is empty during 30s idle sweeps, model loading is skipped entirely.
+  - **Barge-In Eviction**: On voice engagement (`PipelineActive` event) or session disengage / batch completion, `unload_memory_pipeline_onnx_models()` / `unload_all_onnx_models()` evicts all pipeline ONNX sessions from RAM so voice processing runs with full CPU/RAM headroom.
 
 - **Frontend & Event Safety Standards**:
   - **Listeners**: Push unlisteners immediately to cleanup array (`TrayApp.tsx`). Direct `listen` promise chains without cleanup are banned.
@@ -143,7 +157,7 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
   - **Fact Mutations & Transactions**: Multi-statement operations (`edit_fact_content`, `soft_delete_fact`, `resolve_memory_conflict`) MUST be wrapped in explicit SQLite transactions (`BEGIN TRANSACTION;` ... `COMMIT;` with `ROLLBACK` on error).
   - **Vector Embedding Synchronization**: `edit_fact_content` updates raw text and executes SQLite `UPSERT` on `memory_facts_vectors(fact_id)` (`ON CONFLICT(fact_id) DO UPDATE SET embedding = excluded.embedding`) to prevent vector drift.
   - **Status Invariant on Deletes & Conflict Resolution**: `soft_delete_fact` and `resolve_memory_conflict` MUST execute `UPDATE memory_facts SET status = 'superseded' WHERE id = ?` on target/loser nodes. *Pitfall: Omitting this leaves superseded facts as `status = 'active'`, causing vector retrieval (`WHERE status = 'active'`) to inject deleted/loser facts into LLM context windows.*
-  - **Queue Retries**: `retry_failed_queue` resets both `attempts = 0` AND `retry_count = 0`. Worker auto-retries idle items when `retry_count < 3`.
+  - **Queue Retries**: `retry_failed_queue` (all failed items) and `retry_failed_queue_items` (selective item IDs) reset both `attempts = 0` AND `retry_count = 0`. Worker auto-retries idle items when `retry_count < 3`.
   - **Database Indexes**: Schema defines `idx_mfv_fact_id` on `memory_facts_vectors(fact_id)` and `idx_pmq_session` on `personal_memory_queue(session_id)` to prevent $O(N)$ full table scans.
   - **Relation Constants**: Conflict relation string is `PM_RELATION_CONFLICTS` (`"CONFLICTS"`). Using `"CONFLICTS_WITH"` in SQL returns 0 rows.
 

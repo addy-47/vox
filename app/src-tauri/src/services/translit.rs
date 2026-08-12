@@ -3,7 +3,6 @@ use ort::session::Session;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::OnceLock;
 
 pub struct TransliterationEngine {
     encoder_sess: Mutex<Session>,
@@ -220,23 +219,57 @@ impl TransliterationEngine {
     }
 }
 
-pub static TRANSLITERATION_ENGINE: OnceLock<TransliterationEngine> = OnceLock::new();
+static TRANSLITERATION_ENGINE: parking_lot::RwLock<Option<TransliterationEngine>> =
+    parking_lot::RwLock::new(None);
 
 pub fn init_transliteration_engine() -> Result<(), String> {
-    if TRANSLITERATION_ENGINE.get().is_some() {
+    let mut lock = TRANSLITERATION_ENGINE.write();
+    if lock.is_some() {
         return Ok(());
     }
 
-    let model_path = crate::utils::paths::models_dir().join("translit");
+    let models_dir = if let Some(p) = crate::utils::paths::try_get() {
+        p.models.clone()
+    } else {
+        dirs::home_dir()
+            .unwrap_or_default()
+            .join(".vox")
+            .join("models")
+    };
+
+    let model_path = models_dir.join("translit");
     let engine = TransliterationEngine::new(&model_path)?;
-    if TRANSLITERATION_ENGINE.set(engine).is_err() {
-        log::warn!("[Translit] Engine was already initialized by another thread.");
-    }
+    *lock = Some(engine);
+    log::info!("[Translit] Transliteration ONNX engine loaded into memory.");
     Ok(())
 }
 
+pub fn unload_transliteration_engine() {
+    let mut lock = TRANSLITERATION_ENGINE.write();
+    if lock.is_some() {
+        *lock = None;
+        log::info!("[Translit] Transliteration ONNX engine evicted from memory.");
+    }
+}
+
+pub fn is_transliteration_engine_loaded() -> bool {
+    TRANSLITERATION_ENGINE.read().is_some()
+}
+
 pub fn transliterate(word: &str) -> String {
-    if let Some(engine) = TRANSLITERATION_ENGINE.get() {
+    {
+        let lock = TRANSLITERATION_ENGINE.read();
+        if lock.is_none() {
+            drop(lock);
+            if let Err(e) = init_transliteration_engine() {
+                log::warn!("[Translit] Lazy initialization failed: {}", e);
+                return word.to_string();
+            }
+        }
+    }
+
+    let lock = TRANSLITERATION_ENGINE.read();
+    if let Some(engine) = lock.as_ref() {
         match engine.transliterate_word(word) {
             Ok(res) => res,
             Err(e) => {
@@ -259,8 +292,8 @@ mod tests {
 
     #[test]
     fn test_transliteration_engine_uninitialized_fallback() {
-        assert_eq!(transliterate("नमस्ते"), "नमस्ते");
-        assert_eq!(transliterate("hello"), "hello");
+        unload_transliteration_engine();
+        assert!(TRANSLITERATION_ENGINE.read().is_none());
     }
 
     #[test]

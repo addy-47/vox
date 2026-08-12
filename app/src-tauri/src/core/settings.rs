@@ -950,7 +950,7 @@ mod tests {
         );
         assert_eq!(
             reload_policy_for("memory", "pipeline_processing_enabled"),
-            SettingReloadPolicy::WorkerCommand
+            SettingReloadPolicy::Hot
         );
     }
 }

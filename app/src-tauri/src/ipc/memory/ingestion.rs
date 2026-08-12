@@ -206,3 +206,33 @@ pub async fn retry_failed_queue(
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(affected as u32)
 }
+
+#[tauri::command]
+pub async fn retry_failed_queue_items(
+    state: State<'_, std::sync::Arc<AppState>>,
+    item_ids: Vec<i64>,
+) -> Result<u32, String> {
+    if item_ids.is_empty() {
+        return Ok(0);
+    }
+    let db_path = crate::utils::paths::get().db.clone();
+    let conn = VoxDb::open(&db_path)
+        .await
+        .map_err(|e| format!("DB open failed: {}", e))?;
+
+    let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "UPDATE personal_memory_queue 
+         SET status = 'staged_pending', attempts = 0, retry_count = 0, error_msg = NULL 
+         WHERE status = 'failed' AND id IN ({})",
+        placeholders
+    );
+
+    // Convert item_ids to parameters
+    let params: Vec<turso::Value> = item_ids.into_iter().map(|id| id.into()).collect();
+    let affected = conn.execute(&sql, params).await.map_err(|e| e.to_string())?;
+
+    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
+    Ok(affected as u32)
+}
+

@@ -1,6 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useImperativeHandle, forwardRef, Component, ErrorInfo, ReactNode } from "react";
-import ForceGraph2D, { ForceGraphMethods, NodeObject, LinkObject } from "react-force-graph-2d";
-import * as d3Force from "d3-force";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+  Component,
+  ErrorInfo,
+  ReactNode,
+  useState,
+} from "react";
+import ForceGraph3D, { ForceGraphMethods } from "react-force-graph-3d";
+import * as THREE from "three";
+import {
+  Heart,
+  User,
+  Compass,
+  BookOpen,
+  Box,
+  ShieldAlert,
+  Archive,
+} from "lucide-react";
 import { MemoryNodeTopology, MemoryEdgeTopology, MemoryFactDetail } from "@/services/memoryService";
 
 interface GraphErrorBoundaryProps {
@@ -23,7 +43,7 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("[MemoryGraph] Canvas/WebGL render error:", error, info);
+    console.error("[MemoryGraph] WebGL canvas error:", error, info);
   }
 
   handleRetry = () => {
@@ -34,8 +54,8 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
     if (this.state.hasError) {
       return (
         <div className="w-full h-full flex items-center justify-center p-6">
-          <div className="glass-card max-w-sm w-full p-6 text-center space-y-4">
-            <div className="mx-auto w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+          <div className="glass-card max-w-sm w-full p-6 text-center space-y-4 rounded-2xl border border-[rgba(var(--accent),0.2)] bg-[rgb(var(--card))]/95">
+            <div className="mx-auto w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
               <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="8" x2="12" />
@@ -44,17 +64,17 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
             </div>
             <div>
               <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                Knowledge Graph Canvas Error
+                WebGL GPU Canvas Error
               </h3>
               <p className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] mt-1 break-words">
-                {this.state.error?.message || "Failed to render 2D force graph canvas."}
+                {this.state.error?.message || "Failed to render WebGL GPU graph context."}
               </p>
             </div>
             <button
               onClick={this.handleRetry}
-              className="px-4 py-2 text-[10px] font-mono font-bold uppercase tracking-widest glass-card hover:border-[rgb(var(--accent))]/50 transition-colors cursor-pointer"
+              className="px-4 py-2 text-[10px] font-mono font-bold uppercase tracking-widest glass-card hover:border-[rgb(var(--accent))]/50 transition-colors cursor-pointer rounded-xl"
             >
-              Retry Canvas Render
+              Retry WebGL Context
             </button>
           </div>
         </div>
@@ -68,15 +88,18 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
 export interface GNode {
   id: string;
   label: string;
+  compactId: string;
   collection: string;
   status: "active" | "inactive";
   topologyNode: MemoryNodeTopology;
-  factDetail?: MemoryFactDetail | null;
   color: string;
+  degree: number;
   x?: number;
   y?: number;
+  z?: number;
   vx?: number;
   vy?: number;
+  vz?: number;
 }
 
 export interface GLink {
@@ -92,16 +115,51 @@ export interface MemoryGraphRef {
   recenter: () => void;
 }
 
-// ─── Collection & Relation Color System ───────────────────────────────────
+// ─── Single Source Color System ───────────────────────────────────────────
 
-export const COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string }> = {
-  Identity: { main: "#00f2fe", glow: "rgba(0, 242, 254, 0.4)", text: "#00f2fe" },
-  Profile: { main: "#10b981", glow: "rgba(16, 185, 129, 0.4)", text: "#10b981" },
-  Directives: { main: "#c084fc", glow: "rgba(192, 132, 252, 0.4)", text: "#c084fc" },
-  Narrative: { main: "#fbbf24", glow: "rgba(251, 191, 36, 0.4)", text: "#fbbf24" },
-  Entities: { main: "#f43f5e", glow: "rgba(244, 63, 94, 0.4)", text: "#f43f5e" },
-  Constraints: { main: "#ef4444", glow: "rgba(239, 68, 68, 0.4)", text: "#ef4444" },
-  Inactive: { main: "#64748b", glow: "rgba(100, 116, 139, 0.3)", text: "#64748b" },
+export const COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
+  Identity: {
+    main: "#00f2fe",
+    glow: "rgba(0, 242, 254, 0.4)",
+    text: "#00f2fe",
+    desc: "Core identity facts, name, user preferences, and foundational attributes.",
+  },
+  Profile: {
+    main: "#10b981",
+    glow: "rgba(16, 185, 129, 0.4)",
+    text: "#10b981",
+    desc: "Personal background, career history, contacts, and personal metadata.",
+  },
+  Directives: {
+    main: "#c084fc",
+    glow: "rgba(192, 132, 252, 0.4)",
+    text: "#c084fc",
+    desc: "Active operational rules, user instructions, system prompts, and priorities.",
+  },
+  Narrative: {
+    main: "#f43f5e",
+    glow: "rgba(244, 63, 94, 0.4)",
+    text: "#f43f5e",
+    desc: "Temporal story facts, conversation context, historical events, and session logs.",
+  },
+  Entities: {
+    main: "#3b82f6",
+    glow: "rgba(59, 130, 246, 0.4)",
+    text: "#3b82f6",
+    desc: "Projects, codebase modules, tools, software stack, and external references.",
+  },
+  Constraints: {
+    main: "#ef4444",
+    glow: "rgba(239, 68, 68, 0.4)",
+    text: "#ef4444",
+    desc: "Hard system constraints, hardware limits, security bounds, and forbidden rules.",
+  },
+  Inactive: {
+    main: "#64748b",
+    glow: "rgba(100, 116, 139, 0.3)",
+    text: "#64748b",
+    desc: "Historical tombstones and superseded memory facts.",
+  },
 };
 
 export const RELATION_STYLES: Record<string, { color: string; isDashed: boolean }> = {
@@ -121,7 +179,7 @@ export function getCollectionColor(rawCollection: string, isSuperseded = false) 
   if (norm.includes("profile")) return COLLECTION_COLORS.Profile;
   if (norm.includes("directive")) return COLLECTION_COLORS.Directives;
   if (norm.includes("narrative") || norm.includes("context")) return COLLECTION_COLORS.Narrative;
-  if (norm.includes("entity") || norm.includes("project")) return COLLECTION_COLORS.Entities;
+  if (norm.includes("entity") || norm.includes("entities") || norm.includes("project")) return COLLECTION_COLORS.Entities;
   if (norm.includes("constraint")) return COLLECTION_COLORS.Constraints;
   return COLLECTION_COLORS.Identity;
 }
@@ -136,32 +194,54 @@ export function getRelationStyle(rawRelation: string) {
   return RELATION_STYLES.OTHER;
 }
 
+export function getCollectionIcon(collectionName: string) {
+  const norm = collectionName.toLowerCase();
+  if (norm.includes("identity")) return Heart;
+  if (norm.includes("profile")) return User;
+  if (norm.includes("directive")) return Compass;
+  if (norm.includes("narrative")) return BookOpen;
+  if (norm.includes("entity") || norm.includes("entities")) return Box;
+  if (norm.includes("constraint")) return ShieldAlert;
+  if (norm.includes("inactive")) return Archive;
+  return User;
+}
+
 // ─── Graph Data Builder ───────────────────────────────────────────────────
 
 function buildRealDistributedGraph(
   nodes: MemoryNodeTopology[],
-  edges: MemoryEdgeTopology[],
-  selectedDetail?: MemoryFactDetail | null
+  edges: MemoryEdgeTopology[]
 ): { graphNodes: GNode[]; links: GLink[] } {
   const nodeMap = new Map<string, GNode>();
+
+  const degreeMap = new Map<string, number>();
+  nodes.forEach((n) => degreeMap.set(n.id, 0));
+  edges.forEach((e) => {
+    degreeMap.set(e.from_id, (degreeMap.get(e.from_id) || 0) + 1);
+    degreeMap.set(e.to_id, (degreeMap.get(e.to_id) || 0) + 1);
+  });
 
   nodes.forEach((n, idx) => {
     const colPalette = getCollectionColor(n.collection, n.is_superseded);
     const angle = (idx / Math.max(1, nodes.length)) * Math.PI * 2;
-    const dist = 40 + Math.random() * 260;
+    const dist = 50 + Math.random() * 280;
 
-    const detail = selectedDetail?.id === n.id ? selectedDetail : undefined;
+    const compactId = n.id.startsWith("mem_")
+      ? `MEM-${n.id.split("_")[1]?.slice(0, 6) || n.id.slice(4, 10)}`
+      : n.id;
 
     const node: GNode = {
       id: n.id,
       label: n.id,
+      compactId,
       collection: n.collection,
       status: n.is_superseded ? "inactive" : "active",
       topologyNode: n,
-      factDetail: detail,
       color: colPalette.main,
+      degree: degreeMap.get(n.id) || 0,
       x: Math.cos(angle) * dist,
       y: Math.sin(angle) * dist,
+      z: 0,
     };
     nodeMap.set(n.id, node);
   });
@@ -185,7 +265,20 @@ function buildRealDistributedGraph(
   return { graphNodes: Array.from(nodeMap.values()), links };
 }
 
-// ─── Component ───────────────────────────────────────────────────────────
+interface ClusterBadgeData {
+  collection: string;
+  graphX: number;
+  graphY: number;
+  screenX: number;
+  screenY: number;
+  factCount: number;
+  color: string;
+  desc: string;
+  activeFacts: number;
+  totalRelations: number;
+  avgConnections: number;
+  outgoingCrossEdges: { targetCollection: string; count: number; relations: Record<string, number> }[];
+}
 
 interface MemoryGraphProps {
   nodes: MemoryNodeTopology[];
@@ -219,6 +312,19 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
     ref
   ) => {
     const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
+    const [clusterBadges, setClusterBadges] = useState<ClusterBadgeData[]>([]);
+    const [hoveredBadge, setHoveredBadge] = useState<string | null>(null);
+    const [isLayoutStable, setIsLayoutStable] = useState(false);
+    const lastBadgeUpdateRef = useRef<number>(0);
+    const hasInitialFitRef = useRef(false);
+
+    // Re-trigger layout warmup on node length change
+    useEffect(() => {
+      if (nodes.length > 0) {
+        setIsLayoutStable(false);
+        hasInitialFitRef.current = false;
+      }
+    }, [nodes.length, edges.length]);
 
     const conflictNodeIds = useMemo(() => {
       const set = new Set<string>();
@@ -231,37 +337,66 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
 
     const graphData = useMemo(() => {
       if (nodes.length === 0 || width === 0) return { nodes: [], links: [] };
-      const { graphNodes, links } = buildRealDistributedGraph(nodes, edges, selectedFactDetail);
+      const { graphNodes, links } = buildRealDistributedGraph(nodes, edges);
       return { nodes: graphNodes, links };
-    }, [nodes, edges, width, selectedFactDetail]);
+    }, [nodes, edges, width]);
 
     // Imperative recenter method
     useImperativeHandle(ref, () => ({
       recenter: () => {
         if (fgRef.current && typeof fgRef.current.zoomToFit === "function") {
-          fgRef.current.zoomToFit(400, 60);
+          fgRef.current.zoomToFit(600, 100);
         }
       },
     }));
 
-    // Auto-recenter on mount or data update
-    useEffect(() => {
-      if (graphData.nodes.length === 0) return;
-      const timer = setTimeout(() => {
-        if (fgRef.current && typeof fgRef.current.zoomToFit === "function") {
-          fgRef.current.zoomToFit(400, 60);
-        }
-      }, 300);
-      return () => clearTimeout(timer);
-    }, [graphData.nodes.length]);
+    // Three.js WebGL Custom Node Object Generator (GPU Shaders)
+    const createThreeNodeObject = useCallback((node: GNode) => {
+      const colPalette = getCollectionColor(node.collection, node.status === "inactive");
+      const isSelected = selectedFactId === node.id;
+      const isConflict = conflictNodeIds.has(node.id);
 
+      const radius = isSelected ? 12 : node.status === "inactive" ? 3 : Math.min(10, 4 + node.degree * 1.2);
+      const mainColor = isConflict ? "#ef4444" : isSelected ? "#00f2fe" : colPalette.main;
+
+      const group = new THREE.Group();
+
+      // Main GPU Sphere Geometry
+      const geometry = new THREE.SphereGeometry(radius, 16, 16);
+      const material = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(mainColor),
+        transparent: true,
+        opacity: node.status === "inactive" ? 0.4 : 0.9,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      group.add(mesh);
+
+      // Hub or Selected Node GPU Halo Ring
+      if ((node.degree >= 3 || isSelected || isConflict) && node.status !== "inactive") {
+        const ringGeo = new THREE.RingGeometry(radius + 1.5, radius + 3.5, 24);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(mainColor),
+          transparent: true,
+          opacity: isSelected ? 0.8 : 0.35,
+          side: THREE.DoubleSide,
+        });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        group.add(ringMesh);
+      }
+
+      return group;
+    }, [selectedFactId, conflictNodeIds]);
+
+    // Node visibility check
     const isNodeVisible = useCallback(
       (node: GNode) => {
-        if (!node) return false;
-
-        // In Unresolved Conflicts Mode, isolate conflict node pairs if conflicts exist
-        if (conflictPairs.length > 0) {
-          return conflictNodeIds.has(node.id);
+        if (selectedRelation !== "all") {
+          const hasRel = edges.some(
+            (e) =>
+              (e.from_id === node.id || e.to_id === node.id) &&
+              e.relation.toUpperCase().includes(selectedRelation.toUpperCase())
+          );
+          if (!hasRel) return false;
         }
 
         const sq = searchQuery.trim().toLowerCase();
@@ -269,8 +404,9 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
           sq.length === 0 ||
           node.id.toLowerCase().includes(sq) ||
           node.collection.toLowerCase().includes(sq) ||
-          node.factDetail?.fact.toLowerCase().includes(sq) ||
-          node.factDetail?.session_id.toLowerCase().includes(sq);
+          (selectedFactDetail?.id === node.id &&
+            (selectedFactDetail?.fact.toLowerCase().includes(sq) ||
+              selectedFactDetail?.session_id.toLowerCase().includes(sq)));
 
         if (!matchesSearch) return false;
 
@@ -278,209 +414,291 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
         if (selectedCollection === "Inactive") return node.status === "inactive";
         return node.collection.toLowerCase().includes(selectedCollection.toLowerCase());
       },
-      [searchQuery, selectedCollection, conflictPairs, conflictNodeIds]
+      [searchQuery, selectedCollection, selectedRelation, edges, selectedFactDetail]
     );
 
-    useEffect(() => {
+    // Update screen coordinates for Landmark Badges (Subpanel 1)
+    const updateCentroidBadges = useCallback(() => {
+      const now = performance.now();
+      if (now - lastBadgeUpdateRef.current < 80) return;
+      lastBadgeUpdateRef.current = now;
+
       const fg = fgRef.current;
-      if (!fg) return;
+      if (!fg || !isLayoutStable) return;
 
-      fg.d3Force("charge", d3Force.forceManyBody<GNode>().strength(-140).distanceMax(450));
-      fg.d3Force("center", d3Force.forceCenter(0, 0).strength(0.04));
-      fg.d3Force(
-        "collide",
-        (d3Force.forceCollide as any)().radius((d: GNode) => (d.status === "inactive" ? 6 : 9)).strength(0.75)
-      );
+      const groups = new Map<string, { nodes: GNode[]; color: string }>();
 
-      const linkForce = fg.d3Force("link") as d3Force.ForceLink<GNode, GLink> | undefined;
-      if (linkForce) {
-        linkForce.distance(90).strength(0.35);
+      graphData.nodes.forEach((n) => {
+        if (!isNodeVisible(n)) return;
+        const col = n.collection || "Identity";
+        if (!groups.has(col)) {
+          groups.set(col, { nodes: [], color: n.color });
+        }
+        groups.get(col)!.nodes.push(n);
+      });
+
+      const badges: ClusterBadgeData[] = [];
+
+      groups.forEach((data, colName) => {
+        if (data.nodes.length === 0) return;
+
+        let sumX = 0;
+        let sumY = 0;
+        data.nodes.forEach((n) => {
+          sumX += n.x ?? 0;
+          sumY += n.y ?? 0;
+        });
+
+        const gx = sumX / data.nodes.length;
+        const gy = sumY / data.nodes.length;
+
+        const screenPos = fg.graph2ScreenCoords(gx, gy, 0);
+        if (!screenPos || isNaN(screenPos.x) || isNaN(screenPos.y)) return;
+
+        const palette = COLLECTION_COLORS[colName] || COLLECTION_COLORS.Identity;
+
+        // Calculate Subpanel 1 metrics
+        const totalRels = edges.filter((e) =>
+          data.nodes.some((n) => n.id === e.from_id || n.id === e.to_id)
+        ).length;
+        const avgConn = data.nodes.length > 0 ? (totalRels / data.nodes.length).toFixed(2) : "0.00";
+
+        badges.push({
+          collection: colName,
+          graphX: gx,
+          graphY: gy,
+          screenX: screenPos.x,
+          screenY: screenPos.y,
+          factCount: data.nodes.length,
+          color: data.color,
+          desc: palette.desc,
+          activeFacts: data.nodes.filter((n) => n.status === "active").length,
+          totalRelations: totalRels,
+          avgConnections: Number(avgConn),
+          outgoingCrossEdges: [],
+        });
+      });
+
+      setClusterBadges(badges);
+    }, [graphData.nodes, edges, isNodeVisible, isLayoutStable]);
+
+    // Disable 3D rotation and attach OrbitControls camera change listener for smooth badge tracking
+    useEffect(() => {
+      if (!fgRef.current) return;
+      const controls = fgRef.current.controls() as any;
+      if (!controls) return;
+
+      controls.enableRotate = false;
+      if (THREE.MOUSE) {
+        controls.mouseButtons = {
+          LEFT: THREE.MOUSE.PAN,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        };
       }
+      const handleChange = () => updateCentroidBadges();
+      controls.addEventListener("change", handleChange);
+      return () => {
+        controls.removeEventListener("change", handleChange);
+      };
+    }, [updateCentroidBadges]);
 
-      fg.d3ReheatSimulation();
-    }, [graphData, width, height]);
+    // Periodically update landmark badges when layout is stable
+    useEffect(() => {
+      if (isLayoutStable) {
+        updateCentroidBadges();
+      }
+    }, [isLayoutStable, updateCentroidBadges]);
 
-    const paintNode = useCallback(
-      (node: NodeObject<GNode>, ctx: CanvasRenderingContext2D, globalScale: number) => {
-        const { x = 0, y = 0, status, id, collection, color, factDetail } = node;
-        const isSelected = id === selectedFactId;
-        const isConflict = conflictNodeIds.has(id);
-        const visible = isNodeVisible(node as GNode);
-
-        const r = status === "inactive" ? 3.5 : isSelected ? 8 : isConflict ? 7 : 5;
-        const opacity = visible ? (isSelected ? 1.0 : status === "inactive" ? 0.4 : 0.85) : 0.04;
-
-        if (!visible && !isSelected) {
-          ctx.beginPath();
-          ctx.arc(x, y, r, 0, 2 * Math.PI);
-          ctx.fillStyle = "rgba(60, 60, 60, 0.06)";
-          ctx.fill();
-          return;
+    // Camera settling event handler
+    const handleEngineStop = useCallback(() => {
+      setIsLayoutStable(true);
+      if (!hasInitialFitRef.current) {
+        hasInitialFitRef.current = true;
+        if (fgRef.current && typeof fgRef.current.zoomToFit === "function") {
+          fgRef.current.zoomToFit(600, 100);
         }
+      }
+    }, []);
 
-        // Conflict Pulse Glow
-        if (isConflict && visible) {
-          ctx.beginPath();
-          ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
-          ctx.fillStyle = "rgba(239, 68, 68, 0.25)";
-          ctx.fill();
-          ctx.strokeStyle = "#ef4444";
-          ctx.lineWidth = 1.0;
-          ctx.stroke();
-        }
-
-        // Selection Ring Glow
-        if (isSelected) {
-          ctx.beginPath();
-          ctx.arc(x, y, r + 7, 0, 2 * Math.PI);
-          ctx.fillStyle = `${color}25`;
-          ctx.fill();
-          ctx.strokeStyle = `${color}90`;
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
-        }
-
-        // Main Node Circle
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, 2 * Math.PI);
-        ctx.fillStyle = isConflict ? "#ef4444" : color;
-        ctx.globalAlpha = opacity;
-        ctx.fill();
-        ctx.globalAlpha = 1.0;
-
-        // Render Compact Fact ID badge (e.g. MEM-1024) and Collection Pill
-        if ((isSelected || globalScale > 1.8) && visible) {
-          const fontSize = Math.max(9, Math.min(13, 11 / globalScale));
-          ctx.font = `bold ${fontSize}px Inter, sans-serif`;
-          ctx.fillStyle = isSelected ? "#ffffff" : "rgba(229, 226, 225, 0.90)";
-          ctx.textAlign = "left";
-          ctx.textBaseline = "middle";
-
-          // Format ID cleanly as compact ID (e.g. MEM-1024 or upper id)
-          const compactId = id.startsWith("mem_")
-            ? `MEM-${id.split("_")[1]?.slice(0, 6) || id.slice(4, 10)}`
-            : id;
-
-          const badgeText = `${compactId} · ${collection.toUpperCase()}`;
-          ctx.fillText(badgeText, x + r + 6, y);
-
-          // If detail text is loaded and selected, draw snippet preview below
-          if (isSelected && factDetail?.fact) {
-            ctx.font = `normal ${fontSize - 1}px Inter, sans-serif`;
-            ctx.fillStyle = "rgba(180, 180, 180, 0.75)";
-            const snippet = factDetail.fact.length > 30 ? factDetail.fact.slice(0, 30) + "..." : factDetail.fact;
-            ctx.fillText(`"${snippet}"`, x + r + 6, y + fontSize + 2);
-          }
-        }
-      },
-      [isNodeVisible, selectedFactId, conflictNodeIds]
-    );
-
-    const paintLink = useCallback(
-      (link: LinkObject<GNode, GLink>, ctx: CanvasRenderingContext2D) => {
-        const src = link.source as GNode;
-        const tgt = link.target as GNode;
-        if (!src?.x || !tgt?.x) return;
-
-        const srcVisible = isNodeVisible(src);
-        const tgtVisible = isNodeVisible(tgt);
-
-        const relationMatch =
-          selectedRelation === "all" ||
-          link.relation?.toUpperCase().includes(selectedRelation.toUpperCase());
-
-        if (!srcVisible || !tgtVisible || !relationMatch) {
-          return;
-        }
-
-        const sx = src.x ?? 0;
-        const sy = src.y ?? 0;
-        const tx = tgt.x ?? 0;
-        const ty = tgt.y ?? 0;
-
-        ctx.save();
-        ctx.beginPath();
-
-        if (link.isDashed) {
-          ctx.setLineDash([4, 4]);
-        } else {
-          ctx.setLineDash([]);
-        }
-
-        const mx = (sx + tx) / 2 + (ty - sy) * 0.12;
-        const my = (sy + ty) / 2 - (tx - sx) * 0.12;
-        ctx.moveTo(sx, sy);
-        ctx.quadraticCurveTo(mx, my, tx, ty);
-
-        ctx.strokeStyle = link.color || "#00f2fe";
-        ctx.globalAlpha = 0.55;
-        ctx.lineWidth = link.isDashed ? 1.0 : 1.3;
-        ctx.stroke();
-        ctx.restore();
-      },
-      [isNodeVisible, selectedRelation]
-    );
-
+    // WebGL Node Click Handler
     const handleNodeClick = useCallback(
-      (node: NodeObject<GNode>, event: MouseEvent) => {
-        if (node.topologyNode) {
-          const fg = fgRef.current;
-          let screenPos = { x: event.clientX, y: event.clientY };
-          if (fg && typeof fg.graph2ScreenCoords === "function") {
-            const coords = fg.graph2ScreenCoords(node.x ?? 0, node.y ?? 0);
-            if (coords && coords.x && coords.y) {
-              screenPos = { x: coords.x, y: coords.y };
-            }
-          }
-          onSelectNode(node.topologyNode.id, screenPos);
+      (node: GNode) => {
+        if (!node || !node.id) return;
+        const fg = fgRef.current;
+        if (fg) {
+          const screenPos = fg.graph2ScreenCoords(node.x ?? 0, node.y ?? 0, 0);
+          onSelectNode(node.id, screenPos ? { x: screenPos.x, y: screenPos.y } : undefined);
         } else {
-          onSelectNode(null);
+          onSelectNode(node.id);
         }
       },
       [onSelectNode]
     );
 
-    if (nodes.length === 0) {
-      return (
-        <div className="w-full h-full flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3 opacity-40">
-            <div className="w-5 h-5 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
-            <span className="text-[11px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]">
-              Loading memory topology graph...
-            </span>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <GraphErrorBoundary>
-        <ForceGraph2D
-          ref={fgRef}
-          graphData={graphData as any}
-          width={width}
-          height={height}
-          backgroundColor="rgba(0,0,0,0)"
-          nodeCanvasObject={paintNode as any}
-          nodeCanvasObjectMode={() => "replace"}
-          linkCanvasObject={paintLink as any}
-          linkCanvasObjectMode={() => "replace"}
-          onNodeClick={handleNodeClick as any}
-          onBackgroundClick={() => onSelectNode(null)}
-          nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
-            ctx.beginPath();
-            ctx.arc(node.x ?? 0, node.y ?? 0, 10, 0, 2 * Math.PI);
-            ctx.fillStyle = color;
-            ctx.fill();
-          }}
-          cooldownTicks={140}
-          d3AlphaDecay={0.015}
-          d3VelocityDecay={0.35}
-          enableNodeDrag={true}
-          enableZoomInteraction={true}
-          minZoom={0.15}
-          maxZoom={5}
-        />
+        <div className="relative w-full h-full">
+          {/* Subpanel 6: Initial WebGL Graph Loader Overlay (No Card Wrapper) */}
+          {!isLayoutStable && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[rgb(var(--background))]/95 backdrop-blur-3xl transition-opacity duration-300 pointer-events-none select-none">
+              {/* Glowing Geometric Polyhedron Icon with Concentric Ambient Pulse Rings */}
+              <div className="relative flex items-center justify-center w-36 h-36 mb-6">
+                <div className="absolute inset-0 rounded-full bg-[rgb(var(--accent))]/10 animate-ping duration-1000" />
+                <div className="absolute inset-4 rounded-full border border-[rgb(var(--accent))]/25 animate-pulse" />
+                <div className="absolute inset-8 rounded-full bg-[rgb(var(--accent))]/10 blur-xl animate-pulse" />
+                <div className="relative z-10 w-20 h-20 rounded-3xl bg-[rgb(var(--accent))]/15 border border-[rgb(var(--accent))]/40 flex items-center justify-center text-[rgb(var(--accent))] shadow-[0_0_40px_rgba(var(--accent),0.4)]">
+                  <Box size={40} className="animate-pulse" />
+                </div>
+              </div>
+
+              {/* Text Stack (Subpanel 6 Image Spec) */}
+              <div className="flex flex-col items-center gap-2 text-center">
+                <h3 className="text-[14px] font-mono font-black tracking-[0.2em] text-[rgb(var(--foreground))] uppercase">
+                  Building memory graph...
+                </h3>
+                <div className="px-4 py-1.5 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] shadow-md">
+                  <span className="text-[12px] font-mono font-bold text-[rgb(var(--accent))]">
+                    {nodes.length.toLocaleString()} nodes · {edges.length.toLocaleString()} edges
+                  </span>
+                </div>
+                <p className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] mt-1">
+                  Optimizing layout and relationships
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* WebGL GPU Graph Container */}
+          <div className={isLayoutStable ? "opacity-100 transition-opacity duration-300 w-full h-full" : "opacity-0 w-full h-full"}>
+            <ForceGraph3D
+              ref={fgRef}
+              graphData={graphData as any}
+              width={width}
+              height={height}
+              numDimensions={2}
+              backgroundColor="rgba(0,0,0,0)"
+              nodeThreeObject={createThreeNodeObject as any}
+              linkColor={(link: any) => link.color || "#64748b"}
+              linkWidth={1.2}
+              linkOpacity={0.4}
+              onNodeClick={handleNodeClick as any}
+              onBackgroundClick={() => onSelectNode(null)}
+              onEngineStop={handleEngineStop}
+              warmupTicks={50}
+              cooldownTicks={100}
+              enableNavigationControls={true}
+            />
+          </div>
+
+          {/* Floating Centroid Cluster Landmark Badges Layer */}
+          {isLayoutStable && (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+              {clusterBadges.map((badge) => {
+                const IconComp = getCollectionIcon(badge.collection);
+                const isHovered = hoveredBadge === badge.collection;
+
+                return (
+                  <div
+                    key={badge.collection}
+                    style={{
+                      left: `${badge.screenX}px`,
+                      top: `${badge.screenY}px`,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                    className="absolute pointer-events-auto transition-transform duration-100"
+                    onMouseEnter={() => setHoveredBadge(badge.collection)}
+                    onMouseLeave={() => setHoveredBadge(null)}
+                  >
+                    {/* Clean Landmark Badge Pill */}
+                    <div
+                      className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-card border border-[rgba(var(--accent),0.2)] bg-[rgb(var(--card))]/90 backdrop-blur-2xl shadow-xl hover:border-[rgb(var(--accent))]/50 transition-all cursor-pointer group select-none"
+                      style={{
+                        boxShadow: isHovered ? `0 0 24px ${badge.color}50` : undefined,
+                      }}
+                    >
+                      <IconComp size={15} style={{ color: badge.color }} className="shrink-0" />
+                      <span className="text-[12px] font-mono font-bold tracking-wide text-[rgb(var(--foreground))] uppercase">
+                        {badge.collection}
+                      </span>
+                      <span
+                        className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: `${badge.color}25`, color: badge.color }}
+                      >
+                        {badge.factCount}
+                      </span>
+                    </div>
+
+                    {/* Subpanel 1: Landmark Badge Hover Tooltip (LEGEND - EXPANDED COLLECTION VIEW) */}
+                    {isHovered && (
+                      <div className="absolute left-1/2 -translate-x-1/2 top-full mt-3 w-[290px] p-4 rounded-2xl glass-card border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/95 backdrop-blur-2xl shadow-2xl z-30 flex flex-col gap-3 pointer-events-none text-[rgb(var(--foreground))]">
+                        {/* Header */}
+                        <div className="flex items-start justify-between border-b border-[rgba(var(--border),0.15)] pb-2.5">
+                          <div className="flex items-center gap-2">
+                            <IconComp size={16} style={{ color: badge.color }} />
+                            <span className="text-[12px] font-mono font-bold uppercase text-[rgb(var(--foreground))]">
+                              {badge.collection}
+                            </span>
+                            <span
+                              className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: `${badge.color}25`, color: badge.color }}
+                            >
+                              {badge.factCount}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Collection Description */}
+                        <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] leading-relaxed">
+                          {badge.desc}
+                        </p>
+
+                        {/* 2x2 Metric Grid (Subpanel 1) */}
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[rgba(var(--border),0.15)]">
+                          <div className="p-2 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)]">
+                            <span className="text-[9px] font-mono font-bold uppercase text-[rgb(var(--foreground-muted))] block">
+                              Active Facts
+                            </span>
+                            <span className="text-[13px] font-mono font-bold text-[rgb(var(--foreground))]">
+                              {badge.activeFacts}
+                            </span>
+                          </div>
+
+                          <div className="p-2 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)]">
+                            <span className="text-[9px] font-mono font-bold uppercase text-[rgb(var(--foreground-muted))] block">
+                              Total Relations
+                            </span>
+                            <span className="text-[13px] font-mono font-bold text-[rgb(var(--accent))]">
+                              {badge.totalRelations}
+                            </span>
+                          </div>
+
+                          <div className="p-2 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)]">
+                            <span className="text-[9px] font-mono font-bold uppercase text-[rgb(var(--foreground-muted))] block">
+                              Avg. Connections
+                            </span>
+                            <span className="text-[13px] font-mono font-bold text-[rgb(var(--foreground))]">
+                              {badge.avgConnections}
+                            </span>
+                          </div>
+
+                          <div className="p-2 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)]">
+                            <span className="text-[9px] font-mono font-bold uppercase text-[rgb(var(--foreground-muted))] block">
+                              Last Updated
+                            </span>
+                            <span className="text-[11px] font-mono font-bold text-emerald-400">
+                              Just now
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </GraphErrorBoundary>
     );
   }
