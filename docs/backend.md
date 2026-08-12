@@ -179,7 +179,7 @@ Vox implements a **cognitive memory subsystem** that operates asynchronously via
 
 A pre-retrieval **MemoryScope classifier** (ModernBERT INT8 ONNX, 4-class) routes each user query to the appropriate memory collection before embedding generation and vector search. This prunes irrelevant collections early, saving ~30ms of embedding inference and ~10–50ms of vector DB search per chit-chat turn.
 
-The ingestion pipeline runs as a 4-stage async queue: **Dedup(128) → Embed(16) → Eval(16, concurrent NLI+Edge) → Commit(32)**. Full implementation details and benchmark gate results in `docs/features/memory-architecture.md`.
+The ingestion pipeline runs as a 4-stage async queue: **Dedup(128) → Embed(16) → Eval(16, concurrent NLI+Edge) → Commit(32)**. All 3 pipeline ONNX models (Embedder, NLI Engine, Edge Classifier) use an **evictable singleton pattern** (`parking_lot::RwLock<Option<T>>`). They are lazy-loaded only when `personal_memory_queue` has pending items during 30s idle sweeps, and evicted immediately on voice engagement (`PipelineActive`), disengage, or batch completion.
 
 Key files: `services/memory/` (11 modules), `persistence/memory_worker.rs`, `persistence/mutations.rs`, `persistence/queries.rs`. See [`docs/features/memory-architecture.md`](features/memory-architecture.md) for the current v7 architecture reference.
 
@@ -264,6 +264,7 @@ Playback:   PlaybackStarted, PlaybackFinished
 | `mpsc::channel` | Inter-thread events (VoxEvent) | All workers |
 | `crossbeam_channel::bounded` | High-throughput telemetry | `monitoring/aggregator.rs` |
 | `parking_lot::RwLock<VoxSettings>` | Read-heavy settings | `core/state.rs` |
+| `parking_lot::RwLock<Option<T>>` | Evictable ONNX model singletons | `translit.rs`, `query_classifier.rs`, `embedder.rs`, `intra_edge_classifier.rs`, `inter_edge_classifier.rs` |
 | `parking_lot::Mutex<Option<VoxEngine>>` | Engine lifecycle | `core/state.rs` |
 | `tokio::sync::Mutex` | Async IPC state | `ipc/` handlers |
 
@@ -299,10 +300,11 @@ Cold ──(engage)──→ Warm ──(auto-sleep timeout)──→ Cold
   └───────────────────(re-engage)───────────────────────┘
 ```
 
-- **Cold state**: All models unloaded, minimal RAM (~50 MB)
-- **Warm state**: LLM + TTS loaded, ready for interaction (~2.5 GB peak)
-- **Auto-sleep**: Offloads LLM/TTS after inactivity timeout
-- **Shutdown**: Signal via channels + atomics → join threads → persistence flush
+- **Cold state**: 0 ONNX models loaded on boot (~50 MB base RAM). Audio engine auto-launches only if `tray_enabled == true`. Opening main window in passive mode does not load engine or ONNX models.
+- **Warm state**: LLM + TTS loaded on demand (`engage()`), query scope classifier lazy-loaded for spoken turn routing.
+- **Memory Pipeline Eviction**: Pipeline ONNX models (Embedder, NLI, Edge Classifier) lazy-load during 30s idle sweeps **only if pending queue items exist**, and evict back to 0 MB RAM on voice engagement (`PipelineActive`), disengage, or batch completion.
+- **Auto-sleep**: Offloads LLM/TTS after inactivity timeout.
+- **Shutdown**: Signal via channels + atomics → join threads → persistence flush.
 
 ---
 
@@ -314,4 +316,4 @@ Cold ──(engage)──→ Warm ──(auto-sleep timeout)──→ Cold
 
 ---
 
-**Last Updated:** 2026-08-02
+**Last Updated:** 2026-08-12

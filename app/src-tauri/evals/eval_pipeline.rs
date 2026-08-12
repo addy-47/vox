@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use std::sync::Arc;
 use turso::Builder;
-use vox_lib::core::constants::{inter_collection_edge, PM_SEMANTIC_GRAPH_COLLECTIONS};
+use vox_lib::core::constants::{is_valid_inter_collection_pair, PM_SEMANTIC_GRAPH_COLLECTIONS};
 use vox_lib::persistence::{decode_f32_blob, mutations, queries};
 use vox_lib::services::memory::pipeline::batch_result::{CandidateAuditLog, DedupAuditLog};
 use vox_lib::services::memory::pipeline::stage3_eval::{
@@ -355,7 +355,7 @@ async fn main() -> Result<()> {
         let policy_targets: Vec<&'static str> = PM_SEMANTIC_GRAPH_COLLECTIONS
             .iter()
             .copied()
-            .filter(|&tgt| inter_collection_edge(&item_collection, tgt).is_some())
+            .filter(|&tgt| is_valid_inter_collection_pair(&item_collection, tgt))
             .collect();
 
         let inter_subfloor = if !policy_targets.is_empty() {

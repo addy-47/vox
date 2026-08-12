@@ -253,20 +253,29 @@ pub const PM_RELATION_SHAPES: &str = "SHAPES";
 pub const PM_RELATION_DEPENDS_ON: &str = "DEPENDS_ON";
 
 // ─── Inter-Collection Edge Policy Matrix ──────────────────────────────────────
-/// Returns (forward_edge, deterministic_inverse_edge) for valid v7 collection pairs (spec §4.2).
-/// Returns None if no inter-collection relation policy exists for the pair.
-pub fn inter_collection_edge(src: &str, tgt: &str) -> Option<(&'static str, &'static str)> {
-    match (src, tgt) {
-        ("Identity", "Profile") => Some((PM_RELATION_SHAPES, "shaped_by")),
-        ("Directives", "Constraints") => Some((PM_RELATION_SHAPES, "shaped_by")),
-        ("Directives", "Entities") => Some((PM_RELATION_DEPENDS_ON, "dependency_of")),
-        ("Entities", "Constraints") => Some((PM_RELATION_DEPENDS_ON, "constrains")),
-        ("Entities", "Profile") => Some((PM_RELATION_SHAPES, "shaped_by")),
-        ("Entities", "Entities") => Some((PM_RELATION_DEPENDS_ON, "dependency_of")),
-        ("Profile", "Profile") => Some((PM_RELATION_SHAPES, "shaped_by")),
-        ("Profile", "Entities") => Some((PM_RELATION_SHAPES, "shaped_by")),
-        ("Profile", "Constraints") => Some(("restricted_by", "restricts")),
-        _ => None,
+/// Checks if the collection pair is allowed for inter-collection edge classification (spec §4.2).
+pub fn is_valid_inter_collection_pair(src: &str, tgt: &str) -> bool {
+    matches!(
+        (src, tgt),
+        ("Identity", "Profile")
+            | ("Directives", "Constraints")
+            | ("Directives", "Entities")
+            | ("Entities", "Constraints")
+            | ("Entities", "Profile")
+            | ("Entities", "Entities")
+            | ("Profile", "Profile")
+    )
+}
+
+/// Returns the deterministic inverse relation string for any edge relation label (spec §4.3).
+pub fn inverse_edge_for_relation(relation: &str) -> &'static str {
+    match relation {
+        PM_RELATION_SHAPES => "shaped_by",
+        PM_RELATION_DEPENDS_ON => "dependency_of",
+        PM_RELATION_CONFLICTS | "CONFLICTS_WITH" => "conflicts_with",
+        PM_RELATION_SUPPORTS => "supported_by",
+        PM_RELATION_SUPERSEDES => "superseded_by",
+        _ => "related_to",
     }
 }
 

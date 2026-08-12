@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use query_sieve::{MemoryScope, MemoryScopeClassifier};
 use std::path::Path;
-use std::sync::OnceLock;
 
 pub const MEMORY_SCOPE_MODEL_DIR: &str = "modernbert_memory_scope";
 pub const CLASSIFIER_MODEL_FILENAME: &str = "model_quantized.onnx";
@@ -9,7 +8,7 @@ pub const CLASSIFIER_TOKENIZER_FILENAME: &str = "tokenizer.json";
 
 /// Engine wrapper for the ModernBERT 4-Class MemoryScope Classifier.
 pub struct QueryScopeClassifier {
-    engine: MemoryScopeClassifier,
+    classifier: MemoryScopeClassifier,
 }
 
 impl QueryScopeClassifier {
@@ -17,37 +16,18 @@ impl QueryScopeClassifier {
     pub fn load(classifier_dir: &Path) -> Result<Self> {
         let model_path = classifier_dir.join(CLASSIFIER_MODEL_FILENAME);
         let tokenizer_path = classifier_dir.join(CLASSIFIER_TOKENIZER_FILENAME);
-
-        if !model_path.exists() || !tokenizer_path.exists() {
-            return Err(anyhow!(
-                "MemoryScope classifier assets missing at {:?} (model: {}, tokenizer: {})",
-                classifier_dir,
-                CLASSIFIER_MODEL_FILENAME,
-                CLASSIFIER_TOKENIZER_FILENAME
-            ));
-        }
-
-        let engine = MemoryScopeClassifier::load(&model_path, &tokenizer_path)?;
-        Ok(Self { engine })
+        let classifier = MemoryScopeClassifier::load(&model_path, &tokenizer_path)
+            .map_err(|e| anyhow!("Failed to load QueryScopeClassifier from {:?}: {}", classifier_dir, e))?;
+        Ok(Self { classifier })
     }
 
-    /// Classifies an input query into 4-class `MemoryScope`.
     pub fn classify(&self, text: &str) -> MemoryScope {
-        match self.engine.classify(text) {
-            Ok(scope) => scope,
-            Err(e) => {
-                log::warn!(
-                    "[QueryScopeClassifier] Classification error for query '{}': {}. Defaulting to Domain.",
-                    text,
-                    e
-                );
-                MemoryScope::Domain
-            }
-        }
+        self.classifier.classify(text).unwrap_or(MemoryScope::Domain)
     }
 }
 
-static SCOPE_CLASSIFIER_INSTANCE: OnceLock<QueryScopeClassifier> = OnceLock::new();
+static SCOPE_CLASSIFIER_INSTANCE: parking_lot::RwLock<Option<QueryScopeClassifier>> =
+    parking_lot::RwLock::new(None);
 
 /// Initializes the `QueryScopeClassifier` singleton from the specified model directory.
 /// Returns `Ok(true)` if loaded, `Ok(false)` if model files do not exist.
@@ -63,22 +43,33 @@ pub fn init_scope_classifier(classifier_dir: &Path) -> Result<bool> {
         return Ok(false);
     }
 
-    let instance = QueryScopeClassifier::load(classifier_dir)?;
-    if SCOPE_CLASSIFIER_INSTANCE.set(instance).is_err() {
-        log::warn!("[QueryScopeClassifier] Singleton already initialized.");
-    } else {
-        log::info!(
-            "[QueryScopeClassifier] Successfully initialized ModernBERT MemoryScope classifier from {:?}",
-            classifier_dir
-        );
+    let mut lock = SCOPE_CLASSIFIER_INSTANCE.write();
+    if lock.is_some() {
+        return Ok(true);
     }
+
+    let instance = QueryScopeClassifier::load(classifier_dir)?;
+    *lock = Some(instance);
+    log::info!(
+        "[QueryScopeClassifier] Successfully initialized ModernBERT MemoryScope classifier from {:?}",
+        classifier_dir
+    );
 
     Ok(true)
 }
 
+/// Evicts the `QueryScopeClassifier` singleton from process memory.
+pub fn unload_scope_classifier() {
+    let mut lock = SCOPE_CLASSIFIER_INSTANCE.write();
+    if lock.is_some() {
+        *lock = None;
+        log::info!("[QueryScopeClassifier] Scope classifier ONNX model evicted from memory.");
+    }
+}
+
 /// Lazily loads the `QueryScopeClassifier` singleton into memory if not already initialized.
 pub fn ensure_scope_classifier_loaded() -> Result<bool> {
-    if SCOPE_CLASSIFIER_INSTANCE.get().is_some() {
+    if SCOPE_CLASSIFIER_INSTANCE.read().is_some() {
         return Ok(true);
     }
 
@@ -105,7 +96,8 @@ pub fn classify_scope(text: &str) -> MemoryScope {
             e
         );
     }
-    if let Some(classifier) = SCOPE_CLASSIFIER_INSTANCE.get() {
+    let lock = SCOPE_CLASSIFIER_INSTANCE.read();
+    if let Some(classifier) = lock.as_ref() {
         classifier.classify(text)
     } else {
         MemoryScope::Domain
@@ -114,7 +106,7 @@ pub fn classify_scope(text: &str) -> MemoryScope {
 
 /// Returns true if the query scope classifier model is initialized and ready in memory.
 pub fn is_scope_classifier_loaded() -> bool {
-    SCOPE_CLASSIFIER_INSTANCE.get().is_some()
+    SCOPE_CLASSIFIER_INSTANCE.read().is_some()
 }
 
 #[cfg(test)]

@@ -50,6 +50,15 @@ importers:
       framer-motion:
         specifier: ^12.38.0
         version: 12.38.0(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      graphology:
+        specifier: ^0.26.0
+        version: 0.26.0(graphology-types@0.24.8)
+      graphology-layout-forceatlas2:
+        specifier: ^0.10.1
+        version: 0.10.1(graphology-types@0.24.8)
+      graphology-types:
+        specifier: ^0.24.8
+        version: 0.24.8
       lucide-react:
         specifier: ^1.14.0
         version: 1.14.0(react@19.2.5)
@@ -68,6 +77,9 @@ importers:
       react-force-graph-2d:
         specifier: ^1.29.1
         version: 1.29.1(react@19.2.5)
+      react-force-graph-3d:
+        specifier: ^1.29.1
+        version: 1.29.1(react@19.2.5)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.14)(react@19.2.5)
@@ -80,6 +92,9 @@ importers:
       shadcn:
         specifier: ^4.7.0
         version: 4.7.0(@types/node@25.6.0)(typescript@5.8.3)
+      sigma:
+        specifier: ^3.0.3
+        version: 3.0.3(graphology-types@0.24.8)
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.5.0
@@ -164,6 +179,10 @@ importers:
         version: 4.1.10(@types/node@25.6.0)(msw@2.14.3(@types/node@25.6.0)(typescript@5.8.3))(vite@7.3.2(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0))
 
 packages:
+
+  3d-force-graph@1.80.0:
+    resolution: {integrity: sha512-tzI353gW1nXPpnC7VTa3JjMg+3cp77qOLUFO0vucPTfF+q5R6sQsNsIqVTbRIb7RSypn14nBa4yfkOe9ThxASw==}
+    engines: {node: '>=12'}
 
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -1733,6 +1752,10 @@ packages:
     resolution: {integrity: sha512-b8AmV3kfQaqWAuacbPuNbL6vahnOJflOhexLzMMNLga62+/nh0JzvJ0aO/5a5MVgUFGS7Hu1P9P03o3fJkDCyw==}
     engines: {node: '>=12'}
 
+  data-bind-mapper@1.0.3:
+    resolution: {integrity: sha512-QmU3lyEnbENQPo0M1F9BMu4s6cqNNp8iJA+b/HP2sSb7pf3dxwF3+EP1eO69rwBfH9kFJ1apmzrtogAmVt2/Xw==}
+    engines: {node: '>=12'}
+
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
     engines: {node: '>= 12'}
@@ -2237,6 +2260,24 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  graphology-layout-forceatlas2@0.10.1:
+    resolution: {integrity: sha512-ogzBeF1FvWzjkikrIFwxhlZXvD2+wlY54lqhsrWprcdPjopM2J9HoMweUmIgwaTvY4bUYVimpSsOdvDv1gPRFQ==}
+    peerDependencies:
+      graphology-types: '>=0.19.0'
+
+  graphology-types@0.24.8:
+    resolution: {integrity: sha512-hDRKYXa8TsoZHjgEaysSRyPdT6uB78Ci8WnjgbStlQysz7xR52PInxNsmnB7IBOM1BhikxkNyCVEFgmPKnpx3Q==}
+
+  graphology-utils@2.5.2:
+    resolution: {integrity: sha512-ckHg8MXrXJkOARk56ZaSCM1g1Wihe2d6iTmz1enGOz4W/l831MBCKSayeFQfowgF8wd+PQ4rlch/56Vs/VZLDQ==}
+    peerDependencies:
+      graphology-types: '>=0.23.0'
+
+  graphology@0.26.0:
+    resolution: {integrity: sha512-8SSImzgUUYC89Z042s+0r/vMibY7GX/Emz4LDO5e7jYXhuoWfHISPFJYjpRLUSJGq6UQ6xlenvX1p/hJdfXuXg==}
+    peerDependencies:
+      graphology-types: '>=0.24.0'
 
   graphql@16.13.2:
     resolution: {integrity: sha512-5bJ+nf/UCpAjHM8i06fl7eLyVC9iuNAjm9qzkiu2ZGhM0VscSvS6WDPfAwkdkBuoXGM9FJSbKl6wylMwP9Ktig==}
@@ -2940,6 +2981,21 @@ packages:
     resolution: {integrity: sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==}
     engines: {node: '>= 0.6'}
 
+  ngraph.events@1.4.0:
+    resolution: {integrity: sha512-NeDGI4DSyjBNBRtA86222JoYietsmCXbs8CEB0dZ51Xeh4lhVl1y3wpWLumczvnha8sFQIW4E0vvVWwgmX2mGw==}
+
+  ngraph.forcelayout@3.3.1:
+    resolution: {integrity: sha512-MKBuEh1wujyQHFTW57y5vd/uuEOK0XfXYxm3lC7kktjJLRdt/KEKEknyOlc6tjXflqBKEuYBBcu7Ax5VY+S6aw==}
+
+  ngraph.graph@20.1.2:
+    resolution: {integrity: sha512-W/G3GBR3Y5UxMLHTUCPP9v+pbtpzwuAEIqP5oZV+9IwgxAIEZwh+Foc60iPc1idlnK7Zxu0p3puxAyNmDvBd0Q==}
+
+  ngraph.merge@1.0.0:
+    resolution: {integrity: sha512-5J8YjGITUJeapsomtTALYsw7rFveYkM+lBj3QiYZ79EymQcuri65Nw3knQtFxQBU1r5iOaVRXrSwMENUPK62Vg==}
+
+  ngraph.random@1.2.0:
+    resolution: {integrity: sha512-4EUeAGbB2HWX9njd6bP6tciN6ByJfoaAvmVL9QTaZSeXrW46eNGA9GajiXiPBbvFqxUWFkEbyo6x5qsACUuVfA==}
+
   node-domexception@1.0.0:
     resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
     engines: {node: '>=10.5.0'}
@@ -3107,6 +3163,10 @@ packages:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
 
+  polished@4.3.1:
+    resolution: {integrity: sha512-OBatVyC/N7SCW/FaDHrSd+vn0o5cS855TOmYi4OkdWUMSJCET/xip//ch8xGUvtr3i44X9LVyWwQlRMTN3pwSA==}
+    engines: {node: '>=10'}
+
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
@@ -3200,6 +3260,12 @@ packages:
 
   react-force-graph-2d@1.29.1:
     resolution: {integrity: sha512-1Rl/1Z3xy2iTHKj6a0jRXGyiI86xUti81K+jBQZ+Oe46csaMikp47L5AjrzA9hY9fNGD63X8ffrqnvaORukCuQ==}
+    engines: {node: '>=12'}
+    peerDependencies:
+      react: '*'
+
+  react-force-graph-3d@1.29.1:
+    resolution: {integrity: sha512-5Vp+PGpYnO+zLwgK2NvNqdXHvsWLrFzpDfJW1vUA1twjo9SPvXqfUYQrnRmAbD+K2tOxkZw1BkbH31l5b4TWHg==}
     engines: {node: '>=12'}
     peerDependencies:
       react: '*'
@@ -3447,6 +3513,9 @@ packages:
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
 
+  sigma@3.0.3:
+    resolution: {integrity: sha512-5H0zFlx6/NTQpqBg4Rm569ZOpnBOXMaS25UQThIWMU3XyzI5AhmorK/gnl87BvJBLhQd0tW4C0LIp3enWzMoNw==}
+
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
 
@@ -3581,10 +3650,22 @@ packages:
     resolution: {integrity: sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A==}
     engines: {node: '>=6'}
 
+  three-forcegraph@1.43.4:
+    resolution: {integrity: sha512-FtmiZP/T16ZQaHza3JDaDn0YTXFtg9e7pGnTeU8nzu0NNkx7MpWbF/GvmpbQsWHx3rukHtkRv1fTorLPB3FDEA==}
+    engines: {node: '>=12'}
+    peerDependencies:
+      three: '>=0.118.3'
+
   three-mesh-bvh@0.8.3:
     resolution: {integrity: sha512-4G5lBaF+g2auKX3P0yqx+MJC6oVt6sB5k+CchS6Ob0qvH0YIhuUk1eYr7ktsIpY+albCqE80/FVQGV190PmiAg==}
     peerDependencies:
       three: '>= 0.159.0'
+
+  three-render-objects@1.42.0:
+    resolution: {integrity: sha512-KYfkPrYGEbIK8ChFocWqOF1aAN80FBUBWVYB8mB2oBpVuVN+52FvvngVYB5ieFANQu7Rt21rPYZ/xKaAgVWWRQ==}
+    engines: {node: '>=12'}
+    peerDependencies:
+      three: '>=0.179'
 
   three-stdlib@2.36.1:
     resolution: {integrity: sha512-XyGQrFmNQ5O/IoKm556ftwKsBg11TIb301MB5dWNicziQBEs2g3gtOYIf7pFiLa0zI2gUwhtCjv9fmjnxKZ1Cg==}
@@ -4026,6 +4107,16 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  3d-force-graph@1.80.0:
+    dependencies:
+      accessor-fn: 1.5.3
+      kapsule: 1.16.3
+      three: 0.184.0
+      three-forcegraph: 1.43.4(three@0.184.0)
+      three-render-objects: 1.42.0(three@0.184.0)
+    transitivePeerDependencies:
+      - preact-render-to-string
 
   '@alloc/quick-lru@5.2.0': {}
 
@@ -5527,6 +5618,10 @@ snapshots:
       d3-selection: 3.0.0
       d3-transition: 3.0.1(d3-selection@3.0.0)
 
+  data-bind-mapper@1.0.3:
+    dependencies:
+      accessor-fn: 1.5.3
+
   data-uri-to-buffer@4.0.1: {}
 
   data-view-buffer@1.0.2:
@@ -6190,6 +6285,22 @@ snapshots:
   gopd@1.2.0: {}
 
   graceful-fs@4.2.11: {}
+
+  graphology-layout-forceatlas2@0.10.1(graphology-types@0.24.8):
+    dependencies:
+      graphology-types: 0.24.8
+      graphology-utils: 2.5.2(graphology-types@0.24.8)
+
+  graphology-types@0.24.8: {}
+
+  graphology-utils@2.5.2(graphology-types@0.24.8):
+    dependencies:
+      graphology-types: 0.24.8
+
+  graphology@0.26.0(graphology-types@0.24.8):
+    dependencies:
+      events: 3.3.0
+      graphology-types: 0.24.8
 
   graphql@16.13.2: {}
 
@@ -6961,6 +7072,22 @@ snapshots:
 
   negotiator@1.0.0: {}
 
+  ngraph.events@1.4.0: {}
+
+  ngraph.forcelayout@3.3.1:
+    dependencies:
+      ngraph.events: 1.4.0
+      ngraph.merge: 1.0.0
+      ngraph.random: 1.2.0
+
+  ngraph.graph@20.1.2:
+    dependencies:
+      ngraph.events: 1.4.0
+
+  ngraph.merge@1.0.0: {}
+
+  ngraph.random@1.2.0: {}
+
   node-domexception@1.0.0: {}
 
   node-exports-info@1.6.0:
@@ -7144,6 +7271,10 @@ snapshots:
 
   pkce-challenge@5.0.1: {}
 
+  polished@4.3.1:
+    dependencies:
+      '@babel/runtime': 7.29.7
+
   possible-typed-array-names@1.1.0: {}
 
   postcss-selector-parser@7.1.1:
@@ -7231,6 +7362,15 @@ snapshots:
   react-force-graph-2d@1.29.1(react@19.2.5):
     dependencies:
       force-graph: 1.51.4
+      prop-types: 15.8.1
+      react: 19.2.5
+      react-kapsule: 2.6.0(react@19.2.5)
+    transitivePeerDependencies:
+      - preact-render-to-string
+
+  react-force-graph-3d@1.29.1(react@19.2.5):
+    dependencies:
+      3d-force-graph: 1.80.0
       prop-types: 15.8.1
       react: 19.2.5
       react-kapsule: 2.6.0(react@19.2.5)
@@ -7609,6 +7749,13 @@ snapshots:
 
   siginfo@2.0.0: {}
 
+  sigma@3.0.3(graphology-types@0.24.8):
+    dependencies:
+      events: 3.3.0
+      graphology-utils: 2.5.2(graphology-types@0.24.8)
+    transitivePeerDependencies:
+      - graphology-types
+
   signal-exit@3.0.7: {}
 
   signal-exit@4.1.0: {}
@@ -7746,9 +7893,34 @@ snapshots:
 
   tapable@2.3.3: {}
 
+  three-forcegraph@1.43.4(three@0.184.0):
+    dependencies:
+      accessor-fn: 1.5.3
+      d3-array: 3.2.4
+      d3-force-3d: 3.0.6
+      d3-scale: 4.0.2
+      d3-scale-chromatic: 3.1.0
+      data-bind-mapper: 1.0.3
+      kapsule: 1.16.3
+      ngraph.forcelayout: 3.3.1
+      ngraph.graph: 20.1.2
+      three: 0.184.0
+      tinycolor2: 1.6.0
+
   three-mesh-bvh@0.8.3(three@0.184.0):
     dependencies:
       three: 0.184.0
+
+  three-render-objects@1.42.0(three@0.184.0):
+    dependencies:
+      '@tweenjs/tween.js': 23.1.3
+      accessor-fn: 1.5.3
+      float-tooltip: 1.7.5
+      kapsule: 1.16.3
+      polished: 4.3.1
+      three: 0.184.0
+    transitivePeerDependencies:
+      - preact-render-to-string
 
   three-stdlib@2.36.1(three@0.184.0):
     dependencies:
