@@ -1,19 +1,40 @@
 {
-  "models_version": "1.3.0",
+  "models_version": "1.4.0",
   "release_notes": [
-    "Standardized canonical model directory structure and file names across all engines.",
-    "MiniLM-L12-v2 integrated as primary multilingual embedding engine.",
-    "BGE-M3 configured as fallback embedding engine.",
-    "DistilBERT Query Classifier integrated as primary memory intent routing engine.",
-    "Nemotron 3.5, Qwen3 ASR, DeBERTa-v3 NLI, Supertonic 3, and Chatterbox TTS paths standardized."
+    "Expanded Single Source of Truth (SSOT) model manifest with user-friendly descriptions.",
+    "Added explicit process RAM usage estimates and parameters to all model groups.",
+    "Integrated virtual built-in and cloud provider entries for dynamic UI rendering."
   ],
   "total_size_bytes": 10219831741,
   "model_groups": [
     {
-      "id": "ten_vad",
-      "name": "Ten VAD Engine",
+      "id": "earshot",
+      "name": "Earshot (Built-in)",
       "category": "vad",
+      "subcategory": "vad",
+      "description": "Ultra-fast built-in voice detector. Embedded directly in the app with zero download and zero extra memory.",
+      "parameters": "Built-in Rust",
+      "ram_usage": "0 MB",
+      "tradeoffs": "Zero extra RAM, instant boot, built into app binary",
       "version": "1.0.0",
+      "is_built_in": true,
+      "is_cloud": false,
+      "is_remote": false,
+      "files": []
+    },
+    {
+      "id": "ten_vad",
+      "name": "TenVAD Engine",
+      "category": "vad",
+      "subcategory": "vad",
+      "description": "ONNX voice detector. Analyzes audio frames in real time to detect when you start and stop speaking.",
+      "parameters": "ONNX INT8",
+      "ram_usage": "~2 MB",
+      "tradeoffs": "Low CPU overhead, requires small ONNX download",
+      "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "ten_vad_onnx",
@@ -28,7 +49,15 @@
       "id": "vox_translit_rnn",
       "name": "Vox Transliteration Engine",
       "category": "translit",
+      "subcategory": "auxiliary",
+      "description": "Converts spoken Hindi and Devanagari words into clean Roman script for seamless multilingual processing.",
+      "parameters": "Embedded ONNX",
+      "ram_usage": "~15 MB",
+      "tradeoffs": "Instant phonetic normalization for Hinglish",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "translit_encoder",
@@ -64,7 +93,15 @@
       "id": "nvidia_nemotron",
       "name": "Nemotron-3.5 ASR Engine",
       "category": "stt",
+      "subcategory": "main",
+      "description": "High-accuracy streaming speech recognition. Best for noisy background environments.",
+      "parameters": "0.6B INT8",
+      "ram_usage": "~2.5 GB",
+      "tradeoffs": "Top transcription accuracy; higher RAM usage",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "stt_nemotron_config",
@@ -100,7 +137,15 @@
       "id": "qwen3_asr",
       "name": "Qwen3 ASR Engine",
       "category": "stt",
+      "subcategory": "main",
+      "description": "Lightweight multilingual speech recognition. Fast transcription with lower memory requirements.",
+      "parameters": "Sherpa-ONNX INT8",
+      "ram_usage": "~800 MB",
+      "tradeoffs": "Lower memory footprint; good accuracy",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "stt_conv_frontend",
@@ -148,9 +193,17 @@
     },
     {
       "id": "gemma_4_reasoning",
-      "name": "Gemma-4 Reasoning LLM",
+      "name": "Gemma 4 Reasoning LLM",
       "category": "llm",
+      "subcategory": "main",
+      "description": "Smart conversational engine. Great balance of speed and intelligence for general tasks.",
+      "parameters": "2.4B (Q4_K_M)",
+      "ram_usage": "~1.4 GB",
+      "tradeoffs": "Supports tool calling and smart reasoning",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "llm_gemma_4_q4_k_m",
@@ -163,9 +216,17 @@
     },
     {
       "id": "llama_3_2_reasoning_q4",
-      "name": "Llama-3.2 Reasoning LLM (Q4)",
+      "name": "Llama 3.2 1B (Q4)",
       "category": "llm",
+      "subcategory": "main",
+      "description": "Fast and concise model. Optimized for ultra-low latency quick replies.",
+      "parameters": "1.2B (Q4_K_M)",
+      "ram_usage": "~750 MB",
+      "tradeoffs": "Ultra-fast response time; lightweight",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "llm_llama_3_2_1b_instruct_q4_k_m",
@@ -178,9 +239,17 @@
     },
     {
       "id": "llama_3_2_reasoning",
-      "name": "Llama-3.2 Reasoning LLM (Q6)",
+      "name": "Llama 3.2 1B (Q6)",
       "category": "llm",
+      "subcategory": "main",
+      "description": "Higher precision model. Delivers detailed, high-fidelity answers.",
+      "parameters": "1.2B (Q6_K)",
+      "ram_usage": "~1.0 GB",
+      "tradeoffs": "Higher output fidelity; slightly slower response",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "llm_llama_3_2_1b_instruct_q6_k",
@@ -193,9 +262,17 @@
     },
     {
       "id": "supertonic_tts",
-      "name": "Supertonic 3 TTS Engine",
+      "name": "Supertonic 3 Multilingual",
       "category": "tts",
+      "subcategory": "main",
+      "description": "Fast local speech generator. Features 10 natural preset voices with instant startup.",
+      "parameters": "99M (INT8)",
+      "ram_usage": "~144 MB",
+      "tradeoffs": "Fast response; 10 built-in voices",
       "version": "3.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "tts_supertonic_duration_predictor",
@@ -250,16 +327,32 @@
     },
     {
       "id": "edge_tts",
-      "name": "Microsoft Edge TTS Engine (Cloud)",
+      "name": "Microsoft Edge Neural TTS",
       "category": "tts",
+      "subcategory": "cloud",
+      "description": "Cloud voice synthesis. Offers over 400 natural voices with zero local CPU or RAM load.",
+      "parameters": "Cloud Neural",
+      "ram_usage": "0 MB (Cloud)",
+      "tradeoffs": "Zero local RAM load; requires active internet",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": true,
+      "is_remote": false,
       "files": []
     },
     {
       "id": "chatterbox_tts",
-      "name": "Chatterbox Multilingual TTS Engine",
+      "name": "Chatterbox Local TTS",
       "category": "tts",
+      "subcategory": "main",
+      "description": "Local voice cloning engine. Mimics any voice from a short 5-second sample audio clip.",
+      "parameters": "340M (Q4)",
+      "ram_usage": "~1.1 GB",
+      "tradeoffs": "Voice cloning capabilities; higher CPU/GPU load",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "tts_chatterbox_t3",
@@ -286,10 +379,33 @@
       ]
     },
     {
-      "id": "bge_m3",
-      "name": "BGE-M3 Multilingual Embedding Engine (Fallback)",
-      "category": "embedding",
+      "id": "chatterbox_remote",
+      "name": "Chatterbox Remote TTS",
+      "category": "tts",
+      "subcategory": "remote",
+      "description": "Remote voice cloning engine. Offloads voice cloning to a dedicated remote GPU server.",
+      "parameters": "340M (Remote GPU)",
+      "ram_usage": "0 MB (Local)",
+      "tradeoffs": "Real-time voice cloning with zero local memory usage; requires GPU server",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": true,
+      "files": []
+    },
+    {
+      "id": "bge_m3",
+      "name": "BGE-M3 Multilingual Embedding Engine",
+      "category": "embedding",
+      "subcategory": "auxiliary",
+      "description": "Fallback memory vector generator. Creates 1024-dimensional semantic embeddings.",
+      "parameters": "1024-dim ONNX",
+      "ram_usage": "~280 MB",
+      "tradeoffs": "Deep 1024-dim semantic search capability",
+      "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "embedding_bge_m3_onnx",
@@ -309,9 +425,17 @@
     },
     {
       "id": "minilm_l12_v2",
-      "name": "MiniLM-L12 Multilingual Embedding Engine (Primary)",
+      "name": "MiniLM-L12 Multilingual Embeddings",
       "category": "embedding",
+      "subcategory": "auxiliary",
+      "description": "Fast memory vector generator. Creates 384-dimensional embeddings for memory retrieval.",
+      "parameters": "33M ONNX",
+      "ram_usage": "~120 MB",
+      "tradeoffs": "Fast memory retrieval with low memory usage",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "embedding_minilm_l12_onnx",
@@ -331,9 +455,17 @@
     },
     {
       "id": "nli_deberta_v3_base",
-      "name": "DeBERTa-v3 Base NLI Contradiction Engine",
+      "name": "DeBERTa-v3 NLI Fact Verifier",
       "category": "nli",
+      "subcategory": "auxiliary",
+      "description": "Memory contradiction checker. Verifies facts before saving to prevent incorrect memories.",
+      "parameters": "22M ONNX",
+      "ram_usage": "~90 MB",
+      "tradeoffs": "Prevents duplicate or conflicting memories",
       "version": "2.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "nli_deberta_onnx",
@@ -353,9 +485,17 @@
     },
     {
       "id": "modernbert_memory_scope",
-      "name": "ModernBERT Multilingual MemoryScope Classifier Engine",
+      "name": "ModernBERT MemoryScope Classifier",
       "category": "classifier",
+      "subcategory": "auxiliary",
+      "description": "Smart intent filter. Checks your speech in under 5ms to route queries without wasting resources.",
+      "parameters": "66M ONNX",
+      "ram_usage": "~130 MB",
+      "tradeoffs": "Instant intent classification",
       "version": "2.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "memory_scope_model_quantized",
@@ -375,9 +515,17 @@
     },
     {
       "id": "modernbert_edge_creation",
-      "name": "ModernBERT Cognitive Edge Classifier Engine",
+      "name": "ModernBERT Cognitive Edge Classifier",
       "category": "classifier",
+      "subcategory": "auxiliary",
+      "description": "Memory relationship builder. Connects related facts together in your memory graph.",
+      "parameters": "66M ONNX",
+      "ram_usage": "~130 MB",
+      "tradeoffs": "Automatic memory graph linking",
       "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
       "files": [
         {
           "id": "edge_classifier_model_quantized",

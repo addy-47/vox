@@ -65,15 +65,15 @@ export const InteractionCard = memo(
           : ttsPill;
 
     const cycleCategory = () => {
-      setActiveCategory((prev) => {
-        const next = prev === "STT" ? "LLM" : prev === "LLM" ? "TTS" : "STT";
-        const event = new CustomEvent("sync_pipeline_tab", {
-          detail: next.toLowerCase(),
-        });
-        window.dispatchEvent(event);
-        return next;
-      });
+      setActiveCategory((prev) => (prev === "STT" ? "LLM" : prev === "LLM" ? "TTS" : "STT"));
     };
+
+    useEffect(() => {
+      const event = new CustomEvent("sync_pipeline_tab", {
+        detail: activeCategory.toLowerCase(),
+      });
+      window.dispatchEvent(event);
+    }, [activeCategory]);
 
     useEffect(() => {
       const handleSync = (e: Event) => {

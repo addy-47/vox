@@ -1,7 +1,8 @@
-import React, { memo } from "react";
+import React, { memo, useMemo } from "react";
 import { VoxOrb, PipelineField, StatusCapsule } from "@/shared/components/home";
+import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
-import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
+import { TEST_CLIPS, GOVERNOR_LABELS } from "@/data/homeData";
 import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/shared/lib/utils";
@@ -28,17 +29,17 @@ const MarkdownComponents = {
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>
     {turn.user && (
-      <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/65 font-light text-[14px] leading-relaxed opacity-90 prose prose-invert select-text">
-        <span className="text-[12px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-0.5">
-          [USER]
+      <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--foreground-muted))] font-normal text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.12)]">
+        <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
+          USER
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
       </div>
     )}
     {turn.assistant && (
-      <div className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[14px] leading-relaxed opacity-90 prose prose-invert select-text">
-        <span className="text-[12px] font-mono tracking-widest text-[rgb(var(--accent))]/90 uppercase block mb-0.5">
-          [VOX]
+      <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.2)]">
+        <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/80 uppercase block mb-1 font-bold">
+          VOX
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
       </div>
@@ -46,17 +47,6 @@ const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; 
   </React.Fragment>
 ));
 DialogueTurn.displayName = "DialogueTurn";
-
-// ─── Test clips metadata ──────────────────────────────────────────────────────
-
-const TEST_CLIPS = [
-  { id: "short_en", name: "Quick English", duration: "~5s", desc: "Short English query" },
-  { id: "short_hi", name: "Quick Hindi", duration: "~8s", desc: "Short Hindi query" },
-  { id: "hinglish", name: "Hinglish Mix", duration: "~10s", desc: "Code-switching (EN+HI)" },
-  { id: "command", name: "Command", duration: "~10s", desc: "Action-oriented command" },
-  { id: "expressive", name: "Expressive", duration: "~16s", desc: "Longer, triggers emotion tags" },
-] as const;
-
 
 export const Home = memo(() => {
   const navigate = useNavigate();
@@ -93,9 +83,6 @@ export const Home = memo(() => {
     handleTestClip,
   } = useHomePage();
 
-  const streamedTranscript = useStreamingRenderer(transcript);
-  const streamedAssistantText = useStreamingRenderer(assistantText);
-
   const ambientMood = toMood(interactionState, isSleeping);
   const statusLabel = toStatusLabel(
     interactionState,
@@ -107,7 +94,10 @@ export const Home = memo(() => {
   );
   const dotActive = isDotActive(isEngaged, interactionState, pttStatus, isSleeping);
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // Bound visible dialogue history to recent turns to prevent unbounded DOM accumulation
+  const visibleDialogueTurns = useMemo(() => {
+    return dialogueHistory.slice(-10);
+  }, [dialogueHistory]);
 
   return (
     <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
@@ -159,8 +149,8 @@ export const Home = memo(() => {
       {/* ── Top-right: Status Capsule (single, clean, centered on mobile) ── */}
       <div className="absolute top-[10%] md:top-4 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-5 z-30 flex items-center gap-2 pointer-events-none">
         {cpuWarning && (
-          <span className="text-[10px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]/60">
-            CPU: {cpuWarning.governor}
+          <span className="text-[10px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
+            Mode: {GOVERNOR_LABELS[cpuWarning.governor] || cpuWarning.governor}
           </span>
         )}
         <StatusCapsule
@@ -173,11 +163,11 @@ export const Home = memo(() => {
       {/* ── Side Dialogue Area - Right Only (All transcripts, big screens only) ── */}
       <div
         className="absolute top-[64px] bottom-[20%] right-0 flex flex-col justify-end items-center pointer-events-none hidden md:flex z-20"
-        style={{ width: "calc(50vw - min(35vw, 32.5vh))" }}
+        style={{ width: "clamp(240px, calc(50vw - 20vw), 360px)" }}
       >
         <div
           ref={dialogueScrollRef}
-          className="w-full max-h-[85%] overflow-y-auto scrollbar-none flex flex-col items-center gap-6 pointer-events-auto select-text px-4 pb-6"
+          className="w-full max-h-[85%] overflow-y-auto scrollbar-none flex flex-col items-center gap-4 pointer-events-auto select-text px-4 pb-6"
           style={{
             maskImage: "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
             WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
@@ -185,39 +175,12 @@ export const Home = memo(() => {
         >
           <div className="flex-1 min-h-[4vh]" />
           {/* Dialogue History */}
-          {dialogueHistory.map((turn: { user: string; assistant: string; id: number }) => (
+          {visibleDialogueTurns.map((turn: { user: string; assistant: string; id: number }) => (
             <DialogueTurn key={turn.id} turn={turn} />
           ))}
 
-          {/* Active Current Turn */}
-          {(streamedTranscript || streamedAssistantText) && (
-            <div className="w-full flex flex-col gap-6 items-center">
-              {streamedTranscript && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-[220px] break-words text-left text-[rgb(var(--foreground))]/85 font-light text-[12px] leading-relaxed prose prose-invert select-text"
-                >
-                  <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--foreground-muted))]/60 uppercase block mb-0.5">
-                    [USER]
-                  </span>
-                  <ReactMarkdown components={MarkdownComponents}>{streamedTranscript}</ReactMarkdown>
-                </motion.div>
-              )}
-              {streamedAssistantText && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-[220px] break-words text-left text-[rgb(var(--accent))] font-medium text-[12px] leading-relaxed prose prose-invert select-text" style={{ textShadow: "0 0 25px rgba(var(--accent), 0.25)" }}
-                >
-                  <span className="text-[10px] font-mono tracking-widest text-[rgb(var(--accent))]/70 uppercase block mb-0.5">
-                    [VOX]
-                  </span>
-                  <ReactMarkdown components={MarkdownComponents}>{streamedAssistantText}</ReactMarkdown>
-                </motion.div>
-              )}
-            </div>
-          )}
+          {/* Isolated Active Streaming Transcript */}
+          <ActiveTranscript transcript={transcript} assistantText={assistantText} />
         </div>
       </div>
 
@@ -377,20 +340,21 @@ export const Home = memo(() => {
               <button
                 key={clip.id}
                 onClick={() => handleTestClip(clip.id)}
-                className="w-full text-left p-2 rounded-xl hover:bg-[rgb(var(--accent))]/10 transition-colors border border-transparent hover:border-[rgb(var(--accent))]/15 flex flex-col"
+                className="w-full text-left p-2 rounded-xl hover:bg-[rgb(var(--accent))]/10 transition-colors border border-transparent hover:border-[rgb(var(--accent))]/15 flex flex-col cursor-pointer"
               >
                 <span className="text-[14px] font-semibold text-[rgb(var(--foreground))]">
-                  {clip.name}
+                  {clip.label}
                 </span>
                 <span className="text-[12px] text-[rgb(var(--foreground-muted))] mt-0.5">
-                  {clip.desc} · {clip.duration}
+                  {clip.desc}
                 </span>
               </button>
             ))}
           </motion.div>
         )}
       </AnimatePresence>
-
     </div>
   );
 });
+
+Home.displayName = "Home";

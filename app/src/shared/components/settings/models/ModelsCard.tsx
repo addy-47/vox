@@ -125,16 +125,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const refreshPresence = useCallback(async () => {
     try {
       const presence: Record<string, boolean> = {};
-      const allModelIds = [
-        "ten_vad",
+      const allModelIds = modelCatalog?.model_groups?.map((g) => g.id) || [
+        ...(modelCatalog?.vad?.map((m) => m.id) || []),
         ...(modelCatalog?.asr?.map((m) => m.id) || []),
         ...(modelCatalog?.llm?.map((m) => m.id) || []),
         ...(modelCatalog?.tts?.map((m) => m.id) || []),
-        "modernbert_memory_scope",
-        "minilm_l12_v2",
-        "nli_deberta_v3_base",
-        "vox_translit_rnn",
-        "modernbert_edge_creation",
+        ...(modelCatalog?.auxiliary?.map((m) => m.id) || []),
       ];
 
       for (const id of allModelIds) {
@@ -148,6 +144,15 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   useEffect(() => {
     refreshPresence();
+  }, [refreshPresence]);
+
+  useEffect(() => {
+    const unsub = eventsService.onOptionalModelComplete(() => {
+      refreshPresence();
+    });
+    return () => {
+      unsub();
+    };
   }, [refreshPresence]);
 
   // 3. Custom Voices & Edge TTS
@@ -439,23 +444,24 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
   }, [activePipelineTab, draftSettings?.tts?.provider?.kind, isRemoteTtsHealthy, activeCategoryTab]);
 
+
+
   if (!draftSettings) return null;
 
   // Topology verification flags
-  const isVadVerified = !!(modelPresence["silero_vad_v5"] && modelPresence["speech_tokenizer"]);
-  const isAsrVerified = !!(modelPresence["whisper_medium"] || modelPresence["whisper_small"] || modelPresence["whisper_tiny"]);
-  const isLlmDownloaded = !!(modelPresence["qwen2_5_0_5b"] || modelPresence["qwen2_5_1_5b"] || isRemoteLlm);
+  const isVadVerified = draftSettings?.vad?.vad_backend === "earshot" || !!modelPresence["ten_vad"];
+  const isAsrVerified = !!(modelPresence[draftSettings?.asr?.model || "nvidia_nemotron"] || modelPresence["nvidia_nemotron"] || modelPresence["qwen3_asr"]);
+  const isLlmDownloaded = isRemoteLlm || !!(modelPresence[draftSettings?.llm?.model || "llama_3_2_reasoning_q4"] || modelPresence["gemma_4_reasoning"]);
   const isTtsVerified =
     draftSettings?.tts?.provider?.kind === "chatterbox_remote"
       ? isRemoteTtsHealthy === true
-      : !!(modelPresence["chatterbox_turbo"] || modelPresence["supertonic"]);
-  const isAuxiliaryVerified = !!(
-    modelPresence["modernbert_memory_scope"] &&
-    modelPresence["modernbert_edge_creation"] &&
-    modelPresence["minilm_l12_v2"] &&
-    modelPresence["nli_deberta_v3_base"] &&
-    modelPresence["vox_translit_rnn"]
-  );
+      : draftSettings?.tts?.provider?.kind === "edge_tts"
+        ? true
+        : !!(modelPresence["supertonic_tts"] || modelPresence["chatterbox_tts"]);
+  const isAuxiliaryVerified =
+    (modelCatalog?.auxiliary?.length || 0) > 0
+      ? modelCatalog?.auxiliary?.every((m) => !!modelPresence[m.id])
+      : true;
 
   return (
     <div

@@ -20,6 +20,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
   const settings = useSettingsStore((s) => s.settings);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
+  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
   const [url, setUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -34,6 +35,22 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
   const [checkingHealth, setCheckingHealth] = useState(false);
 
   if (!draftSettings || !settings) return null;
+
+  const activeLlmId = draftSettings.llm?.model;
+  const activeLlm = modelCatalog?.llm?.find((m) => m.id === activeLlmId) || modelCatalog?.llm?.[0];
+  const activeLlmDescription = activeLlm?.description || "";
+
+  const activeAsrId = draftSettings.asr?.model;
+  const activeAsr = modelCatalog?.asr?.find((m) => m.id === activeAsrId) || modelCatalog?.asr?.[0];
+  const activeAsrDescription = activeAsr?.description || "";
+
+  const activeTtsKind = draftSettings.tts?.provider?.kind;
+  const activeTts = modelCatalog?.tts?.find((m) => m.id === activeTtsKind || (activeTtsKind && m.id.includes(activeTtsKind))) || modelCatalog?.tts?.[0];
+  const activeTtsDescription = activeTts?.description || "";
+
+  const edgeTtsModel = modelCatalog?.tts?.find((m) => m.id === "edge_tts");
+  const edgeTtsDescription = edgeTtsModel?.description || "";
+
   const currentProvider = draftSettings.llm.provider || { kind: "embedded" };
   const isCloudUrl = checkIfCloudUrl(currentProvider.base_url || "");
   const providerPill = currentProvider.kind === "embedded" ? "local" : isCloudUrl ? "cloud" : "remote";
@@ -221,12 +238,9 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
                 Embedded STT Engine
               </span>
-              <span className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase font-mono">
-                {draftSettings.asr?.model || "Whisper Medium"}
-              </span>
             </div>
             <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
-              On-device voice transcription powered by whisper.cpp with streaming INT8 quantization.
+              {activeAsrDescription}
             </p>
           </div>
         </div>
@@ -283,40 +297,20 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
         <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
           <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
             <div className="absolute w-20 h-20 rounded-full border border-[rgb(var(--accent))]/5 animate-ring-pulse-slow" />
-            <div className="absolute w-14 h-14 rounded-full border border-[rgb(var(--accent))]/15 animate-pulse-slow" />
-            <div className="absolute w-10 h-10 rounded-full border border-[rgb(var(--accent))]/25 animate-pulse" />
             <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/40 flex items-center justify-center relative z-10">
               <Brain className="text-[rgb(var(--accent))]" size={18} />
             </div>
           </div>
 
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse" />
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
-                Local Core Ready
+                Embedded LLM Engine
               </span>
             </div>
-            <div className="space-y-0.5 text-[12px] text-[rgb(var(--foreground-muted))]/70 font-medium">
-              <div className="flex justify-between items-center border-b border-[rgba(var(--border),0.04)] pb-0.5">
-                <span className="shrink-0">PIPELINE</span>
-                <span className="font-mono text-[12px] text-[rgb(var(--accent))] text-right whitespace-nowrap">
-                  low-latency
-                </span>
-              </div>
-              <div className="flex justify-between items-center border-b border-[rgba(var(--border),0.04)] pb-0.5">
-                <span className="shrink-0">VAD SENSE</span>
-                <span className="font-mono text-[12px] text-[rgb(var(--accent))] text-right whitespace-nowrap">
-                  earshot rust
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="shrink-0">LLM ENGINE</span>
-                <span className="font-mono text-[12px] text-[rgb(var(--accent))] text-right whitespace-nowrap">
-                  local gguf
-                </span>
-              </div>
-            </div>
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+              {activeLlmDescription}
+            </p>
           </div>
         </div>
       )}
@@ -430,14 +424,11 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
-                Local TTS Config
-              </span>
-              <span className="text-[11px] font-bold text-[rgb(var(--accent))] uppercase">
-                {currentTtsProvider.kind === "chatterbox" ? "Chatterbox Local" : "Supertonic 3"}
+                Embedded TTS Engine
               </span>
             </div>
             <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
-              Synthesis voice, speed and quality can be configured in the Models panel.
+              {activeTtsDescription}
             </p>
           </div>
         </div>
@@ -496,15 +487,12 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
-                Microsoft Edge Neural TTS
-              </span>
               <span className="text-[11px] font-bold text-emerald-400 uppercase font-mono">
                 Zero Config
               </span>
             </div>
             <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
-              Free, high-fidelity neural voices streamed directly over Edge WebSockets.
+              {edgeTtsDescription}
             </p>
           </div>
         </div>

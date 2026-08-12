@@ -1,50 +1,57 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { type InteractionState } from "@/services/eventsService";
 
 interface PipelineFieldProps {
   state: InteractionState;
-  volume?: number; // Optional volume parameter for AssistantSpeaking reactive expansion
+  volume?: number;
 }
 
 export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldProps) => {
-  const [energy, setEnergy] = useState(0.12);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Map states to field energy — all use accent color via CSS variable,
-    // visual distinction comes from energy level, opacity, and scale.
+    if (!containerRef.current) return;
+    let targetEnergy = 0.12;
+
     switch (state) {
       case "Listening":
-        setEnergy(0.28);
+        targetEnergy = 0.28;
         break;
       case "UserSpeaking":
-        setEnergy(0.35 + volume * 0.25); // Expand with speech volume
+        targetEnergy = 0.35 + volume * 0.25;
         break;
       case "Thinking":
-        setEnergy(0.24);
+        targetEnergy = 0.24;
         break;
       case "AssistantSpeaking":
-        setEnergy(0.32 + volume * 0.3); // React to output audio
+        targetEnergy = 0.32 + volume * 0.3;
         break;
       case "Interrupted":
-        setEnergy(0.15);
+        targetEnergy = 0.15;
         break;
       case "Idle":
       default:
-        setEnergy(0.12);
+        targetEnergy = 0.12;
         break;
     }
+
+    containerRef.current.style.setProperty("--field-energy", targetEnergy.toString());
+    containerRef.current.style.setProperty("--field-scale", (0.8 + targetEnergy * 0.4).toString());
+    containerRef.current.style.setProperty("--border-alpha", (0.05 + targetEnergy * 0.1).toString());
   }, [state, volume]);
 
   return (
     <div
+      ref={containerRef}
       className="absolute inset-0 pointer-events-none transition-all duration-700 ease-out overflow-hidden"
       style={{
         zIndex: 1,
-        // Set CSS custom property dynamically
-        ["--field-energy" as any]: energy,
+        ["--field-energy" as any]: "0.12",
+        ["--field-scale" as any]: "0.85",
+        ["--border-alpha" as any]: "0.06",
       }}
     >
-      {/* Sentient Field Ambient Heatmap — always uses accent color via CSS var */}
+      {/* Sentient Field Ambient Heatmap */}
       <div
         className="absolute w-[80vw] h-[80vw] max-w-[800px] max-h-[800px] rounded-full blur-[120px] opacity-[var(--field-energy)] transition-all duration-700 ease-out"
         style={{
@@ -62,8 +69,8 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
         style={{
           left: "50%",
           top: "55%",
-          transform: `translate(-50%, -50%) scale(${0.8 + energy * 0.4})`,
-          borderColor: `rgba(var(--accent), ${0.05 + energy * 0.1})`,
+          transform: `translate(-50%, -50%) scale(var(--field-scale))`,
+          borderColor: `rgba(var(--accent), var(--border-alpha))`,
           opacity: state === "Idle" ? 0.2 : 0.6,
         }}
       />

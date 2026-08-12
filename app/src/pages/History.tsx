@@ -5,15 +5,7 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import { Ghost, ChevronLeft, ChevronRight, X, Trash2, Check, AlertCircle, RotateCcw } from "lucide-react";
-import {
-  forceSimulation,
-  forceX,
-  forceY,
-  forceCollide,
-  forceManyBody,
-  SimulationNodeDatum,
-} from "d3-force";
+import { Ghost, ChevronLeft, ChevronRight, X, AlertCircle, RotateCcw, Check, Trash2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -28,6 +20,7 @@ import {
 import { VoiceRippleNode } from "@/shared/components/history";
 import { DetailPanel } from "@/shared/components/history";
 import { EmptyState } from "@/shared/components/common/EmptyState";
+import { HISTORY_COPY } from "@/data/historyCopy";
 
 function getErrorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error) return e.message;
@@ -50,6 +43,7 @@ export const History: React.FC = () => {
   const [turnsError, setTurnsError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const deleteTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Pagination & Layout states
   const [pageIndex, setPageIndex] = useState(0);
@@ -85,7 +79,7 @@ export const History: React.FC = () => {
       setSessions(data.sort((a, b) => b.started_at - a.started_at));
     } catch (e: unknown) {
       console.error("Failed to fetch sessions:", e);
-      setError(getErrorMessage(e, "Failed to load history sessions. Please check backend connection."));
+      setError(getErrorMessage(e, HISTORY_COPY.failedFallback));
     }
   }, []);
 
@@ -152,6 +146,8 @@ export const History: React.FC = () => {
   const handleDelete = useCallback(
     async (e: React.MouseEvent, id: number) => {
       e.stopPropagation();
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+
       if (confirmDeleteId === id) {
         try {
           await deleteSession(id);
@@ -161,11 +157,13 @@ export const History: React.FC = () => {
           fetchSessions();
         } catch (err: unknown) {
           console.error("Failed to delete session:", err);
-          setDeleteError(getErrorMessage(err, "Failed to delete session."));
+          setDeleteError(getErrorMessage(err, HISTORY_COPY.deleteFailed));
         }
       } else {
         setConfirmDeleteId(id);
-        setTimeout(() => setConfirmDeleteId((curr) => (curr === id ? null : curr)), 3000);
+        deleteTimerRef.current = setTimeout(() => {
+          setConfirmDeleteId(null);
+        }, 3000);
       }
     },
     [confirmDeleteId, selectedSession, fetchSessions]
@@ -179,6 +177,7 @@ export const History: React.FC = () => {
 
   const handleCancelDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
     setConfirmDeleteId(null);
   }, []);
 
@@ -204,12 +203,7 @@ export const History: React.FC = () => {
     return sessions.slice(pageIndex * maxPerPage, (pageIndex + 1) * maxPerPage);
   }, [sessions, pageIndex, maxPerPage]);
 
-  interface SessionNode extends SimulationNodeDatum {
-    id: number;
-    session: SessionRow;
-    dayKey: string;
-  }
-
+  // Deterministic Grid Layout with Seeded Radial Jitter (No main-thread D3-Force physics simulation)
   const nodesWithPositions = useMemo(() => {
     const N = pageSessions.length;
     if (N === 0 || dimensions.width === 0) return [];
@@ -251,7 +245,10 @@ export const History: React.FC = () => {
       availableSlots[j] = temp;
     }
 
-    const nodes: SessionNode[] = pageSessions.map((session, index) => {
+    const edgeMarginX = 64;
+    const edgeMarginY = 64;
+
+    return pageSessions.map((session, index) => {
       let cellIdx: number;
       if (index === 0) {
         cellIdx = 0;
@@ -279,37 +276,17 @@ export const History: React.FC = () => {
       const jitterX = (rx * 2 - 1) * maxJitterX;
       const jitterY = (ry * 2 - 1) * maxJitterY;
 
+      const rawX = centerX + jitterX;
+      const rawY = centerY + jitterY;
+
+      const clampedX = Math.max(112 + edgeMarginX, Math.min(dimensions.width - 112 - edgeMarginX, rawX));
+      const clampedY = Math.max(56 + edgeMarginY, Math.min(dimensions.height - 56 - edgeMarginY, rawY));
+
       return {
-        id: session.id,
         session,
-        dayKey: formatDateShort(session.started_at),
-        x: centerX + jitterX,
-        y: centerY + jitterY,
-        vx: 0,
-        vy: 0,
-      };
-    });
-
-    const simulation = forceSimulation<SessionNode>(nodes)
-      .force("x", forceX<SessionNode>((d) => d.x ?? 0).strength(0.2))
-      .force("y", forceY<SessionNode>((d) => d.y ?? 0).strength(0.2))
-      .force("charge", forceManyBody<SessionNode>().strength(-120))
-      .force("collide", forceCollide<SessionNode>().radius(135).iterations(4));
-
-    simulation.tick(30);
-    simulation.stop();
-
-    const edgeMarginX = 64;
-    const edgeMarginY = 64;
-
-    return nodes.map((node) => {
-      const clampedX = Math.max(112 + edgeMarginX, Math.min(dimensions.width - 112 - edgeMarginX, node.x ?? 0));
-      const clampedY = Math.max(56 + edgeMarginY, Math.min(dimensions.height - 56 - edgeMarginY, node.y ?? 0));
-      return {
-        session: node.session,
         x: clampedX,
         y: clampedY,
-        dayKey: node.dayKey,
+        dayKey: formatDateShort(session.started_at),
       };
     });
   }, [pageSessions, pageIndex, usableW, usableH, paddingX, paddingY, dimensions]);
@@ -357,7 +334,7 @@ export const History: React.FC = () => {
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             className="absolute top-4 left-1/2 -translate-x-1/2 z-[100] max-w-md w-full px-4 pointer-events-auto"
           >
-            <div className="glass-card p-3.5 rounded-xl flex items-center justify-between gap-3 border border-red-500/30 shadow-2xl bg-black/60 backdrop-blur-md text-left">
+            <div className="glass-card p-3.5 rounded-xl flex items-center justify-between gap-3 border border-red-500/30 shadow-2xl bg-[rgb(var(--card))]/90 backdrop-blur-md text-left">
               <div className="flex items-center gap-2.5 min-w-0">
                 <AlertCircle className="text-red-400 shrink-0" size={16} />
                 <span className="text-[12px] font-medium text-[rgb(var(--foreground))] truncate">
@@ -384,7 +361,7 @@ export const History: React.FC = () => {
         {showLoading ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-50">
             <div className="w-6 h-6 border border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
-            <span className="text-[11px] font-bold uppercase tracking-widest">Loading memories...</span>
+            <span className="text-[11px] font-bold uppercase tracking-widest">{HISTORY_COPY.loading}</span>
           </div>
         ) : error ? (
           <div className="absolute inset-0 flex items-center justify-center p-8">
@@ -393,7 +370,7 @@ export const History: React.FC = () => {
                 <AlertCircle size={20} />
               </div>
               <div className="space-y-1">
-                <h3 className="text-[14px] font-bold text-[rgb(var(--foreground))]">Failed to load history</h3>
+                <h3 className="text-[14px] font-bold text-[rgb(var(--foreground))]">{HISTORY_COPY.failedTitle}</h3>
                 <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed">
                   {error}
                 </p>
@@ -403,7 +380,7 @@ export const History: React.FC = () => {
                 className="px-4 py-2 rounded-xl glass-card border border-[rgba(var(--accent),0.3)] text-[12px] font-bold text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors flex items-center gap-2 cursor-pointer"
               >
                 <RotateCcw size={14} />
-                Retry
+                {HISTORY_COPY.retry}
               </button>
             </div>
           </div>
@@ -411,8 +388,8 @@ export const History: React.FC = () => {
           <div className="absolute inset-0 flex items-center justify-center p-8">
             <EmptyState
               icon={Ghost}
-              title="No memories persisted"
-              description="Transcribed interactions and voice sessions will appear here as memory nodes."
+              title={HISTORY_COPY.noMemoriesTitle}
+              description={HISTORY_COPY.noMemoriesDesc}
               className="max-w-sm border-0 bg-transparent"
             />
           </div>
@@ -422,7 +399,7 @@ export const History: React.FC = () => {
             {sessions.map((session) => {
               const isSelected = selectedSession?.id === session.id;
               const isConfirmingDelete = confirmDeleteId === session.id;
-              const previewText = session.first_message || "No transcript recorded";
+              const previewText = session.first_message || HISTORY_COPY.noTranscript;
               return (
                 <div
                   key={session.id}
@@ -438,14 +415,14 @@ export const History: React.FC = () => {
                   )}
                 >
                   <div className="flex items-center justify-between mb-2 pr-10">
-                    <span className="text-[11px] font-mono text-[rgb(var(--accent))]/80 font-bold">
+                    <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">
                       {formatDateTime(session.started_at)}
                     </span>
-                    <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40">
-                      {session.turn_count} {session.turn_count === 1 ? "turn" : "turns"}
+                    <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] font-medium">
+                      {session.turn_count} {session.turn_count === 1 ? HISTORY_COPY.turnSingular : HISTORY_COPY.turnPlural}
                     </span>
                   </div>
-                  <p className="text-[14px] font-light leading-relaxed italic text-[rgb(var(--foreground))]/75 pr-10">
+                  <p className="text-[14px] font-light leading-relaxed italic text-[rgb(var(--foreground))] pr-10">
                     "{previewText}"
                   </p>
                   <div className="absolute top-4 right-4 z-20">
@@ -453,23 +430,23 @@ export const History: React.FC = () => {
                       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={(e) => handleDelete(e, session.id)}
-                          className="w-6 h-6 rounded-full glass-card flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20"
+                          className="w-7 h-7 rounded-full glass-card flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 cursor-pointer shadow-md"
                           aria-label="Confirm delete"
                         >
-                          <Check size={14} strokeWidth={3} />
+                          <Check size={14} strokeWidth={2.5} />
                         </button>
                         <button
                           onClick={handleCancelDelete}
-                          className="w-6 h-6 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                          className="w-7 h-7 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shadow-md"
                           aria-label="Cancel delete"
                         >
-                          <X size={14} strokeWidth={3} />
+                          <X size={14} strokeWidth={2.5} />
                         </button>
                       </div>
                     ) : (
                       <button
                         onClick={(e) => handleDelete(e, session.id)}
-                        className="w-6 h-6 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        className="w-7 h-7 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
                         aria-label="Delete session"
                       >
                         <Trash2 size={14} />
@@ -486,7 +463,7 @@ export const History: React.FC = () => {
             <button
               onClick={(e) => { e.stopPropagation(); handlePrevPage(); }}
               disabled={pageIndex === 0}
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-10 transition-all z-30"
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-10 transition-all z-30 cursor-pointer"
               aria-label="Newer sessions page"
             >
               <ChevronLeft size={22} />
@@ -494,13 +471,13 @@ export const History: React.FC = () => {
             <button
               onClick={(e) => { e.stopPropagation(); handleNextPage(); }}
               disabled={pageIndex === totalPages - 1}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-10 transition-all z-30"
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-10 transition-all z-30 cursor-pointer"
               aria-label="Older sessions page"
             >
               <ChevronRight size={22} />
             </button>
 
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40 z-30">
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-mono font-medium text-[rgb(var(--foreground-muted))] z-30">
               {pageIndex + 1} / {totalPages}
             </div>
 
@@ -533,7 +510,7 @@ export const History: React.FC = () => {
                         key={session.id}
                         session={session}
                         isSelected={selectedSession?.id === session.id}
-                        confirmDeleteId={confirmDeleteId}
+                        isConfirmingDelete={confirmDeleteId === session.id}
                         onSelect={setSelectedSession}
                         onDelete={handleDelete}
                         onCancelDelete={handleCancelDelete}
@@ -552,7 +529,7 @@ export const History: React.FC = () => {
       <AnimatePresence>
         {selectedSession && (
           <div
-            className="absolute inset-0 z-25 cursor-default glass"
+            className="absolute inset-0 z-[25] cursor-default glass-card bg-[rgb(var(--background))]/50 backdrop-blur-sm"
             onClick={() => setSelectedSession(null)}
           />
         )}

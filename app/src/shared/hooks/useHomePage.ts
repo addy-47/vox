@@ -314,24 +314,10 @@ export function useHomePage() {
     }
   }, [isEngaged, pipelineMode]);
 
-  // Tauri Event Listeners
+  // Tauri Event Listeners (Safely registered concurrently with memory leak guards)
   useEffect(() => {
     let isMounted = true;
     const unlisteners: (() => void)[] = [];
-
-    const addListener = async <T>(event: string, handler: (e: any) => void) => {
-      try {
-        const appWindow = getCurrentWindow();
-        const unlisten = await appWindow.listen<T>(event, handler);
-        if (!isMounted) {
-          unlisten();
-        } else {
-          unlisteners.push(unlisten);
-        }
-      } catch (err) {
-        console.error(`[Home] Failed to listen to ${event}:`, err);
-      }
-    };
 
     const setup = async () => {
       try {
@@ -375,60 +361,109 @@ export function useHomePage() {
           console.warn("[Home] Failed to sync initial state:", e);
         }
 
-        await addListener<InteractionState>("state_changed", (event) => {
-          const newState = event.payload;
-          setInteractionState(newState);
-          if (newState !== "Idle") {
-            hasActiveTurnStarted.current = true;
-            setIdleTimeout(null);
+        const appWindow = getCurrentWindow();
+        const eventsList: Array<[string, (event: any) => void]> = [
+          [
+            "state_changed",
+            (event) => {
+              if (!isMounted) return;
+              const newState = event.payload;
+              setInteractionState(newState);
+              if (newState !== "Idle") {
+                hasActiveTurnStarted.current = true;
+                setIdleTimeout(null);
+              }
+              if (newState === "UserSpeaking" || newState === "Listening") {
+                archiveCurrentTurn();
+              }
+            },
+          ],
+          [
+            "transcript_partial",
+            (event) => {
+              if (!isMounted) return;
+              setTranscript(event.payload.text);
+              activeUserTextRef.current = event.payload.text;
+              setIdleTimeout(null);
+            },
+          ],
+          [
+            "transcript_final",
+            (event) => {
+              if (!isMounted) return;
+              setTranscript(event.payload.text);
+              activeUserTextRef.current = event.payload.text;
+              setIdleTimeout(null);
+            },
+          ],
+          [
+            "llm_token",
+            (event) => {
+              if (!isMounted) return;
+              setAssistantText(event.payload);
+              activeAiTextRef.current = event.payload;
+              setIdleTimeout(null);
+            },
+          ],
+          [
+            "mode_changed_main",
+            (event) => {
+              if (!isMounted) return;
+              setInteractionMode(event.payload.toUpperCase() as InteractionMode);
+            },
+          ],
+          [
+            "ptt_status",
+            (event) => {
+              if (!isMounted) return;
+              setPttStatus(event.payload.state as "IDLE" | "RECORDING" | "PROCESSING");
+            },
+          ],
+          [
+            "idle_timeout_tick",
+            (event) => {
+              if (!isMounted) return;
+              setIdleTimeout(event.payload.seconds);
+            },
+          ],
+          [
+            "idle_timeout_reset",
+            () => {
+              if (!isMounted) return;
+              setIdleTimeout(null);
+            },
+          ],
+          [
+            "hud_sleep_state",
+            (event) => {
+              if (!isMounted) return;
+              setIsSleeping(event.payload);
+              if (event.payload) archiveCurrentTurn();
+            },
+          ],
+          [
+            "pipeline_mode_changed",
+            (event) => {
+              if (!isMounted) return;
+              setPipelineMode(event.payload.toLowerCase() as "modular" | "realtime");
+            },
+          ],
+        ];
+
+        const listenPromises = eventsList.map(async ([event, handler]) => {
+          try {
+            const unlisten = await appWindow.listen(event, handler);
+            if (!isMounted) {
+              unlisten();
+            } else {
+              unlisteners.push(unlisten);
+            }
+          } catch (err) {
+            console.error(`[Home] Failed to listen to ${event}:`, err);
           }
-          if (newState === "UserSpeaking" || newState === "Listening") {
-            archiveCurrentTurn();
-          }
         });
 
-        await addListener<{ text: string }>("transcript_partial", (event) => {
-          setTranscript(event.payload.text);
-          activeUserTextRef.current = event.payload.text;
-          setIdleTimeout(null);
-        });
-
-        await addListener<{ text: string }>("transcript_final", (event) => {
-          setTranscript(event.payload.text);
-          activeUserTextRef.current = event.payload.text;
-          setIdleTimeout(null);
-        });
-
-        await addListener<string>("llm_token", (event) => {
-          setAssistantText(event.payload);
-          activeAiTextRef.current = event.payload;
-          setIdleTimeout(null);
-        });
-
-        await addListener<string>("mode_changed_main", (event) => {
-          setInteractionMode(event.payload.toUpperCase() as InteractionMode);
-        });
-
-        await addListener<{ state: string }>("ptt_status", (event) => {
-          setPttStatus(event.payload.state as "IDLE" | "RECORDING" | "PROCESSING");
-        });
-
-        await addListener<{ seconds: number }>("idle_timeout_tick", (event) => {
-          setIdleTimeout(event.payload.seconds);
-        });
-
-        await addListener("idle_timeout_reset", () => {
-          setIdleTimeout(null);
-        });
-
-        await addListener<boolean>("hud_sleep_state", (event) => {
-          setIsSleeping(event.payload);
-          if (event.payload) archiveCurrentTurn();
-        });
-
-        await addListener<string>("pipeline_mode_changed", (event) => {
-          setPipelineMode(event.payload.toLowerCase() as "modular" | "realtime");
-        });
+        await Promise.all(listenPromises);
 
         setTimeout(async () => {
           if (isMounted) await showMainWindow();
