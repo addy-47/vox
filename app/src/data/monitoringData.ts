@@ -1,0 +1,15 @@
+export const MONITORING_COPY = {
+  systemMetrics: "System Metrics",
+  liveMonitor: "LIVE MONITOR",
+  engineMonitor: "Engine Monitor",
+  voxCpu: "VOX CPU",
+  voxRam: "VOX RAM",
+  forceOffloadTitle: "Force Offload Models",
+  forceOffloadDesc: "Force offload all models immediately from RAM",
+  reloadModelsTitle: "Reload Models",
+  reloadModelsDesc: "Reload default models into engine",
+  sttTooltip: "Speech-To-Text Audio Recognition Latency (VAD -> STT Transcribe)",
+  ttftTooltip: "Time To First Token Latency (LLM Initial Inference Speed)",
+  rtfTooltip: "Real-Time Factor (TTS Output Generation Speed / Audio Duration)",
+  footprintTitle: "Vox Runtime Footprint",
+};

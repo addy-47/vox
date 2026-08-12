@@ -165,35 +165,74 @@ fn eval_subbranch_b_edges_sync(
     }
 
     for (cand_id, cand_fact, cand_coll, sim) in edge_candidates {
-        if is_valid_inter_collection_pair(&item.collection, cand_coll) {
+        let is_forward = is_valid_inter_collection_pair(&item.collection, cand_coll);
+        let is_reverse = is_valid_inter_collection_pair(cand_coll, &item.collection);
+
+        if is_forward || is_reverse {
             let mut decision = "NONE".to_string();
             let mut rejection_reason = None;
             let mut edge_score_val = None;
 
+            // Canonical Prompt Construction (CRITICAL):
+            // Always feed (semantic_src, semantic_tgt) to the ModernBERT classifier in canonical matrix order.
+            let (src_coll, src_fact, tgt_coll, tgt_fact) = if is_forward {
+                (
+                    item.collection.as_str(),
+                    item.fact.as_str(),
+                    cand_coll.as_str(),
+                    cand_fact.as_str(),
+                )
+            } else {
+                (
+                    cand_coll.as_str(),
+                    cand_fact.as_str(),
+                    item.collection.as_str(),
+                    item.fact.as_str(),
+                )
+            };
+
             match inter_edge_classifier::classify_edge(
-                &item.collection,
-                &item.fact,
+                src_coll,
+                src_fact,
                 None,
-                cand_coll,
-                cand_fact,
+                tgt_coll,
+                tgt_fact,
                 None,
             ) {
                 Ok((Some(pred_edge), score)) => {
                     edge_score_val = Some(score);
                     decision = pred_edge.clone();
                     let inv_edge = crate::core::constants::inverse_edge_for_relation(&pred_edge);
-                    relations.push(RelationEdge {
-                        from_id: format!("item_{}", item.id),
-                        to_id: cand_id.clone(),
-                        relation: pred_edge,
-                        source: "ModernBERT".to_string(),
-                    });
-                    relations.push(RelationEdge {
-                        from_id: cand_id.clone(),
-                        to_id: format!("item_{}", item.id),
-                        relation: inv_edge.to_string(),
-                        source: "ModernBERT".to_string(),
-                    });
+
+                    if is_forward {
+                        // Item is semantic Source, Candidate is semantic Target
+                        relations.push(RelationEdge {
+                            from_id: format!("item_{}", item.id),
+                            to_id: cand_id.clone(),
+                            relation: pred_edge,
+                            source: "ModernBERT".to_string(),
+                        });
+                        relations.push(RelationEdge {
+                            from_id: cand_id.clone(),
+                            to_id: format!("item_{}", item.id),
+                            relation: inv_edge.to_string(),
+                            source: "ModernBERT".to_string(),
+                        });
+                    } else {
+                        // Candidate is semantic Source, Item is semantic Target
+                        relations.push(RelationEdge {
+                            from_id: cand_id.clone(),
+                            to_id: format!("item_{}", item.id),
+                            relation: pred_edge,
+                            source: "ModernBERT".to_string(),
+                        });
+                        relations.push(RelationEdge {
+                            from_id: format!("item_{}", item.id),
+                            to_id: cand_id.clone(),
+                            relation: inv_edge.to_string(),
+                            source: "ModernBERT".to_string(),
+                        });
+                    }
                 }
                 Ok((None, score)) => {
                     edge_score_val = Some(score);
@@ -328,7 +367,7 @@ pub async fn run_stage3_eval_with_metrics_seq(
         let policy_targets: Vec<&'static str> = PM_SEMANTIC_GRAPH_COLLECTIONS
             .iter()
             .copied()
-            .filter(|&tgt| is_valid_inter_collection_pair(&item.collection, tgt))
+            .filter(|&tgt| crate::core::constants::has_inter_collection_relationship(&item.collection, tgt))
             .collect();
 
         let edge_candidates = if !policy_targets.is_empty() {
@@ -422,4 +461,26 @@ pub async fn run_stage3_eval_with_metrics_seq(
     }
 
     Ok(processed_count)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::core::constants::has_inter_collection_relationship;
+
+    #[test]
+    fn test_bidirectional_trigger_policy() {
+        // Identity -> Profile (forward pair in matrix)
+        assert!(has_inter_collection_relationship("Identity", "Profile"));
+        // Profile -> Identity (reverse trigger) MUST also evaluate to true
+        assert!(has_inter_collection_relationship("Profile", "Identity"));
+
+        // Directives -> Entities (forward pair in matrix)
+        assert!(has_inter_collection_relationship("Directives", "Entities"));
+        // Entities -> Directives (reverse trigger) MUST also evaluate to true
+        assert!(has_inter_collection_relationship("Entities", "Directives"));
+
+        // Narrative has no inter-collection relationship in either direction
+        assert!(!has_inter_collection_relationship("Narrative", "Profile"));
+        assert!(!has_inter_collection_relationship("Profile", "Narrative"));
+    }
 }
