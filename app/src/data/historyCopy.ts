@@ -1,0 +1,16 @@
+export const HISTORY_COPY = {
+  loading: "Loading memories...",
+  noMemoriesTitle: "No memories persisted",
+  noMemoriesDesc: "Transcribed interactions and voice sessions will appear here as memory nodes.",
+  failedTitle: "Failed to load history",
+  failedFallback: "Failed to load history sessions. Please check backend connection.",
+  retry: "Retry",
+  deleteConfirm: "Confirm Delete",
+  deleteFailed: "Failed to delete session.",
+  noTranscript: "No transcript recorded",
+  turnSingular: "turn",
+  turnPlural: "turns",
+  connectionError: "Connection Error",
+  sttLabel: "Audio Recognition (STT)",
+  ttftLabel: "Response Speed (TTFT)",
+};

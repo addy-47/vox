@@ -27,9 +27,11 @@ export const VadWorkspace = memo(
   }: VadWorkspaceProps) => {
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
+    const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
     if (!draftSettings) return null;
     const activeVadBackend = draftSettings.vad?.vad_backend || "earshot";
+    const vadModels = modelCatalog?.vad || [];
 
     return (
       <div className="space-y-3">
@@ -40,39 +42,36 @@ export const VadWorkspace = memo(
               layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
             )}
           >
-            <SubModelCard
-              id="earshot"
-              name="Earshot (Built-in)"
-              description="Pure Rust voice detection. Embedded weights, runs instantly with zero CPU load."
-              parameters="Built-in"
-              ramUsage="0 MB"
-              isDownloaded={true}
-              isActive={activeVadBackend === "earshot"}
-              isRequired={true}
-              layoutMode={layoutMode}
-              onSelect={() => updateDraft("vad", "vad_backend", "earshot")}
-              confirmDeleteId={confirmDeleteId}
-              setConfirmDeleteId={setConfirmDeleteId}
-              startDownload={() => {}}
-              deleteModel={() => {}}
-            />
-            <SubModelCard
-              id="ten_vad"
-              name="TenVAD Engine"
-              description="ONNX-based voice detector. Requires downloading auxiliary neural files."
-              parameters="ONNX"
-              ramUsage="~2 MB"
-              isDownloaded={!!modelPresence["ten_vad"]}
-              isActive={activeVadBackend === "ten_vad"}
-              isRequired={false}
-              layoutMode={layoutMode}
-              onSelect={() => updateDraft("vad", "vad_backend", "ten_vad")}
-              confirmDeleteId={confirmDeleteId}
-              setConfirmDeleteId={setConfirmDeleteId}
-              downloadStatus={downloadStatuses["ten_vad"]}
-              startDownload={() => startDownload("ten_vad")}
-              deleteModel={() => deleteModel("ten_vad")}
-            />
+            {vadModels.map((model) => {
+              const isBuiltIn = !!model.is_built_in;
+              const isDownloaded = isBuiltIn || !!modelPresence[model.id];
+              const isActive =
+                activeVadBackend.toLowerCase() === model.id.toLowerCase() ||
+                (model.id === "earshot" && activeVadBackend === "earshot") ||
+                (model.id === "ten_vad" && activeVadBackend === "ten_vad");
+
+              return (
+                <SubModelCard
+                  key={model.id}
+                  id={model.id}
+                  name={model.name}
+                  description={model.description || ""}
+                  parameters={model.parameters || (isBuiltIn ? "Built-in" : "ONNX")}
+                  ramUsage={model.ram_usage || "0 MB"}
+                  tradeoffs={model.tradeoffs || ""}
+                  isDownloaded={isDownloaded}
+                  isActive={isActive}
+                  isRequired={isBuiltIn}
+                  layoutMode={layoutMode}
+                  onSelect={() => updateDraft("vad", "vad_backend", model.id)}
+                  confirmDeleteId={confirmDeleteId}
+                  setConfirmDeleteId={setConfirmDeleteId}
+                  downloadStatus={downloadStatuses[model.id]}
+                  startDownload={() => startDownload(model.id)}
+                  deleteModel={() => deleteModel(model.id)}
+                />
+              );
+            })}
           </div>
         ) : (
           <div className="space-y-4 p-1">

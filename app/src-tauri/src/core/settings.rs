@@ -40,19 +40,6 @@ pub enum PipelineMode {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(default)]
-#[derive(Default)]
-pub struct ModelMetadata {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub ram_usage: String,
-    pub parameters: String,
-    pub tradeoffs: String,
-}
-
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VoiceProfile {
     pub id: i32,
     pub name: String,
@@ -143,108 +130,6 @@ pub fn get_preset_colors() -> Vec<String> {
         "#EC4899".to_string(),
         "#F59E0B".to_string(),
         "#10B981".to_string(),
-    ]
-}
-
-pub fn get_llm_metadata() -> Vec<ModelMetadata> {
-    vec![
-        ModelMetadata {
-            id: "gemma_4_reasoning".to_string(),
-            name: "Gemma 4".to_string(),
-            description: "Fast and smart core for general conversation and tasks.".to_string(),
-            ram_usage: " ~1.4GB".to_string(),
-            parameters: "2.4B (Q4_K_M)".to_string(),
-            tradeoffs: "Agentic capabilities (function calling, tool use). Higher quality but slower TPS than Llama Q4. ~1.4GB RAM.".to_string(),
-        },
-        ModelMetadata {
-            id: "llama_3_2_reasoning_q4".to_string(),
-            name: "Llama 3.2 1B (Q4)".to_string(),
-            description: "Fast, concise — optimized for low-latency responses.".to_string(),
-            ram_usage: " ~750MB".to_string(),
-            parameters: "1.2B (Q4_K_M)".to_string(),
-            tradeoffs: "More concise, faster responses (~4.5 TPS). Slightly lower output quality than Q6. ~750MB RAM.".to_string(),
-        },
-        ModelMetadata {
-            id: "llama_3_2_reasoning".to_string(),
-            name: "Llama 3.2 1B (Q6)".to_string(),
-            description: "Detailed, higher quality — maximises output fidelity.".to_string(),
-            ram_usage: " ~1.0GB".to_string(),
-            parameters: "1.2B (Q6_K)".to_string(),
-            tradeoffs: "More elaborate, higher-quality responses. Slower TPS (~3.3). Higher RAM. ~1.0GB RAM.".to_string(),
-        },
-        ModelMetadata {
-            id: "gemma_4_uncensored".to_string(),
-            name: "Gemma 4 Uncensored".to_string(),
-            description: "Unrestricted high-speed agent with ultra-quantized weights.".to_string(),
-            ram_usage: " ~2.9GB".to_string(),
-            parameters: "2.4B (Q2_K_P)".to_string(),
-            tradeoffs: "Unrestricted output. Heavily quantized — may lose coherence on complex tasks. ~2.9GB RAM.".to_string(),
-        },
-    ]
-}
-
-pub fn get_asr_metadata() -> Vec<ModelMetadata> {
-    vec![
-        ModelMetadata {
-            id: "qwen3_asr".to_string(),
-            name: "Qwen3-ASR".to_string(),
-            description: "Multi-lingual speech recognition.".to_string(),
-            ram_usage: " ~800MB".to_string(),
-            parameters: "Sherpa-ONNX".to_string(),
-            tradeoffs: "Good multilingual ASR. Requires ~800MB. Standard ONNX engine.".to_string(),
-        },
-        ModelMetadata {
-            id: "nvidia_nemotron".to_string(),
-            name: "Nemotron-3.5 ASR".to_string(),
-            description: "Streaming Automatic Speech Recognition (parakeet-rs).".to_string(),
-            ram_usage: " ~2.5GB".to_string(),
-            parameters: "0.6B".to_string(),
-            tradeoffs: "Higher accuracy streaming ASR. Larger model — requires ~2.5GB RAM. Better for noisy environments.".to_string(),
-        },
-    ]
-}
-
-pub fn get_tts_metadata() -> Vec<ModelMetadata> {
-    vec![
-        ModelMetadata {
-            id: "supertonic_tts".to_string(),
-            name: "Supertonic 3 Multilingual".to_string(),
-            description: "Lightweight flow-matching local voice synthesis.".to_string(),
-            ram_usage: " ~144MB".to_string(),
-            parameters: "99M (INT8)".to_string(),
-            tradeoffs: "Fast start (~400ms), 10 preset voices. No custom voice cloning."
-                .to_string(),
-        },
-        ModelMetadata {
-            id: "chatterbox_tts".to_string(),
-            name: "Chatterbox Local TTS".to_string(),
-            description: "Local speech synthesis with zero-shot voice cloning.".to_string(),
-            ram_usage: " ~1.1GB".to_string(),
-            parameters: "340M (Q4)".to_string(),
-            tradeoffs: "Authentic voice mimicry from 5s clip. Heavy on CPU; GPU recommended."
-                .to_string(),
-        },
-        ModelMetadata {
-            id: "chatterbox_remote".to_string(),
-            name: "Chatterbox Remote TTS".to_string(),
-            description: "Offload voice synthesis to a remote CUDA GPU host.".to_string(),
-            ram_usage: " 0 MB (Local)".to_string(),
-            parameters: "340M (Remote)".to_string(),
-            tradeoffs: "Real-time latency with zero local memory footprint. Requires GPU server."
-                .to_string(),
-        },
-        ModelMetadata {
-            id: "edge_tts".to_string(),
-            name: "Microsoft Edge Neural TTS".to_string(),
-            description:
-                "Zero-latency cloud synthesis over Edge WebSockets with 400+ neural voices."
-                    .to_string(),
-            ram_usage: " 0 MB (Cloud)".to_string(),
-            parameters: "Cloud (Neural)".to_string(),
-            tradeoffs:
-                "Ultra-crisp neural prosody with zero local CPU load. Requires active internet."
-                    .to_string(),
-        },
     ]
 }
 
@@ -358,12 +243,12 @@ pub struct UiSettings {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            theme: "dark".into(),
-            accent_seed: "#00DBE9".into(), // Default Cyan
-            tray_enabled: true,
-            tray_blur_density: 40,
-            tray_glass_tint: true,
-            tray_history_limit: 5,
+            theme: crate::core::defaults::DEFAULT_UI_THEME.into(),
+            accent_seed: crate::core::defaults::DEFAULT_UI_ACCENT_SEED.into(),
+            tray_enabled: crate::core::defaults::DEFAULT_UI_TRAY_ENABLED,
+            tray_blur_density: crate::core::defaults::DEFAULT_UI_TRAY_BLUR_DENSITY,
+            tray_glass_tint: crate::core::defaults::DEFAULT_UI_TRAY_GLASS_TINT,
+            tray_history_limit: crate::core::defaults::DEFAULT_UI_TRAY_HISTORY_LIMIT,
         }
     }
 }
@@ -396,8 +281,8 @@ pub struct VadSettings {
 impl Default for VadSettings {
     fn default() -> Self {
         Self {
-            threshold: 0.5, // Earshot recommends 0.5 as general default, TenVAD also optimized to 0.5
-            ptt_noise_gate: 0.005,
+            threshold: crate::core::defaults::DEFAULT_VAD_THRESHOLD,
+            ptt_noise_gate: crate::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
             vad_backend: VadBackendOption::TenVad,
         }
     }
@@ -440,25 +325,25 @@ impl Default for SttProviderConfig {
 }
 
 fn default_stt_model() -> String {
-    "nvidia_nemotron".into()
+    crate::core::defaults::DEFAULT_ASR_MODEL.into()
 }
 
 fn default_cloud_model() -> String {
-    "chirp_3".into()
+    crate::core::defaults::DEFAULT_STT_CLOUD_MODEL.into()
 }
 
 fn default_cloud_language() -> String {
-    "en-US".into()
+    crate::core::defaults::DEFAULT_STT_CLOUD_LANGUAGE.into()
 }
 
 fn default_cloud_region() -> String {
-    "global".into()
+    crate::core::defaults::DEFAULT_STT_CLOUD_REGION.into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AsrSettings {
-    pub model: String, // e.g., "nvidia_nemotron"
+    pub model: String,
     pub transliterate_enabled: bool,
     #[serde(default)]
     pub provider: SttProviderConfig,
@@ -467,8 +352,8 @@ pub struct AsrSettings {
 impl Default for AsrSettings {
     fn default() -> Self {
         Self {
-            model: "nvidia_nemotron".to_string(),
-            transliterate_enabled: true,
+            model: crate::core::defaults::DEFAULT_ASR_MODEL.to_string(),
+            transliterate_enabled: crate::core::defaults::DEFAULT_ASR_TRANSLITERATE_ENABLED,
             provider: SttProviderConfig::default(),
         }
     }
@@ -491,21 +376,21 @@ pub enum LlmProviderConfig {
 
 
 fn default_chat_temperature() -> f32 {
-    0.2
+    crate::core::defaults::DEFAULT_LLM_CHAT_TEMPERATURE
 }
 
 fn default_compaction_temperature() -> f32 {
-    0.5
+    crate::core::defaults::DEFAULT_LLM_COMPACTION_TEMPERATURE
 }
 
 fn default_max_output_tokens() -> u32 {
-    512
+    crate::core::defaults::DEFAULT_LLM_MAX_OUTPUT_TOKENS
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LlmSettings {
-    pub model: String, // e.g., "llama_3_2_reasoning"
+    pub model: String,
     pub ctx_size: u32,
     pub threads: u32,
     pub provider: LlmProviderConfig,
@@ -534,13 +419,13 @@ impl LlmSettings {
 impl Default for LlmSettings {
     fn default() -> Self {
         Self {
-            model: "llama_3_2_reasoning_q4".to_string(),
-            ctx_size: 2048,
-            threads: 4,
+            model: crate::core::defaults::DEFAULT_LLM_MODEL.to_string(),
+            ctx_size: crate::core::defaults::DEFAULT_LLM_CTX_SIZE,
+            threads: crate::core::defaults::DEFAULT_LLM_THREADS,
             provider: LlmProviderConfig::default(),
-            chat_temperature: 0.2,
-            compaction_temperature: 0.5,
-            max_output_tokens: 512,
+            chat_temperature: crate::core::defaults::DEFAULT_LLM_CHAT_TEMPERATURE,
+            compaction_temperature: crate::core::defaults::DEFAULT_LLM_COMPACTION_TEMPERATURE,
+            max_output_tokens: crate::core::defaults::DEFAULT_LLM_MAX_OUTPUT_TOKENS,
         }
     }
 }
@@ -575,10 +460,6 @@ pub enum TtsProviderConfig {
         #[serde(default)]
         voice: Option<String>,
     },
-    // Future providers:
-    // Pocket { reference_audio: Option<String> },
-    // OpenAiCompat { base_url: String, model: String, api_key: Option<String>, voice: Option<String> },
-    // OmniVoice { voice: Option<String> },
 }
 
 impl Default for TtsProviderConfig {
@@ -600,9 +481,9 @@ impl Default for TtsSettings {
     fn default() -> Self {
         Self {
             provider: TtsProviderConfig::default(),
-            voice: 0,
-            quality_steps: 12,
-            speed: 1.05,
+            voice: crate::core::defaults::DEFAULT_TTS_VOICE_INDEX,
+            quality_steps: crate::core::defaults::DEFAULT_TTS_QUALITY_STEPS,
+            speed: crate::core::defaults::DEFAULT_TTS_SPEED,
         }
     }
 }
@@ -621,7 +502,7 @@ impl Default for InteractionSettings {
         Self {
             main_app_mode: InteractionMode::Passive,
             tray_mode: InteractionMode::Passive,
-            auto_sleep_timeout: 400,
+            auto_sleep_timeout: crate::core::defaults::DEFAULT_AUTO_SLEEP_TIMEOUT,
             pipeline_mode: PipelineMode::Modular,
         }
     }
@@ -637,8 +518,8 @@ pub struct TelemetrySettings {
 impl Default for TelemetrySettings {
     fn default() -> Self {
         Self {
-            enabled: true,
-            log_level: "info".into(),
+            enabled: crate::core::defaults::DEFAULT_TELEMETRY_ENABLED,
+            log_level: crate::core::defaults::DEFAULT_TELEMETRY_LOG_LEVEL.into(),
         }
     }
 }
@@ -680,13 +561,13 @@ pub struct MemorySettings {
 impl Default for MemorySettings {
     fn default() -> Self {
         Self {
-            context_retrieval_enabled: true,
-            pipeline_processing_enabled: true,
-            max_personal_memory_share: 0.15,
-            context_chaining_window_hours: 12,
-            top_k_facts: 5,
-            max_hops: 2,
-            semantic_similarity_cutoff: 0.40,
+            context_retrieval_enabled: crate::core::defaults::DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
+            pipeline_processing_enabled: crate::core::defaults::DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
+            max_personal_memory_share: crate::core::defaults::DEFAULT_MEMORY_MAX_PERSONAL_SHARE,
+            context_chaining_window_hours: crate::core::defaults::DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
+            top_k_facts: crate::core::defaults::DEFAULT_MEMORY_TOP_K_FACTS,
+            max_hops: crate::core::defaults::DEFAULT_MEMORY_MAX_HOPS,
+            semantic_similarity_cutoff: crate::core::defaults::DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
         }
     }
 }
@@ -733,9 +614,9 @@ pub enum RealtimeProviderKind {
 pub struct GeminiRealtimeConfig {
     pub api_key: String,
     pub model: String,
-    pub voice_name: String,    // default "Aoede"
-    pub language_code: String, // BCP-47, default "en-US"
-    pub temperature: f32,      // default 0.2
+    pub voice_name: String,
+    pub language_code: String,
+    pub temperature: f32,
     pub enable_web_search: bool,
     pub resume_handle: Option<String>,
 }
@@ -744,10 +625,10 @@ impl Default for GeminiRealtimeConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            model: "gemini-3.1-flash-live-preview".to_string(),
-            voice_name: "Aoede".to_string(),
-            language_code: "en-US".to_string(),
-            temperature: 0.2,
+            model: crate::core::defaults::DEFAULT_GEMINI_REALTIME_MODEL.to_string(),
+            voice_name: crate::core::defaults::DEFAULT_GEMINI_REALTIME_VOICE.to_string(),
+            language_code: crate::core::defaults::DEFAULT_GEMINI_REALTIME_LANG.to_string(),
+            temperature: crate::core::defaults::DEFAULT_GEMINI_REALTIME_TEMP,
             enable_web_search: true,
             resume_handle: None,
         }
@@ -776,9 +657,9 @@ impl Default for DeepgramVoiceAgentConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            model: "gpt-4o-mini".to_string(),
-            voice: "Aoede".to_string(),
-            temperature: 0.7,
+            model: crate::core::defaults::DEFAULT_DEEPGRAM_MODEL.to_string(),
+            voice: crate::core::defaults::DEFAULT_DEEPGRAM_VOICE.to_string(),
+            temperature: crate::core::defaults::DEFAULT_DEEPGRAM_TEMP,
             agent_mode: false,
         }
     }
@@ -834,12 +715,11 @@ pub struct VoxSettings {
 }
 
 impl VoxSettings {
-    /// Load settings from disk with full corruption recovery.
+    /// Load settings from disk with corruption recovery.
     ///
     /// Recovery strategy:
     /// 1. Try to parse as current nested format
-    /// 2. Try Phase 6.0 flat migration
-    /// 3. On corruption: rename `.json` → `.json.bak`, return defaults (NEVER panics)
+    /// 2. On corruption: rename `.json` → `.json.bak`, return defaults (NEVER panics)
     pub fn load() -> Self {
         let path = paths::get().settings.clone();
 
@@ -850,21 +730,7 @@ impl VoxSettings {
                 return settings;
             }
 
-            // 2. Try Phase 6.0 flat migration
-            if let Ok(legacy) = serde_json::from_str::<serde_json::Value>(&content) {
-                if legacy.is_object()
-                    && !legacy
-                        .as_object()
-                        .map(|o| o.contains_key("ui"))
-                        .unwrap_or(false)
-                {
-                    log::warn!("[Settings] Phase 6.0 legacy config detected. Migrating...");
-                    let settings = Self::migrate_from_v6_0(legacy);
-                    return settings;
-                }
-            }
-
-            // 3. Corruption recovery: rename to .bak, return defaults
+            // 2. Corruption recovery: rename to .bak, return defaults
             let bak = path.with_extension("json.bak");
             log::error!(
                 "[Settings] Corrupt settings.json — backing up to {:?} and restoring defaults",
@@ -897,35 +763,6 @@ impl VoxSettings {
         fs::rename(tmp_path, path)?;
 
         Ok(())
-    }
-
-    fn migrate_from_v6_0(legacy: serde_json::Value) -> Self {
-        let mut settings = Self::default();
-
-        if let Some(theme) = legacy.get("theme").and_then(|v| v.as_str()) {
-            settings.ui.theme = theme.to_string();
-        }
-
-        if let Some(vad_t) = legacy.get("vad_threshold").and_then(|v| v.as_f64()) {
-            settings.vad.threshold = vad_t as f32;
-        }
-
-        if let Some(ptt_g) = legacy.get("ptt_noise_gate").and_then(|v| v.as_f64()) {
-            settings.vad.ptt_noise_gate = ptt_g as f32;
-        }
-
-        if let Some(ctx) = legacy.get("llm_ctx_size").and_then(|v| v.as_u64()) {
-            settings.llm.ctx_size = ctx as u32;
-        }
-
-        if let Some(threads) = legacy.get("llm_threads").and_then(|v| v.as_u64()) {
-            settings.llm.threads = threads as u32;
-        }
-
-        // Model paths: reset to standardized ~/.vox/models/ defaults
-        // (legacy paths were relative `assets/` paths which no longer apply)
-        let _ = settings.save();
-        settings
     }
 }
 

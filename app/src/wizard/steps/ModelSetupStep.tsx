@@ -151,72 +151,80 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
 
   const categories = useMemo(() => {
     if (!manifest || !manifest.model_groups) return [];
-    
+
+    const getSubLabel = (category: string, defaultFallback: string) => {
+      const groups = manifest.model_groups.filter((g) => g.category === category);
+      if (groups.length > 0) {
+        return groups.map((g) => g.name).join(" / ");
+      }
+      return defaultFallback;
+    };
+
     return [
-        {
-            id: 'vad',
-            label: 'Silence Detection (VAD)',
-            subLabel: 'Earshot VAD / Ten-VAD (10ms Window)',
-            icon: <Mic />,
-            required: true,
-            groups: manifest.model_groups.filter(g => g.category === 'vad')
-        },
-        {
-            id: 'stt',
-            label: 'Voice Understanding (ASR)',
-            subLabel: 'Nemotron-3.5 / Qwen3 ASR (INT8)',
-            icon: <Database />,
-            required: true,
-            groups: manifest.model_groups.filter(g => g.category === 'stt')
-        },
-        {
-            id: 'translit',
-            label: 'HI-EN Transliteration',
-            subLabel: 'Devanagari to Roman ONNX Encoder-Decoder',
-            icon: <Languages />,
-            required: true,
-            groups: manifest.model_groups.filter(g => g.category === 'translit')
-        },
-        {
-            id: 'embedding',
-            label: 'Multilingual Vector Embeddings',
-            subLabel: 'MiniLM-L12-v2 / BGE-M3 (384/1024-dim)',
-            icon: <Layers />,
-            required: true,
-            groups: manifest.model_groups.filter(g => g.category === 'embedding')
-        },
-        {
-            id: 'nli',
-            label: 'Contradiction & Memory Verification',
-            subLabel: 'DeBERTa-v3 Base NLI Engine',
-            icon: <ShieldCheck />,
-            required: true,
-            groups: manifest.model_groups.filter(g => g.category === 'nli')
-        },
-        {
-            id: 'classifier',
-            label: 'Cognitive & Scope Classifiers',
-            subLabel: 'ModernBERT MemoryScope & Edge Classifiers',
-            icon: <Filter />,
-            required: true,
-            groups: manifest.model_groups.filter(g => g.category === 'classifier')
-        },
-        {
-            id: 'llm',
-            label: 'Intelligence Layer (LLM)',
-            subLabel: 'Gemma-4 / Llama-3.2 Reasoning (1B/2B)',
-            icon: <BrainCircuit />,
-            required: false,
-            groups: manifest.model_groups.filter(g => g.category === 'llm')
-        },
-        {
-            id: 'tts',
-            label: 'Speech Synthesis (TTS)',
-            subLabel: 'Microsoft Edge TTS (Cloud) / Supertonic 3 / Chatterbox Multilingual',
-            icon: <VolumeIcon />,
-            required: false,
-            groups: manifest.model_groups.filter(g => g.category === 'tts')
-        }
+      {
+        id: "vad",
+        label: "Silence Detection (VAD)",
+        subLabel: getSubLabel("vad", "Voice Activity Detection Engine"),
+        icon: <Mic />,
+        required: true,
+        groups: manifest.model_groups.filter((g) => g.category === "vad"),
+      },
+      {
+        id: "stt",
+        label: "Voice Understanding (ASR)",
+        subLabel: getSubLabel("stt", "Automatic Speech Recognition"),
+        icon: <Database />,
+        required: true,
+        groups: manifest.model_groups.filter((g) => g.category === "stt"),
+      },
+      {
+        id: "translit",
+        label: "HI-EN Transliteration",
+        subLabel: getSubLabel("translit", "Phonetic Transliteration Engine"),
+        icon: <Languages />,
+        required: true,
+        groups: manifest.model_groups.filter((g) => g.category === "translit"),
+      },
+      {
+        id: "embedding",
+        label: "Multilingual Vector Embeddings",
+        subLabel: getSubLabel("embedding", "Memory Embedding Engine"),
+        icon: <Layers />,
+        required: true,
+        groups: manifest.model_groups.filter((g) => g.category === "embedding"),
+      },
+      {
+        id: "nli",
+        label: "Contradiction & Memory Verification",
+        subLabel: getSubLabel("nli", "NLI Verification Engine"),
+        icon: <ShieldCheck />,
+        required: true,
+        groups: manifest.model_groups.filter((g) => g.category === "nli"),
+      },
+      {
+        id: "classifier",
+        label: "Cognitive & Scope Classifiers",
+        subLabel: getSubLabel("classifier", "Intent & Edge Classifiers"),
+        icon: <Filter />,
+        required: true,
+        groups: manifest.model_groups.filter((g) => g.category === "classifier"),
+      },
+      {
+        id: "llm",
+        label: "Intelligence Layer (LLM)",
+        subLabel: getSubLabel("llm", "Language Model Intelligence"),
+        icon: <BrainCircuit />,
+        required: false,
+        groups: manifest.model_groups.filter((g) => g.category === "llm"),
+      },
+      {
+        id: "tts",
+        label: "Speech Synthesis (TTS)",
+        subLabel: getSubLabel("tts", "Text-To-Speech Generator"),
+        icon: <VolumeIcon />,
+        required: false,
+        groups: manifest.model_groups.filter((g) => g.category === "tts"),
+      },
     ];
   }, [manifest]);
 
