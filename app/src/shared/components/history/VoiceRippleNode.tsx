@@ -85,7 +85,7 @@ export const VoiceRippleNode = memo(
         </p>
 
         {/* Delete button (minimum 28px hit target) */}
-        <div className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+        <div className={cn("absolute top-2.5 right-2.5 transition-opacity duration-200 z-20", isConfirmingDelete ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
           {isConfirmingDelete ? (
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
               <button
