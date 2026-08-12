@@ -69,6 +69,9 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
                 log::info!("[PIPELINE] Persistence worker signaled to shutdown/flush.");
             }
         }
+
+        // 4. Evict all ONNX models from process memory
+        crate::services::memory::unload_all_onnx_models();
     }
 
     Ok(())
@@ -209,11 +212,10 @@ pub async fn engage(
                 s.ui.tray_enabled
             };
             if !tray_enabled {
-                let _ = engine
-                    .vad_tx
-                    .send(crate::core::state::VadCommand::UpdateMode(
-                        crate::core::settings::InteractionMode::PTT,
-                    ));
+                log::info!("[Pipeline] Disengaged and tray is disabled. Stopping engine to save memory...");
+                let _ = stop_engine(app.clone()).await;
+            } else {
+                crate::services::memory::unload_all_onnx_models();
             }
 
             // Persist Session End

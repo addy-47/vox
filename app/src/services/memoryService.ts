@@ -71,6 +71,7 @@ export interface MemoryQueueSummary {
   nli_evaluated: number;
   paused: number;
   failed: number;
+  failed_items?: MemoryQueueItem[];
   recent_items: MemoryQueueItem[];
 }
 
@@ -149,8 +150,8 @@ export async function softDeleteFact(factId: string): Promise<void> {
 /**
  * Toggles background pipeline processing pause state.
  */
-export async function togglePipelineProcessing(): Promise<boolean> {
-  return await invoke<boolean>("toggle_pipeline_processing");
+export async function togglePipelineProcessing(paused?: boolean): Promise<boolean> {
+  return await invoke<boolean>("toggle_pipeline_processing", { paused });
 }
 
 /**
@@ -158,6 +159,13 @@ export async function togglePipelineProcessing(): Promise<boolean> {
  */
 export async function retryFailedQueue(): Promise<number> {
   return await invoke<number>("retry_failed_queue");
+}
+
+/**
+ * Resets specific failed queue items back to staged_pending.
+ */
+export async function retryFailedQueueItems(itemIds: number[]): Promise<number> {
+  return await invoke<number>("retry_failed_queue_items", { itemIds });
 }
 
 /**

@@ -2,7 +2,6 @@ use anyhow::Result;
 use ndarray::Array2;
 use parking_lot::Mutex;
 use std::path::Path;
-use std::sync::OnceLock;
 use tokenizers::Tokenizer;
 
 pub const EMBEDDING_DIM: usize = 384;
@@ -18,7 +17,7 @@ pub struct TextEmbedder {
     has_token_type_ids: bool,
 }
 
-static EMBEDDER: OnceLock<TextEmbedder> = OnceLock::new();
+static EMBEDDER: parking_lot::RwLock<Option<TextEmbedder>> = parking_lot::RwLock::new(None);
 
 /// Initializes the text embedding model singleton (`services/memory/embedder.rs`).
 ///
@@ -42,6 +41,11 @@ pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
             TOKENIZER_FILENAME
         );
         return Ok(false);
+    }
+
+    let mut lock = EMBEDDER.write();
+    if lock.is_some() {
+        return Ok(true);
     }
 
     let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
@@ -74,16 +78,22 @@ pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
         has_token_type_ids,
     };
 
-    if EMBEDDER.set(embedder).is_err() {
-        log::warn!("[Embedder] Embedder singleton already set.");
-    } else {
-        log::info!(
-            "[Embedder] Successfully loaded text embedding model from {:?}",
-            model_dir
-        );
-    }
+    *lock = Some(embedder);
+    log::info!(
+        "[Embedder] Successfully loaded text embedding model from {:?}",
+        model_dir
+    );
 
     Ok(true)
+}
+
+/// Evicts the text embedding model singleton from process memory.
+pub fn unload_embedder() {
+    let mut lock = EMBEDDER.write();
+    if lock.is_some() {
+        *lock = None;
+        log::info!("[Embedder] Text embedder ONNX model evicted from memory.");
+    }
 }
 
 /// Lazily loads the text embedding model into RAM only when required.
@@ -94,7 +104,7 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
         log::debug!("[Embedder] Memory subsystem disabled. Skipping model load.");
         return Ok(false);
     }
-    if EMBEDDER.get().is_some() {
+    if EMBEDDER.read().is_some() {
         return Ok(true);
     }
     let models_dir = if let Some(p) = crate::utils::paths::try_get() {
@@ -118,7 +128,8 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
 /// Generates a dense vector embedding for the input text.
 /// Returns `Ok(None)` if the embedder model is not loaded.
 pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
-    let embedder = match EMBEDDER.get() {
+    let lock = EMBEDDER.read();
+    let embedder = match lock.as_ref() {
         Some(e) => e,
         None => return Ok(None),
     };
@@ -213,7 +224,7 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
 
 /// Returns true if the text embedder model is loaded and ready.
 pub fn is_embedder_loaded() -> bool {
-    EMBEDDER.get().is_some()
+    EMBEDDER.read().is_some()
 }
 
 /// L2 normalizes a slice of floats in-place.

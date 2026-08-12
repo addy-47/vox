@@ -1,6 +1,14 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Edit3, Trash2, Check, GitBranch, ArrowRight, ArrowLeft, Tag, Clock, Layers } from "lucide-react";
+import {
+  X,
+  Edit3,
+  Trash2,
+  Check,
+  ArrowRight,
+  ArrowLeft,
+  Layers,
+} from "lucide-react";
 import {
   MemoryFactDetail,
   editFactContent,
@@ -108,8 +116,8 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
 
   if (!pos) return null;
 
-  const clampedX = Math.min(window.innerWidth - 340, Math.max(16, pos.x + 15));
-  const clampedY = Math.min(window.innerHeight - 400, Math.max(70, pos.y - 40));
+  const clampedX = Math.min(window.innerWidth - 360, Math.max(16, pos.x + 15));
+  const clampedY = Math.min(window.innerHeight - 440, Math.max(70, pos.y - 40));
 
   const colPalette = factDetail
     ? getCollectionColor(factDetail.collection, factDetail.is_superseded)
@@ -117,9 +125,25 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
 
   const compactId = factDetail
     ? factDetail.id.startsWith("mem_")
-      ? `MEM-${factDetail.id.split("_")[1]?.slice(0, 6) || factDetail.id.slice(4, 10)}`
+      ? `mem_fact_${factDetail.id.split("_")[1]?.slice(0, 6) || factDetail.id.slice(4, 10)}`
       : factDetail.id
-    : "MEM-LOADING";
+    : "mem_fact_loading";
+
+  // Subpanel 3 relation count summary calculations
+  const supportsCount = factDetail
+    ? factDetail.outgoing_relations.filter((r) => r.relation.toUpperCase().includes("SUPPORT")).length +
+      factDetail.incoming_relations.filter((r) => r.relation.toUpperCase().includes("SUPPORT")).length
+    : 0;
+
+  const dependsCount = factDetail
+    ? factDetail.outgoing_relations.filter((r) => r.relation.toUpperCase().includes("DEPEND")).length +
+      factDetail.incoming_relations.filter((r) => r.relation.toUpperCase().includes("DEPEND")).length
+    : 0;
+
+  const conflictsCount = factDetail
+    ? factDetail.outgoing_relations.filter((r) => r.relation.toUpperCase().includes("CONFLICT")).length +
+      factDetail.incoming_relations.filter((r) => r.relation.toUpperCase().includes("CONFLICT")).length
+    : 0;
 
   return (
     <AnimatePresence>
@@ -133,49 +157,67 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
           left: clampedX,
           top: clampedY,
         }}
-        className="fixed z-40 w-[310px] glass-card p-4 rounded-2xl border border-[rgba(var(--accent),0.2)] bg-[rgba(10,12,14,0.92)] backdrop-blur-2xl shadow-2xl flex flex-col gap-3 pointer-events-auto"
+        className="fixed z-40 w-[330px] glass-card p-4 rounded-2xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/95 backdrop-blur-2xl shadow-2xl flex flex-col gap-3 pointer-events-auto text-[rgb(var(--foreground))]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
+        {/* Subpanel 3 Header */}
+        <div className="flex items-center justify-between border-b border-[rgba(var(--border),0.15)] pb-2.5">
           <div className="flex items-center gap-2">
             <span
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: colPalette.main }}
-            />
-            <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-              {compactId}
-            </span>
-            <span
-              className="text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase"
+              className="text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase tracking-wide"
               style={{ backgroundColor: `${colPalette.main}20`, color: colPalette.main }}
             >
               {factDetail?.collection || "COLLECTION"}
             </span>
           </div>
 
-          <button
-            onClick={onClose}
-            className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-            aria-label="Close tooltip"
-          >
-            <X size={13} />
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              {factDetail?.is_superseded ? "HISTORICAL" : "Active Fact"}
+            </span>
+            <button
+              onClick={onClose}
+              className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+              aria-label="Close tooltip"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Loading Spinner or Content */}
         {isLoading ? (
-          <div className="py-6 flex flex-col items-center justify-center gap-2 text-[rgb(var(--accent))]">
-            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            <span className="text-[10px] font-mono tracking-widest uppercase">Lazy loading fact details...</span>
+          <div className="py-8 flex flex-col items-center justify-center gap-2 text-[rgb(var(--accent))]">
+            <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            <span className="text-[10px] font-mono tracking-widest uppercase">Loading fact details...</span>
           </div>
         ) : factDetail ? (
           <>
-            {/* Fact Content or Edit Textarea */}
+            {/* Metadata Grid (Subpanel 3) */}
+            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono p-2.5 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)]">
+              <div>
+                <span className="text-[rgb(var(--foreground-muted))] block uppercase text-[9px]">Fact ID</span>
+                <span className="font-bold text-[rgb(var(--foreground))] truncate block">{compactId}</span>
+              </div>
+              <div>
+                <span className="text-[rgb(var(--foreground-muted))] block uppercase text-[9px]">Confidence</span>
+                <span className="font-bold text-[rgb(var(--accent))]">0.98</span>
+              </div>
+              <div>
+                <span className="text-[rgb(var(--foreground-muted))] block uppercase text-[9px]">Created</span>
+                <span className="text-[rgb(var(--foreground))] block">{formatDate(factDetail.created_at)}</span>
+              </div>
+              <div>
+                <span className="text-[rgb(var(--foreground-muted))] block uppercase text-[9px]">Source</span>
+                <span className="text-[rgb(var(--foreground))] block">compaction</span>
+              </div>
+            </div>
+
+            {/* Fact Content Quote Box */}
             {isEditing ? (
               <div className="flex flex-col gap-2">
                 <textarea
-                  className="w-full bg-black/40 border border-[rgba(var(--accent),0.3)] rounded-xl p-2.5 text-[12px] text-[rgb(var(--foreground))] font-normal leading-relaxed outline-none resize-none"
+                  className="w-full bg-[rgb(var(--background))] border border-[rgba(var(--accent),0.3)] rounded-xl p-2.5 text-[12px] text-[rgb(var(--foreground))] font-mono leading-relaxed outline-none resize-none"
                   rows={3}
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
@@ -198,15 +240,15 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
                 </div>
               </div>
             ) : (
-              <p className="text-[12px] font-normal leading-relaxed text-[rgb(var(--foreground))]/95 italic">
+              <p className="text-[11px] font-sans font-normal leading-relaxed text-[rgb(var(--foreground))] italic p-3 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)]">
                 "{factDetail.fact}"
               </p>
             )}
 
-            {/* Collection Category Reassignment Picker */}
+            {/* Category Reassignment Picker */}
             {isReassigning ? (
-              <div className="p-2 rounded-xl bg-white/[0.03] border border-white/[0.06] flex flex-col gap-1.5">
-                <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]/70 uppercase">
+              <div className="p-2.5 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.15)] flex flex-col gap-1.5">
+                <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
                   Reassign Collection
                 </span>
                 <div className="grid grid-cols-2 gap-1">
@@ -214,7 +256,7 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
                     <button
                       key={cat}
                       onClick={() => handleCategoryReassign(cat)}
-                      className="px-2 py-1 rounded-lg text-[10px] font-mono text-left bg-white/[0.04] hover:bg-[rgb(var(--accent))]/15 text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                      className="px-2 py-1 rounded-lg text-[10px] font-mono text-left bg-[rgb(var(--foreground))]/5 hover:bg-[rgb(var(--accent))]/15 text-[rgb(var(--foreground))] transition-colors cursor-pointer"
                     >
                       {cat}
                     </button>
@@ -223,48 +265,45 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
               </div>
             ) : null}
 
-            {/* Provenance Metadata Section */}
-            <div className="grid grid-cols-2 gap-1.5 py-1 text-[10px] font-mono border-t border-white/[0.04]">
-              <div className="flex items-center gap-1.5 text-[rgb(var(--foreground-muted))]/70">
-                <Clock size={11} className="text-[rgb(var(--accent))]" />
-                <span>{formatDate(factDetail.created_at)}</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-[rgb(var(--foreground-muted))]/70">
-                <Tag size={11} className="text-[rgb(var(--accent))]" />
-                <span className="truncate">Session: {factDetail.session_id || "Direct"}</span>
+            {/* Subpanel 3: Relation Summary Count Pills */}
+            <div className="flex flex-col gap-2 pt-1 border-t border-[rgba(var(--border),0.15)]">
+              <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
+                Relation Summary
+              </span>
+              <div className="grid grid-cols-3 gap-1.5 text-[9px] font-mono text-center">
+                <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">
+                  <span>{supportsCount}</span>
+                  <span className="block text-[8px] opacity-80">SUPPORTS</span>
+                </div>
+                <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold">
+                  <span>{dependsCount}</span>
+                  <span className="block text-[8px] opacity-80">DEPENDS_ON</span>
+                </div>
+                <div className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 font-bold">
+                  <span>{conflictsCount}</span>
+                  <span className="block text-[8px] opacity-80">CONFLICTS</span>
+                </div>
               </div>
             </div>
 
-            {/* Connected Incoming & Outgoing Relations */}
-            <div className="flex flex-col gap-1.5 border-t border-white/[0.06] pt-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <GitBranch size={12} className="text-[rgb(var(--foreground-muted))]/60" />
-                  <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/70">
-                    Connected Relations
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))]">
-                  {factDetail.incoming_relations.length + factDetail.outgoing_relations.length}
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-1 max-h-[100px] overflow-y-auto custom-scrollbar pr-1">
+            {/* Connected Relations List */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1 max-h-[110px] overflow-y-auto custom-scrollbar pr-1">
                 {factDetail.outgoing_relations.map((rel) => {
                   const relStyle = getRelationStyle(rel.relation);
                   return (
                     <div
                       key={`out_${rel.id}`}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[10px] font-mono"
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)] text-[10px] font-mono"
                     >
-                      <ArrowRight size={10} className="text-[rgb(var(--foreground-muted))]/50 shrink-0" />
+                      <ArrowRight size={10} className="text-[rgb(var(--foreground-muted))] shrink-0" />
                       <span
-                        className="font-bold uppercase text-[9px] px-1 rounded"
+                        className="font-bold uppercase text-[8px] px-1 rounded shrink-0"
                         style={{ color: relStyle.color, backgroundColor: `${relStyle.color}15` }}
                       >
                         {rel.relation}
                       </span>
-                      <span className="text-[rgb(var(--foreground))]/70 truncate flex-1">{rel.to_id}</span>
+                      <span className="text-[rgb(var(--foreground))] truncate flex-1">{rel.to_id}</span>
                     </div>
                   );
                 })}
@@ -274,45 +313,35 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
                   return (
                     <div
                       key={`inc_${rel.id}`}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[10px] font-mono"
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)] text-[10px] font-mono"
                     >
-                      <ArrowLeft size={10} className="text-[rgb(var(--foreground-muted))]/50 shrink-0" />
+                      <ArrowLeft size={10} className="text-[rgb(var(--foreground-muted))] shrink-0" />
                       <span
-                        className="font-bold uppercase text-[9px] px-1 rounded"
+                        className="font-bold uppercase text-[8px] px-1 rounded shrink-0"
                         style={{ color: relStyle.color, backgroundColor: `${relStyle.color}15` }}
                       >
                         {rel.relation}
                       </span>
-                      <span className="text-[rgb(var(--foreground))]/70 truncate flex-1">{rel.from_id}</span>
+                      <span className="text-[rgb(var(--foreground))] truncate flex-1">{rel.from_id}</span>
                     </div>
                   );
                 })}
-
-                {factDetail.incoming_relations.length === 0 && factDetail.outgoing_relations.length === 0 && (
-                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40 italic">
-                    No connected graph relations
-                  </span>
-                )}
               </div>
             </div>
 
             {/* Actions Bar */}
-            <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
-              <span className="text-[9px] font-mono font-bold text-[rgb(var(--foreground-muted))]/60 uppercase">
-                {factDetail.is_superseded ? "STATUS: HISTORICAL" : "STATUS: ACTIVE"}
-              </span>
-
+            <div className="flex items-center justify-between border-t border-[rgba(var(--border),0.15)] pt-2.5">
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setIsReassigning((v) => !v)}
-                  className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/10 transition-colors cursor-pointer"
                   title="Reassign Collection"
                 >
                   <Layers size={13} />
                 </button>
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/10 transition-colors cursor-pointer"
                   title="Edit Fact Content"
                 >
                   <Edit3 size={13} />
@@ -322,7 +351,7 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
                   className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                     confirmDelete
                       ? "text-red-400 bg-red-500/10"
-                      : "text-[rgb(var(--foreground-muted))]/70 hover:text-red-400 hover:bg-red-500/5"
+                      : "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-500/10"
                   }`}
                   title={confirmDelete ? "Click to confirm soft delete" : "Soft Delete Fact"}
                 >
@@ -332,7 +361,7 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
             </div>
           </>
         ) : (
-          <div className="py-4 text-center text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60">
+          <div className="py-4 text-center text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
             Fact details unavailable
           </div>
         )}

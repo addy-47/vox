@@ -1,8 +1,7 @@
-use crate::core::constants::inter_collection_edge;
+use crate::core::constants::is_valid_inter_collection_pair;
 use anyhow::{anyhow, Result};
 use ndarray::Array2;
 use std::path::Path;
-use std::sync::OnceLock;
 use tokenizers::Tokenizer;
 
 pub const EDGE_CLASSIFIER_MODEL_DIR: &str = "classifier/modernbert_edge_creation";
@@ -16,7 +15,8 @@ pub struct EdgeClassifierEngine {
     has_token_type_ids: bool,
 }
 
-static EDGE_ENGINE: OnceLock<EdgeClassifierEngine> = OnceLock::new();
+static EDGE_ENGINE: parking_lot::RwLock<Option<EdgeClassifierEngine>> =
+    parking_lot::RwLock::new(None);
 
 /// Initializes the ModernBERT INT8 ONNX Edge Classifier Engine.
 pub fn init_edge_classifier(model_dir: &Path) -> Result<bool> {
@@ -31,6 +31,11 @@ pub fn init_edge_classifier(model_dir: &Path) -> Result<bool> {
             TOKENIZER_FILENAME
         );
         return Ok(false);
+    }
+
+    let mut lock = EDGE_ENGINE.write();
+    if lock.is_some() {
+        return Ok(true);
     }
 
     let mut tokenizer = Tokenizer::from_file(&tokenizer_path)
@@ -70,15 +75,24 @@ pub fn init_edge_classifier(model_dir: &Path) -> Result<bool> {
         has_token_type_ids,
     };
 
-    let _ = EDGE_ENGINE.set(engine);
+    *lock = Some(engine);
     log::info!(
         "[EdgeClassifier] ModernBERT INT8 ONNX Edge Classifier Engine initialized successfully."
     );
     Ok(true)
 }
 
+/// Evicts the ModernBERT Edge Classifier Engine from process memory.
+pub fn unload_edge_classifier() {
+    let mut lock = EDGE_ENGINE.write();
+    if lock.is_some() {
+        *lock = None;
+        log::info!("[EdgeClassifier] Edge classifier ONNX model evicted from memory.");
+    }
+}
+
 pub fn is_edge_classifier_loaded() -> bool {
-    EDGE_ENGINE.get().is_some()
+    EDGE_ENGINE.read().is_some()
 }
 
 pub fn ensure_edge_classifier_loaded() -> Result<()> {
@@ -97,7 +111,8 @@ pub fn ensure_edge_classifier_loaded() -> Result<()> {
 }
 
 /// Classifies an inter-collection candidate pair using the fine-tuned ModernBERT INT8 ONNX sequence classifier.
-/// Returns `Ok((Some(forward_edge), prob))` if calibrated prediction score >= tau* (0.80) and matches `forward_edge`, else `Ok((None, prob))`.
+/// Dynamically predicts output relation label (0: SHAPES, 1: DEPENDS_ON, 2: CONFLICTS_WITH, 3: NONE) (spec §4.2).
+/// Returns `Ok((Some(predicted_edge), prob))` if score >= tau* (0.80) and predicted label != NONE, else `Ok((None, prob))`.
 pub fn classify_edge(
     src_collection: &str,
     src_fact: &str,
@@ -105,27 +120,20 @@ pub fn classify_edge(
     tgt_collection: &str,
     tgt_fact: &str,
     _tgt_context: Option<&str>,
-    forward_edge: &str,
 ) -> Result<(Option<String>, f32)> {
-    // 1. Verify policy matrix allows an edge for this pair
-    let policy_edge = match inter_collection_edge(src_collection, tgt_collection) {
-        Some((fwd, _inv)) => fwd,
-        None => return Ok((None, 0.0)),
-    };
-
-    if policy_edge != forward_edge {
+    // 1. Verify policy matrix allows an edge for this collection pair (spec §4.2)
+    if !is_valid_inter_collection_pair(src_collection, tgt_collection) {
         return Ok((None, 0.0));
     }
 
-    let engine = match EDGE_ENGINE.get() {
+    if !is_edge_classifier_loaded() {
+        ensure_edge_classifier_loaded()?;
+    }
+
+    let lock = EDGE_ENGINE.read();
+    let engine = match lock.as_ref() {
         Some(e) => e,
-        None => {
-            ensure_edge_classifier_loaded()?;
-            match EDGE_ENGINE.get() {
-                Some(e) => e,
-                None => return Ok((None, 0.0)),
-            }
-        }
+        None => return Ok((None, 0.0)),
     };
 
     let input_text = format!(
@@ -181,7 +189,7 @@ pub fn classify_edge(
         return Ok((None, 0.0));
     }
 
-    // Softmax calculation
+    // Softmax calculation across output logits
     let max_logit = logits_slice
         .iter()
         .cloned()
@@ -206,9 +214,16 @@ pub fn classify_edge(
         }
     }
 
-    // Label index 0, 1, 2 map to positive relation, label index 3 (or last) maps to NONE
-    if max_prob >= EDGE_CLASSIFIER_THRESHOLD && max_idx < probs.len().saturating_sub(1) {
-        Ok((Some(forward_edge.to_string()), max_prob))
+    // Spec §4.2 Label Mapping: 0: SHAPES, 1: DEPENDS_ON, 2: CONFLICTS_WITH, 3: NONE
+    let predicted_label = match max_idx {
+        0 => crate::core::constants::PM_RELATION_SHAPES,
+        1 => crate::core::constants::PM_RELATION_DEPENDS_ON,
+        2 => crate::core::constants::PM_RELATION_CONFLICTS,
+        _ => "",
+    };
+
+    if !predicted_label.is_empty() && max_prob >= EDGE_CLASSIFIER_THRESHOLD {
+        Ok((Some(predicted_label.to_string()), max_prob))
     } else {
         Ok((None, max_prob))
     }
@@ -216,16 +231,14 @@ pub fn classify_edge(
 
 #[cfg(test)]
 mod tests {
-    use crate::core::constants::{
-        inter_collection_edge, PM_COLLECTIONS, PM_RELATION_DEPENDS_ON, PM_RELATION_SHAPES,
-    };
+    use crate::core::constants::{is_valid_inter_collection_pair, PM_COLLECTIONS};
 
     #[test]
     fn test_special_state_collections_reject_inter_collection_edges() {
         // Narrative is pure context chaining history and must not originate inter-collection edges
         for &coll in PM_COLLECTIONS {
             assert!(
-                inter_collection_edge("Narrative", coll).is_none(),
+                !is_valid_inter_collection_pair("Narrative", coll),
                 "Narrative as source must not originate inter-collection edge to '{}'",
                 coll
             );
@@ -235,43 +248,22 @@ mod tests {
     #[test]
     fn test_class_c_taxonomy_connection_matrix_compliance() {
         let allowed_pairs = [
-            ("Identity", "Profile", PM_RELATION_SHAPES, "shaped_by"),
-            ("Directives", "Constraints", PM_RELATION_SHAPES, "shaped_by"),
-            (
-                "Directives",
-                "Entities",
-                PM_RELATION_DEPENDS_ON,
-                "dependency_of",
-            ),
-            (
-                "Entities",
-                "Constraints",
-                PM_RELATION_DEPENDS_ON,
-                "constrains",
-            ),
-            ("Entities", "Profile", PM_RELATION_SHAPES, "shaped_by"),
-            (
-                "Entities",
-                "Entities",
-                PM_RELATION_DEPENDS_ON,
-                "dependency_of",
-            ),
-            ("Profile", "Profile", PM_RELATION_SHAPES, "shaped_by"),
-            ("Profile", "Entities", PM_RELATION_SHAPES, "shaped_by"),
-            ("Profile", "Constraints", "restricted_by", "restricts"),
+            ("Identity", "Profile"),
+            ("Directives", "Constraints"),
+            ("Directives", "Entities"),
+            ("Entities", "Constraints"),
+            ("Entities", "Profile"),
+            ("Entities", "Entities"),
+            ("Profile", "Profile"),
         ];
 
-        for (src, tgt, expected_fwd, expected_inv) in allowed_pairs {
-            let res = inter_collection_edge(src, tgt);
+        for (src, tgt) in allowed_pairs {
             assert!(
-                res.is_some(),
-                "Taxonomy pair ({}, {}) must be allowed",
+                is_valid_inter_collection_pair(src, tgt),
+                "Sanctioned pair ({}, {}) must be allowed",
                 src,
                 tgt
             );
-            let (fwd, inv) = res.unwrap();
-            assert_eq!(fwd, expected_fwd);
-            assert_eq!(inv, expected_inv);
         }
     }
 }

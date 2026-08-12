@@ -101,6 +101,7 @@ pub fn spawn_memory_worker(
                             state.is_idle = false;
                             state.idle_since = None;
                             cancel_flag.store(true, Ordering::Relaxed);
+                            crate::services::memory::unload_memory_pipeline_onnx_models();
                         }
                         MemoryWorkerEvent::SessionEnd { session_id, summary } => {
                             if let Some(ref db_conn) = conn {
@@ -150,44 +151,64 @@ pub fn spawn_memory_worker(
 
                         if is_debounced {
                             if let Some(ref db_conn) = conn {
-                                loop {
-                                    if !state.is_idle || !rx.is_empty() {
-                                        break;
-                                    }
-
-                                    let processed_count = handle.block_on(async {
-                                        crate::services::memory::pipeline::run_pipeline_cycle(db_conn, &cancel_flag).await
-                                    });
-
-                                    match processed_count {
-                                        Ok(n) if n > 0 => {
-                                            graph_version.fetch_add(1, Ordering::SeqCst);
-                                            continue;
+                                let has_pending = handle.block_on(async {
+                                    if let Ok(mut rows) = db_conn
+                                        .query(
+                                            "SELECT COUNT(*) FROM personal_memory_queue WHERE status IN ('staged_pending', 'deduped', 'embedded')",
+                                            (),
+                                        )
+                                        .await
+                                    {
+                                        if let Ok(Some(row)) = rows.next().await {
+                                            return row.get::<i64>(0).unwrap_or(0) > 0;
                                         }
-                                        _ => {
-                                            // Check if any items have status = 'failed' and retry_count < 3 to auto-retry
-                                            let auto_retried = handle.block_on(async {
-                                                db_conn
-                                                    .execute(
-                                                        "UPDATE personal_memory_queue 
-                                                         SET status = 'staged_pending', attempts = attempts + 1, retry_count = retry_count + 1 
-                                                         WHERE status = 'failed' AND retry_count < 3",
-                                                        (),
-                                                    )
-                                                    .await
-                                                    .unwrap_or(0)
-                                            });
+                                    }
+                                    false
+                                });
 
-                                            if auto_retried > 0 {
-                                                tracing::info!("[MemoryWorker] Auto-retrying {} failed queue items.", auto_retried);
-                                                continue;
-                                            }
-
-                                            // Reset idle_since timer so empty queue doesn't re-trigger every 500ms
-                                            state.idle_since = Some(Instant::now());
+                                if has_pending {
+                                    loop {
+                                        if !state.is_idle || !rx.is_empty() {
                                             break;
                                         }
+
+                                        let processed_count = handle.block_on(async {
+                                            crate::services::memory::pipeline::run_pipeline_cycle(db_conn, &cancel_flag).await
+                                        });
+
+                                        match processed_count {
+                                            Ok(n) if n > 0 => {
+                                                graph_version.fetch_add(1, Ordering::SeqCst);
+                                                continue;
+                                            }
+                                            _ => {
+                                                // Check if any items have status = 'failed' and retry_count < 3 to auto-retry
+                                                let auto_retried = handle.block_on(async {
+                                                    db_conn
+                                                        .execute(
+                                                            "UPDATE personal_memory_queue 
+                                                             SET status = 'staged_pending', attempts = attempts + 1, retry_count = retry_count + 1 
+                                                             WHERE status = 'failed' AND retry_count < 3",
+                                                            (),
+                                                        )
+                                                        .await
+                                                        .unwrap_or(0)
+                                                });
+
+                                                if auto_retried > 0 {
+                                                    tracing::info!("[MemoryWorker] Auto-retrying {} failed queue items.", auto_retried);
+                                                    continue;
+                                                }
+
+                                                // Reset idle_since timer so empty queue doesn't re-trigger every 500ms
+                                                state.idle_since = Some(Instant::now());
+                                                crate::services::memory::unload_memory_pipeline_onnx_models();
+                                                break;
+                                            }
+                                        }
                                     }
+                                } else {
+                                    state.idle_since = Some(Instant::now());
                                 }
                             }
                         }

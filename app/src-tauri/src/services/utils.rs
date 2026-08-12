@@ -556,10 +556,7 @@ mod tests {
         assert!(res_mixed.contains("😊"), "Emoji '😊' must be preserved");
 
         // If engine was initialized, "नमस्ते" should be converted to Roman script ("namaste" / "namas")
-        if crate::services::translit::TRANSLITERATION_ENGINE
-            .get()
-            .is_some()
-        {
+        if crate::services::translit::is_transliteration_engine_loaded() {
             assert!(
                 res_mixed.to_lowercase().contains("namaste")
                     || res_mixed.to_lowercase().contains("namas"),

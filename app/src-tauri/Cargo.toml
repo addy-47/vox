@@ -161,6 +161,10 @@ harness = false
 name = "memory_scope_bench"
 harness = false
 
+[[bench]]
+name = "memory_pipeline_bench"
+harness = false
+
 [[example]]
 name = "voice_clone"
 

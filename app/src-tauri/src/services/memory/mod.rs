@@ -31,3 +31,19 @@ pub use query_sieve::MemoryScope;
 pub use retrieval::{retrieve_personal_context_v7, MemoryFact};
 pub use tokenizer::estimate_tokens;
 pub use working_memory::{ChatMessage, ConversationContext, ConversationManager, Role};
+
+/// Evicts the 3 memory pipeline worker ONNX models (MiniLM embedder, DeBERTa v3 NLI, ModernBERT Edge Classifier).
+pub fn unload_memory_pipeline_onnx_models() {
+    embedder::unload_embedder();
+    classifiers::intra_edge_classifier::unload_nli_engine();
+    classifiers::inter_edge_classifier::unload_edge_classifier();
+    log::info!("[MemorySubsystem] Evicted 3 memory pipeline ONNX models from process memory.");
+}
+
+/// Evicts all ONNX models (memory pipeline + query scope classifier + transliteration engine).
+pub fn unload_all_onnx_models() {
+    unload_memory_pipeline_onnx_models();
+    classifiers::query_classifier::unload_scope_classifier();
+    crate::services::translit::unload_transliteration_engine();
+    log::info!("[MemorySubsystem] Evicted all ONNX models from process memory.");
+}
