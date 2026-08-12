@@ -130,7 +130,7 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
   - **Custom InstancedMesh Engine**: All 10,000+ nodes rendered in 1 `InstancedMesh` GPU draw call, all edges in 1 `LineSegments` call (<15MB RAM).
   - **WebGL Scene Stability**: Scene teardown on prop updates is strictly BANNED. Buffer updates use stable `useRef` handles.
   - **Interaction & Search**: 24px screen-space proximity node selection; smart fly-to centering preserving current zoom (`Math.min(currentZ, 1200)`); search filtering ghosts out non-matching nodes & line edges (`#1e293b`).
-  - **Borderless UI Surfaces**: Borderless orbital network loader with central `Sparkles` emblem; frameless alternating Left/Right zig-zag telemetry drawer (`MemoryPipelineDrawer.tsx`); 2-column legend card (`MemoryLegendCard.tsx`).
+  - **Borderless UI Surfaces & Real Telemetry**: Borderless orbital network loader with central `Sparkles` emblem; 2-column legend card (`MemoryLegendCard.tsx`); frameless hybrid telemetry drawer (`MemoryPipelineDrawer.tsx`, `w-[530px]`) displaying 100% real SQLite IPC queue metrics (`staged_pending`, `dedup_pass`, `nli_evaluated`, `failed`) bound to `settings.memory.pipeline_processing_enabled` SSOT, with top navigation tabs (**Pipeline Flow** vs **Failed Items** with `retryFailedQueue()` IPC controls), central vertical conduit line with alternating Left/Right stage cards, enlarged 4-column telemetry strip, and primary action button labeled **`PROCESS PENDING QUEUE`**.
 
 - **Linux Window Invariant (`window_customizer.rs`)**:
   - WebKitGTK trackpad pinch-to-zoom is disabled in `PinchZoomDisablePlugin` by destroying `wk-view-zoom-gesture` handlers and setting `zoom-level = 1.0`.

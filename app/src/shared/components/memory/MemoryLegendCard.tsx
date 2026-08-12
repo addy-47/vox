@@ -92,10 +92,10 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
                       onClick={() => onSelectCollection(isSelected ? "all" : col.id)}
                       aria-pressed={isSelected}
                       className={cn(
-                        "flex items-center gap-1.5 px-1.5 py-1 rounded-md text-[10px] font-sans transition-colors cursor-pointer select-none text-left border-l-2",
+                        "flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-sans transition-all cursor-pointer select-none text-left",
                         isSelected
-                          ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10"
-                          : "border-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
+                          ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] font-bold ring-1 ring-[rgb(var(--accent))]/30"
+                          : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
                       )}
                     >
                       <span
@@ -120,10 +120,10 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
                       onClick={() => onSelectRelation?.(isSelected ? "all" : rel.id)}
                       aria-pressed={isSelected}
                       className={cn(
-                        "flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-md text-[10px] font-sans transition-colors cursor-pointer select-none border-l-2",
+                        "flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg text-[11px] font-sans transition-all cursor-pointer select-none",
                         isSelected
-                          ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10"
-                          : "border-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
+                          ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] font-bold ring-1 ring-[rgb(var(--accent))]/30"
+                          : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
                       )}
                     >
                       <span className="truncate font-medium">{rel.label}</span>

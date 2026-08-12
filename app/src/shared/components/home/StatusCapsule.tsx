@@ -8,7 +8,12 @@ interface StatusCapsuleProps {
 }
 
 export const StatusCapsule: React.FC<StatusCapsuleProps> = ({ label, dotActive, testing }) => (
-  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[rgb(var(--accent))]/25 bg-[rgb(var(--accent))]/10 dark:bg-[rgba(10,12,14,0.40)] dark:backdrop-blur-md">
+  <div
+    role="status"
+    aria-live="polite"
+    aria-label={`Vox Status: ${testing ? "Testing" : label}`}
+    className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[rgb(var(--accent))]/25 bg-[rgb(var(--accent))]/10 dark:bg-[rgba(10,12,14,0.40)] dark:backdrop-blur-md"
+  >
     {testing ? (
       <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse" />
     ) : (

@@ -30,7 +30,7 @@ const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; 
   <React.Fragment>
     {turn.user && (
       <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--foreground-muted))] font-normal text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.12)]">
-        <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
+        <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
           USER
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
@@ -38,7 +38,7 @@ const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; 
     )}
     {turn.assistant && (
       <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.2)]">
-        <span className="text-[9px] font-mono tracking-widest text-[rgb(var(--accent))]/80 uppercase block mb-1 font-bold">
+        <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--accent))]/80 uppercase block mb-1 font-bold">
           VOX
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
@@ -189,12 +189,12 @@ export const Home = memo(() => {
         className="absolute z-10 pointer-events-none overflow-hidden flex items-center justify-center"
         style={{
           left: "50%",
-          top: "47%",
+          top: isMobileScreen ? "40%" : "47%",
           transform: "translate(-50%, -50%)",
-          width: isMobileScreen ? "min(92vw, 85vh)" : "min(70vw, 65vh)",
-          height: isMobileScreen ? "min(92vw, 85vh)" : "min(70vw, 65vh)",
-          minWidth: 280,
-          minHeight: 280,
+          width: isMobileScreen ? "min(88vw, 55vh)" : "min(70vw, 65vh)",
+          height: isMobileScreen ? "min(88vw, 55vh)" : "min(70vw, 65vh)",
+          minWidth: isMobileScreen ? 200 : 280,
+          minHeight: isMobileScreen ? 200 : 280,
           maxWidth: 660,
           maxHeight: 660,
         }}
@@ -219,7 +219,7 @@ export const Home = memo(() => {
       </div>
 
       {/* ── Bottom Controls ─────────────────────────────────────────────── */}
-      <div className="absolute bottom-[10%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4 w-full max-w-md">
+      <div className="absolute bottom-[6%] md:bottom-[10%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4 w-full max-w-md">
         {/* Buttons */}
         <div className="flex items-center gap-4 relative">
           {/* Universal Pause / Resume Button */}

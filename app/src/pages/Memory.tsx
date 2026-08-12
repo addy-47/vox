@@ -245,8 +245,8 @@ export const Memory: React.FC = () => {
       {/* Search Bar & Popover */}
       <SearchBar nodes={nodes} onCommitSearch={setSearchQuery} onSelectNode={handleSelectNode} />
 
-      {/* Top-Left: Legend Card */}
-      <div className="absolute top-4 left-4 z-20 pointer-events-auto">
+      {/* Top-Left: Legend Card (hidden on small layouts) */}
+      <div className="absolute top-4 left-4 z-20 pointer-events-auto hidden sm:block">
         <MemoryLegendCard
           selectedCollection={selectedCollection}
           onSelectCollection={setSelectedCollection}
@@ -346,6 +346,7 @@ export const Memory: React.FC = () => {
         onClose={() => setDrawerOpen(false)}
         summary={queueSummary}
         nodes={nodes}
+        edges={edges}
         onRefresh={fetchAuxiliaryData}
       />
     </div>
