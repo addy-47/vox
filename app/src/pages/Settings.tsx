@@ -1,23 +1,21 @@
-import { useState, useMemo, useEffect, memo, Suspense } from "react";
+import { useState, useMemo, useEffect, memo, Suspense, lazy } from "react";
 import { RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
 import { GlassSkeleton, ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
-
-import { PersonaCard } from "@/shared/components/settings/persona/PersonaCard";
-import { ModelsCard } from "@/shared/components/settings/models/ModelsCard";
-import { RealtimeCard } from "@/shared/components/settings/realtime/RealtimeCard";
-import { HistoryCard } from "@/shared/components/settings/history/HistoryCard";
-import { MemoryCard } from "@/shared/components/settings/memory/MemoryCard";
-import { AppearanceCard } from "@/shared/components/settings/appearance/AppearanceCard";
-import { InteractionCard } from "@/shared/components/settings/interaction/InteractionCard";
-
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
+import { SETTINGS_COPY } from "@/data/settingsData";
 
-// ─── Radial hub geometry ──────────────────────────────────────────────────────
-
+// Lazy-loaded domain card components to prevent bundle inflation and 180ms Settings opening lag
+const PersonaCard = lazy(() => import("@/shared/components/settings/persona/PersonaCard").then(m => ({ default: m.PersonaCard })));
+const ModelsCard = lazy(() => import("@/shared/components/settings/models/ModelsCard").then(m => ({ default: m.ModelsCard })));
+const RealtimeCard = lazy(() => import("@/shared/components/settings/realtime/RealtimeCard").then(m => ({ default: m.RealtimeCard })));
+const HistoryCard = lazy(() => import("@/shared/components/settings/history/HistoryCard").then(m => ({ default: m.HistoryCard })));
+const MemoryCard = lazy(() => import("@/shared/components/settings/memory/MemoryCard").then(m => ({ default: m.MemoryCard })));
+const AppearanceCard = lazy(() => import("@/shared/components/settings/appearance/AppearanceCard").then(m => ({ default: m.AppearanceCard })));
+const InteractionCard = lazy(() => import("@/shared/components/settings/interaction/InteractionCard").then(m => ({ default: m.InteractionCard })));
 
 // ─── Domain content map ───────────────────────────────────────────────────────
 
@@ -130,7 +128,7 @@ interface SettingsCardWrapperProps {
 const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCardWrapperProps) => {
   const { settings, draftSettings, commitChanges } = useSettings();
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
-  
+
   const hasChanges = useMemo(() => {
     return hasCardChanges(domain.id, settings, draftSettings);
   }, [domain.id, settings, draftSettings]);
@@ -180,8 +178,8 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
           transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
           className="w-full h-full flex items-center justify-center pointer-events-auto"
         >
-          <div 
-            id={`card-${domain.id}`} 
+          <div
+            id={`card-${domain.id}`}
             className={cn(
               "shrink-0 flex flex-col gap-0",
               hasChanges && "has-unsaved-changes"
@@ -202,17 +200,19 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
               >
                 {showRestartConfirm ? (
                   <>
-                    <span className="font-bold uppercase tracking-wider text-yellow-500 animate-pulse">Restart Required. Confirm?</span>
+                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] animate-pulse">
+                      {SETTINGS_COPY.restartRequired}
+                    </span>
                     <div className="flex gap-2">
                       <button
                         onClick={handleSave}
-                        className="px-3.5 py-1 rounded-lg bg-yellow-500 text-black text-[12px] font-black uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all"
+                        className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-black uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shadow-md"
                       >
                         Yes
                       </button>
                       <button
                         onClick={() => setShowRestartConfirm(false)}
-                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
+                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer"
                       >
                         No
                       </button>
@@ -220,19 +220,21 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
                   </>
                 ) : (
                   <>
-                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))]">Unsaved Changes</span>
+                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
+                      {SETTINGS_COPY.unsavedChanges}
+                    </span>
                     <div className="flex gap-2">
                       <button
                         onClick={handleSave}
-                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-bold uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all"
+                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-bold uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shadow-md"
                       >
-                        Save
+                        {SETTINGS_COPY.saveChanges}
                       </button>
                       <button
                         onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors"
+                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer"
                       >
-                        Discard
+                        {SETTINGS_COPY.discardChanges}
                       </button>
                     </div>
                   </>
@@ -261,8 +263,6 @@ export const Settings: React.FC = () => {
     handleCenterClick,
   } = useSettingsPage();
 
-
-
   if (!draftSettings) {
     return (
       <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10">
@@ -278,11 +278,11 @@ export const Settings: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-6">
-      
+
       {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
       {!isCompact ? (
         <div ref={containerRef} className="flex-1 w-full grid grid-cols-12 grid-rows-6 gap-4 items-stretch relative min-h-0">
-          
+
           {/* Dynamic SVG Overlay for Node-to-Card connections */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
             {DOMAINS.map((domain) => {
@@ -292,28 +292,23 @@ export const Settings: React.FC = () => {
               const isVertical = domain.id === "persona" || domain.id === "appearance";
               let pathD = "";
 
-              // Determine the next point the line goes to after the start point (line.x1, line.y1)
               let nextX = line.x2;
               let nextY = line.y2;
 
               if (!isVertical) {
                 const dx_mid = Math.abs(line.y2 - line.y1);
                 if (domain.id === "models" || domain.id === "history") {
-                  // Card is on the right
                   nextX = Math.min(line.x2, line.x1 + dx_mid);
                 } else {
-                  // Card is on the left (memory, interaction)
                   nextX = Math.max(line.x2, line.x1 - dx_mid);
                 }
                 nextY = line.y2;
               }
 
-              // Compute the unit vector from node center to the next point
               const vx = nextX - line.x1;
               const vy = nextY - line.y1;
               const len = Math.sqrt(vx * vx + vy * vy) || 1;
 
-              // Offset the start point by the node's radius (20px)
               const startX = line.x1 + (vx / len) * 20;
               const startY = line.y1 + (vy / len) * 20;
 
@@ -325,14 +320,12 @@ export const Settings: React.FC = () => {
 
               return (
                 <g key={domain.id}>
-                  {/* Outer glow line */}
                   <path
                     d={pathD}
                     fill="none"
                     stroke="var(--connection-glow)"
                     strokeWidth={4.5}
                   />
-                  {/* Sharp core line */}
                   <path
                     d={pathD}
                     fill="none"
@@ -373,10 +366,8 @@ export const Settings: React.FC = () => {
                 height: Math.max(radiusX, radiusY) * 2 + 100,
               }}
             >
-              {/* Hub connector lines */}
               <HubConnectors activeDomains={activeDomains} radiusX={radiusX} radiusY={radiusY} />
 
-              {/* Domain nodes */}
               {DOMAINS.map((domain) => (
                 <RadialNode
                   key={domain.id}
@@ -388,7 +379,6 @@ export const Settings: React.FC = () => {
                 />
               ))}
 
-              {/* Center node */}
               <HubCenter onClick={handleCenterClick} hasActiveCards={hasSelection} />
             </div>
           </div>
@@ -410,26 +400,18 @@ export const Settings: React.FC = () => {
           {/* Sticky Header - Always Visible */}
           <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--accent),0.12)] mb-4 px-1 shrink-0">
             <span className="text-[11px] font-black uppercase tracking-[0.15em] text-[rgb(var(--foreground))]/75">
-              System Settings
+              {SETTINGS_COPY.settingsTitle}
             </span>
             <div className="flex gap-2 items-center">
               <button
                 onClick={() => commitChanges()}
                 disabled={!hasChanges}
                 className={cn(
-                  "px-3.5 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                  "px-3.5 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all duration-300 shadow-md",
                   hasChanges
-                    ? "hover:scale-[1.02] active:scale-95 cursor-pointer"
+                    ? "hover:scale-[1.02] active:scale-95 cursor-pointer bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                     : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
                 )}
-                style={
-                  hasChanges
-                    ? {
-                        backgroundColor: "rgb(var(--accent))",
-                        color: "rgb(var(--accent-foreground))",
-                      }
-                    : undefined
-                }
               >
                 Save
               </button>
@@ -448,26 +430,26 @@ export const Settings: React.FC = () => {
               <div className="relative group">
                 <button
                   onClick={() => restoreDefaults()}
-                  className="p-1.5 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))] transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0"
+                  className="p-1.5 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))] transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0"
                   aria-label="Restore Defaults"
                 >
                   <RotateCcw size={14} />
                 </button>
-                <div className="absolute bottom-full mb-2 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--background))]/95 dark:bg-zinc-950/95 backdrop-blur-md text-[rgb(var(--accent))] shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] text-[11px] font-bold tracking-wide uppercase z-50">
-                  Restore Defaults
+                <div className="absolute bottom-full mb-2 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/95 backdrop-blur-md text-[rgb(var(--accent))] shadow-2xl text-[11px] font-bold tracking-wide uppercase z-50">
+                  {SETTINGS_COPY.restoreDefaults}
                 </div>
               </div>
             </div>
           </div>
 
-           <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-3 py-4 pb-[85px] space-y-7 animate-fade-in">
+          <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-3 py-4 pb-[85px] space-y-7 animate-fade-in">
             {[...DOMAINS].sort((a, b) => {
               const order = ["interaction", "history", "models", "appearance", "memory", "persona"];
               return order.indexOf(a.id) - order.indexOf(b.id);
             }).map((domain) => {
-               const Icon = domain.icon;
-               return (
-                 <div key={domain.id} className="w-full glass rounded-2xl p-4 md:p-5 space-y-4">
+              const Icon = domain.icon;
+              return (
+                <div key={domain.id} className="w-full glass-card rounded-2xl p-4 md:p-5 space-y-4">
                   {/* Category Header */}
                   <div className="flex items-center gap-2.5 px-1">
                     <div className="p-2 rounded-lg bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] flex items-center justify-center">
@@ -477,12 +459,12 @@ export const Settings: React.FC = () => {
                       <span className="text-[16px] font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
                         {domain.label}
                       </span>
-                      <span className="text-[11px] font-semibold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+                      <span className="text-[11px] font-semibold tracking-wider uppercase text-[rgb(var(--foreground-muted))]">
                         {domain.sublabel}
                       </span>
                     </div>
                   </div>
-                  
+
                   {/* Divider and Content */}
                   <div className="border-t border-[rgba(var(--accent),0.05)] pt-4">
                     <ErrorBoundary name={`SettingsMobile:${domain.id}`}>

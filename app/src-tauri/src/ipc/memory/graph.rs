@@ -9,6 +9,7 @@ pub struct MemoryNodeTopology {
     pub collection: String,
     pub is_superseded: bool,
     pub created_at: i64,
+    pub fact: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -76,12 +77,13 @@ pub async fn get_memory_graph_topology(
 
     let query_str = if include_inactive {
         "SELECT f.id, f.collection, f.created_at, 
-                EXISTS(SELECT 1 FROM memory_relations r WHERE r.to_id = f.id AND r.relation = 'SUPERSEDES') as is_superseded
+                EXISTS(SELECT 1 FROM memory_relations r WHERE r.to_id = f.id AND r.relation = 'SUPERSEDES') as is_superseded,
+                f.fact
          FROM memory_facts f
          WHERE f.fact != ''
          ORDER BY f.collection, f.created_at DESC"
     } else {
-        "SELECT f.id, f.collection, f.created_at, 0 as is_superseded
+        "SELECT f.id, f.collection, f.created_at, 0 as is_superseded, f.fact
          FROM memory_facts f
          WHERE f.fact != '' AND f.id NOT IN (SELECT to_id FROM memory_relations WHERE relation = 'SUPERSEDES')
          ORDER BY f.collection, f.created_at DESC"
@@ -92,11 +94,13 @@ pub async fn get_memory_graph_topology(
     let mut nodes = Vec::new();
     while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
         let is_sup_val: i64 = row.get(3).unwrap_or(0);
+        let fact_val: Option<String> = row.get(4).ok();
         nodes.push(MemoryNodeTopology {
             id: row.get(0).map_err(|e| e.to_string())?,
             collection: row.get(1).map_err(|e| e.to_string())?,
             is_superseded: is_sup_val != 0,
             created_at: row.get(2).map_err(|e| e.to_string())?,
+            fact: fact_val,
         });
     }
 

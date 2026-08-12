@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -45,18 +45,35 @@ function formatDate(timestamp: number): string {
   });
 }
 
-export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
+export const MemoryNodeTooltip = memo(({
   factDetail,
   isLoading,
   pos,
   onClose,
   onRefresh,
-}) => {
+}: MemoryNodeTooltipProps) => {
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const [isReassigning, setIsReassigning] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Click outside to dismiss tooltip
+  useEffect(() => {
+    const handleDocClick = (e: MouseEvent | PointerEvent) => {
+      if (tooltipRef.current && !tooltipRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener("pointerdown", handleDocClick);
+    }, 50);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", handleDocClick);
+    };
+  }, [onClose]);
 
   useEffect(() => {
     if (factDetail) {
@@ -125,11 +142,10 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
 
   const compactId = factDetail
     ? factDetail.id.startsWith("mem_")
-      ? `mem_fact_${factDetail.id.split("_")[1]?.slice(0, 6) || factDetail.id.slice(4, 10)}`
+      ? `mem_${factDetail.id.split("_")[1]?.slice(0, 8) || factDetail.id.slice(4, 12)}`
       : factDetail.id
-    : "mem_fact_loading";
+    : "mem_fact";
 
-  // Subpanel 3 relation count summary calculations
   const supportsCount = factDetail
     ? factDetail.outgoing_relations.filter((r) => r.relation.toUpperCase().includes("SUPPORT")).length +
       factDetail.incoming_relations.filter((r) => r.relation.toUpperCase().includes("SUPPORT")).length
@@ -148,76 +164,56 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
   return (
     <AnimatePresence>
       <motion.div
+        ref={tooltipRef}
         key={factDetail?.id || "loading"}
-        initial={{ opacity: 0, scale: 0.92, y: 6 }}
+        initial={{ opacity: 0, scale: 0.94, y: 6 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.92, y: 6 }}
+        exit={{ opacity: 0, scale: 0.94, y: 6 }}
         transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
         style={{
           left: clampedX,
           top: clampedY,
         }}
-        className="fixed z-40 w-[330px] glass-card p-4 rounded-2xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/95 backdrop-blur-2xl shadow-2xl flex flex-col gap-3 pointer-events-auto text-[rgb(var(--foreground))]"
+        className="fixed z-40 w-[400px] glass-card p-5 rounded-3xl border border-[rgba(var(--accent),0.15)] bg-[rgb(var(--card))]/90 backdrop-blur-2xl shadow-2xl flex flex-col gap-4 pointer-events-auto text-[rgb(var(--foreground))]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Subpanel 3 Header */}
-        <div className="flex items-center justify-between border-b border-[rgba(var(--border),0.15)] pb-2.5">
+        {/* Header — Clean single-line entity title */}
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span
-              className="text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase tracking-wide"
-              style={{ backgroundColor: `${colPalette.main}20`, color: colPalette.main }}
-            >
-              {factDetail?.collection || "COLLECTION"}
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: colPalette.main }}
+            />
+            <span className="text-[12px] font-sans font-black uppercase tracking-wider text-[rgb(var(--foreground))]">
+              {factDetail?.collection || "Identity"}
+            </span>
+            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+              • {compactId}
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-              {factDetail?.is_superseded ? "HISTORICAL" : "Active Fact"}
-            </span>
-            <button
-              onClick={onClose}
-              className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-              aria-label="Close tooltip"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+            aria-label="Close tooltip"
+          >
+            <X size={15} />
+          </button>
         </div>
 
         {/* Loading Spinner or Content */}
         {isLoading ? (
-          <div className="py-8 flex flex-col items-center justify-center gap-2 text-[rgb(var(--accent))]">
+          <div className="py-6 flex flex-col items-center justify-center gap-2 text-[rgb(var(--accent))]">
             <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            <span className="text-[10px] font-mono tracking-widest uppercase">Loading fact details...</span>
+            <span className="text-[11px] font-mono tracking-widest uppercase">Loading detail...</span>
           </div>
         ) : factDetail ? (
           <>
-            {/* Metadata Grid (Subpanel 3) */}
-            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono p-2.5 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)]">
-              <div>
-                <span className="text-[rgb(var(--foreground-muted))] block uppercase text-[9px]">Fact ID</span>
-                <span className="font-bold text-[rgb(var(--foreground))] truncate block">{compactId}</span>
-              </div>
-              <div>
-                <span className="text-[rgb(var(--foreground-muted))] block uppercase text-[9px]">Confidence</span>
-                <span className="font-bold text-[rgb(var(--accent))]">0.98</span>
-              </div>
-              <div>
-                <span className="text-[rgb(var(--foreground-muted))] block uppercase text-[9px]">Created</span>
-                <span className="text-[rgb(var(--foreground))] block">{formatDate(factDetail.created_at)}</span>
-              </div>
-              <div>
-                <span className="text-[rgb(var(--foreground-muted))] block uppercase text-[9px]">Source</span>
-                <span className="text-[rgb(var(--foreground))] block">compaction</span>
-              </div>
-            </div>
-
-            {/* Fact Content Quote Box */}
+            {/* Fact Content Quote */}
             {isEditing ? (
               <div className="flex flex-col gap-2">
                 <textarea
-                  className="w-full bg-[rgb(var(--background))] border border-[rgba(var(--accent),0.3)] rounded-xl p-2.5 text-[12px] text-[rgb(var(--foreground))] font-mono leading-relaxed outline-none resize-none"
+                  className="w-full bg-[rgb(var(--background))]/80 border border-[rgba(var(--accent),0.35)] rounded-2xl p-3 text-[12px] text-[rgb(var(--foreground))] font-sans leading-relaxed outline-none resize-none shadow-inner"
                   rows={3}
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
@@ -226,84 +222,91 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
                 <div className="flex gap-2 justify-end">
                   <button
                     onClick={() => setIsEditing(false)}
-                    className="px-2.5 py-1 rounded-lg text-[10px] font-mono text-[rgb(var(--foreground-muted))]"
+                    className="px-3 py-1 rounded-xl text-[11px] font-sans text-[rgb(var(--foreground-muted))] hover:bg-white/5 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleEditSave}
                     disabled={isSaving}
-                    className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/40 text-[10px] font-mono font-bold uppercase cursor-pointer"
+                    className="px-3.5 py-1 rounded-xl bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/40 text-[11px] font-sans font-bold uppercase cursor-pointer hover:bg-[rgb(var(--accent))]/30 transition-colors shadow-sm"
                   >
                     {isSaving ? "Saving..." : "Save Content"}
                   </button>
                 </div>
               </div>
             ) : (
-              <p className="text-[11px] font-sans font-normal leading-relaxed text-[rgb(var(--foreground))] italic p-3 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)]">
-                "{factDetail.fact}"
-              </p>
+              <div className="relative pl-3 border-l-2 border-[rgb(var(--accent))]/40 py-1">
+                <p className="text-[12.5px] font-sans leading-relaxed text-[rgb(var(--foreground))]">
+                  "{factDetail.fact}"
+                </p>
+                <div className="flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))] mt-1.5">
+                  <span>{formatDate(factDetail.created_at)}</span>
+                  <span className="font-bold text-[rgb(var(--accent))]">
+                    {factDetail.is_superseded ? "HISTORICAL" : "ACTIVE"}
+                  </span>
+                </div>
+              </div>
             )}
 
             {/* Category Reassignment Picker */}
-            {isReassigning ? (
-              <div className="p-2.5 rounded-xl bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.15)] flex flex-col gap-1.5">
-                <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
+            {isReassigning && (
+              <div className="pt-2 flex flex-col gap-2">
+                <span className="text-[10px] font-sans font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-wider">
                   Reassign Collection
                 </span>
-                <div className="grid grid-cols-2 gap-1">
+                <div className="grid grid-cols-2 gap-1.5">
                   {CATEGORIES.map((cat) => (
                     <button
                       key={cat}
                       onClick={() => handleCategoryReassign(cat)}
-                      className="px-2 py-1 rounded-lg text-[10px] font-mono text-left bg-[rgb(var(--foreground))]/5 hover:bg-[rgb(var(--accent))]/15 text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-xl text-[11px] font-sans font-medium text-left bg-black/[0.03] dark:bg-white/[0.04] hover:bg-[rgb(var(--accent))]/15 text-[rgb(var(--foreground))] transition-colors cursor-pointer"
                     >
                       {cat}
                     </button>
                   ))}
                 </div>
               </div>
-            ) : null}
+            )}
 
-            {/* Subpanel 3: Relation Summary Count Pills */}
-            <div className="flex flex-col gap-2 pt-1 border-t border-[rgba(var(--border),0.15)]">
-              <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-                Relation Summary
+            {/* Relation Summary Inline Stats Row */}
+            <div className="flex items-center justify-between text-[11px] font-sans pt-1">
+              <span className="text-[10px] font-mono font-bold uppercase text-[rgb(var(--foreground-muted))]">
+                RELATIONS
               </span>
-              <div className="grid grid-cols-3 gap-1.5 text-[9px] font-mono text-center">
-                <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">
-                  <span>{supportsCount}</span>
-                  <span className="block text-[8px] opacity-80">SUPPORTS</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold">
-                  <span>{dependsCount}</span>
-                  <span className="block text-[8px] opacity-80">DEPENDS_ON</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 font-bold">
-                  <span>{conflictsCount}</span>
-                  <span className="block text-[8px] opacity-80">CONFLICTS</span>
-                </div>
+              <div className="flex items-center gap-3 font-mono text-[11px]">
+                <span className="text-emerald-500 dark:text-emerald-400 font-bold">
+                  {supportsCount} <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">SUPPORTS</span>
+                </span>
+                <span className="text-amber-500 dark:text-amber-400 font-bold">
+                  {dependsCount} <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">DEPENDS</span>
+                </span>
+                <span className="text-red-500 dark:text-red-400 font-bold">
+                  {conflictsCount} <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">CONFLICTS</span>
+                </span>
               </div>
             </div>
 
             {/* Connected Relations List */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex flex-col gap-1 max-h-[110px] overflow-y-auto custom-scrollbar pr-1">
+            {(factDetail.outgoing_relations.length > 0 || factDetail.incoming_relations.length > 0) && (
+              <div className="flex flex-col gap-1 max-h-[100px] overflow-y-auto custom-scrollbar pt-1">
                 {factDetail.outgoing_relations.map((rel) => {
                   const relStyle = getRelationStyle(rel.relation);
                   return (
                     <div
                       key={`out_${rel.id}`}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)] text-[10px] font-mono"
+                      className="flex items-center justify-between text-[11px] font-mono py-0.5"
                     >
-                      <ArrowRight size={10} className="text-[rgb(var(--foreground-muted))] shrink-0" />
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <ArrowRight size={11} className="text-[rgb(var(--foreground-muted))] shrink-0" />
+                        <span className="truncate text-[rgb(var(--foreground))]">{rel.to_id}</span>
+                      </div>
                       <span
-                        className="font-bold uppercase text-[8px] px-1 rounded shrink-0"
+                        className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0"
                         style={{ color: relStyle.color, backgroundColor: `${relStyle.color}15` }}
                       >
                         {rel.relation}
                       </span>
-                      <span className="text-[rgb(var(--foreground))] truncate flex-1">{rel.to_id}</span>
                     </div>
                   );
                 })}
@@ -313,59 +316,63 @@ export const MemoryNodeTooltip: React.FC<MemoryNodeTooltipProps> = ({
                   return (
                     <div
                       key={`inc_${rel.id}`}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.12)] text-[10px] font-mono"
+                      className="flex items-center justify-between text-[11px] font-mono py-0.5"
                     >
-                      <ArrowLeft size={10} className="text-[rgb(var(--foreground-muted))] shrink-0" />
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <ArrowLeft size={11} className="text-[rgb(var(--foreground-muted))] shrink-0" />
+                        <span className="truncate text-[rgb(var(--foreground))]">{rel.from_id}</span>
+                      </div>
                       <span
-                        className="font-bold uppercase text-[8px] px-1 rounded shrink-0"
+                        className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0"
                         style={{ color: relStyle.color, backgroundColor: `${relStyle.color}15` }}
                       >
                         {rel.relation}
                       </span>
-                      <span className="text-[rgb(var(--foreground))] truncate flex-1">{rel.from_id}</span>
                     </div>
                   );
                 })}
               </div>
-            </div>
+            )}
 
             {/* Actions Bar */}
-            <div className="flex items-center justify-between border-t border-[rgba(var(--border),0.15)] pt-2.5">
-              <div className="flex items-center gap-1.5">
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => setIsReassigning((v) => !v)}
-                  className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/10 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
                   title="Reassign Collection"
                 >
-                  <Layers size={13} />
+                  <Layers size={14} />
                 </button>
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/10 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
                   title="Edit Fact Content"
                 >
-                  <Edit3 size={13} />
+                  <Edit3 size={14} />
                 </button>
                 <button
                   onClick={handleDelete}
-                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
                     confirmDelete
-                      ? "text-red-400 bg-red-500/10"
+                      ? "text-red-400 bg-red-500/15"
                       : "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-500/10"
                   }`}
                   title={confirmDelete ? "Click to confirm soft delete" : "Soft Delete Fact"}
                 >
-                  {confirmDelete ? <Check size={13} /> : <Trash2 size={13} />}
+                  {confirmDelete ? <Check size={14} /> : <Trash2 size={14} />}
                 </button>
               </div>
             </div>
           </>
         ) : (
-          <div className="py-4 text-center text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+          <div className="py-3 text-center text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
             Fact details unavailable
           </div>
         )}
       </motion.div>
     </AnimatePresence>
   );
-};
+});
+
+MemoryNodeTooltip.displayName = "MemoryNodeTooltip";
