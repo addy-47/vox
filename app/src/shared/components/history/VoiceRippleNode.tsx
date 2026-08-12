@@ -14,7 +14,7 @@ function formatTime(ms: number): string {
 export interface VoiceRippleNodeProps {
   session: SessionRow;
   isSelected: boolean;
-  confirmDeleteId: number | null;
+  isConfirmingDelete: boolean;
   onSelect: (session: SessionRow) => void;
   onDelete: (e: React.MouseEvent, id: number) => void;
   onCancelDelete: (e: React.MouseEvent) => void;
@@ -26,15 +26,13 @@ export const VoiceRippleNode = memo(
   ({
     session,
     isSelected,
-    confirmDeleteId,
+    isConfirmingDelete,
     onSelect,
     onDelete,
     onCancelDelete,
     x,
     y,
   }: VoiceRippleNodeProps) => {
-    const isConfirmingDelete = confirmDeleteId === session.id;
-
     const previewText = useMemo(() => {
       const msg = session.first_message || "No transcript recorded";
       const words = msg.trim().split(/\s+/);
@@ -56,7 +54,7 @@ export const VoiceRippleNode = memo(
         className={cn(
           "w-56 rounded-2xl p-4 flex flex-col text-left transition-colors duration-300 select-none group cursor-pointer z-10 glass-card",
           isSelected
-            ? "border-[rgba(var(--accent),0.6)] bg-[rgba(var(--accent),0.12)]"
+            ? "border-[rgba(var(--accent),0.6)] bg-[rgba(var(--accent),0.12)] shadow-lg"
             : "hover:bg-[rgba(var(--accent),0.04)]"
         )}
         onClick={(e) => {
@@ -64,49 +62,51 @@ export const VoiceRippleNode = memo(
           onSelect(session);
         }}
       >
-        {/* Pulsating background ring */}
-        <div className="absolute top-4 left-4 w-2 h-2 rounded-full bg-[rgb(var(--accent))]/75">
-          <div className="absolute inset-[-4px] rounded-full border border-[rgb(var(--accent))]/25 animate-ping" />
+        {/* Dynamic pulsing background ring — active only when selected */}
+        <div className="absolute top-4 left-4 w-2.5 h-2.5 rounded-full bg-[rgb(var(--accent))]">
+          {isSelected && (
+            <div className="absolute inset-[-4px] rounded-full border border-[rgb(var(--accent))]/40 animate-ping" />
+          )}
         </div>
 
         {/* Top Info */}
         <div className="flex items-center justify-between mb-2 pl-4">
-          <span className="text-[11px] font-mono text-[rgb(var(--accent))]/80 font-bold">
+          <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">
             {formatTime(session.started_at)}
           </span>
-          <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40">
+          <span className="text-[10px] font-mono font-medium text-[rgb(var(--foreground-muted))]">
             {session.turn_count} {session.turn_count === 1 ? "turn" : "turns"}
           </span>
         </div>
 
         {/* Snippet */}
-        <p className="text-[14px] font-light leading-relaxed italic text-[rgb(var(--foreground))]/75 pl-4">
+        <p className="text-[13px] font-normal leading-relaxed italic text-[rgb(var(--foreground))] pl-4">
           "{previewText}"
         </p>
 
-        {/* Delete button */}
-        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+        {/* Delete button (minimum 28px hit target) */}
+        <div className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
           {isConfirmingDelete ? (
-            <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={(e) => onDelete(e, session.id)}
-                className="w-5 h-5 rounded-full glass-card flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20"
+                className="w-7 h-7 rounded-full glass-card flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 cursor-pointer shadow-md"
                 aria-label="Confirm delete"
               >
-                <Check size={14} strokeWidth={3} />
+                <Check size={14} strokeWidth={2.5} />
               </button>
               <button
                 onClick={onCancelDelete}
-                className="w-5 h-5 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                className="w-7 h-7 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shadow-md"
                 aria-label="Cancel delete"
               >
-                <X size={14} strokeWidth={3} />
+                <X size={14} strokeWidth={2.5} />
               </button>
             </div>
           ) : (
             <button
               onClick={(e) => onDelete(e, session.id)}
-              className="w-5 h-5 rounded-full glass flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors"
+              className="w-7 h-7 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer"
               aria-label="Delete session"
             >
               <Trash2 size={14} />

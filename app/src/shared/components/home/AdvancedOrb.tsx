@@ -39,15 +39,26 @@ const BASE_AMP: Record<string, number> = {
 };
 
 // Helper to parse CSS variables that contain comma-separated RGB values (e.g., "0, 219, 233") or hex colors
+const COLOR_CACHE = new Map<string, THREE.Color>();
+
 function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
   if (typeof window === 'undefined') return new THREE.Color(fallbackHex);
+  if (COLOR_CACHE.has(varName)) return COLOR_CACHE.get(varName)!.clone();
   const val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-  if (!val) return new THREE.Color(fallbackHex);
+  if (!val) {
+    const col = new THREE.Color(fallbackHex);
+    COLOR_CACHE.set(varName, col);
+    return col.clone();
+  }
   const parts = val.split(',').map(s => parseInt(s.trim(), 10));
   if (parts.length === 3 && !parts.some(isNaN)) {
-    return new THREE.Color(parts[0] / 255, parts[1] / 255, parts[2] / 255);
+    const col = new THREE.Color(parts[0] / 255, parts[1] / 255, parts[2] / 255);
+    COLOR_CACHE.set(varName, col);
+    return col.clone();
   }
-  return new THREE.Color(val);
+  const col = new THREE.Color(val);
+  COLOR_CACHE.set(varName, col);
+  return col.clone();
 }
 
 // ─── Geometry ────────────────────────────────────────────────────────────────
@@ -613,9 +624,10 @@ export const VoxOrb = React.memo(({
     type DiscAnim = { speedX: number; speedY: number; speedZ: number };
     const discAnims: DiscAnim[] = [];
 
-    for (let i = 0; i < NUM_SHEETS; i++) {
-      const geo = createDiscGeometry(DISC_R, 36, 12);
+    // Share a single BufferGeometry across all 7 silk-sheet meshes
+    const sharedDiscGeo = createDiscGeometry(DISC_R, 36, 12);
 
+    for (let i = 0; i < NUM_SHEETS; i++) {
       const mat = new THREE.ShaderMaterial({
         uniforms: {
           u_time: sharedUni.u_time,
@@ -637,7 +649,7 @@ export const VoxOrb = React.memo(({
       });
       discMats.push(mat);
 
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = new THREE.Mesh(sharedDiscGeo, mat);
       mesh.rotation.order = 'ZYX';
       mesh.rotation.x = (Math.random() - 0.5) * Math.PI;
       mesh.rotation.y = Math.random() * Math.PI * 2;
@@ -736,13 +748,10 @@ export const VoxOrb = React.memo(({
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
+      sharedDiscGeo.dispose();
       outerGeo.dispose();
       outerMat.dispose();
       discMats.forEach((m) => m.dispose());
-      discGroup.children.forEach((child) => {
-        const mesh = child as THREE.Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
-      });
       renderer.dispose();
     };
   }, []);

@@ -6,7 +6,7 @@
 
 > 🛑 **MANDATORY POST-TASK DOCUMENTATION HOOK (NON-NEGOTIABLE):**
 > Every time code, architecture, candidate thresholds, system prompts, or LLM judge models are modified, or a task/phase is completed:
-> 1. You **MUST** automatically update `AGENTS.md` to reflect the exact current implementation, model configuration, and threshold matrix.
+> 1. You **MUST** automatically update `AGENTS.md` to reflect the exact current implementation, model configuration, and threshold matrix. 
 > 2. You **MUST** automatically update the relevant feature documentation (e.g. `docs/features/memory-architecture.md` and feature ledgers).
 > 3. This is a **mandatory post-task completion hook** — do NOT wait for the user to explicitly remind you to sync documentation.
 
@@ -119,46 +119,35 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
 > 3. **Deep Semantic Audit**: The subagent must act as a mini QA Lead, inspecting raw database rows (`audit_json`, `dedup_match_json`) and verifying output matching our goals rather than just checking exit codes.
 > 4. **HITL User Approval Gate**: After the QA Subagent completes its report for a phase, execution MUST STOP. Present the audit findings to the user and wait for explicit HITL user approval before starting the next evaluation phase.
 
-### 5.4 Consolidated System Notes & Critical Pitfalls
+### 5.4 Consolidated System Invariants & Critical Pitfalls
 
-- **Memory UI Page & Observability (`Memory.tsx` / `MemoryGraph.tsx` / `MemoryPipelineDrawer.tsx`)**:
-  - **WebGL GPU Hardware Acceleration**: Graph geometry rendering is powered by Three.js WebGL GPU instanced buffer geometry (`Three.js` v0.184.0 via `react-force-graph-3d` in 2D WebGL camera mode), offloading node and edge rasterization to GPU fragment shaders for locked 60 FPS performance at 10,000 nodes scale.
-  - **Subpanel 6 Initial WebGL Loader**: Glowing geometric polyhedron icon, ambient radial pulse ring, tracking-widest title `Building memory graph...`, metric pill (`1,299 nodes · 470 edges`), and status text `Optimizing spatial topology layout`.
-  - **Subpanel 1 Landmark Badge Hover Tooltip**: Expanded collection header (`ENTITIES 104`), collection description (`Semantic Graph Collection...`), 2x2 metric stat grid (`Active Facts: 192`, `Total Relations: 387`, `Avg. Connections: 2.01`, `Last Updated: 2m ago`), and connected relation breakdown. Sphere/dot icon removed.
-  - **Subpanel 2 Pipeline Drawer (`MemoryPipelineDrawer.tsx`)**: Slide-in panel (`w-[420px] top-[40px] h-[calc(100vh-40px)]`) aligned below titlebar without clipping or dark backdrop dimming. Pauses background graph topology polling while open. Features `Auto-Ingestion Daemon` status card (`Uptime`, `Total Processed`, `Avg/Fact`, `Success Rate`), 5-stage vertical timeline, Stage 5 expandable failed items with selective retries, and bottom CTA consolidation button.
-  - **Subpanel 3 Detailed Node Tooltip (`MemoryNodeTooltip.tsx`)**: Status tag (`Active Fact`), metadata grid (`Fact ID`, `Created`, `Updated`, `Confidence`, `Source`), quote box, relation summary count pills (`SUPPORTS`, `DEPENDS_ON`, `CONFLICTS_WITH`), and direct connected relations list.
-  - **Right Action Dock**: Vertically centered top-right floating dock (`top-1/2 -translate-y-1/2 right-6`) with 18px icons in `w-10 h-10` button targets matching edge navigation size.
-  - **Strict 2D WebGL Graph View**: OrbitControls rotation is disabled (`controls.enableRotate = false`) to enforce 2D pan and zoom navigation strictly.
-  - **Decoupled Three.js Mesh Instantiation**: Node selection highlights run via GPU uniform material color updates without destroying or re-instantiating 1,200 Three.js WebGL Meshes, eliminating 4-5s click lag.
-  - **Isolated Search Component**: Search bar state is isolated into `<SearchBar>`, preventing typing keystrokes from re-rendering the parent page or triggering graph VDOM passes.
-  - **Dynamic Cluster Badge Tracking**: Attached `change` event listener to OrbitControls so landmark badges glide smoothly over cluster centroids frame-by-frame during camera drag/zoom.
-  - **Cardless Subpanel 6 Initial Loader**: Full-screen centered glass surface with glowing 3D polyhedron wireframe and concentric ambient rings (`bg-radial`), without card box wrapper.
-  - **Vox Semantic Theme CSS Variables**: Zero double-border ghost cards, zero hardcoded dark boxes. Uses Vox semantic CSS tokens (`bg-[rgb(var(--card))]`, `text-[rgb(var(--foreground))]`, `border-[rgba(var(--border),0.15)]`) ensuring 100% WCAG contrast across Light Mode and Dark Mode.
+- **Memory UI & WebGL Invariants (`Memory.tsx` / `MemoryGraph.tsx`)**:
+  - **Strict 2D WebGL View**: `OrbitControls.enableRotate = false` is enforced.
+  - **GPU Uniform Highlights**: Node selection updates GPU uniform material colors without destroying/re-instantiating 1,200 Three.js WebGL Meshes, avoiding 4-5s click lag.
+  - **Isolated Search Input**: Search state is isolated inside `<SearchBar>` to prevent keystroke re-renders of graph VDOM.
 
 - **Linux Window Invariant (`window_customizer.rs`)**:
-  - WebKitGTK trackpad pinch-to-zoom is disabled in `PinchZoomDisablePlugin` by destroying `wk-view-zoom-gesture` handlers on GTK widget realization and forcing `zoom-level` back to `1.0`.
+  - WebKitGTK trackpad pinch-to-zoom is disabled in `PinchZoomDisablePlugin` by destroying `wk-view-zoom-gesture` handlers and setting `zoom-level = 1.0`.
 
-- **Backend ONNX Model Memory Footprint & Eviction Lifecycle**:
-  - **Zero Idle ONNX Model RAM Baseline**: 0 ONNX models are loaded on application boot.
-  - **Singleton Eviction Pattern**: Replaced static `OnceLock<T>` with thread-safe `parking_lot::RwLock<Option<T>>` for all 5 ONNX singletons (`TransliterationEngine`, `QueryScopeClassifier`, `TextEmbedder`, `NliEngine`, `EdgeClassifierEngine`). Calling `*SINGLETON.write() = None` drops the ORT Session and tokenizer, immediately returning process memory back to the OS.
-  - **Audio Engine Gating**: `launch_engine()` on startup is strictly gated on `tray_enabled == true`. Opening the Main App window (`show_main_window`) DOES NOT trigger `launch_engine()` in passive mode. Engine STT/VAD models are lazy-loaded on-demand when the user clicks engage (`engage()`).
-  - **Memory Pipeline ONNX Lifecycle**: The 3 memory pipeline ONNX models (Embedder, NLI Engine, Edge Classifier) are lazy-loaded only when `memory.pipeline_processing_enabled == true` AND `personal_memory_queue` has pending items (`status IN ('staged_pending', 'deduped', 'embedded')`). When the queue is empty during 30s idle sweeps, model loading is skipped entirely.
-  - **Barge-In Eviction**: On voice engagement (`PipelineActive` event) or session disengage / batch completion, `unload_memory_pipeline_onnx_models()` / `unload_all_onnx_models()` evicts all pipeline ONNX sessions from RAM so voice processing runs with full CPU/RAM headroom.
+- **Backend ONNX Lifecycle & Eviction Rules**:
+  - **Zero Idle RAM**: 0 ONNX models loaded on boot. All 5 ONNX singletons use thread-safe `parking_lot::RwLock<Option<T>>` for instant process memory eviction (`*SINGLETON.write() = None`).
+  - **Audio Engine Gating**: `launch_engine()` on startup is strictly gated on `tray_enabled == true`. Opening main window DOES NOT launch engine in passive mode. Models lazy-load on `engage()`.
+  - **Memory Pipeline ONNX Lifecycle**: Memory ONNX models load ONLY when `memory.pipeline_processing_enabled == true` AND `personal_memory_queue` has pending items. Skip when queue is empty.
+  - **Barge-In Eviction**: On voice engagement (`PipelineActive`), disengage, or batch completion, `unload_all_onnx_models()` evicts pipeline ONNX sessions from RAM.
 
 - **Frontend & Event Safety Standards**:
   - **Listeners**: Push unlisteners immediately to cleanup array (`TrayApp.tsx`). Direct `listen` promise chains without cleanup are banned.
-  - **Routing**: `TitleBar.tsx` must use `useNavigate()`; manual `window.history.pushState` dispatching is banned.
-  - **State Mutations**: Render-phase state mutations in settings/models components are banned; use `useEffect`.
+  - **Routing**: `TitleBar.tsx` must use `useNavigate()`; `window.history.pushState` is banned.
+  - **State Mutations**: Render-phase state mutations are banned; use `useEffect`.
+  - **Settings Card Sync**: `InteractionCard` and `ModelsCard` sync bidirectionally using `sync_pipeline_tab` and `sync_interaction_category` custom events.
+  - **Manifest-Driven UI**: `LlmConfigDesk.tsx` and workspace cards read titles, descriptions, and flags (`is_cloud`, `is_remote`, `is_built_in`) directly from `modelCatalog` without hardcoded fallback strings.
+  - **Test Clip Invariant (`homeData.ts`)**: `TEST_CLIPS` must match the 5 canonical WAV IDs in `app/src-tauri/test-clips/` (`short_en`, `short_hi`, `hinglish`, `command`, `expressive`).
 
-- **Backend Memory Subsystem Architecture (`app/src-tauri/src/ipc/memory/`)**:
-  - **Modular Structure**: `ipc/memory/{mod.rs, graph.rs, ingestion.rs, mutations.rs, conflicts.rs}`.
-  - **Cache Token (`graph_version`)**: Atomic `Arc<AtomicU64>` in `MemoryAppState` (`state.rs`), incremented on mutations, conflict resolutions, and background worker commits.
-  - **Topology Endpoint**: `get_memory_graph_topology` fetches node topology via a single SQL query (`EXISTS(SELECT 1 FROM memory_relations WHERE to_id = f.id AND relation = 'SUPERSEDES') as is_superseded`), avoiding $O(N)$ N+1 subqueries. Full text is lazy-loaded per node via `get_memory_fact_detail`.
-  - **Fact Mutations & Transactions**: Multi-statement operations (`edit_fact_content`, `soft_delete_fact`, `resolve_memory_conflict`) MUST be wrapped in explicit SQLite transactions (`BEGIN TRANSACTION;` ... `COMMIT;` with `ROLLBACK` on error).
-  - **Vector Embedding Synchronization**: `edit_fact_content` updates raw text and executes SQLite `UPSERT` on `memory_facts_vectors(fact_id)` (`ON CONFLICT(fact_id) DO UPDATE SET embedding = excluded.embedding`) to prevent vector drift.
-  - **Status Invariant on Deletes & Conflict Resolution**: `soft_delete_fact` and `resolve_memory_conflict` MUST execute `UPDATE memory_facts SET status = 'superseded' WHERE id = ?` on target/loser nodes. *Pitfall: Omitting this leaves superseded facts as `status = 'active'`, causing vector retrieval (`WHERE status = 'active'`) to inject deleted/loser facts into LLM context windows.*
-  - **Queue Retries**: `retry_failed_queue` (all failed items) and `retry_failed_queue_items` (selective item IDs) reset both `attempts = 0` AND `retry_count = 0`. Worker auto-retries idle items when `retry_count < 3`.
-  - **Database Indexes**: Schema defines `idx_mfv_fact_id` on `memory_facts_vectors(fact_id)` and `idx_pmq_session` on `personal_memory_queue(session_id)` to prevent $O(N)$ full table scans.
-  - **Relation Constants**: Conflict relation string is `PM_RELATION_CONFLICTS` (`"CONFLICTS"`). Using `"CONFLICTS_WITH"` in SQL returns 0 rows.
+- **Backend Memory Subsystem Invariants (`app/src-tauri/src/ipc/memory/`)**:
+  - **Cache Token**: `graph_version` (`Arc<AtomicU64>`) incremented on all mutations.
+  - **Transactions**: Multi-statement operations MUST be wrapped in explicit SQLite transactions (`BEGIN TRANSACTION;` ... `COMMIT;`).
+  - **Vector Sync**: `edit_fact_content` executes SQLite `UPSERT` on `memory_facts_vectors(fact_id)`.
+  - **Superseded Status Invariant**: `soft_delete_fact` and `resolve_memory_conflict` MUST execute `UPDATE memory_facts SET status = 'superseded' WHERE id = ?`. *Pitfall: Omitting this injects deleted/loser facts into LLM context windows.*
+  - **Relation Constant**: Conflict relation string is `"CONFLICTS"`. Using `"CONFLICTS_WITH"` in SQL returns 0 rows.
 
 

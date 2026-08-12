@@ -18,9 +18,12 @@ pub struct BootState {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ModelCatalog {
-    pub llm: Vec<crate::core::settings::ModelMetadata>,
-    pub asr: Vec<crate::core::settings::ModelMetadata>,
-    pub tts: Vec<crate::core::settings::ModelMetadata>,
+    pub llm: Vec<crate::setup::manifest::ModelGroup>,
+    pub asr: Vec<crate::setup::manifest::ModelGroup>,
+    pub tts: Vec<crate::setup::manifest::ModelGroup>,
+    pub vad: Vec<crate::setup::manifest::ModelGroup>,
+    pub auxiliary: Vec<crate::setup::manifest::ModelGroup>,
+    pub model_groups: Vec<crate::setup::manifest::ModelGroup>,
     pub voices: Vec<crate::core::settings::VoiceProfile>,
     pub preset_colors: Vec<String>,
 }
@@ -53,11 +56,52 @@ pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
 }
 
 #[tauri::command]
-pub async fn request_model_catalog() -> Result<ModelCatalog, String> {
+pub async fn request_model_catalog(
+    app: AppHandle,
+) -> Result<ModelCatalog, String> {
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let manifest_opt = {
+        let guard = state.manifest.read().await;
+        guard.clone()
+    };
+
+    let manifest = if let Some(m) = manifest_opt {
+        m
+    } else {
+        let manifest_path = paths::get().models.join("models_manifest.json");
+        if manifest_path.exists() {
+            let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
+            serde_json::from_str::<crate::setup::manifest::VoxManifest>(&content).map_err(|e| e.to_string())?
+        } else {
+            return Err("Manifest not available".to_string());
+        }
+    };
+
+    let groups = manifest.model_groups;
+
+    let llm = groups.iter().filter(|g| g.category == "llm").cloned().collect();
+    let asr = groups.iter().filter(|g| g.category == "stt").cloned().collect();
+    let tts = groups.iter().filter(|g| g.category == "tts").cloned().collect();
+    let vad = groups.iter().filter(|g| g.category == "vad").cloned().collect();
+    let auxiliary = groups
+        .iter()
+        .filter(|g| {
+            g.subcategory.as_deref() == Some("auxiliary")
+                || matches!(
+                    g.category.as_str(),
+                    "translit" | "embedding" | "nli" | "classifier"
+                )
+        })
+        .cloned()
+        .collect();
+
     Ok(ModelCatalog {
-        llm: crate::core::settings::get_llm_metadata(),
-        asr: crate::core::settings::get_asr_metadata(),
-        tts: crate::core::settings::get_tts_metadata(),
+        llm,
+        asr,
+        tts,
+        vad,
+        auxiliary,
+        model_groups: groups,
         voices: crate::core::settings::get_voice_profiles(),
         preset_colors: crate::core::settings::get_preset_colors(),
     })
