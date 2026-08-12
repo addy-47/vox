@@ -9,6 +9,8 @@ interface AmbientBackgroundProps {
   originX?: string;
   /** Y origin of the orb — ripples expand from this point */
   originY?: string;
+  /** Speed multiplier for ripple ring expansion (e.g. 1.5 = 1.5x slower / longer interval) */
+  rippleSpeedMultiplier?: number;
 }
 
 interface MoodConfig {
@@ -71,8 +73,10 @@ export const AmbientBackground = React.memo(({
   mood = "calm",
   originX = "50%",
   originY = "50%",
+  rippleSpeedMultiplier = 1.0,
 }: AmbientBackgroundProps) => {
   const cfg = MOOD_CONFIG[mood];
+  const effectiveRippleDuration = cfg.rippleDuration * rippleSpeedMultiplier;
   const telemetryRef = useTelemetry();
   const glowRef = React.useRef<HTMLDivElement>(null);
   const rippleRef = React.useRef<HTMLDivElement>(null);
@@ -129,7 +133,7 @@ export const AmbientBackground = React.memo(({
       style={{
         "--origin-x": originX,
         "--origin-y": originY,
-        "--rp-dur": `${cfg.rippleDuration}s`,
+        "--rp-dur": `${effectiveRippleDuration}s`,
         "--rp-anim-name": rpAnimName,
       } as React.CSSProperties}
       aria-hidden="true"
@@ -165,7 +169,7 @@ export const AmbientBackground = React.memo(({
             key={i}
             className="rp-ring"
             style={{
-              animationDelay: `${(i * cfg.rippleDuration) / RIPPLE_COUNT}s`,
+              animationDelay: `${(i * effectiveRippleDuration) / RIPPLE_COUNT}s`,
             }}
           />
         ))}

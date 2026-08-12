@@ -267,6 +267,11 @@ pub fn is_valid_inter_collection_pair(src: &str, tgt: &str) -> bool {
     )
 }
 
+/// Checks if there is a sanctioned inter-collection relationship between `col1` and `col2` in EITHER direction (spec §4.2).
+pub fn has_inter_collection_relationship(col1: &str, col2: &str) -> bool {
+    is_valid_inter_collection_pair(col1, col2) || is_valid_inter_collection_pair(col2, col1)
+}
+
 /// Returns the deterministic inverse relation string for any edge relation label (spec §4.3).
 pub fn inverse_edge_for_relation(relation: &str) -> &'static str {
     match relation {

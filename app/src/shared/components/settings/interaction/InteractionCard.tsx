@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, useRef, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { Sliders, Eye, EyeOff, Activity, Radio } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -28,6 +28,8 @@ export const InteractionCard = memo(
     const [activeCategory, setActiveCategory] = useState<"STT" | "LLM" | "TTS">("LLM");
     const [sttPillOverride, setSttPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
     const [ttsPillOverride, setTtsPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
+
+    const prevCategoryRef = useRef<string>(activeCategory);
 
     if (!draftSettings || !settings) return null;
     const { interaction, llm, ui } = draftSettings;
@@ -68,18 +70,26 @@ export const InteractionCard = memo(
       setActiveCategory((prev) => (prev === "STT" ? "LLM" : prev === "LLM" ? "TTS" : "STT"));
     };
 
+    // Guard sync_pipeline_tab event dispatch to prevent ping-pong loop
     useEffect(() => {
-      const event = new CustomEvent("sync_pipeline_tab", {
-        detail: activeCategory.toLowerCase(),
-      });
-      window.dispatchEvent(event);
+      if (prevCategoryRef.current !== activeCategory) {
+        prevCategoryRef.current = activeCategory;
+        const event = new CustomEvent("sync_pipeline_tab", {
+          detail: activeCategory.toLowerCase(),
+        });
+        window.dispatchEvent(event);
+      }
     }, [activeCategory]);
 
     useEffect(() => {
       const handleSync = (e: Event) => {
         const cat = (e as CustomEvent).detail;
         if (cat === "stt" || cat === "llm" || cat === "tts") {
-          setActiveCategory(cat.toUpperCase() as any);
+          const upperCat = cat.toUpperCase() as "STT" | "LLM" | "TTS";
+          if (prevCategoryRef.current !== upperCat) {
+            prevCategoryRef.current = upperCat;
+            setActiveCategory(upperCat);
+          }
         }
       };
       window.addEventListener("sync_interaction_category", handleSync);
