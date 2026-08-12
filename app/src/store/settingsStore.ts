@@ -61,14 +61,33 @@ export interface LlmModelInfo {
   capabilities?: ModelCapabilities | null;
 }
 
-export interface ModelMetadata {
+export interface ModelEntry {
+  id: string;
+  path: string;
+  size: number;
+  sha256: string;
+  archive?: string | null;
+  required?: boolean;
+}
+
+export interface ModelGroupInfo {
   id: string;
   name: string;
-  description: string;
-  ram_usage: string;
-  parameters: string;
+  category: string;
+  subcategory?: string;
+  description?: string;
+  parameters?: string;
+  ram_usage?: string;
   tradeoffs?: string;
+  version: string;
+  is_built_in?: boolean;
+  is_cloud?: boolean;
+  is_remote?: boolean;
+  files?: ModelEntry[];
 }
+
+// Alias for backwards compatibility during component migration
+export type ModelMetadata = ModelGroupInfo;
 
 export interface VoiceProfile {
   id: number;
@@ -76,9 +95,12 @@ export interface VoiceProfile {
 }
 
 export interface ModelCatalog {
-  llm: ModelMetadata[];
-  asr: ModelMetadata[];
-  tts: ModelMetadata[];
+  llm: ModelGroupInfo[];
+  asr: ModelGroupInfo[];
+  tts: ModelGroupInfo[];
+  vad: ModelGroupInfo[];
+  auxiliary: ModelGroupInfo[];
+  model_groups: ModelGroupInfo[];
   voices: VoiceProfile[];
   preset_colors: string[];
 }

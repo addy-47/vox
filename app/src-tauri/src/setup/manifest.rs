@@ -19,7 +19,23 @@ pub struct ModelGroup {
     pub id: String,
     pub name: String,
     pub category: String,
+    #[serde(default)]
+    pub subcategory: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub parameters: Option<String>,
+    #[serde(default)]
+    pub ram_usage: Option<String>,
+    #[serde(default)]
+    pub tradeoffs: Option<String>,
     pub version: String,
+    #[serde(default)]
+    pub is_built_in: bool,
+    #[serde(default)]
+    pub is_cloud: bool,
+    #[serde(default)]
+    pub is_remote: bool,
     pub files: Vec<ModelEntry>,
 }
 

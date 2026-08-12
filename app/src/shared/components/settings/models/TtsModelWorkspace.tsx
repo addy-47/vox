@@ -37,16 +37,16 @@ export const TtsModelWorkspace = memo(
     const isRemote = draftSettings.tts.provider?.kind === "chatterbox_remote";
     const isCloud = draftSettings.tts.provider?.kind === "edge_tts";
 
-    // Strictly partition models according to the active provider tier (Embedded, Remote, or Cloud)
+    // Strictly partition models according to the active provider tier (Embedded, Remote, or Cloud) using manifest flags
     const filteredModels = (modelCatalog.tts || []).filter((model) => {
       if (isCloud) {
-        return model.id === "edge_tts";
+        return !!model.is_cloud;
       }
       if (isRemote) {
-        return model.id === "chatterbox_remote";
+        return !!model.is_remote;
       }
       // Embedded / Local Tier
-      return model.id === "supertonic_tts" || model.id === "chatterbox_tts";
+      return !model.is_cloud && !model.is_remote;
     });
 
     return (
@@ -59,15 +59,13 @@ export const TtsModelWorkspace = memo(
         >
           {filteredModels.map((model) => {
             const isSelected =
-              (model.id === "edge_tts" && draftSettings.tts.provider?.kind === "edge_tts") ||
+              (model.is_cloud && draftSettings.tts.provider?.kind === "edge_tts") ||
               (model.id === "supertonic_tts" && draftSettings.tts.provider?.kind === "supertonic") ||
               (model.id === "chatterbox_tts" && draftSettings.tts.provider?.kind === "chatterbox") ||
-              (model.id === "chatterbox_remote" && draftSettings.tts.provider?.kind === "chatterbox_remote");
+              (model.is_remote && draftSettings.tts.provider?.kind === "chatterbox_remote");
 
             const isDownloaded =
-              model.id === "edge_tts" || model.id === "chatterbox_remote"
-                ? true
-                : modelPresence[model.id];
+              !!model.is_cloud || !!model.is_remote || !!model.is_built_in || !!modelPresence[model.id];
             const status = downloadStatuses[model.id];
 
             return (
@@ -75,12 +73,12 @@ export const TtsModelWorkspace = memo(
                 <SubModelCard
                   id={model.id}
                   name={model.name}
-                  description={model.description}
-                  parameters={model.parameters}
+                  description={model.description || ""}
+                  parameters={model.parameters || ""}
                   ramUsage={model.ram_usage}
                   tradeoffs={model.tradeoffs}
-                  isDownloaded={isDownloaded}
-                  isActive={isSelected}
+                  isDownloaded={!!isDownloaded}
+                  isActive={!!isSelected}
                   isRequired={false}
                   layoutMode={layoutMode}
                   onSelect={() => {

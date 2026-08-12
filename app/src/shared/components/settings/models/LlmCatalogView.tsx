@@ -390,8 +390,8 @@ export const LlmCatalogView = memo(({
             key={model.id}
             id={model.id}
             name={model.name}
-            description={model.description}
-            parameters={model.parameters}
+            description={model.description || ""}
+            parameters={model.parameters || ""}
             ramUsage={model.ram_usage}
             tradeoffs={model.tradeoffs}
             isDownloaded={isDownloaded}
@@ -404,7 +404,7 @@ export const LlmCatalogView = memo(({
             downloadStatus={status}
             startDownload={() => startDownload(model.id)}
             deleteModel={() => handleDeleteModelGroup(model.id)}
-            showTooltip={true}
+            showTooltip={false}
           />
         );
       })}
