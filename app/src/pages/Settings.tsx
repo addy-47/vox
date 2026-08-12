@@ -8,14 +8,23 @@ import { AnimatePresence, motion } from "framer-motion";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
 import { SETTINGS_COPY } from "@/data/settingsData";
 
-// Lazy-loaded domain card components to prevent bundle inflation and 180ms Settings opening lag
-const PersonaCard = lazy(() => import("@/shared/components/settings/persona/PersonaCard").then(m => ({ default: m.PersonaCard })));
-const ModelsCard = lazy(() => import("@/shared/components/settings/models/ModelsCard").then(m => ({ default: m.ModelsCard })));
-const RealtimeCard = lazy(() => import("@/shared/components/settings/realtime/RealtimeCard").then(m => ({ default: m.RealtimeCard })));
-const HistoryCard = lazy(() => import("@/shared/components/settings/history/HistoryCard").then(m => ({ default: m.HistoryCard })));
-const MemoryCard = lazy(() => import("@/shared/components/settings/memory/MemoryCard").then(m => ({ default: m.MemoryCard })));
-const AppearanceCard = lazy(() => import("@/shared/components/settings/appearance/AppearanceCard").then(m => ({ default: m.AppearanceCard })));
-const InteractionCard = lazy(() => import("@/shared/components/settings/interaction/InteractionCard").then(m => ({ default: m.InteractionCard })));
+// Loader functions for eager prewarming
+const loadPersona = () => import("@/shared/components/settings/persona/PersonaCard").then(m => ({ default: m.PersonaCard }));
+const loadModels = () => import("@/shared/components/settings/models/ModelsCard").then(m => ({ default: m.ModelsCard }));
+const loadRealtime = () => import("@/shared/components/settings/realtime/RealtimeCard").then(m => ({ default: m.RealtimeCard }));
+const loadHistory = () => import("@/shared/components/settings/history/HistoryCard").then(m => ({ default: m.HistoryCard }));
+const loadMemory = () => import("@/shared/components/settings/memory/MemoryCard").then(m => ({ default: m.MemoryCard }));
+const loadAppearance = () => import("@/shared/components/settings/appearance/AppearanceCard").then(m => ({ default: m.AppearanceCard }));
+const loadInteraction = () => import("@/shared/components/settings/interaction/InteractionCard").then(m => ({ default: m.InteractionCard }));
+
+// Lazy-loaded domain card components
+const PersonaCard = lazy(loadPersona);
+const ModelsCard = lazy(loadModels);
+const RealtimeCard = lazy(loadRealtime);
+const HistoryCard = lazy(loadHistory);
+const MemoryCard = lazy(loadMemory);
+const AppearanceCard = lazy(loadAppearance);
+const InteractionCard = lazy(loadInteraction);
 
 // ─── Domain content map ───────────────────────────────────────────────────────
 
@@ -251,6 +260,7 @@ SettingsCardWrapper.displayName = "SettingsCardWrapper";
 
 export const Settings: React.FC = () => {
   const { draftSettings, commitChanges, discardChanges, hasChanges, restoreDefaults } = useSettings();
+  const [isMobileConfirmRestore, setIsMobileConfirmRestore] = useState(false);
   const {
     containerRef,
     activeDomains,
@@ -262,6 +272,17 @@ export const Settings: React.FC = () => {
     handleSelect,
     handleCenterClick,
   } = useSettingsPage();
+
+  // Eagerly prewarm lazy card components on mount so cards and SVG lines appear synchronously
+  useEffect(() => {
+    loadPersona();
+    loadModels();
+    loadRealtime();
+    loadHistory();
+    loadMemory();
+    loadAppearance();
+    loadInteraction();
+  }, []);
 
   if (!draftSettings) {
     return (
@@ -283,9 +304,10 @@ export const Settings: React.FC = () => {
       {!isCompact ? (
         <div ref={containerRef} className="flex-1 w-full grid grid-cols-12 grid-rows-6 gap-4 items-stretch relative min-h-0">
 
-          {/* Dynamic SVG Overlay for Node-to-Card connections */}
+          {/* Dynamic SVG Overlay for Node-to-Card connections (rendered synchronously with active cards) */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
             {DOMAINS.map((domain) => {
+              if (!activeDomains.includes(domain.id)) return null;
               const line = lines[domain.id];
               if (!line) return null;
 
@@ -429,14 +451,27 @@ export const Settings: React.FC = () => {
               </button>
               <div className="relative group">
                 <button
-                  onClick={() => restoreDefaults()}
-                  className="p-1.5 rounded-xl bg-[rgb(var(--foreground))]/[0.03] border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))] transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0"
+                  onClick={() => {
+                    if (isMobileConfirmRestore) {
+                      restoreDefaults();
+                      setIsMobileConfirmRestore(false);
+                    } else {
+                      setIsMobileConfirmRestore(true);
+                      setTimeout(() => setIsMobileConfirmRestore(false), 4000);
+                    }
+                  }}
+                  className={cn(
+                    "p-1.5 rounded-xl border transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0",
+                    isMobileConfirmRestore
+                      ? "bg-red-500/20 border-red-500/60 text-red-400 animate-pulse"
+                      : "bg-[rgb(var(--foreground))]/[0.03] border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))]"
+                  )}
                   aria-label="Restore Defaults"
                 >
-                  <RotateCcw size={14} />
+                  <RotateCcw size={14} className={cn(isMobileConfirmRestore && "animate-spin")} />
                 </button>
                 <div className="absolute bottom-full mb-2 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/95 backdrop-blur-md text-[rgb(var(--accent))] shadow-2xl text-[11px] font-bold tracking-wide uppercase z-50">
-                  {SETTINGS_COPY.restoreDefaults}
+                  {isMobileConfirmRestore ? "Tap again to confirm reset" : SETTINGS_COPY.restoreDefaults}
                 </div>
               </div>
             </div>
@@ -444,7 +479,7 @@ export const Settings: React.FC = () => {
 
           <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-3 py-4 pb-[85px] space-y-7 animate-fade-in">
             {[...DOMAINS].sort((a, b) => {
-              const order = ["interaction", "history", "models", "appearance", "memory", "persona"];
+              const order = ["interaction", "models", "appearance", "memory","history", "persona"];
               return order.indexOf(a.id) - order.indexOf(b.id);
             }).map((domain) => {
               const Icon = domain.icon;

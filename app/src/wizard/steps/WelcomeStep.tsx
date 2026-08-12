@@ -52,10 +52,10 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
             >
-              <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">
-                Welcome <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/50"> to Vox.</span>
+              <h1 className="text-4xl font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">
+                Welcome to Vox.
               </h1>
-              <p className="text-white/40 text-sm leading-relaxed max-w-md">
+              <p className="text-[rgb(var(--foreground-muted))] text-sm leading-relaxed max-w-md">
                 Vox is a low-latency audio intelligence system designed to live in your system tray and provide real-time interaction.
               </p>
             </motion.div>

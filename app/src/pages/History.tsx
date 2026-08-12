@@ -395,7 +395,17 @@ export const History: React.FC = () => {
           </div>
         ) : dimensions.width < 680 ? (
           // ─── Compact mobile list view ───────────────────────────────────────
-          <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto px-6 pb-[110px] space-y-4 custom-scrollbar">
+            {/* Category Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--accent),0.12)] mb-4 px-1 shrink-0">
+              <span className="text-[12px] font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
+                History & Sessions
+              </span>
+              <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                {sessions.length} {sessions.length === 1 ? "Session" : "Sessions"}
+              </span>
+            </div>
+
             {sessions.map((session) => {
               const isSelected = selectedSession?.id === session.id;
               const isConfirmingDelete = confirmDeleteId === session.id;
