@@ -81,7 +81,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
           <div className="flex items-center gap-2">
             <Database className="text-[rgb(var(--accent))]" size={18} />
             <span className="text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
-              Memory & Cognitive RAG
+              Memory Stack
             </span>
           </div>
 

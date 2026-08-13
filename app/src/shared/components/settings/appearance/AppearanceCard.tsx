@@ -41,7 +41,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
         <div className="flex items-center gap-2">
           <Palette className="text-[rgb(var(--accent))]" size={16} />
           <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
-            Appearance Settings
+            Appearance
           </span>
         </div>
 

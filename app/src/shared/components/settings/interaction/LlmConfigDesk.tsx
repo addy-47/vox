@@ -270,22 +270,20 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
       {isModular && activeCategory === "STT" && activePill === "remote" && (
         <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
-          <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
-            <div className="w-8 h-8 rounded-full bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center relative min-w-[80px] h-full">
+            <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/30 flex items-center justify-center relative z-10">
               <Clock className="text-[rgb(var(--accent))]" size={18} />
             </div>
           </div>
-          <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
-            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
-                Remote Whisper Server
-              </span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-mono">
-                Coming Soon
-              </span>
-            </div>
-            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
-              Remote WebSocket streaming STT server integration is scheduled for an upcoming release.
+          <div className="flex-[2] flex flex-col justify-center gap-0.5 h-full">
+            <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+              Server STT
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
+              Coming Soon
+            </span>
+            <p className="text-[10.5px] text-[rgb(var(--foreground-muted))]/70 leading-normal font-medium line-clamp-1 mt-0.5">
+              Remote WebSocket speech-to-text server streaming will be available in a future update.
             </p>
           </div>
         </div>
@@ -293,21 +291,19 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
       {isModular && activeCategory === "STT" && activePill === "cloud" && (
         <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-2">
-          <div className="flex-1 flex items-center justify-center relative min-w-[90px] h-full">
-            <div className="w-8 h-8 rounded-full bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center relative min-w-[80px] h-full">
+            <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/30 flex items-center justify-center relative z-10">
               <Cloud className="text-[rgb(var(--accent))]" size={18} />
             </div>
           </div>
-          <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
-            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
-                Cloud Transcription
-              </span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase font-mono">
-                Coming Soon
-              </span>
-            </div>
-            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-relaxed font-semibold">
+          <div className="flex-[2] flex flex-col justify-center gap-0.5 h-full">
+            <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+              Cloud STT
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
+              Coming Soon
+            </span>
+            <p className="text-[10.5px] text-[rgb(var(--foreground-muted))]/70 leading-normal font-medium line-clamp-1 mt-0.5">
               Ultra-fast Groq & Deepgram cloud speech-to-text integration is in active development.
             </p>
           </div>
@@ -393,26 +389,26 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             {renderLlmStatusBadge()}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 flex-1 min-h-0 items-center">
+          <div className={cn("grid gap-3 flex-1 min-h-0 items-end", layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2")}>
             <div className="space-y-1">
-              <label className="text-[12px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
+              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
                 Cloud Provider
               </label>
-              <div className="flex items-center justify-between bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.15)] rounded-lg h-[26px] px-1.5">
+              <div className="flex items-center justify-between bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.15)] rounded-lg h-[32px] px-2">
                 <button
                   onClick={() => handleCloudCycle("left")}
-                  className="p-0.5 text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] transition-colors active:scale-90"
+                  className="p-1 text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] transition-colors active:scale-90"
                 >
-                  <ChevronLeft size={18} />
+                  <ChevronLeft size={16} />
                 </button>
-                <span className="text-[12px] font-bold text-[rgb(var(--accent))] uppercase tracking-wider">
+                <span className="text-[11px] sm:text-[12px] font-bold text-[rgb(var(--accent))] uppercase tracking-wider truncate px-1">
                   {CLOUD_PROVIDERS[cloudIndex].name}
                 </span>
                 <button
                   onClick={() => handleCloudCycle("right")}
-                  className="p-0.5 text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] transition-colors active:scale-90"
+                  className="p-1 text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] transition-colors active:scale-90"
                 >
-                  <ChevronRight size={18} />
+                  <ChevronRight size={16} />
                 </button>
               </div>
             </div>

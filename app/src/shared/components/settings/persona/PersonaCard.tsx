@@ -81,7 +81,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
           <div className="flex items-center gap-2">
             <UserCircle className="text-[rgb(var(--accent))]" size={18} />
             <span className="text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
-              Persona Settings
+              Persona
             </span>
           </div>
           
