@@ -79,15 +79,15 @@ export const SubModelCard = memo<SubModelCardProps>(({
 
     if (isConfirmingDelete) {
       return (
-        <div className="flex items-center gap-1 transition-all duration-300 shrink-0">
-          <span className="text-[11px] text-[rgb(var(--destructive))] font-bold uppercase tracking-wider mr-0.5">Delete?</span>
+        <div className="flex items-center gap-1.5 transition-all duration-300 shrink-0">
+          <span className="text-[11px] text-rose-400 font-bold uppercase tracking-wider">Delete?</span>
           <button
             onClick={(e) => {
               e.stopPropagation();
               deleteModel();
               setConfirmDeleteId(null);
             }}
-            className="p-1.5 rounded-lg bg-[rgb(var(--destructive))]/20 text-[rgb(var(--destructive))] hover:bg-[rgb(var(--destructive))]/35 transition-colors border border-[rgb(var(--destructive))]/30 flex items-center justify-center cursor-pointer shadow-md"
+            className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-colors flex items-center justify-center cursor-pointer"
             aria-label="Confirm Delete"
           >
             <Check size={14} className="font-bold" />
@@ -97,7 +97,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
               e.stopPropagation();
               setConfirmDeleteId(null);
             }}
-            className="p-1.5 rounded-lg bg-[rgb(var(--foreground))]/[0.05] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/[0.08] transition-colors border border-[rgba(var(--border),0.1)] flex items-center justify-center cursor-pointer shadow-md"
+            className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.1)] transition-colors flex items-center justify-center cursor-pointer"
             aria-label="Cancel"
           >
             <ArrowLeft size={14} />
@@ -112,7 +112,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
           e.stopPropagation();
           setConfirmDeleteId(id);
         }}
-        className="p-1.5 rounded-lg bg-[rgb(var(--destructive))]/10 text-[rgb(var(--destructive))] border border-[rgb(var(--destructive))]/20 hover:bg-[rgb(var(--destructive))]/20 hover:border-[rgb(var(--destructive))]/30 transition-colors shrink-0 cursor-pointer shadow-sm"
+        className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/15 transition-colors shrink-0 cursor-pointer"
         aria-label="Delete weights"
       >
         <Trash2 size={16} />

@@ -38,27 +38,21 @@ const BASE_AMP: Record<string, number> = {
   Interrupted:       0.02,
 };
 
-// Helper to parse CSS variables that contain comma-separated RGB values (e.g., "0, 219, 233") or hex colors
-const COLOR_CACHE = new Map<string, THREE.Color>();
-
 function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
   if (typeof window === 'undefined') return new THREE.Color(fallbackHex);
-  if (COLOR_CACHE.has(varName)) return COLOR_CACHE.get(varName)!.clone();
   const val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   if (!val) {
-    const col = new THREE.Color(fallbackHex);
-    COLOR_CACHE.set(varName, col);
-    return col.clone();
+    return new THREE.Color(fallbackHex);
   }
   const parts = val.split(',').map(s => parseInt(s.trim(), 10));
   if (parts.length === 3 && !parts.some(isNaN)) {
-    const col = new THREE.Color(parts[0] / 255, parts[1] / 255, parts[2] / 255);
-    COLOR_CACHE.set(varName, col);
-    return col.clone();
+    return new THREE.Color(parts[0] / 255, parts[1] / 255, parts[2] / 255);
   }
-  const col = new THREE.Color(val);
-  COLOR_CACHE.set(varName, col);
-  return col.clone();
+  try {
+    return new THREE.Color(val);
+  } catch {
+    return new THREE.Color(fallbackHex);
+  }
 }
 
 // ─── Geometry ────────────────────────────────────────────────────────────────
@@ -383,9 +377,7 @@ export const VoxOrb = React.memo(({
       if (typeof document === 'undefined') return;
       const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
       const accent = getCSSColor('--accent', '#00dbe9');
-      const glow = currentTheme === 'light'
-        ? getCSSColor('--accent-dark', '#0891b2')
-        : accent.clone().multiplyScalar(0.40);
+      const glow = accent.clone().multiplyScalar(currentTheme === 'light' ? 0.70 : 0.40);
 
       themeRef.current = {
         theme: currentTheme,
@@ -398,7 +390,10 @@ export const VoxOrb = React.memo(({
 
     if (typeof window !== 'undefined') {
       observer = new MutationObserver(updateTheme);
-      observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme", "style"]
+      });
     }
 
     return () => {
@@ -538,7 +533,7 @@ export const VoxOrb = React.memo(({
 
     if (state === 'Idle' || state === 'Interrupted') {
       ctx.tgtGlow.copy(themeGlow);
-      ctx.tgtAccent.copy(themeGlow);
+      ctx.tgtAccent.copy(themeAccent);
     } else if (state === 'AssistantSpeaking') {
       ctx.tgtGlow.copy(themeAccent);
       const isDark = themeRef.current.theme !== 'light';

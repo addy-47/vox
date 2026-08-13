@@ -125,6 +125,7 @@ To eliminate hallucinated reports and fictitious item comparisons, evaluation mo
   - **Zero Fake Data**: BANNED from introducing fake or mock telemetry. All static copy lives centralized in `src/data/`.
   - **Model & Manifest SSOT**: `manifests/models_manifest.json` is the SSOT for model specs. Font scale floor is **>= 11px**.
   - **Explicit Graph Sync**: Memory topology polling is disabled. Explicit refresh control queries `getGraphVersion()` to transition topology without unnecessary canvas repaints.
+  - **Monitoring Surface & Terminology**: BANNED from sci-fi jargon, skull icons, redundant card nested wrappers, and pill overload. `MonitoringPopover.tsx` is an ultra-compact single-column HUD popover (zero scrollbar) with Voice State, Latency breakdown, CPU/RAM, and Model Status. `Monitoring.tsx` uses a streamlined minimal hierarchy with clean human terminology ("Voice Pipeline State", "Speech Recognition", "AI Reasoning", "Audio Output", "Engine Memory", "Offload Models").
 
 - **3D Memory Graph & WebGL Invariants (`Memory.tsx` / `MemoryGraph.tsx`)**:
   - **Custom InstancedMesh Engine**: All 10,000+ nodes rendered in 1 `InstancedMesh` GPU draw call, all edges in 1 `LineSegments` call (<15MB RAM).

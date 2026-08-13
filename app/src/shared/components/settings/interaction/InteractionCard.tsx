@@ -173,23 +173,21 @@ export const InteractionCard = memo(
         )}
       >
         {/* Header Section */}
-        {layoutMode !== "small" && (
-          <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
-            <div className="flex items-center gap-2">
-              <Sliders className="text-[rgb(var(--accent))]" size={18} />
-              <span className="text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
-                Interaction Console
-              </span>
-            </div>
-            {/* Top Right Main / Tray Switcher */}
-            <SegmentedControl
-              options={VIEW_OPTIONS}
-              value={activeView}
-              onChange={setActiveView}
-              size="sm"
-            />
+        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+          <div className="flex items-center gap-2">
+            <Sliders className="text-[rgb(var(--accent))]" size={layoutMode === "small" ? 15 : 18} />
+            <span className="text-[12px] sm:text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+              Interaction
+            </span>
           </div>
-        )}
+          {/* Top Right Main / Tray Switcher */}
+          <SegmentedControl
+            options={VIEW_OPTIONS}
+            value={activeView}
+            onChange={setActiveView}
+            size="sm"
+          />
+        </div>
 
         <div className="flex flex-col gap-3 flex-1">
           {/* Core Controls Dashboard Grid */}
