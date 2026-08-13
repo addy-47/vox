@@ -283,6 +283,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { settings, draftSettings } = get();
     if (!draftSettings || !settings) return;
 
+    const currentVal = (draftSettings[domain] as any)?.[key];
+    if (currentVal === value) return;
+
     const newDraft = {
       ...draftSettings,
       [domain]: {
@@ -345,10 +348,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       case "persona":
         return JSON.stringify(settings.assistant) !== JSON.stringify(draftSettings.assistant);
       case "memory":
-        return (
-          JSON.stringify(settings.persistence) !== JSON.stringify(draftSettings.persistence) ||
-          JSON.stringify(settings.memory) !== JSON.stringify(draftSettings.memory)
-        );
+        return JSON.stringify(settings.memory) !== JSON.stringify(draftSettings.memory);
       case "appearance":
         return false;
       case "interaction": {
@@ -425,7 +425,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         Object.keys(settings.assistant).forEach(k => updateDraft("assistant", k, (settings.assistant as any)[k]));
         break;
       case "memory":
-        Object.keys(settings.persistence).forEach(k => updateDraft("persistence", k, (settings.persistence as any)[k]));
         Object.keys(settings.memory).forEach(k => updateDraft("memory", k, (settings.memory as any)[k]));
         break;
       case "appearance":

@@ -36,9 +36,9 @@ html, body {
   --background: 241, 245, 249;
   --foreground: 15, 23, 42;
   --foreground-muted: 51, 65, 85; /* #334155 Slate 700 - WCAG AA 4.5:1 Compliant */
-  --accent: 8, 145, 178;
+  --accent: 14, 116, 144; /* Deep Cyan 700 - WCAG AA 5.1:1 Compliant with white text */
   --accent-dark: 21, 94, 117;
-  --accent-muted: 8, 145, 178;
+  --accent-muted: 14, 116, 144;
   --accent-foreground: 255, 255, 255;
   --card: 255, 255, 255;
   --border: 0, 0, 0;
