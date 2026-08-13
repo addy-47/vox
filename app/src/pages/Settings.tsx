@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, memo, Suspense, lazy } from "react";
+import { useState, useMemo, useEffect, useCallback, memo, Suspense, lazy } from "react";
 import { RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
@@ -122,10 +122,6 @@ const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
 ));
 HubCenter.displayName = "HubCenter";
 
-const hasCardChanges = (domainId: DomainId, _settings: any, _draftSettings: any) => {
-  return useSettingsStore.getState().isDomainDirty(domainId);
-};
-
 import { useSettingsPage } from "@/shared/hooks/useSettingsPage";
 
 interface SettingsCardWrapperProps {
@@ -138,9 +134,7 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
   const { settings, draftSettings, commitChanges } = useSettings();
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
 
-  const hasChanges = useMemo(() => {
-    return hasCardChanges(domain.id, settings, draftSettings);
-  }, [domain.id, settings, draftSettings]);
+  const hasChanges = useSettingsStore(useCallback((s: any) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
 
   const requiresRestart = useMemo(() => {
     if (!settings || !draftSettings) return false;
@@ -201,27 +195,24 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
 
             {/* Dynamic Save/Discard Expanded Footer */}
             {hasChanges && (layoutMode === "full-max" || layoutMode === "full-min") && (
-              <motion.div
-                initial={{ opacity: 0, height: 0, y: -4 }}
-                animate={{ opacity: 1, height: "auto", y: 0 }}
-                exit={{ opacity: 0, height: 0, y: -4 }}
-                className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none glass-card border-t-0 flex items-center justify-between overflow-hidden text-[12px]"
+              <div
+                className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px] animate-fade-in transition-all duration-150 ease-out"
               >
                 {showRestartConfirm ? (
                   <>
-                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] animate-pulse">
+                    <span className="font-bold uppercase tracking-wider text-amber-400 animate-pulse">
                       {SETTINGS_COPY.restartRequired}
                     </span>
                     <div className="flex gap-2">
                       <button
                         onClick={handleSave}
-                        className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-black uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shadow-md"
+                        className="px-3.5 py-1 rounded-lg bg-amber-500 dark:bg-amber-400 text-black dark:text-white font-black text-[12px] uppercase tracking-wider shadow-[0_0_12px_rgba(245,158,11,0.35)] hover:bg-amber-400 active:scale-95 transition-all cursor-pointer"
                       >
                         Yes
                       </button>
                       <button
                         onClick={() => setShowRestartConfirm(false)}
-                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer"
+                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground))] border border-[rgba(var(--border),0.12)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgba(var(--foreground),0.1)] transition-colors cursor-pointer"
                       >
                         No
                       </button>
@@ -235,20 +226,20 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
                     <div className="flex gap-2">
                       <button
                         onClick={handleSave}
-                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-bold uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shadow-md"
+                        className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-black dark:text-white font-black text-[12px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-md"
                       >
                         {SETTINGS_COPY.saveChanges}
                       </button>
                       <button
                         onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.15)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer"
+                        className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
                       >
                         {SETTINGS_COPY.discardChanges}
                       </button>
                     </div>
                   </>
                 )}
-              </motion.div>
+              </div>
             )}
           </div>
         </motion.div>
@@ -431,7 +422,7 @@ export const Settings: React.FC = () => {
                 className={cn(
                   "px-3.5 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all duration-300 shadow-md",
                   hasChanges
-                    ? "hover:scale-[1.02] active:scale-95 cursor-pointer bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                    ? "hover:brightness-110 active:scale-95 cursor-pointer bg-[rgb(var(--accent))] text-black dark:text-white font-black"
                     : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
                 )}
               >
@@ -441,9 +432,9 @@ export const Settings: React.FC = () => {
                 onClick={() => discardChanges()}
                 disabled={!hasChanges}
                 className={cn(
-                  "px-3.5 py-1.5 rounded-xl border text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
+                  "px-3.5 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
                   hasChanges
-                    ? "bg-[rgba(var(--foreground),0.08)] dark:bg-[rgba(var(--foreground),0.15)] text-[rgb(var(--foreground))] border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/10 cursor-pointer"
+                    ? "bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 cursor-pointer"
                     : "bg-[rgb(var(--foreground))]/5 border-[rgba(var(--border),0.04)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
                 )}
               >

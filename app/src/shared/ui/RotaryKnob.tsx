@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, memo } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo, memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Minus, Plus } from "lucide-react";
 
@@ -32,6 +32,8 @@ export const RotaryKnob = memo(({
   const [isDragging, setIsDragging] = useState(false);
   const startYRef = useRef<number>(0);
   const startValRef = useRef<number>(value);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   // Clamp & normalize helper (prevents IEEE-754 precision drift)
   const clamp = useCallback(
@@ -42,35 +44,30 @@ export const RotaryKnob = memo(({
     [min, max]
   );
 
-  // Compute percentage (0 to 1)
-  const pct = (value - min) / (max - min);
-
-  // SVG arc calculation (radius 32, center 40)
+  // Memoize SVG arc geometry
   const radius = 32;
   const strokeWidth = 4;
   const center = 40;
   const circumference = 2 * Math.PI * radius;
   const arcLength = (270 / 360) * circumference;
-  const strokeDashoffset = arcLength * (1 - pct);
 
-  // Drag interaction handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    startYRef.current = e.clientY;
-    startValRef.current = value;
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-  };
+  const strokeDashoffset = useMemo(() => {
+    const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
+    return arcLength * (1 - pct);
+  }, [value, min, max, arcLength]);
 
+  // Stable event listeners using refs to prevent memory/listener leaks
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
       const deltaY = startYRef.current - e.clientY;
       const range = max - min;
       const deltaVal = (deltaY / 100) * range;
-      const newVal = Math.round((startValRef.current + deltaVal) / step) * step;
-      onChange(clamp(newVal));
+      const rawVal = startValRef.current + deltaVal;
+      const newVal = Math.round(rawVal / step) * step;
+      const clampedVal = clamp(newVal);
+      onChangeRef.current(clampedVal);
     },
-    [min, max, step, onChange, clamp]
+    [min, max, step, clamp]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -78,6 +75,23 @@ export const RotaryKnob = memo(({
     window.removeEventListener("mousemove", handleMouseMove);
     window.removeEventListener("mouseup", handleMouseUp);
   }, [handleMouseMove]);
+
+  // Cleanup on unmount if unmounted while dragging
+  useEffect(() => {
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [handleMouseMove, handleMouseUp]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    startYRef.current = e.clientY;
+    startValRef.current = value;
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
 
   // Wheel interaction handler
   const handleWheel = (e: React.WheelEvent) => {
@@ -149,7 +163,7 @@ export const RotaryKnob = memo(({
               strokeDasharray={`${arcLength} ${circumference}`}
               strokeLinecap="round"
             />
-            {/* Active Accent Arc (Zero CSS transition latency for instant sync) */}
+            {/* Active Accent Arc with fluid smooth transition */}
             <circle
               cx={center}
               cy={center}
@@ -160,9 +174,10 @@ export const RotaryKnob = memo(({
               strokeDasharray={`${arcLength} ${circumference}`}
               strokeDashoffset={strokeDashoffset}
               strokeLinecap="round"
-              style={{
-                filter: "drop-shadow(0 0 4px rgba(var(--accent), 0.6))",
-              }}
+              className={cn(
+                "transition-[stroke-dashoffset] ease-out",
+                isDragging ? "duration-75" : "duration-300"
+              )}
             />
           </svg>
 

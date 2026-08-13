@@ -184,19 +184,19 @@ export const Home = memo(() => {
         </div>
       </div>
 
-      {/* ── Orb Stage (center of lower half) ───────────────────────────── */}
+      {/* ── Orb Stage (Vertically centered in stage distance between top edge & EdgeNav) ── */}
       <div
         className="absolute z-10 pointer-events-none overflow-hidden flex items-center justify-center"
         style={{
           left: "50%",
-          top: isMobileScreen ? "40%" : "47%",
+          top: "calc(50% - 36px)",
           transform: "translate(-50%, -50%)",
-          width: isMobileScreen ? "min(88vw, 55vh)" : "min(70vw, 65vh)",
-          height: isMobileScreen ? "min(88vw, 55vh)" : "min(70vw, 65vh)",
-          minWidth: isMobileScreen ? 200 : 280,
-          minHeight: isMobileScreen ? 200 : 280,
-          maxWidth: 660,
-          maxHeight: 660,
+          width: isMobileScreen ? "min(82vw, 50vh)" : "min(65vw, 56vh)",
+          height: isMobileScreen ? "min(82vw, 50vh)" : "min(65vw, 56vh)",
+          minWidth: isMobileScreen ? 180 : 220,
+          minHeight: isMobileScreen ? 180 : 220,
+          maxWidth: 580,
+          maxHeight: 580,
         }}
       >
         {/* Subtle dynamic ring behind orb */}
@@ -218,8 +218,13 @@ export const Home = memo(() => {
         </div>
       </div>
 
-      {/* ── Bottom Controls ─────────────────────────────────────────────── */}
-      <div className="absolute bottom-[6%] md:bottom-[10%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4 w-full max-w-md">
+      {/* ── Bottom Controls (positioned cleanly above EdgeNav top edge at 72px) ── */}
+      <div 
+        className="absolute left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4 w-full max-w-md pointer-events-auto"
+        style={{
+          bottom: "calc(72px + clamp(12px, 2.5vh, 28px))"
+        }}
+      >
         {/* Buttons */}
         <div className="flex items-center gap-4 relative">
           {/* Universal Pause / Resume Button */}
