@@ -322,6 +322,11 @@ pub struct AppState {
     pub is_tts_loaded: Arc<AtomicBool>,
     pub is_stt_loaded: Arc<AtomicBool>,
     pub is_vad_loaded: Arc<AtomicBool>,
+    pub is_embedder_loaded: Arc<AtomicBool>,
+    pub is_query_classifier_loaded: Arc<AtomicBool>,
+    pub is_intra_edge_classifier_loaded: Arc<AtomicBool>,
+    pub is_inter_edge_classifier_loaded: Arc<AtomicBool>,
+    pub is_translit_loaded: Arc<AtomicBool>,
     pub is_sleeping: Arc<AtomicBool>,
     pub runtime_status: Arc<std::sync::atomic::AtomicU32>, // RuntimeStatus as u32
 
@@ -444,6 +449,11 @@ impl AppState {
             is_tts_loaded: Arc::new(AtomicBool::new(false)),
             is_stt_loaded: Arc::new(AtomicBool::new(false)),
             is_vad_loaded: Arc::new(AtomicBool::new(false)),
+            is_embedder_loaded: Arc::new(AtomicBool::new(false)),
+            is_query_classifier_loaded: Arc::new(AtomicBool::new(false)),
+            is_intra_edge_classifier_loaded: Arc::new(AtomicBool::new(false)),
+            is_inter_edge_classifier_loaded: Arc::new(AtomicBool::new(false)),
+            is_translit_loaded: Arc::new(AtomicBool::new(false)),
             is_sleeping: Arc::new(AtomicBool::new(false)),
             runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
             persist_tx: parking_lot::Mutex::new(None),

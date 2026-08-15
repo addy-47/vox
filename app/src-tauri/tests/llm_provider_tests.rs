@@ -255,7 +255,11 @@ fn test_anthropic_header_injection_no_bearer() {
 fn test_openai_compat_cancellation() {
     let sse_body = "data: {\"choices\":[{\"delta\":{\"content\":\"Token1\"}}]}\r\n\r\n\
                     data: {\"choices\":[{\"delta\":{\"content\":\"Token2\"}}]}\r\n\r\n";
-    let url = spawn_mock_server(200, "Content-Type: text/event-stream\r\n".to_string(), sse_body);
+    let url = spawn_mock_server(
+        200,
+        "Content-Type: text/event-stream\r\n".to_string(),
+        sse_body,
+    );
 
     let provider = OpenAiCompatProvider::new(&url, "test-model", None, None);
     let cancel_flag = Arc::new(AtomicBool::new(true)); // Pre-cancelled
@@ -293,7 +297,10 @@ fn test_openai_compat_cancellation() {
             cancelled = true;
         }
     }
-    assert!(cancelled, "Expected VoxEvent::Cancelled event when cancel_flag is set");
+    assert!(
+        cancelled,
+        "Expected VoxEvent::Cancelled event when cancel_flag is set"
+    );
 }
 
 #[test]
@@ -322,4 +329,3 @@ fn test_cloud_provider_nvidia_live() {
         assert!(provider.health_check(), "NVIDIA API health check failed");
     }
 }
-

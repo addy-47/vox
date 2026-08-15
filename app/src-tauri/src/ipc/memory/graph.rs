@@ -57,10 +57,11 @@ pub struct MemoryStats {
 }
 
 #[tauri::command]
-pub async fn get_graph_version(
-    state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<u64, String> {
-    Ok(state.memory.graph_version.load(std::sync::atomic::Ordering::SeqCst))
+pub async fn get_graph_version(state: State<'_, std::sync::Arc<AppState>>) -> Result<u64, String> {
+    Ok(state
+        .memory
+        .graph_version
+        .load(std::sync::atomic::Ordering::SeqCst))
 }
 
 #[tauri::command]
@@ -73,7 +74,10 @@ pub async fn get_memory_graph_topology(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    let include_inactive = filter.as_ref().and_then(|f| f.include_inactive).unwrap_or(false);
+    let include_inactive = filter
+        .as_ref()
+        .and_then(|f| f.include_inactive)
+        .unwrap_or(false);
 
     let query_str = if include_inactive {
         "SELECT f.id, f.collection, f.created_at, 
@@ -123,7 +127,10 @@ pub async fn get_memory_graph_topology(
         });
     }
 
-    let version = state.memory.graph_version.load(std::sync::atomic::Ordering::SeqCst);
+    let version = state
+        .memory
+        .graph_version
+        .load(std::sync::atomic::Ordering::SeqCst);
 
     Ok(MemoryGraphPayload {
         version,

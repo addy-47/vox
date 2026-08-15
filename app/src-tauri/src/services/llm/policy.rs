@@ -111,4 +111,3 @@ mod tests {
         assert!(policy.compaction.max_output_tokens <= 16_384);
     }
 }
-

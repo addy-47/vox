@@ -66,7 +66,7 @@ agy --conversation {STORED_CONVERSATION_ID} \
 
 ## 3. Model Parameter
 
-`{CURRENT_MODEL}` is a placeholder, not a literal. Before the first spawn in a session, confirm the model string you're about to pass is still current — do not carry forward a hardcoded string from a previous session or from this file. Model identifiers change; a skill that hardcodes one goes stale silently, exactly like the paths this project already moved away from. DEFAULT : gemini-3.6-flash-high
+`{CURRENT_MODEL}` is a placeholder, not a literal. Before the first spawn in a session, confirm the model string you're about to pass is still current — do not carry forward a hardcoded string from a previous session or from this file. Model identifiers change; a skill that hardcodes one goes stale silently, exactly like the paths this project already moved away from. DEFAULT : gemini-3.7-flash-low
 
 ---
 

@@ -783,7 +783,7 @@ export const RealtimeCard = memo(
               </span>
             </div>
             <span className="text-[11px] font-bold uppercase text-[rgb(var(--foreground-muted))]/60">
-              v0.8.6
+              v0.8.7
             </span>
           </div>
         )}

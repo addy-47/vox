@@ -118,7 +118,9 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
                     let prio_b = crate::core::constants::MemoryCollection::parse(&b.2)
                         .map(|c| c.priority())
                         .unwrap_or(0);
-                    prio_a.cmp(&prio_b).then_with(|| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal))
+                    prio_a
+                        .cmp(&prio_b)
+                        .then_with(|| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal))
                 });
 
                 if let Some((match_id, match_fact, match_coll, sim)) = best_match {

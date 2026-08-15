@@ -71,7 +71,7 @@ describe("modelService", () => {
 
   describe("Updates & System Reports", () => {
     it("should check for app updates and model updates", async () => {
-      const mockAppUpdate = { current_version: "0.8.6", latest_version: "0.8.6", update_available: false, release_notes: [], update_command: "" };
+      const mockAppUpdate = { current_version: "0.8.7", latest_version: "0.8.7", update_available: false, release_notes: [], update_command: "" };
       mockInvoke.mockResolvedValueOnce(mockAppUpdate);
       const appReport = await checkForUpdates();
       expect(mockInvoke).toHaveBeenCalledWith("check_for_updates");

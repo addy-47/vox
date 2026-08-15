@@ -845,10 +845,11 @@ impl PipelineOrchestrator {
                             // Start local_silence_time tracking when silence is detected.
                             let current_state = *self.state.lock();
                             if current_state == crate::core::state::InteractionState::UserSpeaking
-                                && local_silence_time.is_none() {
-                                    log::info!("[Pipeline] Local VAD detected silence in UserSpeaking state. Starting 10s timeout guard.");
-                                    local_silence_time = Some(std::time::Instant::now());
-                                }
+                                && local_silence_time.is_none()
+                            {
+                                log::info!("[Pipeline] Local VAD detected silence in UserSpeaking state. Starting 10s timeout guard.");
+                                local_silence_time = Some(std::time::Instant::now());
+                            }
                         } else {
                             self.update_interaction_state(
                                 crate::core::state::InteractionState::Thinking,
@@ -916,16 +917,19 @@ impl PipelineOrchestrator {
 
                     // Persist Turn
                     if let Some(ref tx) = self.persist_tx {
-                        if tx.try_send(
-                            crate::persistence::events::PersistenceEvent::TurnCompleted {
-                                conversation_id: self.conversation_id.load(Ordering::Relaxed),
-                                turn_id,
-                                user_text: turn_user_text.clone(),
-                                assistant_text: turn_assistant_text.clone(),
-                                stt_latency_ms: turn_stt_ms,
-                                ttft_ms: turn_ttft_ms,
-                            },
-                        ).is_err() {
+                        if tx
+                            .try_send(
+                                crate::persistence::events::PersistenceEvent::TurnCompleted {
+                                    conversation_id: self.conversation_id.load(Ordering::Relaxed),
+                                    turn_id,
+                                    user_text: turn_user_text.clone(),
+                                    assistant_text: turn_assistant_text.clone(),
+                                    stt_latency_ms: turn_stt_ms,
+                                    ttft_ms: turn_ttft_ms,
+                                },
+                            )
+                            .is_err()
+                        {
                             self.dropped_persistence_events
                                 .fetch_add(1, Ordering::Relaxed);
                         }
@@ -957,12 +961,15 @@ impl PipelineOrchestrator {
 
                     // Persist Cancellation
                     if let Some(ref tx) = self.persist_tx {
-                        if tx.try_send(
-                            crate::persistence::events::PersistenceEvent::TurnCancelled {
-                                conversation_id: self.conversation_id.load(Ordering::Relaxed),
-                                turn_id,
-                            },
-                        ).is_err() {
+                        if tx
+                            .try_send(
+                                crate::persistence::events::PersistenceEvent::TurnCancelled {
+                                    conversation_id: self.conversation_id.load(Ordering::Relaxed),
+                                    turn_id,
+                                },
+                            )
+                            .is_err()
+                        {
                             self.dropped_persistence_events
                                 .fetch_add(1, Ordering::Relaxed);
                         }

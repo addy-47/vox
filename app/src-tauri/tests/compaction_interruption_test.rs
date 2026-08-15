@@ -20,7 +20,10 @@ fn setup_manager_in_opportunistic_zone() -> ConversationManager {
 
     // Push 4 turns to build total token count
     for i in 1..=4 {
-        mgr.push_user_turn(format!("User query turn number {} with detailed context.", i));
+        mgr.push_user_turn(format!(
+            "User query turn number {} with detailed context.",
+            i
+        ));
         mgr.push_assistant_turn(format!("Assistant detailed response turn number {}.", i));
     }
 
@@ -82,7 +85,10 @@ fn test_opportunistic_compaction_race_detection_on_new_user_message() {
 
     // 1. Trigger opportunistic compaction snapshot
     let candidate = mgr.try_trigger_opportunistic();
-    assert!(candidate.is_some(), "Opportunistic compaction candidate should be triggered!");
+    assert!(
+        candidate.is_some(),
+        "Opportunistic compaction candidate should be triggered!"
+    );
     let (snapshot_len, _, _) = candidate.unwrap();
 
     // 2. User sends a new message while compaction is running in background
@@ -109,7 +115,10 @@ fn test_opportunistic_compaction_successful_commit_when_uninterrupted() {
     let mut mgr = setup_manager_in_opportunistic_zone();
 
     let candidate = mgr.try_trigger_opportunistic();
-    assert!(candidate.is_some(), "Opportunistic compaction candidate should be triggered!");
+    assert!(
+        candidate.is_some(),
+        "Opportunistic compaction candidate should be triggered!"
+    );
     let (snapshot_len, _, _) = candidate.unwrap();
 
     // Commit uninterrupted
@@ -118,7 +127,9 @@ fn test_opportunistic_compaction_successful_commit_when_uninterrupted() {
 
     // System prompt + Summary + Last user turn = 3 messages
     assert_eq!(mgr.get_messages().len(), 3);
-    assert!(mgr.get_messages()[1].content.contains("Compacted summary text"));
+    assert!(mgr.get_messages()[1]
+        .content
+        .contains("Compacted summary text"));
 }
 
 // ─── 2. Server & Cloud Tests (Ignored — Run via cargo test -- --ignored) ──────

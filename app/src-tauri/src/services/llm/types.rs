@@ -10,8 +10,7 @@ pub enum GenerationPurpose {
 }
 
 /// Provider-neutral generation sampling and output length options.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct GenerationOptions {
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
@@ -21,10 +20,8 @@ pub struct GenerationOptions {
     pub seed: Option<u64>,
 }
 
-
 /// Explicit constraint on LLM output format.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum OutputConstraint {
     #[default]
     Text,
@@ -35,7 +32,6 @@ pub enum OutputConstraint {
         strict: bool,
     },
 }
-
 
 /// Neutral container for input messages.
 #[derive(Debug, Clone)]

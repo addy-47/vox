@@ -14,7 +14,6 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
-use std::io::Write;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
@@ -97,7 +96,7 @@ impl TtsProvider for EdgeTtsProvider {
         event_tx: Sender<VoxEvent>,
     ) -> anyhow::Result<()> {
         let text_clean = text.trim();
-        println!("[EdgeTTS] Entering synthesize_chunk: '{}'", text_clean);
+        log::debug!("[EdgeTTS] Entering synthesize_chunk: '{}'", text_clean);
         if text_clean.is_empty() {
             return Ok(());
         }
@@ -109,7 +108,7 @@ impl TtsProvider for EdgeTtsProvider {
         let rt = match tokio::runtime::Runtime::new() {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("[EdgeTTS] Failed to build Tokio runtime: {}", e);
+                log::error!("[EdgeTTS] Failed to build Tokio runtime: {}", e);
                 let _ = event_tx.send(VoxEvent::Error {
                     turn_id,
                     message: format!("Edge TTS Tokio runtime error: {}", e),
@@ -121,10 +120,8 @@ impl TtsProvider for EdgeTtsProvider {
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         rt.block_on(async move {
-            println!("[EdgeTTS] Inside rt.block_on async block");
             let mut ws_stream_opt = None;
             for attempt in 1..=3 {
-                println!("[EdgeTTS] Attempt {} connecting...", attempt);
                 let conn_id = uuid::Uuid::new_v4().simple().to_string();
                 let sec_ms_gec = generate_sec_ms_gec();
                 let url_str = format!(
@@ -153,20 +150,14 @@ impl TtsProvider for EdgeTtsProvider {
                 let _ = headers.insert("Accept-Language", "en-US,en;q=0.9".parse().unwrap());
                 let _ = headers.insert("Cookie", format!("muid={};", muid).parse().unwrap());
 
-                eprintln!("[EdgeTTS] Attempt {} connecting to URL...", attempt);
-                use std::io::Write;
-                let _ = std::io::stderr().flush();
-
                 match connect_async(req).await {
                     Ok((ws, _)) => {
-                        eprintln!("[EdgeTTS] Connected successfully on attempt {}", attempt);
-                        let _ = std::io::stderr().flush();
+                        log::debug!("[EdgeTTS] Connected successfully on attempt {}", attempt);
                         ws_stream_opt = Some(ws);
                         break;
                     }
                     Err(e) => {
-                        eprintln!("[EdgeTTS] Connection attempt {} failed: {:?}", attempt, e);
-                        let _ = std::io::stderr().flush();
+                        log::warn!("[EdgeTTS] Connection attempt {} failed: {:?}", attempt, e);
                         if attempt == 3 {
                             let _ = event_tx.send(VoxEvent::Error {
                                 turn_id,
@@ -191,9 +182,6 @@ impl TtsProvider for EdgeTtsProvider {
                 now
             );
 
-            eprintln!("[EdgeTTS] Sending cfg_msg:\n{}", cfg_msg);
-            let _ = std::io::stderr().flush();
-
             if let Err(e) = ws_stream.send(Message::Text(cfg_msg.into())).await {
                 let _ = event_tx.send(VoxEvent::Error { turn_id, message: format!("Edge TTS config send error: {}", e) });
                 return;
@@ -209,9 +197,6 @@ impl TtsProvider for EdgeTtsProvider {
                 "X-RequestId:{}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:{}Z\r\nPath:ssml\r\n\r\n{}",
                 req_id, now, ssml_body
             );
-
-            eprintln!("[EdgeTTS] Sending ssml_msg:\n{}", ssml_msg);
-            let _ = std::io::stderr().flush();
 
             if let Err(e) = ws_stream.send(Message::Text(ssml_msg.into())).await {
                 let _ = event_tx.send(VoxEvent::Error { turn_id, message: format!("Edge TTS SSML send error: {}", e) });
@@ -231,21 +216,16 @@ impl TtsProvider for EdgeTtsProvider {
                             if bin.len() >= 2 + header_len {
                                 let payload = &bin[2 + header_len..];
                                 mp3_buffer.extend_from_slice(payload);
-                                eprintln!("[EdgeTTS] Audio frame: {} bytes (total {})", payload.len(), mp3_buffer.len());
-                                let _ = std::io::stderr().flush();
                             }
                         }
                     }
                     Ok(Message::Text(txt)) => {
-                        eprintln!("[EdgeTTS] Text frame: {}", txt.trim());
-                        let _ = std::io::stderr().flush();
                         if txt.contains("Path:turn.end") {
                             break;
                         }
                     }
                     Err(e) => {
-                        eprintln!("[EdgeTTS] WebSocket receive error: {:?}", e);
-                        let _ = std::io::stderr().flush();
+                        log::warn!("[EdgeTTS] WebSocket receive error: {:?}", e);
                         break;
                     }
                     _ => {}

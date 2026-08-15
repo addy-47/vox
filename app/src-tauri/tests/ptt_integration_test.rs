@@ -67,17 +67,20 @@ fn test_ptt_atomic_compare_exchange_double_call_protection() {
     };
 
     // 1. First compare_exchange: false -> true should succeed
-    let first_start = ptt
-        .is_recording
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
+    let first_start =
+        ptt.is_recording
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
     assert!(first_start.is_ok());
     assert!(ptt.is_recording.load(Ordering::SeqCst));
 
     // 2. Second compare_exchange while recording: false -> true MUST FAIL
-    let second_start = ptt
-        .is_recording
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
-    assert!(second_start.is_err(), "Concurrent PTT start must fail atomically when already recording!");
+    let second_start =
+        ptt.is_recording
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
+    assert!(
+        second_start.is_err(),
+        "Concurrent PTT start must fail atomically when already recording!"
+    );
     assert!(second_start.unwrap_err());
 
     // 3. Verify state remains recording

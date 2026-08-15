@@ -192,71 +192,25 @@
       ]
     },
     {
-      "id": "gemma_4_reasoning",
-      "name": "Gemma 4 Reasoning LLM",
+      "id": "qwen_3_5_0_8b",
+      "name": "Qwen 3.5 0.8B (Q4)",
       "category": "llm",
       "subcategory": "main",
-      "description": "Smart conversational engine. Great balance of speed and intelligence for general tasks.",
-      "parameters": "2.4B (Q4_K_M)",
-      "ram_usage": "~1.4 GB",
-      "tradeoffs": "Supports tool calling and smart reasoning",
+      "description": "Ultra-fast and intelligent multilingual conversational engine with official ChatML template.",
+      "parameters": "0.8B (Q4_K_M)",
+      "ram_usage": "~550 MB",
+      "tradeoffs": "Extremely fast TTFT and high throughput for English and Hindi conversational inference",
       "version": "1.0.0",
       "is_built_in": false,
       "is_cloud": false,
       "is_remote": false,
       "files": [
         {
-          "id": "llm_gemma_4_q4_k_m",
-          "path": "llm/gemma4/gemma-4-e2b-q4_k_m.gguf",
-          "size": 3462678272,
-          "sha256": "b5310340b3a23d31655d7119d100d5df1b2d8ee17b3ca8b0a23ad7e9eb5fa705",
-          "required": false
-        }
-      ]
-    },
-    {
-      "id": "llama_3_2_reasoning_q4",
-      "name": "Llama 3.2 1B (Q4)",
-      "category": "llm",
-      "subcategory": "main",
-      "description": "Fast and concise model. Optimized for ultra-low latency quick replies.",
-      "parameters": "1.2B (Q4_K_M)",
-      "ram_usage": "~750 MB",
-      "tradeoffs": "Ultra-fast response time; lightweight",
-      "version": "1.0.0",
-      "is_built_in": false,
-      "is_cloud": false,
-      "is_remote": false,
-      "files": [
-        {
-          "id": "llm_llama_3_2_1b_instruct_q4_k_m",
-          "path": "llm/llama/llama-3.2-1b-q4_k_m.gguf",
-          "size": 807694464,
-          "sha256": "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83",
-          "required": false
-        }
-      ]
-    },
-    {
-      "id": "llama_3_2_reasoning",
-      "name": "Llama 3.2 1B (Q6)",
-      "category": "llm",
-      "subcategory": "main",
-      "description": "Higher precision model. Delivers detailed, high-fidelity answers.",
-      "parameters": "1.2B (Q6_K)",
-      "ram_usage": "~1.0 GB",
-      "tradeoffs": "Higher output fidelity; slightly slower response",
-      "version": "1.0.0",
-      "is_built_in": false,
-      "is_cloud": false,
-      "is_remote": false,
-      "files": [
-        {
-          "id": "llm_llama_3_2_1b_instruct_q6_k",
-          "path": "llm/llama/llama-3.2-1b-q6_k.gguf",
-          "size": 1021800576,
-          "sha256": "0f4c510daf16e0d1b3bc94931fd9296c28936bebdda2593687d4eb70c5b70628",
-          "required": false
+          "id": "llm_qwen_3_5_0_8b_q4_k_m",
+          "path": "llm/qwen/qwen-3.5-0.8b-q4_k_m.gguf",
+          "size": 532517120,
+          "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+          "required": true
         }
       ]
     },

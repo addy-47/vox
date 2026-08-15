@@ -157,9 +157,9 @@ pub async fn start_realtime_session_internal(
     // 6. Propagate settings update to the pipeline event loop
     let _ = engine
         .pipeline_tx
-        .send(crate::core::events::VoxEvent::SettingsUpdated(
-            Box::new(current_settings),
-        ));
+        .send(crate::core::events::VoxEvent::SettingsUpdated(Box::new(
+            current_settings,
+        )));
 
     // 7. Tell VAD to start routing chunks — pass is_ptt so it applies the
     //    correct routing policy (gated vs. unconditional).

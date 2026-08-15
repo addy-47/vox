@@ -48,31 +48,31 @@ fn spawn_slow_sse_server() -> String {
     std::thread::spawn(move || {
         for mut stream in listener.incoming().flatten() {
             std::thread::spawn(move || {
-                    let mut buf = [0u8; 2048];
-                    if let Ok(n) = stream.read(&mut buf) {
-                        let req_str = String::from_utf8_lossy(&buf[..n]);
-                        if req_str.contains("GET ") {
-                            // Respond 200 OK to health/probe GET checks
-                            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}";
-                            let _ = stream.write_all(resp.as_bytes());
-                        } else if req_str.contains("POST ") {
-                            // Respond SSE stream to POST generation requests
-                            let header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\n";
-                            let _ = stream.write_all(header.as_bytes());
+                let mut buf = [0u8; 2048];
+                if let Ok(n) = stream.read(&mut buf) {
+                    let req_str = String::from_utf8_lossy(&buf[..n]);
+                    if req_str.contains("GET ") {
+                        // Respond 200 OK to health/probe GET checks
+                        let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}";
+                        let _ = stream.write_all(resp.as_bytes());
+                    } else if req_str.contains("POST ") {
+                        // Respond SSE stream to POST generation requests
+                        let header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\n";
+                        let _ = stream.write_all(header.as_bytes());
 
-                            for i in 0..10 {
-                                std::thread::sleep(Duration::from_millis(50));
-                                let chunk = format!(
+                        for i in 0..10 {
+                            std::thread::sleep(Duration::from_millis(50));
+                            let chunk = format!(
                                     "data: {{\x22choices\x22:[{{\x22delta\x22:{{\x22content\x22:\x22Token{}\x22}}}}]}}\r\n\r\n",
                                     i
                                 );
-                                if stream.write_all(chunk.as_bytes()).is_err() {
-                                    break;
-                                }
+                            if stream.write_all(chunk.as_bytes()).is_err() {
+                                break;
                             }
                         }
                     }
-                });
+                }
+            });
         }
     });
 
@@ -102,7 +102,11 @@ fn test_local_provider_mid_stream_cancellation() {
         .unwrap();
 
     let gen_res = rt.block_on(provider.generate(request, 101, &cancel_flag, &tx));
-    assert!(gen_res.is_ok(), "Generation request returned error: {:?}", gen_res.err());
+    assert!(
+        gen_res.is_ok(),
+        "Generation request returned error: {:?}",
+        gen_res.err()
+    );
 
     let mut received_tokens = Vec::new();
     let mut saw_cancelled_event = false;
@@ -146,7 +150,11 @@ fn test_local_provider_pre_cancelled() {
         .unwrap();
 
     let gen_res = rt.block_on(provider.generate(request, 102, &cancel_flag, &tx));
-    assert!(gen_res.is_ok(), "Pre-cancelled generation request returned error: {:?}", gen_res.err());
+    assert!(
+        gen_res.is_ok(),
+        "Pre-cancelled generation request returned error: {:?}",
+        gen_res.err()
+    );
 
     let mut saw_cancelled_event = false;
     let mut token_count = 0;
@@ -162,8 +170,14 @@ fn test_local_provider_pre_cancelled() {
         }
     }
 
-    assert!(saw_cancelled_event, "Pre-cancelled request MUST emit VoxEvent::Cancelled!");
-    assert_eq!(token_count, 0, "Pre-cancelled request MUST NOT emit any tokens!");
+    assert!(
+        saw_cancelled_event,
+        "Pre-cancelled request MUST emit VoxEvent::Cancelled!"
+    );
+    assert_eq!(
+        token_count, 0,
+        "Pre-cancelled request MUST NOT emit any tokens!"
+    );
 }
 
 // ─── 2. Server & Cloud Tests (Ignored — Run via cargo test -- --ignored) ──────
@@ -171,12 +185,20 @@ fn test_local_provider_pre_cancelled() {
 #[test]
 #[ignore = "Server provider test requires running local Ollama instance at localhost:11434"]
 fn test_server_ollama_cancellation_ignored() {
-    let provider = OpenAiCompatProvider::new("http://localhost:11434", "llama3.2:latest", None, Some("ollama"));
+    let provider = OpenAiCompatProvider::new(
+        "http://localhost:11434",
+        "llama3.2:latest",
+        None,
+        Some("ollama"),
+    );
     let cancel_flag = Arc::new(AtomicBool::new(true));
     let (tx, rx) = mpsc::channel();
     let request = create_test_request();
 
-    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let _ = rt.block_on(provider.generate(request, 201, &cancel_flag, &tx));
 
     let mut cancelled = false;
@@ -215,7 +237,10 @@ fn test_cloud_nvidia_cancellation_ignored() {
         let (tx, rx) = mpsc::channel();
         let request = create_test_request();
 
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         let _ = rt.block_on(provider.generate(request, 301, &cancel_flag, &tx));
 
         let mut cancelled = false;

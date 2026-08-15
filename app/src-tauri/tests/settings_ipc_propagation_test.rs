@@ -172,7 +172,10 @@ fn test_event_channel_propagation_non_blocking() {
 fn test_llm_provider_deduplication_contract() {
     let p1 = LlmProviderConfig::Embedded;
     let p2 = LlmProviderConfig::Embedded;
-    assert_eq!(p1, p2, "Identical Embedded provider configs MUST equal each other!");
+    assert_eq!(
+        p1, p2,
+        "Identical Embedded provider configs MUST equal each other!"
+    );
 
     let remote1 = LlmProviderConfig::OpenAiCompat {
         base_url: "http://localhost:11434".to_string(),
@@ -186,6 +189,8 @@ fn test_llm_provider_deduplication_contract() {
         api_key: None,
         provider_name: Some("ollama".to_string()),
     };
-    assert_eq!(remote1, remote2, "Identical OpenAiCompat provider configs MUST equal each other!");
+    assert_eq!(
+        remote1, remote2,
+        "Identical OpenAiCompat provider configs MUST equal each other!"
+    );
 }
-

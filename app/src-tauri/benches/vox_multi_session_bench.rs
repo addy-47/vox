@@ -23,8 +23,8 @@ use vox_lib::core::settings::{MemorySettings, SttProviderConfig, VoxSettings};
 use vox_lib::persistence::memory_worker::{spawn_memory_worker, MemoryWorkerEvent};
 use vox_lib::services::llm::{LlmProvider, OpenAiCompatProvider, ProviderKind};
 use vox_lib::services::memory::{
-    ensure_embedder_loaded, estimate_tokens, ChatMessage,
-    ConversationContext, ConversationManager, Role,
+    ensure_embedder_loaded, estimate_tokens, ChatMessage, ConversationContext, ConversationManager,
+    Role,
 };
 use vox_lib::services::stt::providers::{create_stt_provider, SttProvider, SttProviderKind};
 use vox_lib::services::tts::providers::TtsProvider;
@@ -290,7 +290,12 @@ fn main() -> Result<()> {
     let is_private_mode = Arc::new(AtomicBool::new(false));
     let settings = Arc::new(RwLock::new(VoxSettings::default()));
     let graph_version = Arc::new(std::sync::atomic::AtomicU64::new(1));
-    let memory_tx = spawn_memory_worker(db_path.clone(), is_private_mode.clone(), settings, graph_version);
+    let memory_tx = spawn_memory_worker(
+        db_path.clone(),
+        is_private_mode.clone(),
+        settings,
+        graph_version,
+    );
 
     // Memory Settings Configuration (MiniLM-L12 384-dim, 0.40 threshold)
     let memory_settings = MemorySettings {
@@ -589,7 +594,10 @@ fn main() -> Result<()> {
                 output: vox_lib::services::llm::OutputConstraint::Text,
                 purpose: vox_lib::services::llm::GenerationPurpose::Conversation,
             };
-            if tokio_handle.block_on(provider.generate(gen_req, turn as u32, &cancel, &tx)).is_ok() {
+            if tokio_handle
+                .block_on(provider.generate(gen_req, turn as u32, &cancel, &tx))
+                .is_ok()
+            {
                 while let Ok(evt) = rx.recv_timeout(Duration::from_millis(5000)) {
                     match evt {
                         VoxEvent::LlmToken { token, .. } => {

@@ -287,7 +287,6 @@ pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-
     }
     Ok(())
 }

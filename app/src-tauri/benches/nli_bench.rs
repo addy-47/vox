@@ -352,7 +352,6 @@ fn resolve_model_dir(override_dir: Option<PathBuf>) -> PathBuf {
         return default_path;
     }
 
-    
     PathBuf::from("~/.vox/models/nli/deberta-v3-xsmall")
 }
 
