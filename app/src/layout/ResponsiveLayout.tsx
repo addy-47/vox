@@ -1,14 +1,15 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, lazy, Suspense } from "react";
 import { EdgeNav } from "./EdgeNav";
 import { TitleBar } from "./TitleBar";
 import { AmbientBackground } from "@/shared/components/common";
-import { MonitoringPopover } from "@/shared/components/monitoring";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Activity } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
 import { cn } from "@/shared/lib/utils";
 import { ModelStatusOverlay } from "@/shared/components/settings/ModelStatusOverlay";
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
+
+const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
 interface ResponsiveLayoutProps {
   children?: React.ReactNode;
@@ -157,11 +158,14 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         </div>
 
         {/* Monitoring Popover */}
-        <MonitoringPopover
-          open={monitorOpen}
-          onClose={() => setMonitorOpen(false)}
-          anchorRef={monitorBtnRef}
-        />
+        <Suspense fallback={null}>
+          <Monitoring
+            popover
+            open={monitorOpen}
+            onClose={() => setMonitorOpen(false)}
+            anchorRef={monitorBtnRef}
+          />
+        </Suspense>
 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
         {isSettings && (
