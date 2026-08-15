@@ -370,7 +370,7 @@ where
             {
                 let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
                     app.state();
-                
+
                 // If VAD is owned by Tray but tray_enabled is false, bypass speech detection
                 let tray_enabled = match state.settings.read() {
                     Ok(s) => s.ui.tray_enabled,

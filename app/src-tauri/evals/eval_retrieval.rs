@@ -178,7 +178,11 @@ async fn main() -> Result<()> {
         Vec::new()
     };
 
-    println!("[Eval 3] Loaded {} test queries from {:?}", queries.len(), queries_path);
+    println!(
+        "[Eval 3] Loaded {} test queries from {:?}",
+        queries.len(),
+        queries_path
+    );
 
     let settings = MemorySettings::default(); // max_personal_memory_share = 0.15
     let context_window_size = 4096;
@@ -200,18 +204,14 @@ async fn main() -> Result<()> {
         };
 
         let start_time = std::time::Instant::now();
-        let rendered_context = retrieve_personal_context_v7(
-            &conn,
-            &norm_vec,
-            scope,
-            &settings,
-            context_window_size,
-        )
-        .await?;
+        let rendered_context =
+            retrieve_personal_context_v7(&conn, &norm_vec, scope, &settings, context_window_size)
+                .await?;
         let elapsed_ms = start_time.elapsed().as_millis();
 
         let token_count = estimate_tokens(&rendered_context);
-        let chitchat_zero_overhead = scope == MemoryScope::ChitChat && rendered_context.is_empty() && elapsed_ms <= 2;
+        let chitchat_zero_overhead =
+            scope == MemoryScope::ChitChat && rendered_context.is_empty() && elapsed_ms <= 2;
         let budget_compliant = token_count <= budget_cap;
 
         println!(

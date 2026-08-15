@@ -155,6 +155,20 @@ fn collect_snapshot(
         is_tts_loaded: state.is_tts_loaded.load(Ordering::Relaxed),
         is_stt_loaded: state.is_stt_loaded.load(Ordering::Relaxed),
         is_vad_loaded: state.is_vad_loaded.load(Ordering::Relaxed),
+        is_embedder_loaded: state.is_embedder_loaded.load(Ordering::Relaxed)
+            || crate::services::memory::is_embedder_loaded(),
+        is_query_classifier_loaded: state.is_query_classifier_loaded.load(Ordering::Relaxed)
+            || crate::services::memory::is_scope_classifier_loaded(),
+        is_intra_edge_classifier_loaded: state
+            .is_intra_edge_classifier_loaded
+            .load(Ordering::Relaxed)
+            || crate::services::memory::is_nli_loaded(),
+        is_inter_edge_classifier_loaded: state
+            .is_inter_edge_classifier_loaded
+            .load(Ordering::Relaxed)
+            || crate::services::memory::is_edge_classifier_loaded(),
+        is_translit_loaded: state.is_translit_loaded.load(Ordering::Relaxed)
+            || crate::services::translit::is_transliteration_engine_loaded(),
         is_sleeping: state.is_sleeping.load(Ordering::Relaxed),
         is_engaged: state.pipeline.is_engaged.load(Ordering::Relaxed),
 
@@ -203,6 +217,11 @@ mod tests {
             is_tts_loaded: true,
             is_stt_loaded: true,
             is_vad_loaded: true,
+            is_embedder_loaded: true,
+            is_query_classifier_loaded: true,
+            is_intra_edge_classifier_loaded: true,
+            is_inter_edge_classifier_loaded: true,
+            is_translit_loaded: true,
             is_sleeping: false,
             is_engaged: true,
             cpu_governor: "performance".to_string(),

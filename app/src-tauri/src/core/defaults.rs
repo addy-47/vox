@@ -22,10 +22,10 @@ pub const DEFAULT_STT_CLOUD_LANGUAGE: &str = "en-US";
 pub const DEFAULT_STT_CLOUD_REGION: &str = "global";
 
 // ─── LLM Defaults ────────────────────────────────────────────────────────────
-pub const DEFAULT_LLM_MODEL: &str = "llama_3_2_reasoning_q4";
+pub const DEFAULT_LLM_MODEL: &str = "qwen_3_5_0_8b";
 pub const DEFAULT_LLM_CTX_SIZE: u32 = 2048;
 pub const DEFAULT_LLM_THREADS: u32 = 4;
-pub const DEFAULT_LLM_CHAT_TEMPERATURE: f32 = 0.2;
+pub const DEFAULT_LLM_CHAT_TEMPERATURE: f32 = 1.0;
 pub const DEFAULT_LLM_COMPACTION_TEMPERATURE: f32 = 0.5;
 pub const DEFAULT_LLM_MAX_OUTPUT_TOKENS: u32 = 512;
 

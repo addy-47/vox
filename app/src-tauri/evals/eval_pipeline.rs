@@ -127,7 +127,6 @@ fn format_stage3_batch_toon(
 
 const OLLAMA_GPU_SERVER_URL: &str = "http://100.86.62.14:11434/v1/chat/completions";
 
-
 async fn run_llm_judge_prompt_with_model(
     client: &reqwest::Client,
     api_key: &str,
@@ -180,7 +179,6 @@ async fn run_llm_judge_prompt_with_model(
             "max_tokens": 3000
         });
 
-
         if let Ok(resp) = client
             .post("https://integrate.api.nvidia.com/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", api_key))
@@ -205,7 +203,9 @@ async fn run_llm_judge_prompt_with_model(
         }
     }
 
-    Err(anyhow::anyhow!("LLM Judge API call failed on both Ollama GPU server and Nvidia API"))
+    Err(anyhow::anyhow!(
+        "LLM Judge API call failed on both Ollama GPU server and Nvidia API"
+    ))
 }
 
 async fn run_llm_judge_prompt(
@@ -223,7 +223,11 @@ async fn main() -> Result<()> {
 
     let cli_arg = std::env::args().nth(1);
     let input_db_path = if let Some(ref db_path) = cli_arg {
-        resolve_path(db_path.trim_start_matches("--db=").trim_start_matches("--db"))
+        resolve_path(
+            db_path
+                .trim_start_matches("--db=")
+                .trim_start_matches("--db"),
+        )
     } else {
         let primary = resolve_path("evals/results/stage_1_compaction.db");
         if primary.exists() {
@@ -234,7 +238,6 @@ async fn main() -> Result<()> {
     };
     let output_db_path = resolve_path("evals/results/stage_2_pipeline.db");
     let reports_dir = resolve_path("evals/results/reports");
-
 
     if !input_db_path.exists() {
         return Err(anyhow::anyhow!(
@@ -261,7 +264,6 @@ async fn main() -> Result<()> {
     }
 
     let _ = std::fs::copy(&input_db_path, &output_db_path)?;
-
 
     let abs_db_path = std::fs::canonicalize(&output_db_path)?;
     let db_path_str = abs_db_path
@@ -615,12 +617,16 @@ async fn main() -> Result<()> {
             reports_dir.join(format!("stage3_batch_{:02}_raw_vs_toon.log", batch_num));
 
         let mut debug_content = String::new();
-        debug_content.push_str("=========================================================================\n");
+        debug_content.push_str(
+            "=========================================================================\n",
+        );
         debug_content.push_str(&format!(
             "STAGE 3 BATCH {:02} RAW INPUT vs TOON FORMAT AUDIT LOG\n",
             batch_num
         ));
-        debug_content.push_str("=========================================================================\n\n");
+        debug_content.push_str(
+            "=========================================================================\n\n",
+        );
         debug_content.push_str("--- SECTION 1: RAW CandidateAuditLog STRUCTS (JSON) ---\n");
         for (item_id, item_fact, item_coll, logs) in chunk.iter() {
             debug_content.push_str(&format!(
@@ -687,7 +693,14 @@ async fn main() -> Result<()> {
     );
 
     let report_c_path = reports_dir.join("stage3_master_report_c.md");
-    match run_llm_judge_prompt_with_model(&client, &api_key, "meta/llama-3.1-70b-instruct", &report_c_prompt).await {
+    match run_llm_judge_prompt_with_model(
+        &client,
+        &api_key,
+        "meta/llama-3.1-70b-instruct",
+        &report_c_prompt,
+    )
+    .await
+    {
         Ok(content) => {
             std::fs::write(&report_c_path, &content)?;
             println!(

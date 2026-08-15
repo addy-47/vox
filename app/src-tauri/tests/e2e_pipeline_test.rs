@@ -81,7 +81,10 @@ fn test_e2e_pipeline_mock_turn_flow() {
 
     assert!(is_completed, "Pipeline MUST complete LLM generation!");
     assert_eq!(received_tokens.join(""), "Hello there! This is Vox.");
-    assert!(!received_tts_chunks.is_empty(), "TTS chunker MUST produce clauses!");
+    assert!(
+        !received_tts_chunks.is_empty(),
+        "TTS chunker MUST produce clauses!"
+    );
 }
 
 // ─── 2. Synthetic Audio Frame Ingestion & VAD Buffer Test ────────────────────
@@ -110,7 +113,10 @@ fn test_e2e_pipeline_synthetic_audio_vad_ingestion() {
         total_frames_processed += 1;
         // Verify frame energy computation
         let energy: f32 = frame.iter().map(|s| s * s).sum::<f32>() / frame.len() as f32;
-        assert!(energy > 0.0, "Sine wave audio frame MUST have non-zero energy!");
+        assert!(
+            energy > 0.0,
+            "Sine wave audio frame MUST have non-zero energy!"
+        );
     }
 
     assert_eq!(total_frames_processed, 32); // 16000 / 512 = 31.25 -> 32 chunks
@@ -126,15 +132,19 @@ fn test_e2e_pipeline_server_ollama_live() {
         .build()
         .unwrap();
 
-    let response = client
-        .get("http://100.86.62.14:11434/api/tags")
-        .send();
+    let response = client.get("http://100.86.62.14:11434/api/tags").send();
 
     match response {
         Ok(resp) => {
-            assert!(resp.status().is_success(), "Ollama server returned error status!");
+            assert!(
+                resp.status().is_success(),
+                "Ollama server returned error status!"
+            );
             let body = resp.text().unwrap();
-            assert!(body.contains("models"), "Ollama response MUST list available models!");
+            assert!(
+                body.contains("models"),
+                "Ollama response MUST list available models!"
+            );
         }
         Err(e) => panic!("Live Ollama GPU server connection failed: {}", e),
     }

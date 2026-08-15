@@ -508,8 +508,7 @@ impl LlmProvider for OpenAiCompatProvider {
                             .models
                             .into_iter()
                             .map(|m| {
-                                let clean_name =
-                                    m.name.replace([':', '_', '-'], " ");
+                                let clean_name = m.name.replace([':', '_', '-'], " ");
                                 LlmModelInfo {
                                     id: m.name.clone(),
                                     name: clean_name,

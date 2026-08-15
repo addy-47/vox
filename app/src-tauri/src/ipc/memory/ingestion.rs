@@ -145,7 +145,10 @@ pub async fn toggle_pipeline_processing(
 ) -> Result<bool, String> {
     let current = state.memory.pipeline_paused.load(Ordering::SeqCst);
     let new_state = !current;
-    state.memory.pipeline_paused.store(new_state, Ordering::SeqCst);
+    state
+        .memory
+        .pipeline_paused
+        .store(new_state, Ordering::SeqCst);
 
     if let Ok(mut settings) = state.settings.write() {
         settings.memory.pipeline_processing_enabled = !new_state;
@@ -185,9 +188,7 @@ pub async fn trigger_memory_consolidation(
 }
 
 #[tauri::command]
-pub async fn retry_failed_queue(
-    state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<u32, String> {
+pub async fn retry_failed_queue(state: State<'_, std::sync::Arc<AppState>>) -> Result<u32, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
@@ -230,9 +231,11 @@ pub async fn retry_failed_queue_items(
 
     // Convert item_ids to parameters
     let params: Vec<turso::Value> = item_ids.into_iter().map(|id| id.into()).collect();
-    let affected = conn.execute(&sql, params).await.map_err(|e| e.to_string())?;
+    let affected = conn
+        .execute(&sql, params)
+        .await
+        .map_err(|e| e.to_string())?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(affected as u32)
 }
-
