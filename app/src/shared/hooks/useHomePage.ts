@@ -9,6 +9,7 @@ import {
   pttStart,
   pttStop,
   testClip,
+  testClipCancel,
   getRealtimeSessionCache,
   getRuntimeSnapshot,
 } from "@/services/pipelineService";
@@ -174,12 +175,17 @@ export function useHomePage() {
     setIsPaused(false);
     setTranscript("");
     setAssistantText("");
+    
+    const wasTesting = !!testingClip;
     setTestingClip(null);
+
     try {
-      if (pipelineMode === "realtime") {
+      if (wasTesting) {
+        await testClipCancel();
+      } else if (pipelineMode === "realtime") {
         await stopRealtimeSession();
       } else {
-        await pausePipeline();
+        await engage();
       }
     } catch (err: any) {
       console.error("[Home] End session failed:", err);
@@ -187,7 +193,7 @@ export function useHomePage() {
     } finally {
       setIsLaunching(false);
     }
-  }, [pipelineMode, archiveCurrentTurn]);
+  }, [pipelineMode, testingClip, archiveCurrentTurn]);
 
   const handlePause = useCallback(async () => {
     if (!isEngaged || isPaused) return;

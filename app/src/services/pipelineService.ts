@@ -36,6 +36,11 @@ export interface RuntimeSnapshot {
   is_tts_loaded: boolean;
   is_stt_loaded: boolean;
   is_vad_loaded: boolean;
+  is_embedder_loaded: boolean;
+  is_query_classifier_loaded: boolean;
+  is_intra_edge_classifier_loaded: boolean;
+  is_inter_edge_classifier_loaded: boolean;
+  is_translit_loaded: boolean;
   is_sleeping: boolean;
   is_engaged: boolean;
   cpu_governor: string;

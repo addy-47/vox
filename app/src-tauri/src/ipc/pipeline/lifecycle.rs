@@ -124,12 +124,15 @@ pub async fn engage(
             {
                 let persist_tx = state.persist_tx.lock();
                 if let Some(ref tx) = *persist_tx {
-                    if tx.try_send(
-                        crate::persistence::events::PersistenceEvent::SessionStarted {
-                            id: conv_id,
-                            timestamp_ms: conv_id,
-                        },
-                    ).is_err() {
+                    if tx
+                        .try_send(
+                            crate::persistence::events::PersistenceEvent::SessionStarted {
+                                id: conv_id,
+                                timestamp_ms: conv_id,
+                            },
+                        )
+                        .is_err()
+                    {
                         state
                             .dropped_persistence_events
                             .fetch_add(1, Ordering::Relaxed);
@@ -196,63 +199,74 @@ pub async fn engage(
             });
         }
 
-        if let Some(engine) = state.engine.lock().await.as_ref() {
-            let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
-            let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id });
-            let _ = engine.stt_tx.send(SttCommand::ResetStream);
-            engine.playback_engine.cancel();
-            let _ = engine
-                .vad_tx
-                .send(crate::core::state::VadCommand::UpdateOwner(
-                    InteractionOwner::Tray,
-                ));
+        let should_stop_engine = {
+            let engine_guard = state.engine.lock().await;
+            if let Some(engine) = engine_guard.as_ref() {
+                let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
+                let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id });
+                let _ = engine.stt_tx.send(SttCommand::ResetStream);
+                engine.playback_engine.cancel();
+                let _ = engine
+                    .vad_tx
+                    .send(crate::core::state::VadCommand::UpdateOwner(
+                        InteractionOwner::Tray,
+                    ));
 
-            let tray_enabled = {
-                let s = state.settings.read().unwrap();
-                s.ui.tray_enabled
-            };
-            if !tray_enabled {
-                log::info!("[Pipeline] Disengaged and tray is disabled. Stopping engine to save memory...");
-                let _ = stop_engine(app.clone()).await;
+                let tray_enabled = {
+                    let s = state.settings.read().unwrap();
+                    s.ui.tray_enabled
+                };
+                !tray_enabled
             } else {
-                crate::services::memory::unload_all_onnx_models();
+                false
+            }
+        };
+
+        if should_stop_engine {
+            log::info!(
+                "[Pipeline] Disengaged and tray is disabled. Stopping engine to save memory..."
+            );
+            let _ = stop_engine(app.clone()).await;
+        } else {
+            crate::services::memory::unload_all_onnx_models();
+        }
+
+        // Persist Session End
+        let conv_id = state.conversation_id.swap(0, Ordering::Relaxed);
+        if conv_id != 0 {
+            log::info!(
+                "[Session] <<< USER SESSION ENDED (User Disengaged): id={}",
+                conv_id
+            );
+            let persist_tx = state.persist_tx.lock();
+            if let Some(ref tx) = *persist_tx {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                if tx
+                    .try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                        id: conv_id,
+                        timestamp_ms: now,
+                    })
+                    .is_err()
+                {
+                    state
+                        .dropped_persistence_events
+                        .fetch_add(1, Ordering::Relaxed);
+                }
             }
 
-            // Persist Session End
-            let conv_id = state.conversation_id.swap(0, Ordering::Relaxed);
-            if conv_id != 0 {
-                log::info!(
-                    "[Session] <<< USER SESSION ENDED (User Disengaged): id={}",
-                    conv_id
+            // Trigger Memory SessionEnd consolidation
+            let memory_tx = state.memory_tx.lock();
+            if let Some(ref tx) = *memory_tx {
+                let summary = state.conversation_manager.lock().latest_summary();
+                let _ = tx.try_send(
+                    crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
+                        session_id: conv_id.to_string(),
+                        summary,
+                    },
                 );
-                let persist_tx = state.persist_tx.lock();
-                if let Some(ref tx) = *persist_tx {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-                    if tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
-                            id: conv_id,
-                            timestamp_ms: now,
-                        }).is_err()
-                    {
-                        state
-                            .dropped_persistence_events
-                            .fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-
-                // Trigger Memory SessionEnd consolidation
-                let memory_tx = state.memory_tx.lock();
-                if let Some(ref tx) = *memory_tx {
-                    let summary = state.conversation_manager.lock().latest_summary();
-                    let _ = tx.try_send(
-                        crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
-                            session_id: conv_id.to_string(),
-                            summary,
-                        },
-                    );
-                }
             }
         }
 

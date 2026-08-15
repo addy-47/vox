@@ -1,7 +1,7 @@
 {
   "name": "vox-ui",
   "private": true,
-  "version": "0.8.6",
+  "version": "0.8.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -51,6 +51,8 @@
     "@tailwindcss/postcss": "^4.2.4",
     "@tailwindcss/vite": "^4.2.4",
     "@tauri-apps/cli": "2.11.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/d3-force": "^3.0.10",
     "@types/node": "^25.6.0",
     "@types/react": "^19.1.8",
@@ -64,6 +66,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "jsdom": "^30.0.1",
     "postcss": "^8.5.12",
     "tailwindcss": "^4.2.4",
     "ts-morph": "^28.0.0",

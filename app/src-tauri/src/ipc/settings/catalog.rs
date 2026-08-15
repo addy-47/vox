@@ -56,9 +56,7 @@ pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
 }
 
 #[tauri::command]
-pub async fn request_model_catalog(
-    app: AppHandle,
-) -> Result<ModelCatalog, String> {
+pub async fn request_model_catalog(app: AppHandle) -> Result<ModelCatalog, String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let manifest_opt = {
         let guard = state.manifest.read().await;
@@ -71,7 +69,8 @@ pub async fn request_model_catalog(
         let manifest_path = paths::get().models.join("models_manifest.json");
         if manifest_path.exists() {
             let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
-            serde_json::from_str::<crate::setup::manifest::VoxManifest>(&content).map_err(|e| e.to_string())?
+            serde_json::from_str::<crate::setup::manifest::VoxManifest>(&content)
+                .map_err(|e| e.to_string())?
         } else {
             return Err("Manifest not available".to_string());
         }
@@ -79,10 +78,26 @@ pub async fn request_model_catalog(
 
     let groups = manifest.model_groups;
 
-    let llm = groups.iter().filter(|g| g.category == "llm").cloned().collect();
-    let asr = groups.iter().filter(|g| g.category == "stt").cloned().collect();
-    let tts = groups.iter().filter(|g| g.category == "tts").cloned().collect();
-    let vad = groups.iter().filter(|g| g.category == "vad").cloned().collect();
+    let llm = groups
+        .iter()
+        .filter(|g| g.category == "llm")
+        .cloned()
+        .collect();
+    let asr = groups
+        .iter()
+        .filter(|g| g.category == "stt")
+        .cloned()
+        .collect();
+    let tts = groups
+        .iter()
+        .filter(|g| g.category == "tts")
+        .cloned()
+        .collect();
+    let vad = groups
+        .iter()
+        .filter(|g| g.category == "vad")
+        .cloned()
+        .collect();
     let auxiliary = groups
         .iter()
         .filter(|g| {

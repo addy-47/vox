@@ -374,7 +374,6 @@ pub enum LlmProviderConfig {
     },
 }
 
-
 fn default_chat_temperature() -> f32 {
     crate::core::defaults::DEFAULT_LLM_CHAT_TEMPERATURE
 }
@@ -409,9 +408,9 @@ impl LlmSettings {
     pub fn effective_ctx_size(&self) -> u32 {
         match self.provider {
             LlmProviderConfig::Embedded => self.ctx_size,
-            LlmProviderConfig::OpenAiCompat { .. } => {
-                self.ctx_size.max(crate::services::llm::CTX_FLOOR_NON_EMBEDDED)
-            }
+            LlmProviderConfig::OpenAiCompat { .. } => self
+                .ctx_size
+                .max(crate::services::llm::CTX_FLOOR_NON_EMBEDDED),
         }
     }
 }
@@ -532,7 +531,6 @@ pub struct PersistenceSettings {
     pub private_mode: bool,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
 pub struct MemorySettings {
@@ -561,23 +559,25 @@ pub struct MemorySettings {
 impl Default for MemorySettings {
     fn default() -> Self {
         Self {
-            context_retrieval_enabled: crate::core::defaults::DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
-            pipeline_processing_enabled: crate::core::defaults::DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
+            context_retrieval_enabled:
+                crate::core::defaults::DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
+            pipeline_processing_enabled:
+                crate::core::defaults::DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
             max_personal_memory_share: crate::core::defaults::DEFAULT_MEMORY_MAX_PERSONAL_SHARE,
-            context_chaining_window_hours: crate::core::defaults::DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
+            context_chaining_window_hours:
+                crate::core::defaults::DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
             top_k_facts: crate::core::defaults::DEFAULT_MEMORY_TOP_K_FACTS,
             max_hops: crate::core::defaults::DEFAULT_MEMORY_MAX_HOPS,
-            semantic_similarity_cutoff: crate::core::defaults::DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
+            semantic_similarity_cutoff:
+                crate::core::defaults::DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[derive(Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct SetupSettings {
     pub completed: bool,
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]

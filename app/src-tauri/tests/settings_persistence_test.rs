@@ -51,7 +51,8 @@ fn test_settings_serde_json_roundtrip() {
     original.ui.theme = "cyberpunk".to_string();
 
     // Serialize to JSON
-    let json_str = serde_json::to_string_pretty(&original).expect("Failed to serialize VoxSettings");
+    let json_str =
+        serde_json::to_string_pretty(&original).expect("Failed to serialize VoxSettings");
     assert!(!json_str.is_empty());
 
     // Deserialize back from JSON

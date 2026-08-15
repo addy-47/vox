@@ -215,7 +215,9 @@ async fn extract_facts_via_nvidia_api(
                 let status = resp.status();
                 if status.is_success() {
                     if let Ok(json_body) = resp.json::<serde_json::Value>().await {
-                        if let Some(content) = json_body["choices"][0]["message"]["content"].as_str() {
+                        if let Some(content) =
+                            json_body["choices"][0]["message"]["content"].as_str()
+                        {
                             let cleaned = content
                                 .trim()
                                 .trim_start_matches("```markdown")
@@ -247,7 +249,10 @@ async fn extract_facts_via_nvidia_api(
 async fn main() -> Result<()> {
     println!("============================================================================");
     println!(" Memory Pipeline Benchmark & Latency/Bias Analysis");
-    println!(" Execution Mode: NVIDIA API ONLY (Model: {})", NVIDIA_JUDGE_MODEL);
+    println!(
+        " Execution Mode: NVIDIA API ONLY (Model: {})",
+        NVIDIA_JUDGE_MODEL
+    );
     println!("============================================================================");
 
     let api_key = get_nvidia_api_key()?;
@@ -341,7 +346,10 @@ async fn main() -> Result<()> {
         let _ = fs::remove_file(&db_path);
     }
 
-    println!("[2/5] Initializing benchmark SQLite database at: {:?}", db_path);
+    println!(
+        "[2/5] Initializing benchmark SQLite database at: {:?}",
+        db_path
+    );
     let db_str = db_path.to_string_lossy();
     let db = Builder::new_local(&db_str).build().await?;
     let conn = db.connect()?;
@@ -369,19 +377,17 @@ async fn main() -> Result<()> {
             turn_end
         );
 
-        let (extracted_facts, duration_ms) = extract_facts_via_nvidia_api(
-            &reqwest_client,
-            &api_key,
-            chunk,
-        )
-        .await?;
+        let (extracted_facts, duration_ms) =
+            extract_facts_via_nvidia_api(&reqwest_client, &api_key, chunk).await?;
 
         let mut per_coll_count = HashMap::new();
         let mut window_fact_count = 0;
         for (coll, fact_list) in &extracted_facts {
             let count = fact_list.len();
             per_coll_count.insert(coll.clone(), count);
-            *global_extracted_facts_by_collection.entry(coll.clone()).or_insert(0) += count;
+            *global_extracted_facts_by_collection
+                .entry(coll.clone())
+                .or_insert(0) += count;
             window_fact_count += count;
         }
 
@@ -433,7 +439,11 @@ async fn main() -> Result<()> {
     let calc_tp = |n: usize, dur: u128| -> f64 {
         if dur > 0 {
             let tp = (n as f64 / dur as f64) * 1000.0;
-            if tp.is_finite() { tp } else { 0.0 }
+            if tp.is_finite() {
+                tp
+            } else {
+                0.0
+            }
         } else {
             0.0
         }
@@ -444,28 +454,40 @@ async fn main() -> Result<()> {
     let n1 = run_stage1_dedup_with_metrics(&conn, &run_id).await?;
     let dur1_ms = t1_start.elapsed().as_millis();
     let tp1 = calc_tp(n1, dur1_ms);
-    println!("  -> Stage 1 (Dedup): Processed {} items in {} ms ({:.2} items/sec)", n1, dur1_ms, tp1);
+    println!(
+        "  -> Stage 1 (Dedup): Processed {} items in {} ms ({:.2} items/sec)",
+        n1, dur1_ms, tp1
+    );
 
     // Stage 2: Embed
     let t2_start = Instant::now();
     let n2 = run_stage2_embed_with_metrics(&conn, &run_id).await?;
     let dur2_ms = t2_start.elapsed().as_millis();
     let tp2 = calc_tp(n2, dur2_ms);
-    println!("  -> Stage 2 (Embed): Processed {} items in {} ms ({:.2} items/sec)", n2, dur2_ms, tp2);
+    println!(
+        "  -> Stage 2 (Embed): Processed {} items in {} ms ({:.2} items/sec)",
+        n2, dur2_ms, tp2
+    );
 
     // Stage 3: Eval
     let t3_start = Instant::now();
     let n3 = run_stage3_eval_with_metrics_seq(&conn, &run_id, 0).await?;
     let dur3_ms = t3_start.elapsed().as_millis();
     let tp3 = calc_tp(n3, dur3_ms);
-    println!("  -> Stage 3 (Eval): Processed {} items in {} ms ({:.2} items/sec)", n3, dur3_ms, tp3);
+    println!(
+        "  -> Stage 3 (Eval): Processed {} items in {} ms ({:.2} items/sec)",
+        n3, dur3_ms, tp3
+    );
 
     // Stage 4: Commit & Prune
     let t4_start = Instant::now();
     let n4 = run_stage4_commit_with_metrics(&conn, &run_id).await?;
     let dur4_ms = t4_start.elapsed().as_millis();
     let tp4 = calc_tp(n4, dur4_ms);
-    println!("  -> Stage 4 (Commit & Prune): Committed {} facts in {} ms ({:.2} items/sec)", n4, dur4_ms, tp4);
+    println!(
+        "  -> Stage 4 (Commit & Prune): Committed {} facts in {} ms ({:.2} items/sec)",
+        n4, dur4_ms, tp4
+    );
 
     let total_pipeline_duration_ms = dur1_ms + dur2_ms + dur3_ms + dur4_ms;
 
@@ -583,8 +605,13 @@ async fn main() -> Result<()> {
     // Write JSON report
     let json_content = serde_json::to_string_pretty(&report)
         .map_err(|e| anyhow!("JSON serialization failed: {}", e))?;
-    fs::write(&json_report_path, &json_content)
-        .map_err(|e| anyhow!("Writing JSON report to {:?} failed: {}", json_report_path, e))?;
+    fs::write(&json_report_path, &json_content).map_err(|e| {
+        anyhow!(
+            "Writing JSON report to {:?} failed: {}",
+            json_report_path,
+            e
+        )
+    })?;
 
     println!("\n============================================================================");
     println!(" BENCHMARK COMPLETE & RESULTS SAVED");
@@ -592,20 +619,44 @@ async fn main() -> Result<()> {
     println!(" Database Output : {:?}", db_path);
     println!(" JSON Report     : {:?}", json_report_path);
     println!(" Total Turns     : {}", turns.len());
-    println!(" Compaction Time : {} ms ({:.2} s)", total_compaction_duration_ms, total_compaction_duration_ms as f64 / 1000.0);
-    println!(" Pipeline Time   : {} ms ({:.2} s)", total_pipeline_duration_ms, total_pipeline_duration_ms as f64 / 1000.0);
+    println!(
+        " Compaction Time : {} ms ({:.2} s)",
+        total_compaction_duration_ms,
+        total_compaction_duration_ms as f64 / 1000.0
+    );
+    println!(
+        " Pipeline Time   : {} ms ({:.2} s)",
+        total_pipeline_duration_ms,
+        total_pipeline_duration_ms as f64 / 1000.0
+    );
     println!(" Facts Extracted : {}", total_extracted_facts);
     println!(" Active Facts    : {}", total_active_facts);
     println!(" Total Relations : {}", total_relations);
     println!("----------------------------------------------------------------------------");
     println!(" Stage Latencies & Throughput:");
-    println!("   Stage 1 (Dedup) : {:6} ms | Throughput: {:8.2} items/sec", dur1_ms, tp1);
-    println!("   Stage 2 (Embed) : {:6} ms | Throughput: {:8.2} items/sec", dur2_ms, tp2);
-    println!("   Stage 3 (Eval)  : {:6} ms | Throughput: {:8.2} items/sec", dur3_ms, tp3);
-    println!("   Stage 4 (Commit): {:6} ms | Throughput: {:8.2} items/sec", dur4_ms, tp4);
+    println!(
+        "   Stage 1 (Dedup) : {:6} ms | Throughput: {:8.2} items/sec",
+        dur1_ms, tp1
+    );
+    println!(
+        "   Stage 2 (Embed) : {:6} ms | Throughput: {:8.2} items/sec",
+        dur2_ms, tp2
+    );
+    println!(
+        "   Stage 3 (Eval)  : {:6} ms | Throughput: {:8.2} items/sec",
+        dur3_ms, tp3
+    );
+    println!(
+        "   Stage 4 (Commit): {:6} ms | Throughput: {:8.2} items/sec",
+        dur4_ms, tp4
+    );
     println!("----------------------------------------------------------------------------");
     println!(" Directed Cross-Collection Edge Pair Matrix:");
-    if report.knowledge_base_summary.cross_collection_edge_matrix.is_empty() {
+    if report
+        .knowledge_base_summary
+        .cross_collection_edge_matrix
+        .is_empty()
+    {
         println!("   (No cross-collection edges generated)");
     } else {
         for entry in &report.knowledge_base_summary.cross_collection_edge_matrix {

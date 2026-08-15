@@ -40,7 +40,8 @@ pub fn spawn_llm_worker(
                 turn_id,
                 cancel_flag,
             } => {
-                let res = runtime.block_on(provider.generate(request, turn_id, &cancel_flag, &event_tx));
+                let res =
+                    runtime.block_on(provider.generate(request, turn_id, &cancel_flag, &event_tx));
 
                 if let Err(e) = res {
                     log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);

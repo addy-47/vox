@@ -212,7 +212,12 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
                     decision: "duplicate_dropped".to_string(),
                     rejection_reason: Some("exact_jaccard_match".to_string()),
                 };
-                let _ = crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log]).await;
+                let _ = crate::persistence::mutations::write_candidate_audit(
+                    conn,
+                    item.id,
+                    &[cand_log],
+                )
+                .await;
             } else {
                 // Higher priority incoming item supersedes existing lower-priority DB fact
                 if !matched_id.starts_with("item_") {
@@ -257,7 +262,12 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
                     decision: "superseded_existing".to_string(),
                     rejection_reason: None,
                 };
-                let _ = crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log]).await;
+                let _ = crate::persistence::mutations::write_candidate_audit(
+                    conn,
+                    item.id,
+                    &[cand_log],
+                )
+                .await;
 
                 active_facts_map
                     .entry(item.collection.clone())

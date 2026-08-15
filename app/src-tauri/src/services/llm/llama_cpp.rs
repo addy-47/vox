@@ -75,7 +75,7 @@ impl ModelFamily {
             }
             ModelFamily::Qwen => {
                 format!(
-                    "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+                    "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
                     text
                 )
             }
@@ -130,7 +130,6 @@ impl ModelFamily {
             ModelFamily::Qwen => &[
                 "<|im_end|>",
                 "<|im_start|>",
-                "</think>",
                 "<|turn|>",
                 "<|endoftext|>",
                 "<|end|>",
@@ -549,6 +548,24 @@ impl LlmEngine for LlmWorker {
         let mut batch = LlamaBatch::new(total_input_tokens + 512, 1);
         let mut sample_ith = last_sample_ith;
 
+        let mut qwen_sampler = if self.family == ModelFamily::Qwen {
+            Some(LlamaSampler::chain_simple([
+                LlamaSampler::penalties(
+                    self.ctx_size as i32,
+                    1.0, // repetition penalty
+                    0.0, // frequency penalty
+                    2.0, // presence penalty
+                ),
+                LlamaSampler::top_k(20),
+                LlamaSampler::top_p(1.0, 1),
+                LlamaSampler::min_p(0.0, 1),
+                LlamaSampler::temp(1.0),
+                LlamaSampler::dist(42),
+            ]))
+        } else {
+            None
+        };
+
         loop {
             if cancel_flag.load(Ordering::Relaxed) {
                 log::info!("[LLM] Cancelled at token {} (turn: {})", n_cur, turn_id);
@@ -560,13 +577,7 @@ impl LlmEngine for LlmWorker {
             let candidates = ctx.candidates_ith(sample_ith);
             let mut candidates_p = LlamaTokenDataArray::from_iter(candidates, false);
 
-            let token = if self.family == ModelFamily::Qwen {
-                let mut sampler = LlamaSampler::chain_simple([
-                    LlamaSampler::top_k(20),
-                    LlamaSampler::top_p(0.95, 1),
-                    LlamaSampler::temp(0.6),
-                    LlamaSampler::dist(42),
-                ]);
+            let token = if let Some(sampler) = qwen_sampler.as_mut() {
                 sampler.apply(&mut candidates_p);
                 candidates_p
                     .selected_token()
@@ -631,15 +642,11 @@ impl LlmEngine for LlmWorker {
                     ttft = Some(start_time.elapsed());
                 }
 
-                let mut cleaned = self.family.strip_tags_raw(&raw_gen_buf);
-
-                if let Some(think_pos) = cleaned.find("<think>") {
-                    cleaned.truncate(think_pos);
-                }
+                let cleaned = self.family.strip_tags_raw(&raw_gen_buf);
 
                 let tags = self.family.tags_to_strip();
                 let holdback = partial_tag_len(&cleaned, tags);
-                let clean_len = cleaned.len() - holdback;
+                let clean_len = cleaned.len().saturating_sub(holdback);
 
                 if clean_len > emitted_clean_len {
                     let delta = &cleaned[emitted_clean_len..clean_len];

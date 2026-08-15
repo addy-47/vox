@@ -163,12 +163,12 @@ fn main() -> anyhow::Result<()> {
             custom
         } else {
             let candidate_paths = [
-                "gemma4/gemma-4-e2b-q4_k_m.gguf",
-                "gemma4/Gemma-4-E2B-Uncensored-HauhauCS-Aggressive-Q2_K_P.gguf",
-                "LFM2.5-230M-Q4_K_M.gguf",
+                "qwen/qwen-3.5-0.8b-q4_k_m.gguf",
+                "llama/llama-3.2-1b-q4_k_m.gguf",
                 "llama/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+                "gemma4/gemma-4-e2b-q4_k_m.gguf",
             ];
-            let mut chosen = "gemma4/gemma-4-e2b-q4_k_m.gguf".to_string();
+            let mut chosen = "qwen/qwen-3.5-0.8b-q4_k_m.gguf".to_string();
             for cand in &candidate_paths {
                 if vox_lib::utils::paths::model_dir("llm").join(cand).exists() {
                     chosen = cand.to_string();
@@ -621,7 +621,10 @@ fn main() -> anyhow::Result<()> {
                 _ => {}
             },
             Err(e) => {
-                println!("\x1b[31m[Bench Event Loop]\x1b[0m recv_timeout error: {:?}", e);
+                println!(
+                    "\x1b[31m[Bench Event Loop]\x1b[0m recv_timeout error: {:?}",
+                    e
+                );
                 break;
             }
         }
