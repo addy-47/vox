@@ -91,3 +91,16 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - **Frontend Hook Contracts**: `useHomePage.ts` explicitly routes `handleEnd` to `testClipCancel()`, `engage()`, or `stopRealtimeSession()` (covered in `useHomePage.test.ts`).
 - **Telemetry & Audio Logs**: Cleaned up unbuffered `edge_tts.rs` stderr prints to prevent IPC spam.
 
+### 5.4 Sentient Glass Liquid Chamber Diagnostics (`Monitoring.tsx`)
+- **Modular Shell Architecture**: [`Monitoring.tsx`](file:///home/addy/projects/apps/vox/app/src/pages/Monitoring.tsx) serves as a lean container shell orchestrating isolated subcomponents in `shared/components/monitoring/`:
+  - [`MetricCarousel.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/monitoring/MetricCarousel.tsx): 2-card paginated carousel displaying 6 human-friendly telemetry metrics with zero technical jargon.
+  - [`LiquidChamber.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/monitoring/LiquidChamber.tsx): Continuous 60fps canvas wave simulation, top-corner CPU %/RAM GB telemetry, bold resident models counter, and lightweight 3-variant glass HUD pills (`LLM`, `STT`, `TTS`).
+  - [`colorUtils.ts`](file:///home/addy/projects/apps/vox/app/src/shared/components/monitoring/colorUtils.ts): Dynamic RGB/HSL color space conversion and complementary harmonic rotation.
+- **Single Adaptive Container**: Functions as a full page route on compact/mobile layouts and an ultra-clean 414px floating glass popover on desktop.
+- **Interactive Action Button**: Single-click model offload button displays a dedicated `Skull` icon and `"UNLOAD ALL"` text when models are resident in memory.
+- **ResizeObserver Canvas Dynamic Sync**: Container dimensions are tracked via `ResizeObserver` with `syncCanvasSize()`, guaranteeing the wave animation initializes smoothly on first popover mount.
+- **Continuous Physics Simulation**: Uses `metricsRef` and `colorsRef` in the HTML5 `<canvas>` animation loop to eliminate bubble re-seeding and liquid height snap jitter when metrics poll.
+- **Dynamic Reactive Palette Sync**: `MutationObserver` on `document.documentElement` + `useSettingsStore` hooks instantly synchronize any user theme or custom `--accent` hex seed without page refresh.
+- **Theme-Aware Memory Pipeline Drawer**: `MemoryPipelineDrawer.tsx` uses semantic CSS variables and glassmorphic tokens, providing WCAG AA contrast in both light and dark modes.
+
+

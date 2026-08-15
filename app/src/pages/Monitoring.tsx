@@ -1,36 +1,80 @@
-import {
+import React, {
   useMemo,
-  memo,
+  useRef,
+  useEffect,
+  useState,
+  useCallback,
 } from "react";
-import { stopEngine, launchEngine } from "@/services/pipelineService";
-import { useMonitoringMetrics } from "@/shared/hooks/useMonitoringMetrics";
-import { Sparkline } from "@/shared/components/monitoring/Sparkline";
-import { ResourceBar } from "@/shared/components/monitoring/MonitoringPopover";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
-  Cpu,
-  Volume2,
-  ShieldCheck,
-  Moon,
-  Zap,
-  MemoryStick,
-  Skull,
   RefreshCw,
+  X,
+  Skull,
 } from "lucide-react";
+import {
+  stopEngine,
+  launchEngine,
+} from "@/services/pipelineService";
+import { useMonitoringMetrics } from "@/shared/hooks/useMonitoringMetrics";
+import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
-import { EngineBadge } from "@/shared/components/monitoring/EngineBadge";
-import { MONITORING_COPY } from "@/data/monitoringData";
+import {
+  parseRgb,
+  rgbToHsl,
+  hslToRgb,
+  MetricCarousel,
+  LiquidChamber,
+} from "@/shared/components/monitoring";
 
-export const Monitoring = memo(() => {
+interface MonitoringProps {
+  popover?: boolean;
+  open?: boolean;
+  onClose?: () => void;
+  anchorRef?: React.RefObject<HTMLButtonElement | null>;
+}
+
+export const Monitoring: React.FC<MonitoringProps> = ({
+  popover = false,
+  open = true,
+  onClose,
+  anchorRef,
+}) => {
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Subscribe to settings store to inspect exact variants and reactive theme
+  const accentSeed = useSettingsStore((s) => s.settings?.ui.accent_seed);
+  const theme = useSettingsStore((s) => s.settings?.ui.theme);
+  const llmProvider = useSettingsStore((s) => s.settings?.llm?.provider?.kind);
+  const ttsProvider = useSettingsStore((s) => s.settings?.tts?.provider?.kind);
+  const sttProvider = useSettingsStore((s) => s.settings?.asr?.provider?.kind);
+
+  // Dynamic CSS variable observer state
+  const [accentRgbStr, setAccentRgbStr] = useState<string>("0, 219, 233");
+
+  const syncAccent = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const val = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    if (val && val !== accentRgbStr) {
+      setAccentRgbStr(val);
+    }
+  }, [accentRgbStr]);
+
+  // Keep colors continuously in sync when theme changes or DOM attribute shifts
+  useEffect(() => {
+    syncAccent();
+    const observer = new MutationObserver(() => syncAccent());
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["style", "data-theme", "class"],
+    });
+    return () => observer.disconnect();
+  }, [syncAccent, accentSeed, theme]);
+
   const {
-    history,
     latest,
     engineToggling: togglingEngine,
     setEngineToggling: setTogglingEngine,
-    cpuTextRef,
-    cpuBarRef,
-    ramTextRef,
-    ramBarRef,
     formatLatency,
   } = useMonitoringMetrics();
 
@@ -43,167 +87,242 @@ export const Monitoring = memo(() => {
     );
   }, [latest]);
 
-  return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent px-8 pt-6 z-10 select-none">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-4 shrink-0 border-b border-[rgba(var(--accent),0.08)]">
-        <div>
-          <span className="text-[14px] font-mono font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]">Monitoring</span>
-          <p className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono font-medium tracking-[0.2em] mt-1">
-            {MONITORING_COPY.systemMetrics}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* Force Offload / Reload button */}
-          {isEngineLoaded ? (
-            <button
-              onClick={async () => {
-                if (togglingEngine) return;
-                setTogglingEngine(true);
-                try {
-                  await stopEngine();
-                } catch (e) {
-                  console.error("Failed to offload engine:", e);
-                } finally {
-                  setTogglingEngine(false);
-                }
-              }}
-              disabled={togglingEngine}
-              title={MONITORING_COPY.forceOffloadDesc}
-              className={cn(
-                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer shadow-md",
-                togglingEngine
-                  ? "opacity-50 cursor-wait border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]"
-                  : "border-[rgba(var(--destructive),0.35)] text-[rgb(var(--destructive))] bg-[rgba(var(--destructive),0.1)] hover:bg-[rgba(var(--destructive),0.2)] shadow-[0_0_12px_rgba(239,68,68,0.25)]"
-              )}
-            >
-              <Skull size={16} />
-            </button>
-          ) : (
-            <button
-              onClick={async () => {
-                if (togglingEngine) return;
-                setTogglingEngine(true);
-                try {
-                  await launchEngine();
-                } catch (e) {
-                  console.error("Failed to reload engine:", e);
-                } finally {
-                  setTogglingEngine(false);
-                }
-              }}
-              disabled={togglingEngine}
-              title={MONITORING_COPY.reloadModelsDesc}
-              className={cn(
-                "p-2 rounded-full border transition-all duration-300 flex items-center justify-center cursor-pointer shadow-md",
-                togglingEngine
-                  ? "opacity-50 cursor-wait border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]"
-                  : "border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.05)] hover:bg-[rgba(var(--accent),0.15)]"
-              )}
-            >
-              <RefreshCw size={16} className={cn(togglingEngine && "animate-spin")} />
-            </button>
-          )}
+  const isEdgeLoaded = useMemo(() => {
+    return !!(latest?.is_intra_edge_classifier_loaded || latest?.is_inter_edge_classifier_loaded);
+  }, [latest]);
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[rgba(var(--accent),0.15)] glass-card">
-            <Activity size={16} className="text-[rgb(var(--accent))] animate-pulse" />
-            <span className="text-[10px] font-mono font-bold tracking-widest text-[rgb(var(--accent))] uppercase">
-              {MONITORING_COPY.liveMonitor}
+  const activeModelsCount = useMemo(() => {
+    return (
+      (latest?.is_vad_loaded ? 1 : 0) +
+      (latest?.is_stt_loaded ? 1 : 0) +
+      (latest?.is_llm_loaded ? 1 : 0) +
+      (latest?.is_tts_loaded ? 1 : 0) +
+      (latest?.is_embedder_loaded ? 1 : 0) +
+      (latest?.is_query_classifier_loaded ? 1 : 0) +
+      (isEdgeLoaded ? 1 : 0) +
+      (latest?.is_translit_loaded ? 1 : 0)
+    );
+  }, [latest, isEdgeLoaded]);
+
+  // Derive model variant labels (llm, stt, tts)
+  const variants = useMemo(() => {
+    let llmVariant = "Embedded";
+    if (llmProvider === "open_ai_compat") {
+      llmVariant = "Server";
+    }
+
+    let ttsVariant = "Embedded";
+    if (ttsProvider === "edge_tts") {
+      ttsVariant = "Cloud";
+    } else if (ttsProvider === "chatterbox_remote") {
+      ttsVariant = "Server";
+    }
+
+    let sttVariant = "Embedded";
+    if (sttProvider && sttProvider !== "embedded") {
+      sttVariant = "Server";
+    }
+
+    return {
+      llm: llmVariant,
+      tts: ttsVariant,
+      stt: sttVariant,
+    };
+  }, [llmProvider, ttsProvider, sttProvider]);
+
+  // Derived Dynamic Color Palette (Primary Accent + Harmonized Violet/Magenta)
+  const colors = useMemo(() => {
+    const primaryRgb = parseRgb(accentRgbStr);
+    const [h, s, l] = rgbToHsl(...primaryRgb);
+    const compHue = (h + 140) % 360;
+    const compRgb = hslToRgb(compHue, Math.min(100, s + 15), l);
+
+    return {
+      primary: `${primaryRgb[0]}, ${primaryRgb[1]}, ${primaryRgb[2]}`,
+      complementary: `${compRgb[0]}, ${compRgb[1]}, ${compRgb[2]}`,
+      primaryRgb,
+      compRgb,
+    };
+  }, [accentRgbStr]);
+
+  // Close handlers for popover mode
+  useEffect(() => {
+    if (!popover || !open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose?.();
+    };
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(e.target as Node) &&
+        anchorRef?.current &&
+        !anchorRef.current.contains(e.target as Node)
+      ) {
+        onClose?.();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [popover, open, onClose, anchorRef]);
+
+  const handleToggleEngine = useCallback(async () => {
+    if (togglingEngine) return;
+    setTogglingEngine(true);
+    try {
+      if (isEngineLoaded) {
+        await stopEngine();
+      } else {
+        await launchEngine();
+      }
+    } catch (e) {
+      console.error("[Monitoring] Failed to toggle engine:", e);
+    } finally {
+      setTogglingEngine(false);
+    }
+  }, [isEngineLoaded, togglingEngine, setTogglingEngine]);
+
+  const cpuPct = latest?.vox_cpu_usage || 0;
+  const ramMb = latest?.vox_ram_mb || 0;
+  const totalRamMb = latest?.total_ram_mb || 8192;
+  const ramGb = (ramMb / 1024).toFixed(2);
+  const ramPct = Math.min(100, Math.max(0, (ramMb / totalRamMb) * 100));
+
+  const containerContent = (
+    <div className="flex flex-col h-full w-full select-none">
+      {/* ── 1. Top Header Bar ── */}
+      <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--border),0.08)] shrink-0">
+        <div className="flex items-center gap-3">
+          <div
+            style={{
+              backgroundColor: `rgba(${colors.primary}, 0.12)`,
+              borderColor: `rgba(${colors.primary}, 0.35)`,
+            }}
+            className="w-8 h-8 rounded-2xl border flex items-center justify-center shadow-lg"
+          >
+            <Activity size={17} style={{ color: `rgb(${colors.primary})` }} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[13px] font-mono font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+                SYSTEM MONITOR
+              </h2>
+              <span className="flex h-2 w-2 relative">
+                <span
+                  style={{ backgroundColor: `rgb(${colors.primary})` }}
+                  className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                />
+                <span
+                  style={{ backgroundColor: `rgb(${colors.primary})` }}
+                  className="relative inline-flex rounded-full h-2 w-2"
+                />
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] uppercase tracking-wider">
+              Live Voice Engine Telemetry
             </span>
           </div>
         </div>
-      </div>
 
-      {/* Main Content Pane */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar pt-6 pb-10 space-y-6 min-h-0">
-        {/* Engine badges */}
-        <div className="flex flex-wrap gap-1.5">
-          <EngineBadge
-            label="VAD"
-            active={latest?.is_vad_loaded ?? false}
-            icon={<ShieldCheck size={16} />}
-          />
-          <EngineBadge
-            label="STT"
-            active={latest?.is_stt_loaded ?? false}
-            icon={<Activity size={16} />}
-          />
-          <EngineBadge
-            label="LLM"
-            active={latest?.is_llm_loaded ?? false}
-            icon={<Cpu size={16} />}
-          />
-          <EngineBadge
-            label="TTS"
-            active={latest?.is_tts_loaded ?? false}
-            icon={<Volume2 size={16} />}
-          />
-          {latest?.is_sleeping && (
-            <EngineBadge label="Sleep" active={true} icon={<Moon size={16} />} />
+        <div className="flex items-center gap-2">
+          {/* Unload / Load Models Button with Skull Icon when Loaded */}
+          <button
+            onClick={handleToggleEngine}
+            disabled={togglingEngine}
+            title={isEngineLoaded ? "Unload all models from memory" : "Load models into memory"}
+            style={{
+              backgroundColor: isEngineLoaded
+                ? "rgba(239, 68, 68, 0.12)"
+                : `rgba(${colors.primary}, 0.12)`,
+              borderColor: isEngineLoaded
+                ? "rgba(239, 68, 68, 0.35)"
+                : `rgba(${colors.primary}, 0.35)`,
+              color: isEngineLoaded ? "#ef4444" : `rgb(${colors.primary})`,
+            }}
+            className={cn(
+              "px-3 py-1.5 rounded-xl border transition-all duration-300 flex items-center gap-1.5 text-[10.5px] font-mono font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02]",
+              togglingEngine && "opacity-50 cursor-wait"
+            )}
+          >
+            {togglingEngine ? (
+              <RefreshCw size={12} className="animate-spin" />
+            ) : isEngineLoaded ? (
+              <Skull size={13} className="text-red-400" />
+            ) : (
+              <RefreshCw size={12} />
+            )}
+            <span>{isEngineLoaded ? "UNLOAD ALL" : "LOAD MODELS"}</span>
+          </button>
+
+          {popover && onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
+              aria-label="Close monitor"
+            >
+              <X size={16} />
+            </button>
           )}
         </div>
-
-        {/* Resource bars */}
-        <div className="space-y-4 max-w-lg pt-2">
-          <ResourceBar
-            label={MONITORING_COPY.voxCpu}
-            textRef={cpuTextRef}
-            barRef={cpuBarRef}
-          />
-          <ResourceBar
-            label={MONITORING_COPY.voxRam}
-            textRef={ramTextRef}
-            barRef={ramBarRef}
-          />
-        </div>
-
-        {/* Latency metrics */}
-        <div className="grid grid-cols-3 gap-3 max-w-lg">
-          {[
-            { label: "STT", title: MONITORING_COPY.sttTooltip, val: formatLatency(latest?.stt_latency_ms ?? null) },
-            { label: "TTFT", title: MONITORING_COPY.ttftTooltip, val: formatLatency(latest?.ttft_ms ?? null) },
-            {
-              label: "RTF",
-              title: MONITORING_COPY.rtfTooltip,
-              val: latest?.tts_rtf != null ? `${latest.tts_rtf.toFixed(2)}×` : "--",
-            },
-          ].map((m) => (
-            <div
-              key={m.label}
-              title={m.title}
-              className="glass-card px-3 py-3 flex flex-col items-center gap-1 border border-[rgba(var(--border),0.1)] hover:border-[rgba(var(--accent),0.2)] transition-colors cursor-help"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
-                {m.label}
-              </span>
-              <span className="text-[15px] font-mono font-bold text-[rgb(var(--accent))]">
-                {m.val}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Live Sparkline Graphs */}
-        <div className="space-y-4 max-w-xl">
-          {[
-            { label: "CPU History", key: "vox_cpu_usage" as const, icon: Cpu },
-            { label: "RAM History", key: "vox_ram_mb" as const, icon: MemoryStick },
-            { label: "VAD Probability", key: "vad_probability" as const, icon: Zap },
-          ].map(({ label, key, icon: Icon }) => (
-            <div key={key} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Icon size={16} className="text-[rgb(var(--accent))]" />
-                <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--foreground-muted))]">
-                  {label}
-                </span>
-              </div>
-              <Sparkline history={history} dataKey={key} heightPx={64} />
-            </div>
-          ))}
-        </div>
       </div>
+
+      {/* ── 2. Top Metric Cards Carousel ── */}
+      <MetricCarousel
+        latest={latest}
+        colors={colors}
+        formatLatency={formatLatency}
+      />
+
+      {/* ── 3. Central Liquid Chamber Container ── */}
+      <LiquidChamber
+        latest={latest}
+        colors={colors}
+        isEngineLoaded={isEngineLoaded}
+        activeModelsCount={activeModelsCount}
+        cpuPct={cpuPct}
+        ramGb={ramGb}
+        ramPct={ramPct}
+        variants={variants}
+        popover={popover}
+        open={open}
+      />
     </div>
   );
-});
 
-Monitoring.displayName = "Monitoring";
+  // If Popover mode: wrap in animated floating container with 10% reduced width (414px)
+  if (popover) {
+    return (
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            ref={modalRef}
+            initial={{ opacity: 0, y: 14, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 14, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed z-[200] bottom-[72px] left-4 w-[414px] max-w-[calc(100vw-32px)] h-[580px] max-h-[calc(100vh-96px)] glass-card p-4 flex flex-col shadow-2xl rounded-3xl"
+            role="dialog"
+            aria-label="System Monitoring"
+          >
+            {containerContent}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
+
+  // Full-page route mode
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent px-4 sm:px-8 pt-4 pb-20 z-10 select-none max-w-4xl mx-auto w-full">
+      {containerContent}
+    </div>
+  );
+};
+export default Monitoring;
