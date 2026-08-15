@@ -65,13 +65,16 @@ The desktop layout transitions dynamically to a unified layout on small screens 
 ### Central Navigation Capsule (`EdgeNav`)
 On desktop, navigation is a floating bottom capsule. On mobile, the system monitoring metrics (which float bottom-left on desktop) are hidden, and the **Activity Monitor** is integrated directly as a 4th `NavLink` tab inside the navigation capsule itself, routing directly to `/monitoring`.
 
-### Full-Page Diagnostics Monitor
-On mobile/small screens, monitoring is not rendered as a popover panel overlay (which could cause home page UI bleed-through and flashing). Instead, it renders as a dedicated page route (`/monitoring`) with a solid background containing status badges, CPU/RAM bars, latency metrics, and Sparkline graphs.
+### Unified Responsive Diagnostics Monitor (`Monitoring.tsx`)
+Monitoring is consolidated into a single responsive component that adapts seamlessly to the viewport:
+* On mobile/small screens, it renders as a dedicated page route (`/monitoring`) with a solid glass background.
+* On desktop, it renders as an anchored floating popover modal (`popover={true}`) bottom-left without duplicating component hierarchy.
+* Features 8–9 model residency badges, dual tabs (**Consumption** with continuous 60 FPS smoothed spline graphs for System vs. Vox CPU & RAM, and **Metrics** for voice latency waterfall and audio health).
 
 ### Viewport Transition Engine
 Vox handles window resizing dynamically:
-*   **Mobile ➔ Desktop**: If the user is on the `/monitoring` route page and resizes to desktop, the router redirects them back to the Home page (`/`) and automatically launches the popover panel.
-*   **Desktop ➔ Mobile**: If the user has the popover panel open on desktop and resizes to mobile, the popover closes and they are routed directly to `/monitoring` so they don't lose context.
+* **Mobile ➔ Desktop**: If the user is on the `/monitoring` route page and resizes to desktop, the router redirects them back to the Home page (`/`) and automatically launches the popover panel.
+* **Desktop ➔ Mobile**: If the user has the popover panel open on desktop and resizes to mobile, the popover closes and they are routed directly to `/monitoring` so they don't lose context.
 
 ### Sentient Core Scale
 On mobile viewports, the central Orb is scaled up by **50%** (`min(92vw, 85vh)` instead of `min(70vw, 65vh)`) to act as the primary, dominant touch target and visual anchor.

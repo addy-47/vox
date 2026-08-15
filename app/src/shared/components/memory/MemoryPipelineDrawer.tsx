@@ -144,19 +144,19 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed right-0 top-[var(--titlebar-height,40px)] bottom-0 z-50 w-[530px] max-w-[100vw] h-[calc(100vh-var(--titlebar-height,40px))] bg-[#0a0b12]/96 backdrop-blur-3xl border-l border-white/10 shadow-2xl flex flex-col pointer-events-auto overflow-hidden text-white"
+            className="fixed right-0 top-[var(--titlebar-height,40px)] bottom-0 z-50 w-[530px] max-w-[100vw] h-[calc(100vh-var(--titlebar-height,40px))] bg-[rgb(var(--card))]/95 backdrop-blur-3xl border-l border-[rgba(var(--border),0.12)] shadow-2xl flex flex-col pointer-events-auto overflow-hidden text-[rgb(var(--foreground))]"
           >
             {/* Header Section */}
-            <div className="flex items-center justify-between px-6 py-3.5 border-b border-white/10 shrink-0 bg-[#0e0f18]/90">
+            <div className="flex items-center justify-between px-6 py-3.5 border-b border-[rgba(var(--border),0.1)] shrink-0 bg-[rgba(var(--foreground),0.02)]">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-2xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center shrink-0 shadow-md">
                   <Brain size={18} className="text-purple-400" />
                 </div>
                 <div className="flex flex-col">
-                  <h2 className="text-[13px] font-sans font-black tracking-wider uppercase text-white">
+                  <h2 className="text-[13px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
                     MEMORY PIPELINE
                   </h2>
-                  <span className="text-[10.5px] font-sans text-purple-300/70 font-medium">
+                  <span className="text-[10.5px] font-sans text-purple-400/80 font-medium">
                     Live Ingestion Conduit & Telemetry
                   </span>
                 </div>
@@ -179,13 +179,13 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                 <button
                   onClick={onRefresh}
                   title="Refresh Pipeline Telemetry"
-                  className="p-1.5 rounded-xl text-purple-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-xl text-purple-400 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
                 >
                   <RefreshCw size={14} className={cn(running && "animate-spin")} />
                 </button>
                 <button
                   onClick={onClose}
-                  className="p-1.5 rounded-xl text-white/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
                   aria-label="Close drawer"
                 >
                   <X size={15} />
@@ -194,35 +194,35 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
             </div>
 
             {/* Centered Top Navigation Tabs Switcher */}
-            <div className="flex items-center justify-center gap-8 px-6 pt-3 pb-2 border-b border-white/5 bg-[#0a0b12] text-[12px] font-sans font-bold uppercase tracking-wider shrink-0">
+            <div className="flex items-center justify-center gap-8 px-6 pt-3 pb-2 border-b border-[rgba(var(--border),0.08)] bg-[rgba(var(--foreground),0.01)] text-[12px] font-sans font-bold uppercase tracking-wider shrink-0">
               <button
                 onClick={() => setActiveTab("pipeline")}
                 className={cn(
                   "transition-all cursor-pointer pb-2 border-b-2 flex items-center gap-2 text-center",
                   activeTab === "pipeline"
-                    ? "border-purple-400 text-purple-300"
-                    : "border-transparent text-white/40 hover:text-white/80"
+                    ? "border-purple-400 text-purple-400 font-black"
+                    : "border-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
                 )}
               >
                 <Activity size={14} />
                 <span>Pipeline Flow</span>
               </button>
 
-              <span className="text-white/20 font-light select-none pb-2">|</span>
+              <span className="text-[rgb(var(--foreground-muted))]/30 font-light select-none pb-2">|</span>
 
               <button
                 onClick={() => setActiveTab("failed")}
                 className={cn(
                   "transition-all cursor-pointer pb-2 border-b-2 flex items-center gap-2 text-center relative",
                   activeTab === "failed"
-                    ? "border-red-400 text-red-300"
-                    : "border-transparent text-white/40 hover:text-white/80"
+                    ? "border-red-400 text-red-400 font-black"
+                    : "border-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
                 )}
               >
                 <ShieldAlert size={14} />
                 <span>Failed Items</span>
                 {failedCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-300 text-[10px] font-mono border border-red-500/30">
+                  <span className="px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-400 text-[10px] font-mono border border-red-500/30 font-bold">
                     {failedCount}
                   </span>
                 )}
@@ -240,7 +240,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                   {/* STAGE 1: Left Card | Center Node | Empty Right */}
                   <div className="relative flex items-center justify-between w-full min-h-0">
                     <div className="w-[44%] flex justify-end">
-                      <div className="w-full p-3 rounded-2xl bg-[#12131c]/95 border border-white/10 hover:border-purple-500/40 transition-all flex flex-col gap-1 shadow-md">
+                      <div className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] hover:border-purple-500/40 transition-all flex flex-col gap-1 shadow-md">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-sans font-black tracking-wide text-purple-400 uppercase">
                             1 DEDUPLICATION
@@ -251,17 +251,17 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                             <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-white/60">
+                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
                           Exact & sub-word Jaccard dedup
                         </span>
-                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-white/5">
+                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
                             <span className="w-1.5 h-1.5 rounded-full bg-purple-400/80" />
                             <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.2)]" />
                           </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[10px] font-bold">
                             {stagedPendingCount} staged
                           </span>
                         </div>
@@ -269,7 +269,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     </div>
 
                     {/* Center Node 1 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-purple-500/50 bg-[#12131c] text-purple-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(168,85,247,0.35)]">
+                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-purple-500/50 bg-[rgb(var(--card))] text-purple-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(168,85,247,0.35)]">
                       <Filter size={16} />
                     </div>
 
@@ -281,12 +281,12 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     <div className="w-[44%]" />
 
                     {/* Center Node 2 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-blue-500/50 bg-[#12131c] text-blue-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(59,130,246,0.35)]">
+                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-blue-500/50 bg-[rgb(var(--card))] text-blue-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(59,130,246,0.35)]">
                       <Box size={16} />
                     </div>
 
                     <div className="w-[44%] flex justify-start">
-                      <div className="w-full p-3 rounded-2xl bg-[#12131c]/95 border border-white/10 hover:border-blue-500/40 transition-all flex flex-col gap-1 shadow-md">
+                      <div className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] hover:border-blue-500/40 transition-all flex flex-col gap-1 shadow-md">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-sans font-black tracking-wide text-blue-400 uppercase">
                             2 EMBEDDING
@@ -297,17 +297,17 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                             <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-white/60">
+                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
                           Generating MiniLM-L12 384d vectors
                         </span>
-                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-white/5">
+                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-400/80" />
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-400/60" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.2)]" />
                           </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-bold">
                             {dedupPassCount} pending
                           </span>
                         </div>
@@ -318,7 +318,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                   {/* STAGE 3: Left Card | Center Node | Empty Right */}
                   <div className="relative flex items-center justify-between w-full min-h-0">
                     <div className="w-[44%] flex justify-end">
-                      <div className="w-full p-3 rounded-2xl bg-[#12131c]/95 border border-white/10 hover:border-cyan-500/40 transition-all flex flex-col gap-1 shadow-md">
+                      <div className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] hover:border-cyan-500/40 transition-all flex flex-col gap-1 shadow-md">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-sans font-black tracking-wide text-cyan-400 uppercase">
                             3 EVALUATION
@@ -329,17 +329,17 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-white/60">
+                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
                           DeBERTa NLI & ModernBERT Edges
                         </span>
-                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-white/5">
+                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/80" />
                             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/60" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.2)]" />
                           </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold">
                             {nliEvaluatedCount} evaluated
                           </span>
                         </div>
@@ -347,7 +347,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     </div>
 
                     {/* Center Node 3 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-cyan-500/50 bg-[#12131c] text-cyan-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(6,182,212,0.35)]">
+                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-cyan-500/50 bg-[rgb(var(--card))] text-cyan-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(6,182,212,0.35)]">
                       <GitBranch size={16} />
                     </div>
 
@@ -359,12 +359,12 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     <div className="w-[44%]" />
 
                     {/* Center Node 4 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-amber-500/50 bg-[#12131c] text-amber-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(245,158,11,0.35)]">
+                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-amber-500/50 bg-[rgb(var(--card))] text-amber-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(245,158,11,0.35)]">
                       <Database size={16} />
                     </div>
 
                     <div className="w-[44%] flex justify-start">
-                      <div className="w-full p-3 rounded-2xl bg-[#12131c]/95 border border-white/10 hover:border-amber-500/40 transition-all flex flex-col gap-1 shadow-md">
+                      <div className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] hover:border-amber-500/40 transition-all flex flex-col gap-1 shadow-md">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-sans font-black tracking-wide text-amber-400 uppercase">
                             4 GRAPH COMMIT
@@ -375,17 +375,17 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                             <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-white/60">
+                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
                           Writing facts to Turso graph DB
                         </span>
-                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-white/5">
+                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80" />
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.2)]" />
                           </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-bold">
                             {totalPending > 0 ? `${totalPending} ready` : "Synced"}
                           </span>
                         </div>
@@ -399,8 +399,8 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                       <div
                         onClick={() => setActiveTab("failed")}
                         className={cn(
-                          "w-full p-3 rounded-2xl bg-[#12131c]/95 border transition-all flex flex-col gap-1 shadow-md cursor-pointer group",
-                          failedCount > 0 ? "border-red-500/40 hover:border-red-500/60" : "border-white/10 hover:border-white/20"
+                          "w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border transition-all flex flex-col gap-1 shadow-md cursor-pointer group",
+                          failedCount > 0 ? "border-red-500/40 hover:border-red-500/60" : "border-[rgba(var(--border),0.1)] hover:border-[rgba(var(--border),0.2)]"
                         )}
                       >
                         <div className="flex items-center justify-between">
@@ -413,14 +413,14 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                             <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-white/60">
+                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
                           Failed items needing review
                         </span>
-                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-white/5">
-                          <span className="text-[9.5px] font-mono text-white/40">
+                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
+                          <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]">
                             {failedCount > 0 ? "Click to view errors" : "No errors"}
                           </span>
-                          <span className={cn("px-2 py-0.5 rounded-lg text-[10px] font-bold border", failedCount > 0 ? "bg-red-500/20 text-red-300 border-red-500/30" : "bg-white/5 text-white/40 border-white/10")}>
+                          <span className={cn("px-2 py-0.5 rounded-lg text-[10px] font-bold border", failedCount > 0 ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.08)]")}>
                             {failedCount} failed
                           </span>
                         </div>
@@ -428,7 +428,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     </div>
 
                     {/* Center Node 5 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-red-500/50 bg-[#12131c] text-red-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(239,68,68,0.35)]">
+                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-red-500/50 bg-[rgb(var(--card))] text-red-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(239,68,68,0.35)]">
                       <ShieldAlert size={16} />
                     </div>
 
@@ -457,35 +457,35 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                   </div>
 
                   {failedQueueItems.length === 0 ? (
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#12131c]/50 rounded-2xl border border-white/5">
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[rgba(var(--foreground),0.02)] rounded-2xl border border-[rgba(var(--border),0.06)]">
                       <CheckCircle2 size={32} className="text-emerald-400 mb-2" />
-                      <span className="text-[13px] font-sans font-bold text-white uppercase tracking-wider">
+                      <span className="text-[13px] font-sans font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">
                         Zero Failed Items
                       </span>
-                      <span className="text-[11px] font-sans text-white/50 mt-1 max-w-xs">
+                      <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 max-w-xs">
                         All queued memory facts processed cleanly without ingestion errors.
                       </span>
                     </div>
                   ) : (
                     <div className="flex-1 flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-1">
                       {failedQueueItems.map((item) => (
-                        <div key={item.id} className="p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 transition-all flex flex-col gap-1.5">
+                        <div key={item.id} className="p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] hover:bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.06)] transition-all flex flex-col gap-1.5">
                           <div className="flex items-start justify-between gap-3">
-                            <span className="text-[12px] font-sans text-white/90 font-medium">
+                            <span className="text-[12px] font-sans text-[rgb(var(--foreground))] font-medium">
                               "{item.fact}"
                             </span>
                             <button
                               onClick={() => handleRetrySingleItem(item.id)}
                               title="Retry this item"
-                              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-[10.5px] font-sans font-medium transition-colors cursor-pointer shrink-0 border border-white/10 flex items-center gap-1"
+                              className="px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] text-[10.5px] font-sans font-medium transition-colors cursor-pointer shrink-0 border border-[rgba(var(--border),0.1)] flex items-center gap-1"
                             >
                               <RotateCcw size={10} />
                               <span>Retry</span>
                             </button>
                           </div>
 
-                          <div className="flex items-center justify-between text-[10.5px] font-sans text-white/40 pt-1 border-t border-white/5">
-                            <span>Collection: <strong className="text-purple-300 font-semibold">{item.collection}</strong></span>
+                          <div className="flex items-center justify-between text-[10.5px] font-sans text-[rgb(var(--foreground-muted))] pt-1 border-t border-[rgba(var(--border),0.06)]">
+                            <span>Collection: <strong className="text-purple-400 font-semibold">{item.collection}</strong></span>
                             <span>Attempts: <strong className="text-amber-400/80 font-semibold">{item.attempts}</strong></span>
                           </div>
 
@@ -509,43 +509,43 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
               )}
 
               {/* Expanded Prominent Bottom Telemetry Strip */}
-              <div className="p-3.5 rounded-2xl bg-[#12131c] border border-white/10 grid grid-cols-4 gap-2 shrink-0 shadow-xl text-center">
+              <div className="p-3.5 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] grid grid-cols-4 gap-2 shrink-0 shadow-lg text-center">
                 <div className="flex flex-col items-center">
                   <TrendingUp size={16} className="text-purple-400 mb-0.5" />
-                  <span className="text-[14px] font-sans font-black text-white">
+                  <span className="text-[14px] font-sans font-black text-[rgb(var(--foreground))]">
                     {activeNodesCount.toLocaleString()}
                   </span>
-                  <span className="text-[9px] font-sans text-white/50 uppercase font-semibold">
+                  <span className="text-[9px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
                     Graph Nodes
                   </span>
                 </div>
 
-                <div className="flex flex-col items-center border-l border-white/5">
+                <div className="flex flex-col items-center border-l border-[rgba(var(--border),0.08)]">
                   <Layers size={16} className="text-blue-400 mb-0.5" />
-                  <span className="text-[14px] font-sans font-black text-white">
+                  <span className="text-[14px] font-sans font-black text-[rgb(var(--foreground))]">
                     {activeEdgesCount.toLocaleString()}
                   </span>
-                  <span className="text-[9px] font-sans text-white/50 uppercase font-semibold">
+                  <span className="text-[9px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
                     Graph Edges
                   </span>
                 </div>
 
-                <div className="flex flex-col items-center border-l border-white/5">
+                <div className="flex flex-col items-center border-l border-[rgba(var(--border),0.08)]">
                   <Clock size={16} className="text-cyan-400 mb-0.5" />
                   <span className="text-[14px] font-sans font-black text-amber-400">
                     {totalPending}
                   </span>
-                  <span className="text-[9px] font-sans text-white/50 uppercase font-semibold">
+                  <span className="text-[9px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
                     Queue Items
                   </span>
                 </div>
 
-                <div className="flex flex-col items-center border-l border-white/5">
+                <div className="flex flex-col items-center border-l border-[rgba(var(--border),0.08)]">
                   <ShieldCheck size={16} className={cn("mb-0.5", failedCount > 0 ? "text-red-400" : "text-emerald-400")} />
                   <span className={cn("text-[14px] font-sans font-black", failedCount > 0 ? "text-red-400" : "text-emerald-400")}>
                     {failedCount > 0 ? `${failedCount} Failed` : "Healthy"}
                   </span>
-                  <span className="text-[9px] font-sans text-white/50 uppercase font-semibold">
+                  <span className="text-[9px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
                     Queue Health
                   </span>
                 </div>
@@ -553,7 +553,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
             </div>
 
             {/* Bottom Immediate Queue Processing Control */}
-            <div className="p-4 border-t border-white/10 bg-[#0e0f18] shrink-0 flex flex-col gap-2">
+            <div className="p-4 border-t border-[rgba(var(--border),0.1)] bg-[rgba(var(--foreground),0.02)] shrink-0 flex flex-col gap-2">
               {lastProcessedCount !== null && (
                 <div className="flex items-center gap-1.5 text-emerald-400 text-[11px] font-sans justify-center font-medium">
                   <CheckCircle2 size={14} />
@@ -564,16 +564,16 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
               <button
                 onClick={handleTrigger}
                 disabled={running}
-                className="w-full py-3.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 text-[12.5px] font-sans font-bold uppercase tracking-wider shadow-lg"
+                className="w-full py-3.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-400 hover:text-[rgb(var(--foreground))] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 text-[12.5px] font-sans font-bold uppercase tracking-wider shadow-lg"
               >
                 {running ? (
-                  <Sparkles size={16} className="animate-spin text-purple-300" />
+                  <Sparkles size={16} className="animate-spin text-purple-400" />
                 ) : (
-                  <Zap size={16} className="text-purple-300" />
+                  <Zap size={16} className="text-purple-400" />
                 )}
                 <span>{running ? MEMORY_COPY.consolidating : "PROCESS PENDING QUEUE"}</span>
               </button>
-              <span className="text-[10px] font-sans text-white/40 text-center">
+              <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))] text-center">
                 Runs immediate pipeline sweep over uncommitted queued facts
               </span>
             </div>
