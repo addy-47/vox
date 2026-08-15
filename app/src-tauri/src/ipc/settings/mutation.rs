@@ -86,9 +86,11 @@ pub async fn update_setting(
                 std::sync::atomic::Ordering::Relaxed,
             );
             if let Some(engine) = state.engine.lock().await.as_ref() {
-                let _ = engine.vad_tx.send(crate::core::state::VadCommand::UpdateOwner(
-                    crate::core::state::InteractionOwner::MainWindow,
-                ));
+                let _ = engine
+                    .vad_tx
+                    .send(crate::core::state::VadCommand::UpdateOwner(
+                        crate::core::state::InteractionOwner::MainWindow,
+                    ));
             }
 
             if let Some(tray_win) = app.get_webview_window("tray") {
@@ -215,9 +217,9 @@ pub async fn update_setting(
         let current_settings = state.settings.read().unwrap().clone();
         let _ = engine
             .pipeline_tx
-            .send(crate::core::events::VoxEvent::SettingsUpdated(
-                Box::new(current_settings),
-            ));
+            .send(crate::core::events::VoxEvent::SettingsUpdated(Box::new(
+                current_settings,
+            )));
     }
 
     let _ = app.emit("settings-updated", ());

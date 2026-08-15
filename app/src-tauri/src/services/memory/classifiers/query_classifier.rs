@@ -16,13 +16,21 @@ impl QueryScopeClassifier {
     pub fn load(classifier_dir: &Path) -> Result<Self> {
         let model_path = classifier_dir.join(CLASSIFIER_MODEL_FILENAME);
         let tokenizer_path = classifier_dir.join(CLASSIFIER_TOKENIZER_FILENAME);
-        let classifier = MemoryScopeClassifier::load(&model_path, &tokenizer_path)
-            .map_err(|e| anyhow!("Failed to load QueryScopeClassifier from {:?}: {}", classifier_dir, e))?;
+        let classifier =
+            MemoryScopeClassifier::load(&model_path, &tokenizer_path).map_err(|e| {
+                anyhow!(
+                    "Failed to load QueryScopeClassifier from {:?}: {}",
+                    classifier_dir,
+                    e
+                )
+            })?;
         Ok(Self { classifier })
     }
 
     pub fn classify(&self, text: &str) -> MemoryScope {
-        self.classifier.classify(text).unwrap_or(MemoryScope::Domain)
+        self.classifier
+            .classify(text)
+            .unwrap_or(MemoryScope::Domain)
     }
 }
 

@@ -110,7 +110,6 @@ async fn post_chat_completion(
             "max_tokens": max_tokens
         });
 
-
         if let Ok(resp) = client
             .post("https://integrate.api.nvidia.com/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", api_key))
@@ -135,7 +134,9 @@ async fn post_chat_completion(
         }
     }
 
-    Err(anyhow!("Chat completion failed on both Ollama GPU Server and Nvidia API fallback"))
+    Err(anyhow!(
+        "Chat completion failed on both Ollama GPU Server and Nvidia API fallback"
+    ))
 }
 
 async fn extract_facts_via_nvidia_llm(
@@ -191,7 +192,11 @@ async fn extract_facts_via_nvidia_llm(
                 Ok(HashMap::new())
             }
         }
-        Err(e) => Err(anyhow!("Compaction extraction failed for chunk {}: {}", chunk_idx + 1, e)),
+        Err(e) => Err(anyhow!(
+            "Compaction extraction failed for chunk {}: {}",
+            chunk_idx + 1,
+            e
+        )),
     }
 }
 
@@ -284,7 +289,14 @@ async fn run_llm_compaction_master_synthesis(
     ]);
 
     // Use 70B Master Judge for Master Synthesis Report
-    post_chat_completion(client, api_key, "meta/llama-3.1-70b-instruct", messages, 3500).await
+    post_chat_completion(
+        client,
+        api_key,
+        "meta/llama-3.1-70b-instruct",
+        messages,
+        3500,
+    )
+    .await
 }
 
 #[tokio::main]
@@ -300,10 +312,15 @@ async fn main() -> Result<()> {
 
     let cli_arg = std::env::args().nth(1);
     let dataset_filename = cli_arg
-        .map(|a| a.trim_start_matches("--dataset=").trim_start_matches("--dataset").to_string())
+        .map(|a| {
+            a.trim_start_matches("--dataset=")
+                .trim_start_matches("--dataset")
+                .to_string()
+        })
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| {
-            std::env::var("EVAL_DATASET_NAME").unwrap_or_else(|_| "dataset_session_1.json".to_string())
+            std::env::var("EVAL_DATASET_NAME")
+                .unwrap_or_else(|_| "dataset_session_1.json".to_string())
         });
     let dataset_path = resolve_path(&format!("evals/datasets/{}", dataset_filename));
     let output_db_path = resolve_path("evals/results/stage_1_compaction.db");

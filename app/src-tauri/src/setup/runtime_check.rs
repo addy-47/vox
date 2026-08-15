@@ -164,7 +164,10 @@ fn check_model_integrity(models_dir: &Path, manifest: Option<&VoxManifest>) -> (
                 let p_str = entry.path.as_str();
                 if let Some(stripped) = p_str.strip_suffix(".tar.gz") {
                     models_dir.join(stripped)
-                } else if let Some(stripped) = p_str.strip_suffix(".zip").or_else(|| p_str.strip_suffix(".tgz")) {
+                } else if let Some(stripped) = p_str
+                    .strip_suffix(".zip")
+                    .or_else(|| p_str.strip_suffix(".tgz"))
+                {
                     models_dir.join(stripped)
                 } else {
                     models_dir.join(&entry.path)

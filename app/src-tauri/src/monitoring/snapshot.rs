@@ -56,6 +56,11 @@ pub struct RuntimeSnapshot {
     pub is_tts_loaded: bool,
     pub is_stt_loaded: bool,
     pub is_vad_loaded: bool,
+    pub is_embedder_loaded: bool,
+    pub is_query_classifier_loaded: bool,
+    pub is_intra_edge_classifier_loaded: bool,
+    pub is_inter_edge_classifier_loaded: bool,
+    pub is_translit_loaded: bool,
     pub is_sleeping: bool,
     pub is_engaged: bool,
 

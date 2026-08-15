@@ -526,43 +526,51 @@ impl NativeEngine {
             let t1 = self
                 .model
                 .str_to_token("1", AddBos::Never)
-                .unwrap_or_default().first()
+                .unwrap_or_default()
+                .first()
                 .copied();
             let t2 = self
                 .model
                 .str_to_token("2", AddBos::Never)
-                .unwrap_or_default().first()
+                .unwrap_or_default()
+                .first()
                 .copied();
             let t3 = self
                 .model
                 .str_to_token("3", AddBos::Never)
-                .unwrap_or_default().first()
+                .unwrap_or_default()
+                .first()
                 .copied();
             let t4 = self
                 .model
                 .str_to_token("4", AddBos::Never)
-                .unwrap_or_default().first()
+                .unwrap_or_default()
+                .first()
                 .copied();
 
             let t1_sp = self
                 .model
                 .str_to_token(" 1", AddBos::Never)
-                .unwrap_or_default().first()
+                .unwrap_or_default()
+                .first()
                 .copied();
             let t2_sp = self
                 .model
                 .str_to_token(" 2", AddBos::Never)
-                .unwrap_or_default().first()
+                .unwrap_or_default()
+                .first()
                 .copied();
             let t3_sp = self
                 .model
                 .str_to_token(" 3", AddBos::Never)
-                .unwrap_or_default().first()
+                .unwrap_or_default()
+                .first()
                 .copied();
             let t4_sp = self
                 .model
                 .str_to_token(" 4", AddBos::Never)
-                .unwrap_or_default().first()
+                .unwrap_or_default()
+                .first()
                 .copied();
 
             let get_score = |t_opt: Option<llama_cpp_4::token::LlamaToken>,

@@ -198,9 +198,14 @@ pub async fn user_edit_memory(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    let res = crate::persistence::mutations::supersede_user_fact(&conn, &old_fact_id, &new_fact, &collection)
-        .await
-        .map_err(|e| e.to_string())?;
+    let res = crate::persistence::mutations::supersede_user_fact(
+        &conn,
+        &old_fact_id,
+        &new_fact,
+        &collection,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(res)

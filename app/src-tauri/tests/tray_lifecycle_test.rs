@@ -20,19 +20,28 @@ fn test_tray_precondition_guards() {
     settings.setup.completed = false;
     settings.ui.tray_enabled = true;
     let guard_blocked_1 = !settings.setup.completed || !settings.ui.tray_enabled;
-    assert!(guard_blocked_1, "Toggle MUST be blocked when setup is not completed!");
+    assert!(
+        guard_blocked_1,
+        "Toggle MUST be blocked when setup is not completed!"
+    );
 
     // 2. Setup completed, Tray disabled -> Guard must block
     settings.setup.completed = true;
     settings.ui.tray_enabled = false;
     let guard_blocked_2 = !settings.setup.completed || !settings.ui.tray_enabled;
-    assert!(guard_blocked_2, "Toggle MUST be blocked when tray HUD is disabled!");
+    assert!(
+        guard_blocked_2,
+        "Toggle MUST be blocked when tray HUD is disabled!"
+    );
 
     // 3. Setup completed, Tray enabled -> Guard passes
     settings.setup.completed = true;
     settings.ui.tray_enabled = true;
     let guard_passed = settings.setup.completed && settings.ui.tray_enabled;
-    assert!(guard_passed, "Toggle MUST proceed when setup is completed and tray is enabled!");
+    assert!(
+        guard_passed,
+        "Toggle MUST proceed when setup is completed and tray is enabled!"
+    );
 }
 
 #[test]
