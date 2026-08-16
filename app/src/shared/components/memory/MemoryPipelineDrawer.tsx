@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   RefreshCw,
@@ -35,6 +35,8 @@ import {
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryData";
+import { Tooltip } from "@/shared/ui/Tooltip";
+import { parseRgb, rgbToHsl, hslToRgb } from "@/shared/components/monitoring/colorUtils";
 
 interface MemoryPipelineDrawerProps {
   open: boolean;
@@ -61,8 +63,56 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
 
   // Settings Store SSOT for Pipeline Processing Enabled
   const pipelineProcessingEnabled = useSettingsStore((s) => s.settings?.memory?.pipeline_processing_enabled ?? true);
+  const accentSeed = useSettingsStore((s) => s.settings?.ui.accent_seed);
+  const theme = useSettingsStore((s) => s.settings?.ui.theme);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
+
+  // Dynamic CSS variable observer state for Primary Accent
+  const [accentRgbStr, setAccentRgbStr] = useState<string>("0, 219, 233");
+
+  const syncAccent = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const val = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    if (val && val !== accentRgbStr) {
+      setAccentRgbStr(val);
+    }
+  }, [accentRgbStr]);
+
+  // Keep colors continuously in sync when theme changes or DOM attribute shifts
+  useEffect(() => {
+    syncAccent();
+    const observer = new MutationObserver(() => syncAccent());
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["style", "data-theme", "class"],
+    });
+    return () => observer.disconnect();
+  }, [syncAccent, accentSeed, theme]);
+
+  // Derive 4 Harmonic Pipeline Stage Colors from Primary Accent
+  const stageColors = useMemo(() => {
+    const primaryRgb = parseRgb(accentRgbStr);
+    const [h, s, l] = rgbToHsl(...primaryRgb);
+
+    const stage1Hsl = [h, s, l] as [number, number, number];
+    const stage2Hsl = [(h + 45) % 360, Math.min(100, s + 10), l] as [number, number, number];
+    const stage3Hsl = [(h + 90) % 360, Math.min(100, s + 15), l] as [number, number, number];
+    const stage4Hsl = [(h + 140) % 360, Math.min(100, s + 20), l] as [number, number, number];
+
+    const rgb1 = hslToRgb(...stage1Hsl);
+    const rgb2 = hslToRgb(...stage2Hsl);
+    const rgb3 = hslToRgb(...stage3Hsl);
+    const rgb4 = hslToRgb(...stage4Hsl);
+
+    return {
+      stage1: `${rgb1[0]}, ${rgb1[1]}, ${rgb1[2]}`,
+      stage2: `${rgb2[0]}, ${rgb2[1]}, ${rgb2[2]}`,
+      stage3: `${rgb3[0]}, ${rgb3[1]}, ${rgb3[2]}`,
+      stage4: `${rgb4[0]}, ${rgb4[1]}, ${rgb4[2]}`,
+      failed: "239, 68, 68", // Fixed Semantic Red
+    };
+  }, [accentRgbStr]);
 
   // 10-second Polling Interval when drawer is open
   useEffect(() => {
@@ -149,40 +199,54 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
             {/* Header Section */}
             <div className="flex items-center justify-between px-6 py-3.5 border-b border-[rgba(var(--border),0.1)] shrink-0 bg-[rgba(var(--foreground),0.02)]">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-2xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center shrink-0 shadow-md">
-                  <Brain size={18} className="text-purple-400" />
+                <div
+                  style={{
+                    backgroundColor: `rgba(${stageColors.stage1}, 0.12)`,
+                    borderColor: `rgba(${stageColors.stage1}, 0.35)`,
+                  }}
+                  className="w-8 h-8 rounded-2xl border flex items-center justify-center shrink-0 shadow-md"
+                >
+                  <Brain size={18} style={{ color: `rgb(${stageColors.stage1})` }} />
                 </div>
                 <div className="flex flex-col">
-                  <h2 className="text-[13px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
-                    MEMORY PIPELINE
+                  <h2 className="font-display text-[13px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
+                    HOW VOX REMEMBERS
                   </h2>
-                  <span className="text-[10.5px] font-sans text-purple-400/80 font-medium">
-                    Live Ingestion Conduit & Telemetry
+                  <span
+                    style={{ color: `rgba(${stageColors.stage1}, 0.85)` }}
+                    className="text-[11px] font-sans font-medium"
+                  >
+                    Live memory activity
                   </span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleTogglePause}
-                  title={pipelineProcessingEnabled ? "Pause Pipeline Ingestion" : "Activate Pipeline Ingestion"}
-                  className={cn(
-                    "p-1.5 rounded-xl transition-all cursor-pointer border flex items-center gap-1.5 px-2.5 text-[10px] font-mono font-bold uppercase shadow-sm",
-                    !pipelineProcessingEnabled
-                      ? "bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30"
-                      : "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
-                  )}
+                <Tooltip
+                  label={pipelineProcessingEnabled ? "Pause saving new memories" : "Resume saving new memories"}
                 >
-                  {!pipelineProcessingEnabled ? <Play size={12} /> : <Pause size={12} />}
-                  <span>{!pipelineProcessingEnabled ? "PAUSED" : "ACTIVE"}</span>
-                </button>
-                <button
-                  onClick={onRefresh}
-                  title="Refresh Pipeline Telemetry"
-                  className="p-1.5 rounded-xl text-purple-400 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
-                >
-                  <RefreshCw size={14} className={cn(running && "animate-spin")} />
-                </button>
+                  <button
+                    onClick={handleTogglePause}
+                    className={cn(
+                      "p-1.5 rounded-xl transition-all cursor-pointer border flex items-center gap-1.5 px-2.5 text-[11px] font-mono font-bold uppercase shadow-sm",
+                      !pipelineProcessingEnabled
+                        ? "bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30"
+                        : "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
+                    )}
+                  >
+                    {!pipelineProcessingEnabled ? <Play size={12} /> : <Pause size={12} />}
+                    <span>{!pipelineProcessingEnabled ? "PAUSED" : "ACTIVE"}</span>
+                  </button>
+                </Tooltip>
+                <Tooltip label="Refresh memory activity">
+                  <button
+                    onClick={onRefresh}
+                    style={{ color: `rgb(${stageColors.stage1})` }}
+                    className="p-1.5 rounded-xl hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
+                  >
+                    <RefreshCw size={14} className={cn(running && "animate-spin")} />
+                  </button>
+                </Tooltip>
                 <button
                   onClick={onClose}
                   className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
@@ -197,15 +261,23 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
             <div className="flex items-center justify-center gap-8 px-6 pt-3 pb-2 border-b border-[rgba(var(--border),0.08)] bg-[rgba(var(--foreground),0.01)] text-[12px] font-sans font-bold uppercase tracking-wider shrink-0">
               <button
                 onClick={() => setActiveTab("pipeline")}
+                style={{
+                  borderBottomColor: activeTab === "pipeline" ? `rgb(${stageColors.stage1})` : "transparent",
+                }}
                 className={cn(
                   "transition-all cursor-pointer pb-2 border-b-2 flex items-center gap-2 text-center",
                   activeTab === "pipeline"
-                    ? "border-purple-400 text-purple-400 font-black"
-                    : "border-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                    ? "font-black text-[rgb(var(--foreground))]"
+                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
                 )}
               >
-                <Activity size={14} />
-                <span>Pipeline Flow</span>
+                <Activity
+                  size={14}
+                  style={{
+                    color: activeTab === "pipeline" ? `rgb(${stageColors.stage1})` : undefined,
+                  }}
+                />
+                <span>How It Works</span>
               </button>
 
               <span className="text-[rgb(var(--foreground-muted))]/30 font-light select-none pb-2">|</span>
@@ -215,14 +287,17 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                 className={cn(
                   "transition-all cursor-pointer pb-2 border-b-2 flex items-center gap-2 text-center relative",
                   activeTab === "failed"
-                    ? "border-red-400 text-red-400 font-black"
+                    ? "border-red-400 font-black text-[rgb(var(--foreground))]"
                     : "border-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
                 )}
               >
-                <ShieldAlert size={14} />
+                <ShieldAlert
+                  size={14}
+                  className={cn(activeTab === "failed" ? "text-red-400" : undefined)}
+                />
                 <span>Failed Items</span>
                 {failedCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-400 text-[10px] font-mono border border-red-500/30 font-bold">
+                  <span className="px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-400 text-[11px] font-mono border border-red-500/30 font-bold">
                     {failedCount}
                   </span>
                 )}
@@ -232,36 +307,68 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
             {/* Scrollable Main Content Area */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-5 flex flex-col justify-between h-full min-h-0 gap-4">
               {activeTab === "pipeline" ? (
-                /* TAB 1: Central Vertical Pipeline Conduit Stream (All 5 Stages) */
+                /* TAB 1: Central Vertical Pipeline Conduit Stream (All 5 Stages with Harmonic Colors) */
                 <div className="flex-1 flex flex-col justify-between relative py-2 min-h-[320px] h-full gap-2">
                   {/* Center Glowing Conduit Line */}
-                  <div className="absolute left-1/2 top-4 bottom-4 w-[2px] -translate-x-1/2 bg-gradient-to-b from-purple-500 via-blue-500 via-cyan-500 via-amber-500 to-red-500 pointer-events-none opacity-80" />
+                  <div
+                    style={{
+                      background: `linear-gradient(to bottom, rgb(${stageColors.stage1}), rgb(${stageColors.stage2}), rgb(${stageColors.stage3}), rgb(${stageColors.stage4}), rgb(${stageColors.failed}))`,
+                    }}
+                    className="absolute left-1/2 top-4 bottom-4 w-[2px] -translate-x-1/2 pointer-events-none opacity-80"
+                  />
 
                   {/* STAGE 1: Left Card | Center Node | Empty Right */}
                   <div className="relative flex items-center justify-between w-full min-h-0">
                     <div className="w-[44%] flex justify-end">
-                      <div className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] hover:border-purple-500/40 transition-all flex flex-col gap-1 shadow-md">
+                      <div
+                        style={{
+                          borderColor: `rgba(${stageColors.stage1}, 0.25)`,
+                        }}
+                        className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border hover:border-opacity-60 transition-all flex flex-col gap-1 shadow-md"
+                      >
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-sans font-black tracking-wide text-purple-400 uppercase">
-                            1 DEDUPLICATION
+                          <span
+                            style={{ color: `rgb(${stageColors.stage1})` }}
+                            className="text-[11px] font-sans font-black tracking-wide uppercase"
+                          >
+                            1 REMOVE DUPLICATES
                           </span>
                           {stagedPendingCount === 0 ? (
                             <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                           ) : (
-                            <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
+                            <span
+                              style={{ backgroundColor: `rgb(${stageColors.stage1})` }}
+                              className="w-2 h-2 rounded-full animate-ping"
+                            />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
-                          Exact & sub-word Jaccard dedup
+                        <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
+                          Removes repeated memories
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400/80" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60" />
+                            <span
+                              style={{ backgroundColor: `rgb(${stageColors.stage1})` }}
+                              className="w-1.5 h-1.5 rounded-full animate-pulse"
+                            />
+                            <span
+                              style={{ backgroundColor: `rgba(${stageColors.stage1}, 0.8)` }}
+                              className="w-1.5 h-1.5 rounded-full"
+                            />
+                            <span
+                              style={{ backgroundColor: `rgba(${stageColors.stage1}, 0.6)` }}
+                              className="w-1.5 h-1.5 rounded-full"
+                            />
                             <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.2)]" />
                           </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[10px] font-bold">
+                          <span
+                            style={{
+                              backgroundColor: `rgba(${stageColors.stage1}, 0.12)`,
+                              borderColor: `rgba(${stageColors.stage1}, 0.25)`,
+                              color: `rgb(${stageColors.stage1})`,
+                            }}
+                            className="px-2 py-0.5 rounded-lg border text-[11px] font-bold"
+                          >
                             {stagedPendingCount} staged
                           </span>
                         </div>
@@ -269,7 +376,14 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     </div>
 
                     {/* Center Node 1 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-purple-500/50 bg-[rgb(var(--card))] text-purple-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(168,85,247,0.35)]">
+                    <div
+                      style={{
+                        borderColor: `rgba(${stageColors.stage1}, 0.55)`,
+                        color: `rgb(${stageColors.stage1})`,
+                        boxShadow: `0 0 15px rgba(${stageColors.stage1}, 0.35)`,
+                      }}
+                      className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border bg-[rgb(var(--card))] flex items-center justify-center shrink-0 z-10"
+                    >
                       <Filter size={16} />
                     </div>
 
@@ -281,33 +395,67 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     <div className="w-[44%]" />
 
                     {/* Center Node 2 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-blue-500/50 bg-[rgb(var(--card))] text-blue-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(59,130,246,0.35)]">
+                    <div
+                      style={{
+                        borderColor: `rgba(${stageColors.stage2}, 0.55)`,
+                        color: `rgb(${stageColors.stage2})`,
+                        boxShadow: `0 0 15px rgba(${stageColors.stage2}, 0.35)`,
+                      }}
+                      className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border bg-[rgb(var(--card))] flex items-center justify-center shrink-0 z-10"
+                    >
                       <Box size={16} />
                     </div>
 
                     <div className="w-[44%] flex justify-start">
-                      <div className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] hover:border-blue-500/40 transition-all flex flex-col gap-1 shadow-md">
+                      <div
+                        style={{
+                          borderColor: `rgba(${stageColors.stage2}, 0.25)`,
+                        }}
+                        className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border hover:border-opacity-60 transition-all flex flex-col gap-1 shadow-md"
+                      >
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-sans font-black tracking-wide text-blue-400 uppercase">
-                            2 EMBEDDING
+                          <span
+                            style={{ color: `rgb(${stageColors.stage2})` }}
+                            className="text-[11px] font-sans font-black tracking-wide uppercase"
+                          >
+                            2 UNDERSTANDING
                           </span>
                           {dedupPassCount === 0 ? (
                             <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                           ) : (
-                            <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+                            <span
+                              style={{ backgroundColor: `rgb(${stageColors.stage2})` }}
+                              className="w-2 h-2 rounded-full animate-ping"
+                            />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
-                          Generating MiniLM-L12 384d vectors
+                        <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
+                          Working out what each memory means
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400/80" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400/60" />
+                            <span
+                              style={{ backgroundColor: `rgb(${stageColors.stage2})` }}
+                              className="w-1.5 h-1.5 rounded-full animate-pulse"
+                            />
+                            <span
+                              style={{ backgroundColor: `rgba(${stageColors.stage2}, 0.8)` }}
+                              className="w-1.5 h-1.5 rounded-full"
+                            />
+                            <span
+                              style={{ backgroundColor: `rgba(${stageColors.stage2}, 0.6)` }}
+                              className="w-1.5 h-1.5 rounded-full"
+                            />
                             <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.2)]" />
                           </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-bold">
+                          <span
+                            style={{
+                              backgroundColor: `rgba(${stageColors.stage2}, 0.12)`,
+                              borderColor: `rgba(${stageColors.stage2}, 0.25)`,
+                              color: `rgb(${stageColors.stage2})`,
+                            }}
+                            className="px-2 py-0.5 rounded-lg border text-[11px] font-bold"
+                          >
                             {dedupPassCount} pending
                           </span>
                         </div>
@@ -318,28 +466,55 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                   {/* STAGE 3: Left Card | Center Node | Empty Right */}
                   <div className="relative flex items-center justify-between w-full min-h-0">
                     <div className="w-[44%] flex justify-end">
-                      <div className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] hover:border-cyan-500/40 transition-all flex flex-col gap-1 shadow-md">
+                      <div
+                        style={{
+                          borderColor: `rgba(${stageColors.stage3}, 0.25)`,
+                        }}
+                        className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border hover:border-opacity-60 transition-all flex flex-col gap-1 shadow-md"
+                      >
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-sans font-black tracking-wide text-cyan-400 uppercase">
-                            3 EVALUATION
+                          <span
+                            style={{ color: `rgb(${stageColors.stage3})` }}
+                            className="text-[11px] font-sans font-black tracking-wide uppercase"
+                          >
+                            3 CHECK FACTS
                           </span>
                           {nliEvaluatedCount === 0 ? (
                             <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                           ) : (
-                            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                            <span
+                              style={{ backgroundColor: `rgb(${stageColors.stage3})` }}
+                              className="w-2 h-2 rounded-full animate-ping"
+                            />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
-                          DeBERTa NLI & ModernBERT Edges
+                        <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
+                          Double-checks each memory
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/80" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/60" />
+                            <span
+                              style={{ backgroundColor: `rgb(${stageColors.stage3})` }}
+                              className="w-1.5 h-1.5 rounded-full animate-pulse"
+                            />
+                            <span
+                              style={{ backgroundColor: `rgba(${stageColors.stage3}, 0.8)` }}
+                              className="w-1.5 h-1.5 rounded-full"
+                            />
+                            <span
+                              style={{ backgroundColor: `rgba(${stageColors.stage3}, 0.6)` }}
+                              className="w-1.5 h-1.5 rounded-full"
+                            />
                             <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.2)]" />
                           </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold">
+                          <span
+                            style={{
+                              backgroundColor: `rgba(${stageColors.stage3}, 0.12)`,
+                              borderColor: `rgba(${stageColors.stage3}, 0.25)`,
+                              color: `rgb(${stageColors.stage3})`,
+                            }}
+                            className="px-2 py-0.5 rounded-lg border text-[11px] font-bold"
+                          >
                             {nliEvaluatedCount} evaluated
                           </span>
                         </div>
@@ -347,7 +522,14 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     </div>
 
                     {/* Center Node 3 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-cyan-500/50 bg-[rgb(var(--card))] text-cyan-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(6,182,212,0.35)]">
+                    <div
+                      style={{
+                        borderColor: `rgba(${stageColors.stage3}, 0.55)`,
+                        color: `rgb(${stageColors.stage3})`,
+                        boxShadow: `0 0 15px rgba(${stageColors.stage3}, 0.35)`,
+                      }}
+                      className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border bg-[rgb(var(--card))] flex items-center justify-center shrink-0 z-10"
+                    >
                       <GitBranch size={16} />
                     </div>
 
@@ -359,33 +541,67 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     <div className="w-[44%]" />
 
                     {/* Center Node 4 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border border-amber-500/50 bg-[rgb(var(--card))] text-amber-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_15px_rgba(245,158,11,0.35)]">
+                    <div
+                      style={{
+                        borderColor: `rgba(${stageColors.stage4}, 0.55)`,
+                        color: `rgb(${stageColors.stage4})`,
+                        boxShadow: `0 0 15px rgba(${stageColors.stage4}, 0.35)`,
+                      }}
+                      className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full border bg-[rgb(var(--card))] flex items-center justify-center shrink-0 z-10"
+                    >
                       <Database size={16} />
                     </div>
 
                     <div className="w-[44%] flex justify-start">
-                      <div className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] hover:border-amber-500/40 transition-all flex flex-col gap-1 shadow-md">
+                      <div
+                        style={{
+                          borderColor: `rgba(${stageColors.stage4}, 0.25)`,
+                        }}
+                        className="w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border hover:border-opacity-60 transition-all flex flex-col gap-1 shadow-md"
+                      >
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-sans font-black tracking-wide text-amber-400 uppercase">
-                            4 GRAPH COMMIT
+                          <span
+                            style={{ color: `rgb(${stageColors.stage4})` }}
+                            className="text-[11px] font-sans font-black tracking-wide uppercase"
+                          >
+                            4 SAVE
                           </span>
                           {running ? (
-                            <span className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
+                            <span
+                              style={{ borderColor: `rgb(${stageColors.stage4})` }}
+                              className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0"
+                            />
                           ) : (
                             <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
-                          Writing facts to Turso graph DB
+                        <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
+                          Stores it for later
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60" />
+                            <span
+                              style={{ backgroundColor: `rgb(${stageColors.stage4})` }}
+                              className="w-1.5 h-1.5 rounded-full animate-pulse"
+                            />
+                            <span
+                              style={{ backgroundColor: `rgba(${stageColors.stage4}, 0.8)` }}
+                              className="w-1.5 h-1.5 rounded-full"
+                            />
+                            <span
+                              style={{ backgroundColor: `rgba(${stageColors.stage4}, 0.6)` }}
+                              className="w-1.5 h-1.5 rounded-full"
+                            />
                             <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.2)]" />
                           </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-bold">
+                          <span
+                            style={{
+                              backgroundColor: `rgba(${stageColors.stage4}, 0.12)`,
+                              borderColor: `rgba(${stageColors.stage4}, 0.25)`,
+                              color: `rgb(${stageColors.stage4})`,
+                            }}
+                            className="px-2 py-0.5 rounded-lg border text-[11px] font-bold"
+                          >
                             {totalPending > 0 ? `${totalPending} ready` : "Synced"}
                           </span>
                         </div>
@@ -405,7 +621,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-sans font-black tracking-wide text-red-400 uppercase">
-                            5 ATTENTION REQUIRED
+                            5 NEEDS YOUR ATTENTION
                           </span>
                           {failedCount > 0 ? (
                             <AlertCircle size={15} className="text-red-400 shrink-0 animate-pulse" />
@@ -413,14 +629,14 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                             <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                           )}
                         </div>
-                        <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">
-                          Failed items needing review
+                        <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
+                          Memories you may want to check
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
-                          <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]">
+                          <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
                             {failedCount > 0 ? "Click to view errors" : "No errors"}
                           </span>
-                          <span className={cn("px-2 py-0.5 rounded-lg text-[10px] font-bold border", failedCount > 0 ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.08)]")}>
+                          <span className={cn("px-2 py-0.5 rounded-lg text-[11px] font-bold border", failedCount > 0 ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.08)]")}>
                             {failedCount} failed
                           </span>
                         </div>
@@ -441,17 +657,22 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                   <div className="flex items-center justify-between px-1">
                     <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-red-400 flex items-center gap-1.5">
                       <AlertCircle size={14} />
-                      Failed Ingestion Items ({failedQueueItems.length})
+                      Needs Your Attention ({failedQueueItems.length})
                     </span>
 
                     {failedQueueItems.length > 0 && (
                       <button
                         onClick={handleRetryAll}
                         disabled={retrying}
-                        className="px-3 py-1.5 rounded-xl bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 border border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] text-[11px] font-sans font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+                        style={{
+                          backgroundColor: `rgba(${stageColors.stage1}, 0.15)`,
+                          borderColor: `rgba(${stageColors.stage1}, 0.35)`,
+                          color: `rgb(${stageColors.stage1})`,
+                        }}
+                        className="px-3 py-1.5 rounded-xl border text-[11px] font-sans font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
                       >
                         <RotateCcw size={12} className={cn(retrying && "animate-spin")} />
-                        <span>Retry All Failed</span>
+                        <span>Retry All</span>
                       </button>
                     )}
                   </div>
@@ -460,10 +681,10 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[rgba(var(--foreground),0.02)] rounded-2xl border border-[rgba(var(--border),0.06)]">
                       <CheckCircle2 size={32} className="text-emerald-400 mb-2" />
                       <span className="text-[13px] font-sans font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">
-                        Zero Failed Items
+                        Nothing Needs Attention
                       </span>
                       <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 max-w-xs">
-                        All queued memory facts processed cleanly without ingestion errors.
+                        Everything was saved without problems.
                       </span>
                     </div>
                   ) : (
@@ -474,24 +695,25 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                             <span className="text-[12px] font-sans text-[rgb(var(--foreground))] font-medium">
                               "{item.fact}"
                             </span>
+                            <Tooltip label="Try this one again">
                             <button
                               onClick={() => handleRetrySingleItem(item.id)}
-                              title="Retry this item"
-                              className="px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] text-[10.5px] font-sans font-medium transition-colors cursor-pointer shrink-0 border border-[rgba(var(--border),0.1)] flex items-center gap-1"
+                              className="px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] text-[11px] font-sans font-medium transition-colors cursor-pointer shrink-0 border border-[rgba(var(--border),0.1)] flex items-center gap-1"
                             >
                               <RotateCcw size={10} />
                               <span>Retry</span>
                             </button>
+                          </Tooltip>
                           </div>
 
-                          <div className="flex items-center justify-between text-[10.5px] font-sans text-[rgb(var(--foreground-muted))] pt-1 border-t border-[rgba(var(--border),0.06)]">
-                            <span>Collection: <strong className="text-purple-400 font-semibold">{item.collection}</strong></span>
-                            <span>Attempts: <strong className="text-amber-400/80 font-semibold">{item.attempts}</strong></span>
+                          <div className="flex items-center justify-between text-[11px] font-sans text-[rgb(var(--foreground-muted))] pt-1 border-t border-[rgba(var(--border),0.06)]">
+                            <span>Category: <strong style={{ color: `rgb(${stageColors.stage1})` }} className="font-semibold">{item.collection}</strong></span>
+                            <span>Tries: <strong style={{ color: `rgb(${stageColors.stage3})` }} className="font-semibold">{item.attempts}</strong></span>
                           </div>
 
                           {item.error_msg && (
-                            <span className="text-[10.5px] font-sans text-red-400/80 line-clamp-2">
-                              Error: {item.error_msg}
+                            <span className="text-[11px] font-sans text-red-400/80 line-clamp-2">
+                              {item.error_msg}
                             </span>
                           )}
                         </div>
@@ -502,7 +724,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                   {lastRetriedCount !== null && (
                     <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-sans font-medium text-center flex items-center justify-center gap-1.5">
                       <Check size={14} />
-                      <span>Re-queued {lastRetriedCount} failed items for processing sweep.</span>
+                      <span>Added {lastRetriedCount} items back to the queue.</span>
                     </div>
                   )}
                 </div>
@@ -511,42 +733,42 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
               {/* Expanded Prominent Bottom Telemetry Strip */}
               <div className="p-3.5 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.1)] grid grid-cols-4 gap-2 shrink-0 shadow-lg text-center">
                 <div className="flex flex-col items-center">
-                  <TrendingUp size={16} className="text-purple-400 mb-0.5" />
+                  <TrendingUp size={16} style={{ color: `rgb(${stageColors.stage1})` }} className="mb-0.5" />
                   <span className="text-[14px] font-sans font-black text-[rgb(var(--foreground))]">
                     {activeNodesCount.toLocaleString()}
                   </span>
-                  <span className="text-[9px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
-                    Graph Nodes
+                  <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
+                    Memories
                   </span>
                 </div>
 
                 <div className="flex flex-col items-center border-l border-[rgba(var(--border),0.08)]">
-                  <Layers size={16} className="text-blue-400 mb-0.5" />
+                  <Layers size={16} style={{ color: `rgb(${stageColors.stage2})` }} className="mb-0.5" />
                   <span className="text-[14px] font-sans font-black text-[rgb(var(--foreground))]">
                     {activeEdgesCount.toLocaleString()}
                   </span>
-                  <span className="text-[9px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
-                    Graph Edges
+                  <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
+                    Connections
                   </span>
                 </div>
 
                 <div className="flex flex-col items-center border-l border-[rgba(var(--border),0.08)]">
-                  <Clock size={16} className="text-cyan-400 mb-0.5" />
-                  <span className="text-[14px] font-sans font-black text-amber-400">
+                  <Clock size={16} style={{ color: `rgb(${stageColors.stage4})` }} className="mb-0.5" />
+                  <span className="text-[14px] font-sans font-black text-[rgb(var(--foreground))]">
                     {totalPending}
                   </span>
-                  <span className="text-[9px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
-                    Queue Items
+                  <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
+                    Waiting to Save
                   </span>
                 </div>
 
                 <div className="flex flex-col items-center border-l border-[rgba(var(--border),0.08)]">
                   <ShieldCheck size={16} className={cn("mb-0.5", failedCount > 0 ? "text-red-400" : "text-emerald-400")} />
-                  <span className={cn("text-[14px] font-sans font-black", failedCount > 0 ? "text-red-400" : "text-emerald-400")}>
-                    {failedCount > 0 ? `${failedCount} Failed` : "Healthy"}
+                  <span className="text-[14px] font-sans font-black text-[rgb(var(--foreground))]">
+                    {failedCount > 0 ? `${failedCount} to check` : "All Good"}
                   </span>
-                  <span className="text-[9px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
-                    Queue Health
+                  <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
+                    Memory Health
                   </span>
                 </div>
               </div>
@@ -557,24 +779,29 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
               {lastProcessedCount !== null && (
                 <div className="flex items-center gap-1.5 text-emerald-400 text-[11px] font-sans justify-center font-medium">
                   <CheckCircle2 size={14} />
-                  <span>Swept & consolidated {lastProcessedCount} queued items into memory graph.</span>
+                  <span>Saved {lastProcessedCount} items into memory.</span>
                 </div>
               )}
 
               <button
                 onClick={handleTrigger}
                 disabled={running}
-                className="w-full py-3.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-400 hover:text-[rgb(var(--foreground))] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 text-[12.5px] font-sans font-bold uppercase tracking-wider shadow-lg"
+                style={{
+                  backgroundColor: "transparent",
+                  borderColor: `rgba(${stageColors.stage1}, 0.45)`,
+                  color: `rgb(${stageColors.stage1})`,
+                }}
+                className="w-full py-3.5 rounded-xl border hover:bg-[rgba(var(--foreground),0.04)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 text-[12px] font-sans font-bold uppercase tracking-wider shadow-sm"
               >
                 {running ? (
-                  <Sparkles size={16} className="animate-spin text-purple-400" />
+                  <Sparkles size={16} className="animate-spin" />
                 ) : (
-                  <Zap size={16} className="text-purple-400" />
+                  <Zap size={16} />
                 )}
-                <span>{running ? MEMORY_COPY.consolidating : "PROCESS PENDING QUEUE"}</span>
+                <span>{running ? MEMORY_COPY.consolidating : "SAVE PENDING MEMORIES"}</span>
               </button>
-              <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))] text-center">
-                Runs immediate pipeline sweep over uncommitted queued facts
+              <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] text-center">
+                Organizes the memories Vox hasn't saved yet
               </span>
             </div>
           </motion.div>

@@ -991,54 +991,26 @@ const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({
 
 ## 10. Design System
 
-### Color Palette
+The **authoritative design system spec lives in [`design.md`](./design.md)** — tokens
+(colors, type ramp, radii), type roles, uppercase policy, elevation levels, and motion
+rules. Frontend code must only use tokens and sizes declared there; the impeccable
+design-system detector enforces this against `docs/design.md`'s frontmatter.
+
+Implementation of the tokens in CSS/Tailwind:
 
 ```css
 :root {
-  --background: 0 0% 4%;      /* Dark obsidian */
-  --foreground: 0 0% 98%;
-  --accent: 180 100% 50%;      /* Cyan glow */
-  --accent-foreground: 0 0% 4%;
-  --secondary: 262 83% 58%;    /* Violet accents */
+  --background: 5, 5, 5;        /* rgb(var(--background)) */
+  --foreground: 229, 226, 225;
+  --accent: 0, 219, 233;         /* voice signal cyan */
+  --accent-foreground: 5, 5, 5;
+  --border: 255, 255, 255;
 }
 ```
 
-### Glassmorphism Implementation
-
-```css
-.liquid-glass {
-  background: rgba(var(--background), 0.8);
-  backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-}
-```
-
-### Orb Animation System
-
-```typescript
-const orbAnimations = {
-  idle: {
-    scale: [1, 1.02, 1],
-    opacity: [0.7, 0.8, 0.7],
-    transition: {
-      duration: 3,
-      repeat: Infinity,
-      ease: "easeInOut"
-    }
-  },
-  listening: {
-    scale: 1.1,
-    boxShadow: "0 0 30px rgba(var(--accent), 0.5)",
-    transition: { duration: 0.3 }
-  },
-  speaking: {
-    scale: 1.2,
-    boxShadow: "0 0 50px rgba(var(--accent), 0.8)",
-    transition: { duration: 0.2 }
-  }
-};
-```
+Glass surfaces use the `.glass-*` elevation classes in `index.css` (blur + tint per
+`design.md` §Elevation). For the full token reference and all UI rules, read
+`docs/design.md`.
 
 ---
 
@@ -1143,5 +1115,117 @@ Vox features a full-screen, ultra-scalable 3D Cognitive Memory Graph visualizati
 
 ---
 
-**Last Updated:** 2026-08-12
+## 16. UX Implementation Guidelines
+
+Mechanic-level UX patterns (moved from the old `design.md`). These describe *how* the UI
+behaves; the *rules* it must obey live in [`design.md`](./design.md).
+
+### 16.1 Responsive & Dynamic Layouts
+
+The desktop layout transitions dynamically to a unified layout on small screens
+(mobile viewports).
+
+* **Central Navigation Capsule (`EdgeNav`)**: On desktop, navigation is a floating bottom
+  capsule. On mobile, the system monitoring metrics (bottom-left on desktop) are hidden and
+  the **Activity Monitor** is integrated as a 4th `NavLink` tab inside the capsule, routing
+  directly to `/monitoring`.
+* **Unified Responsive Diagnostics Monitor (`Monitoring.tsx`)**: On mobile it renders as a
+  dedicated page route (`/monitoring`) with a solid glass background; on desktop it renders
+  as an anchored floating popover modal (`popover={true}`) bottom-left without duplicating
+  component hierarchy.
+* **Viewport Transition Engine**:
+  * Mobile ➔ Desktop: on `/monitoring`, resizing to desktop redirects to `/` and launches
+    the popover panel.
+  * Desktop ➔ Mobile: an open popover closes and routes to `/monitoring` so context is kept.
+* **Sentient Core Scale**: On mobile the central Orb scales up **50%**
+  (`min(92vw, 85vh)` instead of `min(70vw, 65vh)`) to act as the dominant touch target.
+
+### 16.2 Performance Constraints & Best Practices
+
+To hit high rendering performance on baseline systems (8GB RAM, CPU-first):
+
+* **Dynamic FPS (`useDynamicFPS`)**: Heavy visual loops (Three.js WebGL Orb, HTML5 Canvas
+  Waveform) throttle frame rate: *Active* 60fps, *Idle* 15fps, *Sleep* 0fps.
+* **React Memoization**: Visually intensive components (`AmbientBackground`, `PipelineField`,
+  `VoxOrb`, `LiveWaveform`) are wrapped in `React.memo` to avoid re-renders during text
+  streaming or DB reads.
+
+### 16.3 Settings & Configuration Hub UX
+
+* **Flat Underline Tab Strips**: For list selections (LLM providers, gateway options) avoid
+  heavy card grids. Use a flat left-aligned tab strip with a shared underline track
+  (`border-b border-[rgba(var(--border),0.12)]`), active tab indicated by `text` color + a
+  thicker `border-b-2 border-[rgb(var(--accent))]`, pipe separators (`|`) in
+  `text-[rgb(var(--accent))]/30 font-light`. Inline provider/system icons render on desktop
+  and hide on mobile.
+* **Consolidated Card Headers on Mobile**: Hide internal settings card titles ("Appearance",
+  "Model Hub", "Interaction Console") on small layouts; rely on the outer Category Page
+  Headers, which are larger and high-contrast (`text-[15px] font-black uppercase
+  tracking-[0.18em] text-[rgb(var(--foreground))]`).
+* **Hover-Only Slide-Out Action Sidebars**: Toggle buttons wrap in a group row with a hidden
+  sidebar panel (`w-0 opacity-0` → `group-hover:w-[38px] group-hover:opacity-100`) while the
+  main button scales to fit (`flex-1`) and flattens shared borders.
+* **Alignment & Padding Discipline**: Respect parent padding (a `p-3` desk needs no duplicate
+  `px-3`/`mx-3` on children); align labels, tabs, inputs, and cards on one vertical axis.
+
+### 16.4 Settings Hub & Synchronous Loading UX
+
+* **Boot-Time Import Prewarming**: All lazy-loaded domain cards (`PersonaCard`, `ModelsCard`,
+  `RealtimeCard`, `HistoryCard`, `MemoryCard`, `AppearanceCard`, `InteractionCard`) are
+  eagerly prewarmed in parallel at **App boot** (`App.tsx`), so the radial hub opens with no
+  lazy-load latency. Cards mount instantly and only play a brief skeleton cross-fade.
+* **Premium Charging Skeleton**: `GlassSkeleton variant="card"` is the Suspense fallback for
+  every domain card — a glass card with an accent-tinted border, ambient corner glow, a skewed
+  shimmer sweep (`skeleton-shimmer`), a pulsing accent orb (`animate-ping`), and breathing
+  glow (`skeleton-glow`), matching the Liquid Space aesthetic.
+* **Radial Node Tooltips**: Each `RadialNode` and the `HubCenter` are wrapped in the custom
+  `Tooltip` primitive (via `wrapperClassName`/`wrapperStyle` so the absolute node placement is
+  preserved) with action copy from `SETTINGS_COPY` (`Open {label} settings` /
+  `Close {label} settings` / `Open all settings` / `Clear all settings`).
+* **Gated Connection Lines + Decorative Power Pulse**: SVG node-to-card connector lines render
+  strictly when `activeDomains.includes(domain.id)`. On activation a thin accent `path` runs a
+  one-shot `connector-flow` stroke-dashoffset animation (0.9s, staggered 0.12s per domain) —
+  a decorative "node sent power to the card" pulse, not load-synced.
+
+### 16.5 Memory Graph & Telemetry Drawer Invariants
+
+See §15 for the WebGL engine invariants. Additional UI mechanics:
+
+* **Decoupled Renderer Setup**: window/panel resizing triggers only a lightweight
+  `renderer.setSize` update — GPU buffers and controls are never disposed.
+* **Failsafe Stabilization**: layout stabilization enforces a **700ms max failsafe timeout**
+  so the borderless network loader (`isLayoutStable`) always dismisses cleanly.
+* **Clean Pill Selection**: collection/relation filters in `MemoryLegendCard.tsx` use rounded
+  active ring highlights (`ring-1 ring-[rgb(var(--accent))]/30 bg-[rgb(var(--accent))]/15`)
+  instead of vertical `border-l-2` accent borders.
+* **100% Height Telemetry Drawer**: `MemoryPipelineDrawer.tsx` uses full available height with
+  an alternating Left/Right zig-zag conduit (`01 Deduplicate` → `02 Embed` → `03 Evaluate
+  Relations` → `04 Commit & Sync`) down to the `Memory Graph` destination. `Escape` closes it.
+
+### 16.6 Keyboard Navigation & Route Sequence
+
+* **Arrow Key Navigation**: `ArrowRight`/`ArrowLeft` cycles views in exact visual order
+  matching the `EdgeNav` pills: `Home` (`/`) ➔ `History` (`/history`) ➔ `Memory` (`/memory`)
+  ➔ `System` (`/settings`).
+
+### 16.7 Small Layout Navigation & Scroll Backdrop Mask
+
+For mobile and small viewports (`< 1024px`):
+
+* **Floating EdgeNav Capsule**: navigation floats centered near the bottom with compact pill
+  styling.
+* **Soft Glass Fade Mask Backdrop**: a `110px` gradient overlay
+  (`fixed bottom-0 left-0 right-0 pointer-events-none z-40 bg-gradient-to-b from-transparent
+  via-[rgb(var(--background))]/60 to-[rgb(var(--background))]/95 backdrop-blur-[16px]`)
+  sits behind the EdgeNav pill.
+* **Seamless Content Fade**: content scrolls under the mask and fades/blurs out approaching
+  the bottom edge.
+* **Scroll Padding Baseline**: scrollable views (History, Settings, Monitoring) enforce
+  `pb-[110px]` on small layouts.
+* **Mobile Category Headers**: small layouts display explicit category headers
+  (e.g. `HISTORY & SESSIONS`) at the top of scrollable lists.
+
+---
+
+**Last Updated:** 2026-08-16
 

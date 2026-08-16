@@ -86,10 +86,10 @@ export const ModelStatusOverlay = memo(() => {
           <div className="min-w-0 overflow-hidden">
             <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
               {llmName}
-              {!llmExists && <span className="text-[9px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
+              {!llmExists && <span className="text-[11px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
             </div>
             {!isNarrow && (
-              <div className="text-[9px] font-mono mt-0.5 leading-none truncate">{activeLlm.parameters || "LLM"}</div>
+              <div className="text-[11px] font-mono mt-0.5 leading-none truncate">{activeLlm.parameters || "LLM"}</div>
             )}
           </div>
           {/* Tooltip */}
@@ -113,10 +113,10 @@ export const ModelStatusOverlay = memo(() => {
           <div className="min-w-0 overflow-hidden">
             <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
               {asrName}
-              {!asrExists && <span className="text-[9px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
+              {!asrExists && <span className="text-[11px] text-yellow-500 font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
             </div>
             {!isNarrow && (
-              <div className="text-[9px] font-mono mt-0.5 leading-none truncate">{activeAsr.parameters || "ASR"}</div>
+              <div className="text-[11px] font-mono mt-0.5 leading-none truncate">{activeAsr.parameters || "ASR"}</div>
             )}
           </div>
           {/* Tooltip */}
@@ -137,7 +137,7 @@ export const ModelStatusOverlay = memo(() => {
               {ttsName}
             </div>
             {!isNarrow && activeVoice && (
-              <div className="text-[9px] font-mono mt-0.5 leading-none truncate">{activeVoice.name} · Voice</div>
+              <div className="text-[11px] font-mono mt-0.5 leading-none truncate">{activeVoice.name} · Voice</div>
             )}
           </div>
           {/* Tooltip */}

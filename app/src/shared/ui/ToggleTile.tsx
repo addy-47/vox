@@ -102,7 +102,7 @@ export const ToggleTile: React.FC<ToggleTileProps> = ({
       <div
         className="h-full w-0 group-hover:w-[38px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden shrink-0"
       >
-        <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
+        <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
           {isSmall ? "TAP" : "TOGGLE"}
         </span>
       </div>

@@ -31,7 +31,7 @@ export const WizardHeader: React.FC<WizardHeaderProps> = ({
               {step}
             </span>
           </div>
-          <h1 className="text-4xl font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">
+          <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">
             {title}
           </h1>
           <p className="text-[rgb(var(--foreground-muted))] text-sm leading-relaxed max-w-md">

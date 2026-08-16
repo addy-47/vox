@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
+import { SETTINGS_COPY } from "@/data/settingsData";
 
 interface RadialNodeProps {
   domain: Domain;
@@ -18,34 +20,37 @@ export const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }
   };
   const Icon = domain.icon;
   const isUpper = domain.angle < 0;
+  const tooltipLabel = (isActive ? SETTINGS_COPY.closeDomain : SETTINGS_COPY.openDomain).replace("{label}", domain.label);
 
   return (
-    <button
-      id={`node-${domain.id}`}
-      onClick={() => onSelect(domain.id)}
-      className={cn(
-        "absolute w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400 group z-25",
-        isActive
-          ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)]"
-          : "text-[rgb(var(--foreground-muted))] dark:text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.15)] dark:border-[rgba(var(--border),0.08)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.06)]"
-      )}
-      style={{
-        left: "50%",
-        top: "50%",
-        transform: `translate(calc(-50% + ${pos.x}px), calc(-50% + ${pos.y}px))`,
-      }}
-      aria-label={`${domain.label} settings`}
+    <Tooltip
+      label={tooltipLabel}
+      side={isUpper ? "bottom" : "top"}
+      wrapperClassName="absolute left-1/2 top-1/2 z-30"
+      wrapperStyle={{ transform: `translate(calc(-50% + ${pos.x}px), calc(-50% + ${pos.y}px))` }}
     >
-      <Icon size={20} strokeWidth={isActive ? 2.5 : 1.5} />
-      <span 
+      <button
+        id={`node-${domain.id}`}
+        onClick={() => onSelect(domain.id)}
         className={cn(
-          "absolute left-1/2 -translate-x-1/2 text-[12px] font-bold uppercase tracking-[0.15em] leading-none whitespace-nowrap pointer-events-none text-center transition-all duration-400",
-          isUpper ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
+          "relative w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400",
+          isActive
+            ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)]"
+            : "text-[rgb(var(--foreground-muted))] dark:text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.15)] dark:border-[rgba(var(--border),0.08)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.06)]"
         )}
+        aria-label={tooltipLabel}
       >
-        {domain.label}
-      </span>
-    </button>
+        <Icon size={20} strokeWidth={isActive ? 2.5 : 1.5} />
+        <span 
+          className={cn(
+            "absolute left-1/2 -translate-x-1/2 text-[12px] font-bold uppercase tracking-[0.15em] leading-none whitespace-nowrap pointer-events-none text-center transition-all duration-400",
+            isUpper ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
+          )}
+        >
+          {domain.label}
+        </span>
+      </button>
+    </Tooltip>
   );
 });
 RadialNode.displayName = "RadialNode";

@@ -35,43 +35,43 @@ export interface StepHeader {
 
 export const WIZARD_STEP_HEADERS: Record<string, StepHeader> = {
   welcome: {
-    step: "Step 1.0 • Initialization",
+    step: "Step 1 of 6 · Getting Started",
     title: "Welcome to Vox.",
     description:
-      "Vox is a low-latency audio intelligence system designed to live in your system tray and provide real-time interaction.",
+      "Vox is your personal voice assistant. It listens, answers, and lives quietly in your menu bar — everything runs privately on your computer.",
   },
   checking: {
-    step: "Step 2.0 • Infrastructure",
-    title: "Environment Scan",
+    step: "Step 2 of 6 · Checking Your Computer",
+    title: "Checking Your Computer",
     description:
-      "Analyzing system environment for local AI execution. We ensure your hardware meets the requirements for a seamless experience.",
+      "Making sure your computer is ready for Vox. We verify everything works before we move on.",
   },
   selection: {
-    step: "Step 2.1 • Selection",
-    title: "AI Components",
+    step: "Step 3 of 6 · Choosing Voice Models",
+    title: "Choose Your Voice Models",
     description:
-      "Customize your local AI stack. Mandatory core ensures functional interaction, while optional layers unlock deep reasoning.",
+      "Pick which voice features Vox uses. The essential ones make conversation work; the extra ones unlock smarter replies and memory.",
   },
   syncing: {
-    step: "Step 2.2 • Synchronizing",
-    title: "Deploying AI",
+    step: "Step 3 of 6 · Downloading Voice Models",
+    title: "Downloading Voice Models",
     description:
-      "Vox is deploying selected components to your local hardware. This process is fully encrypted and sandboxed.",
+      "Vox is downloading the voice models to your computer. They run locally, so your voice never leaves your device.",
   },
   audio: {
-    step: "Step 3.0 • Audio Input",
-    title: "Device Selection",
+    step: "Step 4 of 6 · Choosing Your Microphone",
+    title: "Choose Your Microphone",
     description:
-      "Configuring audio input for real-time interaction. Select your primary microphone to enable voice understanding.",
+      "Pick the microphone Vox will listen to. This is how Vox hears you.",
   },
   testing: {
-    step: "Step 4.0 • Voice Showcase",
-    title: "Voice Experience",
+    step: "Step 5 of 6 · Test Your Voice",
+    title: "Try It Out",
     description:
-      "Experience real-time local Voice Activity Detection (VAD) and Speech-to-Text (STT) understanding. Say something to watch the live local transcription.",
+      "Say something and watch Vox understand you in real time — entirely on your computer.",
   },
   completed: {
-    step: "Step 5.0 • Completion",
+    step: "Step 6 of 6 · All Done",
     title: "Setup Complete.",
     description: "Vox is installed and ready to use.",
   },
@@ -86,17 +86,17 @@ export const WELCOME_SUBSTEPS: WelcomeSubStep[] = [
   {
     title: "Welcome to Vox.",
     tagline:
-      "Vox is a low-latency audio intelligence system designed to live in your system tray and provide real-time interaction.",
+      "Vox is your personal voice assistant — fast, always ready, and fully private. Everything runs on your computer, never in the cloud.",
   },
   {
-    title: "The AI Core",
+    title: "Your Voice Assistant",
     tagline:
-      "Powered by edge AI models. Experience low-latency intelligence that processes everything locally on your hardware.",
+      "Vox listens and replies using on-device voice AI. It works offline, instantly, and privately on your hardware.",
   },
   {
-    title: "Vox Live HUD",
+    title: "The Voice Overlay",
     tagline:
-      "An AI transcription overlay that follows your voice. It appears instantly when you speak and disappears when finished.",
+      "When you speak, a live transcript follows your voice. It appears the moment you talk and fades when you stop.",
   },
 ];
 
@@ -107,38 +107,38 @@ export interface FeatureCard {
 }
 
 export const WELCOME_FEATURE_CARDS: FeatureCard[] = [
-  { icon: ShieldCheck, title: "Privacy", desc: "100% On-device" },
-  { icon: Zap, title: "Latency", desc: "Low-Latency Inference" },
-  { icon: Globe, title: "Native", desc: "System Integration" },
-  { icon: Activity, title: "Status", desc: "Awaiting Initialization" },
+  { icon: ShieldCheck, title: "Private", desc: "Never leaves your device" },
+  { icon: Zap, title: "Instant", desc: "Replies in under a second" },
+  { icon: Globe, title: "Always On", desc: "Lives in your menu bar" },
+  { icon: Activity, title: "Ready", desc: "Set up in minutes" },
 ];
 
 export const WELCOME_TOOLTIPS = {
   status: {
     title: "Live Status",
-    desc: "Passive VAD detection shows when Vox is actively listening to your environment.",
+    desc: "Shows when Vox is listening for your voice in the background.",
   },
   mic: {
     title: "Push-To-Talk",
-    desc: "Override passive listening for absolute control. Perfect for high-precision input in crowded environments.",
+    desc: "Hold the button to talk. Gives you full control over when Vox is listening.",
   },
   copy: {
     title: "Instant Copy",
-    desc: "One-click to move the finalized transcript to your clipboard for any application.",
+    desc: "Click once to copy the finished transcript, ready to paste anywhere.",
   },
   history: {
-    title: "Ephemeral History",
-    desc: "Quickly browse the last 10 transcripts without leaving your current window.",
+    title: "Recent Chats",
+    desc: "Browse your last few conversations without leaving the current window.",
   },
   renderer: {
-    title: "Fluid Streaming",
-    desc: "Transcripts stream character-by-character with sub-50ms latency.",
+    title: "Instant Words",
+    desc: "Words appear as you speak them — no waiting for the transcript.",
   },
 } as const;
 
 export const WELCOME_DEMO_DEFAULT = {
   title: "Interactive Demo",
-  desc: "Hover over HUD elements to explore features. This visual guide mirrors the real-time overlay — showing exactly what you will see when speaking.",
+  desc: "Hover over Vox's screen to see what each part does.",
 } as const;
 
 export const SYSTEM_CHECK_LABELS = ["STORAGE", "AUDIO", "PERMISSIONS", "HARDWARE"] as const;
@@ -150,8 +150,8 @@ export interface StatusCardData {
 }
 
 export const COMPLETED_STATUS_CARDS: StatusCardData[] = [
-  { label: "SPEECH ENGINE", value: "READY", subValue: "Runs completely offline" },
-  { label: "AI MODELS", value: "READY", subValue: "Configured on your device" },
+  { label: "VOICE ENGINE", value: "READY", subValue: "Runs completely offline" },
+  { label: "VOICE MODELS", value: "READY", subValue: "Configured on your device" },
   { label: "SYSTEM TRAY", value: "RUNNING", subValue: "Access from your menu bar" },
   { label: "PRIVACY", value: "SECURED", subValue: "100% private & safe" },
 ];
@@ -163,11 +163,11 @@ export const COMPLETED_TIP = {
 
 export const WIZARD_CTA_LABELS = {
   beginSetup: "Begin Setup",
-  beginSynchronization: "Begin Synchronization",
-  synchronizing: "Synchronizing...",
-  fetchingCatalog: "Fetching Catalog...",
-  proceedToModelSync: "Proceed to Model Sync",
-  continueToVerification: "Continue to Verification",
+  beginSynchronization: "Download Models",
+  synchronizing: "Downloading...",
+  fetchingCatalog: "Loading Models...",
+  proceedToModelSync: "Continue to Download",
+  continueToVerification: "Continue",
   startUsingVox: "Start Using Vox",
   continueSetup: "Continue Setup",
   returnToSelection: "Return to Selection",

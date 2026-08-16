@@ -176,7 +176,7 @@ export const InteractionCard = memo(
         <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
             <Sliders className="text-[rgb(var(--accent))]" size={layoutMode === "small" ? 15 : 18} />
-            <span className="text-[12px] sm:text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+            <span className="text-[12px] sm:text-[13px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
               Interaction
             </span>
           </div>

@@ -3,6 +3,7 @@ import { Search, X } from "lucide-react";
 import { MemoryNodeTopology } from "@/services/memoryService";
 import { getCollectionIcon, getCollectionColor } from "@/shared/components/memory/MemoryGraph";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 interface SearchBarProps {
   nodes: MemoryNodeTopology[];
@@ -59,25 +60,26 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 200)}
-          placeholder="Search memory graph..."
+          placeholder="Search your memories..."
           className="w-full bg-transparent border-0 outline-none text-[12px] font-sans text-[rgb(var(--foreground))] placeholder-[rgb(var(--foreground-muted))] font-medium"
         />
 
         {value && (
-          <button
-            onClick={handleClear}
-            className="p-1 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer shrink-0"
-            title="Clear search"
-          >
-            <X size={14} />
-          </button>
+          <Tooltip label="Clear search">
+            <button
+              onClick={handleClear}
+              className="p-1 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer shrink-0"
+            >
+              <X size={14} />
+            </button>
+          </Tooltip>
         )}
       </div>
 
       {/* Popover Suggestions with Collection Icons and Fact Content */}
       {focused && results.length > 0 && (
         <div className="absolute top-full mt-2 left-0 right-0 p-2 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/95 backdrop-blur-2xl shadow-2xl flex flex-col gap-1 z-40 max-h-[260px] overflow-y-auto">
-          <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] px-2 py-1 block">
+          <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] px-2 py-1 block">
             Matching Memory Facts ({results.length})
           </span>
           {results.map((node) => {
@@ -105,7 +107,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                   {displayText}
                 </span>
                 <span
-                  className="text-[10px] font-sans font-semibold px-2 py-0.5 rounded-full shrink-0 shadow-xs"
+                  className="text-[11px] font-sans font-semibold px-2 py-0.5 rounded-full shrink-0 shadow-xs"
                   style={{ backgroundColor: `${palette.main}20`, color: palette.main }}
                 >
                   {node.collection}

@@ -26,6 +26,7 @@ import {
   MetricCarousel,
   LiquidChamber,
 } from "@/shared/components/monitoring";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 interface MonitoringProps {
   popover?: boolean;
@@ -76,7 +77,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     engineToggling: togglingEngine,
     setEngineToggling: setTogglingEngine,
     formatLatency,
-  } = useMonitoringMetrics();
+  } = useMonitoringMetrics(!popover || open);
 
   const isEngineLoaded = useMemo(() => {
     return !!(
@@ -104,23 +105,23 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     );
   }, [latest, isEdgeLoaded]);
 
-  // Derive model variant labels (llm, stt, tts)
+  // Derive model variant labels (thinking, hearing, speaking)
   const variants = useMemo(() => {
-    let llmVariant = "Embedded";
+    let llmVariant = "On Device";
     if (llmProvider === "open_ai_compat") {
-      llmVariant = "Server";
+      llmVariant = "On Server";
     }
 
-    let ttsVariant = "Embedded";
+    let ttsVariant = "On Device";
     if (ttsProvider === "edge_tts") {
-      ttsVariant = "Cloud";
+      ttsVariant = "In Cloud";
     } else if (ttsProvider === "chatterbox_remote") {
-      ttsVariant = "Server";
+      ttsVariant = "On Server";
     }
 
-    let sttVariant = "Embedded";
+    let sttVariant = "On Device";
     if (sttProvider && sttProvider !== "embedded") {
-      sttVariant = "Server";
+      sttVariant = "On Server";
     }
 
     return {
@@ -211,7 +212,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-[13px] font-mono font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+              <h2 className="text-[13px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
                 SYSTEM MONITOR
               </h2>
               <span className="flex h-2 w-2 relative">
@@ -225,41 +226,44 @@ export const Monitoring: React.FC<MonitoringProps> = ({
                 />
               </span>
             </div>
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] uppercase tracking-wider">
-              Live Voice Engine Telemetry
+            <span className="text-[11px] text-[rgb(var(--foreground-muted))] tracking-wider">
+              Real-time usage
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           {/* Unload / Load Models Button with Skull Icon when Loaded */}
-          <button
-            onClick={handleToggleEngine}
-            disabled={togglingEngine}
-            title={isEngineLoaded ? "Unload all models from memory" : "Load models into memory"}
-            style={{
-              backgroundColor: isEngineLoaded
-                ? "rgba(239, 68, 68, 0.12)"
-                : `rgba(${colors.primary}, 0.12)`,
-              borderColor: isEngineLoaded
-                ? "rgba(239, 68, 68, 0.35)"
-                : `rgba(${colors.primary}, 0.35)`,
-              color: isEngineLoaded ? "#ef4444" : `rgb(${colors.primary})`,
-            }}
-            className={cn(
-              "px-3 py-1.5 rounded-xl border transition-all duration-300 flex items-center gap-1.5 text-[10.5px] font-mono font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02]",
-              togglingEngine && "opacity-50 cursor-wait"
-            )}
+          <Tooltip
+            label={isEngineLoaded ? "Unload all models from memory" : "Load models into memory"}
           >
-            {togglingEngine ? (
-              <RefreshCw size={12} className="animate-spin" />
-            ) : isEngineLoaded ? (
-              <Skull size={13} className="text-red-400" />
-            ) : (
-              <RefreshCw size={12} />
-            )}
-            <span>{isEngineLoaded ? "UNLOAD ALL" : "LOAD MODELS"}</span>
-          </button>
+            <button
+              onClick={handleToggleEngine}
+              disabled={togglingEngine}
+              style={{
+                backgroundColor: isEngineLoaded
+                  ? "rgba(239, 68, 68, 0.12)"
+                  : `rgba(${colors.primary}, 0.12)`,
+                borderColor: isEngineLoaded
+                  ? "rgba(239, 68, 68, 0.35)"
+                  : `rgba(${colors.primary}, 0.35)`,
+                color: isEngineLoaded ? "#ef4444" : `rgb(${colors.primary})`,
+              }}
+              className={cn(
+                "px-3 py-1.5 rounded-xl border transition-all duration-300 flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02]",
+                togglingEngine && "opacity-50 cursor-wait"
+              )}
+            >
+              {togglingEngine ? (
+                <RefreshCw size={12} className="animate-spin" />
+              ) : isEngineLoaded ? (
+                <Skull size={13} className="text-red-400" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              <span>{isEngineLoaded ? "UNLOAD ALL" : "LOAD MODELS"}</span>
+            </button>
+          </Tooltip>
 
           {popover && onClose && (
             <button

@@ -71,17 +71,17 @@ export const ModelCategory = ({
                 <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className={cn(
                         "w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-500 shrink-0",
-                        selected ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.1)]" : "bg-white/5 text-[rgb(var(--foreground-muted))]"
+                        selected ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.1)]" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
                     )}>
                         {React.cloneElement(icon as React.ReactElement<any>, { className: "w-5 h-5" })}
                     </div>
                     <div className="flex flex-col flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="text-[14px] font-black text-[rgb(var(--foreground))] uppercase tracking-[0.15em]">{label}</span>
+                            <span className="font-display text-[14px] font-black text-[rgb(var(--foreground))] uppercase tracking-[0.15em]">{label}</span>
                             {required ? (
                                 <span className="text-[11px] font-black bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgb(var(--accent))]/20 shrink-0">Mandatory</span>
                             ) : (
-                                <span className="text-[11px] font-black bg-white/5 text-[rgb(var(--foreground-muted))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgba(var(--border),0.08)] shrink-0">Optional Layer</span>
+                                <span className="text-[11px] font-black bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgba(var(--border),0.08)] shrink-0">Optional</span>
                             )}
                         </div>
                         <p className="text-[12px] text-[rgb(var(--foreground-muted))] font-bold uppercase tracking-[0.05em] truncate">
@@ -109,7 +109,7 @@ export const ModelCategory = ({
                             {selected && (
                                 <Check className={cn(
                                     "w-4 h-4 stroke-[4]",
-                                    required ? "text-[rgb(var(--accent))]" : "text-black"
+                                    required ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground))]"
                                 )} />
                             )}
                         </div>
@@ -158,7 +158,7 @@ export const ModelCategory = ({
                                                 {isGroupSelected && (
                                                     <Check className={cn(
                                                         "w-2.5 h-2.5 stroke-[4]",
-                                                        required ? "text-[rgb(var(--accent))]" : "text-black"
+                                                        required ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground))]"
                                                     )} />
                                                 )}
                                             </div>

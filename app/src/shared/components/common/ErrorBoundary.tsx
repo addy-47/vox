@@ -62,7 +62,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
             {/* Error Title */}
             <div>
-              <h2 className="text-lg font-black text-[rgb(var(--foreground))] uppercase tracking-tight mb-2">
+              <h2 className="font-display text-lg font-black text-[rgb(var(--foreground))] uppercase tracking-tight mb-2">
                 Render Error
               </h2>
               <p className="text-[12px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em]">

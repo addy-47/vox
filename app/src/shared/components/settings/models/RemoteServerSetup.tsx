@@ -48,7 +48,7 @@ export const RemoteServerSetup = memo(({
             Setup Remote GPU Server (SSH Setup Required)
           </span>
           <span className={cn(
-            "text-[10px] font-black uppercase px-1.5 py-0.5 rounded border",
+            "text-[11px] font-black uppercase px-1.5 py-0.5 rounded border",
             isRemoteTtsHealthy
               ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
               : "bg-rose-500/10 text-rose-400 border-rose-500/20"
@@ -59,7 +59,7 @@ export const RemoteServerSetup = memo(({
 
         <div className="grid grid-cols-[2.5fr_1fr_2.5fr] gap-2.5">
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
+            <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
               SSH Host / Profile
             </label>
             <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
@@ -73,7 +73,7 @@ export const RemoteServerSetup = memo(({
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
+            <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
               SSH Port
             </label>
             <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
@@ -87,7 +87,7 @@ export const RemoteServerSetup = memo(({
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
+            <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
               Identity Key Path
             </label>
             <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
@@ -126,7 +126,7 @@ export const RemoteServerSetup = memo(({
               />
             </div>
             {setupStatus.log_line && (
-              <p className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 truncate">
+              <p className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 truncate">
                 {setupStatus.log_line}
               </p>
             )}

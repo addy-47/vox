@@ -236,7 +236,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]/80">
                 Unified End-to-End Voice Engine
               </span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
+              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
                 Sub-200ms
               </span>
             </div>
@@ -282,7 +282,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
               Coming Soon
             </span>
-            <p className="text-[10.5px] text-[rgb(var(--foreground-muted))]/70 leading-normal font-medium line-clamp-1 mt-0.5">
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-normal font-medium line-clamp-1 mt-0.5">
               Remote WebSocket speech-to-text server streaming will be available in a future update.
             </p>
           </div>
@@ -303,7 +303,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
               Coming Soon
             </span>
-            <p className="text-[10.5px] text-[rgb(var(--foreground-muted))]/70 leading-normal font-medium line-clamp-1 mt-0.5">
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-normal font-medium line-clamp-1 mt-0.5">
               Ultra-fast Groq & Deepgram cloud speech-to-text integration is in active development.
             </p>
           </div>
@@ -463,7 +463,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
           <div className="grid grid-cols-2 gap-2.5">
             <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
+              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
                 Server HTTP URL
               </label>
               <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
@@ -477,7 +477,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
+              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
                 Remote Path
               </label>
               <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
@@ -505,7 +505,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[11px] font-bold text-emerald-400 uppercase font-mono">
+              <span className="text-[11px] font-bold text-emerald-400 uppercase">
                 Zero Config
               </span>
             </div>

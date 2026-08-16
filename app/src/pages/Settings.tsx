@@ -56,6 +56,7 @@ const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMo
 DomainContent.displayName = "DomainContent";
 
 import { RadialNode, HubConnectors } from "@/shared/components/settings/RadialHub";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 // ─── Hub center ───────────────────────────────────────────────────────────────
 
@@ -65,12 +66,18 @@ interface HubCenterProps {
 }
 
 const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
-  <button
-    id="center-node"
-    onClick={onClick}
-    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full flex items-center justify-center transition-all duration-400 z-30 cursor-pointer"
-    aria-label={hasActiveCards ? "Clear all selections" : "Configure all domains"}
+  <Tooltip
+    label={hasActiveCards ? SETTINGS_COPY.closeAllDomains : SETTINGS_COPY.openAllDomains}
+    side="top"
+    wrapperClassName="absolute left-1/2 top-1/2 z-30"
+    wrapperStyle={{ transform: "translate(-50%, -50%)" }}
   >
+    <button
+      id="center-node"
+      onClick={onClick}
+      className="relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-400 cursor-pointer"
+      aria-label={hasActiveCards ? SETTINGS_COPY.closeAllDomains : SETTINGS_COPY.openAllDomains}
+    >
     {/* Layer 1 (outermost): A circle ~52px diameter */}
     <div
       className="absolute rounded-full border border-dashed transition-all duration-400"
@@ -118,7 +125,8 @@ const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
         boxShadow: "0 0 8px rgba(var(--accent), 0.8)",
       }}
     />
-  </button>
+    </button>
+  </Tooltip>
 ));
 HubCenter.displayName = "HubCenter";
 
@@ -264,17 +272,6 @@ export const Settings: React.FC = () => {
     handleCenterClick,
   } = useSettingsPage();
 
-  // Eagerly prewarm lazy card components on mount so cards and SVG lines appear synchronously
-  useEffect(() => {
-    loadPersona();
-    loadModels();
-    loadRealtime();
-    loadHistory();
-    loadMemory();
-    loadAppearance();
-    loadInteraction();
-  }, []);
-
   if (!draftSettings) {
     return (
       <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10">
@@ -344,6 +341,17 @@ export const Settings: React.FC = () => {
                     fill="none"
                     stroke="var(--connection-core)"
                     strokeWidth={1.5}
+                  />
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="rgb(var(--accent))"
+                    strokeWidth={1.75}
+                    strokeLinecap="round"
+                    strokeDasharray="4 560"
+                    style={{
+                      animation: `connector-flow 0.9s ease-out ${DOMAINS.indexOf(domain) * 0.12}s forwards`,
+                    }}
                   />
                 </g>
               );
@@ -482,7 +490,7 @@ export const Settings: React.FC = () => {
                       <Icon size={18} />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[16px] font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
+                      <span className="text-[16px] font-display font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
                         {domain.label}
                       </span>
                       <span className="text-[11px] font-semibold tracking-wider uppercase text-[rgb(var(--foreground-muted))]">

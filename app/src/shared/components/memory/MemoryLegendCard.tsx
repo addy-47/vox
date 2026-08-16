@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Layers, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 interface MemoryLegendCardProps {
   selectedCollection: string;
@@ -40,10 +41,10 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
       {minimized ? (
         <button
           onClick={() => setMinimized(false)}
-          className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-sans text-[rgb(var(--foreground))] hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
+          className="flex items-center gap-2 px-3 py-1.5 text-[11px] font-sans text-[rgb(var(--foreground))] hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
         >
           <Layers size={12} className="text-[rgb(var(--accent))]" />
-          <span className="font-bold uppercase tracking-wider text-[10px]">Graph Legend</span>
+          <span className="font-bold uppercase tracking-wider text-[11px]">Memory Legend</span>
           <ChevronDown size={13} className="text-[rgb(var(--accent))]" />
         </button>
       ) : (
@@ -52,30 +53,32 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
           <div className="flex items-center justify-between px-1 pb-1.5 border-b border-[rgba(var(--border),0.08)]">
             <div className="flex items-center gap-1.5">
               <Layers size={12} className="text-[rgb(var(--accent))]" />
-              <span className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-[rgb(var(--foreground-muted))]">
-                Graph Legend
+              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-[rgb(var(--foreground-muted))]">
+                Memory Legend
               </span>
             </div>
             <div className="flex items-center gap-1">
               {(selectedCollection !== "all" || selectedRelation !== "all") && (
-                <button
-                  onClick={() => {
-                    onSelectCollection("all");
-                    onSelectRelation?.("all");
-                  }}
-                  className="p-1 rounded text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer"
-                  title="Reset filters"
-                >
-                  <RotateCcw size={11} />
-                </button>
+                <Tooltip label="Reset filters">
+                  <button
+                    onClick={() => {
+                      onSelectCollection("all");
+                      onSelectRelation?.("all");
+                    }}
+                    className="p-1 rounded text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw size={11} />
+                  </button>
+                </Tooltip>
               )}
-              <button
-                onClick={() => setMinimized(true)}
-                className="p-1 rounded text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
-                title="Collapse legend"
-              >
-                <ChevronUp size={13} />
-              </button>
+              <Tooltip label="Collapse legend">
+                <button
+                  onClick={() => setMinimized(true)}
+                  className="p-1 rounded text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <ChevronUp size={13} />
+                </button>
+              </Tooltip>
             </div>
           </div>
 

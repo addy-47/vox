@@ -74,7 +74,7 @@ export const VoiceRippleNode = memo(
           <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">
             {formatTime(session.started_at)}
           </span>
-          <span className="text-[10px] font-mono font-medium text-[rgb(var(--foreground-muted))]">
+          <span className="text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))]">
             {session.turn_count} {session.turn_count === 1 ? "turn" : "turns"}
           </span>
         </div>

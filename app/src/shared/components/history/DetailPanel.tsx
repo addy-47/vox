@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { formatDateTime, type SessionRow, type TurnRow } from "@/services/historyService";
 import { EmptyState } from "@/shared/components/common/EmptyState";
 import { HISTORY_COPY } from "@/data/historyCopy";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, {
@@ -46,7 +47,7 @@ export const DetailPanel = memo(
             <span className="text-[12px] font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))]">
               Session #{session.id}
             </span>
-            <div className="text-[10px] font-mono font-medium text-[rgb(var(--foreground-muted))] mt-0.5">
+            <div className="text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))] mt-0.5">
               {formatDateTime(session.started_at)} · {session.turn_count} {session.turn_count === 1 ? HISTORY_COPY.turnSingular : HISTORY_COPY.turnPlural}
             </div>
           </div>
@@ -83,7 +84,7 @@ export const DetailPanel = memo(
           ) : turns.length === 0 ? (
             <EmptyState
               icon={Ghost}
-              title="No interaction data"
+              title="No conversation data"
               className="py-12 border-0 bg-transparent"
             />
           ) : (
@@ -92,7 +93,7 @@ export const DetailPanel = memo(
                 <div key={turn.id} className="space-y-4">
                   {/* User bubble */}
                   <div className="flex flex-col items-end w-full">
-                    <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-1 mr-2">
+                    <span className="text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-1 mr-2">
                       USER
                     </span>
                     <div className="glass-card rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words prose prose-invert select-text">
@@ -102,21 +103,25 @@ export const DetailPanel = memo(
 
                   {/* Assistant bubble */}
                   <div className="flex flex-col items-start w-full">
-                    <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-1 ml-2">
+                    <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-1 ml-2">
                       VOX
                     </span>
                     <div className="glass-card rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words prose prose-invert select-text border border-[rgba(var(--accent),0.15)]">
                       <ReactMarkdown>{turn.assistant_text}</ReactMarkdown>
-                      <div className="flex gap-3 mt-2 border-t border-[rgba(var(--accent),0.1)] pt-1.5 shrink-0 text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                      <div className="flex gap-3 mt-2 border-t border-[rgba(var(--accent),0.1)] pt-1.5 shrink-0 text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
                         {turn.stt_latency_ms !== null && (
-                          <span title="Speech-To-Text Audio Recognition Latency" className="hover:text-[rgb(var(--accent))] transition-colors">
-                            STT {turn.stt_latency_ms}ms
-                          </span>
+                          <Tooltip label="Hearing time">
+                            <span className="cursor-help hover:text-[rgb(var(--accent))] transition-colors">
+                              Hearing {turn.stt_latency_ms}ms
+                            </span>
+                          </Tooltip>
                         )}
                         {turn.ttft_ms !== null && (
-                          <span title="Time-To-First-Token Response Speed" className="hover:text-[rgb(var(--accent))] transition-colors">
-                            TTFT {turn.ttft_ms}ms
-                          </span>
+                          <Tooltip label="Thinking time">
+                            <span className="cursor-help hover:text-[rgb(var(--accent))] transition-colors">
+                              Thinking {turn.ttft_ms}ms
+                            </span>
+                          </Tooltip>
                         )}
                         <span className="ml-auto text-[rgb(var(--foreground-muted))] font-medium">
                           {formatTime(turn.created_at)}
@@ -131,7 +136,7 @@ export const DetailPanel = memo(
                 <div className="flex justify-center pt-2">
                   <button
                     onClick={() => setVisibleCount((prev) => prev + 20)}
-                    className="px-4 py-2 rounded-xl glass-card text-[11px] font-mono font-bold text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer"
+                    className="px-4 py-2 rounded-xl glass-card text-[11px] font-bold text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer"
                   >
                     Load Older Turns ({turns.length - visibleCount} remaining)
                   </button>
