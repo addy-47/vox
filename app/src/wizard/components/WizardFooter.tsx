@@ -64,7 +64,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
           onClick={onNext}
           disabled={isNextDisabled || isNextLoading}
           className={cn(
-            "group relative flex-1 py-5 text-white font-black rounded-2xl overflow-hidden border transition-all glass-card",
+            "group relative flex-1 py-5 text-[rgb(var(--foreground))] font-black rounded-2xl overflow-hidden border transition-all glass-card",
             (isNextDisabled || isNextLoading) ? "opacity-50 cursor-not-allowed" : "hover:border-[rgb(var(--accent))]/70 active:scale-[0.98]"
           )}
         >

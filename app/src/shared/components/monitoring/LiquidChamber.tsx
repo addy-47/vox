@@ -54,7 +54,9 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
     const container = chamberContainerRef.current;
     if (!canvas || !container) return;
 
-    let rafId: number;
+    const ctx = canvas.getContext("2d");
+    let rafId = 0;
+    let running = true;
     let time = 0;
 
     let curRamFill = Math.max(0.18, Math.min(0.85, metricsRef.current.ramPct / 100));
@@ -89,9 +91,13 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
     };
 
     const render = () => {
+      if (!running || !ctx) return;
+      if (document.hidden) {
+        rafId = 0;
+        return;
+      }
+
       time += 0.02;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
 
       const dpr = window.devicePixelRatio || 1;
       const width = logicalWidth;
@@ -252,11 +258,25 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
     });
     resizeObserver.observe(container);
 
+    const onVisibility = () => {
+      if (document.hidden) {
+        running = false;
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = 0;
+      } else if (!running) {
+        running = true;
+        rafId = requestAnimationFrame(render);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     rafId = requestAnimationFrame(render);
 
     return () => {
+      running = false;
+      document.removeEventListener("visibilitychange", onVisibility);
       resizeObserver.disconnect();
-      cancelAnimationFrame(rafId);
+      if (rafId) cancelAnimationFrame(rafId);
     };
   }, [open, popover]);
 
@@ -275,7 +295,7 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       <div className="relative z-10 w-full flex items-center justify-between">
         {/* Top-Left CPU Pill */}
         <div
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-[rgba(var(--card),0.35)] border border-white/10 backdrop-blur-md shadow-sm text-[11px] font-mono font-bold"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-[rgba(var(--card),0.35)] border border-white/10 shadow-sm text-[11px] font-mono font-bold"
           style={{ color: `rgb(${colors.complementary})` }}
         >
           <span
@@ -287,7 +307,7 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
 
         {/* Top-Right RAM Pill */}
         <div
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-[rgba(var(--card),0.35)] border border-white/10 backdrop-blur-md shadow-sm text-[11px] font-mono font-bold"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-[rgba(var(--card),0.35)] border border-white/10 shadow-sm text-[11px] font-mono font-bold"
           style={{ color: `rgb(${colors.primary})` }}
         >
           <span
@@ -308,7 +328,7 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
                 ? `0 0 35px rgba(${colors.primary}, 0.7)`
                 : "none",
             }}
-            className="text-7xl font-sans font-black tracking-tighter leading-none"
+            className="text-7xl font-display font-black tracking-tighter leading-none"
           >
             {activeModelsCount}
           </span>
@@ -318,12 +338,12 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
         </div>
 
         <div className="mt-2 flex items-center gap-2">
-          <span className="text-[12.5px] font-mono font-bold tracking-[0.25em] uppercase text-white/90 drop-shadow-md">
-            {activeModelsCount === 1 ? "MODEL RESIDENT" : "MODELS RESIDENT"}
+          <span className="text-[12px] font-bold tracking-[0.25em] uppercase text-white/90 drop-shadow-md">
+            {activeModelsCount === 1 ? "MODEL IN MEMORY" : "MODELS IN MEMORY"}
           </span>
         </div>
-        <span className="text-[10.5px] font-sans text-white/60 tracking-wider mt-0.5 max-w-[240px]">
-          Realtime dual-frequency wave containment
+        <span className="text-[11px] font-sans text-white/60 tracking-wider mt-0.5 max-w-[240px]">
+          Your computer's activity, visualized
         </span>
       </div>
 
@@ -340,11 +360,11 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
               ? `0 0 16px rgba(${colors.primary}, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.25)`
               : "none",
           }}
-          className="px-3 py-2 rounded-2xl border backdrop-blur-xl flex flex-col items-center text-center shadow-lg transition-all duration-300 hover:bg-white/[0.12]"
+          className="px-3 py-2 rounded-2xl border  flex flex-col items-center text-center shadow-lg transition-all duration-300 hover:bg-white/[0.12]"
         >
-          <div className="flex items-center gap-1.5 text-[9.5px] font-mono font-bold text-white/80 uppercase">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-white/80 uppercase">
             <Brain size={11} style={{ color: `rgb(${colors.primary})` }} />
-            <span>LLM</span>
+            <span>Thinking</span>
           </div>
           <span
             style={{
@@ -367,11 +387,11 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
               ? `0 0 16px rgba(${colors.complementary}, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.25)`
               : "none",
           }}
-          className="px-3 py-2 rounded-2xl border backdrop-blur-xl flex flex-col items-center text-center shadow-lg transition-all duration-300 hover:bg-white/[0.12]"
+          className="px-3 py-2 rounded-2xl border  flex flex-col items-center text-center shadow-lg transition-all duration-300 hover:bg-white/[0.12]"
         >
-          <div className="flex items-center gap-1.5 text-[9.5px] font-mono font-bold text-white/80 uppercase">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-white/80 uppercase">
             <Mic size={11} style={{ color: `rgb(${colors.complementary})` }} />
-            <span>STT</span>
+            <span>Hearing</span>
           </div>
           <span
             style={{
@@ -396,11 +416,11 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
               ? `0 0 16px rgba(${colors.primary}, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.25)`
               : "none",
           }}
-          className="px-3 py-2 rounded-2xl border backdrop-blur-xl flex flex-col items-center text-center shadow-lg transition-all duration-300 hover:bg-white/[0.12]"
+          className="px-3 py-2 rounded-2xl border  flex flex-col items-center text-center shadow-lg transition-all duration-300 hover:bg-white/[0.12]"
         >
-          <div className="flex items-center gap-1.5 text-[9.5px] font-mono font-bold text-white/80 uppercase">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-white/80 uppercase">
             <Volume2 size={11} style={{ color: `rgb(${colors.primary})` }} />
-            <span>TTS</span>
+            <span>Speaking</span>
           </div>
           <span
             style={{

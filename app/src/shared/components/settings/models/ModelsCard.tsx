@@ -480,7 +480,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
             <Database className="text-[rgb(var(--accent))]" size={18} />
-            <span className="text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+            <span className="font-display text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
               Model Hub
             </span>
           </div>

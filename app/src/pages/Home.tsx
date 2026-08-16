@@ -149,7 +149,7 @@ export const Home = memo(() => {
       {/* ── Top-right: Status Capsule (single, clean, centered on mobile) ── */}
       <div className="absolute top-[10%] md:top-4 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-5 z-30 flex items-center gap-2 pointer-events-none">
         {cpuWarning && (
-          <span className="text-[10px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
+          <span className="text-[11px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
             Mode: {GOVERNOR_LABELS[cpuWarning.governor] || cpuWarning.governor}
           </span>
         )}
@@ -264,7 +264,7 @@ export const Home = memo(() => {
           {/* Primary Engage / Disengage Button */}
           <div className="relative flex flex-col items-center">
             {!isEngaged && hasCachedSession && (
-              <span className="absolute -top-7 text-[10px] font-mono tracking-widest text-[rgb(var(--accent))]/85 uppercase animate-pulse whitespace-nowrap bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded-full border border-[rgb(var(--accent))]/15">
+              <span className="absolute -top-7 text-[11px] tracking-widest text-[rgb(var(--accent))]/85 uppercase animate-pulse whitespace-nowrap bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded-full border border-[rgb(var(--accent))]/15">
                 Resume Session
               </span>
             )}
@@ -337,7 +337,7 @@ export const Home = memo(() => {
             className="fixed bottom-16 right-4 w-56 p-2 flex flex-col gap-1 z-50 glass-card no-blur"
           >
             <div className="px-2 py-1 border-b border-[rgba(var(--accent),0.1)] mb-1">
-              <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--accent))] uppercase block">
+              <span className="text-[11px] tracking-widest text-[rgb(var(--accent))] uppercase block">
                 Select Test Input
               </span>
             </div>

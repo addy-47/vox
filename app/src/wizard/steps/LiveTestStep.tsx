@@ -85,9 +85,9 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
   return (
     <div className="flex flex-col h-full max-h-[100vh] overflow-hidden justify-between relative select-none">
       <WizardHeader 
-        step="Step 4.0 • Voice Showcase"
-        title="Voice Experience"
-        description="Experience real-time local Voice Activity Detection (VAD) and Speech-to-Text (STT) understanding. Say something to watch the live local transcription."
+        step="Step 5 of 6 · Test Your Voice"
+        title="Try It Out"
+        description="Say something and watch Vox understand you in real time — entirely on your computer."
       />
 
       <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-hidden justify-center">
@@ -101,12 +101,12 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                       <X className="w-5 h-5" />
                   </div>
                   <div className="flex flex-col">
-                      <h3 className="text-white font-black uppercase tracking-widest text-[12px]">Engine Failure</h3>
+                      <h3 className="text-[rgb(var(--foreground))] font-black uppercase tracking-widest text-[12px]">Couldn't Start the Voice Engine</h3>
                       <button 
                           onClick={setup}
                           className="text-[12px] font-black uppercase tracking-widest text-[rgb(var(--accent))] hover:underline text-left mt-0.5"
                       >
-                          Retry Initialization
+                          Try Again
                       </button>
                   </div>
               </div>
@@ -126,7 +126,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                           transition={{ type: "spring", stiffness: 350, damping: 25 }}
                           className={cn(
                             "w-1 rounded-full transition-colors duration-300",
-                            energy > 2 ? "bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.5)]" : "bg-white/10"
+                            energy > 2 ? "bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.5)]" : "bg-[rgba(var(--foreground),0.1)]"
                           )}
                           style={{ minHeight: "3px" }}
                         />
@@ -134,8 +134,8 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                     })}
                   </div>
                   
-                  <span className="text-[12px] font-black text-white/20 uppercase tracking-[0.3em] mt-4">
-                    {isEngineReady ? (energy > 2 ? "Active speech feedback" : "Awaiting microphone input") : "Initializing audio pipeline"}
+                  <span className="text-[12px] font-black text-[rgb(var(--foreground-muted))]/50 uppercase tracking-[0.3em] mt-4">
+                    {isEngineReady ? (energy > 2 ? "Voice detected" : "Waiting for your voice") : "Starting the voice engine"}
                   </span>
               </div>
           )}
@@ -147,8 +147,8 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
             testComplete ? "border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.04)]" : ""
         )}>
             <div className="flex items-center justify-between mb-2">
-                <span className="text-[12px] font-black text-white/20 uppercase tracking-[0.3em] flex items-center gap-2">
-                    <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))]/60" /> Live Transcript
+                <span className="text-[12px] font-black text-[rgb(var(--foreground-muted))]/50 uppercase tracking-[0.3em] flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))]/60" /> Your Words
                 </span>
                 {testComplete && (
                     <motion.span 
@@ -168,7 +168,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                             key="text"
                             initial={{ opacity: 0, y: 3 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="text-base font-bold text-white tracking-tight leading-snug overflow-y-auto max-h-full custom-scrollbar pr-1"
+                            className="text-base font-bold text-[rgb(var(--foreground))] tracking-tight leading-snug overflow-y-auto max-h-full custom-scrollbar pr-1"
                         >
                             {transcript}
                             {!testComplete && <motion.span animate={{ opacity: [1, 0.4, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="inline-block w-1.5 h-3.5 bg-[rgb(var(--accent))] ml-1.5 align-middle" />}
@@ -178,9 +178,9 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                             key="placeholder"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            className="text-white/20 italic font-medium text-sm"
+                            className="text-[rgb(var(--foreground-muted))]/60 italic font-medium text-sm"
                         >
-                            {isEngineReady ? "Speak to preview live transcript..." : "Initializing local voice models..."}
+                            {isEngineReady ? "Speak now — your words will appear here." : "Starting local voice models..."}
                         </motion.p>
                     )}
                 </AnimatePresence>
@@ -192,27 +192,27 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
             <div className="p-3 glass flex items-center gap-3">
                 <div className={cn(
                     "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0",
-                    energy > 2 ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] scale-105" : "bg-white/5 text-white/40"
+                    energy > 2 ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] scale-105" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/60"
                 )}>
                     <Activity className="w-4 h-4" />
                 </div>
                 <div className="flex flex-col min-w-0">
-                    <span className="text-[9px] font-bold text-white/20 uppercase tracking-widest truncate">Voice Activity (VAD)</span>
-                    <span className="text-xs font-black text-white truncate">
-                        {isEngineReady ? (energy > 2 ? "Speech Detected" : "Listening...") : "---"}
+                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest truncate">Voice Level</span>
+                    <span className="text-xs font-black text-[rgb(var(--foreground))] truncate">
+                        {isEngineReady ? (energy > 2 ? "Voice Detected" : "Listening...") : "---"}
                     </span>
                 </div>
             </div>
             <div className="p-3 glass flex items-center gap-3">
                 <div className={cn(
                     "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0",
-                    testComplete ? "bg-emerald-500/10 text-emerald-400 scale-105" : "bg-white/5 text-white/40"
+                    testComplete ? "bg-emerald-500/10 text-emerald-400 scale-105" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/60"
                 )}>
                     {testComplete ? <Check className="w-4 h-4" /> : <Sparkles className="w-4 h-4 animate-pulse" />}
                 </div>
                 <div className="flex flex-col min-w-0">
-                    <span className="text-[9px] font-bold text-white/20 uppercase tracking-widest truncate">Speech-To-Text (STT)</span>
-                    <span className="text-xs font-black text-white truncate">
+                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest truncate">Your Words</span>
+                    <span className="text-xs font-black text-[rgb(var(--foreground))] truncate">
                         {testComplete ? "Text Received" : "Waiting..."}
                     </span>
                 </div>

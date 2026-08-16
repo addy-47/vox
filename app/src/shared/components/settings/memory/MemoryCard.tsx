@@ -80,7 +80,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
         <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
             <Database className="text-[rgb(var(--accent))]" size={18} />
-            <span className="text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+            <span className="font-display text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
               Memory Stack
             </span>
           </div>
@@ -94,7 +94,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
         </div>
       ) : (
         <div className="flex items-center justify-between mb-4 w-full shrink-0">
-          <span className="text-[13px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+          <span className="font-display text-[13px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
             Memory Settings
           </span>
           <SegmentedControl
@@ -113,7 +113,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
           <div key="retrieval-tab" className="flex-1 flex flex-col justify-between min-h-0 gap-3">
             {/* Toggle 1: Context Retrieval */}
             <ToggleTile
-              title="Episodic RAG Recall"
+              title="Remembers past conversations"
               active={contextRetrievalEnabled}
               activeLabel="Recall Active"
               inactiveLabel="Recall Disabled"
@@ -213,7 +213,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
           <div key="pipeline-tab" className="flex-1 flex flex-col justify-between min-h-0 gap-3">
             {/* Toggle 2: Background Worker */}
             <ToggleTile
-              title="Auto Sweep Pipeline"
+              title="Saves memories automatically"
               active={pipelineProcessingEnabled}
               activeLabel="Sweeper Running"
               inactiveLabel="Sweeper Stopped"

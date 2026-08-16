@@ -13,10 +13,10 @@ export interface SettingsDomain {
 
 export const SETTINGS_DOMAINS: SettingsDomain[] = [
   { id: "persona", label: "Persona", sublabel: "Prompts & identity", icon: UserCircle, angle: -90 },
-  { id: "models", label: "Models", sublabel: "Intelligence engines", icon: Brain, angle: -30 },
+  { id: "models", label: "Models", sublabel: "Voice & thinking models", icon: Brain, angle: -30 },
   { id: "history", label: "History", sublabel: "Session history & limits", icon: History, angle: 30 },
   { id: "appearance", label: "Appearance", sublabel: "Visual theme & colors", icon: Palette, angle: 90 },
-  { id: "memory", label: "Memory", sublabel: "Cognitive memory & RAG", icon: Database, angle: 150 },
+  { id: "memory", label: "Memory", sublabel: "What Vox remembers", icon: Database, angle: 150 },
   { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: Sliders, angle: -150 },
 ];
 
