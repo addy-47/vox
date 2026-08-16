@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Minus, Plus } from "lucide-react";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 export interface RotaryKnobProps {
   label?: string;
@@ -112,14 +113,15 @@ export const RotaryKnob = memo(({
         <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75 mb-1.5 flex items-center gap-1">
           {label}
           {value !== defaultValue && (
+            <Tooltip label={`Reset to ${formatValue(defaultValue)}`}>
             <button
               type="button"
               onClick={resetDefault}
-              title={`Reset to ${formatValue(defaultValue)}`}
-              className="text-[10px] text-[rgb(var(--accent))] hover:underline font-mono cursor-pointer"
+              className="text-[11px] text-[rgb(var(--accent))] hover:underline cursor-pointer"
             >
               (reset)
             </button>
+          </Tooltip>
           )}
         </span>
       )}
@@ -127,22 +129,23 @@ export const RotaryKnob = memo(({
       {/* Main Knob Control Row with Quick Micro Steppers */}
       <div className="flex items-center gap-3">
         {/* Step Down (-) Micro Button */}
+        <Tooltip label="Decrease Value">
         <button
           type="button"
           onClick={stepDown}
           disabled={value <= min}
           className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] hover:border-[rgb(var(--accent))] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center transition-all cursor-pointer"
-          title="Decrease Value"
         >
           <Minus size={13} />
         </button>
+        </Tooltip>
 
         {/* Interactive Rotary Dial */}
+        <Tooltip label="Drag up/down, scroll mouse wheel, or double-click to reset">
         <div
           onMouseDown={handleMouseDown}
           onWheel={handleWheel}
           onDoubleClick={resetDefault}
-          title="Drag up/down, scroll mouse wheel, or double-click to reset"
           className={cn(
             "relative w-20 h-20 rounded-full flex items-center justify-center transition-transform duration-150 ease-out group cursor-grab active:cursor-grabbing transform-gpu",
             isDragging
@@ -188,17 +191,19 @@ export const RotaryKnob = memo(({
             </span>
           </div>
         </div>
+        </Tooltip>
 
         {/* Step Up (+) Micro Button */}
+        <Tooltip label="Increase Value">
         <button
           type="button"
           onClick={stepUp}
           disabled={value >= max}
           className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] hover:border-[rgb(var(--accent))] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center transition-all cursor-pointer"
-          title="Increase Value"
         >
           <Plus size={13} />
         </button>
+        </Tooltip>
       </div>
 
       {/* Preset Step Buttons Bar */}
@@ -210,7 +215,7 @@ export const RotaryKnob = memo(({
               type="button"
               onClick={() => onChange(clamp(preset))}
               className={cn(
-                "px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all duration-150 cursor-pointer",
+                "px-2 py-0.5 rounded-md text-[11px] font-mono font-bold transition-all duration-150 cursor-pointer",
                 Math.abs(value - preset) < 0.02
                   ? "bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))] text-[rgb(var(--accent))] font-black shadow-[0_0_8px_rgba(var(--accent),0.35)]"
                   : "bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"

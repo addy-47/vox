@@ -9,6 +9,7 @@ import {
   addVoiceFromRecording,
   deleteVoice,
 } from "@/services/pipelineService";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 export const VoiceBars = memo(function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean }) {
   const hash = Array.from(seed).reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -228,39 +229,43 @@ export const VoiceCarousel = memo(function VoiceCarousel({
           />
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={handleSelectFile}
-              disabled={isRecording}
-              className={cn(
-                "p-2 rounded-lg transition-all duration-300 hover:bg-[rgb(var(--foreground))]/5",
-                selectedFile
-                  ? "text-emerald-400 bg-emerald-500/8"
-                  : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))]"
-              )}
-              title={selectedFile ? `File Selected: ${selectedFile.split(/[/\\]/).pop()}` : "Choose WAV File"}
+            <Tooltip
+              label={selectedFile ? `File Selected: ${selectedFile.split(/[/\\]/).pop()}` : "Choose WAV File"}
             >
-              <Folder size={16} />
-            </button>
+              <button
+                type="button"
+                onClick={handleSelectFile}
+                disabled={isRecording}
+                className={cn(
+                  "p-2 rounded-lg transition-all duration-300 hover:bg-[rgb(var(--foreground))]/5",
+                  selectedFile
+                    ? "text-emerald-400 bg-emerald-500/8"
+                    : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))]"
+                )}
+              >
+                <Folder size={16} />
+              </button>
+            </Tooltip>
 
-            <button
-              type="button"
-              onClick={isRecording ? handleStopRecording : handleStartRecording}
-              className={cn(
-                "p-2 rounded-lg transition-all duration-300 relative",
-                isRecording
-                  ? "text-rose-400 bg-rose-500/12 hover:bg-rose-500/20"
-                  : recordedPcm
-                  ? "text-emerald-400 bg-emerald-500/8 hover:bg-emerald-500/15"
-                  : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/5"
-              )}
-              title={isRecording ? "Stop Recording" : "Record Voice"}
-            >
-              {isRecording && (
-                <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75 top-1 right-1"></span>
-              )}
-              <Mic size={16} />
-            </button>
+            <Tooltip label={isRecording ? "Stop Recording" : "Record Voice"}>
+              <button
+                type="button"
+                onClick={isRecording ? handleStopRecording : handleStartRecording}
+                className={cn(
+                  "p-2 rounded-lg transition-all duration-300 relative",
+                  isRecording
+                    ? "text-rose-400 bg-rose-500/12 hover:bg-rose-500/20"
+                    : recordedPcm
+                    ? "text-emerald-400 bg-emerald-500/8 hover:bg-emerald-500/15"
+                    : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/5"
+                )}
+              >
+                {isRecording && (
+                  <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75 top-1 right-1"></span>
+                )}
+                <Mic size={16} />
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -277,17 +282,19 @@ export const VoiceCarousel = memo(function VoiceCarousel({
             </div>
           )}
           {!isRecording && selectedFile && (
-            <div className="text-[11px] text-emerald-400 font-bold text-center max-w-full truncate px-2" title={selectedFile}>
-              ✓ Selected: {selectedFile.split(/[/\\]/).pop()}
-            </div>
+            <Tooltip label={selectedFile} className="w-full">
+              <div className="text-[11px] text-emerald-400 font-bold text-center max-w-full truncate px-2">
+                ✓ Selected: {selectedFile.split(/[/\\]/).pop()}
+              </div>
+            </Tooltip>
           )}
           {!isRecording && recordedPcm && recordingDuration < 10 && (
-            <div className="text-[10px] text-amber-400 font-medium text-center leading-tight">
+            <div className="text-[11px] text-amber-400 font-medium text-center leading-tight">
               ⚠️ Too short ({recordingDuration}s). Minimum is 10s.
             </div>
           )}
           {recordingError && (
-            <div className="text-[10px] text-rose-400 font-medium text-center leading-tight">
+            <div className="text-[11px] text-rose-400 font-medium text-center leading-tight">
               {recordingError}
             </div>
           )}
@@ -355,22 +362,23 @@ export const VoiceCarousel = memo(function VoiceCarousel({
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] px-1 cursor-pointer"
+              className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] px-1 cursor-pointer"
             >
               Clear
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              setIsSearching(false);
-              setSearchQuery("");
-            }}
-            className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
-            title="Close Search"
-          >
-            <X size={13} />
-          </button>
+          <Tooltip label="Close Search">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSearching(false);
+                setSearchQuery("");
+              }}
+              className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Layer 2: Title Header & Search Trigger Icon (Fades out when searching) */}
@@ -383,32 +391,34 @@ export const VoiceCarousel = memo(function VoiceCarousel({
           )}
         >
           {/* Search Expand Icon (Top Left Corner - Primary Accent Color) */}
-          <button
-            type="button"
-            onClick={() => setIsSearching(true)}
-            className="absolute left-0 top-1/2 -translate-y-1/2 p-1 text-[rgb(var(--accent))] hover:scale-110 active:scale-95 transition-all duration-150 cursor-pointer"
-            title="Search Voices"
-            aria-label="Search Voices"
-          >
-            <Search size={15} />
-          </button>
+          <Tooltip label="Search Voices" className="absolute left-0 top-1/2 -translate-y-1/2">
+            <button
+              type="button"
+              onClick={() => setIsSearching(true)}
+              className="p-1 text-[rgb(var(--accent))] hover:scale-110 active:scale-95 transition-all duration-150 cursor-pointer"
+              aria-label="Search Voices"
+            >
+              <Search size={15} />
+            </button>
+          </Tooltip>
 
           {/* Delete Custom Voice (Top Right Corner) */}
           {currentVoice?.isCustom && (
-            <button
-              onClick={() => handleDeleteVoice(currentVoice.id)}
-              className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-rose-400 hover:text-rose-300 hover:scale-110 transition-all duration-150 z-10 cursor-pointer"
-              title="Delete Custom Voice"
-            >
-              <Trash2 size={14} />
-            </button>
+            <Tooltip label="Delete Custom Voice" className="absolute right-0 top-1/2 -translate-y-1/2 z-10">
+              <button
+                onClick={() => handleDeleteVoice(currentVoice.id)}
+                className="p-1 text-rose-400 hover:text-rose-300 hover:scale-110 transition-all duration-150 cursor-pointer"
+              >
+                <Trash2 size={14} />
+              </button>
+            </Tooltip>
           )}
 
           <div className="flex flex-col items-center justify-center min-w-0 max-w-[70%]">
             <span className="text-[14px] font-black tracking-wide text-[rgb(var(--foreground))] truncate leading-tight">
               {currentVoice?.name || "No Voice"}
             </span>
-            <span className="text-[10px] leading-tight font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/40 mt-0.5">
+            <span className="text-[11px] leading-tight font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/40 mt-0.5">
               {currentVoice?.isCustom
                 ? "Custom Clone"
                 : activeList.length > 1

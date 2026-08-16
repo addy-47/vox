@@ -77,7 +77,10 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ### 5.1 Architecture & Performance Invariants
 - **UI & 3D Graph**: Banned sci-fi jargon and nested pills in HUD. Memory graph renders all 10,000+ nodes in 1 `InstancedMesh` GPU call (<15MB RAM) with stable refs across prop updates.
+- **Typography Stack**: Display = `Sora`, Body/UI = `DM Sans`, Telemetry = `JetBrains Mono` (declared in `tailwind.config.js` + `index.css`, mirrored in `docs/design.md` §8). Font floor `>= 11px` — sub-11px functional text is forbidden. All user-facing copy is layman (no engine/STT/LLM jargon; HUD pills read Thinking/Hearing/Speaking).
+- **Custom Tooltip Primitive**: `app/src/shared/ui/Tooltip.tsx` is the only sanctioned tooltip (glass, 11px uppercase). Native `title` attrs are banned as tooltips (keep `title` only for component props, truncated-text, and shared primitives).
 - **ONNX Lifecycle & Zero Idle RAM**: 0 ONNX models loaded on boot. Evict pipeline sessions (`unload_all_onnx_models()`) on barge-in (`PipelineActive`), disengage, or batch completion.
+- **Monitoring Idle Lifecycle**: The telemetry popover is always mounted (`ResponsiveLayout.tsx`), but work is gated — `useMonitoringMetrics(enabled)` only polls `getRuntimeSnapshot()` (1s) while visible, the LiquidChamber canvas loop pauses when closed (`popover && !open`), on `document.hidden`, and hoists `getContext("2d")` out of the rAF. No 60fps loop or polling runs at idle.
 - **ModernBERT Edge Triggering**: Bidirectional candidate evaluation (`has_inter_collection_relationship`) enforcing canonical order `[Source] [SEP] [Target]` before inference.
 - **Benchmark Rules**: Sequential runs only (4 CPU threads, release mode). Evaluated objectively via programmatic QA boolean parsers without inner-loop sampler allocation.
 
@@ -101,6 +104,6 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - **ResizeObserver Canvas Dynamic Sync**: Container dimensions are tracked via `ResizeObserver` with `syncCanvasSize()`, guaranteeing the wave animation initializes smoothly on first popover mount.
 - **Continuous Physics Simulation**: Uses `metricsRef` and `colorsRef` in the HTML5 `<canvas>` animation loop to eliminate bubble re-seeding and liquid height snap jitter when metrics poll.
 - **Dynamic Reactive Palette Sync**: `MutationObserver` on `document.documentElement` + `useSettingsStore` hooks instantly synchronize any user theme or custom `--accent` hex seed without page refresh.
-- **Theme-Aware Memory Pipeline Drawer**: `MemoryPipelineDrawer.tsx` uses semantic CSS variables and glassmorphic tokens, providing WCAG AA contrast in both light and dark modes.
+- **Theme-Aware Harmonic Memory Pipeline Drawer**: `MemoryPipelineDrawer.tsx` uses dynamic 4-stage harmonic palette math (`stage1` at $+0^\circ$, `stage2` at $+45^\circ$, `stage3` at $+90^\circ$, `stage4` at $+140^\circ$) derived directly from `--accent` alongside fixed semantic red (`239, 68, 68`) for failed items, providing aesthetic cohesion across any theme or accent seed.
 
 

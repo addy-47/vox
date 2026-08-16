@@ -3,6 +3,7 @@ import { useSettingsStore, type LlmModelInfo, type ModelCapabilities } from "@/s
 import { SubModelCard } from "../SubModelCard";
 import { Loader2, Network, RefreshCw, AlertCircle, Sparkles, Check } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 export interface LlmCatalogViewProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -208,29 +209,27 @@ export const LlmCatalogView = memo(({
                         {model.name}
                       </span>
                       {model.quantization && (
-                        <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground))]/70 border border-[rgba(var(--foreground),0.04)] leading-none">
+                        <span className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground))]/70 border border-[rgba(var(--foreground),0.04)] leading-none">
                           {model.quantization}
                         </span>
                       )}
                       {model.family && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.08)] leading-none">
+                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.08)] leading-none">
                           {model.family}
                         </span>
                       )}
                       {isGpu ? (
-                        <span
-                          title={probed?.gpu_status || "GPU Offloaded"}
-                          className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 leading-none flex items-center gap-1"
-                        >
-                          🚀 GPU {probed?.vram_bytes ? `(${(probed.vram_bytes / (1024 * 1024)).toFixed(0)}MB)` : ""}
-                        </span>
+                        <Tooltip label={probed?.gpu_status || "GPU Offloaded"}>
+                          <span className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 leading-none flex items-center gap-1">
+                            🚀 GPU {probed?.vram_bytes ? `(${(probed.vram_bytes / (1024 * 1024)).toFixed(0)}MB)` : ""}
+                          </span>
+                        </Tooltip>
                       ) : probed?.server_has_gpu ? (
-                        <span
-                          title="Server has GPU hardware, but model is running in CPU mode"
-                          className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 leading-none flex items-center gap-1"
-                        >
-                          ⚠️ GPU Server (CPU)
-                        </span>
+                        <Tooltip label="Server has GPU hardware, but model is running in CPU mode">
+                          <span className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 leading-none flex items-center gap-1">
+                            ⚠️ GPU Server (CPU)
+                          </span>
+                        </Tooltip>
                       ) : null}
                     </div>
 
@@ -247,54 +246,49 @@ export const LlmCatalogView = memo(({
                     {/* Capability Badges & Readouts */}
                     <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                       {isTesting ? (
-                        <span className="text-[10px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
+                        <span className="text-[11px] font-bold text-[rgb(var(--accent))] flex items-center gap-1">
                           <Loader2 size={10} className="animate-spin" />
                           Testing capabilities...
                         </span>
                       ) : probed ? (
                         <>
                           {probed.supports_tools && (
-                            <span
-                              title="Supports Tool Calling"
-                              className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1"
-                            >
-                              🛠️ Tools
-                            </span>
+                            <Tooltip label="Can use tools">
+                              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1">
+                                🛠️ Tools
+                              </span>
+                            </Tooltip>
                           )}
                           {probed.supports_latin && (
-                            <span
-                              title="Latin Script (EN)"
-                              className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                            >
-                              EN
-                            </span>
+                            <Tooltip label="Latin Script (EN)">
+                              <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                EN
+                              </span>
+                            </Tooltip>
                           )}
                           {probed.supports_devanagari && (
-                            <span
-                              title="Devanagari Script (Hindi/Hinglish)"
-                              className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                            >
-                              DEV
-                            </span>
+                            <Tooltip label="Devanagari Script (Hindi/Hinglish)">
+                              <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                DEV
+                              </span>
+                            </Tooltip>
                           )}
                           {probed.context_window && (
-                            <span
-                              title="Context Window"
-                              className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-300 border border-zinc-700/50"
-                            >
-                              🧠{" "}
-                              {probed.context_window >= 1000000
-                                ? `${(probed.context_window / 1000000).toFixed(1)}M ctx`
-                                : `${Math.round(probed.context_window / 1024)}k ctx`}
-                            </span>
+                            <Tooltip label="Memory size">
+                              <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-300 border border-zinc-700/50">
+                                🧠{" "}
+                                {probed.context_window >= 1000000
+                                  ? `${(probed.context_window / 1000000).toFixed(1)}M ctx`
+                                  : `${Math.round(probed.context_window / 1024)}k ctx`}
+                              </span>
+                            </Tooltip>
                           )}
                           {probed.tps && (
-                            <span
-                              title="Generation Speed"
-                              className="text-[10px] font-mono text-emerald-400 font-bold"
-                            >
-                              ⚡ {probed.tps.toFixed(1)} tps
-                            </span>
+                            <Tooltip label="Response speed">
+                              <span className="text-[11px] font-mono text-emerald-400 font-bold">
+                                ⚡ {probed.tps.toFixed(1)} tps
+                              </span>
+                            </Tooltip>
                           )}
                         </>
                       ) : (
@@ -304,7 +298,7 @@ export const LlmCatalogView = memo(({
                             e.stopPropagation();
                             handleProbeCapabilities(model.id);
                           }}
-                          className="text-[10px] font-bold text-[rgb(var(--accent))] hover:underline flex items-center gap-1"
+                          className="text-[11px] font-bold text-[rgb(var(--accent))] hover:underline flex items-center gap-1"
                         >
                           <Sparkles size={10} /> Test Capabilities
                         </button>
@@ -361,13 +355,13 @@ export const LlmCatalogView = memo(({
             </button>
           </div>
           {customModelStatus === "invalid" && (
-            <div className="text-[10px] text-amber-400/80 leading-normal flex items-start gap-1">
+            <div className="text-[11px] text-amber-400/80 leading-normal flex items-start gap-1">
               <span>⚠</span>
               <span>Model ID not in standard server list. Selected in draft anyway, but verify spelling.</span>
             </div>
           )}
           {customModelStatus === "valid" && (
-            <div className="text-[10px] text-emerald-400/80 leading-normal flex items-start gap-1">
+            <div className="text-[11px] text-emerald-400/80 leading-normal flex items-start gap-1">
               <span>✓</span>
               <span>Model verified successfully! Selected and ready to save.</span>
             </div>

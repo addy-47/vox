@@ -77,7 +77,7 @@ const PipelineFlow = ({
           </div>
           <span
             className={cn(
-              "text-[9px] font-bold uppercase transition-colors",
+              "text-[11px] font-bold uppercase transition-colors",
               active
                 ? "text-[rgb(var(--accent))]/80"
                 : "text-[rgb(var(--foreground-muted))]/40",
@@ -167,13 +167,13 @@ const PipelineFlow = ({
           </div>
           <span
             className={cn(
-              "text-[9px] font-bold uppercase transition-colors",
+              "text-[11px] font-bold uppercase transition-colors",
               active
                 ? "text-[rgb(var(--accent))]"
                 : "text-[rgb(var(--foreground-muted))]/40",
             )}
           >
-            S2S
+            Think
           </span>
           {active && (
             <span className="absolute -top-0.5 -right-0.5 w-[6px] h-[6px] rounded-full bg-[rgb(var(--accent))]">
@@ -257,13 +257,13 @@ const PipelineFlow = ({
           </div>
           <span
             className={cn(
-              "text-[9px] font-bold uppercase transition-colors",
+              "text-[11px] font-bold uppercase transition-colors",
               active
                 ? "text-[rgb(var(--accent))]/80"
                 : "text-[rgb(var(--foreground-muted))]/40",
             )}
           >
-            Render
+            Speak
           </span>
         </div>
       </div>
@@ -271,8 +271,8 @@ const PipelineFlow = ({
       {/* Provider label */}
       {active && (
         <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2">
-          <span className="text-[9px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/25 uppercase">
-            {providerName} · duplex
+          <span className="text-[11px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/25 uppercase">
+            {providerName} · live
           </span>
         </div>
       )}
@@ -778,12 +778,12 @@ export const RealtimeCard = memo(
           <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <Cpu className="text-[rgb(var(--accent))]" size={16} />
-              <span className="text-[12px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+              <span className="font-display text-[12px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
                 Realtime Hub
               </span>
             </div>
             <span className="text-[11px] font-bold uppercase text-[rgb(var(--foreground-muted))]/60">
-              v0.8.7
+              Live Mode
             </span>
           </div>
         )}
@@ -802,8 +802,8 @@ export const RealtimeCard = memo(
               {providerDisplayName(providerId)}
             </span>
           </div>
-          <span className="text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-full shrink-0 border border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))]">
-            Duplex
+          <span className="text-[11px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-full shrink-0 border border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))]">
+            Live
           </span>
         </div>
 

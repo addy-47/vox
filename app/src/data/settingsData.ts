@@ -7,4 +7,8 @@ export const SETTINGS_COPY = {
   restoreDefaults: "Restore All Defaults",
   confirmRestoreTitle: "Are you sure you want to restore defaults?",
   confirmRestoreDesc: "This will reset all persona, model, voice, interaction, and system configurations to default factory settings.",
+  openDomain: "Open {label} settings",
+  closeDomain: "Close {label} settings",
+  openAllDomains: "Open all settings",
+  closeAllDomains: "Clear all settings",
 };

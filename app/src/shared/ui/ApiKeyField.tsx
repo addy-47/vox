@@ -1,6 +1,7 @@
 import { useState, memo } from "react";
 import { Eye, EyeOff, CheckCircle2, AlertCircle, RefreshCw, Key } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 interface ApiKeyFieldProps {
   label?: string;
@@ -61,14 +62,15 @@ export const ApiKeyField = memo(
             placeholder={placeholder}
             className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.12)] rounded-xl px-3.5 py-2.5 pr-10 text-xs font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none focus:border-[rgba(var(--accent),0.4)] focus:bg-[rgba(var(--accent),0.02)] transition-all"
           />
-          <button
-            type="button"
-            onClick={() => setShowKey(!showKey)}
-            className="absolute right-3 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors p-1"
-            title={showKey ? "Hide key" : "Show key"}
-          >
-            {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-          </button>
+          <Tooltip label={showKey ? "Hide key" : "Show key"} className="absolute right-3">
+            <button
+              type="button"
+              onClick={() => setShowKey(!showKey)}
+              className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors p-1"
+            >
+              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </Tooltip>
         </div>
 
         {statusMessage && (

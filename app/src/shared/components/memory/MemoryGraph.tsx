@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { MemoryNodeTopology, MemoryEdgeTopology, MemoryFactDetail } from "@/services/memoryService";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 interface GraphErrorBoundaryProps {
   children: ReactNode;
@@ -67,16 +68,16 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
               </svg>
             </div>
             <div>
-              <h3 className="text-[13px] font-sans font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                WebGL GPU Canvas Error
+              <h3 className="font-display text-[13px] font-sans font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                Couldn't Draw Your Memories
               </h3>
-              <p className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] mt-1 break-words">
-                {this.state.error?.message || "Failed to render WebGL GPU graph context."}
+              <p className="text-[11px] text-[rgb(var(--foreground-muted))] mt-1 break-words">
+                {this.state.error?.message || "Your graphics hardware couldn't render the memory map."}
               </p>
             </div>
             <button
               onClick={this.handleRetry}
-              className="px-4 py-2 text-[11px] font-mono font-bold uppercase tracking-widest glass-card hover:border-[rgb(var(--accent))]/50 transition-colors cursor-pointer rounded-xl"
+              className="px-4 py-2 text-[11px] font-bold uppercase tracking-widest glass-card hover:border-[rgb(var(--accent))]/50 transition-colors cursor-pointer rounded-xl"
             >
               Retry WebGL Context
             </button>
@@ -1154,7 +1155,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
 
                 {/* Clean Borderless Typography */}
                 <div className="flex flex-col items-center text-center gap-1.5">
-                  <h3 className="text-[15px] font-sans font-extrabold tracking-wide text-[rgb(var(--foreground))]">
+                  <h3 className="font-display text-[15px] font-sans font-extrabold tracking-wide text-[rgb(var(--foreground))]">
                     Building memory graph...
                   </h3>
                   <p className="text-[12px] font-sans font-medium text-[rgb(var(--foreground-muted))]">
@@ -1237,7 +1238,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
                                 <span className="text-[12px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
                                   {badge.collection}
                                 </span>
-                                <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                                <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
                                   {badge.activeFacts} Active Facts
                                 </span>
                               </div>
@@ -1245,21 +1246,22 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
 
                             <div className="flex items-center gap-2">
                               <span
-                                className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full shadow-xs"
+                                className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-full shadow-xs"
                                 style={{ backgroundColor: `${badge.color}25`, color: badge.color }}
                               >
-                                {badge.factCount} Facts
+                                {badge.factCount} Memories
                               </span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setExpandedBadge(null);
-                                }}
-                                className="p-1.5 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-                                title="Close details"
-                              >
-                                <X size={14} />
-                              </button>
+                              <Tooltip label="Close details">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedBadge(null);
+                                  }}
+                                  className="p-1.5 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </Tooltip>
                             </div>
                           </div>
 
@@ -1272,10 +1274,10 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
                           {badge.crossRelations.length > 0 && (
                             <div className="flex flex-col gap-1.5 pt-2 border-t" style={{ borderColor: `${badge.color}20` }}>
                               <div className="flex items-center justify-between px-0.5">
-                                <span className="text-[10px] font-mono font-bold uppercase tracking-wider" style={{ color: badge.color }}>
+                                <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: badge.color }}>
                                   Connected Clusters
                                 </span>
-                                <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                                <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
                                   {badge.totalRelations} Edges
                                 </span>
                               </div>
@@ -1298,7 +1300,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
                                         </span>
                                       </div>
                                       <span
-                                        className="font-mono font-bold text-[10px] px-2 py-0.5 rounded-full shrink-0 shadow-xs"
+                                        className="font-mono font-bold text-[11px] px-2 py-0.5 rounded-full shrink-0 shadow-xs"
                                         style={{ backgroundColor: `${badge.color}20`, color: badge.color }}
                                       >
                                         {rel.count}

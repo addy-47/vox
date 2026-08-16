@@ -87,7 +87,7 @@ export const Memory: React.FC = () => {
         return true;
       } catch (e: any) {
         console.error("Failed to load memory graph topology:", e);
-        setError(e.message || "Failed to load knowledge graph from local database.");
+        setError(e.message || "Couldn't load your memories.");
         return false;
       }
     },
@@ -213,7 +213,7 @@ export const Memory: React.FC = () => {
             <div className="glass-card px-4 py-2 rounded-2xl border border-[rgba(var(--accent),0.3)] bg-[rgb(var(--card))]/90 backdrop-blur-2xl flex items-center justify-center gap-2 shadow-2xl">
               <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
               <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
-                Graph is up to date
+                Memory is up to date
               </span>
             </div>
           </motion.div>
@@ -261,18 +261,16 @@ export const Memory: React.FC = () => {
           onClick={handleRefreshGraph}
           disabled={isRefreshing}
           className="w-10 h-10 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer relative group disabled:opacity-40"
-          title="Refresh Graph (Check Version)"
         >
           <RefreshCw size={18} className={cn(isRefreshing && "animate-spin")} />
           <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
-            Refresh Graph
+            Refresh Memories
           </span>
         </button>
 
         <button
           onClick={() => graphRef.current?.recenter()}
           className="w-10 h-10 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer relative group"
-          title={MEMORY_COPY.recenterView}
         >
           <Focus size={18} />
           <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
@@ -288,7 +286,6 @@ export const Memory: React.FC = () => {
               ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40"
               : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10"
           )}
-          title={includeInactive ? MEMORY_COPY.hideInactive : MEMORY_COPY.showInactive}
         >
           {includeInactive ? <Eye size={18} /> : <EyeOff size={18} />}
           <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
@@ -304,11 +301,10 @@ export const Memory: React.FC = () => {
               ? "text-red-400 bg-red-500/20 border border-red-500/40"
               : "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-[rgb(var(--foreground))]/10"
           )}
-          title={`${MEMORY_COPY.unresolvedConflicts} (${conflicts.length})`}
         >
           <GitCompare size={18} />
           {conflicts.length > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-mono font-bold text-white shadow-md">
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[11px] font-mono font-bold text-white shadow-md">
               {conflicts.length}
             </span>
           )}
@@ -320,7 +316,6 @@ export const Memory: React.FC = () => {
         <button
           onClick={() => setDrawerOpen(true)}
           className="w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer relative group text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40 hover:bg-[rgb(var(--accent))]/30 shadow-md"
-          title={MEMORY_COPY.ingestionQueue}
         >
           <Cpu size={18} />
           <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">

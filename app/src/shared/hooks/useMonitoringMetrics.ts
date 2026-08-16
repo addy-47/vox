@@ -4,14 +4,9 @@ import { getRuntimeSnapshot, type RuntimeSnapshot } from "@/services/pipelineSer
 const MAX_SAMPLES = 60;
 const POLL_MS = 1000;
 
-export function useMonitoringMetrics() {
+export function useMonitoringMetrics(enabled = true) {
   const [history, setHistory] = useState<(RuntimeSnapshot & { localTime: number })[]>([]);
   const [engineToggling, setEngineToggling] = useState(false);
-
-  const cpuTextRef = useRef<HTMLSpanElement>(null);
-  const cpuBarRef = useRef<HTMLDivElement>(null);
-  const ramTextRef = useRef<HTMLSpanElement>(null);
-  const ramBarRef = useRef<HTMLDivElement>(null);
 
   const latest = history[history.length - 1] ?? null;
   const latestRef = useRef<RuntimeSnapshot | null>(latest);
@@ -19,8 +14,10 @@ export function useMonitoringMetrics() {
 
   const inFlightRef = useRef(false);
 
-  // Background Polling Loop
+  // Background Polling Loop (only while monitoring is visible)
   useEffect(() => {
+    if (!enabled) return;
+
     const poll = async () => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
@@ -42,50 +39,7 @@ export function useMonitoringMetrics() {
     poll();
     const id = setInterval(poll, POLL_MS);
     return () => clearInterval(id);
-  }, []);
-
-  // Direct DOM Interpolation Loop (EMA) at 60fps
-  useEffect(() => {
-    let curCpu = 0;
-    let curRam = 0;
-    let rafId = 0;
-
-    if (latestRef.current) {
-      curCpu = latestRef.current.vox_cpu_usage;
-      curRam = latestRef.current.vox_ram_mb;
-    }
-
-    const tick = () => {
-      const snap = latestRef.current;
-      if (snap) {
-        const targetCpu = snap.vox_cpu_usage;
-        const targetRam = snap.vox_ram_mb;
-
-        curCpu += (targetCpu - curCpu) * 0.12;
-        curRam += (targetRam - curRam) * 0.12;
-
-        if (cpuTextRef.current) {
-          cpuTextRef.current.textContent = `${curCpu.toFixed(1)}%`;
-        }
-        if (cpuBarRef.current) {
-          cpuBarRef.current.style.width = `${Math.min(100, Math.max(0, curCpu))}%`;
-        }
-        if (ramTextRef.current) {
-          const ramGb = curRam / 1024;
-          ramTextRef.current.textContent = `${ramGb.toFixed(2)} GB`;
-        }
-        if (ramBarRef.current) {
-          const totalRam = snap.total_ram_mb > 0 ? snap.total_ram_mb : 8192;
-          const pct = Math.min(100, Math.max(0, (curRam / totalRam) * 100));
-          ramBarRef.current.style.width = `${pct}%`;
-        }
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [enabled]);
 
   const formatLatency = useCallback((ms: number | null) => {
     if (ms === null) return "--";
@@ -98,10 +52,6 @@ export function useMonitoringMetrics() {
     latest,
     engineToggling,
     setEngineToggling,
-    cpuTextRef,
-    cpuBarRef,
-    ramTextRef,
-    ramBarRef,
     formatLatency,
   };
 }

@@ -22,7 +22,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-4">
             <div className="h-[1px] w-8 bg-[rgb(var(--accent))]/30" />
-            <span className="text-[12px] font-black tracking-[0.4em] text-[rgb(var(--accent))] uppercase">Step 1.0 • Initialization</span>
+            <span className="text-[12px] font-black tracking-[0.4em] text-[rgb(var(--accent))] uppercase">Step 1 of 6 · Getting Started</span>
           </div>
           
             {/* Sub-step Navigation Controls */}
@@ -30,14 +30,14 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
             <button 
               onClick={prevSubStep}
               disabled={subStep === 1}
-              className="p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-white/10 disabled:opacity-20 transition-all"
+              className="p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-[rgba(var(--foreground),0.1)] disabled:opacity-20 transition-all"
             >
               <ChevronLeft className="w-4 h-4 text-[rgb(var(--foreground-muted))]" />
             </button>
             <button 
               onClick={nextSubStep}
               disabled={subStep === 3}
-              className="p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-white/10 disabled:opacity-20 transition-all"
+              className="p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-[rgba(var(--foreground),0.1)] disabled:opacity-20 transition-all"
             >
               <ChevronRight className="w-4 h-4 text-[rgb(var(--foreground-muted))]" />
             </button>
@@ -52,11 +52,11 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
             >
-              <h1 className="text-4xl font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">
+              <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">
                 Welcome to Vox.
               </h1>
               <p className="text-[rgb(var(--foreground-muted))] text-sm leading-relaxed max-w-md">
-                Vox is a low-latency audio intelligence system designed to live in your system tray and provide real-time interaction.
+                Vox listens to your voice, understands what you say, and talks back — all on your own computer. It lives quietly in your menu bar, ready when you need it.
               </p>
             </motion.div>
           )}
@@ -67,12 +67,12 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
             >
-              <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">
+              <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">
                 The AI Core
               </h1>
-              <p className="text-white/40 text-sm leading-relaxed max-w-md">
-                Powered by <span className="text-white/80">edge AI models</span>. 
-                Experience low-latency intelligence that processes everything locally on your hardware.
+              <p className="text-[rgb(var(--foreground-muted))] text-sm leading-relaxed max-w-md">
+                Powered by <span className="text-[rgb(var(--foreground))]">on-device voice AI</span>. 
+                Everything runs locally on your hardware — fast, private, and offline.
               </p>
             </motion.div>
           )}
@@ -83,11 +83,11 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
             >
-              <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">
-                Vox Live HUD
+              <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">
+                Voice Overlay
               </h1>
-              <p className="text-white/40 text-sm leading-relaxed max-w-md">
-                An AI transcription overlay that follows your voice. It appears instantly when you speak and disappears when finished.
+              <p className="text-[rgb(var(--foreground-muted))] text-sm leading-relaxed max-w-md">
+                A live transcript that follows your voice. It appears the moment you speak and fades when you stop.
               </p>
             </motion.div>
           )}
@@ -106,24 +106,24 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
             >
               <div className="grid grid-cols-2 gap-4">
                 <FeatureCard 
-                  icon={<ShieldCheck className="w-4 h-4 text-white/50" />}
+                  icon={<ShieldCheck className="w-4 h-4 text-[rgb(var(--foreground-muted))]/70" />}
                   title="Privacy"
                   desc="100% On-device"
                 />
                 <FeatureCard 
                   icon={<Zap className="w-4 h-4 text-[rgb(var(--accent))]" />}
-                  title="Latency"
-                  desc="Low-Latency Inference"
+                  title="Speed"
+                  desc="Instant Responses"
                 />
                 <FeatureCard 
                   icon={<Globe className="w-4 h-4 text-[rgb(var(--accent))]" />}
-                  title="Native"
-                  desc="System Integration"
+                  title="Always On"
+                  desc="Lives in Your Menu Bar"
                 />
                 <FeatureCard 
                   icon={<Activity className="w-4 h-4" />}
                   title="Status"
-                  desc="Awaiting Initialization"
+                  desc="Ready to Start"
                 />
               </div>
             </motion.div>
@@ -156,7 +156,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
             >
               <div className="flex-1 flex flex-col items-center justify-center relative">
                 <div className="w-[400px] h-[200px] glass-card rounded-2xl border-[rgba(var(--accent),0.15)] overflow-hidden flex flex-col text-left relative z-10">
-                  <div className="px-6 py-4 flex items-center justify-between relative z-10 border-b border-white/5">
+                  <div className="px-6 py-4 flex items-center justify-between relative z-10 border-b border-[rgba(var(--foreground),0.08)]">
                     <div 
                       className="flex items-center gap-3 cursor-help group/status"
                       onMouseEnter={() => setHoveredElement('status')}
@@ -167,7 +167,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                         <div className="absolute w-5 h-5 rounded-full bg-[rgb(var(--accent))] blur-md opacity-40 animate-pulse" />
                         <div className="w-2.5 h-2.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)] z-10" />
                       </div>
-                      <span className="text-[12px] font-black tracking-[0.4em] text-white/60 uppercase">
+                      <span className="text-[12px] font-black tracking-[0.4em] text-[rgb(var(--foreground))]/70 uppercase">
                         Vox <span className="text-[rgb(var(--accent))]">Live</span>
                       </span>
                     </div>
@@ -181,12 +181,12 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                           <Mic size={16} />
                        </div>
                        <Copy 
-                         className="w-4 h-4 text-white/40 hover:text-[rgb(var(--accent))] transition-colors cursor-help p-2 box-content rounded-lg hover:bg-white/5" 
+                         className="w-4 h-4 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-help p-2 box-content rounded-lg hover:bg-[rgba(var(--foreground),0.05)]" 
                          onMouseEnter={() => setHoveredElement('copy')}
                          onMouseLeave={() => setHoveredElement(null)}
                          id="step3-copy"
                        />
-                       <X className="w-4 h-4 text-white/20 p-2 box-content" />
+                       <X className="w-4 h-4 text-[rgb(var(--foreground-muted))]/40 p-2 box-content" />
                     </div>
                   </div>
 
@@ -197,9 +197,9 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                     id="step3-renderer"
                   >
                     <div className="w-full space-y-2">
-                       <div className="text-[18px] leading-snug font-medium tracking-tight text-white/90">
-                          Live transcriptions in real-time...
-                          <motion.span 
+<div className="text-[18px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90">
+                           Listening... your words will appear here.
+                           <motion.span
                             animate={{ opacity: [0, 1, 0] }}
                             transition={{ repeat: Infinity, duration: 0.8 }}
                             className="inline-block w-[2px] h-[1em] ml-1 align-middle bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]"
@@ -209,7 +209,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                   </div>
 
                   <div 
-                    className="px-7 py-4 bg-black/40 border-t border-white/5 flex items-center justify-between"
+                    className="px-7 py-4 bg-[rgba(var(--foreground),0.04)] border-t border-[rgba(var(--foreground),0.08)] flex items-center justify-between"
                     onMouseEnter={() => setHoveredElement('history')}
                     onMouseLeave={() => setHoveredElement(null)}
                     id="step3-history"
@@ -217,18 +217,18 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                      <div className="flex items-center gap-6 opacity-60">
                         <div className="flex items-center gap-2">
                            <Activity size={12} className="text-[rgb(var(--accent))]" />
-                           <span className="text-[12px] font-mono text-white/80 font-bold uppercase tracking-widest">Active</span>
+                           <span className="text-[12px] font-mono text-[rgb(var(--foreground-muted))]/80 font-bold uppercase tracking-widest">Active</span>
                         </div>
                         <div className="flex items-center gap-2">
                            <Zap size={12} className="text-[rgb(var(--accent))]" />
-                           <span className="text-[12px] font-mono text-white/80 font-bold">42MB</span>
+                           <span className="text-[12px] font-mono text-[rgb(var(--foreground-muted))]/80 font-bold">42MB</span>
                         </div>
                      </div>
                      <div className="flex items-center gap-1">
-                        <div className="p-1.5 rounded-md bg-white/5 border border-white/5 flex items-center justify-center">
+                        <div className="p-1.5 rounded-md bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--foreground),0.08)] flex items-center justify-center">
                            <ChevronLeft className="w-3.5 h-3.5 text-[rgb(var(--accent))]" />
                         </div>
-                        <div className="p-1.5 rounded-md bg-white/5 border border-white/5 flex items-center justify-center">
+                        <div className="p-1.5 rounded-md bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--foreground),0.08)] flex items-center justify-center">
                            <ChevronRight className="w-3.5 h-3.5 text-[rgb(var(--accent))]" />
                         </div>
                      </div>
@@ -261,9 +261,9 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                          </h3>
                          <div className="h-[1px] w-4 bg-[rgb(var(--accent))]" />
                       </div>
-                      <p className="text-white/60 text-[14px] leading-relaxed font-medium">
-                         {tooltips[hoveredElement as keyof typeof tooltips].desc}
-                      </p>
+<p className="text-[rgb(var(--foreground-muted))]/80 text-[14px] leading-relaxed font-medium">
+                          {tooltips[hoveredElement as keyof typeof tooltips].desc}
+                       </p>
                     </motion.div>
                   ) : (
                     <motion.div
@@ -279,9 +279,9 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                          </h3>
                          <div className="h-[1px] w-4 bg-[rgb(var(--accent))]" />
                       </div>
-                      <p className="text-white/40 text-[12px] italic">
-                         Hover over HUD elements to explore features...
-                      </p>
+<p className="text-[rgb(var(--foreground-muted))]/70 text-[12px] italic">
+                          Hover over Vox's screen to see what each part does.
+                       </p>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -302,7 +302,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               <motion.div 
                 animate={{ 
                     width: subStep === i ? 24 : 8,
-                    backgroundColor: subStep === i ? 'rgb(var(--accent))' : 'rgba(255,255,255,0.1)'
+                    backgroundColor: subStep === i ? 'rgb(var(--accent))' : 'rgba(var(--foreground),0.15)'
                 }}
                 className={cn(
                     "h-2 rounded-full transition-all duration-500 ease-out",
@@ -326,7 +326,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
         >
           <button
             onClick={onNext}
-            className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
+            className="group relative w-full py-5 text-[rgb(var(--foreground))] font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[12px]">
@@ -341,21 +341,21 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
 };
 
 const FeatureCard = ({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) => (
-  <div className="glass px-5 py-5 group transition-all duration-500 hover:bg-white/[0.06]">
-    <div className="mb-3 w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors">
+  <div className="glass px-5 py-5 group transition-all duration-500 hover:bg-[rgba(var(--foreground),0.06)]">
+    <div className="mb-3 w-8 h-8 rounded-lg bg-[rgba(var(--foreground),0.05)] flex items-center justify-center group-hover:bg-[rgba(var(--foreground),0.1)] transition-colors">
       {icon}
     </div>
     <div className="text-[12px] font-bold text-[rgb(var(--foreground-muted))] tracking-widest uppercase mb-1">{title}</div>
-    <div className="text-white text-sm font-medium">{desc}</div>
+    <div className="text-[rgb(var(--foreground))] text-sm font-medium">{desc}</div>
   </div>
 );
 
 const tooltips = {
-  status: { title: "Live Status", desc: "Passive VAD detection shows when Vox is actively listening to your environment." },
-  mic: { title: "Push-To-Talk", desc: "Override passive listening for absolute control. Perfect for high-precision input in crowded environments." },
-  copy: { title: "Instant Copy", desc: "One-click to move the finalized transcript to your clipboard for any application." },
-  history: { title: "Ephemeral History", desc: "Quickly browse the last 10 transcripts without leaving your current window." },
-  renderer: { title: "Fluid Streaming", desc: "Transcripts stream character-by-character with sub-50ms latency." }
+  status: { title: "Listening", desc: "Shows when Vox is hearing you. It only listens while you hold the button or talk." },
+  mic: { title: "Push-To-Talk", desc: "Hold the button to talk. Gives you full control over when Vox is listening." },
+  copy: { title: "Instant Copy", desc: "Click once to copy the finished transcript, ready to paste anywhere." },
+  history: { title: "Recent Chats", desc: "Browse your last few conversations without leaving the current window." },
+  renderer: { title: "Instant Words", desc: "Your words appear on screen as you speak, almost immediately." }
 };
 
 const CalloutLine = ({ active, fromId, containerRef }: { active: boolean, fromId: string, containerRef: React.RefObject<HTMLDivElement | null> }) => {

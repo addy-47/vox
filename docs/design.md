@@ -1,188 +1,350 @@
-# Vox Design System Spec: "Liquid Space"
+---
+typography:
+  display:
+    fontFamily: "'Sora', 'DM Sans', system-ui, sans-serif"
+  body:
+    fontFamily: "'DM Sans', system-ui, sans-serif"
+  mono:
+    fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace"
+  scale:
+    '2xs': 11px
+    xs: 12px
+    sm: 13px
+    base: 14px
+    md: 15px
+    lg: 16px
+    xl: 18px
+    '2xl': 24px
+    '3xl': 28px
+    '4xl': 36px
+colors:
+  # ── Theme tokens (dark) ────────────────────────────────
+  background: '#050505'
+  foreground: '#e5e2e1'
+  foreground-muted: '#a0a0a0'
+  accent: '#00dbe9'
+  accent-dark: '#0891b2'
+  accent-muted: '#00dbe9'
+  accent-foreground: '#050505'
+  card: '#0a0a0a'
+  border: '#ffffff'
+  field: '#0c0e18'
+  signal: '#00dbe9'
+  # ── Theme tokens (light) ───────────────────────────────
+  background-light: '#f1f5f9'
+  foreground-light: '#0f172a'
+  foreground-muted-light: '#334155'
+  accent-light: '#0e7490'
+  accent-dark-light: '#155e74'
+  accent-foreground-light: '#ffffff'
+  card-light: '#ffffff'
+  border-light: '#000000'
+  field-light: '#ebeff8'
+  signal-light: '#0891b2'
+  # ── Semantic status palette ────────────────────────────
+  success: '#34d399'
+  success-dark: '#047857'
+  error: '#ef4444'
+  error-dark: '#dc2626'
+  danger: '#f43f5e'
+  danger-dark: '#be123c'
+  warning: '#facc15'
+  warning-dark: '#d97706'
+  amber-deep: '#b45309'
+  warn-soft: '#f59e0b'
+  info: '#38bdf8'
+  info-dark: '#0369a1'
+  violet: '#a78bfa'
+  violet-dark: '#7c3aed'
+  violet-deep: '#6d28d9'
+  pink: '#f472b6'
+  pink-dark: '#be185d'
+  muted: '#64748b'
+  muted-soft: '#94a3b8'
+  # ── Neutral & glass ────────────────────────────────────
+  white: '#ffffff'
+  black: '#000000'
+  glass-tint: '#0a0c0e'
+  glass-surface: '#14181e'
+  glass-deep: '#04070e'
+  glass-navy: '#080c16'
+  ghost: '#1e293b'
+  border-dark: '#475569'
+  border-light-tint: '#e2e8f0'
+rounded:
+  sm: 0.25rem
+  base: 0.5rem
+  md: 0.75rem
+  lg: 1rem
+  xl: 1.25rem
+  '2xl': 1.75rem
+  xs: 0.3125rem
+  sm2: 0.5625rem
+  pill: 9999px
+---
 
-This specification details the design philosophy, visual aesthetics, layout rules, and performance systems of Vox, an agentic voice operating system (Jarvis-like OS).
+# Vox Design System Spec — "Liquid Space"
+
+This document is the **authoritative design system** for Vox, a realtime voice AI desktop
+app. It defines the tokens, type system, and visual rules that every user-facing surface
+must follow. Implementation and UX-mechanic details live in
+[`frontend.md`](./frontend.md); anything user-facing not covered here defers to the
+frontend architecture doc and the impeccable design rules.
 
 ---
 
-## 1. Vision & Core Aesthetic
+## 1. Design Principles
 
-Vox is designed not as a static application, but as a **sentient digital organism** that lives on the desktop. The interface feels light, organic, responsive, and alive. 
+Vox is not a standard application interface — it is a sentient ambient surface that reacts
+to the voice pipeline state. Every visual decision either serves that or works against it.
 
-*   **Sentience over UI**: Minimize standard widgets, borders, and input fields. Interactions should lead with voice, sound, and ambient light.
-*   **Holographic Elevation**: Elements float as translucent layers above a morphing visual core.
-*   **Aesthetics**: Glassmorphism, neon gas glows, deep space obsidian gradients, and anti-aliased micro-animations.
+1. **Sentience over UI.** Minimize standard widgets, borders, and input fields. Interactions
+   lead with voice, sound, and ambient light.
+2. **State flows one way: pipeline → UI.** Mood and visual state are always derived from the
+   backend event stream, never invented by local component logic.
+3. **Aliveness never outranks usability.** If an expressive treatment makes a component
+   harder to read, slower to operate, or ambiguous, simplify it. Usability wins — and is
+   said so rather than shipping the fancier version.
+4. **Performance is part of the design.** This runs on constrained, CPU-first hardware
+   (8 GB RAM, sub-200 ms perceived latency). Nothing visually heavy ships un-memoized or
+   un-throttled.
+5. **Glass elevation is a closed system.** A fixed, small number of elevation levels, each
+   with a defined purpose. Do not invent a new level to solve a one-off layout problem.
 
 ---
 
-## 2. Glass Elevation System
+## 2. Elevation & Glass System
 
-All cards, headers, and navigation bars use a cohesive glassmorphic styling sysytem layered on top of a fully transparent page root. This allows the animated ambient background to bleed through and unify the workspace.
+All cards, headers, and navigation bars use a cohesive glassmorphic system layered on a
+transparent page root so the animated ambient background bleeds through and unifies the
+workspace. There are **4 levels of elevation**, defined by blur density and tint opacity:
 
-There are **4 levels of elevation** defined by blur density and tint opacity:
-
-| Elevation Level | CSS Class | Blur Radius | Tint Opacity (Dark) | Tint Opacity (Light) | Best Use Cases |
+| Level | CSS Class | Blur | Tint (Dark) | Tint (Light) | Use Cases |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Whisper** | `.glass-whisper` | 8px | `0.20` | `0.45` | Tooltips, status badges, secondary dropdown options. |
-| **Surface** | `.glass-surface` | 16px | `0.45` | `0.65` | General content panels, navigation strips, settings containers. |
-| **Card** | `.glass-card` | 24px | `0.65` | `0.80` | Major modules, dialog boxes, settings category headers. |
-| **Elevated** | `.glass-elevated` | 40px | `0.85` | `0.92` | Modal overlays, system monitoring windows, popovers. |
+| **Whisper** | `.glass-whisper` | 8px | `0.20` | `0.45` | Tooltips, status badges, secondary dropdowns |
+| **Surface** | `.glass-surface` | 16px | `0.45` | `0.65` | Content panels, navigation strips, settings containers |
+| **Card** | `.glass-card` | 24px | `0.65` | `0.80` | Major modules, dialog boxes, settings category headers |
+| **Elevated** | `.glass-elevated` | 40px | `0.85` | `0.92` | Modals, monitoring windows, popovers |
 
-*   **Sheen & Noise**: Visual depth is enhanced with a noise grain overlay (`.amb-noise` / `.glass-base::after`) to simulate frosted glass texture.
-
----
-
-## 3. Ambient Background & Sentient Energy
-
-The background is a reactive canvas representing the state of the voice engine.
-
-### Mood Synchronization
-The ambient background morphs color and animation velocity based on the pipeline's active phase:
-*   `calm` (Idle/Sleep): Low-energy deep obsidian, slow-flowing organic blobs, minimal ripple rings.
-*   `active` (Listening/UserSpeaking): High frequency, expanded glow, fast morphing speed.
-*   `thinking` (Processing/LLM generation): Swirling cyan/violet orbits, pulsing central energy.
-*   `speaking` (TTS playback): Fluid ripple waves spreading from the central core.
-
-### Sentient Membrane (`PipelineField`)
-Behind the central Orb is a dashed radial membrane that expands and contracts with VAD probability and audio volume, creating a visual heart rate for the assistant.
+* **Sheen & noise**: depth is enhanced with a noise grain overlay (`.amb-noise` /
+  `.glass-base::after`) to simulate frosted glass.
+* **Boundaries**: borders are drawn with `--border` at low opacity (`rgba(var(--border), 0.08–0.15)`);
+  never use hard 1px white borders as the primary separation mechanism.
 
 ---
 
-## 4. Holographic Dialogue Stream
+## 3. Color System
 
-Rather than presenting standard conversation logs or overlapping single lines of text, Vox features a **Holographic Dialogue Stream**:
+Colors are declared as RGB-triplet CSS variables (`rgb(var(--token))`) in `index.css` under
+`:root` and `[data-theme='light']`. The canonical tokens are mirrored in this file's
+frontmatter `colors` map, which is what the impeccable detector enforces.
 
-*   **Left/Right Separation**: User query bubbles align left; AI voice responses align right.
-*   **No Card Framing**: Text is rendered directly on the ambient field, maximizing screen space and visual integration.
-*   **Faded Scroll Boundary**: The scroll zone has a vertical CSS mask gradient (`mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)`) so older turns dissolve into space as they scroll upwards.
-*   **Micro-animations**: Words and lines float up smoothly using Framer Motion as they are streamed from the STT and LLM engines.
+### Core tokens
 
----
-
-## 5. Responsive & Dynamic Layouts
-
-The desktop layout transitions dynamically to a unified layout on small screens (mobile viewports):
-
-### Central Navigation Capsule (`EdgeNav`)
-On desktop, navigation is a floating bottom capsule. On mobile, the system monitoring metrics (which float bottom-left on desktop) are hidden, and the **Activity Monitor** is integrated directly as a 4th `NavLink` tab inside the navigation capsule itself, routing directly to `/monitoring`.
-
-### Unified Responsive Diagnostics Monitor (`Monitoring.tsx`)
-Monitoring is consolidated into a single responsive component that adapts seamlessly to the viewport:
-* On mobile/small screens, it renders as a dedicated page route (`/monitoring`) with a solid glass background.
-* On desktop, it renders as an anchored floating popover modal (`popover={true}`) bottom-left without duplicating component hierarchy.
-* Features 8–9 model residency badges, dual tabs (**Consumption** with continuous 60 FPS smoothed spline graphs for System vs. Vox CPU & RAM, and **Metrics** for voice latency waterfall and audio health).
-
-### Viewport Transition Engine
-Vox handles window resizing dynamically:
-* **Mobile ➔ Desktop**: If the user is on the `/monitoring` route page and resizes to desktop, the router redirects them back to the Home page (`/`) and automatically launches the popover panel.
-* **Desktop ➔ Mobile**: If the user has the popover panel open on desktop and resizes to mobile, the popover closes and they are routed directly to `/monitoring` so they don't lose context.
-
-### Sentient Core Scale
-On mobile viewports, the central Orb is scaled up by **50%** (`min(92vw, 85vh)` instead of `min(70vw, 65vh)`) to act as the primary, dominant touch target and visual anchor.
-
----
-
-## 6. Performance Constraints & Best Practices
-
-To achieve high rendering performance on baseline systems (8GB RAM, CPU-first):
-*   **Dynamic FPS (`useDynamicFPS`)**: Heavy visual loops (Three.js WebGL in the Orb, HTML5 Canvas in the Waveform) throttle their frame rate dynamically:
-    *   *Active*: 60fps (rendering active wave/orb)
-    *   *Idle*: 15fps (slow idle glow)
-    *   *Sleep*: 0fps (fully paused loop when tab is hidden or asleep)
-*   **React Memoization**: All visually intensive components (`AmbientBackground`, `PipelineField`, `VoxOrb`, `LiveWaveform`) are wrapped in `React.memo` to eliminate unnecessary rendering overhead during text streaming or database reads.
-
----
-
-## 7. Settings & Configuration Hub UX/UI Preferences
-
-To maintain a clean, premium visual aesthetic and ensure settings remain readable and uncluttered across all layout viewports:
-
-### Flat Underline Tab Strips
-For list selections (e.g., LLM providers, Realtime Gateway options), avoid heavy card grids or boxed designs. Instead, use a flat, left-aligned tab strip:
-*   **Joint Underline Track**: An anchored horizontal bottom border (`border-b border-[rgba(var(--border),0.12)]`) serves as a shared baseline.
-*   **Active Indicator**: The active tab uses the text color and a thicker bottom border (`border-b-2 border-[rgb(var(--accent))]`) in the active theme's accent color.
-*   **Pipe Separators**: Separate tab buttons with inline vertical pipe separators (`|`) styled in a soft accent color (`text-[rgb(var(--accent))]/30 font-light`).
-*   **Responsive Details**: Render provider/system icons inline right next to the text on desktop/full viewports. Hide icons on mobile/small layouts to optimize horizontal space.
-
-### Consolidated Card Headers on Mobile
-To eliminate duplicate title headers on small screens:
-*   Hide all internal settings card title blocks (e.g., "Appearance", "Model Hub", "Interaction Console") on mobile (`layoutMode === "small"`).
-*   Rely entirely on the outer Category Page Headers (e.g., "Interaction", "Models") inside the scrollable view settings page.
-*   Make the Category Page Headers larger and high-contrast (`text-[15px] font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]`) so they act as the dominant typographic elements.
-
-### Hover-Only Slide-Out Action Sidebars
-To hide repetitive descriptive guidelines (like `"CLICK TO TOGGLE"` or `"TAP TO SAVE"`) inside buttons:
-*   Wrap toggle buttons inside a group flex row containing a hidden sidebar panel (`w-0 opacity-0`).
-*   On hover, transition the sidebar width and opacity smoothly (`group-hover:w-[38px] group-hover:opacity-100`) while scaling the main button container to fit (`flex-1`) and flattening its shared borders.
-
-### Alignment & Padding Discipline
-To ensure visual consistency and neat alignment:
-*   Respect parent container padding: if a parent panel already applies default padding (e.g., `p-3` inside the settings config desks), do not duplicate horizontal padding (`px-3`) or margins (`mx-3`) on child components.
-*   Strictly align all text labels, active tab items, inputs, and gateway cards along the exact same vertical axis (e.g., aligning the `"L"` in `"Local"` or `"G"` in `"Gemini"` with the `"T"` in `"Trigger"`).
-
----
-
-## 8. Typography System & Contrast Standards
-
-Vox uses a curated **Precision Sci-Fi HUD Typography Stack** designed for maximum legibility and visual hierarchy:
-
-| Typographic Level | Font Family | CSS Utility Class | Purpose & Guidelines |
+| Token | Dark | Light | Role |
 | :--- | :--- | :--- | :--- |
-| **Display / Signal** | `Syne` | `.field-text` / `font-sans` | Brand titles, stage titles, uppercase headings, active voice signals. |
-| **Body / UI** | `Plus Jakarta Sans` | `.ambient-label` / `font-sans` | UI labels, settings options, body text, dialogue text. |
-| **Data / Telemetry** | `JetBrains Mono` | `.signal-text` / `font-mono` | Numeric metrics, latencies, footprint HUD (`CPU %` · `RAM MB`), timestamp readouts. |
+| `--background` | `5, 5, 5` | `241, 245, 249` | Page / app shell |
+| `--foreground` | `229, 226, 225` | `15, 23, 42` | Primary text |
+| `--foreground-muted` | `160, 160, 160` | `51, 65, 85` | Secondary text, timestamps, hints |
+| `--accent` | `0, 219, 233` | `14, 116, 144` | Active states, links, focus, voice signal |
+| `--accent-dark` | `8, 145, 178` | `21, 94, 117` | Hover/depressed accent |
+| `--accent-foreground` | `5, 5, 5` | `255, 255, 255` | Text on accent fills |
+| `--card` | `10, 10, 10` | `255, 255, 255` | Card fill |
+| `--border` | `255, 255, 255` | `0, 0, 0` | Hairline borders (used at low alpha) |
+| `--field` | `12, 14, 24` | `235, 239, 248` | Ambient field base |
+| `--signal` | `0, 219, 233` | `8, 145, 178` | Voice signal highlights |
 
-### Font Scale Floor Rule
-* **Minimum Font Size**: All text across the application must strictly adhere to a **font scale floor of `>= 11px`**. Sub-11px font sizes (`8.5px`, `9px`, `10px`) are forbidden to ensure readability on high-DPI and scaled displays.
+### Semantic status palette
 
-### Light Theme Contrast Baseline
-* **WCAG AA Compliance**: In Light Mode (`[data-theme='light']`), `--foreground-muted` is set to `51, 65, 85` (`#334155` - Slate 700). On light glass cards with `0.78` opacity, this yields a contrast ratio of **9.8:1**, comfortably exceeding WCAG AA requirements (4.5:1).
-* **Keyboard Focus Visibility**: All focusable interactive elements (`button`, `a`, `input`, `[role="button"]`) enforce an explicit `focus-visible` ring (`outline: 2px solid rgb(var(--accent))`).
+Used for live status/telemetry only (memory health, model state, ingestion results):
 
----
+- **Success** `#34d399` · **Success deep** `#047857`
+- **Error** `#ef4444` · **Error deep** `#dc2626`
+- **Danger** `#f43f5e` · **Danger deep** `#be123c`
+- **Warning** `#facc15` / `#f59e0b` · **Warning deep** `#d97706`
+- **Info** `#38bdf8` · **Info deep** `#0369a1`
+- **Violet** `#a78bfa` / `#7c3aed` · **Pink** `#f472b6` / `#be185d`
+- **Muted** `#64748b` / `#94a3b8`
 
-## 9. Settings Hub & Synchronous Loading UX
+### Rules
 
-To maintain instant interaction feedback in the 6-domain radial settings hub:
-
-### Synchronous Card & Connector Line Rendering
-* **Eager Import Prewarming**: All lazy-loaded domain cards (`PersonaCard`, `ModelsCard`, `RealtimeCard`, `HistoryCard`, `MemoryCard`, `AppearanceCard`, `InteractionCard`) are eagerly prewarmed in parallel when the `Settings` component mounts.
-* **Gated Connection Lines**: Dynamic SVG node-to-card connector lines render strictly when `activeDomains.includes(domain.id)` is true, ensuring connector lines and card containers animate in synchronously in the exact same frame on first click.
-
----
-
-## 10. 3D Cognitive Memory Graph & Telemetry Drawer Invariants
-
-### WebGL Scene Stability & Resizing
-* **Decoupled Renderer Setup**: The Three.js WebGL canvas renderer, scene, and camera setups are decoupled from viewport width/height changes. Window or panel resizing triggers a lightweight `renderer.setSize` update without disposing of GPU buffers or controls.
-* **Failsafe Stabilization**: Memory graph layout stabilization enforces a **700ms max failsafe timeout** to guarantee the borderless network loader overlay (`isLayoutStable`) always dismisses cleanly.
-* **Clean Pill Selection**: Collection and relation filter cards in `MemoryLegendCard.tsx` use rounded active ring highlights (`ring-1 ring-[rgb(var(--accent))]/30 bg-[rgb(var(--accent))]/15`) instead of vertical `border-l-2` accent borders.
-
-### Frameless Glass Overlays & Pipeline Telemetry
-* **Borderless Loader Core**: Memory graph initialization renders a borderless dual-orbital network loader with a central `Sparkles` emblem rather than a boxed card.
-* **100% Height Alternating Telemetry Drawer**: `MemoryPipelineDrawer.tsx` utilizes 100% full available height with an alternating Left/Right zig-zag conduit flow connecting stages `01 Deduplicate` (Left), `02 Embed` (Right), `03 Evaluate Relations` (Left), `04 Commit & Sync` (Right) down to the `Memory Graph` destination (Center Bottom).
-* **Keyboard Dismissal**: `MemoryPipelineDrawer` listens for the `Escape` key to close the drawer.
+- Text and fills **must** come from tokens (`rgb(var(--token))`); hardcoded hex is reserved
+  for data visualization palettes (memory graph collections) and the semantic status set
+  above.
+- Opacity is expressed as the token's alpha (`/10`, `/25`, `/50`), never as a different color.
+- Light mode muted text must hold WCAG AA ≥ 4.5:1 against light glass (see §Accessibility).
 
 ---
 
-## 11. Keyboard Navigation & Route Sequence
+## 4. Typography System
 
-* **Arrow Key Navigation**: Pressing `ArrowRight` or `ArrowLeft` cycles between views in exact visual order matching `EdgeNav` capsule pills:
-  `Home` (`/`) ➔ `History` (`/history`) ➔ `Memory` (`/memory`) ➔ `System` (`/settings`).
+### 4.1 Role stack
+
+| Role | Family | Utility / Class | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Display** | Sora | `font-display` / `.field-text` | Brand titles, page & section headings, stage titles, active voice signals |
+| **Body / UI** | DM Sans | `font-sans` / `.ambient-label` | UI labels, settings options, body copy, dialogue |
+| **Mono / Data** | JetBrains Mono | `font-mono` / `.signal-text` | Numeric metrics, latencies, timestamps, code-like readouts |
+
+* **Display (Sora) is for headings only.** Page/section titles, wizard `h1`s, and stage
+  headers use `font-display`. Do not use it for body copy or buttons.
+* **Mono is for data only.** `font-mono` belongs on numbers, timestamps, latency readouts,
+  and telemetry — never on descriptive prose or button labels.
+* The app default (`html`, `body`) is `font-sans` (DM Sans) at **14px**.
+
+### 4.2 Type scale
+
+Sizes come from the scale ramp only (frontmatter `typography.scale`). No arbitrary sizes.
+
+| Step | Size | Typical use |
+| :--- | :--- | :--- |
+| `2xs` | 11px | Tooltips, badges, micro-labels. **The floor — nothing renders below 11px.** |
+| `xs` | 12px | Small labels, button text, table cells |
+| `sm` | 13px | Secondary body, input hints, meta |
+| `base` | 14px | Default body / UI text |
+| `md` | 15px | Emphasis body, sub-headings |
+| `lg` | 16px | Card titles, body emphasis |
+| `xl` | 18px | Section headers |
+| `2xl` | 24px | Sub-page headings |
+| `3xl` | 28px | Page headings (display) |
+| `4xl` | 36px | Hero / wizard titles (display) |
+
+### 4.3 Uppercase policy
+
+Uppercase (`uppercase`) is a **label voice, not a design voice**. It is reserved for:
+
+1. Display headings that are intentionally shout-y (`font-display` page titles).
+2. Short labels and kickers (1–3 words): badge text, pill labels, tab labels, section kickers.
+3. Short button text (≤ 4 words).
+
+Uppercase is **forbidden** on:
+
+* Subtext, descriptions, and explanatory copy (sentence case).
+* Muted subtitles under headings.
+* Timestamps, durations, and status messages (sentence case).
+* Any text longer than ~4 words that must be read, not scanned.
+
+### 4.4 Reading rules
+
+* Body copy stays in the **45–75 character measure**.
+* Line height for prose: **1.5–1.7**; for UI labels: ≥ 1.3.
+* Light-on-dark text gets slightly more line height, a touch more tracking, and one more
+  weight step when the face needs it.
+* Tracking (`tracking-*`) is tuned to the role: labels/kickers may track up, body copy never.
+* Preserve browser zoom and user font settings. Load only the used weights.
 
 ---
 
-## 12. Small Layout Navigation & Scroll Backdrop Mask
+## 5. Shape & Rounding
 
-For mobile and small viewports (`< 1024px`):
+Radii come from the `rounded` scale only (frontmatter `rounded`):
 
-* **Floating EdgeNav Capsule**: The navigation capsule floats centered near the bottom of the screen with compact pill styling.
-* **Soft Glass Fade Mask Backdrop**: A `110px` gradient backdrop overlay (`fixed bottom-0 left-0 right-0 pointer-events-none z-40 bg-gradient-to-b from-transparent via-[rgb(var(--background))]/60 to-[rgb(var(--background))]/95 backdrop-blur-[16px]`) is positioned behind the EdgeNav pill.
-* **Seamless Content Fade**: Content scrolls smoothly underneath the mask and gradually fades/blurs out as it approaches the bottom edge, preventing hard cutoffs or rectangular navbar overlays.
-* **Scroll Padding Baseline**: All scrollable page views (History, Settings, Monitoring) enforce `pb-[110px]` on small layouts so the last content item is fully viewable above the mask backdrop.
-* **Mobile Category Headers**: Small layouts display explicit category headers (e.g. `HISTORY & SESSIONS`) at the top of scrollable lists to maintain clear visual hierarchy.
+| Token | Value | Use |
+| :--- | :--- | :--- |
+| `xs` | 5px (0.3125rem) | Scrollbars, tiny controls |
+| `sm` | 0.25rem | Checkboxes, small chips |
+| `base` | 0.5rem | Default inputs, small cards |
+| `sm2` | 9px (0.5625rem) | Scrollbar track end caps |
+| `md` | 0.75rem | Cards, popovers |
+| `lg` | 1rem | Large panels, buttons |
+| `xl` | 1.25rem | Dialog boxes |
+| `2xl` | 1.75rem | Hero panels, drawers |
+| `pill` | 9999px | Fully rounded pills, badges, the nav capsule |
+
+Roundness should read as **consistent and calm** — do not mix `rounded-lg` and `rounded-xl`
+on sibling cards within the same group.
 
 ---
 
-**Last Updated:** 2026-08-12
+## 6. Spacing & Density
 
+* Spacing is a **4px rhythm** (0.25rem steps: `p-1 = 4px`, `p-2 = 8px`, `p-3 = 12px`,
+  `p-4 = 16px`, …).
+* Respect parent-container padding: if a parent panel already applies default padding
+  (e.g. `p-3`), do not duplicate horizontal padding or margins on child components.
+* Align text labels, active tab items, inputs, and cards along the exact same vertical axis.
+* Minimum tappable/target size: **32×32px**; prefer 40px+ for primary controls.
 
+---
+
+## 7. Motion & Feedback
+
+* **Dynamic FPS** (`useDynamicFPS`): heavy visual loops (Three.js WebGL orb, canvas waveform)
+  throttle to 60/15/0 fps by activity tier (active / idle / sleep).
+* Mood sync is universal — any element meant to feel "alive" responds to the pipeline mood
+  cycle (calm / active / thinking / speaking).
+* Micro-interactions are short and eased (150–300 ms, ease-out). Avoid continuous looping
+  animations on functional UI (no `animate-bounce` on buttons).
+* Respect `prefers-reduced-motion`: reduce or pause decorative loops.
+
+---
+
+## 8. Ambient Background & Sentient Energy
+
+The background is a reactive canvas representing the voice engine's state.
+
+### Mood synchronization
+
+| Mood | Phase | Treatment |
+| :--- | :--- | :--- |
+| `calm` | Idle / sleep | Low-energy deep obsidian, slow organic blobs, minimal ripple rings |
+| `active` | Listening / user speaking | High frequency, expanded glow, fast morphing |
+| `thinking` | LLM generation | Swirling cyan/violet orbits, pulsing central energy |
+| `speaking` | TTS playback | Fluid ripple waves spreading from the central core |
+
+### Sentient membrane (`PipelineField`)
+
+Behind the central orb, a dashed radial membrane expands and contracts with VAD probability
+and audio volume — the visual heart rate of the assistant.
+
+---
+
+## 9. Holographic Dialogue Stream
+
+Rather than standard conversation logs, Vox renders a holographic dialogue stream:
+
+* User queries bubble **left**; AI voice responses align **right**.
+* No card framing — text renders directly on the ambient field.
+* The scroll zone has a vertical CSS mask gradient so older turns dissolve upward.
+* Words and lines float up smoothly as they stream from the STT/LLM engines.
+
+---
+
+## 10. Iconography & Tooltips
+
+* **Icon style**: thin-stroke (lucide), consistent 1.5px stroke weight; semantic colors
+  reserved for status.
+* **Custom tooltips only.** `app/src/shared/ui/Tooltip.tsx` is the only sanctioned tooltip —
+  glass, 11px uppercase, 4 sides. Native `title` attributes are banned as tooltips; keep
+  `title` only for component props, truncated-text ellipsis, and shared primitives.
+* Icon-only buttons **must** have a tooltip.
+
+---
+
+## 11. Accessibility
+
+* **Contrast**: text on its surface must meet WCAG AA — 4.5:1 body, 3:1 large text. Light
+  mode `--foreground-muted` (`#334155`) measures 9.8:1 against light glass.
+* **Focus**: all interactive elements enforce a visible `focus-visible` ring
+  (`outline: 2px solid rgb(var(--accent))`).
+* **Keyboard**: all flows operable by keyboard; drawers trap focus and bind `Escape` to close.
+* **Font floor**: nothing below **11px** functional text.
+
+---
+
+## 12. Do / Don't
+
+| Do | Don't |
+| :--- | :--- |
+| Use tokens for every color and size | Hardcode hex or arbitrary px beyond the ramp |
+| Put every heading in `font-display` (Sora) | Put body copy or buttons in Sora |
+| Reserve `font-mono` for numbers & telemetry | Use mono on prose or button labels |
+| Uppercase only headings, short labels, short buttons | Uppercase subtext, descriptions, timestamps |
+| Use the custom `Tooltip` for hover explanations | Rely on native `title` tooltips |
+| Keep cards within one radius step per group | Mix `rounded-lg` + `rounded-xl` on sibling cards |
+| Respect the elevation levels | Invent a 5th glass level for one-off layouts |
+| Speak layman copy (no engine/STT/LLM jargon) | Use acronyms or sci-fi jargon in user-facing text |
+
+---
+
+**Last Updated:** 2026-08-16

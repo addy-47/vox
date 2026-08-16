@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Check, ArrowLeft, Trash2, Info, Lock } from "lucide-react";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 interface SubModelCardProps {
   id: string;
@@ -67,13 +68,14 @@ export const SubModelCard = memo<SubModelCardProps>(({
 
     if (isRequired) {
       return (
-        <div
-          title="Mandatory core model (cannot be deleted)"
-          className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground-muted))] cursor-not-allowed shrink-0 flex items-center gap-1"
-        >
-          <Lock size={12} className="opacity-70" />
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider">Required</span>
-        </div>
+        <Tooltip label="Mandatory core model (cannot be deleted)">
+          <div
+            className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground-muted))] cursor-not-allowed shrink-0 flex items-center gap-1"
+          >
+            <Lock size={12} className="opacity-70" />
+            <span className="text-[11px] font-mono font-bold uppercase tracking-wider">Required</span>
+          </div>
+        </Tooltip>
       );
     }
 
@@ -137,9 +139,11 @@ export const SubModelCard = memo<SubModelCardProps>(({
     >
       <div className="space-y-0.5">
         <div className="flex items-start justify-between gap-2">
-          <span className={cn("text-[13px] font-bold text-[rgb(var(--foreground))]", layoutMode === "small" ? "" : "truncate max-w-[170px]")} title={name}>
-            {name}
-          </span>
+          <Tooltip label={name}>
+            <span className={cn("text-[13px] font-bold text-[rgb(var(--foreground))]", layoutMode === "small" ? "" : "truncate max-w-[170px]")}>
+              {name}
+            </span>
+          </Tooltip>
 
           {hasTooltip && (
             <div className="relative group inline-block shrink-0 mt-0.5">
@@ -147,17 +151,17 @@ export const SubModelCard = memo<SubModelCardProps>(({
               <div className="absolute right-full top-0 mr-2 hidden group-hover:block group-hover:opacity-100 w-52 p-2.5 rounded-lg bg-[rgb(var(--card))]/95 border border-[rgba(var(--accent),0.25)] text-[12px] text-[rgb(var(--foreground-muted))] shadow-2xl leading-normal z-50 transition-opacity duration-200 pointer-events-none">
                 <div className="space-y-1">
                   <div className="flex justify-between border-b border-[rgba(var(--accent),0.08)] pb-0.5 mb-1 font-bold">
-                    <span className="text-[10px] text-[rgb(var(--accent))] uppercase tracking-wider">Specs</span>
-                    <span className="font-mono text-[10px] text-[rgb(var(--foreground-muted))]">{parameters}</span>
+                    <span className="text-[11px] text-[rgb(var(--accent))] uppercase tracking-wider">Specs</span>
+                    <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">{parameters}</span>
                   </div>
                   {description && <div className="text-[11px] text-[rgb(var(--foreground))] leading-normal mb-1">{description}</div>}
                   {ramUsage && (
-                    <div className="text-[10px] text-[rgb(var(--foreground-muted))] font-mono">
+                    <div className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono">
                       RAM: {ramUsage}
                     </div>
                   )}
                   {tradeoffs && (
-                    <div className="text-[10px] text-[rgb(var(--foreground-muted))] italic border-t border-[rgba(var(--accent),0.08)] pt-1 mt-1 leading-normal">
+                    <div className="text-[11px] text-[rgb(var(--foreground-muted))] italic border-t border-[rgba(var(--accent),0.08)] pt-1 mt-1 leading-normal">
                       {tradeoffs}
                     </div>
                   )}

@@ -42,9 +42,9 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
   return (
     <div className="flex flex-col h-full relative">
       <WizardHeader 
-        step="Step 2.0 • Infrastructure"
-        title="Environment Scan"
-        description="Analyzing system environment for local AI execution. We ensure your hardware meets the requirements for a seamless experience."
+        step="Step 2 of 6 · Checking Your Computer"
+        title="Checking Your Computer"
+        description="Making sure your computer is ready for Vox. We verify everything works before we move on."
       />
 
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
@@ -115,11 +115,11 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
       <WizardFooter 
         onBack={onBack}
         onNext={onNext}
-        nextLabel="Proceed to Model Sync"
+        nextLabel="Continue to Models"
         isNextDisabled={!allOk || isLoading}
         showBack={true}
-        error={externalError || (!allOk && !isLoading ? "Constraints Detected" : undefined)}
-        errorLabel="Infrastructure Error"
+        error={externalError || (!allOk && !isLoading ? "Some checks need attention" : undefined)}
+        errorLabel="Setup Check Failed"
       />
     </div>
   );
