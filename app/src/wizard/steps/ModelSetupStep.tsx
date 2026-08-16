@@ -8,6 +8,7 @@ import {
   Layers, ShieldCheck, Filter
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { WIZARD_CTA_LABELS } from '@/data/welcomeContent';
 
 // --- Modular Components ---
 import { WizardHeader } from '../components/WizardHeader';
@@ -163,64 +164,64 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     return [
       {
         id: "vad",
-        label: "Silence Detection (VAD)",
-        subLabel: getSubLabel("vad", "Voice Activity Detection Engine"),
+        label: "Speech Detection",
+        subLabel: getSubLabel("vad", "Knows when you start and stop speaking"),
         icon: <Mic />,
         required: true,
         groups: manifest.model_groups.filter((g) => g.category === "vad"),
       },
       {
         id: "stt",
-        label: "Voice Understanding (ASR)",
-        subLabel: getSubLabel("stt", "Automatic Speech Recognition"),
+        label: "Speech to Text",
+        subLabel: getSubLabel("stt", "Turns your speech into words"),
         icon: <Database />,
         required: true,
         groups: manifest.model_groups.filter((g) => g.category === "stt"),
       },
       {
         id: "translit",
-        label: "HI-EN Transliteration",
-        subLabel: getSubLabel("translit", "Phonetic Transliteration Engine"),
+        label: "Hindi & English Spelling",
+        subLabel: getSubLabel("translit", "Writes spoken Hindi in English letters"),
         icon: <Languages />,
         required: true,
         groups: manifest.model_groups.filter((g) => g.category === "translit"),
       },
       {
         id: "embedding",
-        label: "Multilingual Vector Embeddings",
-        subLabel: getSubLabel("embedding", "Memory Embedding Engine"),
+        label: "Memory Understanding",
+        subLabel: getSubLabel("embedding", "Helps Vox connect related memories"),
         icon: <Layers />,
         required: true,
         groups: manifest.model_groups.filter((g) => g.category === "embedding"),
       },
       {
         id: "nli",
-        label: "Contradiction & Memory Verification",
-        subLabel: getSubLabel("nli", "NLI Verification Engine"),
+        label: "Memory Checking",
+        subLabel: getSubLabel("nli", "Checks new memories against old ones"),
         icon: <ShieldCheck />,
         required: true,
         groups: manifest.model_groups.filter((g) => g.category === "nli"),
       },
       {
         id: "classifier",
-        label: "Cognitive & Scope Classifiers",
-        subLabel: getSubLabel("classifier", "Intent & Edge Classifiers"),
+        label: "Smart Sorting",
+        subLabel: getSubLabel("classifier", "Keeps memories tidy and relevant"),
         icon: <Filter />,
         required: true,
         groups: manifest.model_groups.filter((g) => g.category === "classifier"),
       },
       {
         id: "llm",
-        label: "Intelligence Layer (LLM)",
-        subLabel: getSubLabel("llm", "Language Model Intelligence"),
+        label: "Conversation Brain",
+        subLabel: getSubLabel("llm", "Generates Vox's replies"),
         icon: <BrainCircuit />,
         required: false,
         groups: manifest.model_groups.filter((g) => g.category === "llm"),
       },
       {
         id: "tts",
-        label: "Speech Synthesis (TTS)",
-        subLabel: getSubLabel("tts", "Text-To-Speech Generator"),
+        label: "Voice Generator",
+        subLabel: getSubLabel("tts", "Speaks Vox's replies aloud"),
         icon: <VolumeIcon />,
         required: false,
         groups: manifest.model_groups.filter((g) => g.category === "tts"),
@@ -240,12 +241,12 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             className="flex flex-col h-full"
           >
             <WizardHeader 
-                step="Step 2.1 • Selection"
-                title="AI Components"
-                description="Customize your local AI stack. Mandatory core ensures functional interaction, while optional layers unlock deep reasoning."
+                step="Step 3 of 6 · Choosing Voice Models"
+                title="Choose Your Voice Models"
+                description="Pick which voice features Vox uses. The essential ones make conversation work; the extra ones unlock smarter replies and memory."
                 rightContent={
                     <div className="flex flex-col items-end">
-                        <span className="text-[14px] font-bold text-white/80  tracking-tight mb-1">
+                        <span className="text-[14px] font-bold text-[rgb(var(--foreground))]/80  tracking-tight mb-1">
                             {installPath}
                         </span>
                         <div className="flex items-center gap-2">
@@ -292,19 +293,19 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                 </div>
             </div>
 
-            <div className="mt-8 pt-8 border-t border-white/10">
+            <div className="mt-8 pt-8 border-t border-[rgba(var(--foreground),0.1)]">
                 <div className="flex gap-4">
-                    <button onClick={onBack} className="px-8 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors">
+                    <button onClick={onBack} className="px-8 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] transition-colors">
                         Back
                     </button>
                     <button 
                         onClick={startSetup}
                         disabled={isFetching || selectedIds.size === 0}
-                        className="group relative flex-1 py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
+                        className="group relative flex-1 py-5 text-[rgb(var(--foreground))] font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[12px]">
-                            {isFetching ? 'Fetching Catalog...' : 'Begin Synchronization'}
+                            {isFetching ? WIZARD_CTA_LABELS.fetchingCatalog : WIZARD_CTA_LABELS.beginSynchronization}
                             <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />
                         </span>
                     </button>
@@ -323,9 +324,9 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             className="flex flex-col h-full"
           >
              <WizardHeader 
-                step="Step 2.2 • Synchronizing"
-                title="Deploying AI"
-                description="Vox is deploying selected components to your local hardware. This process is fully encrypted and sandboxed."
+                step="Step 3 of 6 · Downloading Voice Models"
+                title="Downloading Voice Models"
+                description="Vox is downloading the voice models to your computer. They run locally, so your voice never leaves your device."
                 color="rgb(var(--accent))"
             />
 
@@ -347,22 +348,22 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                                 <div className="flex items-center gap-3">
                                     <div className={cn(
                                         "p-2 rounded-lg transition-colors",
-                                        isDone ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]" : "bg-white/5 text-white/40"
+                                        isDone ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/60"
                                     )}>
                                         {cat.icon}
                                     </div>
                                     <div className="flex flex-col">
-                                        <span className="text-[12px] font-black text-white uppercase tracking-wider">{cat.label}</span>
+                                        <span className="text-[12px] font-black text-[rgb(var(--foreground))] uppercase tracking-wider">{cat.label}</span>
                                         <span className="text-[12px] text-[rgb(var(--accent))]/60 font-bold uppercase tracking-tighter">
                                             {activeStep}
                                         </span>
                                     </div>
                                 </div>
-                                <span className="text-[12px] font-mono text-white/60">
+                                <span className="text-[12px] font-mono text-[rgb(var(--foreground-muted))]/80">
                                     {Math.round(groupProgress)}%
                                 </span>
                             </div>
-                            <div className="h-1 bg-white/5 rounded-full overflow-hidden mb-2">
+                            <div className="h-1 bg-[rgba(var(--foreground),0.05)] rounded-full overflow-hidden mb-2">
                                 <motion.div 
                                     className="h-full"
                   style={{ background: `linear-gradient(90deg, rgb(var(--accent)) 0%, rgba(var(--accent), 0.3) 100%)` }}
@@ -379,11 +380,11 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             <WizardFooter 
                 onBack={() => setView('catalog')}
                 onNext={() => setView('complete')}
-                nextLabel={isFinished ? "Continue to Verification" : "Synchronizing..."}
+                nextLabel={isFinished ? "Continue" : "Downloading..."}
                 isNextDisabled={!isFinished}
                 showBack={true}
                 error={internalError || externalError}
-                errorLabel="Synchronization Error"
+                errorLabel="Download Error"
             />
           </motion.div>
         )}
@@ -406,15 +407,15 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     </div>
                 </div>
 
-                <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-4">Models Ready</h1>
-                <p className="text-white/40 text-sm max-w-sm leading-relaxed mb-12">
-                    All selected AI models have been successfully downloaded and verified on your system.
+                <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">Models Ready</h1>
+                <p className="text-[rgb(var(--foreground-muted))]/80 text-sm max-w-sm leading-relaxed mb-12">
+                    All selected voice models have been downloaded and checked on your system.
                 </p>
 
                 <div className="flex flex-col gap-4 w-full max-w-xs">
                     <button 
                         onClick={onNext}
-                        className="group relative w-full py-5 text-white font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
+                        className="group relative w-full py-5 text-[rgb(var(--foreground))] font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgba(var(--accent),0.03)] opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, rgba(var(--accent), 0.1) 0%, rgba(var(--accent), 0.03) 100%)` }} />
                         <span className="relative z-10 flex items-center justify-center gap-3 tracking-widest uppercase text-xs">
@@ -424,7 +425,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     
                     <button 
                         onClick={() => setView('catalog')}
-                        className="py-3 text-xs font-bold text-white/30 uppercase tracking-widest hover:text-white/60 transition-colors"
+                        className="py-3 text-xs font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest hover:text-[rgb(var(--foreground))]/60 transition-colors"
                     >
                         Return to Selection
                     </button>

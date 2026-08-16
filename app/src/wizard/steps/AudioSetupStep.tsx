@@ -86,9 +86,9 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
   return (
     <div className="flex flex-col h-full relative">
       <WizardHeader 
-        step="Step 3.0 • Audio Input"
-        title="Device Selection"
-        description="Configuring audio input for real-time interaction. Select your primary microphone to enable voice understanding."
+        step="Step 4 of 6 · Choosing Your Microphone"
+        title="Choose Your Microphone"
+        description="Pick the microphone Vox will listen to. This is how Vox hears you."
       />
  
       <div className="flex-1 flex flex-col gap-6 min-h-0">
@@ -109,7 +109,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
                   "w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 relative z-10 border",
                   selected 
                     ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.15)]" 
-                    : "bg-white/5 border-transparent text-white/20"
+                    : "bg-[rgba(var(--foreground),0.05)] border-transparent text-[rgb(var(--foreground-muted))]/50"
                 )}>
                   <Mic className="w-7 h-7" />
                 </div>
@@ -117,12 +117,12 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     
             <div className="flex-1">
                 <div className="flex items-center justify-between mb-2">
-                <span className="text-[12px] font-black text-white/80 uppercase tracking-widest flex items-center gap-2">
-                    <Activity className="w-3 h-3" /> Input Signal
+                <span className="text-[12px] font-black text-[rgb(var(--foreground))]/80 uppercase tracking-widest flex items-center gap-2">
+                    <Activity className="w-3 h-3" /> Your Voice
                 </span>
                 <span className="text-[12px] font-bold text-[rgb(var(--accent))] font-mono">{Math.round(energy)}%</span>
                 </div>
-                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                <div className="h-1.5 bg-[rgba(var(--foreground),0.05)] rounded-full overflow-hidden border border-[rgba(var(--foreground),0.08)]">
                 <motion.div 
                     className="h-full" style={{ background: `linear-gradient(90deg, rgb(var(--accent)) 0%, rgba(var(--accent), 0.3) 100%)` }}
                     animate={{ width: `${Math.min(energy, 100)}%` }}
@@ -134,7 +134,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         </div>
     
         <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
-            <span className="text-[12px] font-bold text-white/30 uppercase tracking-widest px-1">Source Selection</span>
+            <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest px-1">Choose a Microphone</span>
             <div className="space-y-2">
             {devices.map(device => (
                 <button
@@ -143,12 +143,12 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
                 className={cn(
                     "w-full p-4 rounded-xl transition-all text-left flex items-center justify-between group",
                     selected === device.name 
-                    ? "glass text-white" 
+                    ? "glass text-[rgb(var(--foreground))]" 
                     : "glass text-[rgb(var(--foreground-muted))]"
                 )}
                 >
                 <div className="flex items-center gap-3">
-                    <Volume2 className={cn("w-4 h-4 transition-colors", selected === device.name ? "text-[rgb(var(--accent))]" : "text-white/20")} />
+                    <Volume2 className={cn("w-4 h-4 transition-colors", selected === device.name ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/40")} />
                     <span className="text-[12px] font-bold truncate max-w-[280px] uppercase tracking-tight">{device.name}</span>
                 </div>
                 {selected === device.name && <Check className="w-4 h-4 text-[rgb(var(--accent))]" />}
@@ -156,7 +156,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
             ))}
             {devices.length === 0 && (
                 <div className="p-8 text-center border border-dashed border-[rgba(var(--border),0.08)] rounded-xl glass">
-                <span className="text-[12px] font-bold text-white/40 uppercase tracking-widest">No devices detected</span>
+                <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest">No microphones detected</span>
                 </div>
             )}
             </div>
@@ -166,7 +166,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
       <WizardFooter 
         onBack={onBack}
         onNext={onNext}
-        nextLabel="Finalize Initialization"
+        nextLabel="Continue"
         isNextDisabled={!selected}
         showBack={true}
       />

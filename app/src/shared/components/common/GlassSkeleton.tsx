@@ -35,10 +35,40 @@ export const GlassSkeleton: React.FC<GlassSkeletonProps> = ({
 
   if (variant === 'card') {
     return (
-      <div className={cn('glass p-5 space-y-4', !noPulse && 'animate-pulse', className)}>
-        <div className="h-3 glass rounded w-1/4" />
-        <div className="h-4 glass rounded w-3/4" />
-        <div className="h-3 glass rounded w-1/2" />
+      <div
+        className={cn(
+          'relative overflow-hidden rounded-2xl glass p-5 space-y-4 border border-[rgba(var(--accent),0.14)]',
+          !noPulse && 'shadow-[0_0_28px_rgba(var(--accent),0.08)]',
+          className
+        )}
+      >
+        {/* ambient accent glow orb */}
+        {!noPulse && (
+          <span
+            className="absolute -top-4 -right-4 w-16 h-16 rounded-full pointer-events-none"
+            style={{ background: 'radial-gradient(circle, rgba(var(--accent),0.18) 0%, transparent 70%)' }}
+          />
+        )}
+
+        {/* shimmer sweep */}
+        {!noPulse && (
+          <span className="absolute inset-y-0 left-0 w-1/2 -skew-x-12 pointer-events-none bg-gradient-to-r from-transparent via-[rgba(var(--accent),0.08)] to-transparent animate-[skeleton-shimmer_1.6s_ease-in-out_infinite]" />
+        )}
+
+        {/* charging header: brand bar + pulsing accent orb */}
+        <div className="flex items-center justify-between">
+          <div className="h-3 rounded w-1/4 bg-[rgba(var(--foreground),0.10)]" />
+          {!noPulse && (
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-[rgb(var(--accent))] opacity-50 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[rgb(var(--accent))]" />
+            </span>
+          )}
+        </div>
+
+        <div className="h-4 rounded w-3/4 bg-[rgba(var(--foreground),0.08)]" />
+        <div className="h-3 rounded w-1/2 bg-[rgba(var(--foreground),0.06)]" />
+        <div className="h-3 rounded w-2/3 bg-[rgba(var(--foreground),0.05)]" />
       </div>
     );
   }

@@ -118,14 +118,14 @@ export const MetricCarousel: React.FC<MetricCarouselProps> = ({
                 key={card.id}
                 className="p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] flex flex-col justify-between shadow-sm min-h-[72px]"
               >
-                <div className="flex items-center gap-1.5 text-[10.5px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase">
                   <IconComp size={13} style={{ color: card.color }} />
                   <span className="truncate">{card.title}</span>
                 </div>
                 <div className="text-[15px] font-mono text-[rgb(var(--foreground))] pt-1">
                   {card.value}
                 </div>
-                <span className="text-[9.5px] font-sans text-[rgb(var(--foreground-muted))]/80 leading-none mt-0.5">
+                <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]/80 leading-none mt-0.5">
                   {card.subtitle}
                 </span>
               </div>

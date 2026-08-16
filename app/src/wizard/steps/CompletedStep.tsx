@@ -19,7 +19,7 @@ export const CompletedStep: React.FC<Props> = ({ onBack }) => {
   return (
     <div className="flex flex-col h-full max-h-[100vh] overflow-hidden justify-between relative select-none">
       <WizardHeader 
-        step="Step 5.0 • Completion"
+        step="Step 6 of 6 · All Done"
         title="Setup Complete."
         description="Vox is installed and ready to use."
       />
@@ -29,14 +29,14 @@ export const CompletedStep: React.FC<Props> = ({ onBack }) => {
         <div className="grid grid-cols-2 gap-3 shrink-0">
           <StatusCard 
             icon={<Check className="w-4 h-4" />}
-            label="SPEECH ENGINE"
+            label="VOICE ENGINE"
             value="READY"
             subValue="Runs completely offline"
             ok={true}
           />
           <StatusCard 
             icon={<Check className="w-4 h-4" />}
-            label="AI MODELS"
+            label="VOICE MODELS"
             value="READY"
             subValue="Configured on your device"
             ok={true}
@@ -64,7 +64,7 @@ export const CompletedStep: React.FC<Props> = ({ onBack }) => {
             <Zap className="w-3 h-3 text-[rgb(var(--accent))]" />
             <span className="text-[12px] font-black text-[rgb(var(--accent))] uppercase tracking-[0.3em]">Quick Tip</span>
           </div>
-          <p className="text-[12px] text-white/40 leading-relaxed relative z-10 font-medium">
+          <p className="text-[12px] text-[rgb(var(--foreground-muted))]/80 leading-relaxed relative z-10 font-medium">
             Click the Vox icon in your menu bar or press your shortcut key to start talking.
           </p>
         </div>

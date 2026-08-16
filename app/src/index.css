@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Sora:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
@@ -311,6 +311,23 @@ input[type="range"]:active::-webkit-slider-thumb {
   100% { background-position: -200% 0; }
 }
 
+@keyframes skeleton-shimmer {
+  0% { transform: translateX(-100%); }
+  55%, 100% { transform: translateX(240%); }
+}
+
+@keyframes skeleton-glow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@keyframes connector-flow {
+  0% { stroke-dashoffset: 0; opacity: 0; }
+  12% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { stroke-dashoffset: -560; opacity: 0; }
+}
+
 .engage-btn-loading {
   position: relative;
   overflow: visible;
@@ -394,7 +411,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 
 /* ── Sentient Field & Signal Redesign Utilities ── */
 .field-text {
-  font-family: 'Syne', 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-family: 'Sora', 'DM Sans', system-ui, sans-serif;
   font-size: clamp(1rem, 2.5vw, 1.75rem);
   font-weight: 600;
   line-height: 1.4;
@@ -405,7 +422,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 
 .signal-text {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: clamp(0.75rem, 1.5vw, 0.9rem);
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -414,7 +431,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 }
 
 .ambient-label {
-  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  font-family: 'DM Sans', system-ui, sans-serif;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.08em;

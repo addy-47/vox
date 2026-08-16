@@ -370,7 +370,7 @@ export const History: React.FC = () => {
                 <AlertCircle size={20} />
               </div>
               <div className="space-y-1">
-                <h3 className="text-[14px] font-bold text-[rgb(var(--foreground))]">{HISTORY_COPY.failedTitle}</h3>
+                <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))]">{HISTORY_COPY.failedTitle}</h3>
                 <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed">
                   {error}
                 </p>
@@ -398,7 +398,7 @@ export const History: React.FC = () => {
           <div className="flex-1 overflow-y-auto px-6 pb-[110px] space-y-4 custom-scrollbar">
             {/* Category Header */}
             <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--accent),0.12)] mb-4 px-1 shrink-0">
-              <span className="text-[12px] font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
+              <span className="text-[12px] font-display font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
                 History & Sessions
               </span>
               <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
@@ -428,7 +428,7 @@ export const History: React.FC = () => {
                     <span className="text-[11px] font-mono text-[rgb(var(--accent))] font-bold">
                       {formatDateTime(session.started_at)}
                     </span>
-                    <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] font-medium">
+                    <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] font-medium">
                       {session.turn_count} {session.turn_count === 1 ? HISTORY_COPY.turnSingular : HISTORY_COPY.turnPlural}
                     </span>
                   </div>
@@ -487,7 +487,7 @@ export const History: React.FC = () => {
               <ChevronRight size={22} />
             </button>
 
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-mono font-medium text-[rgb(var(--foreground-muted))] z-30">
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))] z-30">
               {pageIndex + 1} / {totalPages}
             </div>
 

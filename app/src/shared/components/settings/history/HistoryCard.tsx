@@ -34,14 +34,14 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
         <div className="flex items-center justify-between mb-2 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-1.5 w-full">
           <div className="flex items-center gap-2">
             <History className="text-[rgb(var(--accent))]" size={16} />
-            <span className="text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+            <span className="font-display text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
               History & Storage
             </span>
           </div>
         </div>
       ) : (
         <div className="flex items-center justify-between mb-4 w-full shrink-0">
-          <span className="text-[13px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
+          <span className="font-display text-[13px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
             History Settings
           </span>
         </div>
@@ -93,7 +93,7 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
             onClick={() => updateDraft("persistence", "private_mode", !persistence.private_mode)}
             className="h-full w-0 group-hover:w-[32px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent border-l-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden cursor-pointer select-none shrink-0"
           >
-            <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
+            <span className="text-[11px] font-black uppercase tracking-[0.15em] text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
               TOGGLE
             </span>
           </div>

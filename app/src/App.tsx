@@ -46,6 +46,15 @@ const App: React.FC = () => {
     import("@/pages/Settings").catch(() => {});
     import("@/pages/Monitoring").catch(() => {});
 
+    // Prewarm the 7 settings card chunks at boot so the radial hub opens without lag
+    import("@/shared/components/settings/persona/PersonaCard").catch(() => {});
+    import("@/shared/components/settings/models/ModelsCard").catch(() => {});
+    import("@/shared/components/settings/realtime/RealtimeCard").catch(() => {});
+    import("@/shared/components/settings/history/HistoryCard").catch(() => {});
+    import("@/shared/components/settings/memory/MemoryCard").catch(() => {});
+    import("@/shared/components/settings/appearance/AppearanceCard").catch(() => {});
+    import("@/shared/components/settings/interaction/InteractionCard").catch(() => {});
+
     // Show window immediately once JS is ready to display the loader
     getCurrentWindow().show().catch(console.error);
 

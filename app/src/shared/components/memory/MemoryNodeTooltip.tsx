@@ -16,6 +16,7 @@ import {
   softDeleteFact,
 } from "@/services/memoryService";
 import { getCollectionColor, getRelationStyle } from "@/shared/components/memory/MemoryGraph";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 interface MemoryNodeTooltipProps {
   factDetail: MemoryFactDetail | null;
@@ -187,7 +188,7 @@ export const MemoryNodeTooltip = memo(({
             <span className="text-[12px] font-sans font-black uppercase tracking-wider text-[rgb(var(--foreground))]">
               {factDetail?.collection || "Identity"}
             </span>
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
               • {compactId}
             </span>
           </div>
@@ -205,7 +206,7 @@ export const MemoryNodeTooltip = memo(({
         {isLoading ? (
           <div className="py-6 flex flex-col items-center justify-center gap-2 text-[rgb(var(--accent))]">
             <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            <span className="text-[11px] font-mono tracking-widest uppercase">Loading detail...</span>
+            <span className="text-[11px] tracking-widest uppercase">Loading detail...</span>
           </div>
         ) : factDetail ? (
           <>
@@ -231,19 +232,19 @@ export const MemoryNodeTooltip = memo(({
                     disabled={isSaving}
                     className="px-3.5 py-1 rounded-xl bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/40 text-[11px] font-sans font-bold uppercase cursor-pointer hover:bg-[rgb(var(--accent))]/30 transition-colors shadow-sm"
                   >
-                    {isSaving ? "Saving..." : "Save Content"}
+                    {isSaving ? "Saving..." : "Save"}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="relative pl-3 border-l-2 border-[rgb(var(--accent))]/40 py-1">
-                <p className="text-[12.5px] font-sans leading-relaxed text-[rgb(var(--foreground))]">
+                <p className="text-[12px] font-sans leading-relaxed text-[rgb(var(--foreground))]">
                   "{factDetail.fact}"
                 </p>
-                <div className="flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))] mt-1.5">
+                <div className="flex items-center justify-between text-[11px] font-mono text-[rgb(var(--foreground-muted))] mt-1.5">
                   <span>{formatDate(factDetail.created_at)}</span>
                   <span className="font-bold text-[rgb(var(--accent))]">
-                    {factDetail.is_superseded ? "HISTORICAL" : "ACTIVE"}
+                    {factDetail.is_superseded ? "OUTDATED" : "ACTIVE"}
                   </span>
                 </div>
               </div>
@@ -252,8 +253,8 @@ export const MemoryNodeTooltip = memo(({
             {/* Category Reassignment Picker */}
             {isReassigning && (
               <div className="pt-2 flex flex-col gap-2">
-                <span className="text-[10px] font-sans font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-wider">
-                  Reassign Collection
+                <span className="text-[11px] font-sans font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-wider">
+                  Change Category
                 </span>
                 <div className="grid grid-cols-2 gap-1.5">
                   {CATEGORIES.map((cat) => (
@@ -271,18 +272,18 @@ export const MemoryNodeTooltip = memo(({
 
             {/* Relation Summary Inline Stats Row */}
             <div className="flex items-center justify-between text-[11px] font-sans pt-1">
-              <span className="text-[10px] font-mono font-bold uppercase text-[rgb(var(--foreground-muted))]">
-                RELATIONS
+              <span className="text-[11px] font-bold uppercase text-[rgb(var(--foreground-muted))]">
+                CONNECTIONS
               </span>
               <div className="flex items-center gap-3 font-mono text-[11px]">
                 <span className="text-emerald-500 dark:text-emerald-400 font-bold">
-                  {supportsCount} <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">SUPPORTS</span>
+                  {supportsCount} <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">SUPPORTS</span>
                 </span>
                 <span className="text-amber-500 dark:text-amber-400 font-bold">
-                  {dependsCount} <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">DEPENDS</span>
+                  {dependsCount} <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">DEPENDS</span>
                 </span>
                 <span className="text-red-500 dark:text-red-400 font-bold">
-                  {conflictsCount} <span className="text-[10px] font-sans text-[rgb(var(--foreground-muted))]">CONFLICTS</span>
+                  {conflictsCount} <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">CONFLICTS</span>
                 </span>
               </div>
             </div>
@@ -302,7 +303,7 @@ export const MemoryNodeTooltip = memo(({
                         <span className="truncate text-[rgb(var(--foreground))]">{rel.to_id}</span>
                       </div>
                       <span
-                        className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0"
+                        className="text-[11px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0"
                         style={{ color: relStyle.color, backgroundColor: `${relStyle.color}15` }}
                       >
                         {rel.relation}
@@ -323,7 +324,7 @@ export const MemoryNodeTooltip = memo(({
                         <span className="truncate text-[rgb(var(--foreground))]">{rel.from_id}</span>
                       </div>
                       <span
-                        className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0"
+                        className="text-[11px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0"
                         style={{ color: relStyle.color, backgroundColor: `${relStyle.color}15` }}
                       >
                         {rel.relation}
@@ -337,20 +338,23 @@ export const MemoryNodeTooltip = memo(({
             {/* Actions Bar */}
             <div className="flex items-center justify-between pt-2">
               <div className="flex items-center gap-1">
+                <Tooltip label="Change Category">
                 <button
                   onClick={() => setIsReassigning((v) => !v)}
                   className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
-                  title="Reassign Collection"
                 >
                   <Layers size={14} />
                 </button>
+              </Tooltip>
+              <Tooltip label="Edit Memory">
                 <button
                   onClick={() => setIsEditing(true)}
                   className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
-                  title="Edit Fact Content"
                 >
                   <Edit3 size={14} />
                 </button>
+              </Tooltip>
+              <Tooltip label={confirmDelete ? "Click again to delete" : "Delete Memory"}>
                 <button
                   onClick={handleDelete}
                   className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
@@ -358,16 +362,16 @@ export const MemoryNodeTooltip = memo(({
                       ? "text-red-400 bg-red-500/15"
                       : "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-500/10"
                   }`}
-                  title={confirmDelete ? "Click to confirm soft delete" : "Soft Delete Fact"}
                 >
                   {confirmDelete ? <Check size={14} /> : <Trash2 size={14} />}
                 </button>
+              </Tooltip>
               </div>
             </div>
           </>
         ) : (
           <div className="py-3 text-center text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
-            Fact details unavailable
+            Details unavailable
           </div>
         )}
       </motion.div>

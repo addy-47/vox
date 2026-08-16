@@ -204,7 +204,7 @@ export const TtsVoiceManager = memo(({
                   ) : (
                     <div className="flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)] animate-pulse" />
-                      <span className="text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]/70">
+                      <span className="text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))]/70">
                         {edgeTtsVoices.length > 0 ? `${edgeTtsVoices.length}` : "Live"}
                       </span>
                     </div>
@@ -286,7 +286,7 @@ export const TtsVoiceManager = memo(({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Quality</span>
-                  <span className="text-[13px] font-mono text-[rgb(var(--accent))] font-bold">
+                  <span className="text-[13px] text-[rgb(var(--accent))] font-bold">
                     {draftSettings.tts.quality_steps <= 4
                       ? "Speed"
                       : draftSettings.tts.quality_steps <= 8
