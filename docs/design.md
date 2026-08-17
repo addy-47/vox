@@ -110,6 +110,12 @@ to the voice pipeline state. Every visual decision either serves that or works a
    un-throttled.
 5. **Glass elevation is a closed system.** A fixed, small number of elevation levels, each
    with a defined purpose. Do not invent a new level to solve a one-off layout problem.
+6. **Direct Ambient Stage Invariant (No Redundant Stage Wrappers).** Every major interactive
+   surface (the Orb in `Home`, the 3D Graph in `Memory`, the 3D Chamber in `History`) must mount
+   **directly on the fluid ambient page root** (`relative flex-1 flex flex-col h-full w-full bg-transparent`).
+   NEVER introduce artificial inner container boxes, nested card wrappers, or duplicate radial
+   gradient backdrops for a page's primary interactive canvas. All interactive nodes and controls
+   position fluidly on the root ambient field.
 
 ---
 

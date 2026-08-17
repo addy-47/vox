@@ -3,7 +3,7 @@ import { RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
-import { GlassSkeleton, ErrorBoundary } from "@/shared/components/common";
+import { GlassSkeleton, ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
 import { SETTINGS_COPY } from "@/data/settingsData";
@@ -274,11 +274,13 @@ export const Settings: React.FC = () => {
 
   if (!draftSettings) {
     return (
-      <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10">
-        <div className="w-full max-w-md mx-auto space-y-6">
-          <GlassSkeleton variant="card" />
-          <GlassSkeleton variant="card" />
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10">
+        <OrbitalLoader
+          size="md"
+          title="Loading Settings..."
+          subtitle="Reading hardware and model configurations"
+          statusText="INITIALIZING CONFIG ENGINE"
+        />
       </div>
     );
   }

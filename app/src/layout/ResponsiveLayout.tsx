@@ -125,7 +125,10 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         <div className="absolute bottom-0 right-0 w-2 h-2 cursor-nwse-resize z-[110]" />
 
         {/* Ambient Background — visible on every page */}
-        <AmbientBackground originY={ambientOriginY} />
+        <AmbientBackground
+          originY={ambientOriginY}
+          rippleShape={location.pathname === "/history" ? "orbit" : "circle"}
+        />
 
         {/* Bottom navigation */}
         <EdgeNav />
