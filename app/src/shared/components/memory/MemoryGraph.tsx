@@ -22,11 +22,11 @@ import {
   ShieldAlert,
   Archive,
   X,
-  Sparkles,
 } from "lucide-react";
 import { MemoryNodeTopology, MemoryEdgeTopology, MemoryFactDetail } from "@/services/memoryService";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { OrbitalLoader } from "@/shared/components/common";
 
 interface GraphErrorBoundaryProps {
   children: ReactNode;
@@ -1143,28 +1143,12 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
                 transition={{ duration: 0.6, ease: "easeInOut" }}
                 className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[rgb(var(--background))]/90 backdrop-blur-3xl pointer-events-none select-none"
               >
-                {/* Orbital Glowing Central Core */}
-                <div className="relative flex items-center justify-center w-28 h-28 mb-8">
-                  <div className="absolute inset-0 rounded-full bg-[rgb(var(--accent))]/10 animate-ping duration-1000" />
-                  <div className="absolute inset-2 rounded-full border border-[rgb(var(--accent))]/25 animate-spin duration-[6000ms]" />
-                  <div className="absolute inset-5 rounded-full border border-dashed border-[rgb(var(--accent))]/40 animate-spin duration-[10000ms] [animation-direction:reverse]" />
-                  <div className="relative z-10 p-4 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] shadow-[0_0_40px_rgba(var(--accent),0.3)]">
-                    <Sparkles size={30} className="animate-pulse" />
-                  </div>
-                </div>
-
-                {/* Clean Borderless Typography */}
-                <div className="flex flex-col items-center text-center gap-1.5">
-                  <h3 className="font-display text-[15px] font-sans font-extrabold tracking-wide text-[rgb(var(--foreground))]">
-                    Building memory graph...
-                  </h3>
-                  <p className="text-[12px] font-sans font-medium text-[rgb(var(--foreground-muted))]">
-                    {nodes.length.toLocaleString()} nodes · {edges.length.toLocaleString()} edges
-                  </p>
-                  <p className="text-[11px] font-sans font-semibold text-[rgb(var(--foreground-muted))]/60 tracking-wider uppercase mt-2">
-                    Optimizing layout and relationships
-                  </p>
-                </div>
+                <OrbitalLoader
+                  size="lg"
+                  title="Building memory graph..."
+                  subtitle={`${nodes.length.toLocaleString()} nodes · ${edges.length.toLocaleString()} edges`}
+                  statusText="Optimizing layout and relationships"
+                />
               </motion.div>
             )}
           </AnimatePresence>

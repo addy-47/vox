@@ -586,6 +586,10 @@ input[type="range"]:active::-webkit-slider-thumb {
   will-change: transform, opacity;
   animation: var(--rp-anim-name, ripple-out) var(--rp-dur, 16s) cubic-bezier(0.1, 0.4, 0.2, 1) infinite;
 }
+.rp-ring-orbit {
+  height: 118px; /* Compressed to 0.42 tilt aspect ratio matching orbitMath */
+  border-radius: 50% / 50%;
+}
 [data-theme='light'] .rp-ring {
   border-width: 1.5px;
   border-color: rgba(var(--accent), 0.75);
@@ -697,6 +701,13 @@ input[type="range"]:active::-webkit-slider-thumb {
 @keyframes ring-pulse-slow {
   0%, 100% { transform: scale(1); opacity: 0.15; }
   50% { transform: scale(1.1); opacity: 0.35; }
+}
+
+/* Orbit card positioning is handled strictly imperatively via inline transforms to prevent frame overrides */
+@media (prefers-reduced-motion: reduce) {
+  .orbit-card-enter {
+    animation: none !important;
+  }
 }
 
 .animate-wave-bar-1 { animation: wave-bar-1 1s ease-in-out infinite; }

@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
-import { ErrorBoundary } from "@/shared/components/common";
+import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 
 // Lazy load pages for performance
 const Home = lazy(() => import("@/pages/Home").then(m => ({ default: m.Home })));
@@ -14,18 +14,15 @@ const Memory = lazy(() => import("@/pages/Memory").then(m => ({ default: m.Memor
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
 
-// Premium Loading Overlay
+// Premium Shared Orbital Loading Screen
 const PageLoader = () => (
   <div className="flex h-screen w-full items-center justify-center bg-[rgb(var(--background))]">
-    <div className="flex flex-col items-center gap-6">
-      <div className="relative w-12 h-12">
-        <div className="absolute inset-0 border-2 border-[rgb(var(--accent))]/20 rounded-full" />
-        <div className="absolute inset-0 border-2 border-t-[rgb(var(--accent))] rounded-full animate-spin" />
-      </div>
-      <span className="text-[12px] font-bold tracking-[0.5em] text-[rgb(var(--accent))] uppercase animate-pulse">
-        Synchronizing
-      </span>
-    </div>
+    <OrbitalLoader
+      size="lg"
+      title="SYNCHRONIZING"
+      subtitle="Preparing neural models and interface"
+      statusText="VOX RUNTIME READY"
+    />
   </div>
 );
 
