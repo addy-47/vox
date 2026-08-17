@@ -2,6 +2,7 @@ import React from "react";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 
 type AmbientMood = "calm" | "active" | "thinking" | "speaking";
+type RippleShape = "circle" | "orbit";
 
 interface AmbientBackgroundProps {
   mood?: AmbientMood;
@@ -11,6 +12,8 @@ interface AmbientBackgroundProps {
   originY?: string;
   /** Speed multiplier for ripple ring expansion (e.g. 1.5 = 1.5x slower / longer interval) */
   rippleSpeedMultiplier?: number;
+  /** Shape geometry of ripples — 'circle' for orb views, 'orbit' for 3D tilted chamber */
+  rippleShape?: RippleShape;
 }
 
 interface MoodConfig {
@@ -74,6 +77,7 @@ export const AmbientBackground = React.memo(({
   originX = "50%",
   originY = "50%",
   rippleSpeedMultiplier = 1.0,
+  rippleShape = "circle",
 }: AmbientBackgroundProps) => {
   const cfg = MOOD_CONFIG[mood];
   const effectiveRippleDuration = cfg.rippleDuration * rippleSpeedMultiplier;
@@ -162,12 +166,12 @@ export const AmbientBackground = React.memo(({
       {/* Core glow — centered at orb origin */}
       <div ref={glowRef} className="amb-glow" />
 
-      {/* Ripple rings — expand from orb origin to screen edges, composited under parent opacity */}
+      {/* Ripple rings — expand from origin, circular or 3D orbit shape */}
       <div ref={rippleRef} className="rp-wrapper">
         {Array.from({ length: RIPPLE_COUNT }, (_, i) => (
           <div
             key={i}
-            className="rp-ring"
+            className={rippleShape === "orbit" ? "rp-ring rp-ring-orbit" : "rp-ring"}
             style={{
               animationDelay: `${(i * effectiveRippleDuration) / RIPPLE_COUNT}s`,
             }}
