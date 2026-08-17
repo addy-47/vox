@@ -251,35 +251,76 @@ Engaged + PTT:      [Pause/Resume icon] [Mic icon] [X icon (disengage)]
 #### Data Structure
 
 ```typescript
-interface Session {
+// services/historyService.ts — the only sanctioned IPC gateway for history
+interface SessionRow {
   id: number;
-  started_at: string;
-  ended_at?: string;
+  started_at: number;          // epoch ms
+  ended_at: number | null;     // null while the session is still open
   turn_count: number;
-  turns: Turn[];
+  first_message: string | null;
 }
 
-interface Turn {
+interface TurnRow {
   id: number;
+  session_id: number;
+  turn_id: number;
   user_text: string;
   assistant_text: string;
-  stt_latency_ms: number;
-  ttft_ms: number;
-  created_at: string;
+  stt_latency_ms: number | null;
+  ttft_ms: number | null;
+  created_at: number;
 }
 ```
+
+#### Celestial View Architecture (single-ring carousel)
+
+The orbit view is a **2.5D single-ring carousel** — no WebGL. The ring is a static
+CSS ellipse (`border-radius: 50%` compressed by `ORBIT_TILT_COMPRESSION`); cards are
+projected onto it with pure math from `orbitMath.ts`:
+
+- `ellipsePoint(angle, radius)` — card position; angle 0 = right, +π/2 = bottom (front).
+- `depthFromAngle(angle)` — 0 (top-back) → 1 (bottom-front) drives scale (0.55→1.12)
+  and opacity (0.45→1).
+- `zIndexForAngle(angle, selected)` — back-half cards (z 10-39) slide **behind** the
+  central clock (z-50); front-half (z 51-79) above; selected card wins (z-80).
+- Rotation is **unbounded** (infinite circular scroll): drag or momentum fling spins
+  the wheel; cards cycle front→back→front with depth attenuation. The rAF loop is
+  **self-stopping** — it runs only while dragging or decaying momentum, then dies.
+  No idle drift, no idle CPU.
+
+#### Window Model (bounded orbit)
+
+Days/months with more sessions than the orbit can hold are chunked into windows of
+`orbitCapacityFor(width, height)` cards (clamped 6-12, dynamic by viewport):
+
+- `chunkSessionsIntoWindows(sessions, cap)` → windows labeled by their actual hour
+  range, e.g. "07:12 – 11:48".
+- `chunkDaysIntoWindows(days, cap)` → month windows labeled "1–12", "13–24", "25–31".
+- The central clock shows the active window's range + a segmented rim arc
+  (`WINDOW 1/3`). Chevrons step windows first, then roll over to the previous/next
+  day/month at boundaries.
+- Deleting the last session of a window collapses the window automatically.
+
+#### Voice Print Dial
+
+`VoiceDial.tsx` renders a static SVG ring between the clock and the orbit: one dot
+per session (day view) at its clock position on a 24h face, or per active day
+(month view, 31-day face). Dot size encodes turn count; the current window's dots
+are accent-lit, the rest dimmed. Zero animation.
 
 #### IPC Integration
 
 ```typescript
-const [sessions, setSessions] = useState<Session[]>([]);
+import { getSessions, getTurns, deleteSession } from "@/services/historyService";
+
+const [sessions, setSessions] = useState<SessionRow[]>([]);
 
 useEffect(() => {
-  invoke<Session[]>("get_sessions").then(setSessions);
+  getSessions().then(setSessions);
 }, []);
 
 const loadTurns = (sessionId: number) => {
-  invoke<Turn[]>("get_turns", { sessionId }).then(setTurns);
+  getTurns(sessionId).then(setTurns);
 };
 ```
 

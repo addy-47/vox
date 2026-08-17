@@ -76,34 +76,30 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 ## 5. Recent Work & Critical System Invariants
 
 ### 5.1 Architecture & Performance Invariants
-- **UI & 3D Graph**: Banned sci-fi jargon and nested pills in HUD. Memory graph renders all 10,000+ nodes in 1 `InstancedMesh` GPU call (<15MB RAM) with stable refs across prop updates.
-- **Typography Stack**: Display = `Sora`, Body/UI = `DM Sans`, Telemetry = `JetBrains Mono` (declared in `tailwind.config.js` + `index.css`, mirrored in `docs/design.md` §8). Font floor `>= 11px` — sub-11px functional text is forbidden. All user-facing copy is layman (no engine/STT/LLM jargon; HUD pills read Thinking/Hearing/Speaking).
-- **Custom Tooltip Primitive**: `app/src/shared/ui/Tooltip.tsx` is the only sanctioned tooltip (glass, 11px uppercase). Native `title` attrs are banned as tooltips (keep `title` only for component props, truncated-text, and shared primitives).
-- **ONNX Lifecycle & Zero Idle RAM**: 0 ONNX models loaded on boot. Evict pipeline sessions (`unload_all_onnx_models()`) on barge-in (`PipelineActive`), disengage, or batch completion.
-- **Monitoring Idle Lifecycle**: The telemetry popover is always mounted (`ResponsiveLayout.tsx`), but work is gated — `useMonitoringMetrics(enabled)` only polls `getRuntimeSnapshot()` (1s) while visible, the LiquidChamber canvas loop pauses when closed (`popover && !open`), on `document.hidden`, and hoists `getContext("2d")` out of the rAF. No 60fps loop or polling runs at idle.
-- **ModernBERT Edge Triggering**: Bidirectional candidate evaluation (`has_inter_collection_relationship`) enforcing canonical order `[Source] [SEP] [Target]` before inference.
-- **Benchmark Rules**: Sequential runs only (4 CPU threads, release mode). Evaluated objectively via programmatic QA boolean parsers without inner-loop sampler allocation.
+- **Typography**: Display = `Sora`, Body/UI = `DM Sans`, Telemetry = `JetBrains Mono`. Font floor `>= 11px`. All user-facing copy is layman (no STT/LLM jargon; HUD pills read Thinking/Hearing/Speaking).
+- **Tooltip**: `app/src/shared/ui/Tooltip.tsx` is the only sanctioned tooltip. Native `title` attrs are banned as tooltips.
+- **ONNX / Zero Idle RAM**: 0 ONNX models loaded on boot; evict pipeline sessions on barge-in, disengage, or batch completion.
+- **Memory graph**: 10,000+ nodes in 1 `InstancedMesh` GPU call (<15MB RAM).
+- **Benchmarks**: sequential runs only (4 CPU threads, release mode), no inner-loop sampler allocation.
+- **ModernBERT edge triggering**: bidirectional candidate eval enforcing canonical `[Source] [SEP] [Target]`.
 
-### 5.2 Default Local Conversational LLM (Qwen3.5-0.8B)
-- **Model Registration**: `qwen_3_5_0_8b` (Q4_K_M GGUF, 508MB) in `~/.vox/models/llm/qwen/` registered in `manifests/models_manifest.json` and `defaults.rs`.
-- **Sampling & Pipeline**: Non-thinking ChatML template (`<|im_start|>...`) with `presence_penalty=2.0`, `repetition_penalty=1.0`, `top_k=20`, `temperature=1.0`.
+### 5.2 Default Local LLM (Qwen3.5-0.8B)
+`qwen_3_5_0_8b` (Q4_K_M GGUF, 508MB) in `~/.vox/models/llm/qwen/`, registered in `models_manifest.json` + `defaults.rs`. Non-thinking ChatML template, `presence_penalty=2.0`, `top_k=20`, `temperature=1.0`.
 
-### 5.3 Voice Pipeline Lifecycle & Test Invariants
-- **Concurrency & Deadlock Prevention**: `engage()` disengage drops `state.engine` lock before calling `stop_engine()`, preventing async mutex deadlock.
-- **State Machine Integration Tests**: `pipeline_lifecycle_invariants_test.rs` (15/15 tests) guards state transitions, test clip cancel contracts, and owner handoffs.
-- **Frontend Hook Contracts**: `useHomePage.ts` explicitly routes `handleEnd` to `testClipCancel()`, `engage()`, or `stopRealtimeSession()` (covered in `useHomePage.test.ts`).
-- **Telemetry & Audio Logs**: Cleaned up unbuffered `edge_tts.rs` stderr prints to prevent IPC spam.
+### 5.3 Voice Pipeline & Test Invariants
+- **Deadlock prevention**: `engage()` drops the `state.engine` lock before calling `stop_engine()`.
+- Guarded by `pipeline_lifecycle_invariants_test.rs` (15/15) + `useHomePage.test.ts` (9/9) — `handleEnd` routes to `testClipCancel()`/`engage()`/`stopRealtimeSession()`.
+- No unbuffered stderr prints from `edge_tts.rs` (IPC spam).
 
-### 5.4 Sentient Glass Liquid Chamber Diagnostics (`Monitoring.tsx`)
-- **Modular Shell Architecture**: [`Monitoring.tsx`](file:///home/addy/projects/apps/vox/app/src/pages/Monitoring.tsx) serves as a lean container shell orchestrating isolated subcomponents in `shared/components/monitoring/`:
-  - [`MetricCarousel.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/monitoring/MetricCarousel.tsx): 2-card paginated carousel displaying 6 human-friendly telemetry metrics with zero technical jargon.
-  - [`LiquidChamber.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/monitoring/LiquidChamber.tsx): Continuous 60fps canvas wave simulation, top-corner CPU %/RAM GB telemetry, bold resident models counter, and lightweight 3-variant glass HUD pills (`LLM`, `STT`, `TTS`).
-  - [`colorUtils.ts`](file:///home/addy/projects/apps/vox/app/src/shared/components/monitoring/colorUtils.ts): Dynamic RGB/HSL color space conversion and complementary harmonic rotation.
-- **Single Adaptive Container**: Functions as a full page route on compact/mobile layouts and an ultra-clean 414px floating glass popover on desktop.
-- **Interactive Action Button**: Single-click model offload button displays a dedicated `Skull` icon and `"UNLOAD ALL"` text when models are resident in memory.
-- **ResizeObserver Canvas Dynamic Sync**: Container dimensions are tracked via `ResizeObserver` with `syncCanvasSize()`, guaranteeing the wave animation initializes smoothly on first popover mount.
-- **Continuous Physics Simulation**: Uses `metricsRef` and `colorsRef` in the HTML5 `<canvas>` animation loop to eliminate bubble re-seeding and liquid height snap jitter when metrics poll.
-- **Dynamic Reactive Palette Sync**: `MutationObserver` on `document.documentElement` + `useSettingsStore` hooks instantly synchronize any user theme or custom `--accent` hex seed without page refresh.
-- **Theme-Aware Harmonic Memory Pipeline Drawer**: `MemoryPipelineDrawer.tsx` uses dynamic 4-stage harmonic palette math (`stage1` at $+0^\circ$, `stage2` at $+45^\circ$, `stage3` at $+90^\circ$, `stage4` at $+140^\circ$) derived directly from `--accent` alongside fixed semantic red (`239, 68, 68`) for failed items, providing aesthetic cohesion across any theme or accent seed.
+### 5.4 Monitoring & History 3D Chamber View
+- **Monitoring** (`Monitoring.tsx`): always-mounted popover but **zero work at idle** — polling + the LiquidChamber canvas loop are gated by visibility/`document.hidden`; `getContext("2d")` hoisted out of the rAF. Subcomponents in `shared/components/monitoring/`.
+- **History = 3D Acoustic Chamber Orbit, no WebGL/Three.js** (WebGL atom scrapped — canvas re-rasterization spikes memory and idle CPU). Pure `orbitMath.ts` (35 tests): wide perspective ellipse projection (tilt compression `0.42`), viewport-dynamic radius (`280–560px`), slot-based capacity (`6–12`), depth blur mapping on distant cards (`filter: blur(...)`), and hardware-accelerated CSS 3D transforms. Cards positioned **imperatively onto refs** (dirty-checked style cache, zero re-renders/frame) in a **self-stopping rAF** (drag/momentum only, ~1.6s, then dies). Zero idle CPU.
+- **Concentric Resonance Tracks** (`ChamberOrbitRings.tsx`): Lightweight SVG concentric tracks with bottom-front neon spotlight arc filter (<1MB RAM, 0% CPU).
+- **Session Hub Core** ([`CentralClockNode.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/history/CentralClockNode.tsx)): Replaces passive clock with an informative Session Hub — features integrated top `DAY | MONTH` segmented toggle, perimeter tick marks, dual-tone date hero (`AUG 12`) in Day mode or full uppercase month name (`AUGUST`) in Month mode, weekday indicator, session & memory breakdown counters directly beneath the date hero, and active time-window range (`SPAN 08:15 AM – 10:42 PM`). Stack is bounded to the central safe circular area (`w-[74%] h-[74%]`) with zero edge clipping and inner arc padding (`r=46`).
+- **History List View** ([`HistoryListView.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/history/HistoryListView.tsx)): Streamlined single-row header featuring inline `HISTORY` title, active date badge, and date navigation buttons on the same line; top floating title in [`History.tsx`](file:///home/addy/projects/apps/vox/app/src/pages/History.tsx) is gated to Orbit View to avoid duplicate titles.
+- **Window model**: count-based chunking labeled by actual coverage (`07:12 – 11:48`, `1–12`); chevrons step windows then roll over dates. Locale-independent `YYYY-MM-DD` keys.
+- **History Architecture**: Decoupled into [`useHistory.ts`](file:///home/addy/projects/apps/vox/app/src/shared/components/history/useHistory.ts) (state, IPC, window chunking, dial math, clamped pagination) and [`History.tsx`](file:///home/addy/projects/apps/vox/app/src/pages/History.tsx) (declarative layout <240 lines). Mobile fallback isolated into [`HistoryListView.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/history/HistoryListView.tsx).
+- **Direct Ambient Stage Invariant**: The 3D chamber mounts directly on the fluid page root (`relative flex-1 flex flex-col h-full w-full bg-transparent`) with zero artificial nested stage boxes or background borders. Stage is vertically aligned with the Home orb (`top: calc(50% - 36px)` / `transform: translate(-50%, -50%)`).
+- **DetailPanel Vertical Resizability**: Features an interactive top drag-handle bar supporting live pointer dragging between `35%` and `85%` vh (default `62%`), double-click toggle to full expansion, `will-change: scroll`, and layout containment `[contain: content]` on turn elements.
 
 
