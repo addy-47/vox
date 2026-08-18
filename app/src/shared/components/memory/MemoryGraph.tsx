@@ -120,6 +120,8 @@ export interface GLink {
 
 export interface MemoryGraphRef {
   recenter: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
 }
 
 // Persistent node position cache map
@@ -484,7 +486,9 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       return maxVel > 0.15;
     }, []);
 
-    // Helper: Compute Bounding Sphere Camera Distance for 100% Zoomed-Out View
+    const graphRadiusRef = useRef<number>(800);
+
+    // Helper: Compute Bounding Sphere Camera Distance for 100% Zoomed-Out View & 80% vh ceiling
     const fitCameraToEntireGraph = useCallback(() => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
@@ -497,9 +501,18 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
         if (distSq > maxRadiusSq) maxRadiusSq = distSq;
       });
 
-      const radius = Math.sqrt(maxRadiusSq);
-      // At FOV = 60°, Z distance = radius / sin(FOV/2) * padding = radius * 2.5 + padding
-      const targetZ = Math.max(2800, radius * 3.2);
+      const radius = Math.max(300, Math.sqrt(maxRadiusSq));
+      graphRadiusRef.current = radius;
+
+      // At FOV = 60° (vertical), visible height at distance Z = 2 * Z * tan(30°) ≈ 1.1547 * Z.
+      // For graph (diameter = 2*R) to span at least 80% of viewport height (0.80 * visibleHeight),
+      // 2 * R >= 0.80 * (2 * Z * tan(30°)) => Z <= R / (0.80 * tan(30°)) ≈ R / 0.46188 ≈ R * 2.165
+      // We set targetZ and controls.maxDistance so graph is never smaller than ~80% vh.
+      const maxZoomOutZ = Math.max(1200, (radius / (0.80 * Math.tan((30 * Math.PI) / 180))));
+      const targetZ = Math.min(maxZoomOutZ, Math.max(800, radius * 2.1));
+
+      controls.maxDistance = maxZoomOutZ * 1.05;
+      controls.minDistance = 200;
 
       controls.target.set(0, 0, 0);
       camera.position.set(0, 0, targetZ);
@@ -708,11 +721,31 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       setClusterBadges(badges);
     }, [edges, width, height, isLightMode, isNodeVisible]);
 
-    // Recenter Camera imperatively
+    // Imperative methods exposed to parent (Recenter, Zoom In, Zoom Out)
     useImperativeHandle(ref, () => ({
       recenter: () => {
         userHasNavigatedCameraRef.current = false;
         fitCameraToEntireGraph();
+      },
+      zoomIn: () => {
+        const camera = cameraRef.current;
+        const controls = controlsRef.current;
+        if (!camera || !controls) return;
+        userHasNavigatedCameraRef.current = true;
+
+        const newZ = Math.max(controls.minDistance || 200, camera.position.z * 0.75);
+        camera.position.z = newZ;
+        controls.update();
+      },
+      zoomOut: () => {
+        const camera = cameraRef.current;
+        const controls = controlsRef.current;
+        if (!camera || !controls) return;
+        userHasNavigatedCameraRef.current = true;
+
+        const newZ = Math.min(controls.maxDistance || 4000, camera.position.z * 1.3);
+        camera.position.z = newZ;
+        controls.update();
       },
     }));
 
@@ -933,6 +966,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       const nodeMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
       const instancedMesh = new THREE.InstancedMesh(sphereGeo, nodeMat, maxNodes);
       instancedMesh.count = 0;
+      instancedMesh.frustumCulled = false; // Prevent whole-mesh culling when graph center moves off-camera
       scene.add(instancedMesh);
       instancedMeshRef.current = instancedMesh;
 
@@ -941,6 +975,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       const ringMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.4, side: THREE.DoubleSide });
       const instancedRing = new THREE.InstancedMesh(ringGeo, ringMat, maxNodes);
       instancedRing.count = 0;
+      instancedRing.frustumCulled = false; // Prevent culling when graph center moves off-camera
       scene.add(instancedRing);
       instancedRingRef.current = instancedRing;
 
@@ -960,6 +995,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       });
 
       const lineSegments = new THREE.LineSegments(lineGeo, lineMat);
+      lineSegments.frustumCulled = false; // Prevent line culling when graph center moves off-camera
       scene.add(lineSegments);
       lineSegmentsRef.current = lineSegments;
 
@@ -991,6 +1027,23 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
         }
 
         controls.update();
+
+        // ── Drag & Pan Boundary Clamping ──────────────────────────────────
+        // Ensure user can pan comfortably across the graph while keeping at least half inside view
+        const R = graphRadiusRef.current || 800;
+        const maxPanX = R * 1.5;
+        const maxPanY = R * 1.5;
+
+        if (Math.abs(controls.target.x) > maxPanX || Math.abs(controls.target.y) > maxPanY) {
+          const clampedX = Math.max(-maxPanX, Math.min(maxPanX, controls.target.x));
+          const clampedY = Math.max(-maxPanY, Math.min(maxPanY, controls.target.y));
+          const diffX = clampedX - controls.target.x;
+          const diffY = clampedY - controls.target.y;
+          controls.target.x = clampedX;
+          controls.target.y = clampedY;
+          camera.position.x += diffX;
+          camera.position.y += diffY;
+        }
 
         const isMoving = stepSimulation();
         ticks++;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Focus, Eye, EyeOff, GitCompare, Cpu, RefreshCw } from "lucide-react";
+import { Focus, Eye, EyeOff, GitCompare, Cpu, RefreshCw, Plus, Minus } from "lucide-react";
 import { MemoryGraph, MemoryGraphRef } from "@/shared/components/memory/MemoryGraph";
 import { SearchBar } from "@/shared/components/memory/SearchBar";
 import { MemoryLegendCard } from "@/shared/components/memory/MemoryLegendCard";
@@ -253,6 +253,33 @@ export const Memory: React.FC = () => {
           selectedRelation={selectedRelation}
           onSelectRelation={setSelectedRelation}
         />
+      </div>
+
+      {/* Top-Right: Zoom Controls Dock */}
+      <div className="absolute top-4 right-6 z-20 pointer-events-auto flex items-center gap-1.5 p-1.5 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl">
+        <button
+          onClick={() => graphRef.current?.zoomIn()}
+          aria-label={MEMORY_COPY.zoomIn}
+          className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer relative group"
+        >
+          <Plus size={16} />
+          <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block px-2.5 py-1 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)] pointer-events-none">
+            {MEMORY_COPY.zoomIn}
+          </span>
+        </button>
+
+        <div className="w-[1px] h-4 bg-[rgba(var(--border),0.2)]" />
+
+        <button
+          onClick={() => graphRef.current?.zoomOut()}
+          aria-label={MEMORY_COPY.zoomOut}
+          className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer relative group"
+        >
+          <Minus size={16} />
+          <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block px-2.5 py-1 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)] pointer-events-none">
+            {MEMORY_COPY.zoomOut}
+          </span>
+        </button>
       </div>
 
       {/* Right Action Dock */}

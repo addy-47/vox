@@ -79,8 +79,9 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
     }
   }, [accentRgbStr]);
 
-  // Keep colors continuously in sync when theme changes or DOM attribute shifts
+  // Keep colors in sync when theme changes while drawer is open
   useEffect(() => {
+    if (!open) return;
     syncAccent();
     const observer = new MutationObserver(() => syncAccent());
     observer.observe(document.documentElement, {
@@ -88,7 +89,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
       attributeFilter: ["style", "data-theme", "class"],
     });
     return () => observer.disconnect();
-  }, [syncAccent, accentSeed, theme]);
+  }, [open, syncAccent, accentSeed, theme]);
 
   // Derive 4 Harmonic Pipeline Stage Colors from Primary Accent
   const stageColors = useMemo(() => {

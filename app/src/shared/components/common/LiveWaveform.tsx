@@ -337,7 +337,9 @@ export const LiveWaveform = memo(({
         needsRedrawRef.current = true
       }
 
-      // 2. Redraw (Only if needed or active)
+      if (document.hidden) return
+
+      // 2. Redraw (Only if needed or active and window is visible)
       if (needsRedrawRef.current || active || processing) {
         ctx.clearRect(0, 0, width, height)
         
@@ -349,7 +351,7 @@ export const LiveWaveform = memo(({
         const startX = (width - totalContentWidth) / 2
 
         if (!barGradientCacheRef.current || lastHeightRef.current !== height) {
-          const accentVal = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || "0, 219, 233";
+          const accentVal = "0, 219, 233";
           const g = ctx.createLinearGradient(0, 0, 0, height)
           g.addColorStop(0, `rgba(${accentVal}, 0.05)`)
           g.addColorStop(0.3, `rgba(${accentVal}, 0.6)`)

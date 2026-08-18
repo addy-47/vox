@@ -14,12 +14,14 @@ export function useMonitoringMetrics(enabled = true) {
 
   const inFlightRef = useRef(false);
 
-  // Background Polling Loop (only while monitoring is visible)
+  // Background Polling Loop (only while monitoring is visible and window is focused/visible)
   useEffect(() => {
     if (!enabled) return;
 
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
     const poll = async () => {
-      if (inFlightRef.current) return;
+      if (document.hidden || inFlightRef.current) return;
       inFlightRef.current = true;
       try {
         const snap = await getRuntimeSnapshot();
@@ -36,9 +38,37 @@ export function useMonitoringMetrics(enabled = true) {
       }
     };
 
-    poll();
-    const id = setInterval(poll, POLL_MS);
-    return () => clearInterval(id);
+    const start = () => {
+      if (intervalId) clearInterval(intervalId);
+      poll();
+      intervalId = setInterval(poll, POLL_MS);
+    };
+
+    const stop = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        start();
+      }
+    };
+
+    if (!document.hidden) {
+      start();
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [enabled]);
 
   const formatLatency = useCallback((ms: number | null) => {
