@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight, MessageSquare, Brain, Clock } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { HISTORY_COPY } from "@/data/historyCopy";
@@ -63,6 +63,22 @@ export const CentralClockNode = memo(
     onNext,
   }: CentralClockNodeProps) => {
     const showArc = windowProgress && windowProgress.count > 1;
+    const [isLightMode, setIsLightMode] = useState(false);
+
+    useEffect(() => {
+      const checkTheme = () => {
+        const theme = document.documentElement.getAttribute("data-theme");
+        setIsLightMode(theme === "light");
+      };
+      checkTheme();
+
+      const observer = new MutationObserver(checkTheme);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme", "class"],
+      });
+      return () => observer.disconnect();
+    }, []);
 
     // 48 Perimeter dial ticks around the sphere rim
     const totalTicks = 48;
@@ -74,7 +90,7 @@ export const CentralClockNode = memo(
       >
         {/* Central Session Hub Node — Perfectly Centered 3D Acoustic Core */}
         <div
-          className="relative rounded-full flex flex-col items-center justify-center text-center transition-all duration-300 overflow-hidden isolate"
+          className="relative rounded-full flex flex-col items-center justify-center text-center transition-all duration-300 overflow-hidden isolate backdrop-blur-md"
           style={{
             width: "clamp(320px, 36vw, 440px)",
             height: "clamp(320px, 36vw, 440px)",
@@ -82,11 +98,15 @@ export const CentralClockNode = memo(
             minHeight: "300px",
             maxWidth: "460px",
             maxHeight: "460px",
-            background:
-              "radial-gradient(circle at 50% 35%, rgba(var(--card), 0.98) 0%, rgba(10, 14, 18, 0.98) 72%, rgba(var(--accent), 0.12) 100%)",
-            border: "1.5px solid rgba(var(--accent), 0.55)",
-            boxShadow:
-              "0 25px 70px -10px rgba(0, 0, 0, 0.9), 0 0 60px rgba(var(--accent), 0.22), inset 0 2px 20px rgba(255, 255, 255, 0.14), inset 0 -15px 35px rgba(var(--accent), 0.25)",
+            background: isLightMode
+              ? "radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.15) 60%, rgba(var(--accent), 0.10) 100%)"
+              : "radial-gradient(circle at 50% 35%, rgba(var(--card), 0.98) 0%, rgba(10, 14, 18, 0.98) 72%, rgba(var(--accent), 0.12) 100%)",
+            border: isLightMode
+              ? "1.5px solid rgba(var(--accent), 0.45)"
+              : "1.5px solid rgba(var(--accent), 0.55)",
+            boxShadow: isLightMode
+              ? "0 20px 45px -10px rgba(15, 23, 42, 0.08), 0 0 45px rgba(var(--accent), 0.15), inset 0 2px 14px rgba(255, 255, 255, 0.8), inset 0 -10px 25px rgba(var(--accent), 0.10)"
+              : "0 25px 70px -10px rgba(0, 0, 0, 0.9), 0 0 60px rgba(var(--accent), 0.22), inset 0 2px 20px rgba(255, 255, 255, 0.14), inset 0 -15px 35px rgba(var(--accent), 0.25)",
           }}
         >
           {/* Perimeter Dial Ticks on Outer Rim */}
@@ -151,7 +171,14 @@ export const CentralClockNode = memo(
           {/* ── Inner Circular Safe Zone: Centered Stack with Zero Edge Clipping ── */}
           <div className="relative z-20 flex flex-col items-center justify-between w-[74%] h-[74%] py-1">
             {/* 1. Top View Switcher */}
-            <div className="flex items-center p-0.5 rounded-full bg-black/50 border border-[rgba(var(--accent),0.25)] shadow-inner">
+            <div
+              className={cn(
+                "flex items-center p-0.5 rounded-full border shadow-inner transition-colors backdrop-blur-sm",
+                isLightMode
+                  ? "bg-white/45 border-[rgba(var(--accent),0.3)] shadow-slate-200/40"
+                  : "bg-black/50 border-[rgba(var(--accent),0.25)]"
+              )}
+            >
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -191,7 +218,12 @@ export const CentralClockNode = memo(
                   onPrev();
                 }}
                 disabled={!canPrev}
-                className="absolute -left-6 sm:-left-7 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-black/60 border border-[rgba(var(--accent),0.35)] flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer shadow-[0_0_12px_rgba(0,0,0,0.6)]"
+                className={cn(
+                  "absolute -left-6 sm:-left-7 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer backdrop-blur-sm",
+                  isLightMode
+                    ? "bg-white/50 border-[rgba(var(--accent),0.35)] shadow-md shadow-slate-300/30"
+                    : "bg-black/60 border-[rgba(var(--accent),0.35)] shadow-[0_0_12px_rgba(0,0,0,0.6)]"
+                )}
                 aria-label={variant === "day" ? HISTORY_COPY.prevDay : HISTORY_COPY.prevMonth}
               >
                 <ChevronLeft size={18} strokeWidth={2.5} />
@@ -210,7 +242,7 @@ export const CentralClockNode = memo(
 
                 {/* Hero Date: Dual-Tone "AUG 12" in Day view, or Full Month Name "AUGUST" in Month view */}
                 {variant === "day" && dayHeroParts ? (
-                  <div className="flex items-baseline gap-1.5 font-display font-black tracking-tight leading-none drop-shadow-[0_4px_20px_rgba(0,0,0,0.8)]">
+                  <div className="flex items-baseline gap-1.5 font-display font-black tracking-tight leading-none">
                     <span
                       className="text-[rgb(var(--foreground))]"
                       style={{ fontSize: "clamp(28px, 3.4vw, 42px)" }}
@@ -239,7 +271,14 @@ export const CentralClockNode = memo(
                 </span>
 
                 {/* Direct Sub-Date Metrics Row: Session Count & Memory Count (No redundant center node) */}
-                <div className="flex items-center gap-4 mt-3 px-3 py-1 rounded-xl bg-black/30 border border-[rgba(var(--accent),0.18)] shadow-inner">
+                <div
+                  className={cn(
+                    "flex items-center gap-4 mt-3 px-3 py-1 rounded-xl border shadow-inner transition-colors backdrop-blur-sm",
+                    isLightMode
+                      ? "bg-white/45 border-[rgba(var(--accent),0.25)] shadow-slate-200/40"
+                      : "bg-black/30 border-[rgba(var(--accent),0.18)]"
+                  )}
+                >
                   {/* Sessions */}
                   <div className="flex items-center gap-1.5">
                     <MessageSquare size={13} className="text-[rgb(var(--accent))] shrink-0" />
@@ -278,7 +317,12 @@ export const CentralClockNode = memo(
                   onNext();
                 }}
                 disabled={!canNext}
-                className="absolute -right-6 sm:-right-7 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-black/60 border border-[rgba(var(--accent),0.35)] flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer shadow-[0_0_12px_rgba(0,0,0,0.6)]"
+                className={cn(
+                  "absolute -right-6 sm:-right-7 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer",
+                  isLightMode
+                    ? "bg-white/90 border-[rgba(var(--accent),0.35)] shadow-md shadow-slate-300/40"
+                    : "bg-black/60 border-[rgba(var(--accent),0.35)] shadow-[0_0_12px_rgba(0,0,0,0.6)]"
+                )}
                 aria-label={variant === "day" ? HISTORY_COPY.nextDay : HISTORY_COPY.nextMonth}
               >
                 <ChevronRight size={18} strokeWidth={2.5} />

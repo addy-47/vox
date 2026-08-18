@@ -6,6 +6,7 @@ import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
+import { MemoryProfilerProvider } from "@/shared/context/MemoryProfilerContext";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { Home } from "@/pages/Home";
@@ -15,6 +16,7 @@ const History = lazy(() => import("@/pages/History").then(m => ({ default: m.His
 const Memory = lazy(() => import("@/pages/Memory").then(m => ({ default: m.Memory })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
+const MemoryProfiler = lazy(() => import("@/pages/MemoryProfiler").then(m => ({ default: m.MemoryProfiler })));
 
 // Premium Shared Orbital Loading Screen
 const PageLoader = () => (
@@ -82,55 +84,58 @@ const App: React.FC = () => {
   return (
     <div className="relative h-screen w-full bg-[rgb(var(--background))] overflow-hidden">
       <ErrorBoundary name="App">
-        <Router>
-          {/* Main App content mounts and initializes behind the loader */}
-          <div className="relative h-full w-full">
-            {setupCompleted !== null && (
-              <Suspense fallback={null}>
-                <Routes>
-                  {/* If setup not completed, always redirect to wizard */}
-                  {!setupCompleted && (
-                    <>
-                      <Route path="/wizard" element={<WizardRoot />} />
-                      <Route path="*" element={<Navigate to="/wizard" replace />} />
-                    </>
-                  )}
+        <MemoryProfilerProvider>
+          <Router>
+            {/* Main App content mounts and initializes behind the loader */}
+            <div className="relative h-full w-full">
+              {setupCompleted !== null && (
+                <Suspense fallback={null}>
+                  <Routes>
+                    {/* If setup not completed, always redirect to wizard */}
+                    {!setupCompleted && (
+                      <>
+                        <Route path="/wizard" element={<WizardRoot />} />
+                        <Route path="*" element={<Navigate to="/wizard" replace />} />
+                      </>
+                    )}
 
-                  {/* Main App Routes */}
-                  {setupCompleted && (
-                    <Route element={<ResponsiveLayout />}>
-                      <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
-                      <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
-                      <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
-                      <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
-                      <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
-                      <Route path="/wizard" element={<Navigate to="/" replace />} />
-                      <Route path="*" element={<Navigate to="/" replace />} />
-                    </Route>
-                  )}
-                </Routes>
-              </Suspense>
-            )}
-
-            {/* Seamless Orbital Loader Overlay that cross-fades out once ready */}
-            <AnimatePresence>
-              {isLoading && (
-                <motion.div
-                  key="boot-loader"
-                  initial={{ opacity: 1 }}
-                  exit={{ opacity: 0, scale: 0.98 }}
-                  transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-                  className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[rgb(var(--background))]"
-                >
-                  <TitleBar />
-                  <div className="flex-1 flex items-center justify-center w-full">
-                    <PageLoader />
-                  </div>
-                </motion.div>
+                    {/* Main App Routes */}
+                    {setupCompleted && (
+                      <Route element={<ResponsiveLayout />}>
+                        <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
+                        <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
+                        <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
+                        <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
+                        <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
+                        <Route path="/memory-profiler" element={<ErrorBoundary name="MemoryProfiler"><MemoryProfiler /></ErrorBoundary>} />
+                        <Route path="/wizard" element={<Navigate to="/" replace />} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                      </Route>
+                    )}
+                  </Routes>
+                </Suspense>
               )}
-            </AnimatePresence>
-          </div>
-        </Router>
+
+              {/* Seamless Orbital Loader Overlay that cross-fades out once ready */}
+              <AnimatePresence>
+                {isLoading && (
+                  <motion.div
+                    key="boot-loader"
+                    initial={{ opacity: 1 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[rgb(var(--background))]"
+                  >
+                    <TitleBar />
+                    <div className="flex-1 flex items-center justify-center w-full">
+                      <PageLoader />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </Router>
+        </MemoryProfilerProvider>
       </ErrorBoundary>
     </div>
   );

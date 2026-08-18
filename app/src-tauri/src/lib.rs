@@ -484,6 +484,8 @@ pub fn run() {
             crate::ipc::monitoring::get_runtime_snapshot,
             crate::ipc::monitoring::get_runtime_history,
             crate::ipc::monitoring::clear_runtime_history,
+            crate::ipc::memory_profiler::get_profiler_snapshot,
+            crate::ipc::memory_profiler::record_memory_profile_event,
             // Setup
             crate::ipc::setup::fetch_manifest,
             crate::ipc::setup::check_for_updates,
