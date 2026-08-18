@@ -1,7 +1,8 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { Brain, Mic, Volume2 } from "lucide-react";
 import { type RuntimeSnapshot } from "@/services/pipelineService";
 import { type DynamicColors } from "./colorUtils";
+import { cn } from "@/shared/lib/utils";
 
 interface LiquidChamberProps {
   latest: RuntimeSnapshot | null;
@@ -9,6 +10,7 @@ interface LiquidChamberProps {
   isEngineLoaded: boolean;
   activeModelsCount: number;
   cpuPct: number;
+  ramMb?: number;
   ramGb: string;
   ramPct: number;
   variants: {
@@ -26,6 +28,7 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
   isEngineLoaded,
   activeModelsCount,
   cpuPct,
+  ramMb = 0,
   ramGb,
   ramPct,
   variants,
@@ -34,12 +37,33 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
 }) => {
   const chamberContainerRef = useRef<HTMLDivElement>(null);
   const chamberCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [isLightMode, setIsLightMode] = useState(false);
+
+  useEffect(() => {
+    const checkTheme = () => {
+      const theme = document.documentElement.getAttribute("data-theme");
+      setIsLightMode(theme === "light");
+    };
+    checkTheme();
+
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "class"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  const isLightModeRef = useRef(isLightMode);
+  useEffect(() => {
+    isLightModeRef.current = isLightMode;
+  }, [isLightMode]);
 
   // Persistent mutable refs for fluid physics simulation (prevents re-seeding on polling updates)
-  const metricsRef = useRef({ ramPct, cpuPct });
+  const metricsRef = useRef({ ramPct, cpuPct, ramMb });
   useEffect(() => {
-    metricsRef.current = { ramPct, cpuPct };
-  }, [ramPct, cpuPct]);
+    metricsRef.current = { ramPct, cpuPct, ramMb };
+  }, [ramPct, cpuPct, ramMb]);
 
   const colorsRef = useRef(colors);
   useEffect(() => {
@@ -59,8 +83,9 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
     let running = true;
     let time = 0;
 
-    let curRamFill = Math.max(0.18, Math.min(0.85, metricsRef.current.ramPct / 100));
-    let curCpuFill = Math.max(0.12, Math.min(0.75, metricsRef.current.cpuPct / 100));
+    const initialRamMb = metricsRef.current.ramMb > 0 ? metricsRef.current.ramMb : metricsRef.current.ramPct * 81.92;
+    let curRamFill = 0.12 + Math.min(1, Math.max(0, initialRamMb / 3500)) * 0.72;
+    let curCpuFill = 0.08 + Math.min(1, Math.max(0, metricsRef.current.cpuPct / 100)) * 0.70;
 
     const bubbles = Array.from({ length: 22 }, () => ({
       x: Math.random(),
@@ -113,14 +138,19 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const curColors = colorsRef.current;
-      const targetRamFill = Math.max(
-        0.18,
-        Math.min(0.85, metricsRef.current.ramPct / 100)
-      );
-      const targetCpuFill = Math.max(
-        0.12,
-        Math.min(0.75, metricsRef.current.cpuPct / 100)
-      );
+
+      // Real dynamic water level scaling based on Vox RAM
+      // ~150MB baseline idle -> ~0.15 fill
+      // ~1.5GB models loaded -> ~0.45 fill
+      // ~3.5GB heavy pipeline -> ~0.84 fill
+      const effectiveRamMb = metricsRef.current.ramMb > 0
+        ? metricsRef.current.ramMb
+        : metricsRef.current.ramPct * 81.92;
+      const normalizedRamRatio = Math.min(1, Math.max(0, effectiveRamMb / 3500));
+      const targetRamFill = 0.12 + normalizedRamRatio * 0.72;
+
+      const normalizedCpuRatio = Math.min(1, Math.max(0, metricsRef.current.cpuPct / 100));
+      const targetCpuFill = 0.08 + normalizedCpuRatio * 0.70;
 
       curRamFill += (targetRamFill - curRamFill) * 0.05;
       curCpuFill += (targetCpuFill - curCpuFill) * 0.05;
@@ -134,10 +164,17 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       ctx.roundRect(1.5, 1.5, width - 3, height - 3, radius);
       ctx.clip();
 
-      // Deep space interior
+      const light = isLightModeRef.current;
+
+      // Chamber interior background (transparent frosted glass in light mode)
       const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
-      bgGrad.addColorStop(0, "rgba(8, 12, 22, 0.55)");
-      bgGrad.addColorStop(1, "rgba(4, 7, 14, 0.90)");
+      if (light) {
+        bgGrad.addColorStop(0, "rgba(255, 255, 255, 0.35)");
+        bgGrad.addColorStop(1, "rgba(255, 255, 255, 0.08)");
+      } else {
+        bgGrad.addColorStop(0, "rgba(8, 12, 22, 0.55)");
+        bgGrad.addColorStop(1, "rgba(4, 7, 14, 0.90)");
+      }
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, width, height);
 
@@ -154,13 +191,21 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       ctx.closePath();
 
       const cpuGrad = ctx.createLinearGradient(0, cpuLevelY - 20, 0, height);
-      cpuGrad.addColorStop(0, `rgba(${curColors.complementary}, 0.45)`);
-      cpuGrad.addColorStop(0.3, `rgba(${curColors.complementary}, 0.25)`);
-      cpuGrad.addColorStop(1, `rgba(${curColors.complementary}, 0.05)`);
+      if (light) {
+        cpuGrad.addColorStop(0, `rgba(${curColors.complementary}, 0.35)`);
+        cpuGrad.addColorStop(0.3, `rgba(${curColors.complementary}, 0.18)`);
+        cpuGrad.addColorStop(1, `rgba(${curColors.complementary}, 0.04)`);
+      } else {
+        cpuGrad.addColorStop(0, `rgba(${curColors.complementary}, 0.45)`);
+        cpuGrad.addColorStop(0.3, `rgba(${curColors.complementary}, 0.25)`);
+        cpuGrad.addColorStop(1, `rgba(${curColors.complementary}, 0.05)`);
+      }
       ctx.fillStyle = cpuGrad;
       ctx.fill();
 
-      ctx.strokeStyle = `rgba(${curColors.complementary}, 0.85)`;
+      ctx.strokeStyle = light
+        ? `rgba(${curColors.complementary}, 0.70)`
+        : `rgba(${curColors.complementary}, 0.85)`;
       ctx.lineWidth = 1.8;
       ctx.stroke();
 
@@ -177,16 +222,22 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       ctx.closePath();
 
       const ramGrad = ctx.createLinearGradient(0, ramLevelY - 20, 0, height);
-      ramGrad.addColorStop(0, `rgba(${curColors.primary}, 0.65)`);
-      ramGrad.addColorStop(0.4, `rgba(${curColors.primary}, 0.35)`);
-      ramGrad.addColorStop(1, `rgba(${curColors.primary}, 0.10)`);
+      if (light) {
+        ramGrad.addColorStop(0, `rgba(${curColors.primary}, 0.45)`);
+        ramGrad.addColorStop(0.4, `rgba(${curColors.primary}, 0.22)`);
+        ramGrad.addColorStop(1, `rgba(${curColors.primary}, 0.05)`);
+      } else {
+        ramGrad.addColorStop(0, `rgba(${curColors.primary}, 0.65)`);
+        ramGrad.addColorStop(0.4, `rgba(${curColors.primary}, 0.35)`);
+        ramGrad.addColorStop(1, `rgba(${curColors.primary}, 0.10)`);
+      }
       ctx.fillStyle = ramGrad;
       ctx.fill();
 
       ctx.strokeStyle = `rgba(${curColors.primary}, 0.95)`;
       ctx.lineWidth = 2.2;
       ctx.shadowColor = `rgb(${curColors.primary})`;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = light ? 4 : 10;
       ctx.stroke();
       ctx.shadowBlur = 0;
 
@@ -203,23 +254,34 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
 
         ctx.beginPath();
         ctx.arc(px, py, b.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${b.opacity})`;
+        ctx.fillStyle = light
+          ? `rgba(${curColors.primary}, ${b.opacity * 0.5})`
+          : `rgba(255, 255, 255, ${b.opacity})`;
         ctx.fill();
       });
 
       // Glass Reflections
       const innerSpec = ctx.createLinearGradient(0, 0, width, 0);
-      innerSpec.addColorStop(0, "rgba(255, 255, 255, 0.18)");
-      innerSpec.addColorStop(0.08, "rgba(255, 255, 255, 0.03)");
-      innerSpec.addColorStop(0.92, "rgba(255, 255, 255, 0.03)");
-      innerSpec.addColorStop(1, "rgba(255, 255, 255, 0.18)");
+      if (light) {
+        innerSpec.addColorStop(0, "rgba(255, 255, 255, 0.45)");
+        innerSpec.addColorStop(0.08, "rgba(255, 255, 255, 0.05)");
+        innerSpec.addColorStop(0.92, "rgba(255, 255, 255, 0.05)");
+        innerSpec.addColorStop(1, "rgba(255, 255, 255, 0.45)");
+      } else {
+        innerSpec.addColorStop(0, "rgba(255, 255, 255, 0.18)");
+        innerSpec.addColorStop(0.08, "rgba(255, 255, 255, 0.03)");
+        innerSpec.addColorStop(0.92, "rgba(255, 255, 255, 0.03)");
+        innerSpec.addColorStop(1, "rgba(255, 255, 255, 0.18)");
+      }
       ctx.fillStyle = innerSpec;
       ctx.fillRect(0, 0, width, height);
 
       // Top Glass Rim Curve
       ctx.beginPath();
       ctx.ellipse(width / 2, 20, width * 0.44, 10, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+      ctx.strokeStyle = light
+        ? "rgba(15, 23, 42, 0.08)"
+        : "rgba(255, 255, 255, 0.22)";
       ctx.lineWidth = 1.2;
       ctx.stroke();
 
@@ -232,7 +294,7 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
         height,
         width * 0.48
       );
-      baseGlow.addColorStop(0, `rgba(${curColors.primary}, 0.50)`);
+      baseGlow.addColorStop(0, light ? `rgba(${curColors.primary}, 0.25)` : `rgba(${curColors.primary}, 0.50)`);
       baseGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = baseGlow;
       ctx.fillRect(0, height - 36, width, 36);
@@ -241,7 +303,9 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
 
       ctx.beginPath();
       ctx.roundRect(1, 1, width - 2, height - 2, radius);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+      ctx.strokeStyle = light
+        ? "rgba(15, 23, 42, 0.10)"
+        : "rgba(255, 255, 255, 0.15)";
       ctx.lineWidth = 1.2;
       ctx.stroke();
 
@@ -283,7 +347,12 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
   return (
     <div
       ref={chamberContainerRef}
-      className="flex-1 relative rounded-3xl overflow-hidden min-h-[320px] my-1 shadow-2xl flex flex-col items-center justify-between p-5"
+      className={cn(
+        "flex-1 relative rounded-3xl overflow-hidden min-h-[320px] my-1 flex flex-col items-center justify-between p-5 transition-shadow",
+        isLightMode
+          ? "bg-[rgba(var(--card),0.25)] backdrop-blur-xl shadow-xl shadow-slate-200/40 border border-[rgba(var(--border),0.12)]"
+          : "shadow-2xl border border-white/5"
+      )}
     >
       {/* Background Liquid Canvas */}
       <canvas
@@ -295,7 +364,12 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       <div className="relative z-10 w-full flex items-center justify-between">
         {/* Top-Left CPU Pill */}
         <div
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-[rgba(var(--card),0.35)] border border-white/10 shadow-sm text-[11px] font-mono font-bold"
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border shadow-sm text-[11px] font-mono font-bold backdrop-blur-md transition-colors",
+            isLightMode
+              ? "bg-[rgba(var(--card),0.55)] border-[rgba(var(--border),0.12)]"
+              : "bg-[rgba(var(--card),0.85)] border-white/10"
+          )}
           style={{ color: `rgb(${colors.complementary})` }}
         >
           <span
@@ -307,7 +381,12 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
 
         {/* Top-Right RAM Pill */}
         <div
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-[rgba(var(--card),0.35)] border border-white/10 shadow-sm text-[11px] font-mono font-bold"
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border shadow-sm text-[11px] font-mono font-bold backdrop-blur-md transition-colors",
+            isLightMode
+              ? "bg-[rgba(var(--card),0.55)] border-[rgba(var(--border),0.12)]"
+              : "bg-[rgba(var(--card),0.85)] border-white/10"
+          )}
           style={{ color: `rgb(${colors.primary})` }}
         >
           <span
@@ -320,29 +399,29 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
 
       {/* Center: Futuristic Model Resident Counter */}
       <div className="relative z-10 flex flex-col items-center justify-center text-center my-auto pointer-events-none">
-        <div className="flex items-baseline gap-1.5 drop-shadow-[0_0_24px_rgba(255,255,255,0.2)]">
+        <div className="flex items-baseline gap-1.5">
           <span
             style={{
-              color: isEngineLoaded ? `rgb(${colors.primary})` : "white",
+              color: isEngineLoaded ? `rgb(${colors.primary})` : "rgb(var(--foreground))",
               textShadow: isEngineLoaded
-                ? `0 0 35px rgba(${colors.primary}, 0.7)`
+                ? `0 0 35px rgba(${colors.primary}, 0.6)`
                 : "none",
             }}
             className="text-7xl font-display font-black tracking-tighter leading-none"
           >
             {activeModelsCount}
           </span>
-          <span className="text-2xl font-mono font-bold text-white/40 tracking-tight">
+          <span className="text-2xl font-mono font-bold text-[rgb(var(--foreground-muted))] tracking-tight">
             / 8
           </span>
         </div>
 
         <div className="mt-2 flex items-center gap-2">
-          <span className="text-[12px] font-bold tracking-[0.25em] uppercase text-white/90 drop-shadow-md">
+          <span className="text-[12px] font-bold tracking-[0.25em] uppercase text-[rgb(var(--foreground))] drop-shadow-sm">
             {activeModelsCount === 1 ? "MODEL IN MEMORY" : "MODELS IN MEMORY"}
           </span>
         </div>
-        <span className="text-[11px] font-sans text-white/60 tracking-wider mt-0.5 max-w-[240px]">
+        <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] tracking-wider mt-0.5 max-w-[240px]">
           Your computer's activity, visualized
         </span>
       </div>
@@ -352,25 +431,29 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
         {/* LLM Variant */}
         <div
           style={{
-            backgroundColor: "rgba(255, 255, 255, 0.08)",
             borderColor: latest?.is_llm_loaded
               ? `rgba(${colors.primary}, 0.65)`
-              : "rgba(255, 255, 255, 0.15)",
+              : "rgba(var(--border), 0.12)",
             boxShadow: latest?.is_llm_loaded
-              ? `0 0 16px rgba(${colors.primary}, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.25)`
+              ? `0 0 16px rgba(${colors.primary}, 0.20), inset 0 1px 1px rgba(var(--card), 0.25)`
               : "none",
           }}
-          className="px-3 py-2 rounded-2xl border  flex flex-col items-center text-center shadow-lg transition-all duration-300 hover:bg-white/[0.12]"
+          className={cn(
+            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-all duration-300",
+            isLightMode
+              ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
+              : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
+          )}
         >
-          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-white/80 uppercase">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
             <Brain size={11} style={{ color: `rgb(${colors.primary})` }} />
             <span>Thinking</span>
           </div>
           <span
             style={{
-              color: latest?.is_llm_loaded ? `rgb(${colors.primary})` : "white",
+              color: latest?.is_llm_loaded ? `rgb(${colors.primary})` : "rgb(var(--foreground))",
             }}
-            className="text-[12px] font-sans font-black tracking-wide uppercase mt-0.5 drop-shadow-sm"
+            className="text-[12px] font-sans font-black tracking-wide uppercase mt-0.5 truncate max-w-full"
           >
             {variants.llm}
           </span>
@@ -379,17 +462,21 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
         {/* STT Variant */}
         <div
           style={{
-            backgroundColor: "rgba(255, 255, 255, 0.08)",
             borderColor: latest?.is_stt_loaded
               ? `rgba(${colors.complementary}, 0.65)`
-              : "rgba(255, 255, 255, 0.15)",
+              : "rgba(var(--border), 0.12)",
             boxShadow: latest?.is_stt_loaded
-              ? `0 0 16px rgba(${colors.complementary}, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.25)`
+              ? `0 0 16px rgba(${colors.complementary}, 0.20), inset 0 1px 1px rgba(var(--card), 0.25)`
               : "none",
           }}
-          className="px-3 py-2 rounded-2xl border  flex flex-col items-center text-center shadow-lg transition-all duration-300 hover:bg-white/[0.12]"
+          className={cn(
+            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-all duration-300",
+            isLightMode
+              ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
+              : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
+          )}
         >
-          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-white/80 uppercase">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
             <Mic size={11} style={{ color: `rgb(${colors.complementary})` }} />
             <span>Hearing</span>
           </div>
@@ -397,9 +484,9 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
             style={{
               color: latest?.is_stt_loaded
                 ? `rgb(${colors.complementary})`
-                : "white",
+                : "rgb(var(--foreground))",
             }}
-            className="text-[12px] font-sans font-black tracking-wide uppercase mt-0.5 drop-shadow-sm"
+            className="text-[12px] font-sans font-black tracking-wide uppercase mt-0.5 truncate max-w-full"
           >
             {variants.stt}
           </span>
@@ -408,25 +495,29 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
         {/* TTS Variant */}
         <div
           style={{
-            backgroundColor: "rgba(255, 255, 255, 0.08)",
             borderColor: latest?.is_tts_loaded
               ? `rgba(${colors.primary}, 0.65)`
-              : "rgba(255, 255, 255, 0.15)",
+              : "rgba(var(--border), 0.12)",
             boxShadow: latest?.is_tts_loaded
-              ? `0 0 16px rgba(${colors.primary}, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.25)`
+              ? `0 0 16px rgba(${colors.primary}, 0.20), inset 0 1px 1px rgba(var(--card), 0.25)`
               : "none",
           }}
-          className="px-3 py-2 rounded-2xl border  flex flex-col items-center text-center shadow-lg transition-all duration-300 hover:bg-white/[0.12]"
+          className={cn(
+            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-all duration-300",
+            isLightMode
+              ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
+              : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
+          )}
         >
-          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-white/80 uppercase">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
             <Volume2 size={11} style={{ color: `rgb(${colors.primary})` }} />
             <span>Speaking</span>
           </div>
           <span
             style={{
-              color: latest?.is_tts_loaded ? `rgb(${colors.primary})` : "white",
+              color: latest?.is_tts_loaded ? `rgb(${colors.primary})` : "rgb(var(--foreground))",
             }}
-            className="text-[12px] font-sans font-black tracking-wide uppercase mt-0.5 drop-shadow-sm"
+            className="text-[12px] font-sans font-black tracking-wide uppercase mt-0.5 truncate max-w-full"
           >
             {variants.tts}
           </span>

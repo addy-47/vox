@@ -319,8 +319,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return;
     }
 
-    const hasChanges = JSON.stringify(settings) !== JSON.stringify(newDraft);
-    set({ draftSettings: newDraft, hasChanges });
+    set({ draftSettings: newDraft });
+    const hasChanges = ["models", "history", "persona", "memory", "interaction"].some((d) =>
+      get().isDomainDirty(d)
+    );
+    set({ hasChanges });
   },
 
   isDomainDirty: (domainId: string) => {
@@ -343,12 +346,51 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           
           return JSON.stringify(savedClean) !== JSON.stringify(draftClean);
         }
-        return (
-          JSON.stringify(settings.vad) !== JSON.stringify(draftSettings.vad) ||
-          JSON.stringify(settings.asr) !== JSON.stringify(draftSettings.asr) ||
-          JSON.stringify(settings.tts) !== JSON.stringify(draftSettings.tts) ||
-          JSON.stringify(settings.llm) !== JSON.stringify(draftSettings.llm)
-        );
+
+        // VAD
+        const vadChanged =
+          settings.vad.threshold !== draftSettings.vad.threshold ||
+          settings.vad.ptt_noise_gate !== draftSettings.vad.ptt_noise_gate ||
+          settings.vad.vad_backend !== draftSettings.vad.vad_backend;
+
+        // ASR
+        const asrChanged =
+          settings.asr.model !== draftSettings.asr.model ||
+          settings.asr.transliterate_enabled !== draftSettings.asr.transliterate_enabled ||
+          settings.asr.provider?.kind !== draftSettings.asr.provider?.kind;
+
+        // TTS
+        const ttsKindChanged = settings.tts.provider?.kind !== draftSettings.tts.provider?.kind;
+        const ttsVoiceChanged = settings.tts.voice !== draftSettings.tts.voice;
+        const ttsQualityChanged = settings.tts.quality_steps !== draftSettings.tts.quality_steps;
+        const ttsSpeedChanged = settings.tts.speed !== draftSettings.tts.speed;
+        let ttsSubChanged = false;
+        if (draftSettings.tts.provider?.kind === "edge_tts") {
+          ttsSubChanged = (settings.tts.provider as any)?.voice !== (draftSettings.tts.provider as any)?.voice;
+        } else if (draftSettings.tts.provider?.kind === "chatterbox_remote") {
+          ttsSubChanged =
+            (settings.tts.provider as any)?.endpoint !== (draftSettings.tts.provider as any)?.endpoint ||
+            (settings.tts.provider as any)?.remote_path !== (draftSettings.tts.provider as any)?.remote_path;
+        }
+        const ttsChanged = ttsKindChanged || ttsVoiceChanged || ttsQualityChanged || ttsSpeedChanged || ttsSubChanged;
+
+        // LLM
+        const llmLocalModelChanged = settings.llm.model !== draftSettings.llm.model;
+        const llmCtxChanged = settings.llm.ctx_size !== draftSettings.llm.ctx_size;
+        const llmThreadsChanged = settings.llm.threads !== draftSettings.llm.threads;
+        const llmProviderKindChanged = settings.llm.provider?.kind !== draftSettings.llm.provider?.kind;
+        const llmRemoteModelChanged =
+          draftSettings.llm.provider?.kind === "open_ai_compat" &&
+          settings.llm.provider?.model !== draftSettings.llm.provider?.model;
+
+        const llmChanged =
+          llmLocalModelChanged ||
+          llmCtxChanged ||
+          llmThreadsChanged ||
+          llmProviderKindChanged ||
+          llmRemoteModelChanged;
+
+        return vadChanged || asrChanged || ttsChanged || llmChanged;
       }
       case "history":
         return (

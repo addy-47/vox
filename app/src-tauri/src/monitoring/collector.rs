@@ -175,6 +175,10 @@ fn collect_snapshot(
         cpu_governor: state.cpu_governor.lock().clone(),
         cpu_governor_optimal: state.cpu_governor_optimal.load(Ordering::Relaxed),
 
+        main_webview_ram_mb: None,
+        tray_webview_ram_mb: None,
+        wizard_webview_ram_mb: None,
+
         timestamp_ms: now,
     }
 }
@@ -226,6 +230,9 @@ mod tests {
             is_engaged: true,
             cpu_governor: "performance".to_string(),
             cpu_governor_optimal: true,
+            main_webview_ram_mb: None,
+            tray_webview_ram_mb: None,
+            wizard_webview_ram_mb: None,
             timestamp_ms,
         }
     }

@@ -37,7 +37,7 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
   const [minimized, setMinimized] = useState(false);
 
   return (
-    <div className="glass-whisper rounded-xl border border-[rgba(var(--accent),0.08)] bg-[rgb(var(--card))]/40 backdrop-blur-[12px] pointer-events-auto transition-all duration-200 text-[rgb(var(--foreground))] w-fit max-w-[320px]">
+    <div className="rounded-xl border border-[rgba(var(--accent),0.12)] bg-[rgba(var(--card),0.85)] pointer-events-auto transition-all duration-200 text-[rgb(var(--foreground))] w-fit max-w-[320px] shadow-md">
       {minimized ? (
         <button
           onClick={() => setMinimized(false)}
