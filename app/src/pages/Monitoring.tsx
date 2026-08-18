@@ -6,11 +6,13 @@ import React, {
   useCallback,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import {
   Activity,
   RefreshCw,
   X,
   Skull,
+  Layers,
 } from "lucide-react";
 import {
   stopEngine,
@@ -41,6 +43,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   onClose,
   anchorRef,
 }) => {
+  const navigate = useNavigate();
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Subscribe to settings store to inspect exact variants and reactive theme
@@ -233,6 +236,25 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Memory Profiler Quick Launch Button */}
+          <Tooltip label="Open UI Memory Attribution & RCA Profiler">
+            <button
+              onClick={() => {
+                onClose?.();
+                navigate("/memory-profiler");
+              }}
+              style={{
+                backgroundColor: `rgba(${colors.primary}, 0.10)`,
+                borderColor: `rgba(${colors.primary}, 0.25)`,
+                color: `rgb(${colors.primary})`,
+              }}
+              className="px-2.5 py-1.5 rounded-xl border transition-all duration-300 flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02]"
+            >
+              <Layers size={13} />
+              <span>PROFILER</span>
+            </button>
+          </Tooltip>
+
           {/* Unload / Load Models Button with Skull Icon when Loaded */}
           <Tooltip
             label={isEngineLoaded ? "Unload all models from memory" : "Load models into memory"}
@@ -291,6 +313,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         isEngineLoaded={isEngineLoaded}
         activeModelsCount={activeModelsCount}
         cpuPct={cpuPct}
+        ramMb={ramMb}
         ramGb={ramGb}
         ramPct={ramPct}
         variants={variants}

@@ -8,6 +8,7 @@ import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
 import { cn } from "@/shared/lib/utils";
 import { ModelStatusOverlay } from "@/shared/components/settings/ModelStatusOverlay";
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
@@ -152,11 +153,19 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             <Activity size={24} strokeWidth={2} />
           </button>
 
-          {/* Mini footprint HUD — CPU% · RAM MB */}
+          {/* Mini footprint HUD — CPU% · RAM MB (Click to launch Memory Profiler) */}
           {isReady && (
-            <span className="text-[15px] font-mono text-[rgb(var(--foreground-muted))]/80 leading-none select-none tabular-nums pointer-events-none">
-              {voxCpu.toFixed(1)}% · {Math.round(voxRam)} MB
-            </span>
+            <Tooltip label="Open UI Memory Profiler">
+              <button
+                onClick={() => {
+                  setMonitorOpen(false);
+                  navigate("/memory-profiler");
+                }}
+                className="text-[14px] font-mono text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] px-2 py-1 rounded-lg transition-all leading-none select-none tabular-nums cursor-pointer border border-transparent hover:border-[rgba(var(--border),0.15)]"
+              >
+                {voxCpu.toFixed(1)}% · {Math.round(voxRam)} MB
+              </button>
+            </Tooltip>
           )}
         </div>
 

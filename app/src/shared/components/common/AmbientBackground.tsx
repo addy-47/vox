@@ -1,5 +1,6 @@
 import React from "react";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
 type AmbientMood = "calm" | "active" | "thinking" | "speaking";
 type RippleShape = "circle" | "orbit";
@@ -79,6 +80,8 @@ export const AmbientBackground = React.memo(({
   rippleSpeedMultiplier = 1.0,
   rippleShape = "circle",
 }: AmbientBackgroundProps) => {
+  useMemoryTrace("AmbientBackground (rAF Dynamic Glow)");
+
   const cfg = MOOD_CONFIG[mood];
   const effectiveRippleDuration = cfg.rippleDuration * rippleSpeedMultiplier;
   const telemetryRef = useTelemetry();

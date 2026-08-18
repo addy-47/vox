@@ -78,7 +78,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
 
       {/* Popover Suggestions with Collection Icons and Fact Content */}
       {focused && results.length > 0 && (
-        <div className="absolute top-full mt-2 left-0 right-0 p-2 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/95 backdrop-blur-2xl shadow-2xl flex flex-col gap-1 z-40 max-h-[260px] overflow-y-auto">
+        <div className="absolute top-full mt-2 left-0 right-0 p-2 rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.96)] shadow-2xl flex flex-col gap-1 z-40 max-h-[260px] overflow-y-auto">
           <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] px-2 py-1 block">
             Matching Memory Facts ({results.length})
           </span>

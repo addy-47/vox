@@ -103,7 +103,7 @@ export const MetricCarousel: React.FC<MetricCarouselProps> = ({
         <button
           onClick={handlePrevPage}
           aria-label="Previous metrics page"
-          className="absolute -left-1.5 z-20 p-1 rounded-full bg-[rgba(var(--card),0.8)] border border-white/10 text-[rgb(var(--foreground))] hover:scale-110 transition-transform shadow-md cursor-pointer"
+          className="absolute -left-1.5 z-20 p-1 rounded-full bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground))] hover:scale-110 transition-transform shadow-md cursor-pointer backdrop-blur-sm"
         >
           <ChevronLeft size={14} />
         </button>
@@ -116,7 +116,7 @@ export const MetricCarousel: React.FC<MetricCarouselProps> = ({
             return (
               <div
                 key={card.id}
-                className="p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] flex flex-col justify-between shadow-sm min-h-[72px]"
+                className="p-3 rounded-2xl bg-[rgba(var(--card),0.4)] border border-[rgba(var(--border),0.08)] flex flex-col justify-between shadow-sm min-h-[72px]"
               >
                 <div className="flex items-center gap-1.5 text-[11px] font-bold text-[rgb(var(--foreground-muted))] uppercase">
                   <IconComp size={13} style={{ color: card.color }} />
@@ -137,7 +137,7 @@ export const MetricCarousel: React.FC<MetricCarouselProps> = ({
         <button
           onClick={handleNextPage}
           aria-label="Next metrics page"
-          className="absolute -right-1.5 z-20 p-1 rounded-full bg-[rgba(var(--card),0.8)] border border-white/10 text-[rgb(var(--foreground))] hover:scale-110 transition-transform shadow-md cursor-pointer"
+          className="absolute -right-1.5 z-20 p-1 rounded-full bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground))] hover:scale-110 transition-transform shadow-md cursor-pointer backdrop-blur-sm"
         >
           <ChevronRight size={14} />
         </button>
@@ -154,7 +154,7 @@ export const MetricCarousel: React.FC<MetricCarouselProps> = ({
               backgroundColor:
                 carouselPage === idx
                   ? `rgb(${colors.primary})`
-                  : "rgba(255,255,255,0.2)",
+                  : "rgba(var(--foreground-muted), 0.25)",
               width: carouselPage === idx ? "16px" : "5px",
             }}
             className="h-1 rounded-full transition-all duration-300 cursor-pointer"

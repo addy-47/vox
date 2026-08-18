@@ -3,7 +3,7 @@ import { RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
-import { GlassSkeleton, ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
+import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
 import { SETTINGS_COPY } from "@/data/settingsData";
@@ -26,12 +26,14 @@ const MemoryCard = lazy(loadMemory);
 const AppearanceCard = lazy(loadAppearance);
 const InteractionCard = lazy(loadInteraction);
 
+import { SettingsCardSkeleton } from "@/shared/components/settings/SettingsCardSkeleton";
+
 // ─── Domain content map ───────────────────────────────────────────────────────
 
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
   const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode === "realtime");
   return (
-    <Suspense fallback={<GlassSkeleton variant="card" />}>
+    <Suspense fallback={<SettingsCardSkeleton layoutMode={layoutMode} />}>
       {(() => {
         switch (domain) {
           case "persona":

@@ -10,6 +10,7 @@ import {
   zIndexForAngle,
 } from "./orbitMath";
 import { ChamberOrbitRings } from "./ChamberOrbitRings";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
 export interface OrbitCarouselProps {
   /** Ordered newest-first — the first id always rests at the front. */
@@ -39,6 +40,7 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
   onDragStateChange,
   renderNode,
 }) => {
+  useMemoryTrace("OrbitCarousel (3D Ellipse)");
   const containerRef = useRef<HTMLDivElement>(null);
   const cardsContainerRef = useRef<HTMLDivElement>(null);
 

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { useDynamicFPS } from '@/shared/hooks/useDynamicFPS';
 import { type InteractionState } from '@/services/eventsService';
+import { useMemoryTrace } from '@/shared/hooks/useMemoryTrace';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -347,6 +348,8 @@ export const VoxOrb = React.memo(({
   isSleeping = false,
   isTesting = false,
 }: VoxOrbProps) => {
+  useMemoryTrace("VoxOrb (Three.js Shader)");
+
   const mountRef     = useRef<HTMLDivElement>(null);
   const stateRef     = useRef(interactionState);
   const sleepingRef  = useRef(isSleeping);
