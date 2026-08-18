@@ -142,7 +142,7 @@ export const DetailPanel = memo(
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-4 min-h-0 will-change-scroll custom-scrollbar">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-4 min-h-0 custom-scrollbar">
           {loading ? (
             <div className="flex justify-center py-12">
               <OrbitalLoader
