@@ -361,37 +361,27 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       />
 
       {/* Top Header Layer Inside Container: CPU % on Top-Left & RAM GB on Top-Right */}
-      <div className="relative z-10 w-full flex items-center justify-between">
-        {/* Top-Left CPU Pill */}
+      <div className="relative z-10 w-full flex items-center justify-between px-2">
+        {/* Top-Left CPU Indicator */}
         <div
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border shadow-sm text-[11px] font-mono font-bold backdrop-blur-md transition-colors",
-            isLightMode
-              ? "bg-[rgba(var(--card),0.55)] border-[rgba(var(--border),0.12)]"
-              : "bg-[rgba(var(--card),0.85)] border-white/10"
-          )}
+          className="flex items-center gap-2 text-[11px] font-mono font-bold select-none drop-shadow-xs"
           style={{ color: `rgb(${colors.complementary})` }}
         >
           <span
             style={{ backgroundColor: `rgb(${colors.complementary})` }}
-            className="w-2 h-2 rounded-full inline-block"
+            className="w-2 h-2 rounded-full inline-block shadow-[0_0_8px_currentColor]"
           />
           <span>CPU {cpuPct.toFixed(1)}%</span>
         </div>
 
-        {/* Top-Right RAM Pill */}
+        {/* Top-Right RAM Indicator */}
         <div
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border shadow-sm text-[11px] font-mono font-bold backdrop-blur-md transition-colors",
-            isLightMode
-              ? "bg-[rgba(var(--card),0.55)] border-[rgba(var(--border),0.12)]"
-              : "bg-[rgba(var(--card),0.85)] border-white/10"
-          )}
+          className="flex items-center gap-2 text-[11px] font-mono font-bold select-none drop-shadow-xs"
           style={{ color: `rgb(${colors.primary})` }}
         >
           <span
             style={{ backgroundColor: `rgb(${colors.primary})` }}
-            className="w-2 h-2 rounded-full inline-block"
+            className="w-2 h-2 rounded-full inline-block shadow-[0_0_8px_currentColor]"
           />
           <span>RAM {ramGb} GB</span>
         </div>

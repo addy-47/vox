@@ -108,7 +108,7 @@ export const RotaryKnob = memo(({
   const resetDefault = () => onChange(clamp(defaultValue));
 
   return (
-    <div className={cn("flex flex-col items-center justify-center select-none will-change-transform transform-gpu", className)}>
+    <div className={cn("flex flex-col items-center justify-center select-none", className)}>
       {label && (
         <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75 mb-1.5 flex items-center gap-1">
           {label}

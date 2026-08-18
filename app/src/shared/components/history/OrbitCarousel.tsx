@@ -361,7 +361,7 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
             <div
               key={id}
               ref={registerRefCb(id)}
-              className="absolute left-0 top-0 pointer-events-auto will-change-transform opacity-0"
+              className="absolute left-0 top-0 pointer-events-auto opacity-0"
               style={{ transform: "translate3d(-9999px, -9999px, 0)" }}
             >
               {renderNode(id)}
