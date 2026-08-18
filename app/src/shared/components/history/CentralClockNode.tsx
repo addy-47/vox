@@ -117,6 +117,9 @@ export const CentralClockNode = memo(
           >
             {Array.from({ length: totalTicks }, (_, i) => {
               const angle = (i * 360) / totalTicks;
+              // Remove tick lines at 3:00 (90 deg) and 9:00 (270 deg) to place carousel buttons directly there
+              if (angle === 90 || angle === 270) return null;
+
               const isQuarter = i % (totalTicks / 4) === 0;
               const isEighth = i % (totalTicks / 8) === 0;
               const length = isQuarter ? 8 : isEighth ? 5 : 3;
@@ -148,35 +151,81 @@ export const CentralClockNode = memo(
               aria-hidden
             >
               {Array.from({ length: windowProgress.count }, (_, i) => {
-                const active = i <= windowProgress.index;
-                const angle = (i * 360) / windowProgress.count - 90;
+                const anglePerSegment = 360 / windowProgress.count;
+                const startAngle = i * anglePerSegment - 90;
+                const endAngle = (i + 1) * anglePerSegment - 90 - 4;
+                const r = 46;
+                const isCurrent = i === windowProgress.index;
+                const startRad = (startAngle * Math.PI) / 180;
+                const endRad = (endAngle * Math.PI) / 180;
+                const x1 = 50 + r * Math.cos(startRad);
+                const y1 = 50 + r * Math.sin(startRad);
+                const x2 = 50 + r * Math.cos(endRad);
+                const y2 = 50 + r * Math.sin(endRad);
+
                 return (
-                  <circle
+                  <path
                     key={i}
-                    cx={50}
-                    cy={50}
-                    r={46}
+                    d={`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`}
                     fill="none"
-                    stroke={active ? "rgb(var(--accent))" : "rgba(var(--foreground-muted), 0.20)"}
-                    strokeWidth={active ? 2.5 : 1}
-                    strokeDasharray={`${Math.PI * 2 * 46 * (1 / windowProgress.count) - 3} ${1000}`}
+                    stroke={
+                      isCurrent
+                        ? "rgb(var(--accent))"
+                        : "rgba(var(--foreground-muted), 0.15)"
+                    }
+                    strokeWidth={isCurrent ? 2.5 : 1.5}
                     strokeLinecap="round"
-                    transform={`rotate(${angle} 50 50)`}
                   />
                 );
               })}
             </svg>
           )}
 
-          {/* ── Inner Circular Safe Zone: Centered Stack with Zero Edge Clipping ── */}
-          <div className="relative z-20 flex flex-col items-center justify-between w-[74%] h-[74%] py-1">
-            {/* 1. Top View Switcher */}
+          {/* Prev Button anchored directly at 9:00 Outer Rim Position */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPrev();
+            }}
+            disabled={!canPrev}
+            className={cn(
+              "absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer z-30",
+              isLightMode
+                ? "bg-white/90 border-[rgba(var(--accent),0.45)] shadow-md shadow-slate-300/30"
+                : "bg-black/80 border-[rgba(var(--accent),0.55)] shadow-[0_0_12px_rgba(0,0,0,0.6)]"
+            )}
+            aria-label={variant === "day" ? HISTORY_COPY.prevDay : HISTORY_COPY.prevMonth}
+          >
+            <ChevronLeft size={18} strokeWidth={2.5} />
+          </button>
+
+          {/* Next Button anchored directly at 3:00 Outer Rim Position */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onNext();
+            }}
+            disabled={!canNext}
+            className={cn(
+              "absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer z-30",
+              isLightMode
+                ? "bg-white/90 border-[rgba(var(--accent),0.45)] shadow-md shadow-slate-300/40"
+                : "bg-black/80 border-[rgba(var(--accent),0.55)] shadow-[0_0_12px_rgba(0,0,0,0.6)]"
+            )}
+            aria-label={variant === "day" ? HISTORY_COPY.nextDay : HISTORY_COPY.nextMonth}
+          >
+            <ChevronRight size={18} strokeWidth={2.5} />
+          </button>
+
+          {/* ── Inner Circular Safe Zone: Centered Content with Perfect Breathing Room ── */}
+          <div className="relative z-20 flex flex-col items-center justify-between w-[74%] h-[74%] py-2 select-none">
+            {/* 1. Top Section: Mode Pill Toggle */}
             <div
               className={cn(
-                "flex items-center p-0.5 rounded-full border shadow-inner transition-colors backdrop-blur-sm",
+                "flex items-center gap-1 p-0.5 rounded-full border shadow-inner transition-colors",
                 isLightMode
-                  ? "bg-white/45 border-[rgba(var(--accent),0.3)] shadow-slate-200/40"
-                  : "bg-black/50 border-[rgba(var(--accent),0.25)]"
+                  ? "bg-white/45 border-[rgba(var(--accent),0.25)] shadow-slate-200/50"
+                  : "bg-black/40 border-[rgba(var(--accent),0.2)]"
               )}
             >
               <button
@@ -209,124 +258,78 @@ export const CentralClockNode = memo(
               </button>
             </div>
 
-            {/* 2. Middle Row: Prev Button — Centered Hero Date + Metrics Stack — Next Button */}
-            <div className="relative flex items-center justify-center w-full my-auto">
-              {/* Prev Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onPrev();
-                }}
-                disabled={!canPrev}
-                className={cn(
-                  "absolute -left-6 sm:-left-7 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer backdrop-blur-sm",
-                  isLightMode
-                    ? "bg-white/50 border-[rgba(var(--accent),0.35)] shadow-md shadow-slate-300/30"
-                    : "bg-black/60 border-[rgba(var(--accent),0.35)] shadow-[0_0_12px_rgba(0,0,0,0.6)]"
-                )}
-                aria-label={variant === "day" ? HISTORY_COPY.prevDay : HISTORY_COPY.prevMonth}
-              >
-                <ChevronLeft size={18} strokeWidth={2.5} />
-              </button>
+            {/* 2. Middle Row: Centered Hero Date + Metrics Stack */}
+            <div className="flex flex-col items-center justify-center text-center my-auto">
+              {/* Year with Accent Pips: e.g. "• 2 0 2 6 •" */}
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="w-1 h-1 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_5px_rgb(var(--accent))]" />
+                <span className="text-[10px] font-mono font-bold tracking-[0.3em] text-[rgb(var(--foreground-muted))] uppercase opacity-90">
+                  {secondaryLabel}
+                </span>
+                <span className="w-1 h-1 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_5px_rgb(var(--accent))]" />
+              </div>
 
-              {/* Date, Weekday, & Telemetry Stack */}
-              <div className="flex flex-col items-center justify-center text-center px-4">
-                {/* Year with Accent Pips: e.g. "• 2 0 2 6 •" */}
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="w-1 h-1 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_5px_rgb(var(--accent))]" />
-                  <span className="text-[10px] font-mono font-bold tracking-[0.3em] text-[rgb(var(--foreground-muted))] uppercase opacity-90">
-                    {secondaryLabel}
+              {/* Hero Date: Dual-Tone "AUG 12" in Day view, or Full Month Name "AUGUST" in Month view */}
+              {variant === "day" && dayHeroParts ? (
+                <div className="flex items-baseline gap-1.5 font-display font-black tracking-tight leading-none">
+                  <span
+                    className="text-[rgb(var(--foreground))]"
+                    style={{ fontSize: "clamp(28px, 3.4vw, 42px)" }}
+                  >
+                    {dayHeroParts.month}
                   </span>
-                  <span className="w-1 h-1 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_5px_rgb(var(--accent))]" />
+                  <span
+                    className="text-[rgb(var(--accent))] drop-shadow-[0_0_18px_rgba(var(--accent),0.65)]"
+                    style={{ fontSize: "clamp(28px, 3.4vw, 42px)" }}
+                  >
+                    {dayHeroParts.day}
+                  </span>
+                </div>
+              ) : (
+                <span
+                  className="font-display font-black tracking-tight text-[rgb(var(--accent))] leading-none drop-shadow-[0_0_18px_rgba(var(--accent),0.65)] uppercase"
+                  style={{ fontSize: "clamp(24px, 3.2vw, 36px)" }}
+                >
+                  {monthFullLabel || primaryLabel}
+                </span>
+              )}
+
+              {/* Weekday Subtitle / View mode overview */}
+              <span className="text-[9.5px] font-mono font-bold tracking-[0.32em] text-[rgb(var(--foreground-muted))] uppercase mt-1 opacity-80">
+                {variant === "day" ? weekdayLabel || "TODAY" : "OVERVIEW"}
+              </span>
+
+              {/* Direct Sub-Date Metrics Row: Session Count & Memory Count (Direct text without pill container) */}
+              <div className="flex items-center gap-3 mt-2 text-[rgb(var(--foreground))]">
+                {/* Sessions */}
+                <div className="flex items-center gap-1.5">
+                  <MessageSquare size={13} className="text-[rgb(var(--accent))] shrink-0" />
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[13px] font-display font-black text-[rgb(var(--foreground))]">
+                      {sessionsCount}
+                    </span>
+                    <span className="text-[8.5px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))] uppercase">
+                      SESSIONS
+                    </span>
+                  </div>
                 </div>
 
-                {/* Hero Date: Dual-Tone "AUG 12" in Day view, or Full Month Name "AUGUST" in Month view */}
-                {variant === "day" && dayHeroParts ? (
-                  <div className="flex items-baseline gap-1.5 font-display font-black tracking-tight leading-none">
-                    <span
-                      className="text-[rgb(var(--foreground))]"
-                      style={{ fontSize: "clamp(28px, 3.4vw, 42px)" }}
-                    >
-                      {dayHeroParts.month}
+                {/* Subtle Separator Dot */}
+                <span className="w-1 h-1 rounded-full bg-[rgb(var(--accent))]/40" />
+
+                {/* Memories */}
+                <div className="flex items-center gap-1.5">
+                  <Brain size={13} className="text-[rgb(var(--accent))] shrink-0" />
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[13px] font-display font-black text-[rgb(var(--foreground))]">
+                      {memoriesCount}
                     </span>
-                    <span
-                      className="text-[rgb(var(--accent))] drop-shadow-[0_0_18px_rgba(var(--accent),0.65)]"
-                      style={{ fontSize: "clamp(28px, 3.4vw, 42px)" }}
-                    >
-                      {dayHeroParts.day}
+                    <span className="text-[8.5px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))] uppercase">
+                      MEMORIES
                     </span>
-                  </div>
-                ) : (
-                  <span
-                    className="font-display font-black tracking-tight text-[rgb(var(--accent))] leading-none drop-shadow-[0_0_18px_rgba(var(--accent),0.65)] uppercase"
-                    style={{ fontSize: "clamp(24px, 3.2vw, 36px)" }}
-                  >
-                    {monthFullLabel || primaryLabel}
-                  </span>
-                )}
-
-                {/* Weekday Subtitle / View mode overview */}
-                <span className="text-[9.5px] font-mono font-bold tracking-[0.32em] text-[rgb(var(--foreground-muted))] uppercase mt-1 opacity-80">
-                  {variant === "day" ? weekdayLabel || "TODAY" : "OVERVIEW"}
-                </span>
-
-                {/* Direct Sub-Date Metrics Row: Session Count & Memory Count (No redundant center node) */}
-                <div
-                  className={cn(
-                    "flex items-center gap-4 mt-3 px-3 py-1 rounded-xl border shadow-inner transition-colors backdrop-blur-sm",
-                    isLightMode
-                      ? "bg-white/45 border-[rgba(var(--accent),0.25)] shadow-slate-200/40"
-                      : "bg-black/30 border-[rgba(var(--accent),0.18)]"
-                  )}
-                >
-                  {/* Sessions */}
-                  <div className="flex items-center gap-1.5">
-                    <MessageSquare size={13} className="text-[rgb(var(--accent))] shrink-0" />
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-[13px] font-display font-black text-[rgb(var(--foreground))]">
-                        {sessionsCount}
-                      </span>
-                      <span className="text-[8.5px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))] uppercase">
-                        SESSIONS
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Subtle Separator Dot */}
-                  <span className="w-1 h-1 rounded-full bg-[rgb(var(--accent))]/40" />
-
-                  {/* Memories */}
-                  <div className="flex items-center gap-1.5">
-                    <Brain size={13} className="text-[rgb(var(--accent))] shrink-0" />
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-[13px] font-display font-black text-[rgb(var(--foreground))]">
-                        {memoriesCount}
-                      </span>
-                      <span className="text-[8.5px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))] uppercase">
-                        MEMORIES
-                      </span>
-                    </div>
                   </div>
                 </div>
               </div>
-
-              {/* Next Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNext();
-                }}
-                disabled={!canNext}
-                className={cn(
-                  "absolute -right-6 sm:-right-7 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer",
-                  isLightMode
-                    ? "bg-white/90 border-[rgba(var(--accent),0.35)] shadow-md shadow-slate-300/40"
-                    : "bg-black/60 border-[rgba(var(--accent),0.35)] shadow-[0_0_12px_rgba(0,0,0,0.6)]"
-                )}
-                aria-label={variant === "day" ? HISTORY_COPY.nextDay : HISTORY_COPY.nextMonth}
-              >
-                <ChevronRight size={18} strokeWidth={2.5} />
-              </button>
             </div>
 
             {/* 3. Bottom Section: Time Span Footer */}

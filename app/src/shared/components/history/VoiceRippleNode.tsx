@@ -64,18 +64,19 @@ export const VoiceRippleNode = memo(
         onKeyDown={handleKeyDown}
         style={{ width: ORBIT_CARD_WIDTH }}
         className={cn(
-          "rounded-2xl p-4 flex flex-col text-left select-none group cursor-pointer transition-all duration-200 glass-card backdrop-blur-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+          "rounded-2xl p-4 flex flex-col text-left select-none group cursor-pointer transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
           isSelected
-            ? "border-[rgba(var(--accent),0.9)] bg-[rgb(var(--card))]/95 shadow-[0_0_35px_rgba(var(--accent),0.5)] scale-[1.03]"
-            : "border-[rgba(var(--border),0.15)] bg-[rgb(var(--card))]/75 hover:border-[rgba(var(--accent),0.55)] hover:bg-[rgb(var(--card))]/90 hover:shadow-[0_0_20px_rgba(var(--accent),0.25)]"
+            ? "orbit-card-surface-selected scale-[1.03]"
+            : "orbit-card-surface hover:border-[rgb(var(--accent))] hover:shadow-[0_0_25px_rgba(var(--accent),0.3)] hover:scale-[1.02]"
         )}
         onClick={(e) => {
           e.stopPropagation();
           onSelect(session);
         }}
       >
-        {/* Glowing orbit anchor dot & time header */}
-        <div className="flex items-center justify-between mb-2 pr-8">
+        {/* Glowing orbit anchor dot & time header on left, Delete Action & Duration on right */}
+        <div className="flex items-center justify-between mb-2">
+          {/* Left: Dot + Start Clock Time */}
           <div className="flex items-center gap-2">
             <div className="relative flex items-center justify-center">
               <div
@@ -94,11 +95,55 @@ export const VoiceRippleNode = memo(
             </span>
           </div>
 
-          {durationLabel && (
-            <span className="text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))]">
-              {durationLabel}
-            </span>
-          )}
+          {/* Right: Delete Action Button THEN Duration Text */}
+          <div className="flex items-center gap-2">
+            {/* Delete button (or confirmation action) */}
+            <div
+              className={cn(
+                "transition-opacity duration-200",
+                isConfirmingDelete ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+              )}
+            >
+              {isConfirmingDelete ? (
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Tooltip label={HISTORY_COPY.deleteConfirm}>
+                    <button
+                      onClick={(e) => onDelete(e, session.id)}
+                      className="w-6 h-6 rounded-full border border-[rgba(var(--accent),0.4)] bg-white dark:bg-black flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                      aria-label={HISTORY_COPY.deleteConfirm}
+                    >
+                      <Check size={12} strokeWidth={2.5} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={HISTORY_COPY.cancelDelete}>
+                    <button
+                      onClick={onCancelDelete}
+                      className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] bg-white dark:bg-black flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                      aria-label={HISTORY_COPY.cancelDelete}
+                    >
+                      <X size={12} strokeWidth={2.5} />
+                    </button>
+                  </Tooltip>
+                </div>
+              ) : (
+                <Tooltip label={HISTORY_COPY.deleteSession}>
+                  <button
+                    onClick={(e) => onDelete(e, session.id)}
+                    className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] hover:border-[rgba(var(--accent),0.4)] bg-white/80 dark:bg-black/60 flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                    aria-label={HISTORY_COPY.deleteSession}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </Tooltip>
+              )}
+            </div>
+
+            {durationLabel && (
+              <span className="text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))]">
+                {durationLabel}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Snippet preview — the prominent voice quote matching mockup */}
@@ -127,47 +172,6 @@ export const VoiceRippleNode = memo(
               ? HISTORY_COPY.turnSingular
               : HISTORY_COPY.turnPlural}
           </span>
-        </div>
-
-        {/* Delete session action */}
-        <div
-          className={cn(
-            "absolute top-2.5 right-2.5 transition-opacity duration-200 z-20",
-            isConfirmingDelete ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-          )}
-        >
-          {isConfirmingDelete ? (
-            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <Tooltip label={HISTORY_COPY.deleteConfirm}>
-                <button
-                  onClick={(e) => onDelete(e, session.id)}
-                  className="w-8 h-8 rounded-full glass-card flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 cursor-pointer shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                  aria-label={HISTORY_COPY.deleteConfirm}
-                >
-                  <Check size={14} strokeWidth={2.5} />
-                </button>
-              </Tooltip>
-              <Tooltip label={HISTORY_COPY.cancelDelete}>
-                <button
-                  onClick={onCancelDelete}
-                  className="w-8 h-8 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                  aria-label={HISTORY_COPY.cancelDelete}
-                >
-                  <X size={14} strokeWidth={2.5} />
-                </button>
-              </Tooltip>
-            </div>
-          ) : (
-            <Tooltip label={HISTORY_COPY.deleteSession}>
-              <button
-                onClick={(e) => onDelete(e, session.id)}
-                className="w-8 h-8 rounded-full glass-card flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                aria-label={HISTORY_COPY.deleteSession}
-              >
-                <Trash2 size={14} />
-              </button>
-            </Tooltip>
-          )}
         </div>
       </div>
     );

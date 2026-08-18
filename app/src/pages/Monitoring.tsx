@@ -236,24 +236,26 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Memory Profiler Quick Launch Button */}
-          <Tooltip label="Open UI Memory Attribution & RCA Profiler">
-            <button
-              onClick={() => {
-                onClose?.();
-                navigate("/memory-profiler");
-              }}
-              style={{
-                backgroundColor: `rgba(${colors.primary}, 0.10)`,
-                borderColor: `rgba(${colors.primary}, 0.25)`,
-                color: `rgb(${colors.primary})`,
-              }}
-              className="px-2.5 py-1.5 rounded-xl border transition-all duration-300 flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02]"
-            >
-              <Layers size={13} />
-              <span>PROFILER</span>
-            </button>
-          </Tooltip>
+          {/* Memory Profiler Quick Launch Button (Disabled by default, can be toggled on for diagnostic sessions) */}
+          {false && (
+            <Tooltip label="Open UI Memory Attribution & RCA Profiler">
+              <button
+                onClick={() => {
+                  onClose?.();
+                  navigate("/memory-profiler");
+                }}
+                style={{
+                  backgroundColor: `rgba(${colors.primary}, 0.10)`,
+                  borderColor: `rgba(${colors.primary}, 0.25)`,
+                  color: `rgb(${colors.primary})`,
+                }}
+                className="px-2.5 py-1.5 rounded-xl border transition-all duration-300 flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02]"
+              >
+                <Layers size={13} />
+                <span>PROFILER</span>
+              </button>
+            </Tooltip>
+          )}
 
           {/* Unload / Load Models Button with Skull Icon when Loaded */}
           <Tooltip

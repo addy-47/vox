@@ -290,7 +290,7 @@ export const Settings: React.FC = () => {
   const hasSelection = activeDomains.length > 0;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-6">
+    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-6 lg:pb-[72px]">
 
       {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
       {!isCompact ? (

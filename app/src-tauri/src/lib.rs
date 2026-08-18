@@ -410,31 +410,28 @@ pub fn run() {
             }
 
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Instead of closing, just hide the window
-                if window.label() == "main" || window.label() == "tray" {
-                    let label = window.label().to_string();
-                    log::info!("[Window] Close requested for {}, hiding instead of closing window.", label);
+                // Instead of closing, hide the main window to keep app running
+                if window.label() == "main" {
+                    log::info!("[Window] Close requested for main, hiding instead of closing window.");
                     let _ = window.hide();
                     api.prevent_close();
                     
                     // Evaluate engine offload if the main window is hidden
-                    if label == "main" {
-                        let handle = window.app_handle().clone();
-                        tauri::async_runtime::spawn(async move {
-                            let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
-                            let (tray_enabled, is_engaged) = {
-                                let s = state.settings.read().unwrap();
-                                (s.ui.tray_enabled, state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed))
-                            };
-                            
-                            if !tray_enabled && !is_engaged {
-                                log::info!("[Window] Main window hidden, Tray is disabled, and app is disengaged. Offloading engine...");
-                                let _ = crate::ipc::pipeline::stop_engine(handle).await;
-                            } else {
-                                log::info!("[Window] Main window hidden. Engine kept alive. Tray enabled: {}, Engaged: {}", tray_enabled, is_engaged);
-                            }
-                        });
-                    }
+                    let handle = window.app_handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
+                        let (tray_enabled, is_engaged) = {
+                            let s = state.settings.read().unwrap();
+                            (s.ui.tray_enabled, state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed))
+                        };
+                        
+                        if !tray_enabled && !is_engaged {
+                            log::info!("[Window] Main window hidden, Tray is disabled, and app is disengaged. Offloading engine...");
+                            let _ = crate::ipc::pipeline::stop_engine(handle).await;
+                        } else {
+                            log::info!("[Window] Main window hidden. Engine kept alive. Tray enabled: {}, Engaged: {}", tray_enabled, is_engaged);
+                        }
+                    });
                 }
             }
         })

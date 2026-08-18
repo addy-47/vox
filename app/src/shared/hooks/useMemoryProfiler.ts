@@ -252,10 +252,11 @@ export function useMemoryProfiler(enabled = true, samplingIntervalMs = 2000) {
   }, [enabled, samplingIntervalMs, captureSnapshot]);
 
   // ─── Diagnostic Time-Series Recorder (5s) ───────────────────────────────────
-  // Writes a "poll" event to the session JSONL every 5 seconds regardless of lifecycle.
-  // This gives a precise continuous time-series for reading from the file system.
+  // Writes a "poll" event every 5 seconds. Disabled by default, can be toggled on when profiling.
+  const ENABLE_DIAGNOSTIC_POLL = false;
+
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !ENABLE_DIAGNOSTIC_POLL) return;
 
     const DIAG_INTERVAL_MS = 5000;
 
