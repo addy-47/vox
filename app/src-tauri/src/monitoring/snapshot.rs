@@ -69,6 +69,14 @@ pub struct RuntimeSnapshot {
     /// Whether the CPU governor is optimal ("performance"). False if unknown/non-Linux.
     pub cpu_governor_optimal: bool,
 
+    /// Optional per-WebView RAM breakdown in MB (Measured via sysinfo descendant enumeration)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub main_webview_ram_mb: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tray_webview_ram_mb: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wizard_webview_ram_mb: Option<u32>,
+
     /// Unix timestamp of the snapshot in milliseconds.
     pub timestamp_ms: u64,
 }

@@ -27,6 +27,7 @@ import { MemoryNodeTopology, MemoryEdgeTopology, MemoryFactDetail } from "@/serv
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { OrbitalLoader } from "@/shared/components/common";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
 interface GraphErrorBoundaryProps {
   children: ReactNode;
@@ -290,6 +291,7 @@ interface MemoryGraphProps {
   selectedFactId: string | null;
   selectedFactDetail?: MemoryFactDetail | null;
   conflictPairs?: { fact_a: MemoryNodeTopology; fact_b: MemoryNodeTopology }[];
+  clearCacheOnUnmount?: boolean;
 }
 
 export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
@@ -306,9 +308,12 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       selectedFactId,
       selectedFactDetail,
       conflictPairs = [],
+      clearCacheOnUnmount = false,
     },
     ref
   ) => {
+    useMemoryTrace("MemoryGraph (WebGL InstancedMesh)");
+
     const canvasContainerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
@@ -1070,13 +1075,54 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
         clearTimeout(failsafeTimer);
         if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
         controls.dispose();
+
+        // ── Comprehensive WebGL GPU Resource Teardown ───────────────────────
+        if (instancedMeshRef.current) {
+          instancedMeshRef.current.geometry.dispose();
+          if (Array.isArray(instancedMeshRef.current.material)) {
+            instancedMeshRef.current.material.forEach((m) => m.dispose());
+          } else {
+            instancedMeshRef.current.material.dispose();
+          }
+          instancedMeshRef.current = null;
+        }
+
+        if (instancedRingRef.current) {
+          instancedRingRef.current.geometry.dispose();
+          if (Array.isArray(instancedRingRef.current.material)) {
+            instancedRingRef.current.material.forEach((m) => m.dispose());
+          } else {
+            instancedRingRef.current.material.dispose();
+          }
+          instancedRingRef.current = null;
+        }
+
+        if (lineSegmentsRef.current) {
+          lineSegmentsRef.current.geometry.dispose();
+          if (Array.isArray(lineSegmentsRef.current.material)) {
+            lineSegmentsRef.current.material.forEach((m) => m.dispose());
+          } else {
+            lineSegmentsRef.current.material.dispose();
+          }
+          lineSegmentsRef.current = null;
+        }
+
+        if (sceneRef.current) {
+          sceneRef.current.clear();
+          sceneRef.current = null;
+        }
+
         renderer.dispose();
         rendererRef.current = null;
-        if (container && renderer.domElement) {
+        if (container && renderer.domElement && container.contains(renderer.domElement)) {
           container.removeChild(renderer.domElement);
         }
+
+        if (clearCacheOnUnmount) {
+          nodePosCache.clear();
+        }
       };
-    }, [isLightMode, stepSimulation, width, height]);
+    }, [isLightMode, stepSimulation, width, height, clearCacheOnUnmount]);
 
     // Dedicated lightweight camera & renderer resize effect (prevents WebGL scene teardown)
     useEffect(() => {
@@ -1222,32 +1268,33 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
                       top: `${badge.screenY}px`,
                       transform: "translate(-50%, -50%)",
                     }}
-                    className="absolute pointer-events-auto z-20"
+                    className={cn(
+                      "absolute pointer-events-auto",
+                      isExpanded ? "z-40" : "z-20"
+                    )}
                   >
-                    <motion.div
-                      layout
-                      transition={{ type: "spring", stiffness: 380, damping: 28 }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpandedBadge((prev) => (prev === badge.collection ? null : badge.collection));
-                      }}
-                      style={{
-                        borderColor: isExpanded ? `${badge.color}60` : `${badge.color}35`,
-                        boxShadow: isExpanded
-                          ? `0 16px 45px -8px ${badge.color}45, 0 0 20px ${badge.color}25`
-                          : `0 4px 20px ${badge.color}20`,
-                        backgroundImage: isExpanded
-                          ? `radial-gradient(circle at top, ${badge.color}15, transparent 70%)`
-                          : undefined,
-                      }}
-                      className={cn(
-                        "glass-card bg-[rgb(var(--card))]/90 backdrop-blur-[24px] border transition-colors cursor-pointer select-none text-[rgb(var(--foreground))] overflow-hidden",
-                        isExpanded ? "w-[310px] p-4 rounded-3xl" : "flex items-center gap-2.5 px-4 py-2 rounded-full hover:scale-105 transition-transform"
-                      )}
-                    >
+                    <AnimatePresence mode="wait" initial={false}>
                       {!isExpanded ? (
                         /* Compact Button View */
-                        <div className="flex items-center gap-2.5 w-full">
+                        <motion.button
+                          key="compact"
+                          initial={{ opacity: 0, scale: 0.92 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.92 }}
+                          transition={{ duration: 0.12, ease: "easeOut" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedBadge(badge.collection);
+                          }}
+                          style={{
+                            backgroundColor: isLightMode ? "#ffffff" : "#0d1117",
+                            border: `1.5px solid ${badge.color}70`,
+                            boxShadow: isLightMode
+                              ? "0 4px 14px -2px rgba(15, 23, 42, 0.12), 0 1px 4px -1px rgba(0, 0, 0, 0.06)"
+                              : "0 6px 18px -2px rgba(0, 0, 0, 0.6), 0 2px 4px -1px rgba(0, 0, 0, 0.4)",
+                          }}
+                          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full hover:scale-105 transition-transform cursor-pointer select-none text-[rgb(var(--foreground))]"
+                        >
                           <IconComp size={16} style={{ color: badge.color }} className="shrink-0" />
                           <span className="text-[12px] font-sans font-black tracking-wider text-[rgb(var(--foreground))] uppercase">
                             {badge.collection}
@@ -1258,99 +1305,121 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
                           >
                             {badge.factCount}
                           </span>
-                        </div>
+                        </motion.button>
                       ) : (
                         /* Expanded Badge Card View */
-                        <div className="flex flex-col gap-3 w-full">
-                          {/* Header with Close Button */}
-                          <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: `${badge.color}25` }}>
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className="p-2 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
-                                style={{ backgroundColor: `${badge.color}20`, color: badge.color }}
-                              >
-                                <IconComp size={16} />
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="text-[12px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
-                                  {badge.collection}
-                                </span>
-                                <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-                                  {badge.activeFacts} Active Facts
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-full shadow-xs"
-                                style={{ backgroundColor: `${badge.color}25`, color: badge.color }}
-                              >
-                                {badge.factCount} Memories
-                              </span>
-                              <Tooltip label="Close details">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedBadge(null);
-                                  }}
-                                  className="p-1.5 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                        <motion.div
+                          key="expanded"
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            backgroundColor: isLightMode ? "#ffffff" : "#0d1117",
+                            border: `1.5px solid ${badge.color}`,
+                            boxShadow: isLightMode
+                              ? "0 12px 32px -4px rgba(15, 23, 42, 0.20), 0 3px 8px -1px rgba(0, 0, 0, 0.10)"
+                              : "0 16px 40px -4px rgba(0, 0, 0, 0.85), 0 3px 8px -1px rgba(0, 0, 0, 0.5)",
+                          }}
+                          className="w-[320px] p-4 rounded-3xl cursor-default select-none text-[rgb(var(--foreground))]"
+                        >
+                          <div className="flex flex-col gap-3 w-full">
+                            {/* Header with Close Button */}
+                            <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: `${badge.color}25` }}>
+                              <div className="flex items-center gap-2.5">
+                                <div
+                                  className="p-2 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
+                                  style={{ backgroundColor: `${badge.color}20`, color: badge.color }}
                                 >
-                                  <X size={14} />
-                                </button>
-                              </Tooltip>
-                            </div>
-                          </div>
-
-                          {/* Description */}
-                          <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] leading-relaxed">
-                            {badge.desc}
-                          </p>
-
-                          {/* Cross-Collection Directed Edges */}
-                          {badge.crossRelations.length > 0 && (
-                            <div className="flex flex-col gap-1.5 pt-2 border-t" style={{ borderColor: `${badge.color}20` }}>
-                              <div className="flex items-center justify-between px-0.5">
-                                <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: badge.color }}>
-                                  Connected Clusters
-                                </span>
-                                <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-                                  {badge.totalRelations} Edges
-                                </span>
+                                  <IconComp size={16} />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[12px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
+                                    {badge.collection}
+                                  </span>
+                                  <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+                                    {badge.activeFacts} Active Facts
+                                  </span>
+                                </div>
                               </div>
 
-                              <div className="flex flex-col gap-1.5">
-                                {badge.crossRelations.map((rel, idx) => {
-                                  const targetColColor = getCollectionColor(rel.targetCollection, false, isLightMode).main;
-                                  return (
-                                    <div
-                                      key={idx}
-                                      className="flex items-center justify-between text-[11px] font-sans p-2 rounded-xl bg-black/[0.04] dark:bg-white/[0.04] border border-[rgba(var(--border),0.08)]"
-                                    >
-                                      <div className="flex items-center gap-1.5 font-mono text-[11px] truncate">
-                                        <span className="font-bold" style={{ color: badge.color }}>
-                                          {rel.relation}
-                                        </span>
-                                        <span className="text-[rgb(var(--foreground-muted))]">➔</span>
-                                        <span className="font-semibold text-[rgb(var(--foreground))] truncate" style={{ color: targetColColor }}>
-                                          {rel.targetCollection}
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-full shadow-xs"
+                                  style={{ backgroundColor: `${badge.color}25`, color: badge.color }}
+                                >
+                                  {badge.factCount} Memories
+                                </span>
+                                <Tooltip label="Close details">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedBadge(null);
+                                    }}
+                                    className="p-1.5 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </Tooltip>
+                              </div>
+                            </div>
+
+                            {/* Description */}
+                            <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] leading-relaxed">
+                              {badge.desc}
+                            </p>
+
+                            {/* Cross-Collection Directed Edges */}
+                            {badge.crossRelations.length > 0 && (
+                              <div className="flex flex-col gap-1.5 pt-2 border-t" style={{ borderColor: `${badge.color}20` }}>
+                                <div className="flex items-center justify-between px-0.5">
+                                  <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: badge.color }}>
+                                    Connected Clusters
+                                  </span>
+                                  <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+                                    {badge.totalRelations} Edges
+                                  </span>
+                                </div>
+
+                                <div className="flex flex-col gap-1.5">
+                                  {badge.crossRelations.map((rel, idx) => {
+                                    const targetColColor = getCollectionColor(rel.targetCollection, false, isLightMode).main;
+                                    return (
+                                      <div
+                                        key={idx}
+                                        className={cn(
+                                          "flex items-center justify-between text-[11px] font-sans p-2 rounded-xl border shadow-xs",
+                                          isLightMode
+                                            ? "bg-slate-100 border-slate-200 text-slate-800"
+                                            : "bg-white/[0.06] border-white/10 text-white"
+                                        )}
+                                      >
+                                        <div className="flex items-center gap-1.5 font-mono text-[11px] truncate">
+                                          <span className="font-bold" style={{ color: badge.color }}>
+                                            {rel.relation}
+                                          </span>
+                                          <span className="text-[rgb(var(--foreground-muted))]">➔</span>
+                                          <span className="font-semibold text-[rgb(var(--foreground))] truncate" style={{ color: targetColColor }}>
+                                            {rel.targetCollection}
+                                          </span>
+                                        </div>
+                                        <span
+                                          className="font-mono font-bold text-[11px] px-2 py-0.5 rounded-full shrink-0 shadow-xs"
+                                          style={{ backgroundColor: `${badge.color}20`, color: badge.color }}
+                                        >
+                                          {rel.count}
                                         </span>
                                       </div>
-                                      <span
-                                        className="font-mono font-bold text-[11px] px-2 py-0.5 rounded-full shrink-0 shadow-xs"
-                                        style={{ backgroundColor: `${badge.color}20`, color: badge.color }}
-                                      >
-                                        {rel.count}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
+                                    );
+                                  })}
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </div>
+                            )}
+                          </div>
+                        </motion.div>
                       )}
-                    </motion.div>
+                    </AnimatePresence>
                   </div>
                 );
               })}
