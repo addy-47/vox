@@ -74,7 +74,7 @@ export const CentralClockNode = memo(
       >
         {/* Central Session Hub Node — Perfectly Centered 3D Acoustic Core */}
         <div
-          className="relative rounded-full flex flex-col items-center justify-center text-center transition-all duration-300 glass-card"
+          className="relative rounded-full flex flex-col items-center justify-center text-center transition-all duration-300 overflow-hidden isolate"
           style={{
             width: "clamp(320px, 36vw, 440px)",
             height: "clamp(320px, 36vw, 440px)",

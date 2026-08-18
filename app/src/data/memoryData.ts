@@ -5,6 +5,8 @@ export const MEMORY_COPY = {
   consolidating: "Organizing your memories...",
   noFailedItems: "Everything is working · 0 items need attention",
   recenterView: "Recenter View",
+  zoomIn: "Zoom In",
+  zoomOut: "Zoom Out",
   showInactive: "Show Older Memories",
   hideInactive: "Hide Older Memories",
   unresolvedConflicts: "Conflicting Memories",

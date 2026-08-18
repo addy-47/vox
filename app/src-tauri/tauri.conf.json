@@ -14,13 +14,17 @@
       {
         "label": "main",
         "title": "Vox",
-        "width": 400,
+        "maximized": true,
+        "visible": false,
+        "width": 1280,
         "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "center": true,
         "transparent": false,
         "decorations": false,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "resizable": true,
-        "visible": false,
         "zoomHotkeysEnabled": false
       },
       {

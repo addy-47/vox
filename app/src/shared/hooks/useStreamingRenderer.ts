@@ -31,14 +31,20 @@ export const useStreamingRenderer = (targetText: string) => {
     const tick = () => {
       const targetLen = targetText.length;
       const curLen = currentLengthRef.current;
-      
+
+      if (document.hidden) {
+        currentLengthRef.current = targetLen;
+        setDisplayText(targetText);
+        animationFrameRef.current = null;
+        return;
+      }
+
       if (curLen < targetLen) {
         // Smooth ease-out length transition (exponential catch-up)
-        // Minimum step of 0.8 char per frame to ensure continuous progress
-        const step = Math.max(0.8, (targetLen - curLen) * 0.18);
+        const step = Math.max(1.2, (targetLen - curLen) * 0.22);
         const nextLen = Math.min(targetLen, curLen + step);
         currentLengthRef.current = nextLen;
-        
+
         setDisplayText(targetText.slice(0, Math.floor(nextLen)));
         animationFrameRef.current = requestAnimationFrame(tick);
       } else {

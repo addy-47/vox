@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from "react";
+import { memo, useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Ghost, X, AlertCircle, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -34,6 +34,9 @@ export const DetailPanel = memo(
     const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_TURNS);
     const [heightPercent, setHeightPercent] = useState(DEFAULT_HEIGHT_PERCENT);
     const [isDragging, setIsDragging] = useState(false);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const currentHeightRef = useRef(heightPercent);
+    currentHeightRef.current = heightPercent;
 
     useEffect(() => {
       setVisibleCount(INITIAL_VISIBLE_TURNS);
@@ -42,7 +45,7 @@ export const DetailPanel = memo(
     const visibleTurns = turns.slice(0, visibleCount);
     const hasMoreTurns = turns.length > visibleCount;
 
-    // Handle vertical resizing drag with robust pointer capture
+    // Handle vertical resizing drag with imperative height updates to prevent Markdown re-renders
     const handleDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
       e.preventDefault();
       e.stopPropagation();
@@ -51,7 +54,8 @@ export const DetailPanel = memo(
 
       setIsDragging(true);
       const startY = e.clientY;
-      const startHeight = heightPercent;
+      const startHeight = currentHeightRef.current;
+      let lastHeight = startHeight;
 
       const onPointerMove = (moveEvent: PointerEvent) => {
         const deltaPx = startY - moveEvent.clientY;
@@ -60,13 +64,17 @@ export const DetailPanel = memo(
           MAX_HEIGHT_PERCENT,
           Math.max(MIN_HEIGHT_PERCENT, startHeight + deltaPercent)
         );
-        setHeightPercent(nextHeight);
+        lastHeight = nextHeight;
+        if (panelRef.current) {
+          panelRef.current.style.height = `${nextHeight}%`;
+        }
       };
 
       const onPointerUp = (upEvent: PointerEvent) => {
         upEvent.preventDefault();
         upEvent.stopPropagation();
         setIsDragging(false);
+        setHeightPercent(lastHeight);
         try {
           target.releasePointerCapture(upEvent.pointerId);
         } catch {}
@@ -90,6 +98,7 @@ export const DetailPanel = memo(
 
     return (
       <motion.div
+        ref={panelRef}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}

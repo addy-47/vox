@@ -73,6 +73,14 @@ export const History: React.FC = () => {
     formatMonthYearLabel,
   } = useHistory();
 
+  const monthNodeIds = React.useMemo(() => {
+    return (currentMonthWindow?.days ?? []).map((d) => d.dayKey);
+  }, [currentMonthWindow?.days]);
+
+  const dayNodeIds = React.useMemo(() => {
+    return currentWindowSessions.map((s) => String(s.id));
+  }, [currentWindowSessions]);
+
   return (
     <div
       ref={containerRef}
@@ -164,7 +172,7 @@ export const History: React.FC = () => {
           }}
         >
           <OrbitCarousel
-            nodeIds={(currentMonthWindow?.days ?? []).map((d) => d.dayKey)}
+            nodeIds={monthNodeIds}
             radius={ringRadius}
             paused={!!selectedSession}
             onDragStateChange={handleDragState}
@@ -212,7 +220,7 @@ export const History: React.FC = () => {
           }}
         >
           <OrbitCarousel
-            nodeIds={currentWindowSessions.map((s) => String(s.id))}
+            nodeIds={dayNodeIds}
             radius={ringRadius}
             selectedId={selectedSession ? String(selectedSession.id) : null}
             paused={!!selectedSession}
