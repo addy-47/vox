@@ -226,12 +226,12 @@ pub struct MemoryProfileLogEvent {
 }
 
 /// Records a structured memory event.
-/// - Lifecycle events (mount/peak/retained) → emitted to tracing log (vox2.log) AND session JSONL.
-/// - Poll events → session JSONL only (no log spam).
+/// - Lifecycle events (mount/peak/retained) → emitted to tracing log (vox2.log).
+/// - Disk persistence to session JSONL is gated behind ENABLE_FILE_PERSISTENCE flag (disabled by default).
 #[tauri::command]
 pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        // 1. Emit structured tracing log ONLY for lifecycle events (not poll)
+        // 1. Emit structured tracing log (shows in terminal & vox2.log)
         if event.event_type != "poll" {
             tracing::info!(
                 target: "memory_profiler",
@@ -250,20 +250,24 @@ pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result
             );
         }
 
-        // 2. Append to session-unique JSONL (one file per app run, never mixed with previous sessions)
-        if let Ok(serialized) = serde_json::to_string(&event) {
-            use std::io::Write;
-            let session_path = session_jsonl_path();
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(session_path)
-            {
-                let _ = writeln!(file, "{}", serialized);
-            }
+        // 2. Disk persistence flag (disabled by default, can be flipped on for diagnostic runs)
+        const ENABLE_FILE_PERSISTENCE: bool = false;
 
-            // Also write latest for quick inspection (always overwritten)
-            let _ = std::fs::write("temp/memory_profile_latest.json", &serialized);
+        if ENABLE_FILE_PERSISTENCE {
+            if let Ok(serialized) = serde_json::to_string(&event) {
+                use std::io::Write;
+                let session_path = session_jsonl_path();
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(session_path)
+                {
+                    let _ = writeln!(file, "{}", serialized);
+                }
+
+                // Also write latest for quick inspection
+                let _ = std::fs::write("temp/memory_profile_latest.json", &serialized);
+            }
         }
     })
     .await

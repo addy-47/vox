@@ -93,10 +93,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [location.pathname, navigate]);
 
-  // Ambient origin — on the home page the orb is at 47% vertically, settings radial hub is offset by bottom nav
-  const isHome = location.pathname === "/";
   const isSettings = location.pathname === "/settings";
-  const ambientOriginY = isHome ? "47%" : isSettings ? "calc(50% - 40px)" : "50%";
+  // Ambient origin — standardized across all views (Home, History, Settings, Memory) to calc(50% - 36px)
+  const ambientOriginY = "calc(50% - 36px)";
 
   return (
     <div
@@ -197,6 +196,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             height: "100%",
             overflow: "hidden",
             width: "100%",
+            contain: "layout style",
           }}
         >
           <div className="h-full w-full overflow-hidden flex flex-col">

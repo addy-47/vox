@@ -486,8 +486,6 @@ input[type="range"]:active::-webkit-slider-thumb {
   overflow: hidden;
   user-select: none;
   z-index: 0;
-  transform: translateZ(0);
-  will-change: transform;
 }
 
 .amb-base {
@@ -509,6 +507,31 @@ input[type="range"]:active::-webkit-slider-thumb {
   );
 }
 
+/* ─── Orbit Carousel Card Surfaces (Zero Flash, Instant CSS Theme Evaluation) ─── */
+.orbit-card-surface {
+  background: radial-gradient(circle at 50% 30%, rgba(22, 28, 38, 0.96) 0%, rgba(11, 15, 20, 0.98) 75%, rgba(var(--accent), 0.14) 100%);
+  border: 1.5px solid rgba(var(--accent), 0.45);
+  box-shadow: 0 15px 40px -8px rgba(0, 0, 0, 0.8), 0 0 25px rgba(var(--accent), 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+[data-theme='light'] .orbit-card-surface {
+  background: radial-gradient(circle at 50% 25%, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0.82) 65%, rgba(var(--accent), 0.10) 100%);
+  border: 1.5px solid rgba(var(--accent), 0.35);
+  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.08), 0 0 20px rgba(var(--accent), 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.orbit-card-surface-selected {
+  background: radial-gradient(circle at 50% 30%, rgba(28, 36, 48, 0.98) 0%, rgba(13, 18, 24, 0.98) 75%, rgba(var(--accent), 0.20) 100%);
+  border: 1.5px solid rgb(var(--accent));
+  box-shadow: 0 0 35px rgba(var(--accent), 0.55), 0 15px 40px -8px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+[data-theme='light'] .orbit-card-surface-selected {
+  background: radial-gradient(circle at 50% 25%, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.90) 65%, rgba(var(--accent), 0.16) 100%);
+  border: 1.5px solid rgb(var(--accent));
+  box-shadow: 0 0 30px rgba(var(--accent), 0.45), 0 12px 30px -4px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
 @keyframes blob-rotate-a {
   0%, 100% { transform: translate(-50%, -50%) rotate(0deg) scale(1); }
   33%      { transform: translate(-50%, -50%) rotate(120deg) scale(1.15); }
@@ -526,7 +549,6 @@ input[type="range"]:active::-webkit-slider-thumb {
 .amb-blob {
   position: absolute;
   transform: translate(-50%, -50%);
-  will-change: transform;
 }
 
 .amb-glow {
