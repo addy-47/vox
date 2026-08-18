@@ -101,10 +101,32 @@ export const AmbientBackground = React.memo(({
   const rippleOpacityMultiplier = isLight ? 2.5 : 1.8;
 
   React.useEffect(() => {
-    let animId: number;
+    let animId: number | null = null;
     let smoothedEnergy = 0;
+    let isRunning = false;
+    let isSettled = false;
+
+    const startLoop = () => {
+      if (isRunning || document.hidden) return;
+      isRunning = true;
+      isSettled = false;
+      animId = requestAnimationFrame(update);
+    };
+
+    const stopLoop = () => {
+      if (animId !== null) {
+        cancelAnimationFrame(animId);
+        animId = null;
+      }
+      isRunning = false;
+    };
 
     const update = () => {
+      if (document.hidden) {
+        stopLoop();
+        return;
+      }
+
       const energy = telemetryRef.current?.energy || 0;
       // organic, fluid interpolation
       smoothedEnergy += (energy - smoothedEnergy) * 0.15;
@@ -116,17 +138,53 @@ export const AmbientBackground = React.memo(({
       const dynamicRipple = baseRipple + smoothedEnergy * 0.18 * rippleOpacityMultiplier;
 
       if (glowRef.current) {
-        glowRef.current.style.opacity = String(dynamicGlow);
+        glowRef.current.style.opacity = dynamicGlow.toFixed(3);
       }
       if (rippleRef.current) {
-        rippleRef.current.style.opacity = String(dynamicRipple);
+        rippleRef.current.style.opacity = dynamicRipple.toFixed(3);
+      }
+
+      // Self-stop rAF when energy is settled at idle 0
+      if (energy < 0.001 && smoothedEnergy < 0.001) {
+        if (!isSettled) {
+          isSettled = true;
+          if (glowRef.current) glowRef.current.style.opacity = baseGlow.toFixed(3);
+          if (rippleRef.current) rippleRef.current.style.opacity = baseRipple.toFixed(3);
+        }
+        // Poll every 250ms when idle to check for incoming audio energy instead of continuous 60fps rAF
+        stopLoop();
+        return;
+      } else {
+        isSettled = false;
       }
 
       animId = requestAnimationFrame(update);
     };
 
-    animId = requestAnimationFrame(update);
-    return () => cancelAnimationFrame(animId);
+    // Telemetry monitor check to wake up self-stopping loop
+    const checkInterval = setInterval(() => {
+      const currentEnergy = telemetryRef.current?.energy || 0;
+      if (currentEnergy > 0.005 && !isRunning && !document.hidden) {
+        startLoop();
+      }
+    }, 200);
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stopLoop();
+      } else {
+        startLoop();
+      }
+    };
+
+    startLoop();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      stopLoop();
+      clearInterval(checkInterval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [cfg, glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef]);
 
   const rpAnimName = (mood === "active" || (mood as string) === "listening") ? "ripple-in" : "ripple-out";

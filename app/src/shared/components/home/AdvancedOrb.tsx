@@ -578,7 +578,7 @@ export const VoxOrb = React.memo(({
     isVisible,
     isPageVisible,
     fpsActive: 60,
-    fpsIdle: 15,
+    fpsIdle: 5,
     isActive,
     isPaused: isSleeping,
   });

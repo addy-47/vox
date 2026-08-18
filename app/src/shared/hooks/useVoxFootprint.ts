@@ -11,18 +11,15 @@ interface VoxFootprint {
   isReady: boolean;
 }
 
-const POLL_INTERVAL_MS = 1000;
+const POLL_INTERVAL_MS = 2000;
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
  * useVoxFootprint
  *
- * Polls `get_runtime_snapshot` at 1Hz and exposes the Vox process's
- * CPU usage and RAM footprint for the bottom-of-screen mini-HUD.
- *
- * Returns raw values (not interpolated) since the mini-HUD is static text,
- * not a chart. Interpolation would make the number feel laggy on a display.
+ * Polls `get_runtime_snapshot` at 2s (gated by document visibility) and exposes
+ * the Vox process's CPU usage and RAM footprint for the bottom-of-screen mini-HUD.
  */
 export function useVoxFootprint(): VoxFootprint {
   const [voxCpu, setVoxCpu] = useState<number>(0);
@@ -32,6 +29,7 @@ export function useVoxFootprint(): VoxFootprint {
 
   useEffect(() => {
     const poll = async () => {
+      if (document.hidden) return;
       try {
         const snap = await getRuntimeSnapshot();
         if (snap) {
@@ -44,11 +42,36 @@ export function useVoxFootprint(): VoxFootprint {
       }
     };
 
-    poll(); // immediate first tick
-    intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    const startPolling = () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      poll();
+      intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    };
+
+    const stopPolling = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        startPolling();
+      }
+    };
+
+    if (!document.hidden) {
+      startPolling();
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      stopPolling();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 

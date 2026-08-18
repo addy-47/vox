@@ -121,10 +121,9 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
   }, [activePipelineTab]);
 
-  // 2. Check model files presence
+  // 2. Check model files presence in parallel
   const refreshPresence = useCallback(async () => {
     try {
-      const presence: Record<string, boolean> = {};
       const allModelIds = modelCatalog?.model_groups?.map((g) => g.id) || [
         ...(modelCatalog?.vad?.map((m) => m.id) || []),
         ...(modelCatalog?.asr?.map((m) => m.id) || []),
@@ -133,10 +132,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         ...(modelCatalog?.auxiliary?.map((m) => m.id) || []),
       ];
 
-      for (const id of allModelIds) {
-        presence[id] = await checkModelExists(id);
-      }
-      setModelPresence(presence);
+      const entries = await Promise.all(
+        allModelIds.map(async (id) => [id, await checkModelExists(id)] as const)
+      );
+      setModelPresence(Object.fromEntries(entries));
     } catch (e) {
       console.error("Failed to fetch models presence:", e);
     }
@@ -191,7 +190,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
   }, [draftSettings?.tts?.provider?.kind, edgeTtsVoices.length, loadingEdgeVoices, loadEdgeVoices]);
 
-  // 4. Chatterbox Remote Health Polling
+  // 4. Chatterbox Remote Health Polling (gated by visibility)
   useEffect(() => {
     if (draftSettings?.tts?.provider?.kind !== "chatterbox_remote") {
       setIsRemoteTtsHealthy(null);
@@ -199,7 +198,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
 
     const checkHealth = async () => {
-      if (!draftSettings?.tts?.provider) return;
+      if (document.hidden || !draftSettings?.tts?.provider) return;
       setCheckingTtsHealth(true);
       try {
         const healthy = await checkTtsProviderHealth(draftSettings.tts.provider);

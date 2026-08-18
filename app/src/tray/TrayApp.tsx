@@ -250,6 +250,7 @@ export const TrayApp: React.FC = () => {
 
         const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
           if (!active) return;
+          if (stateRef.current.visibilityState === 'HIDDEN') return;
           setStats(event.payload);
         });
         localUnlisteners.push(u5);
@@ -271,6 +272,7 @@ export const TrayApp: React.FC = () => {
 
         const u7 = await appWindow.listen<string>("state_changed", (event) => {
           if (!active) return;
+          if (stateRef.current.visibilityState === 'HIDDEN') return;
           setInteractionState(event.payload);
         });
         localUnlisteners.push(u7);

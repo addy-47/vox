@@ -67,16 +67,20 @@ export function depthFromAngle(angle: number): number {
 }
 
 /**
- * Stacking band for a card at a given angle. Back-half cards (10-39) render
- * behind the central clock (z-50); front-half cards (51-79) render above it;
- * the selected card always wins (80).
+ * Stacking band for a card at a given angle. Quantized to discrete bands
+ * to prevent constant compositor layer re-sorting during rotation.
+ * Back-half cards render behind the central clock (z-50); front-half cards
+ * render above it; the selected card always wins (85).
  */
 export function zIndexForAngle(angle: number, isSelected: boolean): number {
   if (isSelected) return ORBIT_Z_SELECTED;
   const depth = depthFromAngle(angle);
-  return depth < 0.5
-    ? Math.round(depth * 2 * ORBIT_Z_BACK_MAX)
-    : ORBIT_Z_FRONT_MIN + Math.round((depth - 0.5) * 2 * (ORBIT_Z_SELECTED - ORBIT_Z_FRONT_MIN - 1));
+  if (depth < 0.2) return 12;
+  if (depth < 0.35) return 24;
+  if (depth < 0.5) return 38;
+  if (depth < 0.65) return 55;
+  if (depth < 0.85) return 68;
+  return 78;
 }
 
 /** Ring radius for a viewport — leverages width for a wide panoramic orbit, clamped. */

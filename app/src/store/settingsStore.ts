@@ -234,6 +234,8 @@ function applyAppearance(ui: VoxSettings["ui"]) {
   }
 }
 
+let appearanceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
   draftSettings: null,
@@ -296,7 +298,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     if (domain === "ui" && (key === "theme" || key === "accent_seed")) {
       applyAppearance(newDraft.ui);
-      updateSetting(domain, key, value).catch(console.error);
+
+      // Debounce IPC persistence write to avoid hammering disk/IPC on rapid color picker moves
+      if (appearanceDebounceTimer) {
+        clearTimeout(appearanceDebounceTimer);
+      }
+      appearanceDebounceTimer = setTimeout(() => {
+        updateSetting(domain, key, value).catch(console.error);
+        appearanceDebounceTimer = null;
+      }, 200);
 
       const newSettings = {
         ...settings,
