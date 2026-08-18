@@ -16,6 +16,10 @@ const MarkdownComponents = {
   ),
 };
 
+const hasMarkdownSyntax = (str: string) => {
+  return /[*_`#\[\]\n>]/.test(str);
+};
+
 export const ActiveTranscript: React.FC<ActiveTranscriptProps> = memo(({ transcript, assistantText }) => {
   const streamedTranscript = useStreamingRenderer(transcript);
   const streamedAssistantText = useStreamingRenderer(assistantText);
@@ -29,7 +33,11 @@ export const ActiveTranscript: React.FC<ActiveTranscriptProps> = memo(({ transcr
           <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
             USER
           </span>
-          <ReactMarkdown components={MarkdownComponents}>{streamedTranscript}</ReactMarkdown>
+          {hasMarkdownSyntax(streamedTranscript) ? (
+            <ReactMarkdown components={MarkdownComponents}>{streamedTranscript}</ReactMarkdown>
+          ) : (
+            <p className="mb-1.5 last:mb-0 leading-relaxed whitespace-pre-wrap">{streamedTranscript}</p>
+          )}
         </div>
       )}
 
@@ -38,7 +46,11 @@ export const ActiveTranscript: React.FC<ActiveTranscriptProps> = memo(({ transcr
           <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--accent))]/80 uppercase block mb-1 font-bold">
             VOX
           </span>
-          <ReactMarkdown components={MarkdownComponents}>{streamedAssistantText}</ReactMarkdown>
+          {hasMarkdownSyntax(streamedAssistantText) ? (
+            <ReactMarkdown components={MarkdownComponents}>{streamedAssistantText}</ReactMarkdown>
+          ) : (
+            <p className="mb-1.5 last:mb-0 leading-relaxed whitespace-pre-wrap">{streamedAssistantText}</p>
+          )}
         </div>
       )}
     </div>

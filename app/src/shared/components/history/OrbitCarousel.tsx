@@ -27,7 +27,8 @@ export interface OrbitCarouselProps {
 
 const MOMENTUM_DAMPING = 0.94;
 const MOMENTUM_STOP = 0.00025;
-const MOMENTUM_MAX_MS = 1600;
+// Capped at 1000ms (was 1600ms) to eliminate long tail lag while maintaining smooth momentum
+const MOMENTUM_MAX_MS = 1000;
 const DRAG_THRESHOLD_PX = 3;
 
 export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
@@ -39,6 +40,7 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
   renderNode,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const cardsContainerRef = useRef<HTMLDivElement>(null);
 
   // Continuous ring rotation state (radians)
   const angleRef = useRef<number>(0);
@@ -54,6 +56,7 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
   const nodeElsRef = useRef(new Map<string, HTMLDivElement>());
   const styleCacheRef = useRef(new Map<string, string>());
   const baseAnglesRef = useRef(new Map<string, number>());
+  const prevNodeIdsKeyRef = useRef<string>("");
 
   // Latest props mirrored into refs so the loop never stalls
   const nodeIdsRef = useRef(nodeIds);
@@ -67,8 +70,24 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
   const onDragStateChangeRef = useRef(onDragStateChange);
   onDragStateChangeRef.current = onDragStateChange;
 
+  // Toggle no-blur class on card layer to disable expensive backdrop-filter during rotation
+  const setBlurDisabled = useCallback((disabled: boolean) => {
+    const el = cardsContainerRef.current;
+    if (!el) return;
+    if (disabled) {
+      el.classList.add("no-blur");
+    } else {
+      el.classList.remove("no-blur");
+    }
+  }, []);
+
   // ── Deterministic base angles — newest-first, front slot = newest ──────────
   const rebuildBaseAngles = useCallback((ids: string[]) => {
+    const key = ids.join(",");
+    if (key === prevNodeIdsKeyRef.current && baseAnglesRef.current.size === ids.length) {
+      return;
+    }
+    prevNodeIdsKeyRef.current = key;
     baseAnglesRef.current.clear();
     styleCacheRef.current.clear();
     const angles = distributeAngles(ids.length);
@@ -106,17 +125,22 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
       const opacity = ORBIT_CARD_OPACITY_MIN + depth * (1 - ORBIT_CARD_OPACITY_MIN);
       const zIndex = zIndexForAngle(angle, isSelected);
       
-      // Depth blur for cards traversing the deep back half of the 3D chamber
-      const blurPx = depth < 0.45 ? ((0.45 - depth) * 2.5).toFixed(1) : "0";
+      // Quantized depth blur to avoid continuous GPU layer re-rasterization
+      const blurVal = depth < 0.25 ? 3 : depth < 0.42 ? 1.5 : 0;
+
+      const rx = Math.round(x * 10) / 10;
+      const ry = Math.round(y * 10) / 10;
+      const rScale = Math.round(scale * 1000) / 1000;
+      const rOpacity = Math.round(opacity * 100) / 100;
 
       // Dirty-checked imperative style write — sub-pixel unchanged frames are skipped
-      const cacheKey = `${x.toFixed(1)},${y.toFixed(1)},${scale.toFixed(3)},${opacity.toFixed(2)},${zIndex},${blurPx}`;
+      const cacheKey = `${rx},${ry},${rScale},${rOpacity},${zIndex},${blurVal}`;
       if (styleCacheRef.current.get(id) === cacheKey) continue;
       styleCacheRef.current.set(id, cacheKey);
-      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
-      el.style.opacity = opacity.toFixed(2);
+      el.style.transform = `translate3d(${rx}px, ${ry}px, 0) translate(-50%, -50%) scale(${rScale})`;
+      el.style.opacity = String(rOpacity);
       el.style.zIndex = String(zIndex);
-      el.style.filter = blurPx === "0" ? "none" : `blur(${blurPx}px)`;
+      el.style.filter = blurVal > 0 ? `blur(${blurVal}px)` : "none";
     }
   }, []);
 
@@ -137,20 +161,36 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
-  }, []);
+    setBlurDisabled(false);
+  }, [setBlurDisabled]);
 
   const loop = useCallback(() => {
     rafRef.current = null;
 
-    if (pausedRef.current) return;
+    if (pausedRef.current) {
+      setBlurDisabled(false);
+      return;
+    }
+
+    const now = performance.now();
+
+    // Stuck rAF watchdog: if draggingRef stuck for > 5s without pointermove, force stop
+    if (draggingRef.current && now - lastPointerTimeRef.current > 5000) {
+      draggingRef.current = false;
+      velocityRef.current = 0;
+      setBlurDisabled(false);
+      projectFrame();
+      return;
+    }
 
     if (!draggingRef.current) {
       velocityRef.current *= MOMENTUM_DAMPING;
       if (
         Math.abs(velocityRef.current) < MOMENTUM_STOP ||
-        performance.now() - decayStartRef.current > MOMENTUM_MAX_MS
+        now - decayStartRef.current > MOMENTUM_MAX_MS
       ) {
         velocityRef.current = 0;
+        setBlurDisabled(false);
         projectFrame();
         return;
       }
@@ -159,12 +199,13 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
 
     projectFrame();
     rafRef.current = requestAnimationFrame(loop);
-  }, [projectFrame]);
+  }, [projectFrame, setBlurDisabled]);
 
   const startLoop = useCallback(() => {
+    setBlurDisabled(true);
     if (rafRef.current !== null) return;
     rafRef.current = requestAnimationFrame(loop);
-  }, [loop]);
+  }, [loop, setBlurDisabled]);
 
   // Project once when the ring is resized or content changes (resting state)
   useEffect(() => {
@@ -195,6 +236,18 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
     decayStartRef.current = performance.now();
     onDragStateChangeRef.current?.(false);
     startLoop();
+
+    // Window-level fallback cleanup in case pointer release occurs outside the webview
+    const onWindowPointerUp = () => {
+      window.removeEventListener("pointerup", onWindowPointerUp);
+      window.removeEventListener("pointercancel", onWindowPointerUp);
+      if (draggingRef.current) {
+        draggingRef.current = false;
+        decayStartRef.current = performance.now();
+      }
+    };
+    window.addEventListener("pointerup", onWindowPointerUp, { once: true });
+    window.addEventListener("pointercancel", onWindowPointerUp, { once: true });
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -261,13 +314,17 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
           const opacity =
             ORBIT_CARD_OPACITY_MIN + depth * (1 - ORBIT_CARD_OPACITY_MIN);
           const zIndex = zIndexForAngle(angle, isSelected);
-          const blurPx =
-            depth < 0.45 ? ((0.45 - depth) * 2.5).toFixed(1) : "0";
+          const blurVal = depth < 0.25 ? 3 : depth < 0.42 ? 1.5 : 0;
 
-          el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
-          el.style.opacity = opacity.toFixed(2);
+          const rx = Math.round(x * 10) / 10;
+          const ry = Math.round(y * 10) / 10;
+          const rScale = Math.round(scale * 1000) / 1000;
+          const rOpacity = Math.round(opacity * 100) / 100;
+
+          el.style.transform = `translate3d(${rx}px, ${ry}px, 0) translate(-50%, -50%) scale(${rScale})`;
+          el.style.opacity = String(rOpacity);
           el.style.zIndex = String(zIndex);
-          el.style.filter = blurPx === "0" ? "none" : `blur(${blurPx}px)`;
+          el.style.filter = blurVal > 0 ? `blur(${blurVal}px)` : "none";
         }
       } else {
         nodeElsRef.current.delete(id);
@@ -296,7 +353,7 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
       <ChamberOrbitRings radius={radius} />
 
       {/* Imperatively-positioned 3D orbit card layer (stable DOM nodes, zero re-render per frame) */}
-      <div className="absolute inset-0 pointer-events-none">
+      <div ref={cardsContainerRef} className="absolute inset-0 pointer-events-none">
         {renderNode &&
           nodeIds.map((id) => (
             <div

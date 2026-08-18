@@ -1,7 +1,7 @@
 import React, { memo, useMemo } from "react";
 import { VoxOrb, PipelineField, StatusCapsule } from "@/shared/components/home";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
-import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
+import { ErrorBoundary } from "@/shared/components/common";
 import { TEST_CLIPS, GOVERNOR_LABELS } from "@/data/homeData";
 import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -9,7 +9,6 @@ import { cn } from "@/shared/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   useHomePage,
-  toMood,
   toStatusLabel,
   isDotActive,
 } from "@/shared/hooks/useHomePage";
@@ -83,7 +82,6 @@ export const Home = memo(() => {
     handleTestClip,
   } = useHomePage();
 
-  const ambientMood = toMood(interactionState, isSleeping);
   const statusLabel = toStatusLabel(
     interactionState,
     isEngaged,
@@ -101,9 +99,6 @@ export const Home = memo(() => {
 
   return (
     <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
-      {/* Reactive ambient background — responds to interaction state */}
-      <AmbientBackground mood={ambientMood} originX="50%" originY="47%" />
-
       {/* Sentient Field Background Energy */}
       <PipelineField state={interactionState} />
 

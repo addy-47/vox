@@ -41,9 +41,11 @@ export const useInteraction = () => {
 
   const commitFinal = useCallback((text: string) => {
     if (!text) return;
-    setCommittedText(prev => {
+    setCommittedText((prev) => {
       const separator = prev ? "\n" : "";
-      return prev + separator + text;
+      const full = prev + separator + text;
+      // Cap committed text to recent 4,000 characters to prevent unbounded RAM growth
+      return full.length > 4000 ? full.slice(full.length - 4000) : full;
     });
     setPartialText("");
   }, []);

@@ -136,7 +136,10 @@ export function useHomePage() {
         assistant: aiText,
         id: turnIdCounter.current,
       };
-      setDialogueHistory((prev) => [...prev, newTurn]);
+      setDialogueHistory((prev) => {
+        const next = [...prev, newTurn];
+        return next.length > 100 ? next.slice(next.length - 100) : next;
+      });
       activeUserTextRef.current = "";
       activeAiTextRef.current = "";
       setTranscript("");
@@ -368,12 +371,15 @@ export function useHomePage() {
         }
 
         const appWindow = getCurrentWindow();
+        let partialThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+        let tokenThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+
         const eventsList: Array<[string, (event: any) => void]> = [
           [
             "state_changed",
             (event) => {
               if (!isMounted) return;
-              const newState = event.payload;
+              const newState = event.payload as InteractionState;
               setInteractionState(newState);
               if (newState !== "Idle") {
                 hasActiveTurnStarted.current = true;
@@ -388,17 +394,26 @@ export function useHomePage() {
             "transcript_partial",
             (event) => {
               if (!isMounted) return;
-              setTranscript(event.payload.text);
               activeUserTextRef.current = event.payload.text;
               setIdleTimeout(null);
+              if (!partialThrottleTimer) {
+                partialThrottleTimer = setTimeout(() => {
+                  if (isMounted) setTranscript(activeUserTextRef.current);
+                  partialThrottleTimer = null;
+                }, 30);
+              }
             },
           ],
           [
             "transcript_final",
             (event) => {
               if (!isMounted) return;
-              setTranscript(event.payload.text);
+              if (partialThrottleTimer) {
+                clearTimeout(partialThrottleTimer);
+                partialThrottleTimer = null;
+              }
               activeUserTextRef.current = event.payload.text;
+              setTranscript(event.payload.text);
               setIdleTimeout(null);
             },
           ],
@@ -406,9 +421,14 @@ export function useHomePage() {
             "llm_token",
             (event) => {
               if (!isMounted) return;
-              setAssistantText(event.payload);
               activeAiTextRef.current = event.payload;
               setIdleTimeout(null);
+              if (!tokenThrottleTimer) {
+                tokenThrottleTimer = setTimeout(() => {
+                  if (isMounted) setAssistantText(activeAiTextRef.current);
+                  tokenThrottleTimer = null;
+                }, 30);
+              }
             },
           ],
           [
