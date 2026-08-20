@@ -59,11 +59,11 @@ src/
 ├── main.rs                 # Binary entry (1 line: calls vox_lib::run())
 ├── core/                   # Shared infrastructure
 │   ├── constants.rs        # Model paths, system prompts, timing, memory taxonomy
-│   ├── error.rs            # Unified VoxError + domain-specific errors (Audio, STT, LLM, TTS, Memory, Persistence)
+│   ├── error.rs            # Unified VoxError + domain-specific errors (Audio, STT, LLM, TTS, Memory, Persistence, Dictation)
 │   ├── events.rs           # VoxEvent enum (14 pipeline signal variants)
 │   ├── metrics.rs          # PipelineMetrics, MetricField
-│   ├── settings.rs         # VoxSettings (12 sub-settings: UI, Audio, VAD, ASR, LLM, TTS, Interaction, Telemetry, Persistence, Memory, Assistant, Realtime, Setup)
-│   └── state.rs            # AppState, VoxEngine, PipelineAtomics, PttState, InteractionState, VadCommand
+│   ├── settings.rs         # VoxSettings (13 sub-settings: UI, Audio, VAD, ASR, LLM, TTS, Interaction, Dictation, Telemetry, Persistence, Memory, Assistant, Realtime, Setup)
+│   └── state.rs            # AppState, VoxEngine, PipelineAtomics, PttState, InteractionState, InteractionOwner (Dictation = 0)
 ├── services/
 │   ├── audio/              # Capture (cpal ring buffer), Playback (Cubic Hermite upsample, jitter buffer, underrun fade), Router (VAD/Realtime routing), Decode
 │   ├── vad/                # VadEngine trait + VadBackend enum dispatch (Earshot / TenVAD)
@@ -71,12 +71,13 @@ src/
 │   ├── llm/                # LlmProvider trait (Embedded / OpenAiCompat), LlmEngine, capability probe
 │   ├── tts/                # TtsProvider trait (Edge TTS / Supertonic 3 / Chatterbox / ChatterboxRemote)
 │   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits (Gemini Live, Deepgram Voice Agent)
+│   ├── dictation/          # Realtime dictation engine (clipboard safety, input simulation, output routing, controller, global hotkey)
 │   ├── memory/             # Modularity: classifiers/ (intra_edge_classifier, inter_edge_classifier, query_classifier), deduplication, embedder, formatter, ingestion, retrieval, scope_router, tokenizer, working_memory, pipeline/
 │   ├── pipeline.rs         # Pipeline orchestrator (LLM→TTS→Playback coordination, ~1888 lines)
 │   ├── ptt.rs              # Push-to-talk mode (VAD gate, realtime support, speech_detected)
 │   ├── translit.rs         # Devanagari→Roman ONNX encoder-decoder
 │   └── utils.rs            # should_flush, count_words, is_devanagari, transliterate, stitch
-├── ipc/                    # Tauri command handlers (pipeline, settings, tray, history, audio, voices, monitoring, memory, setup)
+├── ipc/                    # Tauri command handlers (pipeline, dictation, settings, tray, history, audio, voices, monitoring, memory, setup)
 ├── persistence/            # VoxDb (Turso/SQLite), schema migrations, session CRUD, memory_worker, mutations, queries
 ├── monitoring/             # TelemetryAggregator (crossbeam), system monitor (/proc/stat/meminfo), snapshot, emitter
 ├── setup/                  # AppManifest, VoxManifest, ModelManager (download, SHA256 verify), runtime check, update check

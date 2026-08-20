@@ -56,9 +56,9 @@ pub async fn update_setting(
         log::info!("[Settings] Privacy Mode updated: enabled={}", is_private);
     }
 
-    if applied && domain == "ui" && key == "tray_enabled" {
+    if applied && domain == "dictation" && key == "enabled" {
         let enabled = value.as_bool().unwrap_or(true);
-        log::info!("[Settings] Tray Lifecycle Event: enabled={}", enabled);
+        log::info!("[Settings] Dictation Lifecycle Event: enabled={}", enabled);
 
         // Synchronize System Tray Menu Item (Vox Live)
         {
@@ -127,10 +127,10 @@ pub async fn update_setting(
 
     if applied && domain == "interaction" && key == "main_app_mode" {
         // Evaluate offload: If switching to PTT and Tray is disabled, we might want to stop engine
-        let (tray_enabled, is_engaged, is_passive) = {
+        let (dictation_enabled, is_engaged, is_passive) = {
             let s = state.settings.read().unwrap();
             (
-                s.ui.tray_enabled,
+                s.dictation.enabled,
                 state
                     .pipeline
                     .is_engaged
@@ -139,8 +139,8 @@ pub async fn update_setting(
             )
         };
 
-        if !tray_enabled && !is_engaged && !is_passive {
-            log::info!("[Settings] Main App mode changed to non-passive and Tray is disabled. Stopping engine...");
+        if !dictation_enabled && !is_engaged && !is_passive {
+            log::info!("[Settings] Main App mode changed to non-passive and Dictation is disabled. Stopping engine...");
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = stop_engine(app_clone).await;
@@ -285,8 +285,19 @@ pub(crate) fn apply_setting_mutation(
                 .ok_or("accent_seed must be a string")?
                 .to_string();
         }
-        ("ui", "tray_enabled") => {
-            settings.ui.tray_enabled = value.as_bool().ok_or("tray_enabled must be a boolean")?;
+        ("dictation", "enabled") => {
+            settings.dictation.enabled = value.as_bool().ok_or("enabled must be a boolean")?;
+        }
+        ("dictation", "interaction_mode") => {
+            settings.dictation.interaction_mode = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid interaction_mode: {}", e))?;
+        }
+        ("dictation", "hotkey") => {
+            settings.dictation.hotkey = value.as_str().ok_or("hotkey must be a string")?.to_string();
+        }
+        ("dictation", "output_mode") => {
+            settings.dictation.output_mode = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid output_mode: {}", e))?;
         }
         ("ui", "tray_blur_density") => {
             settings.ui.tray_blur_density = value
@@ -389,10 +400,6 @@ pub(crate) fn apply_setting_mutation(
         ("interaction", "pipeline_mode") => {
             settings.interaction.pipeline_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid pipeline_mode: {}", e))?;
-        }
-        ("interaction", "tray_mode") => {
-            settings.interaction.tray_mode = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid tray_mode: {}", e))?;
         }
         ("telemetry", "enabled") => {
             settings.telemetry.enabled = value.as_bool().ok_or("enabled must be a boolean")?;

@@ -1,21 +1,23 @@
 import { useState, useEffect, useRef, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { Sliders, Eye, EyeOff, Activity, Radio } from "lucide-react";
+import { Sliders, Mic, MicOff, Activity, Radio } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl, ToggleTile } from "@/shared/ui";
 import { TriggerModeCard } from "./TriggerModeCard";
 import { PipelineModeCard } from "./PipelineModeCard";
 import { CategorySelector } from "./CategorySelector";
 import { LlmConfigDesk } from "./LlmConfigDesk";
+import { DictationConfigDesk } from "./DictationConfigDesk";
 import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providers";
+import { DICTATION_COPY } from "@/data/settingsData";
 
 interface InteractionCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
 const VIEW_OPTIONS = [
-  { id: "main" as const, label: "Main" },
-  { id: "tray" as const, label: "Tray" },
+  { id: "assistant" as const, label: "Assistant" },
+  { id: "dictation" as const, label: "Dictation" },
 ];
 
 export const InteractionCard = memo(
@@ -24,7 +26,7 @@ export const InteractionCard = memo(
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-    const [activeView, setActiveView] = useState<"main" | "tray">("main");
+    const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
     const [activeCategory, setActiveCategory] = useState<"STT" | "LLM" | "TTS">("LLM");
     const [sttPillOverride, setSttPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
     const [ttsPillOverride, setTtsPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
@@ -32,10 +34,10 @@ export const InteractionCard = memo(
     const prevCategoryRef = useRef<string>(activeCategory);
 
     if (!draftSettings || !settings) return null;
-    const { interaction, llm, ui } = draftSettings;
+    const { interaction, llm, dictation } = draftSettings;
 
-    const trayEnabled = ui.tray_enabled ?? true;
-    const trayMode = interaction.tray_mode ?? "Passive";
+    const dictationEnabled = dictation?.enabled ?? true;
+    const dictationInteractionMode = dictation?.interaction_mode ?? "ptt";
 
     const currentProvider = llm.provider || { kind: "embedded" };
     const isCloudUrl = checkIfCloudUrl(currentProvider.base_url || "");
@@ -180,7 +182,7 @@ export const InteractionCard = memo(
               Interaction
             </span>
           </div>
-          {/* Top Right Main / Tray Switcher */}
+          {/* Top Right Assistant / Dictation Switcher */}
           <SegmentedControl
             options={VIEW_OPTIONS}
             value={activeView}
@@ -190,65 +192,83 @@ export const InteractionCard = memo(
         </div>
 
         <div className="flex flex-col gap-3 flex-1">
-          {/* Core Controls Dashboard Grid */}
-          <div
-            className={cn(
-              "grid gap-2 shrink-0",
-              layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
-            )}
-          >
-            {activeView === "main" ? (
-              <>
+          {activeView === "assistant" ? (
+            <>
+              {/* Core Assistant Controls */}
+              <div
+                className={cn(
+                  "grid gap-2 shrink-0",
+                  layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
+                )}
+              >
                 <TriggerModeCard layoutMode={layoutMode} />
                 <PipelineModeCard layoutMode={layoutMode} />
-              </>
-            ) : (
-              <>
+              </div>
+
+              {/* Category & Provider Selector Subcomponent */}
+              {isModular && (
+                <CategorySelector
+                  activeCategory={activeCategory}
+                  activePill={activePill}
+                  onCycleCategory={cycleCategory}
+                  onSetCategory={setActiveCategory}
+                  onPillChange={handlePillChange}
+                  layoutMode={layoutMode}
+                />
+              )}
+
+              {/* Configuration Desk Subcomponent */}
+              <LlmConfigDesk
+                activeCategory={activeCategory}
+                activePill={activePill}
+                isModular={isModular}
+                layoutMode={layoutMode}
+              />
+            </>
+          ) : (
+            <>
+              {/* Dictation Mode Controls */}
+              <div
+                className={cn(
+                  "grid gap-2 shrink-0",
+                  layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
+                )}
+              >
                 <ToggleTile
-                  title="HUD Window"
-                  active={trayEnabled}
+                  title="Voice Typing"
+                  active={dictationEnabled}
                   activeLabel="Enabled"
                   inactiveLabel="Disabled"
-                  activeSublabel="Overlay Active"
-                  inactiveSublabel="Background Run"
-                  icon={trayEnabled ? Eye : EyeOff}
-                  onToggle={() => updateDraft("ui", "tray_enabled", !trayEnabled)}
+                  activeSublabel={DICTATION_COPY.voiceTypingActive}
+                  inactiveSublabel={DICTATION_COPY.voiceTypingInactive}
+                  icon={dictationEnabled ? Mic : MicOff}
+                  onToggle={() => updateDraft("dictation", "enabled", !dictationEnabled)}
                   layoutMode={layoutMode}
                 />
 
                 <ToggleTile
-                  title="Tray Mode"
-                  active={trayMode === "Passive"}
-                  activeLabel={trayMode === "Passive" ? "Continuous" : "Push-To-Talk"}
-                  inactiveLabel="Push-To-Talk"
-                  activeSublabel={trayMode === "Passive" ? "Passive Sense" : "Manual Trigger"}
-                  inactiveSublabel="Manual Trigger"
-                  icon={trayMode === "Passive" ? Activity : Radio}
-                  onToggle={() => updateDraft("interaction", "tray_mode", trayMode === "Passive" ? "PTT" : "Passive")}
+                  title="Trigger Mode"
+                  active={dictationInteractionMode === "passive"}
+                  activeLabel={DICTATION_COPY.triggerContinuous}
+                  inactiveLabel={DICTATION_COPY.triggerPtt}
+                  activeSublabel={DICTATION_COPY.triggerContinuousSub}
+                  inactiveSublabel={DICTATION_COPY.triggerPttSub}
+                  icon={dictationInteractionMode === "passive" ? Activity : Radio}
+                  onToggle={() =>
+                    updateDraft(
+                      "dictation",
+                      "interaction_mode",
+                      dictationInteractionMode === "passive" ? "ptt" : "passive"
+                    )
+                  }
                   layoutMode={layoutMode}
                 />
-              </>
-            )}
-          </div>
+              </div>
 
-          {/* Category & Provider Selector Subcomponent */}
-          {isModular && (
-            <CategorySelector
-              activeCategory={activeCategory}
-              activePill={activePill}
-              onCycleCategory={cycleCategory}
-              onPillChange={handlePillChange}
-              layoutMode={layoutMode}
-            />
+              {/* Dictation Output & Hotkey Configuration Desk */}
+              <DictationConfigDesk layoutMode={layoutMode} />
+            </>
           )}
-
-          {/* Configuration Desk Subcomponent */}
-          <LlmConfigDesk
-            activeCategory={activeCategory}
-            activePill={activePill}
-            isModular={isModular}
-            layoutMode={layoutMode}
-          />
         </div>
       </div>
     );

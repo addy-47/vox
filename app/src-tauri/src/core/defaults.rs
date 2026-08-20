@@ -5,10 +5,13 @@
 // ─── UI Defaults ─────────────────────────────────────────────────────────────
 pub const DEFAULT_UI_THEME: &str = "dark";
 pub const DEFAULT_UI_ACCENT_SEED: &str = "#00DBE9"; // Default Cyan
-pub const DEFAULT_UI_TRAY_ENABLED: bool = true;
 pub const DEFAULT_UI_TRAY_BLUR_DENSITY: u32 = 40;
 pub const DEFAULT_UI_TRAY_GLASS_TINT: bool = true;
 pub const DEFAULT_UI_TRAY_HISTORY_LIMIT: u32 = 5;
+
+// ─── Dictation Defaults ──────────────────────────────────────────────────────
+pub const DEFAULT_DICTATION_ENABLED: bool = true;
+pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+Space";
 
 // ─── VAD Defaults ────────────────────────────────────────────────────────────
 pub const DEFAULT_VAD_THRESHOLD: f32 = 0.5;

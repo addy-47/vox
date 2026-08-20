@@ -6,7 +6,6 @@ import {
   ORBIT_RADIUS_MAX,
   ORBIT_RADIUS_MIN,
   ORBIT_TILT_COMPRESSION,
-  ORBIT_Z_BACK_MAX,
   ORBIT_Z_FRONT_MIN,
   ORBIT_Z_SELECTED,
   chunkDaysIntoWindows,
@@ -94,9 +93,9 @@ describe("zIndexForAngle — occlusion bands around the clock", () => {
   });
 
   it("binds bands to their ceilings", () => {
-    expect(zIndexForAngle(-Math.PI / 2, false)).toBe(0);
-    expect(zIndexForAngle(Math.PI / 2, false)).toBe(ORBIT_Z_SELECTED - 1);
-    expect(zIndexForAngle(0, false)).toBeGreaterThanOrEqual(ORBIT_Z_BACK_MAX);
+    expect(zIndexForAngle(-Math.PI / 2, false)).toBe(12);
+    expect(zIndexForAngle(Math.PI / 2, false)).toBe(78);
+    expect(zIndexForAngle(0, false)).toBeGreaterThanOrEqual(12);
   });
 
   it("always promotes the selected card above everything", () => {

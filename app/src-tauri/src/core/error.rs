@@ -22,6 +22,9 @@ pub enum VoxError {
     #[error("Persistence error: {0}")]
     Persistence(#[from] PersistenceError),
 
+    #[error("Dictation error: {0}")]
+    Dictation(#[from] DictationError),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -111,4 +114,20 @@ pub enum PersistenceError {
 
     #[error("Record not found: {id}")]
     NotFound { id: String },
+}
+
+/// Dictation subsystem domain error types.
+#[derive(Error, Debug)]
+pub enum DictationError {
+    #[error("Clipboard operation failed: {message}")]
+    ClipboardFailed { message: String },
+
+    #[error("Input simulation failed: {message}")]
+    InputSimulationFailed { message: String },
+
+    #[error("Global hotkey registration failed: {message}")]
+    HotkeyRegistrationFailed { message: String },
+
+    #[error("Dictation engine not ready: {message}")]
+    EngineNotReady { message: String },
 }

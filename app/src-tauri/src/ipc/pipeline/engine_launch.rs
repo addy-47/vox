@@ -24,11 +24,11 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let mut lock = state.engine.lock().await;
 
     if lock.is_some() {
-        let (tray_enabled, setup_completed) = {
+        let (should_show_tray, setup_completed) = {
             let s = state.settings.read().unwrap();
-            (s.ui.tray_enabled, s.setup.completed)
+            (s.dictation.enabled && s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray, s.setup.completed)
         };
-        if setup_completed && tray_enabled {
+        if setup_completed && should_show_tray {
             if let Some(window) = app.get_webview_window("tray") {
                 let _ = window.show();
                 position_tray_window(&window).await;
@@ -87,12 +87,11 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         .ok();
 
     let (_stt_model_path, stt_provider, vad_model_path_opt, vad_backend_opt, input_device) = {
-        let (vad_backend, asr_provider, _tray_enabled, input_device) = {
+        let (vad_backend, asr_provider, input_device) = {
             let settings = state.settings.read().unwrap();
             (
                 settings.vad.vad_backend.clone(),
                 settings.asr.provider.clone(),
-                settings.ui.tray_enabled,
                 settings.audio.input_device.clone(),
             )
         };
@@ -278,7 +277,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                     let owner: InteractionOwner = app_state.owner.load(Ordering::Relaxed).into();
                     match owner {
                         InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
-                        InteractionOwner::Tray => "tray",
+                        InteractionOwner::Dictation => "tray",
                         InteractionOwner::Wizard => "wizard",
                     }
                 };

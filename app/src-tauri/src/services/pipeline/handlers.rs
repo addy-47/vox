@@ -29,7 +29,7 @@ impl PipelineOrchestrator {
 
             let target = match owner {
                 InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
-                InteractionOwner::Tray => "tray",
+                InteractionOwner::Dictation => "tray",
                 InteractionOwner::Wizard => "wizard",
             };
             let _ = app_handle.emit_to(target, "state_changed", new_state);

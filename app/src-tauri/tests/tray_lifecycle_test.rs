@@ -16,62 +16,62 @@ use vox_lib::core::state::{InteractionOwner, PipelineAtomics};
 fn test_tray_precondition_guards() {
     let mut settings = VoxSettings::default();
 
-    // 1. Setup incomplete, Tray enabled -> Guard must block
+    // 1. Setup incomplete, Dictation enabled -> Guard must block
     settings.setup.completed = false;
-    settings.ui.tray_enabled = true;
-    let guard_blocked_1 = !settings.setup.completed || !settings.ui.tray_enabled;
+    settings.dictation.enabled = true;
+    let guard_blocked_1 = !settings.setup.completed || !settings.dictation.enabled;
     assert!(
         guard_blocked_1,
         "Toggle MUST be blocked when setup is not completed!"
     );
 
-    // 2. Setup completed, Tray disabled -> Guard must block
+    // 2. Setup completed, Dictation disabled -> Guard must block
     settings.setup.completed = true;
-    settings.ui.tray_enabled = false;
-    let guard_blocked_2 = !settings.setup.completed || !settings.ui.tray_enabled;
+    settings.dictation.enabled = false;
+    let guard_blocked_2 = !settings.setup.completed || !settings.dictation.enabled;
     assert!(
         guard_blocked_2,
-        "Toggle MUST be blocked when tray HUD is disabled!"
+        "Toggle MUST be blocked when dictation is disabled!"
     );
 
-    // 3. Setup completed, Tray enabled -> Guard passes
+    // 3. Setup completed, Dictation enabled -> Guard passes
     settings.setup.completed = true;
-    settings.ui.tray_enabled = true;
-    let guard_passed = settings.setup.completed && settings.ui.tray_enabled;
+    settings.dictation.enabled = true;
+    let guard_passed = settings.setup.completed && settings.dictation.enabled;
     assert!(
         guard_passed,
-        "Toggle MUST proceed when setup is completed and tray is enabled!"
+        "Toggle MUST proceed when setup is completed and dictation is enabled!"
     );
 }
 
 #[test]
 fn test_tray_hide_cancels_active_session() {
     let pipeline = PipelineAtomics::new();
-    let owner_atomic = std::sync::atomic::AtomicU32::new(InteractionOwner::Tray as u32);
+    let owner_atomic = std::sync::atomic::AtomicU32::new(InteractionOwner::Dictation as u32);
 
-    // 1. Simulate active Tray owner session
+    // 1. Simulate active Dictation owner session
     let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
-    assert_eq!(owner, InteractionOwner::Tray);
+    assert_eq!(owner, InteractionOwner::Dictation);
 
     // 2. Execute cancellation contract when hiding tray window
-    if owner == InteractionOwner::Tray {
+    if owner == InteractionOwner::Dictation {
         pipeline.cancel_flag.store(true, Ordering::Relaxed);
     }
 
     // 3. Assert cancel flag was set to true
     assert!(
         pipeline.cancel_flag.load(Ordering::Relaxed),
-        "Hiding tray window during active Tray owner session MUST set cancel_flag to true!"
+        "Hiding tray window during active Dictation owner session MUST set cancel_flag to true!"
     );
 }
 
 #[test]
 fn test_tray_hide_switch_owner_to_main_window_when_engaged() {
-    let owner_atomic = std::sync::atomic::AtomicU32::new(InteractionOwner::Tray as u32);
+    let owner_atomic = std::sync::atomic::AtomicU32::new(InteractionOwner::Dictation as u32);
     let is_engaged = AtomicBool::new(true);
 
     let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
-    assert_eq!(owner, InteractionOwner::Tray);
+    assert_eq!(owner, InteractionOwner::Dictation);
 
     // When tray hides and pipeline is engaged, owner switches to MainWindow
     if is_engaged.load(Ordering::Relaxed) {
@@ -82,6 +82,6 @@ fn test_tray_hide_switch_owner_to_main_window_when_engaged() {
     assert_eq!(
         new_owner,
         InteractionOwner::MainWindow,
-        "Ending Tray session when engaged MUST revert owner to MainWindow!"
+        "Ending Dictation tray session when engaged MUST revert owner to MainWindow!"
     );
 }

@@ -33,6 +33,23 @@ pub enum InteractionMode {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
+pub enum DictationInteractionMode {
+    Passive,
+    #[default]
+    Ptt,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DictationOutputMode {
+    #[default]
+    Paste,
+    Clipboard,
+    Tray,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum PipelineMode {
     #[default]
     Modular,
@@ -218,6 +235,11 @@ pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
         // Realtime — hot (applied on next session launch)
         ("realtime", _) => SettingReloadPolicy::Hot,
 
+        // Dictation
+        ("dictation", "hotkey") => SettingReloadPolicy::Restart,
+        ("dictation", "interaction_mode") => SettingReloadPolicy::Restart,
+        ("dictation", _) => SettingReloadPolicy::Hot,
+
         // Unknown — conservative default
         _ => SettingReloadPolicy::Restart,
     }
@@ -234,7 +256,6 @@ pub struct UiSettings {
     pub accent_seed: String,
 
     // Tray HUD Aesthetics
-    pub tray_enabled: bool,
     pub tray_blur_density: u32,
     pub tray_glass_tint: bool,
     pub tray_history_limit: u32,
@@ -245,7 +266,6 @@ impl Default for UiSettings {
         Self {
             theme: crate::core::defaults::DEFAULT_UI_THEME.into(),
             accent_seed: crate::core::defaults::DEFAULT_UI_ACCENT_SEED.into(),
-            tray_enabled: crate::core::defaults::DEFAULT_UI_TRAY_ENABLED,
             tray_blur_density: crate::core::defaults::DEFAULT_UI_TRAY_BLUR_DENSITY,
             tray_glass_tint: crate::core::defaults::DEFAULT_UI_TRAY_GLASS_TINT,
             tray_history_limit: crate::core::defaults::DEFAULT_UI_TRAY_HISTORY_LIMIT,
@@ -490,7 +510,6 @@ impl Default for TtsSettings {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InteractionSettings {
     pub main_app_mode: InteractionMode,
-    pub tray_mode: InteractionMode,
     pub auto_sleep_timeout: u32,
     #[serde(default)]
     pub pipeline_mode: PipelineMode,
@@ -500,9 +519,28 @@ impl Default for InteractionSettings {
     fn default() -> Self {
         Self {
             main_app_mode: InteractionMode::Passive,
-            tray_mode: InteractionMode::Passive,
             auto_sleep_timeout: crate::core::defaults::DEFAULT_AUTO_SLEEP_TIMEOUT,
             pipeline_mode: PipelineMode::Modular,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(default)]
+pub struct DictationSettings {
+    pub enabled: bool,
+    pub interaction_mode: DictationInteractionMode,
+    pub hotkey: String,
+    pub output_mode: DictationOutputMode,
+}
+
+impl Default for DictationSettings {
+    fn default() -> Self {
+        Self {
+            enabled: crate::core::defaults::DEFAULT_DICTATION_ENABLED,
+            interaction_mode: DictationInteractionMode::Ptt,
+            hotkey: crate::core::defaults::DEFAULT_DICTATION_HOTKEY.into(),
+            output_mode: DictationOutputMode::Paste,
         }
     }
 }
@@ -706,6 +744,7 @@ pub struct VoxSettings {
     pub llm: LlmSettings,
     pub tts: TtsSettings,
     pub interaction: InteractionSettings,
+    pub dictation: DictationSettings,
     pub telemetry: TelemetrySettings,
     pub persistence: PersistenceSettings,
     pub memory: MemorySettings,

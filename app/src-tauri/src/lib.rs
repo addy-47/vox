@@ -57,9 +57,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_dialog::init())
-        // .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(window_customizer::PinchZoomDisablePlugin)
         .setup(|app| {
             // Capture the Tokio runtime handle early
@@ -228,6 +228,19 @@ pub fn run() {
             spawn_system_monitor(app.handle().clone());
             crate::monitoring::telemetry_emitter::spawn_telemetry_emitter(app.handle().clone());
 
+            // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
+            {
+                let s = state_arc.settings.read().unwrap();
+                if s.dictation.enabled {
+                    if let Err(e) = crate::services::dictation::hotkey::register_global_hotkey(
+                        app.handle(),
+                        &s.dictation.hotkey,
+                    ) {
+                        log::warn!("[BOOTSTRAP] Could not register global dictation hotkey: {:?}", e);
+                    }
+                }
+            }
+
             // ── 1. System Tray ───────────────────────────────────────────────────────
             let tray_menu = Menu::new(app)?;
             let launch_i = tauri::menu::MenuItemBuilder::new("Launch Vox").id("launch").build(app)?;
@@ -245,17 +258,17 @@ pub fn run() {
                 let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
                 *menu_item_lock = Some(live_i.clone());
                 
-                let tray_enabled = {
+                let dictation_enabled = {
                     let s = state.settings.read().unwrap();
-                    s.ui.tray_enabled
+                    s.dictation.enabled
                 };
                 let hud_visible = {
                     let v = tauri::async_runtime::block_on(state.hud_visible.lock());
                     *v
                 };
 
-                // Reflect tray_enabled setting in menu UI
-                let _ = live_i.set_enabled(tray_enabled);
+                // Reflect dictation_enabled setting in menu UI
+                let _ = live_i.set_enabled(dictation_enabled);
                 let _ = live_i.set_checked(hud_visible);
             }
 
@@ -286,12 +299,12 @@ pub fn run() {
                 .on_tray_icon_event(|tray, event| {
                     if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
                         let app = tray.app_handle().clone();
-                        let tray_enabled = {
+                        let dictation_enabled = {
                             let state: State<'_, std::sync::Arc<AppState>> = app.state();
                             let s = state.settings.read().unwrap();
-                            s.ui.tray_enabled
+                            s.dictation.enabled
                         };
-                        if tray_enabled {
+                        if dictation_enabled {
                             tauri::async_runtime::spawn(async move {
                                 let _ = launch_engine(app).await;
                             });
@@ -338,13 +351,17 @@ pub fn run() {
 
             // ── 2. Position tray HUD ─────────────────────────────────────────
             if let Some(tray_win) = app.get_webview_window("tray") {
-                let (tray_enabled, setup_completed) = {
+                let (should_show_tray, setup_completed) = {
                     let state: State<'_, std::sync::Arc<AppState>> = app.state();
                     let s = state.settings.read().unwrap();
-                    (s.ui.tray_enabled, s.setup.completed)
+                    (
+                        s.dictation.enabled
+                            && s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
+                        s.setup.completed,
+                    )
                 };
 
-                if setup_completed && tray_enabled {
+                if setup_completed && should_show_tray {
                     let tray_win_clone = tray_win.clone();
                     tauri::async_runtime::spawn(async move {
                         // Give the window manager a moment to register the window
@@ -356,7 +373,7 @@ pub fn run() {
                 } else if !setup_completed {
                     log::info!("[BOOTSTRAP] Onboarding setup not completed. Keeping tray window hidden.");
                 } else {
-                    log::info!("[BOOTSTRAP] Tray HUD disabled. Closing tray window to save RAM.");
+                    log::info!("[BOOTSTRAP] Tray HUD output mode not selected. Keeping tray window closed to save RAM.");
                     let _ = tray_win.close();
                 }
             }
@@ -364,7 +381,7 @@ pub fn run() {
             // ── 3. Conditional auto-launch engine on startup ─────────────────────────────
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let (tray_enabled, setup_completed) = {
+                let (dictation_enabled, dictation_mode, setup_completed) = {
                     let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
                     
                     // ── 3.1 Auto-detect existing models ────────────────────────────
@@ -375,21 +392,27 @@ pub fn run() {
                         let _ = settings.save();
                     }
                     
-                    (settings.ui.tray_enabled, settings.setup.completed)
+                    (
+                        settings.dictation.enabled,
+                        settings.dictation.interaction_mode.clone(),
+                        settings.setup.completed,
+                    )
                 };
 
-                if setup_completed && tray_enabled {
-                    log::info!("[BOOTSTRAP] Setup completed. Launching engine...");
+                if setup_completed && dictation_enabled && dictation_mode == crate::core::settings::DictationInteractionMode::Passive {
+                    log::info!("[BOOTSTRAP] Passive Dictation enabled. Auto-launching audio/STT engine...");
                     if let Err(e) = launch_engine(handle).await {
                         log::error!("[BOOTSTRAP] Engine auto-launch failed: {}", e);
                     }
+                } else if setup_completed && dictation_enabled && dictation_mode == crate::core::settings::DictationInteractionMode::Ptt {
+                    log::info!("[BOOTSTRAP] PTT Dictation enabled. Zero-idle-RAM preserved (models will load on-demand when hotkey is triggered).");
                 } else if !setup_completed {
                     log::info!("[BOOTSTRAP] Setup not completed. Launching onboarding wizard...");
                     if let Some(wizard_win) = handle.get_webview_window("wizard") {
                         crate::wizard::setup_wizard_window(&wizard_win);
                     }
                 } else {
-                    log::info!("[BOOTSTRAP] Tray disabled. Skipping engine auto-launch to save resources.");
+                    log::info!("[BOOTSTRAP] Dictation disabled. Skipping engine auto-launch to save resources.");
                 }
             });
 
@@ -420,16 +443,16 @@ pub fn run() {
                     let handle = window.app_handle().clone();
                     tauri::async_runtime::spawn(async move {
                         let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
-                        let (tray_enabled, is_engaged) = {
+                        let (dictation_enabled, is_engaged) = {
                             let s = state.settings.read().unwrap();
-                            (s.ui.tray_enabled, state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed))
+                            (s.dictation.enabled, state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed))
                         };
                         
-                        if !tray_enabled && !is_engaged {
-                            log::info!("[Window] Main window hidden, Tray is disabled, and app is disengaged. Offloading engine...");
+                        if !dictation_enabled && !is_engaged {
+                            log::info!("[Window] Main window hidden, Dictation is disabled, and app is disengaged. Offloading engine...");
                             let _ = crate::ipc::pipeline::stop_engine(handle).await;
                         } else {
-                            log::info!("[Window] Main window hidden. Engine kept alive. Tray enabled: {}, Engaged: {}", tray_enabled, is_engaged);
+                            log::info!("[Window] Main window hidden. Engine kept alive. Dictation enabled: {}, Engaged: {}", dictation_enabled, is_engaged);
                         }
                     });
                 }
@@ -469,6 +492,10 @@ pub fn run() {
             get_sessions,
             get_turns,
             delete_session,
+            // Dictation
+            crate::ipc::dictation::get_dictation_settings,
+            crate::ipc::dictation::get_last_dictation_transcript,
+            crate::ipc::dictation::copy_last_dictation_transcript,
             // Voices
             crate::ipc::voices::list_voices,
             crate::ipc::voices::fetch_edge_tts_voices,

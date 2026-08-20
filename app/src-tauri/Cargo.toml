@@ -6,12 +6,7 @@ authors = ["addy-47"]
 edition = "2021"
 default-run = "Vox"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "vox_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -19,88 +14,86 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# ─── 1. Tauri Framework & Plugins ───────────────────────────────────────────
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
-tauri-plugin-positioner = { path = "./plugins/tauri-plugin-positioner", features = [
-    "tray-icon",
-] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-cpal = "0.15"
-ringbuf = "0.4.7"
-earshot = "1.1"
-hound = "3.5"
-anyhow = "1"
-tokio = { version = "1", features = ["full"] }
-nnnoiseless = "0.4"
-log = "0.4"
-env_logger = "0.11"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender = "0.2"
-crossbeam-channel = "0.5"
-parking_lot = "0.12"
-thiserror = "2"
-thread-priority = "1.1"
-
-turso = { version = "0.7.2" }
-
-# Phase 4 — LLM runtime (llama.cpp Rust bindings, compiles llama.cpp from source, CPU-only)
-# Dynamic linking disabled (default includes dynamic-link) — we want static linking
-# for easier distribution. Explicitly enable openmp and mtmd which were also in defaults.
-llama-cpp-4 = { version = "0.2.61", default-features = false, features = [
-    "openmp",
-    "mtmd",
-] }
-llama-cpp-sys-4 = { version = "0.2.61", default-features = false }
-
-chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false }
-query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }
-
-encoding_rs = "0.8.35"
-regex = "1.12.3"
-ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"] }
-ndarray = "0.17.2"
-parakeet-rs = "0.3.6"
-# Phase 7 — Packaging and runtime hardening
+tauri-plugin-positioner = { path = "./plugins/tauri-plugin-positioner", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-global-shortcut = "2"
 
-chrono = "0.4"
-sysinfo = "0.30"
-clap = { version = "4", features = ["derive"] }
-dirs = "6"
-walkdir = "2"
-sha2 = "0.10"
-reqwest = { version = "0.12", features = [
-    "stream",
-    "rustls-tls",
-    "json",
-    "blocking",
-] }
-tokio-util = "0.7"
-futures-util = "0.3"
-zip = "2.0"
-tar = "0.4"
-flate2 = "1.0"
-once_cell = "1.21.4"
-tokio-tungstenite = { version = "0.29.0", features = [
-    "rustls-tls-webpki-roots",
-] }
-rustls = { version = "0.23", features = ["ring"] }
-rubato = "3.0.0"
-audioadapter = "3.0.0"
-audioadapter-buffers = "3.0.0"
-base64 = "0.22.1"
-uuid = { version = "1.23.3", features = ["v4"] }
-symphonia = { version = "0.6.0", features = ["mp3", "flac", "wav", "aac"] }
-symphonia-core = "0.6.0"
-tokenizers = { version = "0.21.0", default-features = false, features = [
-    "fancy-regex",
-] }
-tiktoken-rs = "0.6.0"
+# ─── 2. Audio Capture, Playback & DSP ───────────────────────────────────────
+cpal = "0.15"                  # Cross-platform audio I/O (ALSA, Pulse, CoreAudio, WASAPI)
+ringbuf = "0.4.7"              # SPSC lock-free audio buffer
+earshot = "1.1"                # Embedded lightweight VAD neural network (~1ms latency)
+hound = "3.5"                  # WAV encoder/decoder
+nnnoiseless = "0.4"            # Realtime speech noise suppression
+rubato = "3.0.0"               # High-performance sinc-interpolated sample rate converter
+audioadapter = "3.0.0"         # Audio buffer adapter abstraction
+audioadapter-buffers = "3.0.0" # Audio buffer containers
+symphonia = { version = "0.6.0", features = ["mp3", "flac", "wav", "aac"] } # Media container demuxing
+symphonia-core = "0.6.0"       # Symphonia core primitives
+
+# ─── 3. ML Inference & Language Processing ──────────────────────────────────
+llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openmp", "mtmd"] } # Local GGUF LLM inference
+llama-cpp-sys-4 = { version = "0.2.61", default-features = false }                             # Low-level llama.cpp C++ bindings
+ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings
+ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
+parakeet-rs = "0.3.6"                                                                         # FastConformer RNNT STT inference (Nemotron)
+chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false } # Local voice cloning TTS
+query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }                       # ModernBERT intent classifier
+tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
+tiktoken-rs = "0.6.0"                                                                         # OpenAI BPE tokenizer for context budgeting
+
+# ─── 4. Concurrency, Async & Threading ──────────────────────────────────────
+tokio = { version = "1", features = ["full"] } # Primary async runtime
+tokio-util = "0.7"                             # Tokio utilities (codecs, framers)
+futures-util = "0.3"                           # Futures streams & combinators
+crossbeam-channel = "0.5"                      # High-throughput lock-free multi-producer telemetry channels
+parking_lot = "0.12"                           # Fast, non-poisoning mutexes & RwLocks
+thread-priority = "1.1"                        # OS thread priority controls for audio capture
+
+# ─── 5. Networking & Realtime Speech-to-Speech ──────────────────────────────
+reqwest = { version = "0.12", features = ["stream", "rustls-tls", "json", "blocking"] } # HTTP/HTTPS client for cloud LLM/TTS
+tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"] }       # WebSocket client for Gemini Live & Edge-TTS
+rustls = { version = "0.23", features = ["ring"] }                                       # TLS cryptography provider
+
+# ─── 6. System Integration, Clipboard & Input Simulation ────────────────────
+arboard = { version = "3.4", features = ["wayland-data-control"] } # Cross-platform clipboard with native Wayland protocol
+enigo = { version = "0.2", default-features = false, features = ["x11rb"] } # Native OS keyboard & mouse simulation
+zbus = { version = "4", default-features = false, features = ["tokio"] }    # D-Bus IPC for Wayland XDG Desktop Portal shortcuts
+
+# ─── 7. Database & Persistence ──────────────────────────────────────────────
+turso = { version = "0.7.2" } # Embedded libSQL/SQLite database engine
+
+# ─── 8. Observability & Logging ─────────────────────────────────────────────
+log = "0.4"                                                    # Facade for logging
+env_logger = "0.11"                                            # Terminal logger backend
+tracing = "0.1"                                                # Structured application tracing
+tracing-subscriber = { version = "0.3", features = ["env-filter"] } # Tracing subscriber with dynamic filtering
+tracing-appender = "0.2"                                       # Non-blocking file logging with daily rotation
+
+# ─── 9. Serialization & Common Utilities ────────────────────────────────────
+serde = { version = "1", features = ["derive"] } # Serialization framework
+serde_json = "1"                                 # JSON data format
+anyhow = "1"                                     # Application error handling
+thiserror = "2"                                  # Domain-specific error hierarchies
+chrono = "0.4"                                   # Date and timestamp calculations
+sysinfo = "0.30"                                 # System hardware & process memory telemetry
+dirs = "6"                                       # Standard OS directory discovery
+uuid = { version = "1.23.3", features = ["v4"] } # Unique identifier generation
+regex = "1.12.3"                                 # Regular expressions
+encoding_rs = "0.8.35"                           # Character encoding conversions
+base64 = "0.22.1"                                # Base64 encoder/decoder
+sha2 = "0.10"                                    # SHA-256 model verification
+walkdir = "2"                                    # Directory tree traversal
+clap = { version = "4", features = ["derive"] }  # Command line argument parser
+tar = "0.4"                                      # Tar archive extraction
+flate2 = "1.0"                                   # Gzip decompression
+zip = "2.0"                                      # Zip archive extraction
+once_cell = "1.21.4"                             # Lazy static cell initialization
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }
@@ -108,17 +101,12 @@ webkit2gtk = "2.0"
 cairo-rs = "0.18"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
-sherpa-onnx = { version = "1.13.2", default-features = false, features = [
-    "static",
-] }
+sherpa-onnx = { version = "1.13.2", default-features = false, features = ["static"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-sherpa-onnx = { version = "1.13.2", default-features = false, features = [
-    "shared",
-] }
+sherpa-onnx = { version = "1.13.2", default-features = false, features = ["shared"] }
 
 [dev-dependencies]
-# Helpers for integration tests
 tempfile = "3"
 tauri = { version = "2", features = ["test"] }
 
@@ -179,6 +167,10 @@ harness = false
 
 [[bench]]
 name = "memory_pipeline_bench"
+harness = false
+
+[[bench]]
+name = "dictation_bench"
 harness = false
 
 [[example]]

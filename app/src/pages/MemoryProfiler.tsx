@@ -3,6 +3,7 @@ import { Activity, RefreshCw } from "lucide-react";
 import { useMemoryProfiler } from "@/shared/hooks/useMemoryProfiler";
 import { useMemoryProfilerContext } from "@/shared/context/MemoryProfilerContext";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { ErrorBoundary } from "@/shared/components/common";
 import { cn } from "@/shared/lib/utils";
 import { PROFILER_TABS, PROFILER_COPY, type ProfilerTabItem } from "@/data/profilerData";
 
@@ -92,35 +93,37 @@ export const MemoryProfiler: React.FC = () => {
 
       {/* Active Tab Workspace - Scrollable within 100vh */}
       <div className="flex-1 overflow-y-auto pt-4 pr-1">
-        {activeTab === "overview" && (
-          <OverviewTab
-            latestSnapshot={latestSnapshot}
-            history={history}
-            jsHeap={jsHeap}
-          />
-        )}
+        <ErrorBoundary name={`MemoryProfiler:${activeTab}`}>
+          {activeTab === "overview" && (
+            <OverviewTab
+              latestSnapshot={latestSnapshot}
+              history={history}
+              jsHeap={jsHeap}
+            />
+          )}
 
-        {activeTab === "pages" && (
-          <PagesTab
-            pageRecords={pageRecords}
-            currentRoute={currentRoute}
-            jsHeap={jsHeap}
-            domStats={domStats}
-            cssStats={cssStats}
-          />
-        )}
+          {activeTab === "pages" && (
+            <PagesTab
+              pageRecords={pageRecords}
+              currentRoute={currentRoute}
+              jsHeap={jsHeap}
+              domStats={domStats}
+              cssStats={cssStats}
+            />
+          )}
 
-        {activeTab === "insights" && (
-          <InsightsTab
-            latestSnapshot={latestSnapshot}
-            history={history}
-            pageRecords={pageRecords}
-            componentTraces={componentTraces}
-            domStats={domStats}
-            cssStats={cssStats}
-            currentRoute={currentRoute}
-          />
-        )}
+          {activeTab === "insights" && (
+            <InsightsTab
+              latestSnapshot={latestSnapshot}
+              history={history}
+              pageRecords={pageRecords}
+              componentTraces={componentTraces}
+              domStats={domStats}
+              cssStats={cssStats}
+              currentRoute={currentRoute}
+            />
+          )}
+        </ErrorBoundary>
       </div>
     </div>
   );

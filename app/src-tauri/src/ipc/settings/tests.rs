@@ -26,11 +26,11 @@ mod tests {
         let res = apply_setting_mutation(&mut settings, "ui", "unknown_key", &json!("val"));
         assert_eq!(res, Ok(false));
 
-        // 4. Type mismatch: string passed to boolean field (tray_enabled)
-        let res = apply_setting_mutation(&mut settings, "ui", "tray_enabled", &json!("not_a_bool"));
+        // 4. Type mismatch: string passed to boolean field (dictation.enabled)
+        let res = apply_setting_mutation(&mut settings, "dictation", "enabled", &json!("not_a_bool"));
         assert!(res.is_err());
         let err = res.unwrap_err();
-        assert!(err.contains("tray_enabled must be a boolean"));
+        assert!(err.contains("enabled must be a boolean"));
 
         // 5. Type mismatch: string passed to numeric field (tray_blur_density)
         let res = apply_setting_mutation(&mut settings, "ui", "tray_blur_density", &json!("dense"));

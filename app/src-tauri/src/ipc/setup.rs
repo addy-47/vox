@@ -201,16 +201,16 @@ pub async fn complete_setup_wizard(
 
     // Spawn engine ownership transition and main window initialization in the background
     tauri::async_runtime::spawn(async move {
-        // Transition InteractionOwner to Tray and update VAD synced state
+        // Transition InteractionOwner to Dictation and update VAD synced state
         state_clone.owner.store(
-            crate::core::state::InteractionOwner::Tray as u32,
+            crate::core::state::InteractionOwner::Dictation as u32,
             std::sync::atomic::Ordering::Relaxed,
         );
         if let Some(engine) = state_clone.engine.lock().await.as_ref() {
             let _ = engine
                 .vad_tx
                 .send(crate::core::state::VadCommand::UpdateOwner(
-                    crate::core::state::InteractionOwner::Tray,
+                    crate::core::state::InteractionOwner::Dictation,
                 ));
         }
 

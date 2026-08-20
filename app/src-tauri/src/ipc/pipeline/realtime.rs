@@ -115,7 +115,14 @@ pub async fn start_realtime_session_internal(
         .load(std::sync::atomic::Ordering::Relaxed)
         .into();
     let interaction_mode = match owner {
-        crate::core::state::InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+        crate::core::state::InteractionOwner::Dictation => match settings.dictation.interaction_mode {
+            crate::core::settings::DictationInteractionMode::Passive => {
+                crate::core::settings::InteractionMode::Passive
+            }
+            crate::core::settings::DictationInteractionMode::Ptt => {
+                crate::core::settings::InteractionMode::PTT
+            }
+        },
         crate::core::state::InteractionOwner::MainWindow
         | crate::core::state::InteractionOwner::Ptt => settings.interaction.main_app_mode.clone(),
         crate::core::state::InteractionOwner::Wizard => {
@@ -369,14 +376,14 @@ pub async fn stop_realtime_session(
         .is_engaged
         .store(false, std::sync::atomic::Ordering::Relaxed);
     state.owner.store(
-        crate::core::state::InteractionOwner::Tray as u32,
+        crate::core::state::InteractionOwner::Dictation as u32,
         std::sync::atomic::Ordering::Relaxed,
     );
     if let Some(engine) = state.engine.lock().await.as_ref() {
         let _ = engine
             .vad_tx
             .send(crate::core::state::VadCommand::UpdateOwner(
-                crate::core::state::InteractionOwner::Tray,
+                crate::core::state::InteractionOwner::Dictation,
             ));
     }
 

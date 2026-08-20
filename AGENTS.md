@@ -75,38 +75,21 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ## 5. Recent Work & Critical System Invariants
 
-### 5.1 Architecture & Performance Invariants
-- **Typography**: Display = `Sora`, Body/UI = `DM Sans`, Telemetry = `JetBrains Mono`. Font floor `>= 11px`. All user-facing copy is layman (no STT/LLM jargon; HUD pills read Thinking/Hearing/Speaking).
-- **Tooltip**: `app/src/shared/ui/Tooltip.tsx` is the only sanctioned tooltip. Native `title` attrs are banned as tooltips.
-- **ONNX / Zero Idle RAM**: 0 ONNX models loaded on boot; evict pipeline sessions on barge-in, disengage, or batch completion.
-- **Memory graph**: 10,000+ nodes in 1 `InstancedMesh` GPU call (<15MB RAM).
-- **Benchmarks**: sequential runs only (4 CPU threads, release mode), no inner-loop sampler allocation.
-- **ModernBERT edge triggering**: bidirectional candidate eval enforcing canonical `[Source] [SEP] [Target]`.
-
-### 5.2 Default Local LLM (Qwen3.5-0.8B)
-`qwen_3_5_0_8b` (Q4_K_M GGUF, 508MB) in `~/.vox/models/llm/qwen/`, registered in `models_manifest.json` + `defaults.rs`. Non-thinking ChatML template, `presence_penalty=2.0`, `top_k=20`, `temperature=1.0`.
-
-### 5.3 Voice Pipeline & Test Invariants
+### 5.1 Voice Pipeline & Test Invariants
 - **Deadlock prevention**: `engage()` drops the `state.engine` lock before calling `stop_engine()`.
 - Guarded by `pipeline_lifecycle_invariants_test.rs` (15/15) + `useHomePage.test.ts` (9/9) — `handleEnd` routes to `testClipCancel()`/`engage()`/`stopRealtimeSession()`.
 - No unbuffered stderr prints from `edge_tts.rs` (IPC spam).
 
-### 5.4 UI Systems & View Invariants
-- **Monitoring** (`Monitoring.tsx`): Zero work at idle; polling and canvas loops gated on `!document.hidden`. Subcomponents in `shared/components/monitoring/`.
-- **History Orbit** (`OrbitCarousel.tsx`, `CentralClockNode.tsx`, `MonthDayCard.tsx`, `VoiceRippleNode.tsx`, `useHistory.ts`): CSS 3D perspective ellipse projection with imperative card positioning on refs. Self-stopping rAF loop (<1000ms momentum), 6 discrete z-index bands, and zero blur over 3D canvas for 60fps drag. Session Hub disc and orbit cards (`MonthDayCard`, `VoiceRippleNode`) utilize zero-flash pure CSS classes (`.orbit-card-surface`, `.orbit-card-surface-selected`) evaluated synchronously on mount without React `useEffect` lag, sharing unified semi-opaque frosted porcelain (`radial-gradient` top specular in light mode) and obsidian depth (`radial-gradient` in dark mode) with 1.5px accent borders and zero `backdrop-filter: blur`. Central Clock anchors navigation buttons directly at 9:00 and 3:00 perimeter positions where dial ticks are omitted. Mobile falls back to `HistoryListView.tsx`.
-- **Monitoring & Liquid Chamber** (`Monitoring.tsx`, `LiquidChamber.tsx`): Zero work at idle; polling and canvas loops gated on `!document.hidden`. Liquid chamber 2D physics canvas dynamically computes transparent glass background, fluid gradients, specular reflections, and HUD pill cards based on active `data-theme` (light vs dark) via `MutationObserver`. Direct text indicators without pill wrappers in corners. Water level responds dynamically to real Vox RAM allocation (150MB baseline up to 3.5GB models loaded) and CPU load.
-- **DetailPanel**: Vertically resizable between 35% and 85% vh via direct imperative ref dragging with commit on pointer up.
-- **Memory Graph** (`MemoryGraph.tsx`, `MemoryNodeTooltip.tsx`, `SearchBar.tsx`): Single-pass `InstancedMesh` (10k nodes) and `LineSegments` (20k edges) with `frustumCulled = false` for seamless panning. Clamped pan boundaries (`maxPan = radius * 1.5`), dynamic zoom ceiling ($Z_{\text{max}} \approx R \times 2.165$ enforcing $\ge 80\%$ vh scale), crisp cluster badges and cards using `bg-[rgba(var(--card),0.92-0.96)]` with zero `backdrop-filter` over the 3D canvas (eliminating compositor Gaussian blur halos), and top-right `+` / `-` zoom dock.
-- **Settings & Skeletons** (`Settings.tsx`, `SettingsCardSkeleton.tsx`, `settingsStore.ts`): Single uniform compact global skeleton card (`lg:w-[440px] min-h-[220px]`) with universal header, tab pill bar, 2-column card grid, and controls shimmer layout. `isDomainDirty` performs property-specific comparison avoiding phantom save footer triggers from background server capability probes or cosmetic metadata.
-- **Boot Lifecycle & Window Reveal**: Dark theme injected into HTML head; `App.tsx` coordinates window reveal on double-rAF after initial setup resolution with smooth opacity fade-in.
+### 5.2 Decoupled Realtime Dictation Subsystem (Phase 9)
+- **Decoupled Architecture**: Dictation backend is decoupled from Tray UI (`services/dictation/`). `InteractionOwner::Dictation = 0` is a first-class citizen.
+- **Two Independent Axes**:
+  - `interaction_mode`: `Passive` (Continuous) vs `Ptt` (Push-To-Talk via global hotkey `Alt+Space`).
+  - `output_mode`: `Paste` (Simulated keystroke injection via X11/Wayland with clipboard backup & 350ms restore), `Clipboard` (Clipboard copy only), and `Tray` (Desktop floating HUD window).
+- **Zero Idle RAM & Lazy Warming**: In PTT mode, 0 ONNX models loaded on boot; `DictationController` lazily initializes audio/STT pipeline on-demand when the hotkey is triggered.
+- **Transliteration & Recovery Invariants**: Spoken Hindi/Devanagari text is transliterated before output dispatch across all modes. Last transcript is cached in `AppState.dictation_last_transcript` for recovery (`get_last_dictation_transcript`, `copy_last_dictation_transcript`).
+- **UI System**: `InteractionCard.tsx` provides clean layman switching between `Assistant` and `Dictation` views, mounting `DictationConfigDesk.tsx` with a matching minimal ribbon header, full-width extending SVG connector arrow, underline tabs (`Paste | Clipboard | Tray`), and hotkey trigger rebinding.
+- **Dictation Serialization & Error Safeguards**: Dictation interaction mode normalized to `"passive" | "ptt"` matching Rust `serde(rename_all = "snake_case")`. ErrorBoundary covers all critical interactive canvases (`HistoryStage`, `MemoryGraphCanvas`, `LiquidChamber`, `TrayAppContent`, `MemoryProfilerTabs`). `DictationConfigDesk` features interactive keyboard shortcut recording with Liquid Space aesthetics.
 
-### 5.5 UI Memory Attribution & Diagnostic Profiler
-- **WebGL Teardown**: `MemoryGraph.tsx` guarantees explicit `.geometry.dispose()`, `.material.dispose()`, and `scene.clear()` on unmount before `renderer.dispose()`.
-- **Node Position Cache**: Controlled via `clearCacheOnUnmount` prop (defaults to `false` to preserve spatial coordinates across navigation for UX).
-- **Process-Tree Attribution**: `ipc/memory_profiler.rs` (`get_profiler_snapshot`) provides synchronous, non-blocking on-demand RSS measurement across Main Process, Main WebView, Tray WebView, and Network processes.
-- **Diagnostic UI & Accuracy Floor**: `/memory-profiler` designed as a high-density, full-height diagnostic studio consolidated into 3 comprehensive views: **Overview & Processes** (5 KPI cards, interactive SVG time-series area chart, donut breakdown, full OS process hierarchy), **Page Attributions & Resources** (DOM, font, V8 heap, and GPU layer indicator cards + standard Baseline → Peak → Retained lifecycle table), and **RCA & Event Timeline** (automated heuristic leak diagnosis, component lifecycle mount traces, and real-time event transition stream). Zero hardcoded colors, dynamic theme tokens (`rgb(var(--accent))`, `rgba(var(--card),0.92)`), and zero third-party chart deps.
-- **Tray Window Destruction**: `lib.rs` allows the `tray` window to close cleanly rather than intercepting with `hide()`, terminating its underlying `WebKitWebProcess` (~240MB) when Tray HUD is disabled in settings.
-- **Compositor & Layer Optimizations**: High-opacity semi-transparent card fills (`bg-[rgba(var(--card),0.92-0.96)]` + `shadow-md`) replace nested `backdrop-blur-xl` in `MemoryProfiler.tsx`, `VoiceRippleNode.tsx`, and `MonthDayCard.tsx`. Static `will-change` layer promotions removed from `AmbientBackground`, `OrbitCarousel`, `DetailPanel`, and `RotaryKnob`. Route root container has `contain: layout style`.
-
-
-
+### 5.3 Zero-Noise Testing & Dictation Benchmark Standards
+- **Zero-Noise Testing Policy (`code-style-guide.md`)**: Banned trivial tests that only verify struct field assignments, derive serde roundtrips, or isolated local mutexes. Integration tests in `tests/` must validate real contracts, state machines, platform adapter resolutions, and error fallback recovery.
+- **End-to-End Dictation Benchmark (`dictation_bench.rs`)**: Replaced shallow microbenchmarks with a CLI-driven tool (`--mode`, `--clip`, `--engine`, `--transliterate`) that ingests real audio WAV clips, runs acoustic STT inference, measures per-stage and $T_{\text{e2e}}$ latency, and verifies physical OS output dispatch (clipboard readback, keystroke fallback).
