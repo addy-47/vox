@@ -27,7 +27,14 @@ pub async fn ptt_start(
     let interaction_mode = {
         let settings = state.settings.read().unwrap();
         match actual_owner {
-            crate::core::state::InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+            crate::core::state::InteractionOwner::Dictation => match settings.dictation.interaction_mode {
+                crate::core::settings::DictationInteractionMode::Passive => {
+                    crate::core::settings::InteractionMode::Passive
+                }
+                crate::core::settings::DictationInteractionMode::Ptt => {
+                    crate::core::settings::InteractionMode::PTT
+                }
+            },
             crate::core::state::InteractionOwner::MainWindow
             | crate::core::state::InteractionOwner::Ptt => {
                 settings.interaction.main_app_mode.clone()
@@ -92,7 +99,7 @@ pub async fn ptt_start(
 
     // Determine the owning window target
     let target = match owner {
-        crate::core::state::InteractionOwner::Tray => "tray",
+        crate::core::state::InteractionOwner::Dictation => "tray",
         crate::core::state::InteractionOwner::MainWindow
         | crate::core::state::InteractionOwner::Ptt => "main",
         crate::core::state::InteractionOwner::Wizard => "wizard",
@@ -147,7 +154,7 @@ pub async fn ptt_stop(
     let speech_detected = state.ptt.speech_detected.load(Ordering::Relaxed);
     let owner = actual_owner;
     let target = match owner {
-        crate::core::state::InteractionOwner::Tray => "tray",
+        crate::core::state::InteractionOwner::Dictation => "tray",
         crate::core::state::InteractionOwner::MainWindow
         | crate::core::state::InteractionOwner::Ptt => "main",
         crate::core::state::InteractionOwner::Wizard => "wizard",
@@ -185,7 +192,7 @@ pub async fn ptt_stop(
 
     // Determine the owning window target
     let target = match owner {
-        crate::core::state::InteractionOwner::Tray => "tray",
+        crate::core::state::InteractionOwner::Dictation => "tray",
         crate::core::state::InteractionOwner::MainWindow
         | crate::core::state::InteractionOwner::Ptt => "main",
         crate::core::state::InteractionOwner::Wizard => "wizard",
@@ -275,7 +282,7 @@ pub async fn ptt_cancel(
 
     // Determine the owning window target
     let target = match owner {
-        crate::core::state::InteractionOwner::Tray => "tray",
+        crate::core::state::InteractionOwner::Dictation => "tray",
         crate::core::state::InteractionOwner::MainWindow
         | crate::core::state::InteractionOwner::Ptt => "main",
         crate::core::state::InteractionOwner::Wizard => "wizard",
