@@ -12,7 +12,7 @@ use clap::Parser;
 use hound::WavReader;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use vox_lib::core::settings::{DictationOutputMode, SttProviderConfig};
+use vox_lib::core::settings::SttProviderConfig;
 use vox_lib::services::dictation::clipboard;
 use vox_lib::services::dictation::input::create_input_adapter;
 use vox_lib::services::stt::providers::create_stt_provider;

@@ -37,7 +37,7 @@ export const OrbitalLoader: React.FC<OrbitalLoaderProps> = memo(
         iconSize: 18,
         titleClass: "text-[13px]",
         subtitleClass: "text-[11px]",
-        statusClass: "text-[10px] mt-1",
+        statusClass: "text-[11px] mt-1",
       },
       md: {
         container: "w-24 h-24 mb-6",

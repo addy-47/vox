@@ -147,7 +147,7 @@ export const TitleBar: React.FC = () => {
         {/* App Update Pill */}
         {appUpdate && (
           <div className="relative group/app-pill pointer-events-auto flex items-center">
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[12px] font-black uppercase tracking-wider bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] hover:from-[rgb(var(--accent))]/20 hover:to-[rgb(var(--accent))]/30 transition-all duration-300 animate-pulse">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[12px] font-black uppercase tracking-wider bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] hover:from-[rgb(var(--accent))]/20 hover:to-[rgb(var(--accent))]/30 transition-all duration-300">
               <ArrowUpCircle size={10} className="shrink-0" />
               <span className="hidden sm:inline">v{appUpdate.latest_version} Available</span>
             </button>

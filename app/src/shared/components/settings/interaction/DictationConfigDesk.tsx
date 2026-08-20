@@ -7,6 +7,7 @@ import { DICTATION_COPY } from "@/data/settingsData";
 
 interface DictationConfigDeskProps {
   layoutMode?: "full-max" | "full-min" | "small";
+  disabled?: boolean;
 }
 
 const OUTPUT_OPTIONS = [
@@ -15,7 +16,7 @@ const OUTPUT_OPTIONS = [
   { id: "tray" as const, label: DICTATION_COPY.modeTray },
 ];
 
-export const DictationConfigDesk = memo(({ layoutMode }: DictationConfigDeskProps) => {
+export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: DictationConfigDeskProps) => {
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
@@ -129,7 +130,12 @@ export const DictationConfigDesk = memo(({ layoutMode }: DictationConfigDeskProp
   const OutputIcon = getOutputIcon(outputMode);
 
   return (
-    <div className="flex flex-col gap-1.5 sm:gap-2 w-full mt-1.5 animate-fade-in">
+    <div
+      className={cn(
+        "flex flex-col gap-1.5 sm:gap-2 w-full mt-1.5 animate-fade-in transition-opacity duration-200",
+        disabled && "opacity-40 pointer-events-none select-none"
+      )}
+    >
       {/* Output Destination Selector Ribbon with arrow */}
       <div className="flex flex-wrap items-center justify-between gap-y-1.5 gap-x-1 w-full pb-1.5 sm:pb-2 pt-1 shrink-0 px-1.5 sm:px-3">
         {/* Left: Mode Title */}
@@ -137,7 +143,7 @@ export const DictationConfigDesk = memo(({ layoutMode }: DictationConfigDeskProp
           <div className="p-0.5 sm:p-1 rounded-md text-[rgb(var(--accent))] flex items-center justify-center">
             <OutputIcon size={13} className="shrink-0 sm:w-3.5 sm:h-3.5" />
           </div>
-          <span className="text-[11.5px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] select-none">
+          <span className="text-[12px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] select-none">
             Output
           </span>
         </div>
@@ -182,7 +188,7 @@ export const DictationConfigDesk = memo(({ layoutMode }: DictationConfigDeskProp
                   type="button"
                   onClick={() => updateDraft("dictation", "output_mode", mode.id)}
                   className={cn(
-                    "flex items-center justify-center gap-1 pb-0.5 sm:pb-1 border-b-2 transition-all duration-200 bg-transparent text-[10px] sm:text-[11px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer",
+                    "flex items-center justify-center gap-1 pb-0.5 sm:pb-1 border-b-2 transition-all duration-200 bg-transparent text-[11px] sm:text-[12px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer",
                     isActive
                       ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
                       : "text-[rgb(var(--foreground-muted))]/50 border-transparent hover:text-[rgb(var(--foreground-muted))]/80"
@@ -191,7 +197,7 @@ export const DictationConfigDesk = memo(({ layoutMode }: DictationConfigDeskProp
                   <span>{mode.label}</span>
                 </button>
                 {idx < arr.length - 1 && (
-                  <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))]/20 font-light select-none pb-0.5 sm:pb-1">
+                  <span className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/20 font-light select-none pb-0.5 sm:pb-1">
                     |
                   </span>
                 )}
@@ -238,7 +244,7 @@ export const DictationConfigDesk = memo(({ layoutMode }: DictationConfigDeskProp
             layoutMode === "small" ? "self-end pt-1" : "h-full"
           )}>
             <div className="flex flex-col items-end justify-center gap-1">
-              <span className="text-[9.5px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60 select-none">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60 select-none">
                 {DICTATION_COPY.hotkeyTitle}
               </span>
               {isEditingHotkey ? (
@@ -249,7 +255,7 @@ export const DictationConfigDesk = memo(({ layoutMode }: DictationConfigDeskProp
                     onKeyDown={handleKeyDownRecorder}
                     readOnly
                     placeholder={DICTATION_COPY.recordingPrompt}
-                    className="w-24 sm:w-28 text-center text-[10.5px] sm:text-[11px] font-mono font-bold px-1.5 sm:px-2 py-0.5 rounded-md bg-[rgba(var(--background),0.9)] border border-[rgb(var(--accent))] text-[rgb(var(--accent))] focus:outline-none cursor-pointer"
+                    className="w-24 sm:w-28 text-center text-[11px] sm:text-[12px] font-mono font-bold px-1.5 sm:px-2 py-0.5 rounded-md bg-[rgba(var(--background),0.9)] border border-[rgb(var(--accent))] text-[rgb(var(--accent))] focus:outline-none cursor-pointer"
                     autoFocus
                   />
                   <Tooltip label={DICTATION_COPY.saveLabel}>
@@ -284,7 +290,7 @@ export const DictationConfigDesk = memo(({ layoutMode }: DictationConfigDeskProp
                     <kbd className="text-[11px] font-mono font-bold tracking-wide text-[rgb(var(--accent))]">
                       {dictation.hotkey || "Alt+Space"}
                     </kbd>
-                    <span className="text-[9px] uppercase font-mono font-bold text-[rgb(var(--accent))]/75 group-hover:text-[rgb(var(--accent))] ml-0.5">
+                    <span className="text-[11px] uppercase font-mono font-bold text-[rgb(var(--accent))]/75 group-hover:text-[rgb(var(--accent))] ml-0.5">
                       {DICTATION_COPY.editLabel}
                     </span>
                   </button>

@@ -210,7 +210,7 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
               >
                 {showRestartConfirm ? (
                   <>
-                    <span className="font-bold uppercase tracking-wider text-amber-400 animate-pulse">
+                    <span className="font-bold uppercase tracking-wider text-amber-400">
                       {SETTINGS_COPY.restartRequired}
                     </span>
                     <div className="flex gap-2">
@@ -466,12 +466,12 @@ export const Settings: React.FC = () => {
                   className={cn(
                     "p-1.5 rounded-xl border transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0",
                     isMobileConfirmRestore
-                      ? "bg-red-500/20 border-red-500/60 text-red-400 animate-pulse"
+                      ? "bg-[rgba(var(--danger),0.18)] border-[rgb(var(--danger))]/60 text-[rgb(var(--danger))]"
                       : "bg-[rgb(var(--foreground))]/[0.03] border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))]"
                   )}
                   aria-label="Restore Defaults"
                 >
-                  <RotateCcw size={14} className={cn(isMobileConfirmRestore && "animate-spin")} />
+                  <RotateCcw size={14} />
                 </button>
                 <div className="absolute bottom-full mb-2 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/95 backdrop-blur-md text-[rgb(var(--accent))] shadow-2xl text-[11px] font-bold tracking-wide uppercase z-50">
                   {isMobileConfirmRestore ? "Tap again to confirm reset" : SETTINGS_COPY.restoreDefaults}
