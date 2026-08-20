@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, memo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   RefreshCw,
@@ -34,8 +34,9 @@ import {
 } from "@/services/memoryService";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
-import { MEMORY_COPY } from "@/data/memoryData";
+import { MEMORY_COPY } from "@/data/memoryCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import { parseRgb, rgbToHsl, hslToRgb } from "@/shared/components/monitoring/colorUtils";
 
 interface MemoryPipelineDrawerProps {
@@ -55,6 +56,12 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
   edges = [],
   onRefresh,
 }) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Gesture contract: registered with the global overlay stack so Escape pops
+  // this right-side panel, and pointerdown outside the panel closes it.
+  useOverlay({ onClose, active: open, ref: panelRef, dismissOnOutside: true });
+
   const [running, setRunning] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [lastProcessedCount, setLastProcessedCount] = useState<number | null>(null);
@@ -196,6 +203,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
             exit={{ x: "100%" }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             className="fixed right-0 top-[var(--titlebar-height,40px)] bottom-0 z-50 w-[530px] max-w-[100vw] h-[calc(100vh-var(--titlebar-height,40px))] bg-[rgb(var(--card))]/95 backdrop-blur-3xl border-l border-[rgba(var(--border),0.12)] shadow-2xl flex flex-col pointer-events-auto overflow-hidden text-[rgb(var(--foreground))]"
+            ref={panelRef}
           >
             {/* Header Section */}
             <div className="flex items-center justify-between px-6 py-3.5 border-b border-[rgba(var(--border),0.1)] shrink-0 bg-[rgba(var(--foreground),0.02)]">

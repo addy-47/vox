@@ -12,6 +12,7 @@ import {
 } from "@/shared/components/history";
 import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
+import type { SessionRow } from "@/services/historyService";
 
 export const History: React.FC = () => {
   const {
@@ -73,6 +74,15 @@ export const History: React.FC = () => {
     formatMonthYearLabel,
   } = useHistory();
 
+  // Unified toggle selection: click a session to open its detail; re-click the
+  // same session (or Escape / backdrop / close) to dismiss it.
+  const handleSelectSession = React.useCallback(
+    (session: SessionRow) => {
+      setSelectedSession((prev) => (prev?.id === session.id ? null : session));
+    },
+    [setSelectedSession]
+  );
+
   const monthNodeIds = React.useMemo(() => {
     return (currentMonthWindow?.days ?? []).map((d) => d.dayKey);
   }, [currentMonthWindow?.days]);
@@ -80,6 +90,33 @@ export const History: React.FC = () => {
   const dayNodeIds = React.useMemo(() => {
     return currentWindowSessions.map((s) => String(s.id));
   }, [currentWindowSessions]);
+
+  const renderMonthNode = React.useCallback(
+    (dayKey: string) => {
+      const day = currentMonthGroup?.days.find((d) => d.dayKey === dayKey);
+      if (!day) return null;
+      return <MonthDayCard day={day} onOpen={handleDrillIntoDay} />;
+    },
+    [currentMonthGroup?.days, handleDrillIntoDay]
+  );
+
+  const renderDayNode = React.useCallback(
+    (id: string) => {
+      const session = sessionById.get(id);
+      if (!session) return null;
+      return (
+        <VoiceRippleNode
+          session={session}
+          isSelected={selectedSession?.id === session.id}
+          isConfirmingDelete={confirmDeleteId === session.id}
+          onSelect={handleSelectSession}
+          onDelete={handleDelete}
+          onCancelDelete={handleCancelDelete}
+        />
+      );
+    },
+    [sessionById, selectedSession?.id, confirmDeleteId, handleSelectSession, handleDelete, handleCancelDelete]
+  );
 
   return (
     <div
@@ -180,16 +217,7 @@ export const History: React.FC = () => {
                 selectedId={null}
                 paused={false}
                 onDragStateChange={handleDragState}
-                renderNode={(dayKey) => {
-                  const day = currentMonthGroup?.days.find((d) => d.dayKey === dayKey);
-                  if (!day) return null;
-                  return (
-                    <MonthDayCard
-                      day={day}
-                      onOpen={handleDrillIntoDay}
-                    />
-                  );
-                }}
+                renderNode={renderMonthNode}
               />
 
               <CentralClockNode
@@ -234,20 +262,7 @@ export const History: React.FC = () => {
                 selectedId={selectedSession ? String(selectedSession.id) : null}
                 paused={!!selectedSession}
                 onDragStateChange={handleDragState}
-                renderNode={(id) => {
-                  const session = sessionById.get(id);
-                  if (!session) return null;
-                  return (
-                    <VoiceRippleNode
-                      session={session}
-                      isSelected={selectedSession?.id === session.id}
-                      isConfirmingDelete={confirmDeleteId === session.id}
-                      onSelect={setSelectedSession}
-                      onDelete={handleDelete}
-                      onCancelDelete={handleCancelDelete}
-                    />
-                  );
-                }}
+                renderNode={renderDayNode}
               />
 
               <CentralClockNode
@@ -287,7 +302,7 @@ export const History: React.FC = () => {
               canNextDate={dateIndex < totalDates - 1}
               onPrevDate={handlePrevDate}
               onNextDate={handleNextDate}
-              onSelect={setSelectedSession}
+              onSelect={handleSelectSession}
               onDelete={handleDelete}
               onCancelDelete={handleCancelDelete}
             />
@@ -326,31 +341,18 @@ export const History: React.FC = () => {
         </div>
       )}
 
-      {/* Backdrop overlay for selected session detail panel */}
-      <AnimatePresence>
-        {selectedSession && (
-          <div
-            className="absolute inset-0 z-[25] cursor-default bg-[rgb(var(--background))]/60 backdrop-blur-sm"
-            onClick={() => setSelectedSession(null)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Slide-up Detail Transcript Panel */}
-      <AnimatePresence>
-        {selectedSession && (
-          <ErrorBoundary name="HistoryDetailPanel">
-            <DetailPanel
-              session={selectedSession}
-              turns={turns}
-              loading={turnsLoading}
-              error={turnsError}
-              onClose={() => setSelectedSession(null)}
-              onRetry={retryFetchTurns}
-            />
-          </ErrorBoundary>
-        )}
-      </AnimatePresence>
+      {/* Slide-up Detail Transcript Panel (shared Drawer: backdrop + Escape handled internally) */}
+      <ErrorBoundary name="HistoryDetailPanel">
+        <DetailPanel
+          open={!!selectedSession}
+          session={selectedSession}
+          turns={turns}
+          loading={turnsLoading}
+          error={turnsError}
+          onClose={() => setSelectedSession(null)}
+          onRetry={retryFetchTurns}
+        />
+      </ErrorBoundary>
     </div>
   );
 };

@@ -4,7 +4,7 @@ import type { ProfilerSnapshot, DOMSample, CSSIndicatorsSample } from "@/service
 import type { PageMemoryRecord } from "@/shared/hooks/useMemoryProfiler";
 import type { ComponentTraceData } from "@/shared/context/MemoryProfilerContext";
 import { AccuracyBadge } from "./AccuracyBadge";
-import { PROFILER_COPY } from "@/data/profilerData";
+import { PROFILER_COPY } from "@/data/profilerCopy";
 
 interface InsightsTabProps {
   latestSnapshot: ProfilerSnapshot | null;

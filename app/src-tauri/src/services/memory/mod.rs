@@ -37,6 +37,10 @@ pub fn unload_memory_pipeline_onnx_models() {
     embedder::unload_embedder();
     classifiers::intra_edge_classifier::unload_nli_engine();
     classifiers::inter_edge_classifier::unload_edge_classifier();
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::malloc_trim(0);
+    }
     log::info!("[MemorySubsystem] Evicted 3 memory pipeline ONNX models from process memory.");
 }
 
@@ -45,5 +49,10 @@ pub fn unload_all_onnx_models() {
     unload_memory_pipeline_onnx_models();
     classifiers::query_classifier::unload_scope_classifier();
     crate::services::translit::unload_transliteration_engine();
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::malloc_trim(0);
+    }
     log::info!("[MemorySubsystem] Evicted all ONNX models from process memory.");
 }
+

@@ -283,7 +283,7 @@ const PipelineFlow = ({
 import {
   REALTIME_PROVIDER_DISPLAY_NAMES,
   REALTIME_PROVIDER_SHORT_NAMES,
-} from "@/data/providers";
+} from "@/data/providersCopy";
 
 const providerDisplayName = (id: string): string =>
   (REALTIME_PROVIDER_DISPLAY_NAMES as any)[id] || "ElevenLabs Conversational AI";

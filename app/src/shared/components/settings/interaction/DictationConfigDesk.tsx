@@ -3,7 +3,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { Clipboard, Layers, Send, Check, X } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { cn } from "@/shared/lib/utils";
-import { DICTATION_COPY } from "@/data/settingsData";
+import { DICTATION_COPY } from "@/data/settingsCopy";
 
 interface DictationConfigDeskProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -149,7 +149,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
         </div>
 
         {/* Center Connector Arrow */}
-        <div className="hidden xs:flex flex-1 items-center px-1 min-w-[12px] pointer-events-none select-none overflow-hidden">
+        <div className="flex flex-1 items-center px-1 min-w-[8px] pointer-events-none select-none overflow-hidden">
           <svg
             className="w-full h-2.5 sm:h-3 text-[rgb(var(--accent))]/50 overflow-visible"
             viewBox="0 0 100 12"

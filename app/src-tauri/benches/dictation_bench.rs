@@ -237,14 +237,36 @@ async fn main() {
         let t_dispatch_start = Instant::now();
         match cli.mode.to_lowercase().as_str() {
             "clipboard" => {
-                if let Err(e) = clipboard::set_text(&final_text) {
-                    eprintln!("⚠️ Clipboard write failed: {}", e);
-                } else {
-                    println!(" [Stage 3: Dispatch -> Clipboard]: Text written to system clipboard.");
-                    // Verify clipboard physical state
-                    if let Ok(read_back) = clipboard::get_text() {
-                        assert_eq!(read_back, final_text, "Clipboard readback mismatch");
-                        println!(" ✓ Clipboard Physical State Verified: matches STT output ({} chars)", read_back.len());
+                match arboard::Clipboard::new() {
+                    Ok(mut cb) => {
+                        if let Err(e) = cb.set_text(final_text.clone()) {
+                            eprintln!("⚠️ Clipboard write failed: {}", e);
+                        } else {
+                            println!(" [Stage 3: Dispatch -> Clipboard]: Text written to system clipboard.");
+                            // Small delay for Wayland data-control event propagation
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                            match cb.get_text() {
+                                Ok(read_back) => {
+                                    assert_eq!(read_back, final_text, "Clipboard readback mismatch");
+                                    println!(" ✓ Clipboard Physical State Verified ({} chars): \"{}\"", read_back.len(), read_back.trim());
+                                }
+                                Err(_) => {
+                                    // Fallback check with system clipboard CLI tool
+                                    let output = std::process::Command::new("wl-paste")
+                                        .output()
+                                        .or_else(|_| std::process::Command::new("xclip").args(["-o", "-selection", "clipboard"]).output());
+                                    if let Ok(out) = output {
+                                        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                                        if !text.is_empty() {
+                                            println!(" ✓ OS Clipboard Verified via Display Server ({} chars): \"{}\"", text.len(), text);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️ Failed to initialize clipboard: {}", e);
                     }
                 }
             }

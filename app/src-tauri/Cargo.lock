@@ -26,6 +26,7 @@ dependencies = [
  "futures-util",
  "gtk",
  "hound",
+ "libc",
  "llama-cpp-4",
  "llama-cpp-sys-4",
  "log",
