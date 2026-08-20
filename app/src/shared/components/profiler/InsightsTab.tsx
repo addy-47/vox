@@ -140,7 +140,7 @@ export const InsightsTab: React.FC<InsightsTabProps> = ({
                   <span className="text-xs font-bold text-[rgb(var(--foreground))]">{item.title}</span>
                 </div>
                 <span
-                  className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded border ${
+                  className={`text-[11px] font-mono uppercase px-2 py-0.5 rounded border ${
                     item.severity === "high"
                       ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/40"
                       : item.severity === "medium"

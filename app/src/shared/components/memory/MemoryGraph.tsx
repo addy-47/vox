@@ -1287,7 +1287,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
                             setExpandedBadge(badge.collection);
                           }}
                           style={{
-                            backgroundColor: isLightMode ? "#ffffff" : "#0d1117",
+                            backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
                             border: `1.5px solid ${badge.color}70`,
                             boxShadow: isLightMode
                               ? "0 4px 14px -2px rgba(15, 23, 42, 0.12), 0 1px 4px -1px rgba(0, 0, 0, 0.06)"
@@ -1316,7 +1316,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
                           transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
                           onClick={(e) => e.stopPropagation()}
                           style={{
-                            backgroundColor: isLightMode ? "#ffffff" : "#0d1117",
+                            backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
                             border: `1.5px solid ${badge.color}`,
                             boxShadow: isLightMode
                               ? "0 12px 32px -4px rgba(15, 23, 42, 0.20), 0 3px 8px -1px rgba(0, 0, 0, 0.10)"

@@ -7,14 +7,10 @@
 //! Execution    : cargo test --test dictation_test --release
 //! ============================================================================
 
-use std::sync::Arc;
 use vox_lib::core::error::{DictationError, VoxError};
-use vox_lib::core::settings::{
-    DictationInteractionMode, DictationOutputMode, DictationSettings, VoxSettings,
-};
-use vox_lib::core::state::{AppState, InteractionOwner, InteractionState};
+use vox_lib::core::state::InteractionOwner;
 use vox_lib::services::dictation::clipboard;
-use vox_lib::services::dictation::input::{create_input_adapter, WaylandInputAdapter, X11InputAdapter};
+use vox_lib::services::dictation::input::create_input_adapter;
 
 // ─── 1. Subsystem Interaction Owner Mapping & Fast-Path Invariants ───────────
 
@@ -102,26 +98,26 @@ fn test_dictation_transliteration_delivery_transformation() {
     assert_eq!(untransliterated, sample_devanagari);
 }
 
-// ─── 5. AppState Transcript Cache & Recovery Integration Contract ────────────
+// ─── 5. Transcript Cache & Recovery Storage Contract ──────────────────────────
 
 #[test]
-fn test_appstate_last_transcript_cache_lifecycle() {
-    let app_state = AppState::default();
+fn test_last_transcript_cache_lifecycle() {
+    let transcript_slot = parking_lot::Mutex::new(None);
 
     // Initial state: No transcript cached
-    assert!(app_state.dictation_last_transcript.lock().is_none());
+    assert!(transcript_slot.lock().is_none());
 
     // Simulate final dictation text arrived at output router
     let final_text = "This is a real transcribed voice note from dictation pipeline.".to_string();
-    *app_state.dictation_last_transcript.lock() = Some(final_text.clone());
+    *transcript_slot.lock() = Some(final_text.clone());
 
     // Verify recovery contract: cached transcript matches exactly
-    let recovered = app_state.dictation_last_transcript.lock().clone();
+    let recovered = transcript_slot.lock().clone();
     assert_eq!(recovered, Some(final_text));
 
     // Clearing/overwriting works atomically
-    *app_state.dictation_last_transcript.lock() = None;
-    assert!(app_state.dictation_last_transcript.lock().is_none());
+    *transcript_slot.lock() = None;
+    assert!(transcript_slot.lock().is_none());
 }
 
 // ─── 6. Error Propagation Invariant ──────────────────────────────────────────

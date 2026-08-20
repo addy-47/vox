@@ -175,7 +175,7 @@ export const MemoryNodeTooltip = memo(({
           left: clampedX,
           top: clampedY,
         }}
-        className="fixed z-40 w-[400px] p-5 rounded-3xl border border-[rgba(var(--accent),0.25)] bg-white dark:bg-[#0c1017] shadow-2xl flex flex-col gap-4 pointer-events-auto text-[rgb(var(--foreground))]"
+        className="fixed z-40 w-[400px] p-5 rounded-3xl border border-[rgba(var(--accent),0.25)] bg-white dark:bg-[rgba(var(--glass-navy),0.98)] shadow-2xl flex flex-col gap-4 pointer-events-auto text-[rgb(var(--foreground))]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header — Clean single-line entity title */}

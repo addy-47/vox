@@ -57,7 +57,7 @@ export const MonthDayCard = memo(({ day, onOpen }: MonthDayCardProps) => {
 
       {/* Day number anchor */}
       <div className="flex-1 flex flex-col items-center justify-center leading-none">
-        <span className="font-display text-[26px] font-black tracking-tight text-[rgb(var(--foreground))] drop-shadow-[0_2px_8px_rgba(0,0,0,0.15)]">
+        <span className="font-display text-[24px] font-black tracking-tight text-[rgb(var(--foreground))] drop-shadow-[0_2px_8px_rgba(0,0,0,0.15)]">
           {dayNumberFromKey(day.dayKey)}
         </span>
         <span className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-[rgb(var(--foreground-muted))] mt-1">

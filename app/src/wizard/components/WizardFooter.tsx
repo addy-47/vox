@@ -32,11 +32,11 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
   return (
     <div className={cn("mt-auto pt-8 border-t border-[rgba(var(--border),0.05)]", className)}>
       {error && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3">
-          <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+        <div className="mb-6 p-4 bg-[rgba(var(--danger),0.1)] border border-[rgb(var(--danger))]/20 rounded-xl flex items-center gap-3">
+          <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--danger))]" />
           <div className="flex flex-col">
-            <span className="text-[12px] font-black text-red-500 uppercase tracking-widest mb-0.5">{errorLabel}</span>
-            <p className="text-[12px] text-red-400 font-medium uppercase tracking-wider">{error}</p>
+            <span className="text-[12px] font-black text-[rgb(var(--danger))] uppercase tracking-widest mb-0.5">{errorLabel}</span>
+            <p className="text-[12px] text-[rgb(var(--danger))] font-medium uppercase tracking-wider">{error}</p>
           </div>
         </div>
       )}

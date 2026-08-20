@@ -17,6 +17,7 @@ export const HISTORY_COPY = {
   headerSubtitle: "Your conversation journey",
   dragHint: "Drag to explore",
   clickHint: "Click a session to open",
+  resizeHint: "Drag to resize panel (Double click to expand)",
   sessionSingular: "SESSION",
   sessionPlural: "SESSIONS",
   daySingular: "DAY",

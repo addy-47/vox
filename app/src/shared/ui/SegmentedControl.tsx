@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "./Tooltip";
 
 export interface SegmentedOption<T extends string = string> {
   id: T;
@@ -34,12 +35,10 @@ export function SegmentedControl<T extends string = string>({
         const isActive = value === opt.id;
         const Icon = opt.icon;
 
-        return (
+        const button = (
           <button
-            key={opt.id}
             type="button"
             onClick={() => onChange(opt.id)}
-            title={opt.title || opt.label}
             aria-label={opt.title || opt.label || opt.id}
             className={cn(
               "transition-all duration-300 cursor-pointer border flex items-center justify-center font-bold",
@@ -53,6 +52,16 @@ export function SegmentedControl<T extends string = string>({
             {Icon && <Icon size={size === "sm" ? 14 : 16} className={opt.label ? "mr-1" : ""} />}
             {opt.label && <span>{opt.label}</span>}
           </button>
+        );
+
+        return (
+          <React.Fragment key={opt.id}>
+            {opt.title ? (
+              <Tooltip label={opt.title}>{button}</Tooltip>
+            ) : (
+              button
+            )}
+          </React.Fragment>
         );
       })}
     </div>

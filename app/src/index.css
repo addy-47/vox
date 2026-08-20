@@ -20,6 +20,31 @@
   --signal: 0, 219, 233;
   --field-energy: 0.15;
 
+  /* Glass elevation system (declared in docs/design.md §2) */
+  --glass-tint: 10, 12, 14;
+  --glass-surface: 20, 24, 30;
+  --glass-deep: 4, 7, 14;
+  --glass-navy: 8, 12, 22;
+  --ghost: 30, 41, 59;
+
+  /* Semantic status palette (declared in docs/design.md §3) */
+  --success: 52, 211, 153;
+  --success-dark: 4, 120, 87;
+  --error: 239, 68, 68;
+  --error-dark: 220, 38, 38;
+  --danger: 244, 63, 94;
+  --danger-dark: 190, 24, 60;
+  --warning: 250, 204, 21;
+  --warning-dark: 217, 119, 6;
+  --warn-soft: 245, 158, 11;
+  --info: 56, 189, 248;
+  --info-dark: 3, 105, 161;
+  --violet: 167, 139, 250;
+  --violet-dark: 124, 58, 237;
+  --pink: 244, 114, 182;
+  --muted: 100, 116, 139;
+  --muted-soft: 148, 163, 184;
+
   --connection-glow: rgba(var(--accent), 0.15);
   --connection-core: rgba(var(--accent), 0.45);
   --hub-connector-active-opacity: 0.28;
@@ -27,8 +52,9 @@
   --hub-connector-tick65-opacity: 0.18;
 }
 
-/* Explicit early background to kill the flash */
-html, body {
+/* Explicit early background to kill the flash for main app */
+html:not(.is-tray), 
+body:not(.is-tray) {
   background-color: rgb(var(--background)) !important;
 }
 
@@ -54,6 +80,24 @@ html, body {
   --hub-connector-active-opacity: 0.50;
   --hub-connector-tick35-opacity: 0.40;
   --hub-connector-tick65-opacity: 0.30;
+
+  /* Semantic status palette (light — deepened for WCAG AA contrast on light surfaces) */
+  --success: 4, 120, 87;
+  --success-dark: 6, 95, 70;
+  --error: 220, 38, 38;
+  --error-dark: 153, 27, 27;
+  --danger: 190, 24, 60;
+  --danger-dark: 159, 18, 57;
+  --warning: 202, 138, 4;
+  --warning-dark: 146, 97, 2;
+  --warn-soft: 217, 119, 6;
+  --info: 3, 105, 161;
+  --info-dark: 7, 80, 120;
+  --violet: 109, 40, 217;
+  --violet-dark: 88, 28, 190;
+  --pink: 190, 24, 93;
+  --muted: 71, 85, 105;
+  --muted-soft: 100, 116, 139;
 }
 
 @layer base {
@@ -509,7 +553,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 
 /* ─── Orbit Carousel Card Surfaces (Zero Flash, Instant CSS Theme Evaluation) ─── */
 .orbit-card-surface {
-  background: radial-gradient(circle at 50% 30%, rgba(22, 28, 38, 0.96) 0%, rgba(11, 15, 20, 0.98) 75%, rgba(var(--accent), 0.14) 100%);
+  background: radial-gradient(circle at 50% 30%, rgba(var(--glass-surface), 0.96) 0%, rgba(var(--glass-deep), 0.98) 75%, rgba(var(--accent), 0.14) 100%);
   border: 1.5px solid rgba(var(--accent), 0.45);
   box-shadow: 0 15px 40px -8px rgba(0, 0, 0, 0.8), 0 0 25px rgba(var(--accent), 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
@@ -521,7 +565,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 }
 
 .orbit-card-surface-selected {
-  background: radial-gradient(circle at 50% 30%, rgba(28, 36, 48, 0.98) 0%, rgba(13, 18, 24, 0.98) 75%, rgba(var(--accent), 0.20) 100%);
+  background: radial-gradient(circle at 50% 30%, rgba(var(--ghost), 0.98) 0%, rgba(var(--glass-deep), 0.98) 75%, rgba(var(--accent), 0.20) 100%);
   border: 1.5px solid rgb(var(--accent));
   box-shadow: 0 0 35px rgba(var(--accent), 0.55), 0 15px 40px -8px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
