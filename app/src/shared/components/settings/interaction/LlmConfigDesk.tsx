@@ -1,6 +1,6 @@
 import { useState, useEffect, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providers";
+import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providersCopy";
 import { checkLlmProviderHealth } from "@/services/settingsService";
 import {
   Brain, Cloud, Network, Volume2, Sparkles, Mic,

@@ -4,7 +4,7 @@ import type { PageMemoryRecord } from "@/shared/hooks/useMemoryProfiler";
 import type { JSHeapSample, DOMSample, CSSIndicatorsSample } from "@/services/memoryProfilerService";
 import { AccuracyBadge } from "./AccuracyBadge";
 import { cn } from "@/shared/lib/utils";
-import { TRACKED_PAGES } from "@/data/profilerData";
+import { TRACKED_PAGES } from "@/data/profilerCopy";
 
 interface PagesTabProps {
   pageRecords: Record<string, PageMemoryRecord>;

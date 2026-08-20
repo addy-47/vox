@@ -5,8 +5,8 @@ import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
-import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
-import { SETTINGS_COPY } from "@/data/settingsData";
+import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsCopy";
+import { SETTINGS_COPY } from "@/data/settingsCopy";
 
 // Loader functions for eager prewarming
 const loadPersona = () => import("@/shared/components/settings/persona/PersonaCard").then(m => ({ default: m.PersonaCard }));
@@ -272,7 +272,18 @@ export const Settings: React.FC = () => {
     layoutMode,
     handleSelect,
     handleCenterClick,
+    setActiveDomains,
   } = useSettingsPage();
+
+  // Escape collapses the topmost active Settings card (mirrors outside-click FILO pop).
+  useEffect(() => {
+    if (activeDomains.length === 0) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setActiveDomains((prev) => prev.slice(0, -1));
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [activeDomains.length, setActiveDomains]);
 
   if (!draftSettings) {
     return (

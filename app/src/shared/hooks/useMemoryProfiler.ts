@@ -26,8 +26,9 @@ export interface PageMemoryRecord {
   activeComponentsOnMount: string[];
 }
 
-export function useMemoryProfiler(enabled = true, samplingIntervalMs = 2000) {
+export function useMemoryProfiler(enabled = true) {
   const location = useLocation();
+
   const currentRoute = location.pathname;
   const { componentTraces } = useMemoryProfilerContext();
 
@@ -232,24 +233,12 @@ export function useMemoryProfiler(enabled = true, samplingIntervalMs = 2000) {
     };
   }, [location.pathname, enabled, captureSnapshot]);
 
-  // ─── Periodic Passive Profiling Loop (UI refresh, 2s) ────────────────────────
+  // ─── Initial Snapshot on Open (No periodic auto-polling; manual snapshots on-demand) ─────
   useEffect(() => {
     if (!enabled) return;
+    captureSnapshot();
+  }, [enabled, captureSnapshot]);
 
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const poll = async () => {
-      if (document.hidden) return;
-      await captureSnapshot();
-    };
-
-    poll();
-    intervalId = setInterval(poll, samplingIntervalMs);
-
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [enabled, samplingIntervalMs, captureSnapshot]);
 
   // ─── Diagnostic Time-Series Recorder (5s) ───────────────────────────────────
   // Writes a "poll" event every 5 seconds. Disabled by default, can be toggled on when profiling.

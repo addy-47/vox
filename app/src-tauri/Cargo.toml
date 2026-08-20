@@ -99,6 +99,8 @@ once_cell = "1.21.4"                             # Lazy static cell initializati
 gtk = { version = "0.18", features = ["v3_24"] }
 webkit2gtk = "2.0"
 cairo-rs = "0.18"
+libc = "0.2"
+
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 sherpa-onnx = { version = "1.13.2", default-features = false, features = ["static"] }
