@@ -1,15 +1,19 @@
 import { memo } from "react";
-import { RotateCw, Brain, Server, Cloud, MoveRight } from "lucide-react";
+import { ChevronLeft, Brain, Server, Cloud } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { CATEGORY_SWITCH_COPY } from "@/data/settingsData";
 
 interface CategorySelectorProps {
   activeCategory: "STT" | "LLM" | "TTS";
   activePill: "local" | "remote" | "cloud";
   onCycleCategory: () => void;
+  onSetCategory?: (category: "STT" | "LLM" | "TTS") => void;
   onPillChange: (pill: "local" | "remote" | "cloud") => void;
   layoutMode?: "full-max" | "full-min" | "small";
 }
+
+const CATEGORIES: Array<"STT" | "LLM" | "TTS"> = ["STT", "LLM", "TTS"];
 
 const PILLS = [
   { id: "local" as const, label: "Embedded", icon: Brain },
@@ -18,51 +22,103 @@ const PILLS = [
 ];
 
 export const CategorySelector = memo(
-  ({ activeCategory, activePill, onCycleCategory, onPillChange, layoutMode }: CategorySelectorProps) => {
+  ({
+    activeCategory,
+    activePill,
+    onCycleCategory,
+    onSetCategory,
+    onPillChange,
+    layoutMode,
+  }: CategorySelectorProps) => {
+    const handleNext = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const currentIndex = CATEGORIES.indexOf(activeCategory);
+      const nextIndex = (currentIndex + 1) % CATEGORIES.length;
+      if (onSetCategory) {
+        onSetCategory(CATEGORIES[nextIndex]);
+      } else {
+        onCycleCategory();
+      }
+    };
+
     return (
-      <div className="shrink-0 flex flex-col gap-2 w-full mt-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-2 w-full pb-2 pt-1 shrink-0 px-2 sm:px-3">
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Cycling Category Button with Interactive Rotate Indicator */}
-            <Tooltip label="Click to switch between hearing, thinking, and speaking">
+      <div className="shrink-0 flex flex-col gap-1.5 sm:gap-2 w-full mt-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-y-1.5 gap-x-1 w-full pb-1.5 sm:pb-2 pt-1 shrink-0 px-1.5 sm:px-3">
+          {/* Left: Minimal Category Switcher with left chevron + text only */}
+          <div className="flex items-center shrink-0 pr-0.5 sm:pr-1">
+            <Tooltip label={CATEGORY_SWITCH_COPY.switchTooltip}>
               <button
                 type="button"
-                onClick={onCycleCategory}
-                className="flex items-center gap-1.5 pb-1 bg-transparent transition-all duration-200 text-[13px] sm:text-[14px] font-black tracking-wider uppercase text-[rgb(var(--accent))] border-b-2 border-transparent outline-none active:scale-95 select-none cursor-pointer group"
+                onClick={handleNext}
+                className="flex items-center gap-1 sm:gap-1.5 p-0.5 bg-transparent outline-none cursor-pointer group select-none active:scale-95 transition-transform"
+                aria-label={CATEGORY_SWITCH_COPY.switchTooltip}
               >
-                <div className="p-1 rounded-md bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))] group-hover:bg-[rgba(var(--accent),0.2)] transition-all flex items-center justify-center">
-                  <RotateCw size={12} className="shrink-0 transition-transform duration-300 group-hover:rotate-180" />
+                <div className="p-0.5 sm:p-1 rounded-md text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] transition-colors flex items-center justify-center">
+                  <ChevronLeft size={13} className="shrink-0 sm:w-3.5 sm:h-3.5" />
                 </div>
-                <span>{activeCategory}</span>
+
+                <span
+                  key={activeCategory}
+                  className="text-[11.5px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] group-hover:brightness-125 transition-opacity duration-150 animate-fade-in"
+                >
+                  {activeCategory}
+                </span>
               </button>
             </Tooltip>
-
-            {/* Clean MoveRight separator icon */}
-            <MoveRight size={13} className="text-[rgb(var(--accent))]/70 shrink-0 select-none hidden sm:inline-block" />
           </div>
 
-          {/* Local | Remote | Cloud Pills */}
-          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          {/* Center Connector: Crisp, clean straight arrow extending across the remaining space */}
+          <div className="hidden xs:flex flex-1 items-center px-1 min-w-[12px] pointer-events-none select-none overflow-hidden">
+            <svg
+              className="w-full h-2.5 sm:h-3 text-[rgb(var(--accent))]/50 overflow-visible"
+              viewBox="0 0 100 12"
+              preserveAspectRatio="none"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <line
+                x1="0"
+                y1="6"
+                x2="97"
+                y2="6"
+                stroke="currentColor"
+                strokeWidth="1.25"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+              <path
+                d="M 92 2.5 L 98.5 6 L 92 9.5"
+                stroke="currentColor"
+                strokeWidth="1.25"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+          </div>
+
+          {/* Right: Local | Remote | Cloud Pills */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 pl-0.5 sm:pl-1">
             {PILLS.map((mode, idx, arr) => {
               const isActive = activePill === mode.id;
               const IconComponent = mode.icon;
               return (
-                <div key={mode.id} className="flex items-center gap-2 sm:gap-2.5">
+                <div key={mode.id} className="flex items-center gap-1.5 sm:gap-2.5">
                   <button
                     type="button"
                     onClick={() => onPillChange(mode.id)}
                     className={cn(
-                      "flex items-center justify-center gap-1 pb-1 border-b-2 transition-all duration-200 bg-transparent text-[11px] sm:text-[11px] font-black uppercase tracking-[0.12em] outline-none cursor-pointer",
+                      "flex items-center justify-center gap-1 pb-0.5 sm:pb-1 border-b-2 transition-all duration-200 bg-transparent text-[10px] sm:text-[11px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer",
                       isActive
                         ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
                         : "text-[rgb(var(--foreground-muted))]/50 border-transparent hover:text-[rgb(var(--foreground-muted))]/80"
                     )}
                   >
                     <span>{mode.label}</span>
-                    {layoutMode !== "small" && <IconComponent size={10} className="shrink-0 hidden sm:inline-block" />}
+                    {layoutMode !== "small" && <IconComponent size={10} className="shrink-0 hidden md:inline-block" />}
                   </button>
                   {idx < arr.length - 1 && (
-                    <span className="text-[11px] text-[rgb(var(--foreground-muted))]/20 font-light select-none pb-1">
+                    <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))]/20 font-light select-none pb-0.5 sm:pb-1">
                       |
                     </span>
                   )}

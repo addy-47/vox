@@ -269,7 +269,7 @@ impl PipelineOrchestrator {
                             let target = match owner {
                                 crate::core::state::InteractionOwner::MainWindow
                                 | crate::core::state::InteractionOwner::Ptt => "main",
-                                crate::core::state::InteractionOwner::Tray => "tray",
+                                crate::core::state::InteractionOwner::Dictation => "tray",
                                 crate::core::state::InteractionOwner::Wizard => "wizard",
                             };
                             let _ = app_handle.emit_to(target, "pipeline_paused", ());
@@ -310,8 +310,8 @@ impl PipelineOrchestrator {
                         self.cool_down_tts();
 
                         let owner = self.get_current_owner(&app_handle);
-                        if owner == crate::core::state::InteractionOwner::Tray {
-                            log::info!("[Pipeline] Auto-Sleep Timeout: Ending Tray user session.");
+                        if owner == crate::core::state::InteractionOwner::Dictation {
+                            log::info!("[Pipeline] Auto-Sleep Timeout: Ending Dictation session.");
                             if let Some(window) = app_handle.get_webview_window("tray") {
                                 log::info!("[Pipeline] Auto-Sleep Timeout: Hiding Tray window.");
                                 let _ = window.hide();
@@ -517,7 +517,7 @@ impl PipelineOrchestrator {
                     let target = match owner {
                         crate::core::state::InteractionOwner::MainWindow
                         | crate::core::state::InteractionOwner::Ptt => "main",
-                        crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Dictation => "tray",
                         crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = translit_tx.send(TranslitTask::Partial {
@@ -534,6 +534,25 @@ impl PipelineOrchestrator {
                     owner,
                     text,
                 } => {
+                    // Dictation Interception: route directly to OutputRouter, bypassing LLM/TTS/Playback
+                    if owner == InteractionOwner::Dictation {
+                        log::info!("[Pipeline] Intercepting final transcript for Dictation (turn: {})", turn_id);
+                        metrics.mark(MetricField::FinalTranscript);
+
+                        let app = app_handle.clone();
+                        let text_clone = text.clone();
+                        let translit_enabled = local_transliterate_enabled;
+                        tauri::async_runtime::spawn(async move {
+                            let final_text = crate::services::utils::transliterate_if_hi(&text_clone, true, translit_enabled);
+                            if let Err(e) = crate::services::dictation::output_router::route_transcript(&app, &final_text).await {
+                                log::error!("[Pipeline] Failed to route dictation transcript: {}", e);
+                            }
+                        });
+
+                        self.update_interaction_state(crate::core::state::InteractionState::Idle, owner, &app_handle);
+                        continue;
+                    }
+
                     let is_engaged = self.is_engaged.load(Ordering::Relaxed);
                     if !is_engaged
                         && (owner == InteractionOwner::MainWindow || owner == InteractionOwner::Ptt)
@@ -552,7 +571,7 @@ impl PipelineOrchestrator {
                         let target = match owner {
                             crate::core::state::InteractionOwner::MainWindow
                             | crate::core::state::InteractionOwner::Ptt => "main",
-                            crate::core::state::InteractionOwner::Tray => "tray",
+                            crate::core::state::InteractionOwner::Dictation => "tray",
                             crate::core::state::InteractionOwner::Wizard => "wizard",
                         };
                         let _ = translit_tx.send(TranslitTask::Final {
@@ -612,7 +631,7 @@ impl PipelineOrchestrator {
                     let target = match owner {
                         crate::core::state::InteractionOwner::MainWindow
                         | crate::core::state::InteractionOwner::Ptt => "main",
-                        crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Dictation => "tray",
                         crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = translit_tx.send(TranslitTask::Final {
@@ -639,7 +658,7 @@ impl PipelineOrchestrator {
                         let target_str = match target {
                             crate::core::state::InteractionOwner::MainWindow
                             | crate::core::state::InteractionOwner::Ptt => "main",
-                            crate::core::state::InteractionOwner::Tray => "tray",
+                            crate::core::state::InteractionOwner::Dictation => "tray",
                             crate::core::state::InteractionOwner::Wizard => "wizard",
                         };
                         let _ = translit_tx.send(TranslitTask::Token {
@@ -726,7 +745,7 @@ impl PipelineOrchestrator {
                     let target = match current_turn_owner {
                         crate::core::state::InteractionOwner::MainWindow
                         | crate::core::state::InteractionOwner::Ptt => "main",
-                        crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Dictation => "tray",
                         crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = translit_tx.send(TranslitTask::Token {
@@ -910,7 +929,7 @@ impl PipelineOrchestrator {
                     let target = match owner {
                         crate::core::state::InteractionOwner::MainWindow
                         | crate::core::state::InteractionOwner::Ptt => "main",
-                        crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Dictation => "tray",
                         crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = app_handle.emit_to(target, "playback_finished", &report);
@@ -997,7 +1016,7 @@ impl PipelineOrchestrator {
                     let target = match current_turn_owner {
                         crate::core::state::InteractionOwner::MainWindow
                         | crate::core::state::InteractionOwner::Ptt => "main",
-                        crate::core::state::InteractionOwner::Tray => "tray",
+                        crate::core::state::InteractionOwner::Dictation => "tray",
                         crate::core::state::InteractionOwner::Wizard => "wizard",
                     };
                     let _ = app_handle.emit_to(target, "pipeline_error", &message);

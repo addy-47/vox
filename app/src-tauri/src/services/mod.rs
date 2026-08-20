@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod dictation;
 pub mod llm;
 pub mod memory;
 pub mod pipeline;

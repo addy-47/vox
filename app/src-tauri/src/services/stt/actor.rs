@@ -199,7 +199,7 @@ pub fn spawn_stt_worker(
 
                         let target = match owner {
                             InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
-                            InteractionOwner::Tray => "tray",
+                            InteractionOwner::Dictation => "tray",
                             InteractionOwner::Wizard => "wizard",
                         };
                         let _ = app.emit_to(

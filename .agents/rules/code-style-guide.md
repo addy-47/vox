@@ -53,19 +53,36 @@ where Tier 2 is recommended for users
 - `cargo clippy --all-targets`: Mandatory zero warnings. Never suppress with `#[allow(...)]` without an explanatory comment.
 - `cargo fmt`: Must be run before committing.
 
-### 1.5 Testing & Evaluation Taxonomy & Structure
+### 1.5 Testing & Evaluation Taxonomy & Principles
+
+#### Testing Principles (Zero Noise Policy)
+1. **Never test trivial language invariants or compiler guarantees:**
+   - Banned: Tests that solely construct a struct with default values and assert `field == expected`.
+   - Banned: Tests that serialize/deserialize an enum and assert string equality (serde derive already handles this).
+   - Banned: Tests that assert enum discriminants or `From` implementations with no business logic.
+   - Banned: Instantiating an ad-hoc local `Mutex` or fake struct in a test and claiming it tests a subsystem cache.
+2. **Unit Tests (`#[cfg(test)] mod tests`)**:
+   - Must test non-trivial algorithmic logic, state transitions, parsing, math, or error edge cases.
+   - Must validate deterministic transforms (e.g. text sanitization, transliteration logic, token accumulators).
+3. **Integration Tests (`app/src-tauri/tests/<feature>_test.rs`)**:
+   - Must test subsystem interaction, lifecycle contracts, concurrency, and error recovery using public `vox_lib` APIs.
+   - Must test real failure modes: what happens when a dependency fails, when state races occur, or when buffers overflow.
+4. **Performance Benchmarks (`app/src-tauri/benches/<feature>_bench.rs`)**:
+   - Banned: Micro-benchmarks measuring simple struct serde or isolated mutex locking in a tight loop.
+   - Must execute real pipelines: ingest real inputs (e.g. WAV audio, text corpora), invoke the actual ML inference or service dispatch, and record per-stage and end-to-end latency ($T_{\text{stt}}$, $T_{\text{dispatch}}$, $T_{\text{e2e}}$) and throughput.
+   - Must support CLI arguments via `clap` (e.g. `--clip`, `--mode`) so developers and CI can test realistic workloads.
+   - Must assert physical or state outcomes where possible (e.g., verifying clipboard contents, memory limits, output integrity).
+
 | Category | File Location | Command | Access Scope | Primary Output |
 |---|---|---|---|---|
 | **Unit Test** | Bottom of target `.rs` file in `#[cfg(test)] mod tests` | `cargo test --lib` | Private + public functions | Pass / Fail |
-| **Integration Test** | `app/src-tauri/tests/<feature>_test.rs` | `cargo test --test <name>` | Public `vox_lib` API only | Structural Correctness |
+| **Integration Test** | `app/src-tauri/tests/<feature>_test.rs` | `cargo test --test <name>` | Public `vox_lib` API only | Structural & Lifecycle Correctness |
 | **Evaluation (Eval)** | `app/src-tauri/evals/<capability>/` | `cargo run --example eval_<capability>` | Crate API + Models + Datasets | Statistical Accuracy + LLM Judge Score |
-| **Performance Benchmark** | `app/src-tauri/benches/<feature>_bench.rs` | `cargo test --bench <name>` | Custom `fn main()` (`harness=false`) | Latency (ms/pair) & Throughput |
+| **Performance Benchmark** | `app/src-tauri/benches/<feature>_bench.rs` | `cargo test --bench <name>` | Custom `fn main()` (`harness=false`) | Real Latency ($T_{\text{E2E}}$) & Throughput |
 | **CLI Utility Tool** | `app/src-tauri/examples/<name>.rs` | `cargo run --example <name>` | Runnable dev tools | Standalone Utility CLI |
 
 #### 1.6 Evals Directory Structure Standard (`app/src-tauri/evals/`)
 Every evaluation capability suite lives in its own dedicated subdirectory under `app/src-tauri/evals/<capability>/`:
-```
-```
 
 **Mandatory Header Format for `tests/`, `evals/`, `benches/`, `examples/`:**
 ```rust

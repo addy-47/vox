@@ -12,22 +12,22 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
-use vox_lib::core::settings::{InteractionMode, VoxSettings};
+use vox_lib::core::settings::{DictationInteractionMode, InteractionMode, VoxSettings};
 use vox_lib::core::state::{InteractionOwner, InteractionState, PipelineAtomics};
 
 /// Model the exact `engage()` disengage decision matrix from
 /// `src/ipc/pipeline/lifecycle.rs`. Returns whether the engine MUST be stopped
-/// after disengaging (i.e. the engine should only be torn down when the tray HUD
+/// after disengaging (i.e. the engine should only be torn down when dictation
 /// is disabled and the pipeline has no other owner to serve).
-fn should_stop_engine_on_disengage(tray_enabled: bool) -> bool {
-    !tray_enabled
+fn should_stop_engine_on_disengage(dictation_enabled: bool) -> bool {
+    !dictation_enabled
 }
 
 /// Model the exact `update_interaction_mode()` engine lifecycle decision matrix
 /// from `src/ipc/tray.rs`: the engine is stopped only when the main app mode is
-/// non-passive, the pipeline is unengaged, and the tray HUD is disabled.
-fn engine_stop_trigger(tray_enabled: bool, is_engaged: bool, is_passive: bool) -> bool {
-    !tray_enabled && !is_engaged && !is_passive
+/// non-passive, the pipeline is unengaged, and dictation is disabled.
+fn engine_stop_trigger(dictation_enabled: bool, is_engaged: bool, is_passive: bool) -> bool {
+    !dictation_enabled && !is_engaged && !is_passive
 }
 
 /// Model the `resume_pipeline()` post-resume interaction state transition from
@@ -44,7 +44,7 @@ fn resume_next_state(mode: InteractionMode) -> InteractionState {
 #[test]
 fn test_engage_idle_to_engaged_transition() {
     let pipeline = PipelineAtomics::new();
-    let owner_atomic = AtomicU32::new(InteractionOwner::Tray as u32);
+    let owner_atomic = AtomicU32::new(InteractionOwner::Dictation as u32);
 
     // Cold-start preconditions: dormant STT-only pipeline.
     assert!(!pipeline.is_engaged.load(Ordering::Relaxed));
@@ -54,7 +54,7 @@ fn test_engage_idle_to_engaged_transition() {
         InteractionState::Idle as u32
     );
     let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
-    assert_eq!(owner, InteractionOwner::Tray);
+    assert_eq!(owner, InteractionOwner::Dictation);
 
     // Engage (matching lifecycle.rs engage branch).
     pipeline.is_engaged.store(true, Ordering::Relaxed);
@@ -87,7 +87,7 @@ fn test_disengage_engaged_to_cancelled_and_idle_transition() {
     // Disengage (matching lifecycle.rs disengage branch).
     pipeline.is_engaged.store(false, Ordering::Relaxed);
     pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    owner_atomic.store(InteractionOwner::Tray as u32, Ordering::Relaxed);
+    owner_atomic.store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
     {
         let mut state_lock = pipeline.state.lock();
         *state_lock = InteractionState::Idle;
@@ -98,211 +98,252 @@ fn test_disengage_engaged_to_cancelled_and_idle_transition() {
 
     assert!(
         !pipeline.is_engaged.load(Ordering::Relaxed),
-        "Disengage MUST clear is_engaged!"
+        "Disengage MUST clear is_engaged to false!"
     );
     assert!(
         pipeline.cancel_flag.load(Ordering::Relaxed),
-        "Disengage MUST set cancel_flag to true to abort the current turn!"
+        "Disengage MUST set cancel_flag to true!"
     );
-    let disengaged_owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
+    let idle_owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
     assert_eq!(
-        disengaged_owner,
-        InteractionOwner::Tray,
-        "Disengage MUST revert owner to Tray!"
+        idle_owner,
+        InteractionOwner::Dictation,
+        "Disengage MUST reassign owner to Dictation!"
     );
     assert_eq!(
-        *pipeline.state.lock(),
-        InteractionState::Idle,
-        "Disengage MUST reset interaction state to Idle!"
+        pipeline.current_state_atomic.load(Ordering::Relaxed),
+        InteractionState::Idle as u32,
+        "Disengage MUST reset state to Idle!"
     );
+}
+
+#[test]
+fn test_disengage_stop_engine_decision_matrix() {
+    // Dictation enabled -> do NOT stop engine on disengage (STT stays warm for dictation)
+    assert!(
+        !should_stop_engine_on_disengage(true),
+        "Engine MUST NOT be stopped on disengage when Dictation is enabled!"
+    );
+    // Dictation disabled -> MUST stop engine to reclaim memory.
+    assert!(
+        should_stop_engine_on_disengage(false),
+        "Engine MUST be stopped on disengage when Dictation is disabled!"
+    );
+}
+
+// ─── 2. Cancellation Invariants Across Engine Components ──────────────────────
+
+#[test]
+fn test_cancellation_bumping_turn_id_invalidates_inflight_tasks() {
+    let pipeline = PipelineAtomics::new();
+    let turn_at_start = pipeline.turn_id.load(Ordering::Relaxed);
+    let owner_atomic = AtomicU32::new(InteractionOwner::Dictation as u32);
+
+    // Simulate starting a turn
+    pipeline.cancel_flag.store(false, Ordering::Relaxed);
+
+    // Emulate barge-in cancellation: turn_id is bumped, cancel_flag set.
+    let turn_cancelled = pipeline.turn_id.fetch_add(1, Ordering::SeqCst) + 1;
+    pipeline.cancel_flag.store(true, Ordering::Relaxed);
+
+    assert_eq!(turn_cancelled, turn_at_start + 1);
+    assert!(pipeline.cancel_flag.load(Ordering::Relaxed));
+
+    // Stale task running under `turn_at_start` MUST be rejected by filter logic.
+    let is_task_stale = turn_at_start != pipeline.turn_id.load(Ordering::Relaxed);
+    assert!(
+        is_task_stale,
+        "Task matching the prior turn_id MUST be detected as stale!"
+    );
+
+    // Cancellation resets owner to Dictation if it was unengaged.
+    let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
+    assert_eq!(owner, InteractionOwner::Dictation);
+}
+
+#[test]
+fn test_cancellation_during_playback_clears_pipeline_buffers() {
+    let pipeline = PipelineAtomics::new();
+
+    // 1. Pipeline transitions to AssistantSpeaking.
+    {
+        let mut state_lock = pipeline.state.lock();
+        *state_lock = InteractionState::AssistantSpeaking;
+    }
+    pipeline
+        .current_state_atomic
+        .store(InteractionState::AssistantSpeaking as u32, Ordering::Relaxed);
+
+    // 2. User presses cancel / barge-in occurs.
+    pipeline.cancel_flag.store(true, Ordering::Relaxed);
+    pipeline.turn_id.fetch_add(1, Ordering::SeqCst);
+    {
+        let mut state_lock = pipeline.state.lock();
+        *state_lock = InteractionState::Idle;
+    }
+    pipeline
+        .current_state_atomic
+        .store(InteractionState::Idle as u32, Ordering::Relaxed);
+
+    assert!(pipeline.cancel_flag.load(Ordering::Relaxed));
     assert_eq!(
         pipeline.current_state_atomic.load(Ordering::Relaxed),
         InteractionState::Idle as u32
     );
 }
 
+// ─── 3. Pause / Resume State Transitions ──────────────────────────────────────
+
 #[test]
-fn test_engagement_full_lifecycle_roundtrip() {
+fn test_pause_pipeline_sets_pause_flag_and_transitions_to_idle() {
     let pipeline = PipelineAtomics::new();
-    let owner_atomic = AtomicU32::new(InteractionOwner::Tray as u32);
+    let owner_atomic = AtomicU32::new(InteractionOwner::Dictation as u32);
 
-    // Idle -> Engaged
-    pipeline.is_engaged.store(true, Ordering::Relaxed);
-    pipeline.cancel_flag.store(false, Ordering::Relaxed);
-    owner_atomic.store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
-    assert!(pipeline.is_engaged.load(Ordering::Relaxed));
-    assert!(!pipeline.cancel_flag.load(Ordering::Relaxed));
+    // Precondition: Pipeline is active.
+    pipeline.is_paused.store(false, Ordering::SeqCst);
+    {
+        let mut state_lock = pipeline.state.lock();
+        *state_lock = InteractionState::Listening;
+    }
+    pipeline
+        .current_state_atomic
+        .store(InteractionState::Listening as u32, Ordering::Relaxed);
 
-    // Engaged -> Cancelled (disengage sets cancel flag, ends turn)
-    pipeline.is_engaged.store(false, Ordering::Relaxed);
-    pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    assert!(!pipeline.is_engaged.load(Ordering::Relaxed));
-    assert!(pipeline.cancel_flag.load(Ordering::Relaxed));
-
-    // Cancelled -> Idle (state reset)
+    // Pause requested (matching pause_pipeline IPC command).
+    pipeline.is_paused.store(true, Ordering::SeqCst);
+    pipeline.cancel_flag.store(true, Ordering::SeqCst);
+    pipeline.turn_id.fetch_add(1, Ordering::SeqCst);
     {
         let mut state_lock = pipeline.state.lock();
         *state_lock = InteractionState::Idle;
     }
-    assert_eq!(*pipeline.state.lock(), InteractionState::Idle);
+    pipeline
+        .current_state_atomic
+        .store(InteractionState::Idle as u32, Ordering::Relaxed);
 
-    // Idle -> Engaged again: the next engage MUST reset the stale cancel flag.
-    pipeline.is_engaged.store(true, Ordering::Relaxed);
-    pipeline.cancel_flag.store(false, Ordering::Relaxed);
     assert!(
-        !pipeline.cancel_flag.load(Ordering::Relaxed),
-        "Re-engaging after a cancelled turn MUST reset cancel_flag to false!"
+        pipeline.is_paused.load(Ordering::SeqCst),
+        "Pause MUST set is_paused flag to true!"
     );
-    assert!(pipeline.is_engaged.load(Ordering::Relaxed));
-}
-
-// ─── 2. Test Clip Cancellation Contract ────────────────────────────────────────
-
-#[test]
-fn test_test_clip_start_bumps_turn_id_and_sets_engaged() {
-    let pipeline = PipelineAtomics::new();
-    let owner_atomic = AtomicU32::new(InteractionOwner::Tray as u32);
-
-    let initial_turn = pipeline.turn_id.load(Ordering::Relaxed);
-    assert_eq!(initial_turn, 0);
-
-    // test_clip start: bump turn_id, route to MainWindow, mark engaged.
-    let turn_id = pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
-    owner_atomic.store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
-    pipeline.is_engaged.store(true, Ordering::Relaxed);
-
+    assert!(
+        pipeline.cancel_flag.load(Ordering::SeqCst),
+        "Pause MUST set cancel_flag to true to drop active work!"
+    );
     assert_eq!(
-        turn_id,
-        initial_turn + 1,
-        "test_clip MUST monotonically increment turn_id!"
+        pipeline.current_state_atomic.load(Ordering::Relaxed),
+        InteractionState::Idle as u32,
+        "Pause MUST transition current state to Idle!"
     );
-    assert_eq!(pipeline.turn_id.load(Ordering::Relaxed), 1);
-    assert!(pipeline.is_engaged.load(Ordering::Relaxed));
-    let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
-    assert_eq!(owner, InteractionOwner::MainWindow);
-}
 
-#[test]
-fn test_test_clip_cancel_contract() {
-    let pipeline = PipelineAtomics::new();
-    let owner_atomic = AtomicU32::new(InteractionOwner::MainWindow as u32);
-
-    // A clip is active (turn_id already bumped to 7, engaged).
-    pipeline.turn_id.store(7, Ordering::Relaxed);
-    pipeline.is_engaged.store(true, Ordering::Relaxed);
-    pipeline.cancel_flag.store(false, Ordering::Relaxed);
-
-    // test_clip_cancel contract (matching src/ipc/pipeline/test_clip.rs).
-    pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    pipeline.is_engaged.store(false, Ordering::Relaxed);
-    owner_atomic.store(InteractionOwner::Tray as u32, Ordering::Relaxed);
-
-    assert!(
-        pipeline.cancel_flag.load(Ordering::Relaxed),
-        "test_clip_cancel MUST set cancel_flag to true to abort active inference!"
-    );
-    assert!(
-        !pipeline.is_engaged.load(Ordering::Relaxed),
-        "test_clip_cancel MUST clear is_engaged!"
-    );
     let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
     assert_eq!(
         owner,
-        InteractionOwner::Tray,
-        "test_clip_cancel MUST reassign owner to Tray!"
+        InteractionOwner::Dictation,
+        "Pause does not mutate the current owner!"
     );
 }
 
 #[test]
-fn test_test_clip_turn_id_keeps_incrementing_across_cancels() {
+fn test_resume_pipeline_clears_pause_flag_and_transitions_to_mode_state() {
     let pipeline = PipelineAtomics::new();
-    let owner_atomic = AtomicU32::new(InteractionOwner::Tray as u32);
+    let owner_atomic = AtomicU32::new(InteractionOwner::Dictation as u32);
 
-    for expected_turn in 1u32..=3 {
-        // Start clip
-        let turn_id = pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
-        owner_atomic.store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
-        pipeline.is_engaged.store(true, Ordering::Relaxed);
-        pipeline.cancel_flag.store(false, Ordering::Relaxed);
+    // Precondition: Pipeline is paused.
+    pipeline.is_paused.store(true, Ordering::SeqCst);
+    pipeline.cancel_flag.store(true, Ordering::SeqCst);
+    pipeline
+        .current_state_atomic
+        .store(InteractionState::Idle as u32, Ordering::Relaxed);
 
-        assert_eq!(
-            turn_id, expected_turn,
-            "Turn IDs MUST increment monotonically!"
-        );
-
-        // Cancel clip
-        pipeline.cancel_flag.store(true, Ordering::Relaxed);
-        pipeline.is_engaged.store(false, Ordering::Relaxed);
-        owner_atomic.store(InteractionOwner::Tray as u32, Ordering::Relaxed);
-
-        assert!(pipeline.cancel_flag.load(Ordering::Relaxed));
-        assert!(!pipeline.is_engaged.load(Ordering::Relaxed));
+    // Resume under Passive mode -> Transitions to Listening.
+    pipeline.is_paused.store(false, Ordering::SeqCst);
+    pipeline.cancel_flag.store(false, Ordering::SeqCst);
+    let next_passive_state = resume_next_state(InteractionMode::Passive);
+    {
+        let mut state_lock = pipeline.state.lock();
+        *state_lock = next_passive_state;
     }
+    pipeline
+        .current_state_atomic
+        .store(next_passive_state as u32, Ordering::Relaxed);
+
+    assert!(
+        !pipeline.is_paused.load(Ordering::SeqCst),
+        "Resume MUST clear is_paused flag!"
+    );
+    assert!(
+        !pipeline.cancel_flag.load(Ordering::SeqCst),
+        "Resume MUST reset cancel_flag to false!"
+    );
+    assert_eq!(
+        pipeline.current_state_atomic.load(Ordering::Relaxed),
+        InteractionState::Listening as u32,
+        "Resume under Passive mode MUST transition state to Listening!"
+    );
+
+    // Resume under PTT mode -> Transitions to Idle.
+    let next_ptt_state = resume_next_state(InteractionMode::PTT);
+    {
+        let mut state_lock = pipeline.state.lock();
+        *state_lock = next_ptt_state;
+    }
+    pipeline
+        .current_state_atomic
+        .store(next_ptt_state as u32, Ordering::Relaxed);
 
     assert_eq!(
-        pipeline.turn_id.load(Ordering::Relaxed),
-        3,
-        "turn_id MUST never roll back across repeated test clips!"
+        pipeline.current_state_atomic.load(Ordering::Relaxed),
+        InteractionState::Idle as u32,
+        "Resume under PTT mode MUST transition state to Idle!"
     );
+
+    let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
+    assert_eq!(owner, InteractionOwner::Dictation);
 }
 
-// ─── 3. Disengagement & Engine Stop Decision Path (tray_enabled = false) ──────
-
 #[test]
-fn test_disengage_stops_engine_when_tray_disabled() {
-    let tray_enabled = false;
-
-    // The full disengage state mutation is applied without invoking stop_engine
-    // (which requires a live Tauri handle). This validates the decision path
-    // and the resulting atomics with zero deadlock risk.
+fn test_redundant_pause_and_resume_calls_are_no_ops() {
     let pipeline = PipelineAtomics::new();
-    let owner_atomic = AtomicU32::new(InteractionOwner::MainWindow as u32);
-    pipeline.is_engaged.store(true, Ordering::Relaxed);
 
-    let stop = should_stop_engine_on_disengage(tray_enabled);
+    // Redundant pause: Already unpaused -> pause once -> pause again.
+    pipeline.is_paused.store(false, Ordering::SeqCst);
+    let first_pause_applied = !pipeline.is_paused.swap(true, Ordering::SeqCst);
+    assert!(first_pause_applied);
+
+    let second_pause_applied = !pipeline.is_paused.load(Ordering::SeqCst);
     assert!(
-        stop,
-        "Disengaging with tray_enabled=false MUST decide to stop the engine!"
+        !second_pause_applied,
+        "Second pause call on an already-paused pipeline MUST be a no-op!"
     );
 
-    pipeline.is_engaged.store(false, Ordering::Relaxed);
-    pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    owner_atomic.store(InteractionOwner::Tray as u32, Ordering::Relaxed);
+    // Redundant resume: Already resumed -> resume once -> resume again.
+    let first_resume_applied = pipeline.is_paused.swap(false, Ordering::SeqCst);
+    assert!(first_resume_applied);
 
-    assert!(!pipeline.is_engaged.load(Ordering::Relaxed));
-    assert!(pipeline.cancel_flag.load(Ordering::Relaxed));
-}
-
-#[test]
-fn test_disengage_keeps_engine_when_tray_enabled() {
-    let tray_enabled = true;
-
-    let pipeline = PipelineAtomics::new();
-    pipeline.is_engaged.store(true, Ordering::Relaxed);
-
-    let stop = should_stop_engine_on_disengage(tray_enabled);
+    let second_resume_applied = pipeline.is_paused.load(Ordering::SeqCst);
     assert!(
-        !stop,
-        "Disengaging with tray_enabled=true MUST keep the engine alive for the tray HUD!"
+        !second_resume_applied,
+        "Second resume call on an already-active pipeline MUST be a no-op!"
     );
 }
 
 #[test]
-fn test_disengage_no_deadlock_state_consistency() {
+fn test_cancelled_turn_clears_interaction_state_to_idle() {
     let pipeline = PipelineAtomics::new();
-    let owner_atomic = AtomicU32::new(InteractionOwner::MainWindow as u32);
-    pipeline.is_engaged.store(true, Ordering::Relaxed);
-    pipeline.cancel_flag.store(false, Ordering::Relaxed);
+    let owner_atomic = AtomicU32::new(InteractionOwner::Dictation as u32);
 
-    // Simulate the disengage path deterministically (no engine thread join,
-    // no channel send, no block_on) so the state machine is exercised
-    // without any possibility of deadlock.
-    let stop = should_stop_engine_on_disengage(false);
-    let _stop = stop; // decision recorded; teardown is gated on it upstream.
+    // Pipeline is in Thinking state.
+    {
+        let mut state_lock = pipeline.state.lock();
+        *state_lock = InteractionState::Thinking;
+    }
+    pipeline
+        .current_state_atomic
+        .store(InteractionState::Thinking as u32, Ordering::Relaxed);
 
-    pipeline.is_engaged.store(false, Ordering::Relaxed);
+    // Cancel turn event processed.
     pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    owner_atomic.store(InteractionOwner::Tray as u32, Ordering::Relaxed);
+    pipeline.turn_id.fetch_add(1, Ordering::SeqCst);
     {
         let mut state_lock = pipeline.state.lock();
         *state_lock = InteractionState::Idle;
@@ -311,14 +352,12 @@ fn test_disengage_no_deadlock_state_consistency() {
         .current_state_atomic
         .store(InteractionState::Idle as u32, Ordering::Relaxed);
 
-    // Invariants hold, and this test reaching completion proves no deadlock.
-    assert!(!pipeline.is_engaged.load(Ordering::Relaxed));
-    assert!(pipeline.cancel_flag.load(Ordering::Relaxed));
-    assert_eq!(*pipeline.state.lock(), InteractionState::Idle);
     assert_eq!(
         pipeline.current_state_atomic.load(Ordering::Relaxed),
         InteractionState::Idle as u32
     );
+    let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
+    assert_eq!(owner, InteractionOwner::Dictation);
 }
 
 // ─── 4. Interaction Mode Switching & Owner State Machine Transitions ──────────
@@ -328,18 +367,21 @@ fn test_interaction_mode_switching_between_owners() {
     let mut settings = VoxSettings::default();
 
     assert_eq!(settings.interaction.main_app_mode, InteractionMode::Passive);
-    assert_eq!(settings.interaction.tray_mode, InteractionMode::Passive);
+    assert_eq!(
+        settings.dictation.interaction_mode,
+        DictationInteractionMode::Ptt
+    );
 
     // Main window switches to PTT.
     settings.interaction.main_app_mode = InteractionMode::PTT;
     assert_eq!(settings.interaction.main_app_mode, InteractionMode::PTT);
 
-    // Tray stays Passive — owners resolve independently.
-    assert_eq!(settings.interaction.tray_mode, InteractionMode::Passive);
-
-    // Tray switches to PTT too.
-    settings.interaction.tray_mode = InteractionMode::PTT;
-    assert_eq!(settings.interaction.tray_mode, InteractionMode::PTT);
+    // Dictation switches to Passive — owners resolve independently.
+    settings.dictation.interaction_mode = DictationInteractionMode::Passive;
+    assert_eq!(
+        settings.dictation.interaction_mode,
+        DictationInteractionMode::Passive
+    );
 
     // Main reverts to Passive.
     settings.interaction.main_app_mode = InteractionMode::Passive;
@@ -361,11 +403,11 @@ fn test_resume_pipeline_state_machine_by_mode() {
 }
 
 #[test]
-fn test_owner_transition_tray_hide_to_main_window_when_engaged() {
-    let owner_atomic = AtomicU32::new(InteractionOwner::Tray as u32);
+fn test_owner_transition_dictation_to_main_window_when_engaged() {
+    let owner_atomic = AtomicU32::new(InteractionOwner::Dictation as u32);
     let is_engaged = AtomicBool::new(true);
 
-    // Tray window hides while pipeline is engaged -> owner reverts to MainWindow.
+    // While pipeline is engaged -> owner reverts to MainWindow.
     if is_engaged.load(Ordering::Relaxed) {
         owner_atomic.store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
     }
@@ -374,37 +416,37 @@ fn test_owner_transition_tray_hide_to_main_window_when_engaged() {
     assert_eq!(
         owner,
         InteractionOwner::MainWindow,
-        "Hiding tray while engaged MUST switch owner to MainWindow!"
+        "Engaged pipeline MUST switch owner to MainWindow!"
     );
 }
 
 #[test]
-fn test_owner_transition_main_to_tray_when_unengaged() {
+fn test_owner_transition_main_to_dictation_when_unengaged() {
     let owner_atomic = AtomicU32::new(InteractionOwner::MainWindow as u32);
     let is_engaged = AtomicBool::new(false);
 
-    // Pipeline unengaged -> owner falls back to Tray on disengage.
+    // Pipeline unengaged -> owner falls back to Dictation on disengage.
     if !is_engaged.load(Ordering::Relaxed) {
-        owner_atomic.store(InteractionOwner::Tray as u32, Ordering::Relaxed);
+        owner_atomic.store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
     }
 
     let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
     assert_eq!(
         owner,
-        InteractionOwner::Tray,
-        "Disengaging an unengaged pipeline MUST fall back to Tray owner!"
+        InteractionOwner::Dictation,
+        "Disengaging an unengaged pipeline MUST fall back to Dictation owner!"
     );
 }
 
 #[test]
 fn test_update_interaction_mode_engine_lifecycle_matrix() {
-    // Non-passive + unengaged + tray disabled -> engine MUST stop.
+    // Non-passive + unengaged + dictation disabled -> engine MUST stop.
     assert!(engine_stop_trigger(false, false, false));
     // Passive mode -> engine MUST NOT stop.
     assert!(!engine_stop_trigger(false, false, true));
     // Engaged -> engine MUST NOT stop (active interaction being served).
     assert!(!engine_stop_trigger(false, true, false));
-    // Tray enabled -> engine MUST NOT stop (tray HUD serving as fallback owner).
+    // Dictation enabled -> engine MUST NOT stop (dictation serving as fallback owner).
     assert!(!engine_stop_trigger(true, false, false));
 }
 

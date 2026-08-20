@@ -53,7 +53,7 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
             let target = match owner_enum {
                 crate::core::state::InteractionOwner::MainWindow
                 | crate::core::state::InteractionOwner::Ptt => "main",
-                crate::core::state::InteractionOwner::Tray => "tray",
+                crate::core::state::InteractionOwner::Dictation => "tray",
                 crate::core::state::InteractionOwner::Wizard => "wizard",
             };
 

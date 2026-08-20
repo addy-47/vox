@@ -193,7 +193,7 @@ pub async fn test_clip_cancel(
         let _ = engine
             .vad_tx
             .send(crate::core::state::VadCommand::UpdateOwner(
-                InteractionOwner::Tray,
+                InteractionOwner::Dictation,
             ));
     } else {
         log::warn!("[TestClip] No engine to cancel.");

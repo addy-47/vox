@@ -10,7 +10,8 @@
 
 use std::fs;
 use vox_lib::core::settings::{
-    InteractionMode, LlmProviderConfig, LlmSettings, PipelineMode, VadBackendOption, VoxSettings,
+    DictationInteractionMode, DictationOutputMode, InteractionMode, LlmProviderConfig, LlmSettings,
+    PipelineMode, VadBackendOption, VoxSettings,
 };
 
 // ─── 1. Default Settings Initialization Test ──────────────────────────────────
@@ -21,8 +22,13 @@ fn test_settings_default_values_correctness() {
 
     // Default interaction modes
     assert_eq!(s.interaction.main_app_mode, InteractionMode::Passive);
-    assert_eq!(s.interaction.tray_mode, InteractionMode::Passive);
     assert_eq!(s.interaction.pipeline_mode, PipelineMode::Modular);
+
+    // Default dictation settings
+    assert!(s.dictation.enabled);
+    assert_eq!(s.dictation.interaction_mode, DictationInteractionMode::Ptt);
+    assert_eq!(s.dictation.output_mode, DictationOutputMode::Paste);
+    assert_eq!(s.dictation.hotkey, "Alt+Space");
 
     // Default VAD backend option
     assert_eq!(s.vad.vad_backend, VadBackendOption::TenVad);
@@ -33,7 +39,7 @@ fn test_settings_default_values_correctness() {
     assert_eq!(s.llm.threads, 4);
 
     // Default UI settings
-    assert!(s.ui.tray_enabled);
+    assert_eq!(s.ui.theme, "dark");
 }
 
 // ─── 2. Serde JSON In-Memory Roundtrip Test ──────────────────────────────────
@@ -44,7 +50,8 @@ fn test_settings_serde_json_roundtrip() {
 
     // Mutate custom values
     original.interaction.main_app_mode = InteractionMode::PTT;
-    original.interaction.tray_mode = InteractionMode::Passive;
+    original.dictation.interaction_mode = DictationInteractionMode::Passive;
+    original.dictation.output_mode = DictationOutputMode::Clipboard;
     original.llm.ctx_size = 4096;
     original.llm.threads = 8;
     original.vad.threshold = 0.65;
@@ -61,7 +68,14 @@ fn test_settings_serde_json_roundtrip() {
 
     // Assert exact equality
     assert_eq!(deserialized.interaction.main_app_mode, InteractionMode::PTT);
-    assert_eq!(deserialized.interaction.tray_mode, InteractionMode::Passive);
+    assert_eq!(
+        deserialized.dictation.interaction_mode,
+        DictationInteractionMode::Passive
+    );
+    assert_eq!(
+        deserialized.dictation.output_mode,
+        DictationOutputMode::Clipboard
+    );
     assert_eq!(deserialized.llm.ctx_size, 4096);
     assert_eq!(deserialized.llm.threads, 8);
     assert_eq!(deserialized.vad.threshold, 0.65);
@@ -78,7 +92,7 @@ fn test_settings_disk_save_load_roundtrip_tempfile() {
     let mut settings = VoxSettings::default();
     settings.llm.model = "qwen_2_5_custom_q4".to_string();
     settings.llm.chat_temperature = 0.35;
-    settings.ui.tray_enabled = false;
+    settings.dictation.enabled = false;
 
     // Atomic write simulation (tmp -> target)
     let tmp_path = temp_file_path.with_extension("tmp");
@@ -92,7 +106,7 @@ fn test_settings_disk_save_load_roundtrip_tempfile() {
 
     assert_eq!(loaded.llm.model, "qwen_2_5_custom_q4");
     assert_eq!(loaded.llm.chat_temperature, 0.35);
-    assert!(!loaded.ui.tray_enabled);
+    assert!(!loaded.dictation.enabled);
 
     // Clean up temp file
     let _ = fs::remove_file(&temp_file_path);
@@ -151,4 +165,5 @@ fn test_corrupt_and_partial_json_resilience() {
     assert_eq!(parsed.ui.theme, "nord");
     assert_eq!(parsed.llm.ctx_size, 2048); // Restored default
     assert_eq!(parsed.interaction.main_app_mode, InteractionMode::Passive);
+    assert!(parsed.dictation.enabled);
 }

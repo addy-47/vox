@@ -164,7 +164,7 @@ pub async fn engage(
         state.pipeline.is_engaged.store(false, Ordering::Relaxed);
         state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
         state.owner.store(
-            crate::core::state::InteractionOwner::Tray as u32,
+            crate::core::state::InteractionOwner::Dictation as u32,
             Ordering::Relaxed,
         );
 
@@ -209,14 +209,14 @@ pub async fn engage(
                 let _ = engine
                     .vad_tx
                     .send(crate::core::state::VadCommand::UpdateOwner(
-                        InteractionOwner::Tray,
+                        InteractionOwner::Dictation,
                     ));
 
-                let tray_enabled = {
+                let dictation_enabled = {
                     let s = state.settings.read().unwrap();
-                    s.ui.tray_enabled
+                    s.dictation.enabled
                 };
-                !tray_enabled
+                !dictation_enabled
             } else {
                 false
             }
@@ -224,7 +224,7 @@ pub async fn engage(
 
         if should_stop_engine {
             log::info!(
-                "[Pipeline] Disengaged and tray is disabled. Stopping engine to save memory..."
+                "[Pipeline] Disengaged and dictation is disabled. Stopping engine to save memory..."
             );
             let _ = stop_engine(app.clone()).await;
         } else {
@@ -272,7 +272,7 @@ pub async fn engage(
 
         state
             .owner
-            .store(InteractionOwner::Tray as u32, Ordering::Relaxed);
+            .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
 
         {
             let mut state_lock = state.pipeline.state.lock();
@@ -327,7 +327,7 @@ pub async fn pause_pipeline(
     }
 
     let target = match owner {
-        InteractionOwner::Tray => "tray",
+        InteractionOwner::Dictation => "tray",
         InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
         InteractionOwner::Wizard => "wizard",
     };
@@ -358,7 +358,14 @@ pub async fn resume_pipeline(
         let settings = state.settings.read().unwrap();
         let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
         let mode = match owner {
-            InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+            InteractionOwner::Dictation => match settings.dictation.interaction_mode {
+                crate::core::settings::DictationInteractionMode::Passive => {
+                    crate::core::settings::InteractionMode::Passive
+                }
+                crate::core::settings::DictationInteractionMode::Ptt => {
+                    crate::core::settings::InteractionMode::PTT
+                }
+            },
             InteractionOwner::MainWindow | InteractionOwner::Ptt => {
                 settings.interaction.main_app_mode.clone()
             }
@@ -393,7 +400,7 @@ pub async fn resume_pipeline(
     }
 
     let target = match owner {
-        InteractionOwner::Tray => "tray",
+        InteractionOwner::Dictation => "tray",
         InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
         InteractionOwner::Wizard => "wizard",
     };

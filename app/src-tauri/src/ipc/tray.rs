@@ -9,14 +9,14 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 pub async fn toggle_hud_visibility(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    // Check if setup is completed and tray is even enabled
-    let (tray_enabled, setup_completed) = {
+    // Check if setup is completed and dictation is even enabled
+    let (dictation_enabled, setup_completed) = {
         let s = state.settings.read().unwrap();
-        (s.ui.tray_enabled, s.setup.completed)
+        (s.dictation.enabled, s.setup.completed)
     };
-    if !setup_completed || !tray_enabled {
+    if !setup_completed || !dictation_enabled {
         log::warn!(
-            "[Tray] Blocked toggle_hud_visibility: Setup not completed or Tray HUD is disabled."
+            "[Tray] Blocked toggle_hud_visibility: Setup not completed or Dictation is disabled."
         );
         return;
     }
@@ -56,7 +56,7 @@ pub async fn hide_tray_window(app: AppHandle) {
         .owner
         .load(std::sync::atomic::Ordering::Relaxed)
         .into();
-    if owner == crate::core::state::InteractionOwner::Tray {
+    if owner == crate::core::state::InteractionOwner::Dictation {
         state
             .pipeline
             .cancel_flag
@@ -85,11 +85,11 @@ pub async fn hide_tray_window(app: AppHandle) {
 pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    let tray_enabled = {
+    let dictation_enabled = {
         let s = state.settings.read().unwrap();
-        s.ui.tray_enabled
+        s.dictation.enabled
     };
-    if !tray_enabled && visible {
+    if !dictation_enabled && visible {
         return;
     }
 
@@ -108,14 +108,14 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
     // Sync owner state and VAD actor
     if visible {
         state.owner.store(
-            crate::core::state::InteractionOwner::Tray as u32,
+            crate::core::state::InteractionOwner::Dictation as u32,
             std::sync::atomic::Ordering::Relaxed,
         );
         if let Some(engine) = state.engine.lock().await.as_ref() {
             let _ = engine
                 .vad_tx
                 .send(crate::core::state::VadCommand::UpdateOwner(
-                    crate::core::state::InteractionOwner::Tray,
+                    crate::core::state::InteractionOwner::Dictation,
                 ));
         }
     } else {
@@ -123,7 +123,7 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
             .owner
             .load(std::sync::atomic::Ordering::Relaxed)
             .into();
-        if owner == crate::core::state::InteractionOwner::Tray {
+        if owner == crate::core::state::InteractionOwner::Dictation {
             state
                 .pipeline
                 .cancel_flag
@@ -215,8 +215,11 @@ pub async fn update_interaction_mode(
             "main" => {
                 settings.interaction.main_app_mode = new_mode.clone();
             }
-            "tray" => {
-                settings.interaction.tray_mode = new_mode.clone();
+            "tray" | "dictation" => {
+                settings.dictation.interaction_mode = match new_mode {
+                    InteractionMode::Passive => crate::core::settings::DictationInteractionMode::Passive,
+                    InteractionMode::PTT => crate::core::settings::DictationInteractionMode::Ptt,
+                };
             }
             _ => return Err(format!("Invalid target window: {}", target)),
         }
@@ -231,7 +234,7 @@ pub async fn update_interaction_mode(
         .into();
     let current_target = match target.to_lowercase().as_str() {
         "main" => crate::core::state::InteractionOwner::MainWindow,
-        _ => crate::core::state::InteractionOwner::Tray,
+        _ => crate::core::state::InteractionOwner::Dictation,
     };
 
     if owner == current_target {
@@ -244,10 +247,10 @@ pub async fn update_interaction_mode(
 
     // 2. Engine lifecycle check for main window mode changes
     if target.to_lowercase() == "main" {
-        let (tray_enabled, is_engaged, is_passive) = {
+        let (dictation_enabled, is_engaged, is_passive) = {
             let s = state.settings.read().unwrap();
             (
-                s.ui.tray_enabled,
+                s.dictation.enabled,
                 state
                     .pipeline
                     .is_engaged
@@ -256,8 +259,8 @@ pub async fn update_interaction_mode(
             )
         };
 
-        if !tray_enabled && !is_engaged && !is_passive {
-            log::info!("[Settings] Main App mode changed to non-passive and Tray is disabled. Stopping engine...");
+        if !dictation_enabled && !is_engaged && !is_passive {
+            log::info!("[Settings] Main App mode changed to non-passive and Dictation is disabled. Stopping engine...");
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = crate::ipc::pipeline::stop_engine(app_clone).await;
