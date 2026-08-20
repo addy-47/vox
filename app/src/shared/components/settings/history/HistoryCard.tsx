@@ -50,7 +50,7 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
       {/* Card Content */}
       <div className="flex-1 flex flex-col justify-between min-h-0 pt-1 gap-3">
         {/* Incognito Mode Hover Slide-Out Tile */}
-        <div className="group flex items-center w-full h-[58px] relative shrink-0">
+        <div className="group flex items-center w-full h-[58px] relative shrink-0 overflow-hidden rounded-xl">
           <div
             onClick={() => updateDraft("persistence", "private_mode", !persistence.private_mode)}
             className={cn(

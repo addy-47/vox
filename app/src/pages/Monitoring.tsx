@@ -29,6 +29,7 @@ import {
   LiquidChamber,
 } from "@/shared/components/monitoring";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { ErrorBoundary } from "@/shared/components/common";
 
 interface MonitoringProps {
   popover?: boolean;
@@ -302,26 +303,30 @@ export const Monitoring: React.FC<MonitoringProps> = ({
       </div>
 
       {/* ── 2. Top Metric Cards Carousel ── */}
-      <MetricCarousel
-        latest={latest}
-        colors={colors}
-        formatLatency={formatLatency}
-      />
+      <ErrorBoundary name="MonitoringMetrics">
+        <MetricCarousel
+          latest={latest}
+          colors={colors}
+          formatLatency={formatLatency}
+        />
+      </ErrorBoundary>
 
       {/* ── 3. Central Liquid Chamber Container ── */}
-      <LiquidChamber
-        latest={latest}
-        colors={colors}
-        isEngineLoaded={isEngineLoaded}
-        activeModelsCount={activeModelsCount}
-        cpuPct={cpuPct}
-        ramMb={ramMb}
-        ramGb={ramGb}
-        ramPct={ramPct}
-        variants={variants}
-        popover={popover}
-        open={open}
-      />
+      <ErrorBoundary name="LiquidChamber">
+        <LiquidChamber
+          latest={latest}
+          colors={colors}
+          isEngineLoaded={isEngineLoaded}
+          activeModelsCount={activeModelsCount}
+          cpuPct={cpuPct}
+          ramMb={ramMb}
+          ramGb={ramGb}
+          ramPct={ramPct}
+          variants={variants}
+          popover={popover}
+          open={open}
+        />
+      </ErrorBoundary>
     </div>
   );
 

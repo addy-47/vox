@@ -32,6 +32,7 @@ export type SettingsScope =
   | "llm"
   | "tts"
   | "interaction"
+  | "dictation"
   | "telemetry"
   | "persistence"
   | "memory"
@@ -40,13 +41,14 @@ export type SettingsScope =
   | "realtime";
 
 export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
-  ui: ["theme", "accent_seed", "tray_enabled", "tray_blur_density", "tray_glass_tint", "tray_history_limit"],
+  ui: ["theme", "accent_seed", "tray_blur_density", "tray_glass_tint", "tray_history_limit"],
   audio: ["output_mode", "input_device"],
   vad: ["threshold", "ptt_noise_gate", "vad_backend"],
   asr: ["model", "transliterate_enabled", "provider"],
   llm: ["model", "ctx_size", "threads", "provider"],
   tts: ["provider", "voice", "quality_steps", "speed"],
-  interaction: ["main_app_mode", "tray_mode", "auto_sleep_timeout", "pipeline_mode"],
+  interaction: ["main_app_mode", "auto_sleep_timeout", "pipeline_mode"],
+  dictation: ["enabled", "interaction_mode", "hotkey", "output_mode"],
   telemetry: ["enabled", "log_level"],
   persistence: ["private_mode"],
   memory: ["context_retrieval_enabled", "pipeline_processing_enabled", "max_personal_memory_share", "context_chaining_window_hours", "top_k_facts", "max_hops", "semantic_similarity_cutoff"],
@@ -77,8 +79,8 @@ export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey
   memory: [{ scope: "memory" }],
   appearance: [{ scope: "ui", keys: ["theme", "accent_seed"] }],
   interaction: [
-    { scope: "interaction", keys: ["main_app_mode", "tray_mode", "auto_sleep_timeout", "pipeline_mode"] },
-    { scope: "ui", keys: ["tray_enabled"] },
+    { scope: "interaction", keys: ["main_app_mode", "auto_sleep_timeout", "pipeline_mode"] },
+    { scope: "dictation", keys: ["enabled", "interaction_mode", "hotkey", "output_mode"] },
     { scope: "llm", keys: ["provider"] },
     { scope: "realtime", keys: ["provider", "gemini", "openai", "deepgram", "elevenlabs"] },
   ],

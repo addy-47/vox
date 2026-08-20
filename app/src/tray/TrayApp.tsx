@@ -12,6 +12,7 @@ import { pttStart, pttStop } from "@/services/pipelineService";
 import { commitSessionToHistory, getTranscriptHistory } from "@/services/historyService";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettings } from "@/shared/context/SettingsContext";
+import { ErrorBoundary } from "@/shared/components/common";
 import { cn } from "@/shared/lib/utils";
 
 interface SystemStats {
@@ -357,6 +358,7 @@ export const TrayApp: React.FC = () => {
       <AnimatePresence>
         {visibilityState !== 'HIDDEN' && (
           <motion.div 
+            key="tray-card"
             variants={containerVariants}
             initial="HIDDEN"
             animate={visibilityState}
@@ -374,34 +376,36 @@ export const TrayApp: React.FC = () => {
                backgroundColor: `rgba(var(--card), 0.88)`,
             }}
           >
-            <Header 
-              isListening={interactionState === "Listening" || interactionState === "UserSpeaking" || pttStatus === 'RECORDING'} 
-              hasContent={!!currentTargetText} 
-              copied={copied} 
-              isPttActive={pttStatus !== 'IDLE'}
-              interactionMode={settings.interaction.tray_mode.toUpperCase()}
-              onCopy={copyToClipboard} 
-              onClose={handleClose}
-              onTogglePtt={togglePtt}
-            />
-
-            <div className="flex-1 flex flex-col relative overflow-hidden group">
-              <TranscriptRenderer 
-                displayText={displayText} 
-                interactionState={interactionState}
-                pttStatus={pttStatus}
-                telemetryRef={telemetryRef}
+            <ErrorBoundary name="TrayAppContent">
+              <Header 
+                isListening={interactionState === "Listening" || interactionState === "UserSpeaking" || pttStatus === 'RECORDING'} 
+                hasContent={!!currentTargetText} 
+                copied={copied} 
+                isPttActive={pttStatus !== 'IDLE'}
+                interactionMode={String(settings.dictation?.interaction_mode || "ptt").toUpperCase()}
+                onCopy={copyToClipboard} 
+                onClose={handleClose}
+                onTogglePtt={togglePtt}
               />
-            </div>
 
-            <Footer 
-              stats={stats} 
-              onPrev={handlePrev}
-              onNext={handleNext}
-              historyIndex={historyIndex}
-              viewingHistory={viewingHistory}
-              historyCount={history.length}
-            />
+              <div className="flex-1 flex flex-col relative overflow-hidden group">
+                <TranscriptRenderer 
+                  displayText={displayText} 
+                  interactionState={interactionState}
+                  pttStatus={pttStatus}
+                  telemetryRef={telemetryRef}
+                />
+              </div>
+
+              <Footer 
+                stats={stats} 
+                onPrev={handlePrev}
+                onNext={handleNext}
+                historyIndex={historyIndex}
+                viewingHistory={viewingHistory}
+                historyCount={history.length}
+              />
+            </ErrorBoundary>
           </motion.div>
         )}
       </AnimatePresence>

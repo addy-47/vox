@@ -6,7 +6,7 @@ import { SearchBar } from "@/shared/components/memory/SearchBar";
 import { MemoryLegendCard } from "@/shared/components/memory/MemoryLegendCard";
 import { MemoryNodeTooltip } from "@/shared/components/memory/MemoryNodeTooltip";
 import { MemoryPipelineDrawer } from "@/shared/components/memory/MemoryPipelineDrawer";
-import { AmbientBackground } from "@/shared/components/common";
+import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import {
   MemoryNodeTopology,
   MemoryEdgeTopology,
@@ -184,20 +184,22 @@ export const Memory: React.FC = () => {
       {/* Main Full-Bleed WebGL GPU Graph Canvas directly on ambient background */}
       <div ref={containerRef} className="absolute inset-0 z-0 bg-transparent">
         {dims.w > 0 && (
-          <MemoryGraph
-            ref={graphRef}
-            nodes={nodes}
-            edges={edges}
-            width={dims.w}
-            height={dims.h}
-            searchQuery={searchQuery}
-            selectedCollection={selectedCollection}
-            selectedRelation={selectedRelation}
-            onSelectNode={handleSelectNode}
-            selectedFactId={selectedNodeId}
-            selectedFactDetail={selectedFactDetail}
-            conflictPairs={conflictsMode ? conflicts : EMPTY_CONFLICTS}
-          />
+          <ErrorBoundary name="MemoryGraphCanvas">
+            <MemoryGraph
+              ref={graphRef}
+              nodes={nodes}
+              edges={edges}
+              width={dims.w}
+              height={dims.h}
+              searchQuery={searchQuery}
+              selectedCollection={selectedCollection}
+              selectedRelation={selectedRelation}
+              onSelectNode={handleSelectNode}
+              selectedFactId={selectedNodeId}
+              selectedFactDetail={selectedFactDetail}
+              conflictPairs={conflictsMode ? conflicts : EMPTY_CONFLICTS}
+            />
+          </ErrorBoundary>
         )}
       </div>
 

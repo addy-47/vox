@@ -34,9 +34,15 @@ pub enum InteractionMode {
 ```rust
 pub struct InteractionSettings {
     pub main_app_mode: InteractionMode,  // Main window behavior
-    pub tray_mode: InteractionMode,      // Tray overlay behavior
     pub auto_sleep_timeout: u32,         // Dormancy timeout in seconds
     pub pipeline_mode: PipelineMode,     // Modular or Realtime
+}
+
+pub struct DictationSettings {
+    pub enabled: bool,
+    pub interaction_mode: DictationInteractionMode, // Passive | Ptt
+    pub hotkey: String,                            // "Alt+Space"
+    pub output_mode: DictationOutputMode,          // Paste | Clipboard | Tray
 }
 ```
 
@@ -67,8 +73,8 @@ enum PttState {
 ### Transitions
 
 ```
-// Start recording (owner parameter determines which window)
-IDLE → RECORDING (user presses PTT button, owner = MainWindow | Tray)
+// Start recording (owner parameter determines target domain)
+IDLE → RECORDING (user presses PTT button/hotkey, owner = MainWindow | Dictation)
 
 // Stop recording (checks speech_detected atomic)
 RECORDING → PROCESSING (user releases, speech detected)
@@ -273,7 +279,7 @@ pub async fn ptt_cancel(
 
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
 
-    let target = match actual_owner { /* Tray → "tray", _ → "main" */ };
+    let target = match actual_owner { /* Dictation → "tray", _ → "main" */ };
     let _ = app.emit_to(target, "ptt_status", json!({ "state": "IDLE" }));
 
     state.pipeline.update_interaction_state(InteractionState::Idle, actual_owner, &app);
@@ -404,9 +410,9 @@ const Header: React.FC = () => {
   const togglePtt = async () => {
     try {
       if (pttStatus === 'IDLE') {
-        await invoke("ptt_start", { owner: "Tray" });
+        await invoke("ptt_start", { owner: "Dictation" });
       } else {
-        await invoke("ptt_stop", { owner: "Tray" });
+        await invoke("ptt_stop", { owner: "Dictation" });
       }
     } catch (error) {
       console.error("[PTT] Toggle failed:", error);
@@ -609,7 +615,7 @@ useEffect(() => {
 const togglePtt = async () => {
   try {
     await invoke(pttStatus === 'IDLE' ? "ptt_start" : "ptt_stop", {
-      owner: "Tray"
+      owner: "Dictation"
     });
   } catch (error) {
     console.error("[PTT] Command failed:", error);

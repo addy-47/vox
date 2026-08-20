@@ -52,7 +52,10 @@ where
             .load(std::sync::atomic::Ordering::Relaxed)
             .into();
         let mode = match owner {
-            InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+            InteractionOwner::Dictation => match settings.dictation.interaction_mode {
+                crate::core::settings::DictationInteractionMode::Passive => InteractionMode::Passive,
+                crate::core::settings::DictationInteractionMode::Ptt => InteractionMode::PTT,
+            },
             InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
             InteractionOwner::Ptt => InteractionMode::PTT,
             InteractionOwner::Wizard => InteractionMode::Passive,
@@ -138,7 +141,10 @@ where
                         app.state();
                     let settings = state.settings.read().unwrap();
                     mode = match owner {
-                        InteractionOwner::Tray => settings.interaction.tray_mode.clone(),
+                        InteractionOwner::Dictation => match settings.dictation.interaction_mode {
+                            crate::core::settings::DictationInteractionMode::Passive => InteractionMode::Passive,
+                            crate::core::settings::DictationInteractionMode::Ptt => InteractionMode::PTT,
+                        },
                         InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
                         InteractionOwner::Ptt => InteractionMode::PTT,
                         InteractionOwner::Wizard => InteractionMode::Passive,
@@ -229,7 +235,7 @@ where
                 use tauri::Emitter;
                 let target = match owner {
                     InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
-                    InteractionOwner::Tray => "tray",
+                    InteractionOwner::Dictation => "tray",
                     InteractionOwner::Wizard => "wizard",
                 };
                 let _ = app.emit_to(target, "audio_energy", energy);
@@ -371,12 +377,12 @@ where
                 let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
                     app.state();
 
-                // If VAD is owned by Tray but tray_enabled is false, bypass speech detection
-                let tray_enabled = match state.settings.read() {
-                    Ok(s) => s.ui.tray_enabled,
+                // If VAD is owned by Dictation but dictation is disabled, bypass speech detection
+                let dictation_enabled = match state.settings.read() {
+                    Ok(s) => s.dictation.enabled,
                     Err(_) => true,
                 };
-                if owner == InteractionOwner::Tray && !tray_enabled {
+                if owner == InteractionOwner::Dictation && !dictation_enabled {
                     continue;
                 }
 

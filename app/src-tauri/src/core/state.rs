@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InteractionOwner {
-    Tray = 0,
+    Dictation = 0,
     MainWindow = 1,
     Ptt = 2,
     Wizard = 3,
@@ -28,7 +28,7 @@ impl From<u32> for InteractionOwner {
             1 => InteractionOwner::MainWindow,
             2 => InteractionOwner::Ptt,
             3 => InteractionOwner::Wizard,
-            _ => InteractionOwner::Tray,
+            _ => InteractionOwner::Dictation,
         }
     }
 }
@@ -39,7 +39,7 @@ impl From<u8> for InteractionOwner {
             1 => InteractionOwner::MainWindow,
             2 => InteractionOwner::Ptt,
             3 => InteractionOwner::Wizard,
-            _ => InteractionOwner::Tray,
+            _ => InteractionOwner::Dictation,
         }
     }
 }
@@ -228,7 +228,7 @@ impl PipelineAtomics {
                 .store(new_state as u32, Ordering::Relaxed);
 
             let target = match owner {
-                InteractionOwner::Tray => "tray",
+                InteractionOwner::Dictation => "tray",
                 InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
                 InteractionOwner::Wizard => "wizard",
             };
@@ -291,7 +291,9 @@ pub struct AppState {
     pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
     /// Structured telemetry bus (crossbeam — lock-free, safe for hot-path threads).
     pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
-    /// Long-lived conversation session ID. 0 = no active session (Tray mode).
+    /// Last completed dictation transcript for recovery queries (FR-08).
+    pub dictation_last_transcript: parking_lot::Mutex<Option<String>>,
+    /// Long-lived conversation session ID. 0 = no active session.
     /// Created on Engage, destroyed on Disengage. Persistence worker ignores events with id == 0.
     pub conversation_id: Arc<AtomicU64>,
 
@@ -401,7 +403,7 @@ impl AppState {
             engine: Mutex::new(None),
             realtime_engine: Mutex::new(None),
             owner: Arc::new(AtomicU32::new(if settings.setup.completed {
-                InteractionOwner::Tray as u32
+                InteractionOwner::Dictation as u32
             } else {
                 InteractionOwner::Wizard as u32
             })),
@@ -422,6 +424,7 @@ impl AppState {
             save_debounce: Mutex::new(None),
             _log_guard: log_guard,
             telemetry_tx,
+            dictation_last_transcript: parking_lot::Mutex::new(None),
             conversation_id: Arc::new(AtomicU64::new(0)),
             latest_energy,
             latest_vad_prob,

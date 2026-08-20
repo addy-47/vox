@@ -107,7 +107,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
       )}
 
       {/* Main Body */}
-      <div className="flex-1 flex flex-col justify-between min-h-0 pt-1 gap-3 overflow-y-auto custom-scrollbar">
+      <div className="flex-1 flex flex-col justify-between min-h-0 pt-1 gap-3 overflow-y-auto overflow-x-hidden custom-scrollbar">
         {activeTab === "retrieval" ? (
           /* TAB 1: RETRIEVAL (Readable Glass Chips on Left | Radial Knob on Right) */
           <div key="retrieval-tab" className="flex-1 flex flex-col justify-between min-h-0 gap-3">

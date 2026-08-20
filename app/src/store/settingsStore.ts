@@ -109,7 +109,6 @@ export interface VoxSettings {
   ui: {
     theme: string;
     accent_seed: string;
-    tray_enabled: boolean;
     tray_blur_density: number;
     tray_glass_tint: boolean;
     tray_history_limit: number;
@@ -142,9 +141,14 @@ export interface VoxSettings {
   };
   interaction: {
     main_app_mode: "Passive" | "PTT";
-    tray_mode: "Passive" | "PTT";
     auto_sleep_timeout: number;
     pipeline_mode: PipelineMode;
+  };
+  dictation: {
+    enabled: boolean;
+    interaction_mode: "passive" | "ptt";
+    hotkey: string;
+    output_mode: "paste" | "clipboard" | "tray";
   };
   telemetry: {
     enabled: boolean;
@@ -420,11 +424,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           }
         }
         
+        const dictationChanges =
+          settings.dictation?.enabled !== draftSettings.dictation?.enabled ||
+          settings.dictation?.interaction_mode !== draftSettings.dictation?.interaction_mode ||
+          settings.dictation?.hotkey !== draftSettings.dictation?.hotkey ||
+          settings.dictation?.output_mode !== draftSettings.dictation?.output_mode;
+
         return (
           settings.interaction.main_app_mode !== draftSettings.interaction.main_app_mode ||
           settings.interaction.auto_sleep_timeout !== draftSettings.interaction.auto_sleep_timeout ||
           settings.interaction.pipeline_mode !== draftSettings.interaction.pipeline_mode ||
-          settings.interaction.tray_mode !== draftSettings.interaction.tray_mode ||
+          dictationChanges ||
           realtimeChanges
         );
       }
@@ -487,6 +497,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         updateDraft("interaction", "main_app_mode", settings.interaction.main_app_mode);
         updateDraft("interaction", "auto_sleep_timeout", settings.interaction.auto_sleep_timeout);
         updateDraft("interaction", "pipeline_mode", settings.interaction.pipeline_mode);
+        if (settings.dictation) {
+          Object.keys(settings.dictation).forEach(k => updateDraft("dictation", k, (settings.dictation as any)[k]));
+        }
         const currentDraftModel = draftSettings?.llm.provider?.model || "";
         updateDraft("llm", "provider", {
           ...settings.llm.provider,
@@ -525,9 +538,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         const oldVal = (settings[d] as any)[key];
 
         if (JSON.stringify(val) !== JSON.stringify(oldVal)) {
-          if (domain === "interaction" && (key === "main_app_mode" || key === "tray_mode")) {
-            const target = key === "main_app_mode" ? "main" : "tray";
-            promises.push(updateInteractionMode(target, val));
+          if (domain === "interaction" && key === "main_app_mode") {
+            promises.push(updateInteractionMode("main", val));
           } else {
             promises.push(
               updateSetting(domain, key, val).then((res: any) => {

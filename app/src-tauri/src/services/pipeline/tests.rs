@@ -31,29 +31,29 @@ mod tests {
     #[test]
     fn test_interaction_owner_conversions() {
         // Test u8 -> InteractionOwner conversion
-        assert_eq!(InteractionOwner::from(0u8), InteractionOwner::Tray);
+        assert_eq!(InteractionOwner::from(0u8), InteractionOwner::Dictation);
         assert_eq!(InteractionOwner::from(1u8), InteractionOwner::MainWindow);
         assert_eq!(InteractionOwner::from(2u8), InteractionOwner::Ptt);
         assert_eq!(InteractionOwner::from(3u8), InteractionOwner::Wizard);
-        // Wildcard fallback to Tray
-        assert_eq!(InteractionOwner::from(4u8), InteractionOwner::Tray);
-        assert_eq!(InteractionOwner::from(255u8), InteractionOwner::Tray);
+        // Wildcard fallback to Dictation
+        assert_eq!(InteractionOwner::from(4u8), InteractionOwner::Dictation);
+        assert_eq!(InteractionOwner::from(255u8), InteractionOwner::Dictation);
 
         // Test u32 -> InteractionOwner conversion
-        assert_eq!(InteractionOwner::from(0u32), InteractionOwner::Tray);
+        assert_eq!(InteractionOwner::from(0u32), InteractionOwner::Dictation);
         assert_eq!(InteractionOwner::from(1u32), InteractionOwner::MainWindow);
         assert_eq!(InteractionOwner::from(2u32), InteractionOwner::Ptt);
         assert_eq!(InteractionOwner::from(3u32), InteractionOwner::Wizard);
-        assert_eq!(InteractionOwner::from(100u32), InteractionOwner::Tray);
+        assert_eq!(InteractionOwner::from(100u32), InteractionOwner::Dictation);
 
         // Test InteractionOwner -> u8 conversion
-        assert_eq!(u8::from(InteractionOwner::Tray), 0u8);
+        assert_eq!(u8::from(InteractionOwner::Dictation), 0u8);
         assert_eq!(u8::from(InteractionOwner::MainWindow), 1u8);
         assert_eq!(u8::from(InteractionOwner::Ptt), 2u8);
         assert_eq!(u8::from(InteractionOwner::Wizard), 3u8);
 
         // Test InteractionOwner as u8 casting
-        assert_eq!(InteractionOwner::Tray as u8, 0u8);
+        assert_eq!(InteractionOwner::Dictation as u8, 0u8);
         assert_eq!(InteractionOwner::MainWindow as u8, 1u8);
         assert_eq!(InteractionOwner::Ptt as u8, 2u8);
         assert_eq!(InteractionOwner::Wizard as u8, 3u8);
