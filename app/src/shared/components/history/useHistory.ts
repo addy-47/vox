@@ -293,16 +293,6 @@ export function useHistory() {
     };
   }, [selectedSession]);
 
-  // Escape key listener
-  useEffect(() => {
-    if (!selectedSession) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelectedSession(null);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedSession]);
-
   const retryFetchTurns = useCallback(() => {
     if (!selectedSession) return;
     setTurnsLoading(true);

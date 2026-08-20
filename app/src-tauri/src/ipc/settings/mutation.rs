@@ -62,13 +62,19 @@ pub async fn update_setting(
 
         // Synchronize System Tray Menu Item (Vox Live)
         {
+            let is_tray_mode = {
+                let s = state.settings.read().unwrap();
+                s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray
+            };
+            let is_clickable = enabled && is_tray_mode;
             let menu_item_lock = state.hud_menu_item.lock().await;
             if let Some(ref live_i) = *menu_item_lock {
-                // Keep item enabled so GTK doesn't render a red prohibited square
+                let _ = live_i.set_enabled(is_clickable);
                 let hud_visible = *state.hud_visible.lock().await;
-                let _ = live_i.set_checked(hud_visible && enabled);
+                let _ = live_i.set_checked(hud_visible && is_clickable);
             }
         }
+
 
         if !enabled {
             // Disable Tray: Revert interaction owner to MainWindow, destroy window to save RAM, and evaluate engine offload
@@ -130,14 +136,26 @@ pub async fn update_setting(
             let s = state.settings.read().unwrap();
             (s.dictation.enabled, s.dictation.output_mode.clone())
         };
-        if enabled && output_mode == crate::core::settings::DictationOutputMode::Tray {
+        let is_tray_mode = output_mode == crate::core::settings::DictationOutputMode::Tray;
+        let is_clickable = enabled && is_tray_mode;
+        // Synchronize System Tray Menu Item (Vox Live)
+        {
+            let menu_item_lock = state.hud_menu_item.lock().await;
+            if let Some(ref live_i) = *menu_item_lock {
+                let _ = live_i.set_enabled(is_clickable);
+                let hud_visible = *state.hud_visible.lock().await;
+                let _ = live_i.set_checked(hud_visible && is_clickable);
+            }
+        }
+        if enabled && is_tray_mode {
             log::info!("[Settings] Output mode set to Tray: Ensuring tray HUD webview is constructed...");
             let _ = crate::tray::ensure_tray_window(&app);
-        } else if output_mode != crate::core::settings::DictationOutputMode::Tray {
+        } else if !is_tray_mode {
             log::info!("[Settings] Output mode set to non-Tray: Destroying tray webview to save RAM...");
             crate::tray::destroy_tray_window(&app);
         }
     }
+
 
     if applied && domain == "interaction" && key == "main_app_mode" {
         // Evaluate offload: If switching to PTT and Tray is disabled, we might want to stop engine

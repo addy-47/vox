@@ -2,7 +2,7 @@ import { memo } from "react";
 import { ChevronLeft, Brain, Server, Cloud } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { CATEGORY_SWITCH_COPY } from "@/data/settingsData";
+import { CATEGORY_SWITCH_COPY } from "@/data/settingsCopy";
 
 interface CategorySelectorProps {
   activeCategory: "STT" | "LLM" | "TTS";
@@ -68,7 +68,7 @@ export const CategorySelector = memo(
           </div>
 
           {/* Center Connector: Crisp, clean straight arrow extending across the remaining space */}
-          <div className="hidden xs:flex flex-1 items-center px-1 min-w-[12px] pointer-events-none select-none overflow-hidden">
+          <div className="flex flex-1 items-center px-1 min-w-[8px] pointer-events-none select-none overflow-hidden">
             <svg
               className="w-full h-2.5 sm:h-3 text-[rgb(var(--accent))]/50 overflow-visible"
               viewBox="0 0 100 12"

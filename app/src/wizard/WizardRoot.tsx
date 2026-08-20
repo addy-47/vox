@@ -18,7 +18,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import logo from '@/assets/logo.webp';
 import logoLight from '@/assets/logo-light.webp';
 
-import { WIZARD_STEPS } from '@/data/welcomeContent';
+import { WIZARD_STEPS } from '@/data/welcomeCopy';
 
 export const WizardRoot: React.FC = () => {
   const [state, send] = useMachine(setupMachine);

@@ -1,8 +1,8 @@
 import { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsDomains";
-import { SETTINGS_COPY } from "@/data/settingsData";
+import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsCopy";
+import { SETTINGS_COPY } from "@/data/settingsCopy";
 
 interface RadialNodeProps {
   domain: Domain;

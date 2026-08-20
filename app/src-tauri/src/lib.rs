@@ -258,13 +258,20 @@ pub fn run() {
                 let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
                 *menu_item_lock = Some(live_i.clone());
                 
-                let hud_visible = {
+                let (hud_visible, dictation_enabled, is_tray_mode) = {
+                    let s = state.settings.read().unwrap();
                     let v = tauri::async_runtime::block_on(state.hud_visible.lock());
-                    *v
+                    (
+                        *v,
+                        s.dictation.enabled,
+                        s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
+                    )
                 };
-                // Reflect hud visibility state via checkmark (keep item enabled to avoid GTK red prohibited badge)
-                let _ = live_i.set_checked(hud_visible);
+                let is_clickable = dictation_enabled && is_tray_mode;
+                let _ = live_i.set_enabled(is_clickable);
+                let _ = live_i.set_checked(hud_visible && is_clickable);
             }
+
 
             let mut tray_builder = TrayIconBuilder::new().menu(&tray_menu);
             if let Some(icon) = app.default_window_icon() {

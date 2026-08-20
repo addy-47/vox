@@ -9,6 +9,7 @@ import { cn } from "@/shared/lib/utils";
 import { ModelStatusOverlay } from "@/shared/components/settings/ModelStatusOverlay";
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
@@ -22,6 +23,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const [monitorOpen, setMonitorOpen] = useState(false);
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
+  const { openProfiler } = useProfilerDrawer();
 
   // Ref to track compact state across renders during window resize
   const wasCompactRef = useRef(window.innerWidth < 1024);
@@ -158,7 +160,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
               <button
                 onClick={() => {
                   setMonitorOpen(false);
-                  navigate("/memory-profiler");
+                  openProfiler();
                 }}
                 className="text-[14px] font-mono text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] px-2 py-1 rounded-lg transition-all leading-none select-none tabular-nums cursor-pointer border border-transparent hover:border-[rgba(var(--border),0.15)]"
               >

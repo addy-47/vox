@@ -130,7 +130,6 @@ workspace. There are **4 levels of elevation**, defined by blur density and tint
 | **Whisper** | `.glass-whisper` | 8px | `0.20` | `0.45` | Tooltips, status badges, secondary dropdowns |
 | **Surface** | `.glass-surface` | 16px | `0.45` | `0.65` | Content panels, navigation strips, settings containers |
 | **Card** | `.glass-card` | 24px | `0.65` | `0.80` | Major modules, dialog boxes, settings category headers |
-| **Elevated** | `.glass-elevated` | 40px | `0.85` | `0.92` | Modals, monitoring windows, popovers |
 
 * **Sheen & noise**: depth is enhanced with a noise grain overlay (`.amb-noise` /
   `.glass-base::after`) to simulate frosted glass.
@@ -338,6 +337,55 @@ Rather than standard conversation logs, Vox renders a holographic dialogue strea
 
 ---
 
+## 13. Gesture Contract (Unified Overlay Grammar)
+
+Every transient surface — panel, drawer, popover, card — must respond to the
+same dismissal gestures, enforced by a single global authority rather than
+per-surface listeners.
+
+### Overlay tiers
+
+| Tier | Surface | Anchor | Motion |
+| :--- | :--- | :--- | :--- |
+| **Tier 0** | settings accordion cards | inline | expand / collapse |
+| **Tier 1** | popovers & micro-panels (Memory node tooltip, Home test-clip menu, Monitoring popover) | on hover / click | scale-fade, transient |
+| **Tier 2** | bottom drawers (History detail, Memory pipeline, Memory profiler) | bottom sheet | translate-Y, spring ease |
+
+### Dismissal rules
+
+- **Escape closes the topmost surface first (FILO).** `profiler drawer open →
+  monitoring popover opens on top → first Escape closes the popover → second
+  Escape closes the profiler`.
+- **Clicking the root layout closes any open surface.** Backdrops handle outside
+  clicks for Tier 2; Tier 1 popovers close on any pointerdown outside their element.
+- **Re-tapping a trigger toggles** the surface closed (History detail, Memory pipeline drawer).
+- The stack is the **single Escape authority**; surfaces must not add their own
+  Escape listeners. Exceptions that legitimately stay local (non-dismissal): the
+  dictation hotkey recorder, search-input clear, inline editing.
+
+### Implementation
+
+- `shared/lib/overlayStack.ts` — global FILO registry (`registerOverlay`,
+  `closeTopmost`, `getStackSize`); installed once in `App.tsx` via
+  `installOverlayStack()`. Capture-phase `keydown` (Escape) + `pointerdown`
+  (outside-click on the topmost overlay).
+- `shared/hooks/useOverlay.ts` — registers on `active`, unregisters on close.
+- `shared/ui/Drawer.tsx` — the shared bottom-sheet for all Tier 2 surfaces
+  (backdrop, resize handle, double-click expand, focus restore, `footer`,
+  `position="page" | "global"`).
+- Settings cards collapse via local Escape (mirrors the outside-click FILO pop).
+
+### Tier 2 surfaces
+
+- **History detail** — `DetailPanel` inside a `Drawer` (`position="global"`, `z-60` layering over `EdgeNav` `z-50`). By design, bottom sheet bodies are transparent overlays allowing the ambient page field and dialog bubbles to breathe without opaque solid backgrounds, backed only by the ambient dimmed backdrop.
+- **Memory pipeline** — horizontal, left-to-right stage flow inside a global drawer.
+- **Memory profiler** — converted from a route to a global bottom drawer
+  (`ProfilerDrawer`); sampling is lazy (starts on open, persists across cycles).
+  The bottom-left HUD button and the Monitoring popover open it via the
+  `openProfiler()` handle.
+
+---
+
 ## 12. Do / Don't
 
 | Do | Don't |
@@ -353,4 +401,4 @@ Rather than standard conversation logs, Vox renders a holographic dialogue strea
 
 ---
 
-**Last Updated:** 2026-08-16
+**Last Updated:** 2026-08-20

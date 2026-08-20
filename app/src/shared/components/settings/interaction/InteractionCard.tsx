@@ -8,8 +8,8 @@ import { PipelineModeCard } from "./PipelineModeCard";
 import { CategorySelector } from "./CategorySelector";
 import { LlmConfigDesk } from "./LlmConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
-import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providers";
-import { DICTATION_COPY } from "@/data/settingsData";
+import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providersCopy";
+import { DICTATION_COPY } from "@/data/settingsCopy";
 
 interface InteractionCardProps {
   layoutMode?: "full-max" | "full-min" | "small";

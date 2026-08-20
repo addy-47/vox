@@ -9,30 +9,24 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 pub async fn toggle_hud_visibility(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    // Check setup completion
-    let (setup_completed, was_dictation_enabled) = {
+    // Check setup completion and dictation prerequisites
+    let (setup_completed, dictation_enabled, is_tray_mode) = {
         let s = state.settings.read().unwrap();
-        (s.setup.completed, s.dictation.enabled)
+        (
+            s.setup.completed,
+            s.dictation.enabled,
+            s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
+        )
     };
     if !setup_completed {
         log::warn!("[Tray] Blocked toggle_hud_visibility: Setup not completed.");
         return;
     }
-
-    // If dictation was disabled, automatically enable it and set output mode to tray
-    if !was_dictation_enabled {
-        log::info!("[Tray] Dictation was disabled. Auto-enabling Dictation (Tray mode) on Vox Live toggle...");
-        {
-            let mut s = state.settings.write().unwrap();
-            s.dictation.enabled = true;
-            s.dictation.output_mode = crate::core::settings::DictationOutputMode::Tray;
-        }
-        let _ = app.emit("settings-updated", ());
-        let app_clone = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let _ = crate::ipc::pipeline::engine_launch::launch_engine(app_clone).await;
-        });
+    if !dictation_enabled || !is_tray_mode {
+        log::warn!("[Tray] Blocked toggle_hud_visibility: Dictation is disabled or not set to Tray output mode.");
+        return;
     }
+
 
     let mut hud_lock = state.hud_visible.lock().await;
     let new_state = !*hud_lock;
