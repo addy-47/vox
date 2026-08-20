@@ -59,7 +59,7 @@ export const CategorySelector = memo(
 
                 <span
                   key={activeCategory}
-                  className="text-[11.5px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] group-hover:brightness-125 transition-opacity duration-150 animate-fade-in"
+                  className="text-[12px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] group-hover:brightness-125 transition-opacity duration-150 animate-fade-in"
                 >
                   {activeCategory}
                 </span>
@@ -108,7 +108,7 @@ export const CategorySelector = memo(
                     type="button"
                     onClick={() => onPillChange(mode.id)}
                     className={cn(
-                      "flex items-center justify-center gap-1 pb-0.5 sm:pb-1 border-b-2 transition-all duration-200 bg-transparent text-[10px] sm:text-[11px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer",
+                      "flex items-center justify-center gap-1 pb-0.5 sm:pb-1 border-b-2 transition-all duration-200 bg-transparent text-[11px] sm:text-[12px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer",
                       isActive
                         ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
                         : "text-[rgb(var(--foreground-muted))]/50 border-transparent hover:text-[rgb(var(--foreground-muted))]/80"
@@ -118,7 +118,7 @@ export const CategorySelector = memo(
                     {layoutMode !== "small" && <IconComponent size={10} className="shrink-0 hidden md:inline-block" />}
                   </button>
                   {idx < arr.length - 1 && (
-                    <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))]/20 font-light select-none pb-0.5 sm:pb-1">
+                    <span className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/20 font-light select-none pb-0.5 sm:pb-1">
                       |
                     </span>
                   )}

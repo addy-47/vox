@@ -66,7 +66,7 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
               </span>
               <ShieldAlert
                 size={13}
-                className={persistence.private_mode ? "text-rose-400 animate-pulse" : "text-[rgb(var(--foreground-muted))]/40"}
+                className={persistence.private_mode ? "text-[rgb(var(--pink))]" : "text-[rgb(var(--foreground-muted))]/40"}
               />
             </div>
 

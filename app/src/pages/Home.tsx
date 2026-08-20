@@ -29,7 +29,7 @@ const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; 
   <React.Fragment>
     {turn.user && (
       <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--foreground-muted))] font-normal text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.12)]">
-        <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
+        <span className="text-[11px] tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
           USER
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
@@ -37,7 +37,7 @@ const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; 
     )}
     {turn.assistant && (
       <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.2)]">
-        <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--accent))]/80 uppercase block mb-1 font-bold">
+        <span className="text-[11px] tracking-widest text-[rgb(var(--accent))]/80 uppercase block mb-1 font-bold">
           VOX
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
@@ -144,7 +144,7 @@ export const Home = memo(() => {
       {/* ── Top-right: Status Capsule (single, clean, centered on mobile) ── */}
       <div className="absolute top-[10%] md:top-4 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-5 z-30 flex items-center gap-2 pointer-events-none">
         {cpuWarning && (
-          <span className="text-[11px] font-mono tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
+          <span className="text-[11px] tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
             Mode: {GOVERNOR_LABELS[cpuWarning.governor] || cpuWarning.governor}
           </span>
         )}

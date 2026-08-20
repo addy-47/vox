@@ -111,14 +111,15 @@ export const DetailPanel = memo(
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Vertical Drag Handle Bar */}
-        <div
-          onPointerDown={handleDragStart}
-          onDoubleClick={handleToggleExpand}
-          className="w-full h-5 flex items-center justify-center cursor-row-resize shrink-0 group hover:bg-[rgb(var(--accent))]/5 transition-colors touch-none"
-          title="Drag to resize panel (Double click to expand)"
-        >
-          <div className="w-12 h-1 rounded-full bg-[rgba(var(--accent),0.3)] group-hover:bg-[rgb(var(--accent))] transition-colors shadow-sm" />
-        </div>
+        <Tooltip label={HISTORY_COPY.resizeHint} wrapperClassName="w-full shrink-0">
+          <div
+            onPointerDown={handleDragStart}
+            onDoubleClick={handleToggleExpand}
+            className="w-full h-5 flex items-center justify-center cursor-row-resize group hover:bg-[rgb(var(--accent))]/5 transition-colors touch-none"
+          >
+            <div className="w-12 h-1 rounded-full bg-[rgba(var(--accent),0.3)] group-hover:bg-[rgb(var(--accent))] transition-colors shadow-sm" />
+          </div>
+        </Tooltip>
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-1 pb-3 border-b border-[rgba(var(--accent),0.08)] shrink-0">

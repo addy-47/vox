@@ -30,7 +30,8 @@ pub async fn route_transcript(app: &AppHandle, text: &str) -> Result<(), Dictati
 
     match output_mode {
         DictationOutputMode::Tray => {
-            // Deliver to Tray HUD overlay window
+            // Deliver to Tray HUD overlay window (ensure webview exists)
+            let _ = crate::tray::ensure_tray_window(app);
             let _ = app.emit_to(
                 "tray",
                 "transcript_final",

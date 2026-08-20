@@ -258,17 +258,11 @@ pub fn run() {
                 let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
                 *menu_item_lock = Some(live_i.clone());
                 
-                let dictation_enabled = {
-                    let s = state.settings.read().unwrap();
-                    s.dictation.enabled
-                };
                 let hud_visible = {
                     let v = tauri::async_runtime::block_on(state.hud_visible.lock());
                     *v
                 };
-
-                // Reflect dictation_enabled setting in menu UI
-                let _ = live_i.set_enabled(dictation_enabled);
+                // Reflect hud visibility state via checkmark (keep item enabled to avoid GTK red prohibited badge)
                 let _ = live_i.set_checked(hud_visible);
             }
 

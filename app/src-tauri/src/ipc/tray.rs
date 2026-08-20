@@ -9,29 +9,43 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 pub async fn toggle_hud_visibility(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    // Check if setup is completed and dictation is even enabled
-    let (dictation_enabled, setup_completed) = {
+    // Check setup completion
+    let (setup_completed, was_dictation_enabled) = {
         let s = state.settings.read().unwrap();
-        (s.dictation.enabled, s.setup.completed)
+        (s.setup.completed, s.dictation.enabled)
     };
-    if !setup_completed || !dictation_enabled {
-        log::warn!(
-            "[Tray] Blocked toggle_hud_visibility: Setup not completed or Dictation is disabled."
-        );
+    if !setup_completed {
+        log::warn!("[Tray] Blocked toggle_hud_visibility: Setup not completed.");
         return;
+    }
+
+    // If dictation was disabled, automatically enable it and set output mode to tray
+    if !was_dictation_enabled {
+        log::info!("[Tray] Dictation was disabled. Auto-enabling Dictation (Tray mode) on Vox Live toggle...");
+        {
+            let mut s = state.settings.write().unwrap();
+            s.dictation.enabled = true;
+            s.dictation.output_mode = crate::core::settings::DictationOutputMode::Tray;
+        }
+        let _ = app.emit("settings-updated", ());
+        let app_clone = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = crate::ipc::pipeline::engine_launch::launch_engine(app_clone).await;
+        });
     }
 
     let mut hud_lock = state.hud_visible.lock().await;
     let new_state = !*hud_lock;
     *hud_lock = new_state;
 
-    if let Some(window) = app.get_webview_window("tray") {
-        if new_state {
+    if new_state {
+        if let Ok(window) = crate::tray::ensure_tray_window(&app) {
             let _ = window.show();
             position_tray_window(&window).await;
-        } else {
-            let _ = window.hide();
+            let _ = app.emit("toggle_hud", ());
         }
+    } else if let Some(window) = app.get_webview_window("tray") {
+        let _ = window.hide();
         let _ = app.emit("toggle_hud", ());
     }
 
@@ -162,13 +176,13 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
         }
     }
 
-    if let Some(window) = app.get_webview_window("tray") {
-        if visible {
+    if visible {
+        if let Ok(window) = crate::tray::ensure_tray_window(&app) {
             let _ = window.show();
             let _ = position_tray_window(&window).await;
-        } else {
-            let _ = window.hide();
         }
+    } else if let Some(window) = app.get_webview_window("tray") {
+        let _ = window.hide();
     }
 
     let item_lock = state.hud_menu_item.lock().await;

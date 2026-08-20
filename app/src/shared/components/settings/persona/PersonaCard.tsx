@@ -418,7 +418,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                       {sec.title}
                     </span>
                     {sec.tag && (
-                      <span className="text-[9.5px] font-mono uppercase font-bold text-[rgb(var(--foreground-muted))]/50 px-1 py-0.2 rounded bg-[rgba(var(--foreground),0.04)]">
+                      <span className="text-[11px] font-mono uppercase font-bold text-[rgb(var(--foreground-muted))]/50 px-1 py-0.2 rounded bg-[rgba(var(--foreground),0.04)]">
                         &lt;{sec.tag}&gt;
                       </span>
                     )}
@@ -435,7 +435,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         )}
 
         {/* Footer Guidance Note */}
-        <p className="text-[10.5px] sm:text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold uppercase tracking-wide px-0.5">
+        <p className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold uppercase tracking-wide px-0.5">
           {activeTab === "modular" ? (
             <>
               Supports <code className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.2 rounded border border-amber-400/20">&lt;lang&gt;</code> and <code className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.2 rounded border border-amber-400/20">&lt;script&gt;</code> template variables, dynamically resolved based on user speech language.

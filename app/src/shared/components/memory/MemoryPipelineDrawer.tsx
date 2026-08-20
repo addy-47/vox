@@ -229,7 +229,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                   <button
                     onClick={handleTogglePause}
                     className={cn(
-                      "p-1.5 rounded-xl transition-all cursor-pointer border flex items-center gap-1.5 px-2.5 text-[11px] font-mono font-bold uppercase shadow-sm",
+                      "p-1.5 rounded-xl transition-all cursor-pointer border flex items-center gap-1.5 px-2.5 text-[11px] font-bold uppercase shadow-sm",
                       !pipelineProcessingEnabled
                         ? "bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30"
                         : "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
@@ -617,15 +617,15 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                         onClick={() => setActiveTab("failed")}
                         className={cn(
                           "w-full p-3 rounded-2xl bg-[rgba(var(--foreground),0.02)] border transition-all flex flex-col gap-1 shadow-md cursor-pointer group",
-                          failedCount > 0 ? "border-red-500/40 hover:border-red-500/60" : "border-[rgba(var(--border),0.1)] hover:border-[rgba(var(--border),0.2)]"
+                          failedCount > 0 ? "border-[rgb(var(--danger))]/40 hover:border-[rgb(var(--danger))]/60" : "border-[rgba(var(--border),0.1)] hover:border-[rgba(var(--border),0.2)]"
                         )}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-sans font-black tracking-wide text-red-400 uppercase">
+                          <span className="text-[11px] font-sans font-black tracking-wide text-[rgb(var(--danger))] uppercase">
                             5 NEEDS YOUR ATTENTION
                           </span>
                           {failedCount > 0 ? (
-                            <AlertCircle size={15} className="text-red-400 shrink-0 animate-pulse" />
+                            <AlertCircle size={15} className="text-[rgb(var(--danger))] shrink-0" />
                           ) : (
                             <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                           )}
@@ -637,7 +637,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                           <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
                             {failedCount > 0 ? "Click to view errors" : "No errors"}
                           </span>
-                          <span className={cn("px-2 py-0.5 rounded-lg text-[11px] font-bold border", failedCount > 0 ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.08)]")}>
+                          <span className={cn("px-2 py-0.5 rounded-lg text-[11px] font-bold border", failedCount > 0 ? "bg-[rgba(var(--danger),0.2)] text-[rgb(var(--danger))] border-[rgb(var(--danger))]/30" : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.08)]")}>
                             {failedCount} failed
                           </span>
                         </div>

@@ -12,6 +12,7 @@ export interface ToggleTileProps {
   onToggle: () => void;
   layoutMode?: "full-max" | "full-min" | "small";
   visualizer?: React.ReactNode;
+  disabled?: boolean;
   className?: string;
 }
 
@@ -26,11 +27,13 @@ export const ToggleTile: React.FC<ToggleTileProps> = ({
   onToggle,
   layoutMode = "full-max",
   visualizer,
+  disabled = false,
   className,
 }) => {
   const isSmall = layoutMode === "small";
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return;
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
       onToggle();
@@ -42,11 +45,13 @@ export const ToggleTile: React.FC<ToggleTileProps> = ({
       role="switch"
       aria-checked={active}
       aria-label={title}
-      tabIndex={0}
-      onClick={onToggle}
+      aria-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      onClick={disabled ? undefined : onToggle}
       onKeyDown={handleKeyDown}
       className={cn(
-        "group flex items-center w-full h-[85px] relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] rounded-xl cursor-pointer select-none",
+        "group flex items-center w-full h-[85px] relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] rounded-xl cursor-pointer select-none transition-opacity duration-200",
+        disabled && "opacity-40 pointer-events-none select-none cursor-default",
         className
       )}
     >

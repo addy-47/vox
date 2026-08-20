@@ -296,7 +296,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 <span className="font-mono text-base font-bold text-[rgb(var(--foreground))]">
                   {totalRss.toFixed(0)}
                 </span>
-                <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">MB Total</span>
+                <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">MB Total</span>
               </div>
             </div>
           </div>
