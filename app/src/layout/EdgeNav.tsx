@@ -7,7 +7,7 @@ const navItems = [
   { icon: Monitor, label: "Home", path: "/" },
   { icon: Clock, label: "History", path: "/history" },
   { icon: Database, label: "Memory", path: "/memory" },
-  { icon: Settings, label: "System", path: "/settings" },
+  { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
 export const EdgeNav: React.FC = () => {

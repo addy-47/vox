@@ -254,6 +254,7 @@ export const InteractionCard = memo(
                   activeSublabel={DICTATION_COPY.triggerContinuousSub}
                   inactiveSublabel={DICTATION_COPY.triggerPttSub}
                   icon={dictationInteractionMode === "passive" ? Activity : Radio}
+                  disabled={!dictationEnabled}
                   onToggle={() =>
                     updateDraft(
                       "dictation",
@@ -266,7 +267,7 @@ export const InteractionCard = memo(
               </div>
 
               {/* Dictation Output & Hotkey Configuration Desk */}
-              <DictationConfigDesk layoutMode={layoutMode} />
+              <DictationConfigDesk layoutMode={layoutMode} disabled={!dictationEnabled} />
             </>
           )}
         </div>

@@ -228,14 +228,14 @@ export const Memory: React.FC = () => {
             exit={{ opacity: 0, y: -10 }}
             className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-md w-full px-4"
           >
-            <div className="glass-card p-3.5 rounded-2xl border border-red-500/30 bg-[rgb(var(--card))]/95 flex items-center justify-between gap-3 shadow-2xl">
+            <div className="glass-card p-3.5 rounded-2xl border border-[rgb(var(--danger))]/30 bg-[rgb(var(--card))]/95 flex items-center justify-between gap-3 shadow-2xl">
               <div className="flex items-center gap-2.5 overflow-hidden">
-                <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-                <p className="text-[11px] font-sans text-red-400 truncate">{error}</p>
+                <div className="w-2.5 h-2.5 rounded-full bg-[rgb(var(--danger))] shrink-0" />
+                <p className="text-[11px] font-sans text-[rgb(var(--danger))] truncate">{error}</p>
               </div>
               <button
                 onClick={() => fetchTopology(true)}
-                className="px-3 py-1 rounded-xl text-[11px] font-sans font-bold uppercase tracking-wider bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-colors shrink-0 cursor-pointer shadow-sm"
+                className="px-3 py-1 rounded-xl text-[11px] font-sans font-bold uppercase tracking-wider bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.28)] transition-colors shrink-0 cursor-pointer shadow-sm"
               >
                 Retry
               </button>

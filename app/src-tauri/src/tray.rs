@@ -1,8 +1,46 @@
 use std::time::Duration;
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::WidgetExt;
+
+/// Ensures the "tray" WebviewWindow exists, lazily constructing it if it was closed to save RAM.
+pub fn ensure_tray_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    if let Some(existing) = app.get_webview_window("tray") {
+        return Ok(existing);
+    }
+
+    log::info!("[Tray] Lazily constructing 'tray' HUD webview window...");
+    let window = WebviewWindowBuilder::new(app, "tray", WebviewUrl::App("/tray".into()))
+        .title("vox-live")
+        .inner_size(420.0, 250.0)
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .resizable(false)
+        .visible(false)
+        .shadow(false)
+        .zoom_hotkeys_enabled(false)
+        .skip_taskbar(true)
+        .build()
+        .map_err(|e| format!("Failed to create tray window: {}", e))?;
+
+    setup_tray_window(&window);
+    let win_clone = window.clone();
+    tauri::async_runtime::spawn(async move {
+        position_tray_window(&win_clone).await;
+    });
+
+    Ok(window)
+}
+
+/// Safely closes and destroys the tray window to reclaim memory when Tray mode is inactive.
+pub fn destroy_tray_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("tray") {
+        log::info!("[Tray] Destroying 'tray' HUD webview window to save RAM.");
+        let _ = window.close();
+    }
+}
 
 /// Configures the tray window with standard HUD settings: frameless, always-on-top, etc.
 pub fn setup_tray_window(window: &WebviewWindow) {

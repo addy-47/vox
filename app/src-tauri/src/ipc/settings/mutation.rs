@@ -64,22 +64,16 @@ pub async fn update_setting(
         {
             let menu_item_lock = state.hud_menu_item.lock().await;
             if let Some(ref live_i) = *menu_item_lock {
-                let _ = live_i.set_enabled(enabled);
-                // If disabling, also uncheck it to reflect it's offline
-                if !enabled {
-                    let _ = live_i.set_checked(false);
-                } else {
-                    // Restore checked state based on current visibility logic if needed
-                    let hud_visible = *state.hud_visible.lock().await;
-                    let _ = live_i.set_checked(hud_visible);
-                }
+                // Keep item enabled so GTK doesn't render a red prohibited square
+                let hud_visible = *state.hud_visible.lock().await;
+                let _ = live_i.set_checked(hud_visible && enabled);
             }
         }
 
         if !enabled {
-            // Disable Tray: Revert interaction owner to MainWindow, hide window, and evaluate engine offload
+            // Disable Tray: Revert interaction owner to MainWindow, destroy window to save RAM, and evaluate engine offload
             log::info!(
-                "[Settings] Disabling Tray HUD: Reverting owner to MainWindow, hiding window, and evaluating engine offload..."
+                "[Settings] Disabling Dictation: Reverting owner to MainWindow, destroying tray window to save RAM, and evaluating engine offload..."
             );
             state.owner.store(
                 crate::core::state::InteractionOwner::MainWindow as u32,
@@ -93,9 +87,7 @@ pub async fn update_setting(
                     ));
             }
 
-            if let Some(tray_win) = app.get_webview_window("tray") {
-                let _ = tray_win.hide();
-            }
+            crate::tray::destroy_tray_window(&app);
 
             let is_engaged = state
                 .pipeline
@@ -114,14 +106,36 @@ pub async fn update_setting(
                 log::info!("[Settings] Engine retention: Active consumer(s) engaged.");
             }
         } else {
-            // Enable Tray: Launch engine if needed
-            log::info!("[Settings] Enabling Tray HUD: Ensuring 3-Tier Engine is active...");
+            // Enable Dictation: If output mode is Tray, ensure the window is constructed
+            let output_mode = {
+                let s = state.settings.read().unwrap();
+                s.dictation.output_mode.clone()
+            };
+            if output_mode == crate::core::settings::DictationOutputMode::Tray {
+                let _ = crate::tray::ensure_tray_window(&app);
+            }
+
+            log::info!("[Settings] Enabling Dictation: Ensuring 3-Tier Engine is active...");
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = launch_engine(app_clone).await {
-                    log::error!("[Settings] Failed to launch engine for tray: {}", e);
+                    log::error!("[Settings] Failed to launch engine for dictation: {}", e);
                 }
             });
+        }
+    }
+
+    if applied && domain == "dictation" && key == "output_mode" {
+        let (enabled, output_mode) = {
+            let s = state.settings.read().unwrap();
+            (s.dictation.enabled, s.dictation.output_mode.clone())
+        };
+        if enabled && output_mode == crate::core::settings::DictationOutputMode::Tray {
+            log::info!("[Settings] Output mode set to Tray: Ensuring tray HUD webview is constructed...");
+            let _ = crate::tray::ensure_tray_window(&app);
+        } else if output_mode != crate::core::settings::DictationOutputMode::Tray {
+            log::info!("[Settings] Output mode set to non-Tray: Destroying tray webview to save RAM...");
+            crate::tray::destroy_tray_window(&app);
         }
     }
 
