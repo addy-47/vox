@@ -4,7 +4,7 @@ import { UserCircle, Code2, Eye, Sparkles } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import ReactMarkdown from "react-markdown";
 import { Card, SegmentedControl } from "@/shared/ui";
-import { PERSONA_COPY } from "@/data/settingsData";
+import { PERSONA_COPY } from "@/data/settingsCopy";
 
 interface PersonaCardProps {
   layoutMode?: "full-max" | "full-min" | "small";

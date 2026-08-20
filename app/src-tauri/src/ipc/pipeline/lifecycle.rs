@@ -70,12 +70,17 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
             }
         }
 
-        // 4. Evict all ONNX models from process memory
+        // 4. Evict all ONNX models from process memory and trim glibc heap
         crate::services::memory::unload_all_onnx_models();
+        #[cfg(target_os = "linux")]
+        unsafe {
+            libc::malloc_trim(0);
+        }
     }
 
     Ok(())
 }
+
 
 #[tauri::command]
 pub async fn engage(

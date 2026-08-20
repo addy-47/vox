@@ -6,7 +6,8 @@ import React, {
   useCallback,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import {
   Activity,
   RefreshCw,
@@ -44,8 +45,8 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   onClose,
   anchorRef,
 }) => {
-  const navigate = useNavigate();
   const modalRef = useRef<HTMLDivElement>(null);
+  const { openProfiler } = useProfilerDrawer();
 
   // Subscribe to settings store to inspect exact variants and reactive theme
   const accentSeed = useSettingsStore((s) => s.settings?.ui.accent_seed);
@@ -150,13 +151,12 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     };
   }, [accentRgbStr]);
 
+  // Register with the global overlay stack for FILO Escape dismissal.
+  useOverlay({ onClose: () => onClose?.(), active: !!(popover && open), ref: modalRef, dismissOnOutside: false });
+
   // Close handlers for popover mode
   useEffect(() => {
     if (!popover || !open) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose?.();
-    };
 
     const handleClickOutside = (e: MouseEvent) => {
       if (
@@ -169,11 +169,9 @@ export const Monitoring: React.FC<MonitoringProps> = ({
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("mousedown", handleClickOutside);
 
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [popover, open, onClose, anchorRef]);
@@ -243,7 +241,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
               <button
                 onClick={() => {
                   onClose?.();
-                  navigate("/memory-profiler");
+                  openProfiler();
                 }}
                 style={{
                   backgroundColor: `rgba(${colors.primary}, 0.10)`,

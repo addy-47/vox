@@ -18,7 +18,7 @@ import {
   getUnresolvedConflicts,
   getMemoryFactDetail,
 } from "@/services/memoryService";
-import { MEMORY_COPY } from "@/data/memoryData";
+import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 
 const EMPTY_CONFLICTS: { fact_a: MemoryNodeTopology; fact_b: MemoryNodeTopology }[] = [];
@@ -343,7 +343,7 @@ export const Memory: React.FC = () => {
         </button>
 
         <button
-          onClick={() => setDrawerOpen(true)}
+          onClick={() => setDrawerOpen((v) => !v)}
           className="w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer relative group text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40 hover:bg-[rgb(var(--accent))]/30 shadow-md"
         >
           <Cpu size={18} />

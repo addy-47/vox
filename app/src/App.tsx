@@ -7,6 +7,8 @@ import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { MemoryProfilerProvider } from "@/shared/context/MemoryProfilerContext";
+import { ProfilerDrawerProvider } from "@/shared/components/profiler/ProfilerDrawer";
+import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { Home } from "@/pages/Home";
@@ -16,7 +18,6 @@ const History = lazy(() => import("@/pages/History").then(m => ({ default: m.His
 const Memory = lazy(() => import("@/pages/Memory").then(m => ({ default: m.Memory })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
-const MemoryProfiler = lazy(() => import("@/pages/MemoryProfiler").then(m => ({ default: m.MemoryProfiler })));
 
 // Premium Shared Orbital Loading Screen
 const PageLoader = () => (
@@ -81,6 +82,11 @@ const App: React.FC = () => {
 
   const isLoading = setupCompleted === null || !readyToTransition;
 
+  // Global overlay stack — single authority for FILO Escape / outside-click dismissal.
+  useEffect(() => {
+    installOverlayStack();
+  }, []);
+
   return (
     <div className="relative h-screen w-full bg-[rgb(var(--background))] overflow-hidden">
       <ErrorBoundary name="App">
@@ -90,7 +96,8 @@ const App: React.FC = () => {
             <div className="relative h-full w-full">
               {setupCompleted !== null && (
                 <Suspense fallback={null}>
-                  <Routes>
+                  <ProfilerDrawerProvider>
+                    <Routes>
                     {/* If setup not completed, always redirect to wizard */}
                     {!setupCompleted && (
                       <>
@@ -107,12 +114,12 @@ const App: React.FC = () => {
                         <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
                         <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
                         <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
-                        <Route path="/memory-profiler" element={<ErrorBoundary name="MemoryProfiler"><MemoryProfiler /></ErrorBoundary>} />
                         <Route path="/wizard" element={<Navigate to="/" replace />} />
                         <Route path="*" element={<Navigate to="/" replace />} />
                       </Route>
                     )}
                   </Routes>
+                  </ProfilerDrawerProvider>
                 </Suspense>
               )}
 

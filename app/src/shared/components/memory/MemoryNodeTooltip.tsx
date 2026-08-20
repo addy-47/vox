@@ -17,6 +17,7 @@ import {
 } from "@/services/memoryService";
 import { getCollectionColor, getRelationStyle } from "@/shared/components/memory/MemoryGraph";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 
 interface MemoryNodeTooltipProps {
   factDetail: MemoryFactDetail | null;
@@ -60,21 +61,8 @@ export const MemoryNodeTooltip = memo(({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Click outside to dismiss tooltip
-  useEffect(() => {
-    const handleDocClick = (e: MouseEvent | PointerEvent) => {
-      if (tooltipRef.current && !tooltipRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    const timer = setTimeout(() => {
-      document.addEventListener("pointerdown", handleDocClick);
-    }, 50);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("pointerdown", handleDocClick);
-    };
-  }, [onClose]);
+  // Escape + outside-click dismissal via the global overlay stack.
+  useOverlay({ onClose, ref: tooltipRef, dismissOnOutside: true });
 
   useEffect(() => {
     if (factDetail) {

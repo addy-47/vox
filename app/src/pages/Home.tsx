@@ -2,10 +2,11 @@ import React, { memo, useMemo } from "react";
 import { VoxOrb, PipelineField, StatusCapsule } from "@/shared/components/home";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { ErrorBoundary } from "@/shared/components/common";
-import { TEST_CLIPS, GOVERNOR_LABELS } from "@/data/homeData";
+import { TEST_CLIPS, GOVERNOR_LABELS } from "@/data/homeCopy";
 import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/shared/lib/utils";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   useHomePage,
@@ -81,6 +82,14 @@ export const Home = memo(() => {
     togglePtt,
     handleTestClip,
   } = useHomePage();
+
+  // Test-clip menu participates in the global overlay stack (Escape / outside-click).
+  useOverlay({
+    onClose: () => setTestMode(false),
+    ref: testPanelRef,
+    dismissOnOutside: true,
+    active: testMode && !isEngaged,
+  });
 
   const statusLabel = toStatusLabel(
     interactionState,

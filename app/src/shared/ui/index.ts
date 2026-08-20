@@ -1,4 +1,5 @@
 export * from "./Card";
+export * from "./Drawer";
 export * from "./Badge";
 export * from "./SegmentedControl";
 export * from "./ToggleTile";

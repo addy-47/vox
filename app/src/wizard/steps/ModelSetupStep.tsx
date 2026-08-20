@@ -8,7 +8,7 @@ import {
   Layers, ShieldCheck, Filter
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { WIZARD_CTA_LABELS } from '@/data/welcomeContent';
+import { WIZARD_CTA_LABELS } from '@/data/welcomeCopy';
 
 // --- Modular Components ---
 import { WizardHeader } from '../components/WizardHeader';
