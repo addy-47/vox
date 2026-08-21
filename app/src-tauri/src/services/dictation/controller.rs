@@ -22,10 +22,15 @@ impl DictationController {
         {
             let engine_lock = state.engine.lock().await;
             if engine_lock.is_none() {
-                log::info!("[Dictation::Controller] Engine is cold. Auto-launching audio/STT engine...");
+                log::info!(
+                    "[Dictation::Controller] Engine is cold. Auto-launching audio/STT engine..."
+                );
                 drop(engine_lock);
                 if let Err(e) = crate::ipc::pipeline::launch_engine(app.clone()).await {
-                    log::error!("[Dictation::Controller] Failed to lazy-launch engine: {}", e);
+                    log::error!(
+                        "[Dictation::Controller] Failed to lazy-launch engine: {}",
+                        e
+                    );
                     return Err(DictationError::EngineNotReady {
                         message: format!("Failed to initialize audio engine: {}", e),
                     });
@@ -141,7 +146,9 @@ impl DictationController {
                 .stt_tx
                 .send(SttCommand::Final(turn, owner, buffer_clone));
         } else {
-            log::error!("[Dictation::Controller] Engine not running during dictation finalization.");
+            log::error!(
+                "[Dictation::Controller] Engine not running during dictation finalization."
+            );
             return Err(DictationError::EngineNotReady {
                 message: "Engine not available for transcription".into(),
             });

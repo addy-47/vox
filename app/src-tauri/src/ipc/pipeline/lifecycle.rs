@@ -78,7 +78,6 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-
 #[tauri::command]
 pub async fn engage(
     state: State<'_, std::sync::Arc<AppState>>,

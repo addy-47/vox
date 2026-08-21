@@ -332,6 +332,11 @@ pub struct AppState {
     pub is_sleeping: Arc<AtomicBool>,
     pub runtime_status: Arc<std::sync::atomic::AtomicU32>, // RuntimeStatus as u32
 
+    /// Set when the "main" webview is destroyed (renderer crash / DevTools close)
+    /// so the next "Launch Vox" rebuilds it instead of re-showing a dead window.
+    /// Cleared by `window_main::ensure_main_window` once a fresh window exists.
+    pub main_window_destroyed: Arc<AtomicBool>,
+
     /// Persistence worker channel. None if persistence is disabled or hibernating.
     pub persist_tx: parking_lot::Mutex<
         Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
@@ -459,6 +464,7 @@ impl AppState {
             is_translit_loaded: Arc::new(AtomicBool::new(false)),
             is_sleeping: Arc::new(AtomicBool::new(false)),
             runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
+            main_window_destroyed: Arc::new(AtomicBool::new(false)),
             persist_tx: parking_lot::Mutex::new(None),
             memory_tx: parking_lot::Mutex::new(None),
             dropped_persistence_events: Arc::new(std::sync::atomic::AtomicU64::new(0)),

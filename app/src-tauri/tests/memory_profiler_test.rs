@@ -24,12 +24,24 @@ fn test_sanitize_page_name_normalization() {
 #[test]
 fn test_get_profiler_snapshot_contract() {
     let snapshot = collect_profiler_snapshot(true, false, false);
-    assert!(snapshot.total_vox_ram_mb > 0.0, "Total Vox RAM must be > 0 MB");
-    assert!(snapshot.main_process_ram_mb > 0.0, "Main process RAM must be > 0 MB");
-    assert!(!snapshot.process_tree.is_empty(), "Process tree must contain at least the main process");
+    assert!(
+        snapshot.total_vox_ram_mb > 0.0,
+        "Total Vox RAM must be > 0 MB"
+    );
+    assert!(
+        snapshot.main_process_ram_mb > 0.0,
+        "Main process RAM must be > 0 MB"
+    );
+    assert!(
+        !snapshot.process_tree.is_empty(),
+        "Process tree must contain at least the main process"
+    );
 
     let main_entry = snapshot.process_tree.iter().find(|p| p.is_main_process);
-    assert!(main_entry.is_some(), "Process tree must identify the main process");
+    assert!(
+        main_entry.is_some(),
+        "Process tree must identify the main process"
+    );
 }
 
 #[tokio::test]
@@ -76,10 +88,18 @@ async fn test_record_memory_profile_snapshot_jsonl_persistence() {
     let result = record_memory_profile_event(event.clone()).await;
     assert!(result.is_ok(), "record_memory_profile_event must return Ok");
 
-    assert!(expected_file_path.exists(), "Expected snapshot file {:?} was not created", expected_file_path);
+    assert!(
+        expected_file_path.exists(),
+        "Expected snapshot file {:?} was not created",
+        expected_file_path
+    );
 
-    let content = std::fs::read_to_string(&expected_file_path).expect("Failed to read snapshot file");
-    assert!(!content.trim().is_empty(), "Snapshot file must not be empty");
+    let content =
+        std::fs::read_to_string(&expected_file_path).expect("Failed to read snapshot file");
+    assert!(
+        !content.trim().is_empty(),
+        "Snapshot file must not be empty"
+    );
 
     let read_event: MemoryProfileLogEvent = serde_json::from_str(content.lines().last().unwrap())
         .expect("Failed to deserialize persisted JSONL snapshot line");

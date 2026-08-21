@@ -115,14 +115,16 @@ pub async fn start_realtime_session_internal(
         .load(std::sync::atomic::Ordering::Relaxed)
         .into();
     let interaction_mode = match owner {
-        crate::core::state::InteractionOwner::Dictation => match settings.dictation.interaction_mode {
-            crate::core::settings::DictationInteractionMode::Passive => {
-                crate::core::settings::InteractionMode::Passive
+        crate::core::state::InteractionOwner::Dictation => {
+            match settings.dictation.interaction_mode {
+                crate::core::settings::DictationInteractionMode::Passive => {
+                    crate::core::settings::InteractionMode::Passive
+                }
+                crate::core::settings::DictationInteractionMode::Ptt => {
+                    crate::core::settings::InteractionMode::PTT
+                }
             }
-            crate::core::settings::DictationInteractionMode::Ptt => {
-                crate::core::settings::InteractionMode::PTT
-            }
-        },
+        }
         crate::core::state::InteractionOwner::MainWindow
         | crate::core::state::InteractionOwner::Ptt => settings.interaction.main_app_mode.clone(),
         crate::core::state::InteractionOwner::Wizard => {
