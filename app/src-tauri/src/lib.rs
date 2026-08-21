@@ -31,7 +31,6 @@ use crate::ipc::tray::{
 use crate::services::ptt::{ptt_start, ptt_stop};
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
-use crate::tray::{position_tray_window, setup_tray_window};
 
 use crate::monitoring::system_monitor::spawn_system_monitor;
 
@@ -347,11 +346,11 @@ pub fn run() {
                 let state: State<'_, std::sync::Arc<AppState>> = app.state();
                 state.runtime_status.store(RuntimeStatus::Ready as u32, Ordering::Relaxed);
                 app.emit(crate::core::constants::EVENT_RUNTIME_READY, ()).ok();
-                log::info!("[BOOTSTRAP] Runtime Ready. Tray visible.");
+                log::info!("[BOOTSTRAP] Runtime Ready.");
             }
 
-            // ── 2. Position tray HUD ─────────────────────────────────────────
-            if let Some(tray_win) = app.get_webview_window("tray") {
+            // ── 2. Conditionally construct tray HUD on demand ─────────────────────────
+            {
                 let (should_show_tray, setup_completed) = {
                     let state: State<'_, std::sync::Arc<AppState>> = app.state();
                     let s = state.settings.read().unwrap();
@@ -363,19 +362,14 @@ pub fn run() {
                 };
 
                 if setup_completed && should_show_tray {
-                    let tray_win_clone = tray_win.clone();
-                    tauri::async_runtime::spawn(async move {
-                        // Give the window manager a moment to register the window
-                        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-                        setup_tray_window(&tray_win_clone);
-                        position_tray_window(&tray_win_clone).await;
-                        let _ = tray_win_clone.hide();
-                    });
+                    log::info!("[BOOTSTRAP] Tray HUD mode active. Lazily constructing tray window...");
+                    if let Err(e) = crate::tray::ensure_tray_window(app.handle()) {
+                        log::error!("[BOOTSTRAP] Failed to construct tray window on startup: {}", e);
+                    }
                 } else if !setup_completed {
-                    log::info!("[BOOTSTRAP] Onboarding setup not completed. Keeping tray window hidden.");
+                    log::info!("[BOOTSTRAP] Onboarding setup not completed. 0 tray webviews spawned.");
                 } else {
-                    log::info!("[BOOTSTRAP] Tray HUD output mode not selected. Keeping tray window closed to save RAM.");
-                    let _ = tray_win.close();
+                    log::info!("[BOOTSTRAP] Tray HUD output mode not selected. 0 tray webviews spawned (saving ~250MB RAM).");
                 }
             }
 
@@ -409,8 +403,8 @@ pub fn run() {
                     log::info!("[BOOTSTRAP] PTT Dictation enabled. Zero-idle-RAM preserved (models will load on-demand when hotkey is triggered).");
                 } else if !setup_completed {
                     log::info!("[BOOTSTRAP] Setup not completed. Launching onboarding wizard...");
-                    if let Some(wizard_win) = handle.get_webview_window("wizard") {
-                        crate::wizard::setup_wizard_window(&wizard_win);
+                    if let Ok(wizard_win) = crate::wizard::ensure_wizard_window(&handle) {
+                        let _ = wizard_win.show();
                     }
                 } else {
                     log::info!("[BOOTSTRAP] Dictation disabled. Skipping engine auto-launch to save resources.");

@@ -66,9 +66,8 @@ interface BlobDef {
 }
 
 const BLOBS: BlobDef[] = [
-  { x: "20%",  y: "30%", size: "55vmax", animName: "blob-rotate-a", delay: 0, borderRadius: "42% 58% 60% 40% / 48% 42% 58% 52%" },
-  { x: "75%",  y: "65%", size: "50vmax", animName: "blob-rotate-b", delay: -15, borderRadius: "58% 42% 45% 55% / 62% 38% 62% 38%" },
-  { x: "50%",  y: "15%", size: "40vmax", animName: "blob-rotate-c", delay: -28, borderRadius: "50% 50% 38% 62% / 42% 58% 42% 58%" },
+  { x: "20%",  y: "30%", size: "42vmax", animName: "blob-rotate-a", delay: 0, borderRadius: "42% 58% 60% 40% / 48% 42% 58% 52%" },
+  { x: "75%",  y: "65%", size: "36vmax", animName: "blob-rotate-b", delay: -15, borderRadius: "58% 42% 45% 55% / 62% 38% 62% 38%" },
 ];
 
 const RIPPLE_COUNT = 5;
@@ -154,7 +153,6 @@ export const AmbientBackground = React.memo(({
           if (glowRef.current) glowRef.current.style.opacity = baseGlow.toFixed(3);
           if (rippleRef.current) rippleRef.current.style.opacity = baseRipple.toFixed(3);
         }
-        // Poll every 250ms when idle to check for incoming audio energy instead of continuous 60fps rAF
         stopLoop();
         return;
       } else {
@@ -164,13 +162,13 @@ export const AmbientBackground = React.memo(({
       animId = requestAnimationFrame(update);
     };
 
-    // Telemetry monitor check to wake up self-stopping loop
+    // Telemetry monitor check to wake up self-stopping loop (relaxed interval for low idle overhead)
     const checkInterval = setInterval(() => {
       const currentEnergy = telemetryRef.current?.energy || 0;
       if (currentEnergy > 0.005 && !isRunning && !document.hidden) {
         startLoop();
       }
-    }, 200);
+    }, 600);
 
     const onVisibilityChange = () => {
       if (document.hidden) {
@@ -220,6 +218,7 @@ export const AmbientBackground = React.memo(({
             animation: `${blob.animName} ${cfg.blobSpeed}s ease-in-out infinite`,
             animationDelay: `${blob.delay}s`,
             borderRadius: blob.borderRadius,
+            willChange: "transform",
           }}
         />
       ))}

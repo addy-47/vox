@@ -67,6 +67,7 @@ export interface MemoryProfileLogEvent {
   dom_node_count: number;
   font_face_count: number;
   timestamp_ms: number;
+  process_tree?: ProcessMemoryEntry[];
 }
 
 /**
@@ -150,35 +151,25 @@ export function sampleDOMStats(): DOMSample {
 }
 
 /**
- * Scans the active document for compositing-heavy CSS indicators.
+ * Scans the active document for compositing-heavy CSS indicators without forcing layout recalculation.
  */
 export function sampleCSSIndicators(): CSSIndicatorsSample {
   if (typeof document === "undefined") {
-    return { backdropFilterCount: 0, willChangeCount: 0, canvasCount: 0, accuracy: "Correlated" };
+    return { backdropFilterCount: 0, willChangeCount: 0, canvasCount: 0, accuracy: "Estimated" };
   }
 
-  let backdropFilterCount = 0;
-  let willChangeCount = 0;
   const canvasCount = document.querySelectorAll("canvas").length;
-
-  const elements = document.querySelectorAll<HTMLElement>("*");
-  // Sample up to first 300 elements to avoid performance stutter
-  const sampleLimit = Math.min(elements.length, 300);
-  for (let i = 0; i < sampleLimit; i++) {
-    const el = elements[i];
-    const style = window.getComputedStyle(el);
-    if (style.backdropFilter && style.backdropFilter !== "none") {
-      backdropFilterCount++;
-    }
-    if (style.willChange && style.willChange !== "auto") {
-      willChangeCount++;
-    }
-  }
+  const backdropFilterCount = document.querySelectorAll(
+    '[style*="backdrop-filter"], [class*="backdrop-blur"], .glass-card, .glass-panel'
+  ).length;
+  const willChangeCount = document.querySelectorAll(
+    '[style*="will-change"], [class*="will-change"]'
+  ).length;
 
   return {
     backdropFilterCount,
     willChangeCount,
     canvasCount,
-    accuracy: "Correlated",
+    accuracy: "Estimated",
   };
 }
