@@ -57,7 +57,7 @@ pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
     // 6. Setup Status
     let setup_completed = p.settings.exists() && {
         let settings = crate::core::settings::VoxSettings::load();
-        settings.setup.completed
+        settings.system.setup_completed
     };
 
     RuntimeReport {

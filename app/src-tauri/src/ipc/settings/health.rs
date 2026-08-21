@@ -19,7 +19,10 @@ pub async fn check_llm_provider_health(
             (prov, "".to_string())
         } else {
             let settings = state.settings.read().map_err(|e| e.to_string())?;
-            (settings.llm.provider.clone(), settings.llm.model.clone())
+            (
+                settings.llm.to_provider_config(),
+                settings.llm.active_model().to_string(),
+            )
         }
     };
 
@@ -82,7 +85,7 @@ pub async fn check_stt_provider_health(
         prov
     } else {
         let settings = state.settings.read().map_err(|e| e.to_string())?;
-        settings.asr.provider.clone()
+        settings.stt.to_provider_config()
     };
 
     match config {
@@ -125,7 +128,7 @@ pub async fn check_tts_provider_health(
         prov
     } else {
         let settings = state.settings.read().map_err(|e| e.to_string())?;
-        settings.tts.provider.clone()
+        settings.tts.to_provider_config()
     };
 
     match config {
@@ -177,7 +180,7 @@ pub async fn list_llm_models(
             prov
         } else {
             let settings = state.settings.read().map_err(|e| e.to_string())?;
-            settings.llm.provider.clone()
+            settings.llm.to_provider_config()
         }
     };
 
@@ -212,26 +215,71 @@ pub async fn list_llm_models(
 }
 
 #[tauri::command]
+pub async fn get_cached_capabilities() -> Result<std::collections::HashMap<String, crate::core::settings::ModelCapabilities>, String> {
+    use crate::utils::paths;
+    let cache_file = paths::get().cache.join("model_capabilities.json");
+    if cache_file.exists() {
+        if let Ok(content) = tokio::fs::read_to_string(&cache_file).await {
+            if let Ok(map) = serde_json::from_str(&content) {
+                return Ok(map);
+            }
+        }
+    }
+    Ok(std::collections::HashMap::new())
+}
+
+#[tauri::command]
 pub async fn probe_model_capabilities(
     state: State<'_, std::sync::Arc<AppState>>,
     provider: Option<crate::core::settings::LlmProviderConfig>,
     model_id: Option<String>,
 ) -> Result<crate::core::settings::ModelCapabilities, String> {
     use crate::services::llm::CapabilityProbeEngine;
+    use crate::utils::paths;
 
     let (config, active_model) = {
         let settings = state.settings.read().map_err(|e| e.to_string())?;
         (
-            provider.unwrap_or_else(|| settings.llm.provider.clone()),
-            settings.llm.model.clone(),
+            provider.unwrap_or_else(|| settings.llm.to_provider_config()),
+            settings.llm.active_model().to_string(),
         )
     };
 
     let target = model_id.or(Some(active_model));
 
-    CapabilityProbeEngine::probe_capabilities(&config, target.as_deref())
+    let caps = CapabilityProbeEngine::probe_capabilities(&config, target.as_deref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Persist to cache file
+    let cache_dir = paths::get().cache.clone();
+    let cache_file = cache_dir.join("model_capabilities.json");
+    let caps_clone = caps.clone();
+    
+    tokio::spawn(async move {
+        let _ = tokio::fs::create_dir_all(&cache_dir).await;
+        let mut map: std::collections::HashMap<String, crate::core::settings::ModelCapabilities> = 
+            if cache_file.exists() {
+                tokio::fs::read_to_string(&cache_file).await
+                    .ok()
+                    .and_then(|c| serde_json::from_str(&c).ok())
+                    .unwrap_or_default()
+            } else {
+                std::collections::HashMap::new()
+            };
+
+        let key = format!("{}:{}", caps_clone.provider_kind, caps_clone.model_id);
+        map.insert(key, caps_clone);
+
+        if let Ok(json) = serde_json::to_string_pretty(&map) {
+            let tmp = cache_file.with_extension("tmp");
+            if tokio::fs::write(&tmp, json).await.is_ok() {
+                let _ = tokio::fs::rename(tmp, cache_file).await;
+            }
+        }
+    });
+
+    Ok(caps)
 }
 
 #[tauri::command]
@@ -246,8 +294,8 @@ pub async fn validate_llm_token_cap(
     let (config, active_model) = {
         let settings = state.settings.read().map_err(|e| e.to_string())?;
         (
-            provider.unwrap_or_else(|| settings.llm.provider.clone()),
-            settings.llm.model.clone(),
+            provider.unwrap_or_else(|| settings.llm.to_provider_config()),
+            settings.llm.active_model().to_string(),
         )
     };
 

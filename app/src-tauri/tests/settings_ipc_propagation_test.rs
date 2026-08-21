@@ -12,7 +12,9 @@ use std::sync::mpsc;
 use std::sync::{Arc, RwLock};
 use std::thread;
 use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{LlmProviderConfig, LlmSettings, VoxSettings};
+use vox_lib::core::settings::{
+    LlmActiveProvider, LlmProviderConfig, LlmRemoteConfig, LlmSettings, VoxSettings,
+};
 use vox_lib::services::llm::policy::calculate_compaction_max_tokens;
 use vox_lib::services::llm::CTX_FLOOR_NON_EMBEDDED;
 
@@ -21,35 +23,36 @@ use vox_lib::services::llm::CTX_FLOOR_NON_EMBEDDED;
 #[test]
 fn test_llm_effective_context_window_calculation() {
     let mut llm = LlmSettings {
-        provider: LlmProviderConfig::Embedded,
-        ctx_size: 2048,
+        active: LlmActiveProvider::Embedded,
+        context_window: 2048,
         ..Default::default()
     };
     assert_eq!(llm.effective_ctx_size(), 2048);
 
-    llm.ctx_size = 4096;
+    llm.context_window = 4096;
     assert_eq!(llm.effective_ctx_size(), 4096);
 
-    // 2. OpenAiCompat provider (Server / Cloud) enforces minimum hard floor (8192)
-    llm.provider = LlmProviderConfig::OpenAiCompat {
+    // 2. Server provider (Server / Cloud) enforces minimum hard floor (8192)
+    llm.active = LlmActiveProvider::Server;
+    llm.server = LlmRemoteConfig {
         base_url: "http://localhost:11434".to_string(),
         model: "llama3.2".to_string(),
         api_key: None,
         provider_name: Some("ollama".to_string()),
     };
 
-    llm.ctx_size = 2048; // Below 8192 floor
+    llm.context_window = 2048; // Below 8192 floor
     assert_eq!(
         llm.effective_ctx_size(),
         CTX_FLOOR_NON_EMBEDDED,
-        "Non-embedded models with ctx_size < 8192 MUST enforce CTX_FLOOR_NON_EMBEDDED floor!"
+        "Non-embedded models with context_window < 8192 MUST enforce CTX_FLOOR_NON_EMBEDDED floor!"
     );
 
-    llm.ctx_size = 16384; // Above 8192 floor
+    llm.context_window = 16384; // Above 8192 floor
     assert_eq!(
         llm.effective_ctx_size(),
         16384,
-        "Non-embedded models with ctx_size >= 8192 MUST use the higher configured value!"
+        "Non-embedded models with context_window >= 8192 MUST use the higher configured value!"
     );
 }
 
@@ -91,7 +94,7 @@ fn test_settings_rwlock_concurrency_contract() {
         reader_handles.push(thread::spawn(move || {
             let r = settings_clone.read().unwrap();
             assert_eq!(
-                r.interaction.main_app_mode,
+                r.interaction.mode,
                 vox_lib::core::settings::InteractionMode::Passive
             );
         }));
@@ -104,7 +107,7 @@ fn test_settings_rwlock_concurrency_contract() {
     // 2. Mutate settings on writer thread
     {
         let mut w = settings.write().unwrap();
-        w.interaction.main_app_mode = vox_lib::core::settings::InteractionMode::PTT;
+        w.interaction.mode = vox_lib::core::settings::InteractionMode::PTT;
     }
 
     // 3. Spawn 10 concurrent reader threads checking updated state
@@ -114,7 +117,7 @@ fn test_settings_rwlock_concurrency_contract() {
         updated_reader_handles.push(thread::spawn(move || {
             let r = settings_clone.read().unwrap();
             assert_eq!(
-                r.interaction.main_app_mode,
+                r.interaction.mode,
                 vox_lib::core::settings::InteractionMode::PTT
             );
         }));
@@ -125,7 +128,7 @@ fn test_settings_rwlock_concurrency_contract() {
     }
 
     assert_eq!(
-        settings.read().unwrap().interaction.main_app_mode,
+        settings.read().unwrap().interaction.mode,
         vox_lib::core::settings::InteractionMode::PTT
     );
 }

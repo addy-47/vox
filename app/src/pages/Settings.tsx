@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, memo, Suspense, lazy } from "react";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, AlertCircle } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -152,15 +152,13 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
       const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
       if (isRealtime) return false;
       return (
-        settings.vad.vad_backend !== draftSettings.vad.vad_backend ||
-        settings.asr.model !== draftSettings.asr.model ||
-        settings.asr.provider?.kind !== draftSettings.asr.provider?.kind ||
-        settings.llm.model !== draftSettings.llm.model ||
-        settings.llm.ctx_size !== draftSettings.llm.ctx_size ||
+        settings.vad.backend !== draftSettings.vad.backend ||
+        settings.stt.active !== draftSettings.stt.active ||
+        settings.stt.embedded.model !== draftSettings.stt.embedded.model ||
+        settings.llm.active !== draftSettings.llm.active ||
+        settings.llm.context_window !== draftSettings.llm.context_window ||
         settings.llm.threads !== draftSettings.llm.threads ||
-        settings.tts.provider?.kind !== draftSettings.tts.provider?.kind ||
-        settings.llm.provider?.kind !== draftSettings.llm.provider?.kind ||
-        settings.llm.provider?.model !== draftSettings.llm.provider?.model
+        settings.tts.active !== draftSettings.tts.active
       );
     }
     return false;
@@ -172,7 +170,16 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
     }
   }, [hasChanges]);
 
+  const isCloudLlmMissingKey =
+    draftSettings?.llm?.active === "cloud" &&
+    !draftSettings?.llm?.cloud?.api_key?.trim();
+  const isCloudSttMissingKey =
+    draftSettings?.stt?.active === "cloud" &&
+    !draftSettings?.stt?.cloud?.api_key?.trim();
+  const isMissingCloudKey = isCloudLlmMissingKey || isCloudSttMissingKey;
+
   const handleSave = () => {
+    if (isMissingCloudKey) return;
     if (requiresRestart && !showRestartConfirm) {
       setShowRestartConfirm(true);
     } else {
@@ -208,7 +215,27 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
               <div
                 className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px] animate-fade-in transition-all duration-150 ease-out"
               >
-                {showRestartConfirm ? (
+                {isMissingCloudKey ? (
+                  <>
+                    <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                      <AlertCircle size={14} /> API Key Required for Cloud Provider
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        disabled
+                        className="px-3.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)]"
+                      >
+                        {SETTINGS_COPY.saveChanges}
+                      </button>
+                      <button
+                        onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                        className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                      >
+                        {SETTINGS_COPY.discardChanges}
+                      </button>
+                    </div>
+                  </>
+                ) : showRestartConfirm ? (
                   <>
                     <span className="font-bold uppercase tracking-wider text-amber-400">
                       {SETTINGS_COPY.restartRequired}

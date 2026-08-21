@@ -27,11 +27,11 @@ export const ModelsTopologyMap = memo(
     isAuxiliaryVerified = true,
   }: ModelsTopologyMapProps) => {
     const PIPELINE_NODES = [
-      { id: "vad" as PipelineTab, label: "VAD", Icon: Activity, isVerified: isVadVerified },
-      { id: "asr" as PipelineTab, label: "STT", Icon: Sparkles, isVerified: isAsrVerified },
-      { id: "llm" as PipelineTab, label: "LLM", Icon: Brain, isVerified: isLlmDownloaded },
-      { id: "tts" as PipelineTab, label: "TTS", Icon: Volume2, isVerified: isTtsVerified },
-      { id: "auxiliary" as PipelineTab, label: "Auxiliary", Icon: Layers, isVerified: isAuxiliaryVerified },
+      { id: "vad" as PipelineTab, label: "Voice Detection", Icon: Activity, isVerified: isVadVerified },
+      { id: "asr" as PipelineTab, label: "Speech to Text", Icon: Sparkles, isVerified: isAsrVerified },
+      { id: "llm" as PipelineTab, label: "Reasoning", Icon: Brain, isVerified: isLlmDownloaded },
+      { id: "tts" as PipelineTab, label: "Speech", Icon: Volume2, isVerified: isTtsVerified },
+      { id: "auxiliary" as PipelineTab, label: "Support", Icon: Layers, isVerified: isAuxiliaryVerified },
     ];
 
     return (
@@ -65,7 +65,7 @@ export const ModelsTopologyMap = memo(
                   : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
               )}
             />
-            <span className="text-[12px] font-bold text-[rgb(var(--foreground))] uppercase tracking-wide">
+            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate max-w-full leading-tight">
               {label}
             </span>
             <span

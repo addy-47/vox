@@ -301,7 +301,7 @@ fn main() -> Result<()> {
     let memory_settings = MemorySettings {
         context_retrieval_enabled: true,
         pipeline_processing_enabled: true,
-        max_personal_memory_share: 0.15,
+        max_context_share: 0.15,
         context_chaining_window_hours: 12,
         top_k_facts: 5,
         max_hops: 2,

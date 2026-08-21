@@ -49,11 +49,11 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   const { openProfiler } = useProfilerDrawer();
 
   // Subscribe to settings store to inspect exact variants and reactive theme
-  const accentSeed = useSettingsStore((s) => s.settings?.ui.accent_seed);
-  const theme = useSettingsStore((s) => s.settings?.ui.theme);
-  const llmProvider = useSettingsStore((s) => s.settings?.llm?.provider?.kind);
-  const ttsProvider = useSettingsStore((s) => s.settings?.tts?.provider?.kind);
-  const sttProvider = useSettingsStore((s) => s.settings?.asr?.provider?.kind);
+  const accentSeed = useSettingsStore((s) => s.settings?.appearance.accent_seed);
+  const theme = useSettingsStore((s) => s.settings?.appearance.theme);
+  const llmProvider = useSettingsStore((s) => s.settings?.llm?.active);
+  const ttsProvider = useSettingsStore((s) => s.settings?.tts?.active);
+  const sttProvider = useSettingsStore((s) => s.settings?.stt?.active);
 
   // Dynamic CSS variable observer state
   const [accentRgbStr, setAccentRgbStr] = useState<string>("0, 219, 233");
@@ -113,8 +113,10 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   // Derive model variant labels (thinking, hearing, speaking)
   const variants = useMemo(() => {
     let llmVariant = "On Device";
-    if (llmProvider === "open_ai_compat") {
+    if (llmProvider === "server") {
       llmVariant = "On Server";
+    } else if (llmProvider === "cloud") {
+      llmVariant = "In Cloud";
     }
 
     let ttsVariant = "On Device";
@@ -125,8 +127,8 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     }
 
     let sttVariant = "On Device";
-    if (sttProvider && sttProvider !== "embedded") {
-      sttVariant = "On Server";
+    if (sttProvider === "cloud") {
+      sttVariant = "In Cloud";
     }
 
     return {

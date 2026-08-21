@@ -13,6 +13,7 @@ export interface LlmSettingsViewProps {
 type SettingsSubTab = "performance" | "tokens" | "creativity";
 
 export const LlmSettingsView = memo(({
+  layoutMode,
   isRemoteLlm,
   provider,
 }: LlmSettingsViewProps) => {
@@ -60,7 +61,8 @@ export const LlmSettingsView = memo(({
   }, [currentMaxTokens]);
 
   // Determine creativity / temperature preset (default: 0.7 / balanced)
-  const currentTemp = llmSettings?.chat_temperature ?? 0.7;
+  const currentTemp = llmSettings?.temperature ?? 0.7;
+  const currentContext = llmSettings?.context_window ?? 2048;
 
   const handleVerifyCustomCap = async (capVal: number) => {
     if (!capVal || capVal <= 0) return;
@@ -69,7 +71,7 @@ export const LlmSettingsView = memo(({
 
     try {
       const ceiling = await invoke<number | null>("validate_llm_token_cap", {
-        provider: provider || llmSettings?.provider,
+        provider: provider,
         modelId: provider && "model" in provider ? provider.model : undefined,
         targetCap: capVal,
       });
@@ -108,9 +110,9 @@ export const LlmSettingsView = memo(({
       providerName?.toLowerCase().includes("mistral"));
 
   return (
-    <div className="w-full flex flex-col gap-3.5 animate-fade-in text-[rgb(var(--foreground))] select-none">
-      {/* Flat Underline Tabs */}
-      <div className="flex items-center gap-5 border-b border-[rgba(var(--foreground),0.06)] pb-1">
+    <div className="w-full h-full flex flex-col min-h-0 gap-2.5 animate-fade-in text-[rgb(var(--foreground))] select-none">
+      {/* Flat Underline Tabs (Fixed / Sticky at Top) */}
+      <div className="flex items-center justify-center gap-3.5 border-b border-[rgba(var(--foreground),0.06)] pb-1 shrink-0">
         <button
           type="button"
           onClick={() => setActiveSubTab("performance")}
@@ -125,6 +127,8 @@ export const LlmSettingsView = memo(({
           <span>Performance</span>
         </button>
 
+        <span className="text-[rgba(var(--foreground),0.15)] text-[11px] font-light pb-1.5 select-none">|</span>
+
         <button
           type="button"
           onClick={() => setActiveSubTab("tokens")}
@@ -138,6 +142,8 @@ export const LlmSettingsView = memo(({
           <Sparkles size={14} />
           <span>Tokens & Context</span>
         </button>
+
+        <span className="text-[rgba(var(--foreground),0.15)] text-[11px] font-light pb-1.5 select-none">|</span>
 
         <button
           type="button"
@@ -154,8 +160,15 @@ export const LlmSettingsView = memo(({
         </button>
       </div>
 
-      {/* TAB 1: PERFORMANCE */}
-      {activeSubTab === "performance" && (
+      {/* Tab Contents (Scrollable Area) */}
+      <div
+        className={cn(
+          "flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1",
+          layoutMode === "small" ? "max-h-[235px]" : ""
+        )}
+      >
+        {/* TAB 1: PERFORMANCE */}
+        {activeSubTab === "performance" && (
         <div className="space-y-3 animate-fade-in">
           {!isRemoteLlm ? (
             <div className="p-3.5 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--foreground),0.06)] space-y-3">
@@ -273,7 +286,7 @@ export const LlmSettingsView = memo(({
                 <span className="font-bold text-[13px] tracking-tight">Context Window</span>
               </div>
               <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))]">
-                {!isRemoteLlm ? `${(llmSettings.ctx_size || 2048).toLocaleString()} Tokens` : "Provider Managed"}
+                {!isRemoteLlm ? `${currentContext.toLocaleString()} Tokens` : "Provider Managed"}
               </span>
             </div>
 
@@ -284,12 +297,14 @@ export const LlmSettingsView = memo(({
                 </p>
                 <div className="grid grid-cols-4 gap-2">
                   {[2048, 4096, 8192, 16384].map((size) => {
-                    const isSelected = (llmSettings.ctx_size || 2048) === size;
+                    const isSelected = currentContext === size;
                     return (
                       <button
                         key={size}
                         type="button"
-                        onClick={() => updateDraft("llm", "ctx_size", size)}
+                        onClick={() => {
+                          updateDraft("llm", "context_window", size);
+                        }}
                         className={cn(
                           "p-2 rounded-xl border text-center transition-all cursor-pointer font-mono font-bold text-[12px]",
                           isSelected
@@ -414,7 +429,7 @@ export const LlmSettingsView = memo(({
                     }
                   }}
                   placeholder="Or enter custom limit (e.g. 16384)..."
-                  className="flex-1 px-3 py-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.08)] text-[12px] text-[rgb(var(--foreground))] outline-none focus:border-[rgb(var(--accent))] transition-all font-mono"
+                  className="flex-1 px-3 py-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.08)] text-[12px] text-[rgb(var(--foreground))] outline-none focus:border-[rgb(var(--accent))] transition-all font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 {isRemoteLlm && (
                   <button
@@ -500,7 +515,9 @@ export const LlmSettingsView = memo(({
                 <button
                   key={preset.label}
                   type="button"
-                  onClick={() => updateDraft("llm", "chat_temperature", preset.val)}
+                  onClick={() => {
+                    updateDraft("llm", "temperature", preset.val);
+                  }}
                   className={cn(
                     "p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col justify-between",
                     isSelected
@@ -516,6 +533,7 @@ export const LlmSettingsView = memo(({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 });

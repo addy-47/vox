@@ -35,7 +35,6 @@ use crate::tray::setup_linux_virtual_layer;
 
 use crate::monitoring::system_monitor::spawn_system_monitor;
 
-use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, State};
 
@@ -242,41 +241,13 @@ pub fn run() {
             }
 
             // ── 1. System Tray ───────────────────────────────────────────────────────
-            let tray_menu = Menu::new(app)?;
-            let launch_i = tauri::menu::MenuItemBuilder::new("Launch Vox").id("launch").build(app)?;
-            let live_i = tauri::menu::CheckMenuItemBuilder::new("Vox Live").id("live").build(app)?;
-            let restart_i = tauri::menu::MenuItemBuilder::new("Restart Vox").id("restart").build(app)?;
-            let quit_i = tauri::menu::MenuItemBuilder::new("Quit").id("quit").build(app)?;
-
-            tray_menu.append(&launch_i)?;
-            tray_menu.append(&live_i)?;
-            tray_menu.append(&tauri::menu::PredefinedMenuItem::separator(app)?)?;
-            tray_menu.append(&restart_i)?;
-            tray_menu.append(&tauri::menu::PredefinedMenuItem::separator(app)?)?;
-            tray_menu.append(&quit_i)?;
+            let (tray_menu, live_i) = crate::tray::build_main_tray_menu(app.handle())?;
 
             // Store live_i handle in state for synchronization
-            {
-                let state: State<'_, std::sync::Arc<AppState>> = app.state();
-                let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
-                *menu_item_lock = Some(live_i.clone());
-                
-                let (hud_visible, dictation_enabled, is_tray_mode) = {
-                    let s = state.settings.read().unwrap();
-                    let v = tauri::async_runtime::block_on(state.hud_visible.lock());
-                    (
-                        *v,
-                        s.dictation.enabled,
-                        s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
-                    )
-                };
-                let is_clickable = dictation_enabled && is_tray_mode;
-                let _ = live_i.set_enabled(is_clickable);
-                let _ = live_i.set_checked(hud_visible && is_clickable);
-            }
+            crate::tray::sync_live_menu_item(app.handle(), &live_i);
 
 
-            let mut tray_builder = TrayIconBuilder::new().menu(&tray_menu);
+            let mut tray_builder = TrayIconBuilder::with_id("vox-tray").menu(&tray_menu);
             if let Some(icon) = app.default_window_icon() {
                 tray_builder = tray_builder.icon(icon.clone());
             } else {
@@ -362,7 +333,7 @@ pub fn run() {
                     (
                         s.dictation.enabled
                             && s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
-                        s.setup.completed,
+                        s.system.setup_completed,
                     )
                 };
 
@@ -386,16 +357,16 @@ pub fn run() {
                     
                     // ── 3.1 Auto-detect existing models ────────────────────────────
                     let mut settings = state.settings.write().unwrap();
-                    if !settings.setup.completed && wizard::check_setup_health() {
+                    if !settings.system.setup_completed && wizard::check_setup_health() {
                         log::info!("[BOOTSTRAP] Existing models detected. Auto-completing setup.");
-                        settings.setup.completed = true;
+                        settings.system.setup_completed = true;
                         let _ = settings.save();
                     }
                     
                     (
                         settings.dictation.enabled,
                         settings.dictation.interaction_mode.clone(),
-                        settings.setup.completed,
+                        settings.system.setup_completed,
                     )
                 };
 
@@ -480,6 +451,7 @@ pub fn run() {
             check_stt_provider_health,
             check_tts_provider_health,
             list_llm_models,
+            crate::ipc::settings::get_cached_capabilities,
             crate::ipc::settings::probe_model_capabilities,
             crate::ipc::settings::validate_llm_token_cap,
             setup_remote_server,
@@ -592,6 +564,7 @@ pub fn run() {
                             state
                                 .main_window_destroyed
                                 .store(true, std::sync::atomic::Ordering::Relaxed);
+                            crate::tray::refresh_tray_menu(app_handle);
                         }
                     }
                 }

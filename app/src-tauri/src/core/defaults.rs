@@ -2,12 +2,13 @@
 //! src/core/defaults.rs — Centralized Default Values for Vox Configuration
 //! ============================================================================
 
-// ─── UI Defaults ─────────────────────────────────────────────────────────────
+// ─── Appearance / UI Defaults ────────────────────────────────────────────────
 pub const DEFAULT_UI_THEME: &str = "dark";
 pub const DEFAULT_UI_ACCENT_SEED: &str = "#00DBE9"; // Default Cyan
-pub const DEFAULT_UI_TRAY_BLUR_DENSITY: u32 = 40;
-pub const DEFAULT_UI_TRAY_GLASS_TINT: bool = true;
-pub const DEFAULT_UI_TRAY_HISTORY_LIMIT: u32 = 5;
+
+// ─── History Defaults ────────────────────────────────────────────────────────
+pub const DEFAULT_HISTORY_PRIVATE_MODE: bool = false;
+pub const DEFAULT_HISTORY_TRAY_LIMIT: u32 = 5;
 
 // ─── Dictation Defaults ──────────────────────────────────────────────────────
 pub const DEFAULT_DICTATION_ENABLED: bool = true;
@@ -17,20 +18,29 @@ pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+Space";
 pub const DEFAULT_VAD_THRESHOLD: f32 = 0.5;
 pub const DEFAULT_VAD_PTT_NOISE_GATE: f32 = 0.005;
 
-// ─── ASR / STT Defaults ──────────────────────────────────────────────────────
+// ─── STT / ASR Defaults ──────────────────────────────────────────────────────
 pub const DEFAULT_ASR_MODEL: &str = "nvidia_nemotron";
 pub const DEFAULT_ASR_TRANSLITERATE_ENABLED: bool = true;
+pub const DEFAULT_STT_CLOUD_PROVIDER: &str = "google";
 pub const DEFAULT_STT_CLOUD_MODEL: &str = "chirp_3";
 pub const DEFAULT_STT_CLOUD_LANGUAGE: &str = "en-US";
 pub const DEFAULT_STT_CLOUD_REGION: &str = "global";
 
 // ─── LLM Defaults ────────────────────────────────────────────────────────────
 pub const DEFAULT_LLM_MODEL: &str = "qwen_3_5_0_8b";
-pub const DEFAULT_LLM_CTX_SIZE: u32 = 2048;
+pub const DEFAULT_LLM_CONTEXT_WINDOW: u32 = 2048;
 pub const DEFAULT_LLM_THREADS: u32 = 4;
-pub const DEFAULT_LLM_CHAT_TEMPERATURE: f32 = 0.7;
+pub const DEFAULT_LLM_TEMPERATURE: f32 = 0.7;
 pub const DEFAULT_LLM_COMPACTION_TEMPERATURE: f32 = 0.5;
 pub const DEFAULT_LLM_MAX_OUTPUT_TOKENS: u32 = 300;
+
+pub const DEFAULT_LLM_SERVER_BASE_URL: &str = "http://localhost:11434";
+pub const DEFAULT_LLM_SERVER_MODEL: &str = "gemma3:4b";
+pub const DEFAULT_LLM_SERVER_PROVIDER_NAME: &str = "ollama";
+
+pub const DEFAULT_LLM_CLOUD_BASE_URL: &str = "https://integrate.api.nvidia.com/v1";
+pub const DEFAULT_LLM_CLOUD_MODEL: &str = "meta/llama-3.1-8b-instruct";
+pub const DEFAULT_LLM_CLOUD_PROVIDER_NAME: &str = "nvidia";
 
 // ─── TTS Defaults ────────────────────────────────────────────────────────────
 pub const DEFAULT_TTS_VOICE_INDEX: i32 = 0;
@@ -40,7 +50,7 @@ pub const DEFAULT_TTS_SPEED: f32 = 1.05;
 // ─── Interaction Defaults ────────────────────────────────────────────────────
 pub const DEFAULT_AUTO_SLEEP_TIMEOUT: u32 = 400;
 
-// ─── Telemetry Defaults ──────────────────────────────────────────────────────
+// ─── Telemetry / System Defaults ─────────────────────────────────────────────
 pub const DEFAULT_TELEMETRY_ENABLED: bool = true;
 pub const DEFAULT_TELEMETRY_LOG_LEVEL: &str = "info";
 

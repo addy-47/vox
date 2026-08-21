@@ -31,17 +31,18 @@ impl PipelineOrchestrator {
         let local_is_external_llm = {
             let s = self.settings.read().unwrap();
             matches!(
-                s.llm.provider,
-                crate::core::settings::LlmProviderConfig::OpenAiCompat { .. }
+                s.llm.active,
+                crate::core::settings::LlmActiveProvider::Server
+                    | crate::core::settings::LlmActiveProvider::Cloud
             )
         };
         let mut local_voice = {
             let s = self.settings.read().unwrap();
-            s.tts.voice
+            s.tts.voice_index
         };
         let mut local_transliterate_enabled = {
             let s = self.settings.read().unwrap();
-            s.asr.transliterate_enabled
+            s.stt.transliterate_enabled
         };
         let mut local_sleep_timeout = {
             let s = self.settings.read().unwrap();
@@ -49,7 +50,7 @@ impl PipelineOrchestrator {
         };
         let mut local_main_mode = {
             let s = self.settings.read().unwrap();
-            s.interaction.main_app_mode.clone()
+            s.interaction.mode.clone()
         };
         let mut local_quality_steps = {
             let s = self.settings.read().unwrap();
@@ -1117,12 +1118,12 @@ impl PipelineOrchestrator {
                 VoxEvent::SettingsUpdated(new_settings) => {
                     log::info!("[Pipeline] Local settings cache updated (Asynchronous).");
                     local_pipeline_mode = new_settings.interaction.pipeline_mode.clone();
-                    local_voice = new_settings.tts.voice;
+                    local_voice = new_settings.tts.voice_index;
                     local_sleep_timeout = std::time::Duration::from_secs(
                         new_settings.interaction.auto_sleep_timeout as u64,
                     );
-                    local_main_mode = new_settings.interaction.main_app_mode;
-                    local_transliterate_enabled = new_settings.asr.transliterate_enabled;
+                    local_main_mode = new_settings.interaction.mode;
+                    local_transliterate_enabled = new_settings.stt.transliterate_enabled;
 
                     // Forward TTS hot-updatable settings to the worker
                     if new_settings.tts.quality_steps != local_quality_steps {

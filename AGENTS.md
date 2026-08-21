@@ -103,5 +103,15 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - **Runtime Token Smoke Validator (`validate_llm_token_cap`)**: 1-token smoke probe catching HTTP 400 server ceiling errors with 1-click auto-clamping.
 - **Flat Underline Sub-Tabs & Decoupling**: Organized into non-scrollable flat tabs (`Performance`, `Tokens & Context`, `Creativity`) in `LlmSettingsView.tsx`, decoupled from `LlmCatalogView.tsx` (`fzf` fuzzy search).
 
+### 5.5 Flat 13-Domain Settings Architecture & Parallel Provider Isolation
+> Full specification: [`docs/backend.md#4-settings--state-management`](docs/backend.md#4-settings--state-management)
+- **1:1 UI-to-Domain Map (Zero Aliases)**: Strictly 13 top-level canonical keys: `audio`, `vad`, `stt`, `llm`, `tts`, `realtime`, `interaction`, `dictation`, `history`, `appearance`, `memory`, `persona`, `system`. All legacy alias shims (`ui`, `asr`, `persistence`, `assistant`, `telemetry`, `setup`) and alias serde attributes have been completely purged from Rust, TypeScript, and React UI.
+- **Parallel Provider Memory**: `stt`, `llm`, `tts`, and `realtime` maintain independent child configurations (`embedded`, `server`, `cloud`). Switching providers only changes `active`, completely preserving user credentials, URLs, and model IDs across provider switches.
+- **Minimal Reload Policy Routing**: `get_setting_reload_policy` routes based directly on domain and field guard (`Hot` for appearance/memory/persona/history/realtime, `WorkerCommand` for TTS steps/speed, `Restart` by default) with zero duplicate string matching.
+- **Dynamic Provider-Aware Topology Verification**: Model readiness indicators dynamically inspect `draftSettings.$domain.active` and `$domain.embedded.model` rather than checking hardcoded fallback IDs (`nvidia_nemotron`, `llama_3_2_reasoning_q4`). Cloud/remote providers evaluate to verified immediately without requiring local weights.
+- **Persistent Model Capability Cache**: Probed model metrics and hardware telemetry are written atomically to `~/.vox/cache/model_capabilities.json` upon benchmark completion, loaded via `loadCapabilitiesCache()` on startup and synced directly to Zustand `capabilitiesCache`, guaranteeing benchmark results persist across tab switches and app sessions.
+- **Unified Model Capability Tooltip**: Consolidated all model telemetry (Speed TPS, Context Window, VRAM, Tool calling, and `EN`/`HIN` script validation) into a single compact `Capabilities` trigger with a theme-aware rich breakdown tooltip positioned on the left, keeping card footers minimal and uniform across light and dark themes.
+
+
 
 

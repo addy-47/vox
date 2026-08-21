@@ -5,10 +5,21 @@ import {
   updateSetting,
   updateInteractionMode,
   resetSettings,
+  getCachedCapabilities,
 } from "@/services/settingsService";
 import { hexToRgb } from "@/shared/lib/utils";
+import { DOMAIN_DIRTY_KEYS, type SettingsDomainId } from "@/data/settingsCopy";
 
 export type PipelineMode = "modular" | "realtime";
+export type LlmActiveProvider = "embedded" | "server" | "cloud";
+export type SttActiveProvider = "embedded" | "cloud";
+export type TtsActiveProvider = "edge_tts" | "supertonic" | "chatterbox" | "chatterbox_remote";
+export type RealtimeActiveProvider =
+  | "gemini_live"
+  | "openai_realtime"
+  | "deepgram_voice_agent"
+  | "elevenlabs_convai";
+
 export type LlmProviderKind = "embedded" | "open_ai_compat";
 
 export interface LlmProviderConfig {
@@ -29,7 +40,14 @@ export interface SttProviderConfig {
 export type TtsProviderConfig =
   | { kind: "supertonic" }
   | { kind: "chatterbox"; language: string; quality_steps: number; speed: number }
-  | { kind: "chatterbox_remote"; endpoint: string; language: string; quality_steps: number; speed: number; remote_path: string }
+  | {
+      kind: "chatterbox_remote";
+      endpoint: string;
+      language: string;
+      quality_steps: number;
+      speed: number;
+      remote_path: string;
+    }
   | { kind: "edge_tts"; voice?: string };
 
 export interface ModelCapabilities {
@@ -105,111 +123,200 @@ export interface ModelCatalog {
   preset_colors: string[];
 }
 
+export interface AudioSettings {
+  output_mode: string;
+  input_device: string | null;
+}
+
+export interface VadSettings {
+  threshold: number;
+  ptt_noise_gate: number;
+  backend: "earshot" | "ten_vad";
+  vad_backend?: "earshot" | "ten_vad";
+}
+
+export interface SttEmbeddedConfig {
+  model: string;
+}
+
+export interface SttCloudConfig {
+  provider: string;
+  model: string;
+  language: string;
+  region?: string | null;
+  endpoint?: string | null;
+  api_key?: string | null;
+}
+
+export interface SttSettings {
+  active: SttActiveProvider;
+  transliterate_enabled: boolean;
+  embedded: SttEmbeddedConfig;
+  cloud: SttCloudConfig;
+  model?: string;
+  provider?: SttProviderConfig;
+}
+
+export interface LlmEmbeddedConfig {
+  model: string;
+}
+
+export interface LlmRemoteConfig {
+  base_url: string;
+  model: string;
+  api_key?: string | null;
+  provider_name?: string | null;
+}
+
+export interface LlmSettings {
+  active: LlmActiveProvider;
+  temperature: number;
+  compaction_temperature: number;
+  max_output_tokens: number;
+  context_window: number;
+  threads: number;
+  embedded: LlmEmbeddedConfig;
+  server: LlmRemoteConfig;
+  cloud: LlmRemoteConfig;
+}
+
+export interface TtsEdgeTtsConfig {
+  voice: string;
+}
+
+export interface TtsSupertonicConfig {}
+
+export interface TtsChatterboxConfig {
+  language: string;
+}
+
+export interface TtsChatterboxRemoteConfig {
+  endpoint: string;
+  language: string;
+  remote_path: string;
+}
+
+export interface TtsSettings {
+  active: TtsActiveProvider;
+  voice_index: number;
+  quality_steps: number;
+  speed: number;
+  edge_tts: TtsEdgeTtsConfig;
+  supertonic: TtsSupertonicConfig;
+  chatterbox: TtsChatterboxConfig;
+  chatterbox_remote: TtsChatterboxRemoteConfig;
+  provider?: TtsProviderConfig;
+  voice?: number;
+}
+
+export interface GeminiLiveConfig {
+  api_key: string;
+  model: string;
+  voice_name: string;
+  language_code: string;
+  temperature: number;
+  enable_web_search: boolean;
+  resume_handle: string | null;
+}
+
+export interface OpenAiRealtimeConfig {
+  api_key: string;
+  model: string;
+  voice: string;
+}
+
+export interface DeepgramVoiceAgentConfig {
+  api_key: string;
+  model: string;
+  voice: string;
+  temperature: number;
+  agent_mode: boolean;
+}
+
+export interface ElevenLabsConvaiConfig {
+  api_key: string;
+  agent_id: string;
+}
+
+export interface RealtimeSettings {
+  active: RealtimeActiveProvider;
+  gemini_live: GeminiLiveConfig;
+  openai_realtime: OpenAiRealtimeConfig;
+  deepgram_voice_agent: DeepgramVoiceAgentConfig;
+  elevenlabs_convai: ElevenLabsConvaiConfig;
+  provider?: RealtimeActiveProvider;
+  gemini?: GeminiLiveConfig;
+  openai?: OpenAiRealtimeConfig;
+  deepgram?: DeepgramVoiceAgentConfig;
+  elevenlabs?: ElevenLabsConvaiConfig;
+}
+
+export interface InteractionSettings {
+  mode: "Passive" | "PTT";
+  main_app_mode?: "Passive" | "PTT";
+  auto_sleep_timeout: number;
+  pipeline_mode: PipelineMode;
+}
+
+export interface DictationSettings {
+  enabled: boolean;
+  interaction_mode: "passive" | "ptt";
+  hotkey: string;
+  output_mode: "paste" | "clipboard" | "tray";
+}
+
+export interface HistorySettings {
+  private_mode: boolean;
+  tray_history_limit: number;
+}
+
+export interface AppearanceSettings {
+  theme: string;
+  accent_seed: string;
+}
+
+export interface MemorySettings {
+  context_retrieval_enabled: boolean;
+  pipeline_processing_enabled: boolean;
+  max_context_share: number;
+  context_chaining_window_hours: number;
+  top_k_facts: number;
+  max_hops: number;
+  semantic_similarity_cutoff: number;
+}
+
+export interface PersonaSettings {
+  modular_prompt: string;
+  realtime_prompt: string;
+}
+
+export interface SystemSettings {
+  log_level: string;
+  telemetry_enabled: boolean;
+  setup_completed: boolean;
+}
+
 export interface VoxSettings {
-  ui: {
-    theme: string;
-    accent_seed: string;
-    tray_blur_density: number;
-    tray_glass_tint: boolean;
-    tray_history_limit: number;
-  };
-  audio: {
-    output_mode: string;
-    input_device: string | null;
-  };
-  vad: {
-    threshold: number;
-    ptt_noise_gate: number;
-    vad_backend: "earshot" | "ten_vad";
-  };
-  asr: {
-    model: string;
-    transliterate_enabled: boolean;
-    provider: SttProviderConfig;
-  };
-  llm: {
-    model: string;
-    ctx_size: number;
-    threads: number;
-    provider: LlmProviderConfig;
-    chat_temperature?: number;
-    compaction_temperature?: number;
-    max_output_tokens?: number;
-  };
-  tts: {
-    provider: TtsProviderConfig;
-    voice: number;
-    quality_steps: number;
-    speed: number;
-  };
-  interaction: {
-    main_app_mode: "Passive" | "PTT";
-    auto_sleep_timeout: number;
-    pipeline_mode: PipelineMode;
-  };
-  dictation: {
-    enabled: boolean;
-    interaction_mode: "passive" | "ptt";
-    hotkey: string;
-    output_mode: "paste" | "clipboard" | "tray";
-  };
-  telemetry: {
-    enabled: boolean;
-    log_level: string;
-  };
-  persistence: {
-    private_mode: boolean;
-  };
-  memory: {
-    context_retrieval_enabled: boolean;
-    pipeline_processing_enabled: boolean;
-    max_personal_memory_share: number;
-    context_chaining_window_hours: number;
-    top_k_facts: number;
-    max_hops: number;
-    semantic_similarity_cutoff: number;
-  };
-  assistant: {
-    modular_prompt: string;
-    realtime_prompt: string;
-  };
-  setup: {
-    completed: boolean;
-  };
-  realtime: {
-    provider: "gemini_live" | "openai_realtime" | "deepgram_voice_agent" | "elevenlabs_convai";
-    gemini: {
-      api_key: string;
-      model: string;
-      voice_name: string;
-      language_code: string;
-      temperature: number;
-      enable_web_search: boolean;
-      resume_handle: string | null;
-    };
-    openai: {
-      api_key: string;
-      model: string;
-      voice: string;
-    };
-    deepgram: {
-      api_key: string;
-      model: string;
-      voice: string;
-      temperature: number;
-      agent_mode: boolean;
-    };
-    elevenlabs: {
-      api_key: string;
-      agent_id: string;
-    };
-  };
+  audio: AudioSettings;
+  vad: VadSettings;
+  stt: SttSettings;
+  llm: LlmSettings;
+  tts: TtsSettings;
+  realtime: RealtimeSettings;
+  interaction: InteractionSettings;
+  dictation: DictationSettings;
+  history: HistorySettings;
+  appearance: AppearanceSettings;
+  memory: MemorySettings;
+  persona: PersonaSettings;
+  system: SystemSettings;
 }
 
 interface SettingsState {
   settings: VoxSettings | null;
   draftSettings: VoxSettings | null;
   modelCatalog: ModelCatalog | null;
+  capabilitiesCache: Record<string, ModelCapabilities>;
   isLoading: boolean;
   hasChanges: boolean;
   restartKeys: string[];
@@ -217,6 +324,7 @@ interface SettingsState {
 
   loadSettings: () => Promise<void>;
   loadModelCatalog: () => Promise<void>;
+  loadCapabilitiesCache: () => Promise<void>;
   updateDraft: (domain: keyof VoxSettings, key: string, value: any) => void;
   commitChanges: () => Promise<void>;
   discardChanges: () => void;
@@ -227,11 +335,12 @@ interface SettingsState {
   clearRestartKeys: () => void;
 }
 
-function applyAppearance(ui: VoxSettings["ui"]) {
+function applyAppearance(appearance?: AppearanceSettings) {
+  if (!appearance) return;
   if (typeof document !== "undefined") {
-    document.documentElement.setAttribute("data-theme", ui.theme);
-    document.documentElement.style.setProperty("--accent", hexToRgb(ui.accent_seed));
-    if (ui.theme === "light") {
+    document.documentElement.setAttribute("data-theme", appearance.theme);
+    document.documentElement.style.setProperty("--accent", hexToRgb(appearance.accent_seed));
+    if (appearance.theme === "light") {
       document.documentElement.classList.add("light");
       document.documentElement.classList.remove("dark");
     } else {
@@ -247,6 +356,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
   draftSettings: null,
   modelCatalog: null,
+  capabilitiesCache: {},
   isLoading: true,
   hasChanges: false,
   restartKeys: [],
@@ -254,24 +364,28 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadSettings: async () => {
     try {
-      const bootState = await requestBootState();
+      const [bootState, capsCache] = await Promise.all([
+        requestBootState(),
+        getCachedCapabilities().catch(() => ({})),
+      ]);
       const fetched = bootState.settings;
       const cloned = structuredClone(fetched);
-      
+
       set((state) => {
-        if (state.draftSettings) {
-          cloned.ui.theme = state.draftSettings.ui.theme;
-          cloned.ui.accent_seed = state.draftSettings.ui.accent_seed;
+        if (state.draftSettings && state.draftSettings.appearance && cloned.appearance) {
+          cloned.appearance.theme = state.draftSettings.appearance.theme;
+          cloned.appearance.accent_seed = state.draftSettings.appearance.accent_seed;
         }
         return {
           settings: fetched,
           draftSettings: state.hasChanges ? state.draftSettings : cloned,
+          capabilitiesCache: capsCache || {},
           isLoading: false,
           hasChanges: state.hasChanges,
           error: null,
         };
       });
-      applyAppearance(fetched.ui);
+      applyAppearance(fetched.appearance);
     } catch (err: any) {
       console.error("Failed to load settings:", err);
       set({ isLoading: false, error: err?.message || String(err) || "Failed to load settings" });
@@ -288,12 +402,21 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  updateDraft: (domain, key, value) => {
+  loadCapabilitiesCache: async () => {
+    try {
+      const cache = await getCachedCapabilities();
+      set({ capabilitiesCache: cache || {} });
+    } catch (err) {
+      console.error("Failed to load capabilities cache:", err);
+    }
+  },
+
+  updateDraft: (domain: keyof VoxSettings, key: string, value: any) => {
     const { settings, draftSettings } = get();
     if (!draftSettings || !settings) return;
 
     const currentVal = (draftSettings[domain] as any)?.[key];
-    if (currentVal === value) return;
+    if (JSON.stringify(currentVal) === JSON.stringify(value)) return;
 
     const newDraft = {
       ...draftSettings,
@@ -303,26 +426,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       },
     };
 
-    if (domain === "ui" && (key === "theme" || key === "accent_seed")) {
-      applyAppearance(newDraft.ui);
+    if (domain === "appearance" && (key === "theme" || key === "accent_seed")) {
+      applyAppearance(newDraft.appearance);
 
-      // Debounce IPC persistence write to avoid hammering disk/IPC on rapid color picker moves
       if (appearanceDebounceTimer) {
         clearTimeout(appearanceDebounceTimer);
       }
       appearanceDebounceTimer = setTimeout(() => {
-        updateSetting(domain, key, value).catch(console.error);
+        updateSetting("appearance", key, value).catch(console.error);
         appearanceDebounceTimer = null;
       }, 200);
 
-      const newSettings = {
-        ...settings,
-        ui: {
-          ...settings.ui,
-          [key]: value,
-        },
-      };
-      set({ settings: newSettings, draftSettings: newDraft, hasChanges: false });
+      set({ draftSettings: newDraft });
       return;
     }
 
@@ -336,193 +451,52 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isDomainDirty: (domainId: string) => {
     const { settings, draftSettings } = get();
     if (!settings || !draftSettings) return false;
-    switch (domainId) {
-      case "models": {
-        const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-        if (isRealtime) {
-          const provId = draftSettings.realtime?.provider || "gemini_live";
-          const subkey = provId === "gemini_live" ? "gemini" :
-                         provId === "openai_realtime" ? "openai" :
-                         provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
-                         
-          const savedProvConfig = settings.realtime?.[subkey] || {};
-          const draftProvConfig = draftSettings.realtime?.[subkey] || {};
-          
-          const { api_key: _, ...savedClean } = savedProvConfig;
-          const { api_key: __, ...draftClean } = draftProvConfig;
-          
-          return JSON.stringify(savedClean) !== JSON.stringify(draftClean);
-        }
 
-        // VAD
-        const vadChanged =
-          settings.vad.threshold !== draftSettings.vad.threshold ||
-          settings.vad.ptt_noise_gate !== draftSettings.vad.ptt_noise_gate ||
-          settings.vad.vad_backend !== draftSettings.vad.vad_backend;
+    const dirtyKeys = DOMAIN_DIRTY_KEYS[domainId as SettingsDomainId];
+    if (!dirtyKeys || dirtyKeys.length === 0) return false;
 
-        // ASR
-        const asrChanged =
-          settings.asr.model !== draftSettings.asr.model ||
-          settings.asr.transliterate_enabled !== draftSettings.asr.transliterate_enabled ||
-          settings.asr.provider?.kind !== draftSettings.asr.provider?.kind;
+    for (const rule of dirtyKeys) {
+      const scope = rule.scope as keyof VoxSettings;
+      const draftScope = draftSettings[scope] as any;
+      const savedScope = settings[scope] as any;
 
-        // TTS
-        const ttsKindChanged = settings.tts.provider?.kind !== draftSettings.tts.provider?.kind;
-        const ttsVoiceChanged = settings.tts.voice !== draftSettings.tts.voice;
-        const ttsQualityChanged = settings.tts.quality_steps !== draftSettings.tts.quality_steps;
-        const ttsSpeedChanged = settings.tts.speed !== draftSettings.tts.speed;
-        let ttsSubChanged = false;
-        if (draftSettings.tts.provider?.kind === "edge_tts") {
-          ttsSubChanged = (settings.tts.provider as any)?.voice !== (draftSettings.tts.provider as any)?.voice;
-        } else if (draftSettings.tts.provider?.kind === "chatterbox_remote") {
-          ttsSubChanged =
-            (settings.tts.provider as any)?.endpoint !== (draftSettings.tts.provider as any)?.endpoint ||
-            (settings.tts.provider as any)?.remote_path !== (draftSettings.tts.provider as any)?.remote_path;
-        }
-        const ttsChanged = ttsKindChanged || ttsVoiceChanged || ttsQualityChanged || ttsSpeedChanged || ttsSubChanged;
+      if (!draftScope && !savedScope) continue;
+      if (!draftScope || !savedScope) return true;
 
-        // LLM
-        const llmLocalModelChanged = settings.llm.model !== draftSettings.llm.model;
-        const llmCtxChanged = settings.llm.ctx_size !== draftSettings.llm.ctx_size;
-        const llmThreadsChanged = settings.llm.threads !== draftSettings.llm.threads;
-        const llmProviderKindChanged = settings.llm.provider?.kind !== draftSettings.llm.provider?.kind;
-        const llmRemoteModelChanged =
-          draftSettings.llm.provider?.kind === "open_ai_compat" &&
-          settings.llm.provider?.model !== draftSettings.llm.provider?.model;
-
-        const llmChanged =
-          llmLocalModelChanged ||
-          llmCtxChanged ||
-          llmThreadsChanged ||
-          llmProviderKindChanged ||
-          llmRemoteModelChanged;
-
-        return vadChanged || asrChanged || ttsChanged || llmChanged;
-      }
-      case "history":
-        return (
-          settings.persistence.private_mode !== draftSettings.persistence.private_mode ||
-          settings.ui.tray_history_limit !== draftSettings.ui.tray_history_limit
-        );
-      case "persona":
-        return JSON.stringify(settings.assistant) !== JSON.stringify(draftSettings.assistant);
-      case "memory":
-        return JSON.stringify(settings.memory) !== JSON.stringify(draftSettings.memory);
-      case "appearance":
-        return false;
-      case "interaction": {
-        const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-        let realtimeChanges = false;
-        if (isRealtime) {
-          if (settings.realtime?.provider !== draftSettings.realtime?.provider) {
-            realtimeChanges = true;
-          } else {
-            const provId = draftSettings.realtime?.provider || "gemini_live";
-            const subkey = provId === "gemini_live" ? "gemini" :
-                           provId === "openai_realtime" ? "openai" :
-                           provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
-            if (settings.realtime?.[subkey]?.api_key !== draftSettings.realtime?.[subkey]?.api_key) {
-              realtimeChanges = true;
-            }
+      if (rule.keys && rule.keys.length > 0) {
+        for (const k of rule.keys) {
+          const draftVal = draftScope[k];
+          const savedVal = savedScope[k];
+          if (JSON.stringify(draftVal) !== JSON.stringify(savedVal)) {
+            return true;
           }
         }
-        
-        const dictationChanges =
-          settings.dictation?.enabled !== draftSettings.dictation?.enabled ||
-          settings.dictation?.interaction_mode !== draftSettings.dictation?.interaction_mode ||
-          settings.dictation?.hotkey !== draftSettings.dictation?.hotkey ||
-          settings.dictation?.output_mode !== draftSettings.dictation?.output_mode;
-
-        return (
-          settings.interaction.main_app_mode !== draftSettings.interaction.main_app_mode ||
-          settings.interaction.auto_sleep_timeout !== draftSettings.interaction.auto_sleep_timeout ||
-          settings.interaction.pipeline_mode !== draftSettings.interaction.pipeline_mode ||
-          dictationChanges ||
-          realtimeChanges
-        );
+      } else {
+        if (JSON.stringify(draftScope) !== JSON.stringify(savedScope)) {
+          return true;
+        }
       }
-      default:
-        return false;
     }
+
+    return false;
   },
 
   discardDomainChanges: (domainId: string) => {
     const { settings, draftSettings, updateDraft } = get();
     if (!settings || !draftSettings) return;
-    switch (domainId) {
-      case "models": {
-        const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-        if (isRealtime) {
-          const provId = draftSettings.realtime?.provider || "gemini_live";
-          const subkey = provId === "gemini_live" ? "gemini" :
-                         provId === "openai_realtime" ? "openai" :
-                         provId === "deepgram_voice_agent" ? "deepgram" : "elevenlabs";
-                         
-          const savedProvConfig = (settings.realtime as any)?.[subkey] || {};
-          const currentDraftProvConfig = (draftSettings.realtime as any)?.[subkey] || {};
-          
-          const { api_key: _, ...savedClean } = savedProvConfig;
-          updateDraft("realtime", subkey, {
-            ...currentDraftProvConfig,
-            ...savedClean
-          });
+
+    const dirtyKeys = DOMAIN_DIRTY_KEYS[domainId as SettingsDomainId];
+    if (!dirtyKeys) return;
+
+    for (const rule of dirtyKeys) {
+      const scope = rule.scope as keyof VoxSettings;
+      const savedScope = settings[scope] as any;
+      if (savedScope) {
+        if (rule.keys) {
+          rule.keys.forEach((k) => updateDraft(scope, k, savedScope[k]));
         } else {
-          Object.keys(settings.vad).forEach(k => updateDraft("vad", k, (settings.vad as any)[k]));
-          Object.keys(settings.asr).forEach(k => updateDraft("asr", k, (settings.asr as any)[k]));
-          updateDraft("llm", "model", settings.llm.model);
-          updateDraft("llm", "ctx_size", settings.llm.ctx_size);
-          updateDraft("llm", "threads", settings.llm.threads);
-          Object.keys(settings.tts).forEach(k => updateDraft("tts", k, (settings.tts as any)[k]));
-          if (settings.llm.provider && draftSettings?.llm.provider) {
-            updateDraft("llm", "provider", {
-              ...draftSettings.llm.provider,
-              model: settings.llm.provider.model
-            });
-          }
+          Object.keys(savedScope).forEach((k) => updateDraft(scope, k, savedScope[k]));
         }
-        break;
-      }
-      case "history":
-        updateDraft("persistence", "private_mode", settings.persistence.private_mode);
-        updateDraft("ui", "tray_history_limit", settings.ui.tray_history_limit);
-        break;
-      case "persona":
-        Object.keys(settings.assistant).forEach(k => updateDraft("assistant", k, (settings.assistant as any)[k]));
-        break;
-      case "memory":
-        Object.keys(settings.memory).forEach(k => updateDraft("memory", k, (settings.memory as any)[k]));
-        break;
-      case "appearance":
-        updateDraft("ui", "theme", settings.ui.theme);
-        updateDraft("ui", "accent_seed", settings.ui.accent_seed);
-        break;
-      case "interaction": {
-        updateDraft("interaction", "main_app_mode", settings.interaction.main_app_mode);
-        updateDraft("interaction", "auto_sleep_timeout", settings.interaction.auto_sleep_timeout);
-        updateDraft("interaction", "pipeline_mode", settings.interaction.pipeline_mode);
-        if (settings.dictation) {
-          Object.keys(settings.dictation).forEach(k => updateDraft("dictation", k, (settings.dictation as any)[k]));
-        }
-        const currentDraftModel = draftSettings?.llm.provider?.model || "";
-        updateDraft("llm", "provider", {
-          ...settings.llm.provider,
-          model: currentDraftModel
-        });
-        
-        const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-        if (isRealtime) {
-          updateDraft("realtime", "provider", settings.realtime.provider);
-          const subkeys = ["gemini", "openai", "deepgram", "elevenlabs"] as const;
-          subkeys.forEach(subkey => {
-            if ((settings.realtime as any)?.[subkey] && (draftSettings?.realtime as any)?.[subkey]) {
-              updateDraft("realtime", subkey, {
-                ...(draftSettings.realtime as any)[subkey],
-                api_key: (settings.realtime as any)[subkey].api_key
-              });
-            }
-          });
-        }
-        break;
       }
     }
   },
@@ -534,14 +508,33 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const promises: Promise<any>[] = [];
     const restartKeys: string[] = [];
 
-    for (const domain in draftSettings) {
-      const d = domain as keyof VoxSettings;
-      for (const key in draftSettings[d]) {
-        const val = (draftSettings[d] as any)[key];
-        const oldVal = (settings[d] as any)[key];
+    const canonicalDomains: (keyof VoxSettings)[] = [
+      "audio",
+      "vad",
+      "stt",
+      "llm",
+      "tts",
+      "realtime",
+      "interaction",
+      "dictation",
+      "history",
+      "appearance",
+      "memory",
+      "persona",
+      "system",
+    ];
+
+    for (const domain of canonicalDomains) {
+      const draftObj = (draftSettings as any)[domain];
+      const savedObj = (settings as any)[domain];
+      if (!draftObj) continue;
+
+      for (const key in draftObj) {
+        const val = draftObj[key];
+        const oldVal = savedObj ? savedObj[key] : undefined;
 
         if (JSON.stringify(val) !== JSON.stringify(oldVal)) {
-          if (domain === "interaction" && key === "main_app_mode") {
+          if (domain === "interaction" && key === "mode") {
             promises.push(updateInteractionMode("main", val));
           } else {
             promises.push(
@@ -572,7 +565,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { settings } = get();
     if (!settings) return;
     const cloned = structuredClone(settings);
-    applyAppearance(settings.ui);
+    applyAppearance(settings.appearance);
     set({ draftSettings: cloned, hasChanges: false });
   },
 
@@ -580,7 +573,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const defaults = await resetSettings();
       const cloned = structuredClone(defaults);
-      applyAppearance(defaults.ui);
+      applyAppearance(defaults.appearance);
       set({ settings: defaults, draftSettings: cloned, hasChanges: false });
     } catch (err) {
       console.error("Failed to restore defaults:", err);
@@ -589,9 +582,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   toggleTheme: () => {
     const { draftSettings } = get();
-    if (!draftSettings) return;
-    const newTheme = draftSettings.ui.theme === "dark" ? "light" : "dark";
-    get().updateDraft("ui", "theme", newTheme);
+    if (!draftSettings?.appearance) return;
+    const currentTheme = draftSettings.appearance.theme;
+    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    get().updateDraft("appearance", "theme", newTheme);
   },
 
   clearRestartKeys: () => {

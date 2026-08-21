@@ -40,7 +40,7 @@ export const AsrWorkspace = memo(
           )}
         >
           {modelCatalog.asr.map((model) => {
-            const isSelected = draftSettings.asr.model === model.id;
+            const isSelected = draftSettings.stt.embedded.model === model.id;
             const modelGroupId = model.id;
             const isDownloaded = !!modelPresence[modelGroupId];
             const status = downloadStatuses[modelGroupId];
@@ -59,10 +59,9 @@ export const AsrWorkspace = memo(
                 isRequired={isGroupRequired(model.id)}
                 layoutMode={layoutMode}
                 onSelect={() => {
-                  updateDraft("asr", "model", model.id);
-                  updateDraft("asr", "provider", {
-                    kind: "embedded",
-                    model_type: model.id,
+                  updateDraft("stt", "model", model.id);
+                  updateDraft("stt", "embedded", {
+                    model: model.id,
                   });
                 }}
                 confirmDeleteId={confirmDeleteId}

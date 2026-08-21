@@ -367,15 +367,15 @@ fn test_cancelled_turn_clears_interaction_state_to_idle() {
 fn test_interaction_mode_switching_between_owners() {
     let mut settings = VoxSettings::default();
 
-    assert_eq!(settings.interaction.main_app_mode, InteractionMode::Passive);
+    assert_eq!(settings.interaction.mode, InteractionMode::Passive);
     assert_eq!(
         settings.dictation.interaction_mode,
         DictationInteractionMode::Ptt
     );
 
     // Main window switches to PTT.
-    settings.interaction.main_app_mode = InteractionMode::PTT;
-    assert_eq!(settings.interaction.main_app_mode, InteractionMode::PTT);
+    settings.interaction.mode = InteractionMode::PTT;
+    assert_eq!(settings.interaction.mode, InteractionMode::PTT);
 
     // Dictation switches to Passive — owners resolve independently.
     settings.dictation.interaction_mode = DictationInteractionMode::Passive;
@@ -385,8 +385,8 @@ fn test_interaction_mode_switching_between_owners() {
     );
 
     // Main reverts to Passive.
-    settings.interaction.main_app_mode = InteractionMode::Passive;
-    assert_eq!(settings.interaction.main_app_mode, InteractionMode::Passive);
+    settings.interaction.mode = InteractionMode::Passive;
+    assert_eq!(settings.interaction.mode, InteractionMode::Passive);
 }
 
 #[test]

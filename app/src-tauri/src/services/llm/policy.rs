@@ -44,7 +44,7 @@ impl GenerationPolicy {
 
         Self {
             conversation: GenerationDefaults {
-                temperature: settings.chat_temperature,
+                temperature: settings.temperature,
                 max_output_tokens: settings.max_output_tokens,
                 output: OutputConstraint::Text,
             },
@@ -85,7 +85,6 @@ impl GenerationPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::settings::LlmProviderConfig;
 
     #[test]
     fn test_dynamic_compaction_scaling() {
@@ -97,8 +96,9 @@ mod tests {
     #[test]
     fn test_policy_compaction_budget_clamped_for_cloud() {
         let settings = LlmSettings {
-            ctx_size: 1_000_000,
-            provider: LlmProviderConfig::OpenAiCompat {
+            context_window: 1_000_000,
+            active: crate::core::settings::LlmActiveProvider::Cloud,
+            cloud: crate::core::settings::LlmRemoteConfig {
                 base_url: "https://api.openai.com".to_string(),
                 model: "gpt-4o".to_string(),
                 api_key: None,

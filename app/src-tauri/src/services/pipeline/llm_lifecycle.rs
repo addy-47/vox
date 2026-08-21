@@ -19,7 +19,11 @@ impl PipelineOrchestrator {
 
         let (provider_config, ctx_size, n_threads) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
-            (s.llm.provider.clone(), s.llm.ctx_size, s.llm.threads)
+            (
+                s.llm.to_provider_config(),
+                s.llm.context_window,
+                s.llm.threads,
+            )
         };
 
         let event_tx = self.event_tx.clone();
