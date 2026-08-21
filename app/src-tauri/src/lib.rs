@@ -9,6 +9,7 @@ pub mod setup;
 pub mod tray;
 pub mod utils;
 pub mod window_customizer;
+pub mod window_main;
 pub mod wizard;
 
 use crate::core::state::AppState;
@@ -244,10 +245,13 @@ pub fn run() {
             let tray_menu = Menu::new(app)?;
             let launch_i = tauri::menu::MenuItemBuilder::new("Launch Vox").id("launch").build(app)?;
             let live_i = tauri::menu::CheckMenuItemBuilder::new("Vox Live").id("live").build(app)?;
+            let restart_i = tauri::menu::MenuItemBuilder::new("Restart Vox").id("restart").build(app)?;
             let quit_i = tauri::menu::MenuItemBuilder::new("Quit").id("quit").build(app)?;
 
             tray_menu.append(&launch_i)?;
             tray_menu.append(&live_i)?;
+            tray_menu.append(&tauri::menu::PredefinedMenuItem::separator(app)?)?;
+            tray_menu.append(&restart_i)?;
             tray_menu.append(&tauri::menu::PredefinedMenuItem::separator(app)?)?;
             tray_menu.append(&quit_i)?;
 
@@ -294,6 +298,7 @@ pub fn run() {
                         });
                     }
                     "quit" => app.exit(0),
+                    "restart" => app.restart(),
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -543,38 +548,54 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
-                log::info!("[Vox] Shutting down engine...");
-                let state: State<'_, std::sync::Arc<AppState>> = app_handle.state();
+            match event {
+                tauri::RunEvent::Exit => {
+                    log::info!("[Vox] Shutting down engine...");
+                    let state: State<'_, std::sync::Arc<AppState>> = app_handle.state();
                 
-                // Clear engine (this will drop VoxEngine and close channels)
-                let mut engine_lock = state.engine.blocking_lock();
-                if let Some(engine) = engine_lock.take() {
-                    let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::Shutdown);
-                    let _ = engine.stt_tx.send(crate::services::stt::SttCommand::Shutdown);
-                    let _ = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown);
+                    // Clear engine (this will drop VoxEngine and close channels)
+                    let mut engine_lock = state.engine.blocking_lock();
+                    if let Some(engine) = engine_lock.take() {
+                        let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::Shutdown);
+                        let _ = engine.stt_tx.send(crate::services::stt::SttCommand::Shutdown);
+                        let _ = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown);
+                    }
+                
+                    // Gracefully signal background memory worker to flush and shutdown
+                    {
+                        let mut memory_tx_lock = state.memory_tx.lock();
+                        if let Some(tx) = memory_tx_lock.take() {
+                            log::info!("[Vox] Sending Shutdown signal to memory worker...");
+                            let _ = tx.send(crate::persistence::memory_worker::MemoryWorkerEvent::Shutdown);
+                        }
+                    }
+
+                    // Gracefully signal persistence worker to flush and shutdown
+                    {
+                        let mut persist_tx_lock = state.persist_tx.lock();
+                        if let Some(tx) = persist_tx_lock.take() {
+                            log::info!("[Vox] Sending Shutdown signal to persistence worker...");
+                            let _ = tx.send(crate::persistence::events::PersistenceEvent::Shutdown);
+                        }
+                    }
+
+                    // Allow time for threads to join
+                    std::thread::sleep(std::time::Duration::from_millis(150));
                 }
-                
-                // Gracefully signal background memory worker to flush and shutdown
-                {
-                    let mut memory_tx_lock = state.memory_tx.lock();
-                    if let Some(tx) = memory_tx_lock.take() {
-                        log::info!("[Vox] Sending Shutdown signal to memory worker...");
-                        let _ = tx.send(crate::persistence::memory_worker::MemoryWorkerEvent::Shutdown);
+                tauri::RunEvent::WindowEvent { label, event: win_event, .. } => {
+                    if label == "main" {
+                        if let tauri::WindowEvent::Destroyed = win_event {
+                            log::warn!(
+                                "[Vox] Main window destroyed (renderer crash?). Marking for rebuild on next Launch."
+                            );
+                            let state = app_handle.state::<std::sync::Arc<AppState>>();
+                            state
+                                .main_window_destroyed
+                                .store(true, std::sync::atomic::Ordering::Relaxed);
+                        }
                     }
                 }
-
-                // Gracefully signal persistence worker to flush and shutdown
-                {
-                    let mut persist_tx_lock = state.persist_tx.lock();
-                    if let Some(tx) = persist_tx_lock.take() {
-                        log::info!("[Vox] Sending Shutdown signal to persistence worker...");
-                        let _ = tx.send(crate::persistence::events::PersistenceEvent::Shutdown);
-                    }
-                }
-
-                // Allow time for threads to join
-                std::thread::sleep(std::time::Duration::from_millis(150));
+                _ => {}
             }
         });
 }

@@ -75,9 +75,14 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
                         (true, "NVIDIA", "Tier 1B (Local GPU Available)")
                     } else if name_lower.contains("amd") || name_lower.contains("radeon") {
                         (true, "AMD", "Tier 1B (Local GPU Available)")
-                    } else if name_lower.contains("intel") && (name_lower.contains("arc") || name_lower.contains("xe")) {
+                    } else if name_lower.contains("intel")
+                        && (name_lower.contains("arc") || name_lower.contains("xe"))
+                    {
                         (true, "Intel", "Tier 1B (Local GPU Available)")
-                    } else if name_lower.contains("microsoft basic") || name_lower.contains("virtual") || name_lower.contains("llvm") {
+                    } else if name_lower.contains("microsoft basic")
+                        || name_lower.contains("virtual")
+                        || name_lower.contains("llvm")
+                    {
                         // Virtual/software renderer — treat as CPU-only
                         (false, "Software", "Tier 1A (CPU Only)")
                     } else {
@@ -103,7 +108,6 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
             resolved_tier: "Tier 1A (CPU Only)".to_string(),
         }
     }
-
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {

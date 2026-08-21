@@ -20,7 +20,10 @@ pub struct X11InputAdapter;
 impl SystemInputAdapter for X11InputAdapter {
     fn simulate_paste(&self) -> Result<(), DictationError> {
         let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
-            log::error!("[Dictation::Input] Failed to initialize Enigo on X11: {:?}", e);
+            log::error!(
+                "[Dictation::Input] Failed to initialize Enigo on X11: {:?}",
+                e
+            );
             DictationError::InputSimulationFailed {
                 message: format!("Enigo initialization failed: {:?}", e),
             }
@@ -34,12 +37,14 @@ impl SystemInputAdapter for X11InputAdapter {
             }
         })?;
 
-        enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| {
-            log::error!("[Dictation::Input] Failed to click 'v' key: {:?}", e);
-            DictationError::InputSimulationFailed {
-                message: format!("Failed to click 'v': {:?}", e),
-            }
-        })?;
+        enigo
+            .key(Key::Unicode('v'), Direction::Click)
+            .map_err(|e| {
+                log::error!("[Dictation::Input] Failed to click 'v' key: {:?}", e);
+                DictationError::InputSimulationFailed {
+                    message: format!("Failed to click 'v': {:?}", e),
+                }
+            })?;
 
         enigo.key(Key::Control, Direction::Release).map_err(|e| {
             log::error!("[Dictation::Input] Failed to release Control key: {:?}", e);
@@ -70,7 +75,9 @@ impl SystemInputAdapter for WaylandInputAdapter {
                 let release_res = enigo.key(Key::Control, Direction::Release);
 
                 if press_res.is_ok() && click_res.is_ok() && release_res.is_ok() {
-                    log::debug!("[Dictation::Input] Wayland simulated paste executed successfully.");
+                    log::debug!(
+                        "[Dictation::Input] Wayland simulated paste executed successfully."
+                    );
                     return Ok(());
                 }
             }
@@ -104,7 +111,10 @@ pub struct MacOsInputAdapter;
 impl SystemInputAdapter for MacOsInputAdapter {
     fn simulate_paste(&self) -> Result<(), DictationError> {
         let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
-            log::error!("[Dictation::Input] Failed to initialize Enigo on macOS: {:?}", e);
+            log::error!(
+                "[Dictation::Input] Failed to initialize Enigo on macOS: {:?}",
+                e
+            );
             DictationError::InputSimulationFailed {
                 message: format!("Enigo initialization failed on macOS: {:?}", e),
             }
@@ -118,15 +128,23 @@ impl SystemInputAdapter for MacOsInputAdapter {
             }
         })?;
 
-        enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| {
-            log::error!("[Dictation::Input] Failed to click 'v' key on macOS: {:?}", e);
-            DictationError::InputSimulationFailed {
-                message: format!("Failed to click 'v': {:?}", e),
-            }
-        })?;
+        enigo
+            .key(Key::Unicode('v'), Direction::Click)
+            .map_err(|e| {
+                log::error!(
+                    "[Dictation::Input] Failed to click 'v' key on macOS: {:?}",
+                    e
+                );
+                DictationError::InputSimulationFailed {
+                    message: format!("Failed to click 'v': {:?}", e),
+                }
+            })?;
 
         enigo.key(Key::Meta, Direction::Release).map_err(|e| {
-            log::error!("[Dictation::Input] Failed to release Meta (Cmd) key: {:?}", e);
+            log::error!(
+                "[Dictation::Input] Failed to release Meta (Cmd) key: {:?}",
+                e
+            );
             DictationError::InputSimulationFailed {
                 message: format!("Failed to release Meta: {:?}", e),
             }
@@ -151,7 +169,10 @@ pub struct WindowsInputAdapter;
 impl SystemInputAdapter for WindowsInputAdapter {
     fn simulate_paste(&self) -> Result<(), DictationError> {
         let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
-            log::error!("[Dictation::Input] Failed to initialize Enigo on Windows: {:?}", e);
+            log::error!(
+                "[Dictation::Input] Failed to initialize Enigo on Windows: {:?}",
+                e
+            );
             DictationError::InputSimulationFailed {
                 message: format!("Enigo initialization failed on Windows: {:?}", e),
             }
@@ -163,11 +184,11 @@ impl SystemInputAdapter for WindowsInputAdapter {
             }
         })?;
 
-        enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| {
-            DictationError::InputSimulationFailed {
+        enigo
+            .key(Key::Unicode('v'), Direction::Click)
+            .map_err(|e| DictationError::InputSimulationFailed {
                 message: format!("Failed to click 'v' on Windows: {:?}", e),
-            }
-        })?;
+            })?;
 
         enigo.key(Key::Control, Direction::Release).map_err(|e| {
             DictationError::InputSimulationFailed {
@@ -215,4 +236,3 @@ pub fn create_input_adapter() -> Box<dyn SystemInputAdapter> {
         Box::new(X11InputAdapter)
     }
 }
-

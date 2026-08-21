@@ -53,7 +53,9 @@ where
             .into();
         let mode = match owner {
             InteractionOwner::Dictation => match settings.dictation.interaction_mode {
-                crate::core::settings::DictationInteractionMode::Passive => InteractionMode::Passive,
+                crate::core::settings::DictationInteractionMode::Passive => {
+                    InteractionMode::Passive
+                }
                 crate::core::settings::DictationInteractionMode::Ptt => InteractionMode::PTT,
             },
             InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
@@ -142,8 +144,12 @@ where
                     let settings = state.settings.read().unwrap();
                     mode = match owner {
                         InteractionOwner::Dictation => match settings.dictation.interaction_mode {
-                            crate::core::settings::DictationInteractionMode::Passive => InteractionMode::Passive,
-                            crate::core::settings::DictationInteractionMode::Ptt => InteractionMode::PTT,
+                            crate::core::settings::DictationInteractionMode::Passive => {
+                                InteractionMode::Passive
+                            }
+                            crate::core::settings::DictationInteractionMode::Ptt => {
+                                InteractionMode::PTT
+                            }
                         },
                         InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
                         InteractionOwner::Ptt => InteractionMode::PTT,

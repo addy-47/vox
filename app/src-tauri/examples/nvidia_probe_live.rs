@@ -17,7 +17,10 @@ fn load_nvidia_key() -> Option<String> {
                 for line in content.lines() {
                     let trimmed = line.trim();
                     if trimmed.starts_with("NVIDIA_API_KEY=") {
-                        let val = trimmed.trim_start_matches("NVIDIA_API_KEY=").trim().trim_matches('"');
+                        let val = trimmed
+                            .trim_start_matches("NVIDIA_API_KEY=")
+                            .trim()
+                            .trim_matches('"');
                         if !val.is_empty() {
                             return Some(val.to_string());
                         }
@@ -31,7 +34,9 @@ fn load_nvidia_key() -> Option<String> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let _ = env_logger::builder().filter_level(log::LevelFilter::Info).try_init();
+    let _ = env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .try_init();
 
     let api_key = match load_nvidia_key() {
         Some(k) => k,
@@ -66,13 +71,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             println!(" Probe Succeeded in {:.2?}!", elapsed);
             println!("  - Model ID:           {}", caps.model_id);
             println!("  - Provider Kind:      {}", caps.provider_kind);
-            println!("  - GPU Acceleration:   {} ({})", caps.is_gpu_accelerated, caps.gpu_status);
+            println!(
+                "  - GPU Acceleration:   {} ({})",
+                caps.is_gpu_accelerated, caps.gpu_status
+            );
             println!("  - TTFT (Time to 1st): {:?} ms", caps.ttft_ms);
             println!("  - Throughput (TPS):   {:?} tokens/sec", caps.tps);
             println!("  - Structured Tools:   {}", caps.supports_tools);
             println!("  - Devanagari Script:  {}", caps.supports_devanagari);
             println!("  - Latin Script:       {}", caps.supports_latin);
-            println!("  - Context Window:     {:?} (None = Endpoint Managed)", caps.context_window);
+            println!(
+                "  - Context Window:     {:?} (None = Endpoint Managed)",
+                caps.context_window
+            );
         }
         Err(e) => {
             println!("❌ Probe Failed: {}", e);
@@ -98,7 +109,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             println!(" Server accepted 500,000 tokens without 400 error.");
         }
         Ok(Some(ceiling)) => {
-            println!(" Auto-Clamp Triggered! Server returned ceiling: {} tokens", ceiling);
+            println!(
+                " Auto-Clamp Triggered! Server returned ceiling: {} tokens",
+                ceiling
+            );
         }
         Err(e) => {
             println!(" Server returned unparseable error: {}", e);

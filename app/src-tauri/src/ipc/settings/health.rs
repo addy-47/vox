@@ -253,8 +253,7 @@ pub async fn validate_llm_token_cap(
 
     let target = model_id.or(Some(active_model));
 
-    CapabilityProbeEngine::validate_token_cap(&config, target.as_deref(), target_cap)
-        .await
+    CapabilityProbeEngine::validate_token_cap(&config, target.as_deref(), target_cap).await
 }
 
 #[tauri::command]
