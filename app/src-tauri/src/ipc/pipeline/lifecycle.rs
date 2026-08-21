@@ -172,11 +172,8 @@ pub async fn engage(
         let remote_tts_info = {
             let s = state.settings.read().ok();
             s.and_then(|settings| {
-                if let crate::core::settings::TtsProviderConfig::ChatterboxRemote {
-                    endpoint, ..
-                } = &settings.tts.provider
-                {
-                    Some(endpoint.clone())
+                if settings.tts.active == crate::core::settings::TtsActiveProvider::ChatterboxRemote {
+                    Some(settings.tts.chatterbox_remote.endpoint.clone())
                 } else {
                     None
                 }
@@ -368,7 +365,7 @@ pub async fn resume_pipeline(
                 }
             },
             InteractionOwner::MainWindow | InteractionOwner::Ptt => {
-                settings.interaction.main_app_mode.clone()
+                settings.interaction.mode.clone()
             }
             InteractionOwner::Wizard => crate::core::settings::InteractionMode::Passive,
         };

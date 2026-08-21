@@ -183,8 +183,13 @@ Cloud routing is automatic: `provider_name = "openai"` → `api.openai.com`, `"g
   - Custom token inputs are validated on-demand via a 1-token smoke probe. If the server returns HTTP 400, a regular expression engine (`\d{3,7}`) parses the server's ceiling (`cannot exceed 8192`, `maximum allowed 16384`) and enables 1-click auto-clamping in the UI.
 - **Hardware-Aware CPU Profiles**:
   - Local GGUF allocates CPU cores dynamically: `Auto` (`max(2, cores - 2)` headroom), `Power Saver` (`max(1, cores / 2)`), `Maximum`. Cloud endpoints offload 100% of compute to remote clusters.
+- **Persistent Capability Cache (`~/.vox/cache/model_capabilities.json`)**:
+  - Probed TTFT, TPS, and capabilities are written directly to an isolated cache file on probe completion. Loaded via `get_cached_capabilities` without dirtying or inflating `settings.json`.
+- **Flat 13-Domain Configuration Architecture**:
+  - Replaces nested models key with 13 1:1 mapped domains (`audio`, `vad`, `stt`, `llm`, `tts`, `realtime`, `interaction`, `dictation`, `history`, `appearance`, `memory`, `persona`, `system`).
+  - Supports parallel provider configurations across `embedded`, `server`, and `cloud` without erasing settings during mode toggles.
 - **UI Decoupling**:
-  - `LlmCatalogView.tsx`: 2-column model discovery grid with `fzf` fuzzy subsequence search (`shared/lib/fuzzy.ts`).
+  - `LlmCatalogView.tsx`: 2-column model discovery grid with `fzf` fuzzy subsequence search (`shared/lib/fuzzy.ts`), inline capability benchmarking triggers, and re-test triggers.
   - `LlmSettingsView.tsx`: Flat underline sub-tabs (`Performance`, `Tokens & Context`, `Creativity`) eliminating tall vertical scrollbars.
 
 ### 4.4 TTS — Text-to-Speech

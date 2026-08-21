@@ -19,7 +19,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   if (!draftSettings) return null;
-  const { ui } = draftSettings;
+  const { appearance } = draftSettings;
 
   const isSmall = layoutMode === "small";
   const isMin = layoutMode === "full-min";
@@ -48,8 +48,8 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
         {/* Theme Mode Switcher */}
         <SegmentedControl
           options={THEME_OPTIONS}
-          value={ui.theme}
-          onChange={(theme) => updateDraft("ui", "theme", theme)}
+          value={appearance.theme}
+          onChange={(theme) => updateDraft("appearance", "theme", theme)}
           size="sm"
         />
       </div>
@@ -57,8 +57,8 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
       {/* Bottom Row: Full card width color picker */}
       <div className="flex-1 flex items-center justify-center min-h-0 pt-0.5">
         <HexColorPicker
-          color={ui.accent_seed}
-          onChange={(color) => updateDraft("ui", "accent_seed", color)}
+          color={appearance.accent_seed}
+          onChange={(color) => updateDraft("appearance", "accent_seed", color)}
           className="custom-color-picker w-full"
           style={{ width: "100%", height: "92px" }}
         />

@@ -25,7 +25,7 @@ pub async fn commit_session_to_history(
             history.push_front(text);
             let limit = {
                 let settings = state.settings.read().unwrap();
-                settings.ui.tray_history_limit as usize
+                settings.history.tray_history_limit as usize
             };
             while history.len() > limit {
                 history.pop_back();

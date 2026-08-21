@@ -58,7 +58,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
   // All 7 backend memory settings fields
   const contextRetrievalEnabled = memory.context_retrieval_enabled ?? true;
   const pipelineProcessingEnabled = memory.pipeline_processing_enabled ?? true;
-  const maxPersonalMemoryShare = memory.max_personal_memory_share ?? 0.15;
+  const maxContextShare = memory.max_context_share ?? 0.15;
   const contextChainingWindowHours = memory.context_chaining_window_hours ?? 12;
   const topKFacts = memory.top_k_facts ?? 5;
   const maxHops = memory.max_hops ?? 2;
@@ -241,7 +241,7 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
                     </span>
                   </div>
                   <span className="text-[13px] font-mono font-black text-[rgb(var(--accent))]">
-                    {Math.round(maxPersonalMemoryShare * 100)}%
+                    {Math.round(maxContextShare * 100)}%
                   </span>
                 </div>
 
@@ -249,10 +249,10 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
                   {[0.10, 0.15, 0.25, 0.35].map((share) => (
                     <button
                       key={share}
-                      onClick={() => updateDraft("memory", "max_personal_memory_share", share)}
+                      onClick={() => updateDraft("memory", "max_context_share", share)}
                       className={cn(
                         "py-1.5 rounded-lg text-[12px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center",
-                        Math.abs(maxPersonalMemoryShare - share) < 0.01
+                        Math.abs(maxContextShare - share) < 0.01
                           ? "border border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
                           : "border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
                       )}

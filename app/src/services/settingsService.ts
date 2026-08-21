@@ -82,6 +82,11 @@ export function listLlmModels(provider?: LlmProviderConfig): Promise<LlmModelInf
   return invoke("list_llm_models", { provider });
 }
 
+/** Get cached model capabilities from disk cache (~/.vox/cache/model_capabilities.json). */
+export function getCachedCapabilities(): Promise<Record<string, ModelCapabilities>> {
+  return invoke("get_cached_capabilities");
+}
+
 /** Probe capabilities for a remote model (ipc/settings.rs:849). */
 export function probeModelCapabilities(
   provider?: LlmProviderConfig,

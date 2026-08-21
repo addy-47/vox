@@ -122,7 +122,7 @@ automatically calls `stop_engine()` if `!dictation.enabled && !is_engaged`.
 - `CloseRequested` on `"main"` is still intercepted → `window.hide()` + `prevent_close` (standard hide-to-tray; no behavior change).
 - `src/window_main.rs::ensure_main_window` rebuilds the window when `get_webview_window("main")` is `None`, mirroring the `tauri.conf.json` attributes, then shows + focuses it. `show_main_window` (`src/ipc/tray.rs`) now delegates to it.
 - `AppState::main_window_destroyed` (`src/core/state.rs`) is set by the `RunEvent::WindowEvent::Destroyed` handler in `src/lib.rs` for label `"main"`, and cleared once `ensure_main_window` reconstructs a fresh window.
-- A "Restart Vox" tray menu item calls `app.restart()` (full process restart) for deep recovery when a window rebuild is insufficient.
+- A "Restart Vox" tray menu item appears **only after a crash is detected** (`main_window_destroyed` is set) and calls `app.restart()` for full-process deep recovery; the tray menu is rebuilt via `refresh_tray_menu` (`src/tray.rs`) so the item is hidden again once the window is reconstructed.
 
 **Files**: `src/window_main.rs`, `src/core/state.rs`, `src/lib.rs`, `src/ipc/tray.rs`
 

@@ -21,8 +21,8 @@ impl PipelineOrchestrator {
         let (provider_config, voice, quality_steps, speed) = {
             let s = self.settings.read().map_err(|e| e.to_string())?;
             (
-                s.tts.provider.clone(),
-                s.tts.voice,
+                s.tts.to_provider_config(),
+                s.tts.voice_index,
                 s.tts.quality_steps,
                 s.tts.speed,
             )

@@ -52,7 +52,7 @@ pub async fn start_realtime_session_internal(
 
     // 3. Load settings to determine active provider
     let settings = state.settings.read().unwrap().clone();
-    let mut gemini_config = settings.realtime.gemini.clone();
+    let mut gemini_config = settings.realtime.gemini_live.clone();
 
     // Try to load resumption token from cache
     let cache_path = crate::utils::paths::cache_dir().join("realtime_session.json");
@@ -86,12 +86,12 @@ pub async fn start_realtime_session_internal(
 
     let provider: Box<dyn crate::services::realtime::RealtimeVoiceProvider> = match settings
         .realtime
-        .provider
+        .active
     {
         crate::core::settings::RealtimeProviderKind::GeminiLive => Box::new(
             crate::services::realtime::providers::gemini_live::GeminiLiveProvider::new(
                 gemini_config,
-                settings.assistant.realtime_prompt.clone(),
+                settings.persona.realtime_prompt.clone(),
                 state.pipeline.is_paused.clone(),
             ),
         ),
@@ -100,8 +100,8 @@ pub async fn start_realtime_session_internal(
         }
         crate::core::settings::RealtimeProviderKind::DeepgramVoiceAgent => Box::new(
             crate::services::realtime::providers::deepgram_live::DeepgramVoiceAgentProvider::new(
-                settings.realtime.deepgram.clone(),
-                settings.assistant.realtime_prompt.clone(),
+                settings.realtime.deepgram_voice_agent.clone(),
+                settings.persona.realtime_prompt.clone(),
                 state.pipeline.is_paused.clone(),
             ),
         ),
@@ -126,7 +126,7 @@ pub async fn start_realtime_session_internal(
             }
         }
         crate::core::state::InteractionOwner::MainWindow
-        | crate::core::state::InteractionOwner::Ptt => settings.interaction.main_app_mode.clone(),
+        | crate::core::state::InteractionOwner::Ptt => settings.interaction.mode.clone(),
         crate::core::state::InteractionOwner::Wizard => {
             crate::core::settings::InteractionMode::Passive
         }

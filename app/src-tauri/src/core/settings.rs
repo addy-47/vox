@@ -95,48 +95,16 @@ pub struct LlmModelInfo {
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
     vec![
-        // Male voices (M1-M5)
-        VoiceProfile {
-            id: 0,
-            name: "James".to_string(),
-        },
-        VoiceProfile {
-            id: 1,
-            name: "David".to_string(),
-        },
-        VoiceProfile {
-            id: 2,
-            name: "Alex".to_string(),
-        },
-        VoiceProfile {
-            id: 3,
-            name: "Ryan".to_string(),
-        },
-        VoiceProfile {
-            id: 4,
-            name: "Ethan".to_string(),
-        },
-        // Female voices (F1-F5)
-        VoiceProfile {
-            id: 5,
-            name: "Sophia".to_string(),
-        },
-        VoiceProfile {
-            id: 6,
-            name: "Olivia".to_string(),
-        },
-        VoiceProfile {
-            id: 7,
-            name: "Emma".to_string(),
-        },
-        VoiceProfile {
-            id: 8,
-            name: "Ava".to_string(),
-        },
-        VoiceProfile {
-            id: 9,
-            name: "Mia".to_string(),
-        },
+        VoiceProfile { id: 0, name: "James".to_string() },
+        VoiceProfile { id: 1, name: "David".to_string() },
+        VoiceProfile { id: 2, name: "Alex".to_string() },
+        VoiceProfile { id: 3, name: "Ryan".to_string() },
+        VoiceProfile { id: 4, name: "Ethan".to_string() },
+        VoiceProfile { id: 5, name: "Sophia".to_string() },
+        VoiceProfile { id: 6, name: "Olivia".to_string() },
+        VoiceProfile { id: 7, name: "Emma".to_string() },
+        VoiceProfile { id: 8, name: "Ava".to_string() },
+        VoiceProfile { id: 9, name: "Mia".to_string() },
     ]
 }
 
@@ -151,18 +119,12 @@ pub fn get_preset_colors() -> Vec<String> {
 }
 
 // ─── Reload Policy ────────────────────────────────────────────────────────────
-// NOTE: This is CODE-SIDE metadata only. It is NEVER stored in settings.json.
-// It informs the IPC layer what action is required after a setting changes.
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SettingReloadPolicy {
-    /// Apply immediately with no side effects. No worker restart required.
     Hot,
-    /// Send an update command to the affected worker thread via its existing channel.
-    /// The worker updates its own local copy without restarting.
     WorkerCommand,
-    /// Full app restart required. Model path changes, log level, output device.
     Restart,
 }
 
@@ -176,102 +138,42 @@ impl SettingReloadPolicy {
     }
 }
 
-/// Returns the reload policy for a given settings domain and key.
-///
-/// This is the single authoritative source of truth for what happens when
-/// each setting changes at runtime. Frontend uses this to show appropriate UX.
-pub fn reload_policy_for(domain: &str, key: &str) -> SettingReloadPolicy {
-    match (domain, key) {
-        // UI — all hot: theme and accent change instantly
-        ("ui", _) => SettingReloadPolicy::Hot,
-
-        // VAD — threshold and noise gate update via VadCommand channel
-        ("vad", "threshold") => SettingReloadPolicy::WorkerCommand,
-        ("vad", "ptt_noise_gate") => SettingReloadPolicy::WorkerCommand,
-        // VAD backend switch requires full engine restart (different constructor path)
-        ("vad", "vad_backend") => SettingReloadPolicy::Restart,
-
-        // Audio output mode — update VAD mic ducking snapshot
-        ("audio", "output_mode") => SettingReloadPolicy::WorkerCommand,
-        ("audio", "input_device") => SettingReloadPolicy::Restart,
-
-        // ASR — model change requires full pipeline restart
-        ("asr", "model") => SettingReloadPolicy::Restart,
-        ("asr", "provider") => SettingReloadPolicy::Restart,
-        ("asr", "transliterate_enabled") => SettingReloadPolicy::Hot,
-
-        // LLM — most require restart (model is loaded once)
-        ("llm", "model") => SettingReloadPolicy::Restart,
-        ("llm", "ctx_size") => SettingReloadPolicy::Restart,
-        ("llm", "threads") => SettingReloadPolicy::Restart,
-        ("llm", "provider") => SettingReloadPolicy::Restart,
-
-        // TTS — provider and voice change require engine restart; quality/speed are hot-updated
-        ("tts", "provider") => SettingReloadPolicy::Restart,
-        ("tts", "voice") => SettingReloadPolicy::Restart,
-        ("tts", "quality_steps") => SettingReloadPolicy::WorkerCommand,
-        ("tts", "speed") => SettingReloadPolicy::WorkerCommand,
-
-        // Interaction — sent as mode-changed event immediately
-        ("interaction", "auto_sleep_timeout") => SettingReloadPolicy::Hot,
-        ("interaction", "pipeline_mode") => SettingReloadPolicy::Restart,
-        ("interaction", _) => SettingReloadPolicy::Hot,
-
-        // Telemetry toggle — hot
-        ("telemetry", "enabled") => SettingReloadPolicy::Hot,
-        // Log level — requires subscriber restart
-        ("telemetry", "log_level") => SettingReloadPolicy::Restart,
-
-        // Persistence — limits are hot
-        ("persistence", "private_mode") => SettingReloadPolicy::Hot,
-
-        // Memory — all personal parameters hot
-        ("memory", _) => SettingReloadPolicy::Hot,
-
-        // Assistant — hot update
-        ("assistant", "modular_prompt") => SettingReloadPolicy::Hot,
-        ("assistant", "realtime_prompt") => SettingReloadPolicy::Hot,
-
-        // Realtime — hot (applied on next session launch)
-        ("realtime", _) => SettingReloadPolicy::Hot,
-
-        // Dictation
-        ("dictation", "hotkey") => SettingReloadPolicy::Restart,
-        ("dictation", "interaction_mode") => SettingReloadPolicy::Restart,
-        ("dictation", _) => SettingReloadPolicy::Hot,
-
-        // Unknown — conservative default
+pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy {
+    match domain {
+        "appearance" | "memory" | "persona" | "history" | "realtime" => SettingReloadPolicy::Hot,
+        "tts" if key == "quality_steps" || key == "speed" => SettingReloadPolicy::WorkerCommand,
+        "llm" if key == "temperature" || key == "compaction_temperature" || key == "max_output_tokens" => {
+            SettingReloadPolicy::Hot
+        }
+        "vad" if key == "threshold" || key == "ptt_noise_gate" => SettingReloadPolicy::Hot,
+        "stt" if key == "transliterate_enabled" => SettingReloadPolicy::Hot,
+        "interaction" if key == "auto_sleep_timeout" => SettingReloadPolicy::Hot,
+        "system" if key == "telemetry_enabled" || key == "setup_completed" => {
+            SettingReloadPolicy::Hot
+        }
         _ => SettingReloadPolicy::Restart,
     }
 }
 
-// ─── Domain Settings ──────────────────────────────────────────────────────────
+// ─── 1. Appearance Settings ───────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
-pub struct UiSettings {
+pub struct AppearanceSettings {
     pub theme: String,
-    /// Seed color for the theme engine. Frontend derives full palette dynamically.
-    /// Store only the seed — NOT generated gradients, shades, or glow colors.
     pub accent_seed: String,
-
-    // Tray HUD Aesthetics
-    pub tray_blur_density: u32,
-    pub tray_glass_tint: bool,
-    pub tray_history_limit: u32,
 }
 
-impl Default for UiSettings {
+impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
             theme: crate::core::defaults::DEFAULT_UI_THEME.into(),
             accent_seed: crate::core::defaults::DEFAULT_UI_ACCENT_SEED.into(),
-            tray_blur_density: crate::core::defaults::DEFAULT_UI_TRAY_BLUR_DENSITY,
-            tray_glass_tint: crate::core::defaults::DEFAULT_UI_TRAY_GLASS_TINT,
-            tray_history_limit: crate::core::defaults::DEFAULT_UI_TRAY_HISTORY_LIMIT,
         }
     }
 }
+
+// ─── 2. Audio Settings ────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -289,13 +191,15 @@ impl Default for AudioSettings {
     }
 }
 
+// ─── 3. VAD Settings ──────────────────────────────────────────────────────────
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct VadSettings {
     pub threshold: f32,
     pub ptt_noise_gate: f32,
-    /// Which VAD backend to use. Changing this requires an engine restart.
-    pub vad_backend: VadBackendOption,
+    #[serde(alias = "vad_backend")]
+    pub backend: VadBackendOption,
 }
 
 impl Default for VadSettings {
@@ -303,7 +207,59 @@ impl Default for VadSettings {
         Self {
             threshold: crate::core::defaults::DEFAULT_VAD_THRESHOLD,
             ptt_noise_gate: crate::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
-            vad_backend: VadBackendOption::TenVad,
+            backend: VadBackendOption::TenVad,
+        }
+    }
+}
+
+// ─── 4. STT Settings (Parallel Providers) ─────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SttActiveProvider {
+    #[default]
+    Embedded,
+    Cloud,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct SttEmbeddedConfig {
+    pub model: String,
+}
+
+impl Default for SttEmbeddedConfig {
+    fn default() -> Self {
+        Self {
+            model: crate::core::defaults::DEFAULT_ASR_MODEL.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct SttCloudConfig {
+    pub provider: String,
+    pub model: String,
+    pub language: String,
+    pub region: String,
+    pub credentials_path: Option<String>,
+    pub credentials_json: Option<String>,
+    pub project_id: Option<String>,
+    pub endpoint: Option<String>,
+}
+
+impl Default for SttCloudConfig {
+    fn default() -> Self {
+        Self {
+            provider: crate::core::defaults::DEFAULT_STT_CLOUD_PROVIDER.to_string(),
+            model: crate::core::defaults::DEFAULT_STT_CLOUD_MODEL.to_string(),
+            language: crate::core::defaults::DEFAULT_STT_CLOUD_LANGUAGE.to_string(),
+            region: crate::core::defaults::DEFAULT_STT_CLOUD_REGION.to_string(),
+            credentials_path: None,
+            credentials_json: None,
+            project_id: None,
+            endpoint: None,
         }
     }
 }
@@ -317,7 +273,6 @@ pub enum SttProviderConfig {
         model_type: String,
     },
     Cloud {
-        /// Which cloud provider: "google", "deepgram", "whisperflow", etc.
         provider: String,
         #[serde(default)]
         credentials_path: Option<String>,
@@ -347,41 +302,127 @@ impl Default for SttProviderConfig {
 fn default_stt_model() -> String {
     crate::core::defaults::DEFAULT_ASR_MODEL.into()
 }
-
 fn default_cloud_model() -> String {
     crate::core::defaults::DEFAULT_STT_CLOUD_MODEL.into()
 }
-
 fn default_cloud_language() -> String {
     crate::core::defaults::DEFAULT_STT_CLOUD_LANGUAGE.into()
 }
-
 fn default_cloud_region() -> String {
     crate::core::defaults::DEFAULT_STT_CLOUD_REGION.into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct AsrSettings {
-    pub model: String,
+pub struct SttSettings {
+    pub active: SttActiveProvider,
     pub transliterate_enabled: bool,
-    #[serde(default)]
-    pub provider: SttProviderConfig,
+    pub embedded: SttEmbeddedConfig,
+    pub cloud: SttCloudConfig,
 }
 
-impl Default for AsrSettings {
+impl Default for SttSettings {
     fn default() -> Self {
         Self {
-            model: crate::core::defaults::DEFAULT_ASR_MODEL.to_string(),
+            active: SttActiveProvider::Embedded,
             transliterate_enabled: crate::core::defaults::DEFAULT_ASR_TRANSLITERATE_ENABLED,
-            provider: SttProviderConfig::default(),
+            embedded: SttEmbeddedConfig::default(),
+            cloud: SttCloudConfig::default(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+impl SttSettings {
+    pub fn active_model(&self) -> &str {
+        match self.active {
+            SttActiveProvider::Embedded => &self.embedded.model,
+            SttActiveProvider::Cloud => &self.cloud.model,
+        }
+    }
+
+    pub fn to_provider_config(&self) -> SttProviderConfig {
+        match self.active {
+            SttActiveProvider::Embedded => SttProviderConfig::Embedded {
+                model_type: self.embedded.model.clone(),
+            },
+            SttActiveProvider::Cloud => SttProviderConfig::Cloud {
+                provider: self.cloud.provider.clone(),
+                credentials_path: self.cloud.credentials_path.clone(),
+                credentials_json: self.cloud.credentials_json.clone(),
+                project_id: self.cloud.project_id.clone(),
+                region: self.cloud.region.clone(),
+                model: self.cloud.model.clone(),
+                language: self.cloud.language.clone(),
+                endpoint: self.cloud.endpoint.clone(),
+            },
+        }
+    }
+}
+
+// ─── 5. LLM Settings (Parallel Providers) ─────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmActiveProvider {
+    #[default]
+    Embedded,
+    Server,
+    Cloud,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct LlmEmbeddedConfig {
+    pub model: String,
+}
+
+impl Default for LlmEmbeddedConfig {
+    fn default() -> Self {
+        Self {
+            model: crate::core::defaults::DEFAULT_LLM_MODEL.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct LlmRemoteConfig {
+    pub base_url: String,
+    pub model: String,
+    pub api_key: Option<String>,
+    pub provider_name: Option<String>,
+}
+
+impl LlmRemoteConfig {
+    pub fn server_default() -> Self {
+        Self {
+            base_url: crate::core::defaults::DEFAULT_LLM_SERVER_BASE_URL.to_string(),
+            model: crate::core::defaults::DEFAULT_LLM_SERVER_MODEL.to_string(),
+            api_key: None,
+            provider_name: Some(
+                crate::core::defaults::DEFAULT_LLM_SERVER_PROVIDER_NAME.to_string(),
+            ),
+        }
+    }
+
+    pub fn cloud_default() -> Self {
+        Self {
+            base_url: crate::core::defaults::DEFAULT_LLM_CLOUD_BASE_URL.to_string(),
+            model: crate::core::defaults::DEFAULT_LLM_CLOUD_MODEL.to_string(),
+            api_key: None,
+            provider_name: Some(crate::core::defaults::DEFAULT_LLM_CLOUD_PROVIDER_NAME.to_string()),
+        }
+    }
+}
+
+impl Default for LlmRemoteConfig {
+    fn default() -> Self {
+        Self::server_default()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-#[derive(Default)]
 pub enum LlmProviderConfig {
     #[default]
     Embedded,
@@ -394,57 +435,126 @@ pub enum LlmProviderConfig {
     },
 }
 
-fn default_chat_temperature() -> f32 {
-    crate::core::defaults::DEFAULT_LLM_CHAT_TEMPERATURE
-}
-
-fn default_compaction_temperature() -> f32 {
-    crate::core::defaults::DEFAULT_LLM_COMPACTION_TEMPERATURE
-}
-
-fn default_max_output_tokens() -> u32 {
-    crate::core::defaults::DEFAULT_LLM_MAX_OUTPUT_TOKENS
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LlmSettings {
-    pub model: String,
-    pub ctx_size: u32,
-    pub threads: u32,
-    pub provider: LlmProviderConfig,
-    #[serde(default = "default_chat_temperature")]
-    pub chat_temperature: f32,
-    #[serde(default = "default_compaction_temperature")]
+    pub active: LlmActiveProvider,
+    pub temperature: f32,
     pub compaction_temperature: f32,
-    #[serde(default = "default_max_output_tokens")]
     pub max_output_tokens: u32,
-}
-
-impl LlmSettings {
-    /// Returns the effective context window token limit based on provider type.
-    /// Embedded llama.cpp uses the explicit user-configured value (e.g. 2048, 4096).
-    /// Non-embedded (Server & Cloud) models enforce a hard floor of 8192 tokens.
-    pub fn effective_ctx_size(&self) -> u32 {
-        match self.provider {
-            LlmProviderConfig::Embedded => self.ctx_size,
-            LlmProviderConfig::OpenAiCompat { .. } => self
-                .ctx_size
-                .max(crate::services::llm::CTX_FLOOR_NON_EMBEDDED),
-        }
-    }
+    pub context_window: u32,
+    pub threads: u32,
+    pub embedded: LlmEmbeddedConfig,
+    pub server: LlmRemoteConfig,
+    pub cloud: LlmRemoteConfig,
 }
 
 impl Default for LlmSettings {
     fn default() -> Self {
         Self {
-            model: crate::core::defaults::DEFAULT_LLM_MODEL.to_string(),
-            ctx_size: crate::core::defaults::DEFAULT_LLM_CTX_SIZE,
-            threads: crate::core::defaults::DEFAULT_LLM_THREADS,
-            provider: LlmProviderConfig::default(),
-            chat_temperature: crate::core::defaults::DEFAULT_LLM_CHAT_TEMPERATURE,
+            active: LlmActiveProvider::Embedded,
+            temperature: crate::core::defaults::DEFAULT_LLM_TEMPERATURE,
             compaction_temperature: crate::core::defaults::DEFAULT_LLM_COMPACTION_TEMPERATURE,
             max_output_tokens: crate::core::defaults::DEFAULT_LLM_MAX_OUTPUT_TOKENS,
+            context_window: crate::core::defaults::DEFAULT_LLM_CONTEXT_WINDOW,
+            threads: crate::core::defaults::DEFAULT_LLM_THREADS,
+            embedded: LlmEmbeddedConfig::default(),
+            server: LlmRemoteConfig::server_default(),
+            cloud: LlmRemoteConfig::cloud_default(),
+        }
+    }
+}
+
+impl LlmSettings {
+    pub fn active_model(&self) -> &str {
+        match self.active {
+            LlmActiveProvider::Embedded => &self.embedded.model,
+            LlmActiveProvider::Server => &self.server.model,
+            LlmActiveProvider::Cloud => &self.cloud.model,
+        }
+    }
+
+    pub fn effective_ctx_size(&self) -> u32 {
+        match self.active {
+            LlmActiveProvider::Embedded => self.context_window,
+            LlmActiveProvider::Server | LlmActiveProvider::Cloud => self
+                .context_window
+                .max(crate::services::llm::CTX_FLOOR_NON_EMBEDDED),
+        }
+    }
+
+    pub fn to_provider_config(&self) -> LlmProviderConfig {
+        match self.active {
+            LlmActiveProvider::Embedded => LlmProviderConfig::Embedded,
+            LlmActiveProvider::Server => LlmProviderConfig::OpenAiCompat {
+                base_url: self.server.base_url.clone(),
+                model: self.server.model.clone(),
+                api_key: self.server.api_key.clone(),
+                provider_name: self.server.provider_name.clone(),
+            },
+            LlmActiveProvider::Cloud => LlmProviderConfig::OpenAiCompat {
+                base_url: self.cloud.base_url.clone(),
+                model: self.cloud.model.clone(),
+                api_key: self.cloud.api_key.clone(),
+                provider_name: self.cloud.provider_name.clone(),
+            },
+        }
+    }
+}
+
+// ─── 6. TTS Settings (Parallel Providers) ─────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TtsActiveProvider {
+    #[default]
+    EdgeTts,
+    Supertonic,
+    Chatterbox,
+    ChatterboxRemote,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+#[serde(default)]
+pub struct TtsEdgeConfig {
+    pub voice: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+pub struct TtsSupertonicConfig {}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct TtsChatterboxConfig {
+    pub language: String,
+    pub voice_id: Option<String>,
+}
+
+impl Default for TtsChatterboxConfig {
+    fn default() -> Self {
+        Self {
+            language: "en".to_string(),
+            voice_id: None,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct TtsChatterboxRemoteConfig {
+    pub endpoint: String,
+    pub language: String,
+    pub remote_path: String,
+    pub voice_id: Option<String>,
+}
+
+impl Default for TtsChatterboxRemoteConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: String::new(),
+            language: "en".to_string(),
+            remote_path: "/opt/chatterbox".to_string(),
+            voice_id: None,
         }
     }
 }
@@ -453,28 +563,22 @@ impl Default for LlmSettings {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TtsProviderConfig {
     Supertonic,
-    /// Chatterbox Multilingual TTS via chatterbox-rs (GGML).
     Chatterbox {
         language: String,
         quality_steps: u32,
         speed: f32,
-        /// UUID of a cloned voice from the voices table.
-        /// `None` = use Chatterbox's built-in reference voice.
         #[serde(default)]
         voice_id: Option<String>,
     },
-    /// Chatterbox Remote TTS offloaded to a GPU server.
     ChatterboxRemote {
         endpoint: String,
         language: String,
         quality_steps: u32,
         speed: f32,
         remote_path: String,
-        /// UUID of a cloned voice. Reserved for Phase D (remote forwarding).
         #[serde(default)]
         voice_id: Option<String>,
     },
-    /// Microsoft Edge TTS via WebSocket.
     EdgeTts {
         #[serde(default)]
         voice: Option<String>,
@@ -490,40 +594,78 @@ impl Default for TtsProviderConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TtsSettings {
-    pub provider: TtsProviderConfig,
-    pub voice: i32,         // Supertonic voice index (0-9)
-    pub quality_steps: u32, // Supertonic total_steps / Chatterbox cfm_steps (2-12, default 8)
-    pub speed: f32,         // Speed factor (0.7-2.0, default 1.05)
+    pub active: TtsActiveProvider,
+    #[serde(alias = "voice")]
+    pub voice_index: i32,
+    pub quality_steps: u32,
+    pub speed: f32,
+    pub edge_tts: TtsEdgeConfig,
+    pub supertonic: TtsSupertonicConfig,
+    pub chatterbox: TtsChatterboxConfig,
+    pub chatterbox_remote: TtsChatterboxRemoteConfig,
 }
 
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
-            provider: TtsProviderConfig::default(),
-            voice: crate::core::defaults::DEFAULT_TTS_VOICE_INDEX,
+            active: TtsActiveProvider::EdgeTts,
+            voice_index: crate::core::defaults::DEFAULT_TTS_VOICE_INDEX,
             quality_steps: crate::core::defaults::DEFAULT_TTS_QUALITY_STEPS,
             speed: crate::core::defaults::DEFAULT_TTS_SPEED,
+            edge_tts: TtsEdgeConfig::default(),
+            supertonic: TtsSupertonicConfig::default(),
+            chatterbox: TtsChatterboxConfig::default(),
+            chatterbox_remote: TtsChatterboxRemoteConfig::default(),
         }
     }
 }
 
+impl TtsSettings {
+    pub fn to_provider_config(&self) -> TtsProviderConfig {
+        match self.active {
+            TtsActiveProvider::EdgeTts => TtsProviderConfig::EdgeTts {
+                voice: self.edge_tts.voice.clone(),
+            },
+            TtsActiveProvider::Supertonic => TtsProviderConfig::Supertonic,
+            TtsActiveProvider::Chatterbox => TtsProviderConfig::Chatterbox {
+                language: self.chatterbox.language.clone(),
+                quality_steps: self.quality_steps,
+                speed: self.speed,
+                voice_id: self.chatterbox.voice_id.clone(),
+            },
+            TtsActiveProvider::ChatterboxRemote => TtsProviderConfig::ChatterboxRemote {
+                endpoint: self.chatterbox_remote.endpoint.clone(),
+                language: self.chatterbox_remote.language.clone(),
+                quality_steps: self.quality_steps,
+                speed: self.speed,
+                remote_path: self.chatterbox_remote.remote_path.clone(),
+                voice_id: self.chatterbox_remote.voice_id.clone(),
+            },
+        }
+    }
+}
+
+// ─── 7. Interaction Settings ──────────────────────────────────────────────────
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct InteractionSettings {
-    pub main_app_mode: InteractionMode,
+    pub mode: InteractionMode,
     pub auto_sleep_timeout: u32,
-    #[serde(default)]
     pub pipeline_mode: PipelineMode,
 }
 
 impl Default for InteractionSettings {
     fn default() -> Self {
         Self {
-            main_app_mode: InteractionMode::Passive,
+            mode: InteractionMode::Passive,
             auto_sleep_timeout: crate::core::defaults::DEFAULT_AUTO_SLEEP_TIMEOUT,
             pipeline_mode: PipelineMode::Modular,
         }
     }
 }
+
+// ─── 8. Dictation Settings ────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
@@ -545,52 +687,35 @@ impl Default for DictationSettings {
     }
 }
 
+// ─── 9. History Settings ──────────────────────────────────────────────────────
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TelemetrySettings {
-    pub enabled: bool,
-    /// Controls log verbosity. Change requires subscriber restart.
-    pub log_level: String,
+#[serde(default)]
+pub struct HistorySettings {
+    pub private_mode: bool,
+    pub tray_history_limit: u32,
 }
 
-impl Default for TelemetrySettings {
+impl Default for HistorySettings {
     fn default() -> Self {
         Self {
-            enabled: crate::core::defaults::DEFAULT_TELEMETRY_ENABLED,
-            log_level: crate::core::defaults::DEFAULT_TELEMETRY_LOG_LEVEL.into(),
+            private_mode: crate::core::defaults::DEFAULT_HISTORY_PRIVATE_MODE,
+            tray_history_limit: crate::core::defaults::DEFAULT_HISTORY_TRAY_LIMIT,
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(default)]
-#[derive(Default)]
-pub struct PersistenceSettings {
-    /// Disable all database writes for the current session.
-    pub private_mode: bool,
-}
+// ─── 10. Memory Settings ──────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
 pub struct MemorySettings {
-    /// Toggle 1: Controls whether retrieved memory is injected into live LLM turn prompts.
     pub context_retrieval_enabled: bool,
-
-    /// Toggle 2: Controls whether the background worker thread processes queue items.
     pub pipeline_processing_enabled: bool,
-
-    /// Hard context window budget cap (0.0 - 1.0, default 0.15 / 15% of total LLM context window).
-    pub max_personal_memory_share: f32,
-
-    /// Time window in hours for Context Chaining.
+    pub max_context_share: f32,
     pub context_chaining_window_hours: u32,
-
-    /// Top-K facts limit per collection for vector retrieval (default 5).
     pub top_k_facts: u32,
-
-    /// Maximum graph traversal expansion depth during Seed-and-Expand (default 2).
     pub max_hops: u32,
-
-    /// Similarity Cutoff Floor (0.0 - 1.0, default 0.40 for MiniLM-L12).
     pub semantic_similarity_cutoff: f32,
 }
 
@@ -601,7 +726,7 @@ impl Default for MemorySettings {
                 crate::core::defaults::DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
             pipeline_processing_enabled:
                 crate::core::defaults::DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
-            max_personal_memory_share: crate::core::defaults::DEFAULT_MEMORY_MAX_PERSONAL_SHARE,
+            max_context_share: crate::core::defaults::DEFAULT_MEMORY_MAX_PERSONAL_SHARE,
             context_chaining_window_hours:
                 crate::core::defaults::DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
             top_k_facts: crate::core::defaults::DEFAULT_MEMORY_TOP_K_FACTS,
@@ -612,23 +737,16 @@ impl Default for MemorySettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct SetupSettings {
-    pub completed: bool,
-}
+// ─── 11. Persona Settings ─────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
-pub struct AssistantSettings {
-    /// Prompt used when Devanagari (Hindi) input is detected.
-    #[serde(alias = "hindi_prompt")]
+pub struct PersonaSettings {
     pub modular_prompt: String,
-    /// Prompt used when English/other input is detected.
-    #[serde(alias = "english_prompt")]
     pub realtime_prompt: String,
 }
 
-impl Default for AssistantSettings {
+impl Default for PersonaSettings {
     fn default() -> Self {
         Self {
             modular_prompt: crate::core::constants::SYSTEM_PROMPT_MODULAR.into(),
@@ -636,6 +754,8 @@ impl Default for AssistantSettings {
         }
     }
 }
+
+// ─── 12. Realtime Settings ────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -713,63 +833,80 @@ pub struct ElevenLabsConvaiConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct RealtimeSettings {
-    pub provider: RealtimeProviderKind,
-    pub gemini: GeminiRealtimeConfig,
-    pub openai: OpenAiRealtimeConfig,
-    pub deepgram: DeepgramVoiceAgentConfig,
-    pub elevenlabs: ElevenLabsConvaiConfig,
+    #[serde(alias = "provider")]
+    pub active: RealtimeProviderKind,
+    #[serde(alias = "gemini")]
+    pub gemini_live: GeminiRealtimeConfig,
+    #[serde(alias = "openai")]
+    pub openai_realtime: OpenAiRealtimeConfig,
+    #[serde(alias = "deepgram")]
+    pub deepgram_voice_agent: DeepgramVoiceAgentConfig,
+    #[serde(alias = "elevenlabs")]
+    pub elevenlabs_convai: ElevenLabsConvaiConfig,
 }
 
 impl Default for RealtimeSettings {
     fn default() -> Self {
         Self {
-            provider: RealtimeProviderKind::GeminiLive,
-            gemini: GeminiRealtimeConfig::default(),
-            openai: OpenAiRealtimeConfig::default(),
-            deepgram: DeepgramVoiceAgentConfig::default(),
-            elevenlabs: ElevenLabsConvaiConfig::default(),
+            active: RealtimeProviderKind::GeminiLive,
+            gemini_live: GeminiRealtimeConfig::default(),
+            openai_realtime: OpenAiRealtimeConfig::default(),
+            deepgram_voice_agent: DeepgramVoiceAgentConfig::default(),
+            elevenlabs_convai: ElevenLabsConvaiConfig::default(),
         }
     }
 }
 
-// ─── Main Settings Struct ─────────────────────────────────────────────────────
+// ─── 13. System Settings ──────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
+pub struct SystemSettings {
+    pub log_level: String,
+    pub telemetry_enabled: bool,
+    pub setup_completed: bool,
+}
+
+impl Default for SystemSettings {
+    fn default() -> Self {
+        Self {
+            log_level: crate::core::defaults::DEFAULT_TELEMETRY_LOG_LEVEL.into(),
+            telemetry_enabled: crate::core::defaults::DEFAULT_TELEMETRY_ENABLED,
+            setup_completed: false,
+        }
+    }
+}
+
+// ─── Main Flat Settings Struct ────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct VoxSettings {
-    pub ui: UiSettings,
     pub audio: AudioSettings,
     pub vad: VadSettings,
-    pub asr: AsrSettings,
+    pub stt: SttSettings,
     pub llm: LlmSettings,
     pub tts: TtsSettings,
+    pub realtime: RealtimeSettings,
     pub interaction: InteractionSettings,
     pub dictation: DictationSettings,
-    pub telemetry: TelemetrySettings,
-    pub persistence: PersistenceSettings,
+    pub history: HistorySettings,
+    pub appearance: AppearanceSettings,
     pub memory: MemorySettings,
-    pub assistant: AssistantSettings,
-    pub setup: SetupSettings,
-    pub realtime: RealtimeSettings,
+    pub persona: PersonaSettings,
+    pub system: SystemSettings,
 }
 
 impl VoxSettings {
-    /// Load settings from disk with corruption recovery.
-    ///
-    /// Recovery strategy:
-    /// 1. Try to parse as current nested format
-    /// 2. On corruption: rename `.json` → `.json.bak`, return defaults (NEVER panics)
     pub fn load() -> Self {
         let path = paths::get().settings.clone();
 
         if let Ok(content) = fs::read_to_string(&path) {
-            // 1. Try current nested format
             if let Ok(settings) = serde_json::from_str::<Self>(&content) {
                 log::info!("[Settings] Loaded configuration from {:?}", path);
                 return settings;
             }
 
-            // 2. Corruption recovery: rename to .bak, return defaults
             let bak = path.with_extension("json.bak");
             log::error!(
                 "[Settings] Corrupt settings.json — backing up to {:?} and restoring defaults",
@@ -787,16 +924,11 @@ impl VoxSettings {
     pub fn save(&self) -> Result<()> {
         let path = paths::get().settings.clone();
 
-        // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
 
         let content = serde_json::to_string_pretty(self)?;
-
-        // Atomic write strategy:
-        // 1. Write to a .tmp file
-        // 2. Atomically rename to .json
         let tmp_path = path.with_extension("tmp");
         fs::write(&tmp_path, content)?;
         fs::rename(tmp_path, path)?;
@@ -821,11 +953,11 @@ mod tests {
     #[test]
     fn test_memory_settings_reload_policy() {
         assert_eq!(
-            reload_policy_for("memory", "context_retrieval_enabled"),
+            get_setting_reload_policy("memory", "context_retrieval_enabled"),
             SettingReloadPolicy::Hot
         );
         assert_eq!(
-            reload_policy_for("memory", "pipeline_processing_enabled"),
+            get_setting_reload_policy("memory", "pipeline_processing_enabled"),
             SettingReloadPolicy::Hot
         );
     }

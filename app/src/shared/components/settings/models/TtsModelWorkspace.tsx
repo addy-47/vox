@@ -34,8 +34,8 @@ export const TtsModelWorkspace = memo(
 
     if (!draftSettings || !modelCatalog) return null;
 
-    const isRemote = draftSettings.tts.provider?.kind === "chatterbox_remote";
-    const isCloud = draftSettings.tts.provider?.kind === "edge_tts";
+    const isRemote = draftSettings.tts.active === "chatterbox_remote";
+    const isCloud = draftSettings.tts.active === "edge_tts";
 
     // Strictly partition models according to the active provider tier (Embedded, Remote, or Cloud) using manifest flags
     const filteredModels = (modelCatalog.tts || []).filter((model) => {
@@ -59,10 +59,10 @@ export const TtsModelWorkspace = memo(
         >
           {filteredModels.map((model) => {
             const isSelected =
-              (model.is_cloud && draftSettings.tts.provider?.kind === "edge_tts") ||
-              (model.id === "supertonic_tts" && draftSettings.tts.provider?.kind === "supertonic") ||
-              (model.id === "chatterbox_tts" && draftSettings.tts.provider?.kind === "chatterbox") ||
-              (model.is_remote && draftSettings.tts.provider?.kind === "chatterbox_remote");
+              (model.is_cloud && draftSettings.tts.active === "edge_tts") ||
+              (model.id === "supertonic_tts" && draftSettings.tts.active === "supertonic") ||
+              (model.id === "chatterbox_tts" && draftSettings.tts.active === "chatterbox") ||
+              (model.is_remote && draftSettings.tts.active === "chatterbox_remote");
 
             const isDownloaded =
               !!model.is_cloud || !!model.is_remote || !!model.is_built_in || !!modelPresence[model.id];
@@ -83,31 +83,13 @@ export const TtsModelWorkspace = memo(
                   layoutMode={layoutMode}
                   onSelect={() => {
                     if (model.id === "edge_tts") {
-                      updateDraft("tts", "provider", { kind: "edge_tts", voice: "en-US-AriaNeural" });
+                      updateDraft("tts", "active", "edge_tts");
                     } else if (model.id === "supertonic_tts") {
-                      updateDraft("tts", "provider", { kind: "supertonic" });
+                      updateDraft("tts", "active", "supertonic");
                     } else if (model.id === "chatterbox_tts") {
-                      updateDraft("tts", "provider", {
-                        kind: "chatterbox",
-                        language: "en",
-                        quality_steps: 8,
-                        speed: 1.0,
-                      });
+                      updateDraft("tts", "active", "chatterbox");
                     } else if (model.id === "chatterbox_remote") {
-                      updateDraft("tts", "provider", {
-                        kind: "chatterbox_remote",
-                        endpoint:
-                          draftSettings.tts.provider?.kind === "chatterbox_remote"
-                            ? draftSettings.tts.provider.endpoint || "http://127.0.0.1:7860"
-                            : "http://127.0.0.1:7860",
-                        language: "en",
-                        quality_steps: 8,
-                        speed: 1.0,
-                        remote_path:
-                          draftSettings.tts.provider?.kind === "chatterbox_remote"
-                            ? draftSettings.tts.provider.remote_path || "~/.vox"
-                            : "~/.vox",
-                      });
+                      updateDraft("tts", "active", "chatterbox_remote");
                     }
                   }}
                   confirmDeleteId={confirmDeleteId}

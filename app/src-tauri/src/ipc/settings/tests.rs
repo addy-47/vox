@@ -14,16 +14,16 @@ mod tests {
         let mut settings = VoxSettings::default();
 
         // 1. Valid key and correct type
-        let res = apply_setting_mutation(&mut settings, "ui", "theme", &json!("light"));
+        let res = apply_setting_mutation(&mut settings, "appearance", "theme", &json!("light"));
         assert_eq!(res, Ok(true));
-        assert_eq!(settings.ui.theme, "light");
+        assert_eq!(settings.appearance.theme, "light");
 
         // 2. Invalid domain ("invalid_domain")
         let res = apply_setting_mutation(&mut settings, "invalid_domain", "theme", &json!("dark"));
         assert_eq!(res, Ok(false));
 
         // 3. Unknown key within valid domain
-        let res = apply_setting_mutation(&mut settings, "ui", "unknown_key", &json!("val"));
+        let res = apply_setting_mutation(&mut settings, "appearance", "unknown_key", &json!("val"));
         assert_eq!(res, Ok(false));
 
         // 4. Type mismatch: string passed to boolean field (dictation.enabled)
@@ -33,12 +33,12 @@ mod tests {
         let err = res.unwrap_err();
         assert!(err.contains("enabled must be a boolean"));
 
-        // 5. Type mismatch: string passed to numeric field (tray_blur_density)
-        let res = apply_setting_mutation(&mut settings, "ui", "tray_blur_density", &json!("dense"));
+        // 5. Type mismatch: string passed to numeric field (tray_history_limit)
+        let res = apply_setting_mutation(&mut settings, "history", "tray_history_limit", &json!("dense"));
         assert!(res.is_err());
 
         // 6. Type mismatch: boolean passed to string field (theme)
-        let res = apply_setting_mutation(&mut settings, "ui", "theme", &json!(true));
+        let res = apply_setting_mutation(&mut settings, "appearance", "theme", &json!(true));
         assert!(res.is_err());
     }
 

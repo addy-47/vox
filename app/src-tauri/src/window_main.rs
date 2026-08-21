@@ -42,9 +42,10 @@ pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .build()
         .map_err(|e| format!("Failed to create main window: {}", e))?;
 
-    // A fresh window exists — clear the crash marker.
+    // A fresh window exists — clear the crash marker and hide "Restart Vox".
     let state = app.state::<Arc<AppState>>();
     state.main_window_destroyed.store(false, Ordering::Relaxed);
+    crate::tray::refresh_tray_menu(app);
 
     let _ = window.show();
     let _ = window.set_focus();

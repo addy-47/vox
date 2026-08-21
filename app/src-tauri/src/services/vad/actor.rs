@@ -58,7 +58,7 @@ where
                 }
                 crate::core::settings::DictationInteractionMode::Ptt => InteractionMode::PTT,
             },
-            InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
+            InteractionOwner::MainWindow => settings.interaction.mode.clone(),
             InteractionOwner::Ptt => InteractionMode::PTT,
             InteractionOwner::Wizard => InteractionMode::Passive,
         };
@@ -151,7 +151,7 @@ where
                                 InteractionMode::PTT
                             }
                         },
-                        InteractionOwner::MainWindow => settings.interaction.main_app_mode.clone(),
+                        InteractionOwner::MainWindow => settings.interaction.mode.clone(),
                         InteractionOwner::Ptt => InteractionMode::PTT,
                         InteractionOwner::Wizard => InteractionMode::Passive,
                     };

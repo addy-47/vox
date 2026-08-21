@@ -85,13 +85,20 @@ fn collect_snapshot(
 
     let llm_provider_kind = {
         let settings = state.settings.read().unwrap();
-        match &settings.llm.provider {
-            crate::core::settings::LlmProviderConfig::Embedded => "embedded".to_string(),
-            crate::core::settings::LlmProviderConfig::OpenAiCompat { provider_name, .. } => {
-                if let Some(ref name) = provider_name {
-                    format!("openai_compat:{}", name.to_lowercase())
+        match settings.llm.active {
+            crate::core::settings::LlmActiveProvider::Embedded => "embedded".to_string(),
+            crate::core::settings::LlmActiveProvider::Server => {
+                if let Some(ref name) = settings.llm.server.provider_name {
+                    format!("server:{}", name.to_lowercase())
                 } else {
-                    "openai_compat".to_string()
+                    "server".to_string()
+                }
+            }
+            crate::core::settings::LlmActiveProvider::Cloud => {
+                if let Some(ref name) = settings.llm.cloud.provider_name {
+                    format!("cloud:{}", name.to_lowercase())
+                } else {
+                    "cloud".to_string()
                 }
             }
         }

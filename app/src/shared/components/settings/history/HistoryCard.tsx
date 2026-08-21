@@ -13,7 +13,7 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   if (!draftSettings) return null;
-  const { persistence, ui } = draftSettings;
+  const { history } = draftSettings;
 
   const isSmall = layoutMode === "small";
 
@@ -52,46 +52,47 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
         {/* Incognito Mode Hover Slide-Out Tile */}
         <div className="group flex items-center w-full h-[58px] relative shrink-0 overflow-hidden rounded-xl">
           <div
-            onClick={() => updateDraft("persistence", "private_mode", !persistence.private_mode)}
-            className={cn(
-              "flex-1 p-2.5 rounded-xl group-hover:rounded-r-none border transition-all duration-300 flex flex-col justify-between h-full cursor-pointer min-w-0",
-              persistence.private_mode
-                ? "border-rose-500/25 bg-rose-500/5 hover:border-rose-500/35 hover:bg-rose-500/10"
-                : "border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] hover:border-[rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.02)]"
-            )}
+            onClick={() => updateDraft("history", "private_mode", !history.private_mode)}
+            className="flex-1 h-full flex items-center justify-between px-3.5 bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--foreground),0.06)] rounded-xl cursor-pointer hover:border-[rgba(var(--accent),0.3)] transition-all duration-200"
           >
-            <div className="flex items-center justify-between gap-1.5 leading-none">
-              <span className="text-[11px] font-black tracking-widest text-[rgb(var(--foreground-muted))]/60 whitespace-nowrap uppercase">
-                Incognito Mode
-              </span>
+            <div className="flex items-center gap-2.5">
               <ShieldAlert
-                size={13}
-                className={persistence.private_mode ? "text-[rgb(var(--pink))]" : "text-[rgb(var(--foreground-muted))]/40"}
+                size={16}
+                className={history.private_mode ? "text-[rgb(var(--pink))]" : "text-[rgb(var(--foreground-muted))]/40"}
               />
+              <div className="flex flex-col">
+                <span className="text-[12px] font-bold tracking-tight text-[rgb(var(--foreground))]">
+                  Incognito Mode
+                </span>
+                <span className="text-[10.5px] text-[rgb(var(--foreground-muted))]/60">
+                  {history.private_mode
+                    ? "Ephemeral session (No traces persisted)"
+                    : "Standard persistent storage"}
+                </span>
+              </div>
             </div>
 
-            <div className="flex items-end justify-between leading-none mt-1">
+            <div className="flex items-center gap-1.5">
               <span
                 className={cn(
-                  "text-[13px] font-black transition-colors truncate capitalize",
-                  persistence.private_mode ? "text-rose-400" : "text-[rgb(var(--foreground))]/90 group-hover:text-[rgb(var(--accent))]"
+                  "font-mono text-[10.5px] font-bold uppercase tracking-wider",
+                  history.private_mode ? "text-rose-400" : "text-[rgb(var(--foreground))]/90 group-hover:text-[rgb(var(--accent))]"
                 )}
               >
-                {persistence.private_mode ? "Incognito Active" : "Logging Active"}
+                {history.private_mode ? "Incognito Active" : "Logging Active"}
               </span>
-
-              <div className="w-2.5 h-2.5 rounded-full border border-[rgb(var(--accent))]/40 flex items-center justify-center relative shrink-0">
-                {persistence.private_mode && (
-                  <span className="absolute inset-0 rounded-full border border-rose-500 animate-ping opacity-60" />
+              <span className="relative flex h-2 w-2 items-center justify-center">
+                {history.private_mode && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
                 )}
-                <span className={cn("w-1 h-1 rounded-full", persistence.private_mode ? "bg-rose-400" : "bg-[rgb(var(--foreground-muted))]/40")} />
-              </div>
+                <span className={cn("w-1 h-1 rounded-full", history.private_mode ? "bg-rose-400" : "bg-[rgb(var(--foreground-muted))]/40")} />
+              </span>
             </div>
           </div>
 
           <div
-            onClick={() => updateDraft("persistence", "private_mode", !persistence.private_mode)}
-            className="h-full w-0 group-hover:w-[32px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent border-l-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden cursor-pointer select-none shrink-0"
+            onClick={() => updateDraft("history", "private_mode", !history.private_mode)}
+            className="w-0 group-hover:w-7 h-full bg-[rgba(var(--accent),0.1)] border-y border-r border-[rgba(var(--accent),0.2)] rounded-r-xl transition-all duration-200 overflow-hidden flex items-center justify-center cursor-pointer"
           >
             <span className="text-[11px] font-black uppercase tracking-[0.15em] text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
               TOGGLE
@@ -114,14 +115,14 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
           <div className="shrink-0 flex items-center justify-center pl-1">
             <RotaryKnob
               label="HUD Limit"
-              value={ui.tray_history_limit ?? 5}
+              value={history.tray_history_limit ?? 5}
               min={1}
               max={15}
               step={1}
               defaultValue={5}
               formatValue={(v) => `${v}`}
               formatPreset={(v) => `${v}`}
-              onChange={(v) => updateDraft("ui", "tray_history_limit", v)}
+              onChange={(v) => updateDraft("history", "tray_history_limit", v)}
               presetSteps={[3, 5, 8, 10, 15]}
             />
           </div>

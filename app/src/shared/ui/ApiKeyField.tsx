@@ -13,6 +13,7 @@ interface ApiKeyFieldProps {
   statusMessage?: string | null;
   onTestConnection?: () => void;
   className?: string;
+  error?: boolean;
 }
 
 export const ApiKeyField = memo(
@@ -26,6 +27,7 @@ export const ApiKeyField = memo(
     statusMessage,
     onTestConnection,
     className,
+    error = false,
   }: ApiKeyFieldProps) => {
     const [showKey, setShowKey] = useState(false);
 
@@ -33,8 +35,8 @@ export const ApiKeyField = memo(
       <div className={cn("space-y-2", className)}>
         {label && (
           <div className="flex items-center justify-between text-xs font-semibold tracking-wider text-[rgb(var(--foreground-muted))] uppercase">
-            <span className="flex items-center gap-1.5">
-              <Key size={13} className="text-[rgb(var(--accent))]" />
+            <span className={cn("flex items-center gap-1.5", error && "text-rose-400 font-bold")}>
+              <Key size={13} className={error ? "text-rose-400" : "text-[rgb(var(--accent))]"} />
               {label}
             </span>
             {onTestConnection && (
@@ -60,7 +62,12 @@ export const ApiKeyField = memo(
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
-            className="w-full bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.12)] rounded-xl px-3.5 py-2.5 pr-10 text-xs font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none focus:border-[rgba(var(--accent),0.4)] focus:bg-[rgba(var(--accent),0.02)] transition-all"
+            className={cn(
+              "w-full bg-[rgba(var(--foreground),0.03)] rounded-xl px-3.5 py-2.5 pr-10 text-xs font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none transition-all",
+              error
+                ? "border-2 border-rose-500/80 bg-rose-500/10 focus:border-rose-400 focus:ring-2 focus:ring-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.2)] text-rose-100"
+                : "border border-[rgba(var(--border),0.12)] focus:border-[rgba(var(--accent),0.4)] focus:bg-[rgba(var(--accent),0.02)]"
+            )}
           />
           <Tooltip label={showKey ? "Hide key" : "Show key"} className="absolute right-3">
             <button
