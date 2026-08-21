@@ -1,23 +1,51 @@
 use serde::Serialize;
 use sysinfo::System;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::sync::OnceLock;
 
-/// Session-unique JSONL path, fixed at first call so all events go into one file per app run.
-fn session_jsonl_path() -> &'static String {
-    static PATH: OnceLock<String> = OnceLock::new();
-    PATH.get_or_init(|| {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let dir = std::path::Path::new("temp");
-        let _ = std::fs::create_dir_all(dir);
-        format!("temp/memory_profile_{}.jsonl", ts)
-    })
+/// Robustly resolves the workspace `temp` directory across any execution working directory.
+pub fn resolve_temp_dir() -> std::path::PathBuf {
+    let candidates = [
+        std::path::PathBuf::from("temp"),
+        std::path::PathBuf::from("../temp"),
+        std::path::PathBuf::from("../../temp"),
+    ];
+    for candidate in &candidates {
+        if candidate.is_dir() {
+            return candidate.clone();
+        }
+    }
+    if let Ok(mut dir) = std::env::current_dir() {
+        for _ in 0..5 {
+            let temp_candidate = dir.join("temp");
+            if temp_candidate.is_dir() {
+                return temp_candidate;
+            }
+            if !dir.pop() {
+                break;
+            }
+        }
+    }
+    let fallback = std::path::PathBuf::from("temp");
+    let _ = std::fs::create_dir_all(&fallback);
+    fallback
 }
 
-#[derive(Debug, Clone, Serialize)]
+/// Sanitizes route path into a clean page identifier (e.g. "/history" -> "history", "/" -> "home").
+pub fn sanitize_page_name(route: &str) -> String {
+    let clean = route.trim_matches('/').replace('/', "_").to_lowercase();
+    let sanitized: String = clean
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    if sanitized.is_empty() {
+        "home".to_string()
+    } else {
+        sanitized
+    }
+}
+
+
+#[derive(Debug, Clone, serde::Deserialize, Serialize)]
 pub struct ProcessMemoryEntry {
     pub pid: u32,
     pub parent_pid: Option<u32>,
@@ -46,7 +74,7 @@ pub struct ProfilerSnapshot {
     pub accuracy: &'static str,
 }
 
-fn collect_profiler_snapshot_internal() -> ProfilerSnapshot {
+fn collect_profiler_snapshot_internal(has_main: bool, has_tray: bool, has_wizard: bool) -> ProfilerSnapshot {
     let mut sys = System::new_all();
     sys.refresh_all();
 
@@ -153,26 +181,37 @@ fn collect_profiler_snapshot_internal() -> ProfilerSnapshot {
     let mut tray_webview_ram_mb: Option<f32> = None;
     let mut wizard_webview_ram_mb: Option<f32> = None;
 
-    if !web_processes.is_empty() {
-        main_webview_ram_mb = Some(web_processes[0].memory_mb);
-        // Tag role in process_tree
-        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[0].pid) {
+    let mut proc_idx = 0;
+
+    if has_main && proc_idx < web_processes.len() {
+        main_webview_ram_mb = Some(web_processes[proc_idx].memory_mb);
+        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[proc_idx].pid) {
             entry.role = "Main WebView (Primary UI)".to_string();
         }
+        proc_idx += 1;
     }
 
-    if web_processes.len() > 1 {
-        tray_webview_ram_mb = Some(web_processes[1].memory_mb);
-        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[1].pid) {
+    if has_tray && proc_idx < web_processes.len() {
+        tray_webview_ram_mb = Some(web_processes[proc_idx].memory_mb);
+        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[proc_idx].pid) {
             entry.role = "Tray WebView (HUD Overlay)".to_string();
         }
+        proc_idx += 1;
     }
 
-    if web_processes.len() > 2 {
-        wizard_webview_ram_mb = Some(web_processes[2].memory_mb);
-        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[2].pid) {
+    if has_wizard && proc_idx < web_processes.len() {
+        wizard_webview_ram_mb = Some(web_processes[proc_idx].memory_mb);
+        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[proc_idx].pid) {
             entry.role = "Wizard WebView (Setup Window)".to_string();
         }
+        proc_idx += 1;
+    }
+
+    while proc_idx < web_processes.len() {
+        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[proc_idx].pid) {
+            entry.role = "WebKit Auxiliary WebProcess".to_string();
+        }
+        proc_idx += 1;
     }
 
     // Sort complete process_tree with Main Process first, then WebViews, then others
@@ -199,12 +238,24 @@ fn collect_profiler_snapshot_internal() -> ProfilerSnapshot {
     }
 }
 
+/// Public helper for gathering profiler snapshot metrics with known window states.
+pub fn collect_profiler_snapshot(has_main: bool, has_tray: bool, has_wizard: bool) -> ProfilerSnapshot {
+    collect_profiler_snapshot_internal(has_main, has_tray, has_wizard)
+}
+
 /// Fetch an immediate, on-demand high-accuracy memory snapshot of the Vox process tree.
 #[tauri::command]
-pub async fn get_profiler_snapshot() -> Result<ProfilerSnapshot, String> {
-    tokio::task::spawn_blocking(collect_profiler_snapshot_internal)
-        .await
-        .map_err(|e| format!("Failed to collect memory profiler snapshot: {e}"))
+pub async fn get_profiler_snapshot(app: tauri::AppHandle) -> Result<ProfilerSnapshot, String> {
+    use tauri::Manager;
+    let has_main = app.get_webview_window("main").is_some();
+    let has_tray = app.get_webview_window("tray").is_some();
+    let has_wizard = app.get_webview_window("wizard").is_some();
+
+    tokio::task::spawn_blocking(move || {
+        collect_profiler_snapshot_internal(has_main, has_tray, has_wizard)
+    })
+    .await
+    .map_err(|e| format!("Failed to collect memory profiler snapshot: {e}"))
 }
 
 #[derive(Debug, Clone, serde::Deserialize, Serialize)]
@@ -223,11 +274,13 @@ pub struct MemoryProfileLogEvent {
     pub dom_node_count: usize,
     pub font_face_count: usize,
     pub timestamp_ms: u64,
+    #[serde(default)]
+    pub process_tree: Option<Vec<ProcessMemoryEntry>>,
 }
 
 /// Records a structured memory event.
-/// - Lifecycle events (mount/peak/retained) → emitted to tracing log (vox2.log).
-/// - Disk persistence to session JSONL is gated behind ENABLE_FILE_PERSISTENCE flag (disabled by default).
+/// - Lifecycle events (mount/snapshot/peak/retained) → emitted to tracing log (vox2.log).
+/// - Disk persistence writes structured logs to `temp/<timestamp>-<page>.jsonl`.
 #[tauri::command]
 pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
@@ -250,27 +303,38 @@ pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result
             );
         }
 
-        // 2. Disk persistence flag (disabled by default, can be flipped on for diagnostic runs)
-        const ENABLE_FILE_PERSISTENCE: bool = false;
+        // 2. Disk persistence to temp/<timestamp>-<page>.jsonl
+        if let Ok(serialized) = serde_json::to_string(&event) {
+            use std::io::Write;
+            let temp_dir = resolve_temp_dir();
+            let page = sanitize_page_name(&event.route);
+            let ts = if event.timestamp_ms > 0 {
+                event.timestamp_ms / 1000
+            } else {
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            };
+            let filename = format!("{}-{}.jsonl", ts, page);
+            let file_path = temp_dir.join(&filename);
 
-        if ENABLE_FILE_PERSISTENCE {
-            if let Ok(serialized) = serde_json::to_string(&event) {
-                use std::io::Write;
-                let session_path = session_jsonl_path();
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(session_path)
-                {
-                    let _ = writeln!(file, "{}", serialized);
-                }
-
-                // Also write latest for quick inspection
-                let _ = std::fs::write("temp/memory_profile_latest.json", &serialized);
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&file_path)
+            {
+                let _ = writeln!(file, "{}", serialized);
+            } else {
+                tracing::warn!(target: "memory_profiler", "Failed to open snapshot JSONL file at {:?}", file_path);
             }
+
+            // Also update latest snapshot JSON for immediate inspection
+            let _ = std::fs::write(temp_dir.join("memory_profile_latest.json"), &serialized);
         }
     })
     .await
     .map_err(|e| format!("Failed to record memory event: {e}"))
 }
+
 

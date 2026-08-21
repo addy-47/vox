@@ -353,6 +353,13 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
     const userHasNavigatedCameraRef = useRef(false);
     const tempVecRef = useRef(new THREE.Vector3());
     const animFrameRef = useRef<number | null>(null);
+    const raycasterRef = useRef(new THREE.Raycaster());
+    const mouseVecRef = useRef(new THREE.Vector2());
+    const lastBadgeUpdateRef = useRef(0);
+    const isRenderingRef = useRef(false);
+    const isSettledRef = useRef(false);
+    const ticksRef = useRef(0);
+    const wakeRenderLoopRef = useRef<() => void>(() => {});
 
     // Detect Theme Changes
     useEffect(() => {
@@ -531,13 +538,15 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
         gNodesRef.current = [];
         gLinksRef.current = [];
         idToNodeIndexMap.current.clear();
+        isSettledRef.current = true;
         setIsLayoutStable(true);
         return;
       }
 
-      if (gNodesRef.current.length === 0) {
-        setIsLayoutStable(false);
-      }
+      // Re-arm simulation layout settlement whenever topology nodes or edges update
+      isSettledRef.current = false;
+      ticksRef.current = 0;
+      setIsLayoutStable(false);
 
       const degreeMap = new Map<string, number>();
       nodes.forEach((n) => degreeMap.set(n.id, 0));
@@ -620,25 +629,34 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       if (!userHasNavigatedCameraRef.current && cameraRef.current && controlsRef.current) {
         fitCameraToEntireGraph();
       }
+
+      wakeRenderLoopRef.current();
     }, [nodes, edges, isLightMode, stepSimulation, fitCameraToEntireGraph]);
 
-    // 100% Pixel-Perfect Centroid Badges Update per Animation Frame
-    const updateCentroidBadgesSync = useCallback(() => {
+    // 100% Pixel-Perfect Centroid Badges Update (Throttled to avoid 60fps React state updates)
+    const updateCentroidBadgesSync = useCallback((force = false) => {
+      const now = performance.now();
+      if (!force && now - lastBadgeUpdateRef.current < 120) return; // ~8Hz max
+      lastBadgeUpdateRef.current = now;
+
       const camera = cameraRef.current;
       const renderer = rendererRef.current;
       const gNodes = gNodesRef.current;
       if (!camera || !renderer || gNodes.length === 0) return;
 
       const groups = new Map<string, { nodes: GNode[]; color: string }>();
+      const nodeById = new Map<string, GNode>();
 
-      gNodes.forEach((n) => {
-        if (!isNodeVisible(n)) return;
+      for (let i = 0; i < gNodes.length; i++) {
+        const n = gNodes[i];
+        nodeById.set(n.id, n);
+        if (!isNodeVisible(n)) continue;
         const col = n.collection || "Identity";
         if (!groups.has(col)) {
           groups.set(col, { nodes: [], color: n.color });
         }
         groups.get(col)!.nodes.push(n);
-      });
+      }
 
       const badges: ClusterBadgeData[] = [];
       const tempVec = tempVecRef.current;
@@ -671,18 +689,23 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
 
         // Calculate unique cross-collection relation edge counts
         const relMap = new Map<string, number>();
+        let totalRels = 0;
         edges.forEach((e) => {
           const fromInCol = colNodesSet.has(e.from_id);
           const toInCol = colNodesSet.has(e.to_id);
 
+          if (fromInCol || toInCol) {
+            totalRels++;
+          }
+
           if (fromInCol && !toInCol) {
-            const targetNode = gNodes.find((n) => n.id === e.to_id);
+            const targetNode = nodeById.get(e.to_id);
             if (targetNode) {
               const key = `${e.relation.toUpperCase()} ➔ ${targetNode.collection}`;
               relMap.set(key, (relMap.get(key) || 0) + 1);
             }
           } else if (!fromInCol && toInCol) {
-            const srcNode = gNodes.find((n) => n.id === e.from_id);
+            const srcNode = nodeById.get(e.from_id);
             if (srcNode) {
               const key = `${srcNode.collection} ➔ ${e.relation.toUpperCase()}`;
               relMap.set(key, (relMap.get(key) || 0) + 1);
@@ -702,9 +725,6 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
           .sort((a, b) => b.count - a.count)
           .slice(0, 4);
 
-        const totalRels = edges.filter((e) =>
-          data.nodes.some((n) => n.id === e.from_id || n.id === e.to_id)
-        ).length;
         const avgConn = data.nodes.length > 0 ? (totalRels / data.nodes.length).toFixed(2) : "0.00";
 
         badges.push({
@@ -731,6 +751,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       recenter: () => {
         userHasNavigatedCameraRef.current = false;
         fitCameraToEntireGraph();
+        wakeRenderLoopRef.current();
       },
       zoomIn: () => {
         const camera = cameraRef.current;
@@ -741,6 +762,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
         const newZ = Math.max(controls.minDistance || 200, camera.position.z * 0.75);
         camera.position.z = newZ;
         controls.update();
+        wakeRenderLoopRef.current();
       },
       zoomOut: () => {
         const camera = cameraRef.current;
@@ -751,6 +773,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
         const newZ = Math.min(controls.maxDistance || 4000, camera.position.z * 1.3);
         camera.position.z = newZ;
         controls.update();
+        wakeRenderLoopRef.current();
       },
     }));
 
@@ -897,6 +920,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
     // Imperatively trigger GPU buffer updates when prop refs change without re-creating Three.js scene
     useEffect(() => {
       updateWebGLBuffers();
+      wakeRenderLoopRef.current();
     }, [selectedFactId, selectedFactDetail, searchQuery, selectedCollection, selectedRelation, updateWebGLBuffers]);
 
     const flyToTargetRef = useRef<{ x: number; y: number; z: number } | null>(null);
@@ -912,8 +936,21 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
         const currentZ = cameraRef.current ? cameraRef.current.position.z : 1200;
         const targetZ = Math.min(currentZ, 1200);
         flyToTargetRef.current = { x: targetNode.x, y: targetNode.y, z: targetZ };
+        wakeRenderLoopRef.current();
       }
     }, [selectedFactId]);
+
+    // Theme synchronization without WebGL context destruction
+    useEffect(() => {
+      if (lineSegmentsRef.current) {
+        const mat = lineSegmentsRef.current.material as THREE.LineBasicMaterial;
+        mat.opacity = isLightMode ? 0.6 : 0.45;
+        mat.needsUpdate = true;
+      }
+      updateWebGLBuffers();
+      updateCentroidBadgesSync(true);
+      wakeRenderLoopRef.current();
+    }, [isLightMode, updateWebGLBuffers, updateCentroidBadgesSync]);
 
     // Three.js Scene Setup & Render Loop (NEVER destroyed on layout stabilization or prop changes)
     useEffect(() => {
@@ -1004,12 +1041,12 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       scene.add(lineSegments);
       lineSegmentsRef.current = lineSegments;
 
-      // Animation & Simulation Loop
-      let ticks = 0;
+      // Demand-Driven Animation & Simulation Loop
       const render = () => {
-        animFrameRef.current = requestAnimationFrame(render);
+        isRenderingRef.current = true;
 
         // Smooth Camera Fly-To Lerp
+        let cameraFlying = false;
         if (flyToTargetRef.current && cameraRef.current && controlsRef.current) {
           const target = flyToTargetRef.current;
           const cam = cameraRef.current;
@@ -1028,13 +1065,14 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
           const dz = target.z - cam.position.z;
           if (dx * dx + dy * dy + dz * dz < 2) {
             flyToTargetRef.current = null;
+          } else {
+            cameraFlying = true;
           }
         }
 
         controls.update();
 
         // ── Drag & Pan Boundary Clamping ──────────────────────────────────
-        // Ensure user can pan comfortably across the graph while keeping at least half inside view
         const R = graphRadiusRef.current || 800;
         const maxPanX = R * 1.5;
         const maxPanY = R * 1.5;
@@ -1050,30 +1088,56 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
           camera.position.y += diffY;
         }
 
-        const isMoving = stepSimulation();
-        ticks++;
+        if (!isSettledRef.current) {
+          const isMoving = stepSimulation();
+          ticksRef.current++;
+          updateWebGLBuffersRef.current();
 
-        updateWebGLBuffersRef.current();
-        updateCentroidBadgesSyncRef.current();
-
-        // Guaranteed stabilization after 35 ticks (~0.6s)
-        if (ticks >= 35 || !isMoving) {
-          setIsLayoutStable(true);
+          if (ticksRef.current >= 75 || (!isMoving && ticksRef.current >= 35)) {
+            isSettledRef.current = true;
+            setIsLayoutStable(true);
+            updateCentroidBadgesSyncRef.current(true);
+          }
         }
 
+        updateCentroidBadgesSyncRef.current();
         renderer.render(scene, camera);
+
+        // Keep loop running if still settling or camera actively moving/damping
+        const isInteracting = cameraFlying || !isSettledRef.current;
+        if (isInteracting) {
+          animFrameRef.current = requestAnimationFrame(render);
+        } else {
+          isRenderingRef.current = false;
+          animFrameRef.current = null;
+        }
       };
 
-      render();
+      const wakeRenderLoop = () => {
+        if (!isRenderingRef.current) {
+          isRenderingRef.current = true;
+          animFrameRef.current = requestAnimationFrame(render);
+        }
+      };
+      wakeRenderLoopRef.current = wakeRenderLoop;
+
+      controls.addEventListener("change", wakeRenderLoop);
+      controls.addEventListener("start", wakeRenderLoop);
+
+      wakeRenderLoop();
 
       // Failsafe timer: Ensure graph loader overlay dismisses after 700ms max
       const failsafeTimer = setTimeout(() => {
+        isSettledRef.current = true;
         setIsLayoutStable(true);
+        updateCentroidBadgesSyncRef.current(true);
       }, 700);
 
       return () => {
         clearTimeout(failsafeTimer);
         if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+        isRenderingRef.current = false;
         controls.dispose();
 
         // ── Comprehensive WebGL GPU Resource Teardown ───────────────────────
@@ -1122,7 +1186,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
           nodePosCache.clear();
         }
       };
-    }, [isLightMode, stepSimulation, width, height, clearCacheOnUnmount]);
+    }, [stepSimulation, width, height, clearCacheOnUnmount]);
 
     // Dedicated lightweight camera & renderer resize effect (prevents WebGL scene teardown)
     useEffect(() => {
@@ -1172,13 +1236,14 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
         const clickX = e.clientX - rect.left;
         const clickY = e.clientY - rect.top;
 
-        // 1. Raycaster Direct Hit Test
-        const mouse = new THREE.Vector2(
+        // 1. Raycaster Direct Hit Test (Reusing Ref instances)
+        const mouse = mouseVecRef.current;
+        mouse.set(
           (clickX / rect.width) * 2 - 1,
           -(clickY / rect.height) * 2 + 1
         );
 
-        const raycaster = new THREE.Raycaster();
+        const raycaster = raycasterRef.current;
         raycaster.setFromCamera(mouse, camera);
 
         const intersects = raycaster.intersectObject(instancedMesh);

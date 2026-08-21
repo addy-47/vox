@@ -58,7 +58,7 @@ export const LiveWaveform = memo(({
   const audioContextRef = useRef<AudioContext | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const lastUpdateRef = useRef<number>(0)
-  const processingAnimationRef = useRef<number | null>(null)
+  const processTimeRef = useRef<number>(0)
   const lastActiveDataRef = useRef<number[]>([])
   const transitionProgressRef = useRef(0)
   const staticBarsRef = useRef<number[]>([])
@@ -113,103 +113,21 @@ export const LiveWaveform = memo(({
     return () => resizeObserver.disconnect()
   }, [])
 
-  // Processing & Idle transitions
+  // Reset transition progress on state transitions
   useEffect(() => {
-    if (processing && !active) {
-      let time = 0
-      transitionProgressRef.current = 0
-
-      const animateProcessing = () => {
-        time += 0.05 // Slightly faster for more energy
-        transitionProgressRef.current = Math.min(
-          1,
-          transitionProgressRef.current + 0.05
-        )
-
-        const containerWidth = containerRef.current?.getBoundingClientRect().width || 200
-        const step = barWidth + barGap
-        const barCount = Math.floor(containerWidth / step)
-        const processingData = new Array(barCount)
-
-        if (mode === "static") {
-          const halfCount = Math.floor(barCount / 2)
-          for (let i = 0; i < barCount; i++) {
-            const normalizedPosition = (i - halfCount) / halfCount
-            const centerWeight = 1 - Math.abs(normalizedPosition) * 0.4
-            const wave1 = Math.sin(time * 3.0 + normalizedPosition * 3) * 0.4
-            const wave2 = Math.sin(time * 1.8 - normalizedPosition * 5) * 0.25
-            const processingValue = (0.4 + wave1 + wave2) * centerWeight
-            
-            let finalValue = processingValue
-            if (lastActiveDataRef.current.length > 0 && transitionProgressRef.current < 1) {
-              const lastDataIndex = Math.min(i, lastActiveDataRef.current.length - 1)
-              const lastValue = lastActiveDataRef.current[lastDataIndex] || 0
-              finalValue = lastValue * (1 - transitionProgressRef.current) + processingValue * transitionProgressRef.current
-            }
-            processingData[i] = Math.max(0.1, Math.min(1, finalValue))
-          }
-          staticBarsRef.current = processingData
-        } else {
-          for (let i = 0; i < barCount; i++) {
-            const wave1 = Math.sin(time * 3.0 + i * 0.15) * 0.35
-            const wave2 = Math.sin(time * 1.5 - i * 0.08) * 0.2
-            const processingValue = (0.35 + wave1 + wave2)
-            
-            let finalValue = processingValue
-            if (lastActiveDataRef.current.length > 0 && transitionProgressRef.current < 1) {
-              const lastDataIndex = Math.floor((i / barCount) * lastActiveDataRef.current.length)
-              const lastValue = lastActiveDataRef.current[lastDataIndex] || 0
-              finalValue = lastValue * (1 - transitionProgressRef.current) + processingValue * transitionProgressRef.current
-            }
-            processingData[i] = Math.max(0.1, Math.min(1, finalValue))
-          }
-          historyRef.current = processingData
-        }
-
-        needsRedrawRef.current = true
-        processingAnimationRef.current = requestAnimationFrame(animateProcessing)
+    if (!active && !processing) {
+      transitionProgressRef.current = 0;
+      processTimeRef.current = 0;
+      if (mode === "static") {
+        staticBarsRef.current = staticBarsRef.current.map(() => 0.05);
+      } else {
+        historyRef.current = historyRef.current.map(() => 0.05);
       }
-
-      animateProcessing()
-      return () => {
-        if (processingAnimationRef.current) cancelAnimationFrame(processingAnimationRef.current)
-      }
-    } else if (!active && !processing) {
-      // Idle fade down
-      const fadeToIdle = () => {
-        let stillFading = false
-        if (mode === "static") {
-          staticBarsRef.current = staticBarsRef.current.map(v => {
-            if (v > 0.06) {
-              stillFading = true
-              return v * 0.92
-            }
-            return 0.05
-          })
-        } else {
-          historyRef.current = historyRef.current.map(v => {
-            if (v > 0.06) {
-              stillFading = true
-              return v * 0.92
-            }
-            return 0.05
-          })
-        }
-        
-        if (stillFading) {
-          needsRedrawRef.current = true
-          processingAnimationRef.current = requestAnimationFrame(fadeToIdle)
-        } else {
-          needsRedrawRef.current = true
-        }
-      }
-      fadeToIdle()
-      return () => {
-        if (processingAnimationRef.current) cancelAnimationFrame(processingAnimationRef.current)
-      }
+      needsRedrawRef.current = true;
+    } else if (processing && !active) {
+      transitionProgressRef.current = 0;
     }
-    return undefined
-  }, [processing, active, barWidth, barGap, mode])
+  }, [active, processing, mode]);
 
   // Mic setup (only if no telemetryRef provided)
   useEffect(() => {
@@ -287,7 +205,7 @@ export const LiveWaveform = memo(({
       const height = lastHeightRef.current
       if (width === 0) return
 
-      // 1. Data Update (Throttle to updateRate)
+      // 1. Data Update (Throttle to updateRate when active, or driven by tick when processing)
       if (active && (currentTime - lastUpdateRef.current > updateRate)) {
         lastUpdateRef.current = currentTime
         const externalData = telemetryRef?.current
@@ -333,6 +251,49 @@ export const LiveWaveform = memo(({
           historyRef.current.push(Math.min(1, Math.max(0.1, energy * sensitivity)))
           if (historyRef.current.length > historySize) historyRef.current.shift()
           lastActiveDataRef.current = historyRef.current
+        }
+        needsRedrawRef.current = true
+      } else if (!active && processing) {
+        processTimeRef.current += 0.05
+        transitionProgressRef.current = Math.min(1, transitionProgressRef.current + 0.05)
+        const time = processTimeRef.current
+        const step = barWidth + barGap
+        const barCount = Math.floor(width / step)
+        const processingData = new Array(barCount)
+
+        if (mode === "static") {
+          const halfCount = Math.floor(barCount / 2)
+          for (let i = 0; i < barCount; i++) {
+            const normalizedPosition = (i - halfCount) / halfCount
+            const centerWeight = 1 - Math.abs(normalizedPosition) * 0.4
+            const wave1 = Math.sin(time * 3.0 + normalizedPosition * 3) * 0.4
+            const wave2 = Math.sin(time * 1.8 - normalizedPosition * 5) * 0.25
+            const processingValue = (0.4 + wave1 + wave2) * centerWeight
+
+            let finalValue = processingValue
+            if (lastActiveDataRef.current.length > 0 && transitionProgressRef.current < 1) {
+              const lastDataIndex = Math.min(i, lastActiveDataRef.current.length - 1)
+              const lastValue = lastActiveDataRef.current[lastDataIndex] || 0
+              finalValue = lastValue * (1 - transitionProgressRef.current) + processingValue * transitionProgressRef.current
+            }
+            processingData[i] = Math.max(0.1, Math.min(1, finalValue))
+          }
+          staticBarsRef.current = processingData
+        } else {
+          for (let i = 0; i < barCount; i++) {
+            const wave1 = Math.sin(time * 3.0 + i * 0.15) * 0.35
+            const wave2 = Math.sin(time * 1.5 - i * 0.08) * 0.2
+            const processingValue = 0.35 + wave1 + wave2
+
+            let finalValue = processingValue
+            if (lastActiveDataRef.current.length > 0 && transitionProgressRef.current < 1) {
+              const lastDataIndex = Math.floor((i / barCount) * lastActiveDataRef.current.length)
+              const lastValue = lastActiveDataRef.current[lastDataIndex] || 0
+              finalValue = lastValue * (1 - transitionProgressRef.current) + processingValue * transitionProgressRef.current
+            }
+            processingData[i] = Math.max(0.1, Math.min(1, finalValue))
+          }
+          historyRef.current = processingData
         }
         needsRedrawRef.current = true
       }

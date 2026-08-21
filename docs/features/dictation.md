@@ -35,8 +35,9 @@ In Phase 9, Dictation is **fully decoupled from the desktop Tray HUD**:
                   │   ▼                     ▼                      ▼                │   │
                   │ [Mode 1: Paste]       [Mode 2: Clipboard]    [Mode 3: Tray HUD] │   │
                   │ Simulated Keystroke   OS Clipboard Only      Floating Desktop   │   │
-                  │ (Ctrl+V with safe     (Silent copy without   Overlay Window     │   │
-                  │  350ms restoration)    keystroke injection)  (Persistent turns) │   │
+                  │ (Linux: Ctrl+V        (Silent copy without   Overlay Window     │   │
+                  │  macOS: Cmd+V          keystroke injection)  (Persistent turns) │   │
+                  │  Windows: Ctrl+V      350ms restoration)                        │   │
                   └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -59,7 +60,11 @@ Dictation configuration is governed by two independent, orthogonal settings axes
 Every output mode is **mutually exclusive** — at any given moment, transcription output routes to exactly one destination:
 1. **`Paste` (Simulated Keystroke Injection)**:
    - Injects the transcribed text directly into the user's active cursor position in any app (browser, code editor, chat, terminal).
-   - Executes via platform native adapters (`X11InputAdapter` with Enigo `Ctrl+V` or `WaylandInputAdapter` with D-Bus `VirtualKeyboard`).
+   - Executes via a platform-specific input adapter selected at compile time (see §9 Platform Compatibility):
+     - **Linux X11**: `X11InputAdapter` → `enigo` + `x11rb` → `Ctrl+V`
+     - **Linux Wayland**: `WaylandInputAdapter` → `enigo` (compositor-permitting) → `Ctrl+V`; graceful fallback to clipboard on compositor block
+     - **macOS**: `MacOsInputAdapter` → `enigo` → **`Cmd+V`** (Meta key — not Ctrl+V)
+     - **Windows**: `WindowsInputAdapter` → `enigo` Win32 SendInput → `Ctrl+V`
    - Uses safe clipboard backup and restore (`with_clipboard_safe`).
 2. **`Clipboard` (Clipboard Only)**:
    - Silently writes the transcribed text to the system clipboard (`arboard`) without simulating key events.
@@ -122,8 +127,17 @@ Simulated paste requires writing text to the system clipboard and dispatching `C
 ```
 
 ### 4.2 Platform Adapters
-- **X11 / Windows**: Uses `enigo` with key event simulation (`Key::Control` + `Key::Layout('v')`).
-- **Wayland**: Uses `wl-clipboard-rs` and `zbus` / RemoteDesktop portal protocols.
+
+| Platform | Adapter Struct | Backend | Paste Key | Notes |
+|---|---|---|---|---|
+| Linux X11 | `X11InputAdapter` | `enigo` + `x11rb` feature | `Ctrl+V` | Default on X11 session |
+| Linux Wayland | `WaylandInputAdapter` | `enigo` (best-effort) | `Ctrl+V` | Falls back to clipboard-only on security block |
+| macOS | `MacOsInputAdapter` | `enigo` (CGEvent) | **`Cmd+V`** | Correct macOS paste shortcut |
+| Windows | `WindowsInputAdapter` | `enigo` Win32 SendInput | `Ctrl+V` | Standard Windows paste |
+
+**Factory**: `create_input_adapter()` in `services/dictation/input.rs` selects the correct adapter at compile time via `#[cfg(target_os)]` branches. The old `#[cfg(not(target_os = "linux"))]` fallthrough to `X11InputAdapter` was a functional bug on macOS — fixed in the cross-platform pass.
+
+**Clipboard layer**: `arboard` with `wayland-data-control` feature handles OS clipboard read/write across all platforms. The `wayland-data-control` feature is gracefully ignored on non-Wayland targets.
 
 ---
 
@@ -133,7 +147,9 @@ When `output_mode == DictationOutputMode::Tray`, the desktop floating overlay wi
 
 ### 5.1 UX & Visual Specifications
 - **Dimensions**: Fixed `380px × 250px` floating glassmorphism card (`rounded-2xl`).
-- **Positioning**: Right edge of display, vertically centered with configurable screen padding (`move_window(Position.TopRight)` or Cairo input shape regions on Linux).
+- **Positioning**: Right edge of display, vertically centered with configurable screen padding. Platform-specific:
+  - **Linux X11/Wayland**: Fullscreen transparent GTK virtual layer with `cairo::Region` input shape (click-through) via `setup_linux_virtual_layer`. Handles fractional scaling.
+  - **macOS / Windows**: `tauri-plugin-positioner` `Position::TopRight` — no virtual layer needed; `set_ignore_cursor_events(true)` handles click-through.
 - **Styling**: `backdrop-filter: blur(20px) saturate(180%)`, background `rgba(var(--card), 0.88)`.
 - **Transitions**: Smooth slide & opacity transitions (**150ms entry / 500ms exit**).
 
@@ -209,3 +225,60 @@ In `InteractionCard.tsx`, users toggle between **Assistant** and **Dictation**:
 - **Trigger Mode**: Switch between `Push-To-Talk` and `Continuous`.
 - **Output Destination**: Segmented control for `Simulated Paste`, `Clipboard Only`, and `Floating Tray`.
 - **Activation Hotkey**: Interactive key combination badge with inline edit support.
+
+---
+
+## 9. Platform Compatibility Matrix
+
+This section documents all platform-specific behavior, known limitations, and open verification items.
+
+### 9.1 Paste Output Mode
+
+| Capability | Linux X11 | Linux Wayland | macOS | Windows |
+|---|---|---|---|---|
+| Simulated paste shortcut | `Ctrl+V` | `Ctrl+V` (best-effort) | `Cmd+V` ✅ | `Ctrl+V` |
+| Input simulation backend | `enigo` + x11rb | `enigo` (CGEvent fallback → clipboard) | `enigo` (CGEvent) | `enigo` Win32 SendInput |
+| Clipboard backup/restore | ✅ `arboard` | ✅ `arboard` + wayland-data-control | ✅ `arboard` | ✅ `arboard` |
+| Fallback on failure | Clipboard mode | Clipboard mode (security block) | Clipboard mode | Clipboard mode |
+
+> **Known Limitation — macOS `enigo` CI verification**: The `enigo 0.2` macOS CGEvent path
+> compiles cleanly in `cargo check` but has not been verified on a live macOS build in CI.
+> The Cargo feature configuration (`default-features = false`, no extra features needed on macOS)
+> is correct per `enigo 0.2` documentation. A macOS smoke test of dictation paste mode is
+> required before the DMG target ships. Track as: `TODO(cross-platform): enigo macOS paste live test`.
+
+### 9.2 Tray HUD Positioning & Click-Through
+
+| Capability | Linux X11/Wayland | macOS | Windows |
+|---|---|---|---|
+| Window positioning | GTK virtual layer (fullscreen transparent, Cairo input shape) | `tauri-plugin-positioner` TopRight | `tauri-plugin-positioner` TopRight |
+| Click-through | `gtk_window.input_shape_combine_region(cairo::Region)` | `set_ignore_cursor_events(true)` | `set_ignore_cursor_events(true)` |
+| Fractional DPI scaling | Handled via `window.scale_factor()` in `setup_linux_virtual_layer` | Handled by OS | Handled by OS |
+| HUD dims (logical px) | 380×250, padding 55px right, 15vh top | 380×250 | 380×250 |
+
+
+### 9.3 Global PTT Hotkey (`Alt+Space`)
+
+- **Linux**: Registered via `tauri-plugin-global-shortcut`. Works on X11 and Wayland (portal-permitting).
+- **macOS**: Requires Accessibility permission in System Settings → Privacy & Security → Accessibility.
+- **Windows**: Standard Win32 `RegisterHotKey` — no special permissions needed.
+
+### 9.4 `enigo` Cargo Feature Configuration
+
+The `x11rb` feature is Linux-only. macOS and Windows compile `enigo` with `default-features = false` and no additional feature flags (both platforms are supported by enigo's default build):
+
+```toml
+# Global — no platform features
+enigo = { version = "0.2", default-features = false }
+
+# Linux-only: enable x11rb backend
+[target.'cfg(target_os = "linux")'.dependencies]
+enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
+```
+
+> **⚠️ CI Gap**: The macOS and Windows `enigo` builds have not been verified in CI.
+> Cross-compile checks (`cargo check --target x86_64-apple-darwin` and
+> `cargo check --target x86_64-pc-windows-msvc`) should be added to the pipeline.
+
+> See [`performance-memory-optimizations.md`](./performance-memory-optimizations.md) for the
+> full cross-platform heap trimming strategy (`trim_heap`) applied after model eviction.

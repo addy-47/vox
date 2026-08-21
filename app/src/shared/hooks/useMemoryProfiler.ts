@@ -39,6 +39,11 @@ export function useMemoryProfiler(enabled = true) {
   const [domStats, setDomStats] = useState<DOMSample>(sampleDOMStats());
   const [cssStats, setCssStats] = useState<CSSIndicatorsSample>(sampleCSSIndicators());
   const [isSampling, setIsSampling] = useState(false);
+  const [lastManualSnapshot, setLastManualSnapshot] = useState<{
+    timestampMs: number;
+    filename: string;
+    totalRamMb: number;
+  } | null>(null);
 
   const pageRecordsRef = useRef<Record<string, PageMemoryRecord>>({});
   pageRecordsRef.current = pageRecords;
@@ -51,45 +56,90 @@ export function useMemoryProfiler(enabled = true) {
 
   const inFlightRef = useRef(false);
 
-  const captureSnapshot = useCallback(async (): Promise<ProfilerSnapshot | null> => {
-    if (inFlightRef.current) return null;
-    inFlightRef.current = true;
-    setIsSampling(true);
-    try {
-      const snap = await getProfilerSnapshot();
-      setLatestSnapshot(snap);
-      setHistory((prev) => {
-        const next = [...prev, snap];
-        return next.length > 60 ? next.slice(next.length - 60) : next;
-      });
+  const captureSnapshot = useCallback(
+    async (options?: { isManual?: boolean }): Promise<ProfilerSnapshot | null> => {
+      if (inFlightRef.current) return null;
+      inFlightRef.current = true;
+      setIsSampling(true);
+      try {
+        const snap = await getProfilerSnapshot();
+        setLatestSnapshot(snap);
+        setHistory((prev) => {
+          const next = [...prev, snap];
+          return next.length > 60 ? next.slice(next.length - 60) : next;
+        });
 
-      // Probe browser metrics
-      setJsHeap(sampleJSHeap());
-      setDomStats(sampleDOMStats());
-      setCssStats(sampleCSSIndicators());
+        // Probe browser metrics
+        const jsSample = sampleJSHeap();
+        const domSample = sampleDOMStats();
+        const cssSample = sampleCSSIndicators();
+        setJsHeap(jsSample);
+        setDomStats(domSample);
+        setCssStats(cssSample);
 
-      // Update current route metrics in pageRecords
-      const r = currentRouteRef.current;
-      const existing = pageRecordsRef.current[r];
-      if (existing && existing.baseline) {
+        // Update current route metrics in pageRecords
+        const r = currentRouteRef.current;
+        const existing = pageRecordsRef.current[r];
+        const activeComps = Object.keys(componentTracesRef.current).filter(
+          (k) => componentTracesRef.current[k].activeInstances > 0
+        );
+        const domCount = domSample.nodeCount || document.querySelectorAll("*").length;
+        const fontCount = domSample.fontFaceCount || (document.fonts ? document.fonts.size : 0);
+
         const currentTotal = snap.total_vox_ram_mb;
-        const baselineTotal = existing.baseline.total_vox_ram_mb;
-        const peakTotal = Math.max(existing.peak ? existing.peak.total_vox_ram_mb : 0, currentTotal);
-
-        const isNewPeak = !existing.peak || currentTotal > existing.peak.total_vox_ram_mb;
-        const updatedPeak = isNewPeak ? snap : existing.peak;
+        const baselineTotal = existing?.baseline ? existing.baseline.total_vox_ram_mb : currentTotal;
+        const peakTotal = Math.max(existing?.peak ? existing.peak.total_vox_ram_mb : 0, currentTotal);
+        const isNewPeak = !existing?.peak || currentTotal > existing.peak.total_vox_ram_mb;
+        const updatedPeak = isNewPeak ? snap : (existing?.peak ?? snap);
         const peakDelta = Math.round((peakTotal - baselineTotal) * 100) / 100;
 
         const updated: PageMemoryRecord = {
-          ...existing,
+          route: r,
+          mountedAt: existing?.mountedAt ?? performance.now(),
+          baseline: existing?.baseline ?? snap,
           current: snap,
           peak: updatedPeak,
+          retained: existing?.retained ?? null,
+          retainedDeltaMb: existing?.retainedDeltaMb ?? null,
           peakDeltaMb: peakDelta,
+          activeComponentsOnMount: existing?.activeComponentsOnMount ?? activeComps,
         };
 
         setPageRecords((prev) => ({ ...prev, [r]: updated }));
 
-        if (isNewPeak && peakDelta > 5) {
+        // Record snapshot event to backend when triggered manually or upon new peak
+        if (options?.isManual) {
+          const now = Date.now();
+          const cleanRoute = r.replace(/^\/+|\/+$/g, "").replace(/\//g, "_") || "home";
+          const filename = `${Math.floor(now / 1000)}-${cleanRoute}.jsonl`;
+          setLastManualSnapshot({
+            timestampMs: now,
+            filename,
+            totalRamMb: currentTotal,
+          });
+          console.info(`[MemoryProfiler] Manual snapshot captured (${currentTotal.toFixed(1)} MB) -> temp/${filename}`, snap);
+
+          await recordMemoryProfileEvent({
+            route: r,
+            event_type: "snapshot",
+            baseline_ram_mb: baselineTotal,
+            current_ram_mb: currentTotal,
+            peak_ram_mb: peakTotal,
+            peak_delta_mb: peakDelta,
+            retained_ram_mb: null,
+            retained_delta_mb: null,
+            main_webview_ram_mb: snap.main_webview_ram_mb,
+            tray_webview_ram_mb: snap.tray_webview_ram_mb,
+            active_components: activeComps,
+            dom_node_count: domCount,
+            font_face_count: fontCount,
+            timestamp_ms: now,
+            process_tree: snap.process_tree,
+          });
+
+          // Ensure visual feedback on button
+          await new Promise((res) => setTimeout(res, 350));
+        } else if (existing && existing.baseline && isNewPeak && peakDelta > 5) {
           recordMemoryProfileEvent({
             route: r,
             event_type: "peak",
@@ -101,25 +151,25 @@ export function useMemoryProfiler(enabled = true) {
             retained_delta_mb: null,
             main_webview_ram_mb: snap.main_webview_ram_mb,
             tray_webview_ram_mb: snap.tray_webview_ram_mb,
-            active_components: Object.keys(componentTracesRef.current).filter(
-              (k) => componentTracesRef.current[k].activeInstances > 0
-            ),
-            dom_node_count: document.querySelectorAll("*").length,
-            font_face_count: document.fonts ? document.fonts.size : 0,
+            active_components: activeComps,
+            dom_node_count: domCount,
+            font_face_count: fontCount,
             timestamp_ms: Date.now(),
+            process_tree: snap.process_tree,
           });
         }
-      }
 
-      return snap;
-    } catch (err) {
-      console.warn("[MemoryProfiler] Snapshot capture failed:", err);
-      return null;
-    } finally {
-      inFlightRef.current = false;
-      setIsSampling(false);
-    }
-  }, []);
+        return snap;
+      } catch (err) {
+        console.warn("[MemoryProfiler] Snapshot capture failed:", err);
+        return null;
+      } finally {
+        inFlightRef.current = false;
+        setIsSampling(false);
+      }
+    },
+    []
+  );
 
   // ─── Track Route Changes (Baseline -> Peak -> Retained) ──────────────────────
   useEffect(() => {
@@ -303,6 +353,7 @@ export function useMemoryProfiler(enabled = true) {
     cssStats,
     isSampling,
     currentRoute,
+    lastManualSnapshot,
     captureSnapshot,
     clearHistory,
   };

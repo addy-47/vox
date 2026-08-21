@@ -70,12 +70,9 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
             }
         }
 
-        // 4. Evict all ONNX models from process memory and trim glibc heap
+        // 4. Evict all ONNX models from process memory and trim heap (cross-platform)
         crate::services::memory::unload_all_onnx_models();
-        #[cfg(target_os = "linux")]
-        unsafe {
-            libc::malloc_trim(0);
-        }
+        crate::services::memory::trim_heap("stop_engine");
     }
 
     Ok(())

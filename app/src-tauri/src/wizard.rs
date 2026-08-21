@@ -3,8 +3,36 @@ use crate::services::stt::{MODEL_DIR_STT_NEMOTRON, MODEL_DIR_STT_QWEN, MODEL_FIL
 use crate::services::vad::{MODEL_DIR_VAD, MODEL_FILE_VAD};
 use crate::utils::paths;
 
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+/// Lazily constructs the wizard setup window on-demand.
+pub fn ensure_wizard_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    if let Some(existing) = app.get_webview_window("wizard") {
+        return Ok(existing);
+    }
+
+    log::info!("[Wizard] Lazily constructing 'wizard' setup webview window...");
+    let window = WebviewWindowBuilder::new(app, "wizard", WebviewUrl::App("/wizard".into()))
+        .title("Vox Setup Wizard")
+        .inner_size(900.0, 650.0)
+        .min_inner_size(900.0, 650.0)
+        .max_inner_size(900.0, 650.0)
+        .transparent(false)
+        .decorations(false)
+        .always_on_top(false)
+        .resizable(true)
+        .visible(false)
+        .center()
+        .zoom_hotkeys_enabled(false)
+        .build()
+        .map_err(|e| format!("Failed to create wizard window: {}", e))?;
+
+    setup_wizard_window(&window);
+    Ok(window)
+}
+
 /// Configures the wizard window with specific attributes.
-pub fn setup_wizard_window(window: &tauri::WebviewWindow) {
+pub fn setup_wizard_window(window: &WebviewWindow) {
     let _ = window.set_min_size(Some(tauri::LogicalSize::new(900.0, 650.0)));
     let _ = window.set_max_size(Some(tauri::LogicalSize::new(900.0, 650.0)));
     let _ = window.set_resizable(true);
