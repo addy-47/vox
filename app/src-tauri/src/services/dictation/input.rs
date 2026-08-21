@@ -11,7 +11,9 @@ pub trait SystemInputAdapter: Send + Sync {
     fn simulate_paste(&self) -> Result<(), DictationError>;
 }
 
-/// Linux X11 implementation using Enigo.
+// ─── Linux X11 Adapter ───────────────────────────────────────────────────────
+
+/// Linux X11 implementation using Enigo + x11rb backend.
 #[derive(Default)]
 pub struct X11InputAdapter;
 
@@ -51,7 +53,10 @@ impl SystemInputAdapter for X11InputAdapter {
     }
 }
 
-/// Linux Wayland implementation.
+// ─── Linux Wayland Adapter ───────────────────────────────────────────────────
+
+/// Linux Wayland implementation. Attempts Enigo; falls back gracefully on compositor
+/// security restrictions (most Wayland compositors block background input injection).
 #[derive(Default)]
 pub struct WaylandInputAdapter;
 
@@ -85,7 +90,99 @@ impl SystemInputAdapter for WaylandInputAdapter {
     }
 }
 
-/// Factory function to return the appropriate SystemInputAdapter for current platform/session.
+// ─── macOS Adapter ───────────────────────────────────────────────────────────
+
+/// macOS implementation using Cmd+V (Meta+V).
+///
+/// macOS paste shortcut is always Cmd+V, not Ctrl+V. Using Ctrl+V on macOS is a
+/// silent no-op — this was a functional bug on non-Linux builds before this fix.
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+pub struct MacOsInputAdapter;
+
+#[cfg(target_os = "macos")]
+impl SystemInputAdapter for MacOsInputAdapter {
+    fn simulate_paste(&self) -> Result<(), DictationError> {
+        let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+            log::error!("[Dictation::Input] Failed to initialize Enigo on macOS: {:?}", e);
+            DictationError::InputSimulationFailed {
+                message: format!("Enigo initialization failed on macOS: {:?}", e),
+            }
+        })?;
+
+        // macOS paste = Cmd+V (Meta key), NOT Ctrl+V
+        enigo.key(Key::Meta, Direction::Press).map_err(|e| {
+            log::error!("[Dictation::Input] Failed to press Meta (Cmd) key: {:?}", e);
+            DictationError::InputSimulationFailed {
+                message: format!("Failed to press Meta: {:?}", e),
+            }
+        })?;
+
+        enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| {
+            log::error!("[Dictation::Input] Failed to click 'v' key on macOS: {:?}", e);
+            DictationError::InputSimulationFailed {
+                message: format!("Failed to click 'v': {:?}", e),
+            }
+        })?;
+
+        enigo.key(Key::Meta, Direction::Release).map_err(|e| {
+            log::error!("[Dictation::Input] Failed to release Meta (Cmd) key: {:?}", e);
+            DictationError::InputSimulationFailed {
+                message: format!("Failed to release Meta: {:?}", e),
+            }
+        })?;
+
+        log::debug!("[Dictation::Input] macOS simulated paste (Cmd+V) executed successfully.");
+        Ok(())
+    }
+}
+
+// ─── Windows Adapter ─────────────────────────────────────────────────────────
+
+/// Windows implementation using Ctrl+V via enigo's Win32 SendInput backend.
+///
+/// Enigo 0.2 on Windows sends Ctrl+V correctly via SendInput — same key sequence as X11.
+/// A dedicated type is provided for clarity and future divergence (e.g. IME edge cases).
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+pub struct WindowsInputAdapter;
+
+#[cfg(target_os = "windows")]
+impl SystemInputAdapter for WindowsInputAdapter {
+    fn simulate_paste(&self) -> Result<(), DictationError> {
+        let mut enigo = Enigo::new(&Settings::default()).map_err(|e| {
+            log::error!("[Dictation::Input] Failed to initialize Enigo on Windows: {:?}", e);
+            DictationError::InputSimulationFailed {
+                message: format!("Enigo initialization failed on Windows: {:?}", e),
+            }
+        })?;
+
+        enigo.key(Key::Control, Direction::Press).map_err(|e| {
+            DictationError::InputSimulationFailed {
+                message: format!("Failed to press Control on Windows: {:?}", e),
+            }
+        })?;
+
+        enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| {
+            DictationError::InputSimulationFailed {
+                message: format!("Failed to click 'v' on Windows: {:?}", e),
+            }
+        })?;
+
+        enigo.key(Key::Control, Direction::Release).map_err(|e| {
+            DictationError::InputSimulationFailed {
+                message: format!("Failed to release Control on Windows: {:?}", e),
+            }
+        })?;
+
+        log::debug!("[Dictation::Input] Windows simulated paste (Ctrl+V) executed successfully.");
+        Ok(())
+    }
+}
+
+// ─── Adapter Factory ─────────────────────────────────────────────────────────
+
+/// Factory function to return the appropriate SystemInputAdapter for the current platform/session.
 pub fn create_input_adapter() -> Box<dyn SystemInputAdapter> {
     #[cfg(target_os = "linux")]
     {
@@ -101,8 +198,21 @@ pub fn create_input_adapter() -> Box<dyn SystemInputAdapter> {
         }
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
+        Box::new(MacOsInputAdapter)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Box::new(WindowsInputAdapter)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        // Unsupported platform: return X11 adapter as a best-effort fallback.
+        log::warn!("[Dictation::Input] Unsupported platform — falling back to X11InputAdapter.");
         Box::new(X11InputAdapter)
     }
 }
+

@@ -82,6 +82,8 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
     let rafId = 0;
     let running = true;
     let time = 0;
+    let lastFrameTime = 0;
+    const targetInterval = 1000 / 30; // 30 FPS for fluid sinusoidal waves
 
     const initialRamMb = metricsRef.current.ramMb > 0 ? metricsRef.current.ramMb : metricsRef.current.ramPct * 81.92;
     let curRamFill = 0.12 + Math.min(1, Math.max(0, initialRamMb / 3500)) * 0.72;
@@ -115,14 +117,22 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       return true;
     };
 
-    const render = () => {
+    const render = (now: number) => {
       if (!running || !ctx) return;
       if (document.hidden) {
         rafId = 0;
         return;
       }
 
-      time += 0.02;
+      rafId = requestAnimationFrame(render);
+
+      const elapsed = now - lastFrameTime;
+      if (elapsed < targetInterval) {
+        return;
+      }
+      lastFrameTime = now - (elapsed % targetInterval);
+
+      time += 0.035;
 
       const dpr = window.devicePixelRatio || 1;
       const width = logicalWidth;
@@ -130,7 +140,6 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
 
       if (width <= 0 || height <= 0) {
         syncCanvasSize();
-        rafId = requestAnimationFrame(render);
         return;
       }
 
@@ -310,8 +319,6 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       ctx.stroke();
 
       ctx.restore(); // restore transform
-
-      rafId = requestAnimationFrame(render);
     };
 
     syncCanvasSize();

@@ -26,34 +26,6 @@
         "alwaysOnTop": false,
         "resizable": true,
         "zoomHotkeysEnabled": false
-      },
-      {
-        "label": "wizard",
-        "title": "Vox Setup Wizard",
-        "url": "/wizard",
-        "width": 900,
-        "height": 650,
-        "transparent": false,
-        "decorations": false,
-        "alwaysOnTop": false,
-        "resizable": true,
-        "visible": false,
-        "center": true,
-        "zoomHotkeysEnabled": false
-      },
-      {
-        "label": "tray",
-        "title": "vox-live",
-        "url": "/tray",
-        "width": 420,
-        "height": 250,
-        "transparent": true,
-        "decorations": false,
-        "alwaysOnTop": true,
-        "resizable": false,
-        "visible": false,
-        "shadow": false,
-        "zoomHotkeysEnabled": false
       }
     ],
     "security": {
