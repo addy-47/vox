@@ -37,10 +37,7 @@ pub fn unload_memory_pipeline_onnx_models() {
     embedder::unload_embedder();
     classifiers::intra_edge_classifier::unload_nli_engine();
     classifiers::inter_edge_classifier::unload_edge_classifier();
-    #[cfg(target_os = "linux")]
-    unsafe {
-        libc::malloc_trim(0);
-    }
+    trim_heap("MemorySubsystem::unload_memory_pipeline_onnx_models");
     log::info!("[MemorySubsystem] Evicted 3 memory pipeline ONNX models from process memory.");
 }
 
@@ -49,10 +46,49 @@ pub fn unload_all_onnx_models() {
     unload_memory_pipeline_onnx_models();
     classifiers::query_classifier::unload_scope_classifier();
     crate::services::translit::unload_transliteration_engine();
-    #[cfg(target_os = "linux")]
-    unsafe {
-        libc::malloc_trim(0);
-    }
+    trim_heap("MemorySubsystem::unload_all_onnx_models");
     log::info!("[MemorySubsystem] Evicted all ONNX models from process memory.");
 }
 
+/// Releases physical memory pages back to the OS after model eviction.
+///
+/// Platform behavior:
+/// - **Linux:**  `malloc_trim(0)` — returns free glibc arena pages immediately.
+/// - **Windows:** `EmptyWorkingSet` — moves freed pages from the process working set
+///   to the OS standby list, reducing physical RAM usage without extra allocations.
+/// - **macOS:**  No stable public trim API. Apple's libmalloc returns pages to the kernel
+///   autonomously under memory pressure. A no-op here is correct and safe.
+///   See: https://github.com/apple-oss-distributions/libmalloc (pressure_relief is internal).
+pub(crate) fn trim_heap(caller: &str) {
+    #[cfg(target_os = "linux")]
+    {
+        unsafe { libc::malloc_trim(0); }
+        log::debug!("[Heap] malloc_trim(0) called from {}", caller);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // EmptyWorkingSet via raw FFI — zero new crate dependencies.
+        // Declared here rather than globally to keep the unsafe surface minimal.
+        extern "system" {
+            fn GetCurrentProcess() -> *mut std::ffi::c_void;
+            fn EmptyWorkingSet(hProcess: *mut std::ffi::c_void) -> i32;
+        }
+        let ok = unsafe { EmptyWorkingSet(GetCurrentProcess()) };
+        if ok != 0 {
+            log::debug!("[Heap] EmptyWorkingSet succeeded (called from {})", caller);
+        } else {
+            log::warn!("[Heap] EmptyWorkingSet returned 0 (called from {}). Non-fatal.", caller);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: libmalloc has no stable public trim API (malloc_zone_pressure_relief is
+        // an internal symbol and must not be called externally). The OS allocator releases
+        // pages to the kernel on its own schedule when memory pressure is detected.
+        // PLATFORM_LIMITATION: no explicit trim possible on macOS without private API.
+        log::debug!("[Heap] trim_heap no-op on macOS (called from {}). OS allocator self-manages.", caller);
+        let _ = caller;
+    }
+}

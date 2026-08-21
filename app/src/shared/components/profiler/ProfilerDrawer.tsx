@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState } from "react";
-import { Activity, RefreshCw } from "lucide-react";
+import { Activity, RefreshCw, CheckCircle2 } from "lucide-react";
 import { useMemoryProfiler } from "@/shared/hooks/useMemoryProfiler";
 import { useMemoryProfilerContext } from "@/shared/context/MemoryProfilerContext";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -41,10 +41,10 @@ const ProfilerDrawer: React.FC<ProfilerDrawerProps> = ({ open, onClose }) => {
     domStats,
     cssStats,
     isSampling,
+    lastManualSnapshot,
     currentRoute,
     captureSnapshot,
   } = useMemoryProfiler(open);
-
 
   const { componentTraces } = useMemoryProfilerContext();
 
@@ -73,6 +73,15 @@ const ProfilerDrawer: React.FC<ProfilerDrawerProps> = ({ open, onClose }) => {
       }
       headerActions={
         <>
+          {lastManualSnapshot && (
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-mono animate-fade-in">
+              <CheckCircle2 size={12} className="shrink-0 text-emerald-400" />
+              <span className="truncate max-w-[260px]">
+                temp/{lastManualSnapshot.filename} ({new Date(lastManualSnapshot.timestampMs).toLocaleTimeString()})
+              </span>
+            </div>
+          )}
+
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[rgba(var(--card),0.8)] border border-[rgba(var(--border),0.15)] text-[11px] font-mono">
             <span
               className={cn(
@@ -83,15 +92,14 @@ const ProfilerDrawer: React.FC<ProfilerDrawerProps> = ({ open, onClose }) => {
             <span className="text-[rgb(var(--foreground-muted))]">On-Demand</span>
           </div>
 
-
-          <Tooltip label="Trigger immediate on-demand OS process sample">
+          <Tooltip label="Trigger immediate on-demand OS process sample & write snapshot to temp/">
             <button
-              onClick={() => captureSnapshot()}
+              onClick={() => captureSnapshot({ isManual: true })}
               disabled={isSampling}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-sans font-bold uppercase tracking-wider bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/30 transition-all border border-[rgb(var(--accent))]/30 cursor-pointer disabled:opacity-50"
             >
               <RefreshCw size={14} className={cn(isSampling && "animate-spin")} />
-              <span>{PROFILER_COPY.snapshotButton}</span>
+              <span>{isSampling ? "Capturing..." : PROFILER_COPY.snapshotButton}</span>
             </button>
           </Tooltip>
         </>

@@ -62,7 +62,7 @@ rustls = { version = "0.23", features = ["ring"] }                              
 
 # ─── 6. System Integration, Clipboard & Input Simulation ────────────────────
 arboard = { version = "3.4", features = ["wayland-data-control"] } # Cross-platform clipboard with native Wayland protocol
-enigo = { version = "0.2", default-features = false, features = ["x11rb"] } # Native OS keyboard & mouse simulation
+enigo = { version = "0.2", default-features = false }                    # Native OS keyboard & mouse simulation (platform features added per-target below)
 zbus = { version = "4", default-features = false, features = ["tokio"] }    # D-Bus IPC for Wayland XDG Desktop Portal shortcuts
 
 # ─── 7. Database & Persistence ──────────────────────────────────────────────
@@ -100,6 +100,7 @@ gtk = { version = "0.18", features = ["v3_24"] }
 webkit2gtk = "2.0"
 cairo-rs = "0.18"
 libc = "0.2"
+enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
