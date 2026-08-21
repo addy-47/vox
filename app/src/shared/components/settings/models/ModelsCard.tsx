@@ -29,6 +29,7 @@ import { RemoteServerSetup } from "./RemoteServerSetup";
 import { TtsVoiceManager, type CustomVoice } from "./TtsVoiceManager";
 import { TtsModelWorkspace } from "./TtsModelWorkspace";
 import { LlmCatalogView } from "./LlmCatalogView";
+import { LlmSettingsView } from "./LlmSettingsView";
 
 interface ModelStatus {
   step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
@@ -489,7 +490,20 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             <SegmentedControl
               options={[
                 { id: "model", label: "Model" },
-                { id: "settings", label: "Settings" },
+                {
+                  id: "settings",
+                  label: "Settings",
+                  disabled:
+                    activePipelineTab === "tts" &&
+                    draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
+                    isRemoteTtsHealthy !== true,
+                  title:
+                    activePipelineTab === "tts" &&
+                    draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
+                    isRemoteTtsHealthy !== true
+                      ? "Complete server setup first to configure voices"
+                      : undefined,
+                },
               ]}
               value={activeCategoryTab}
               onChange={(val) => setActiveCategoryTab(val as "model" | "settings")}
@@ -544,29 +558,36 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           )}
 
           {activePipelineTab === "llm" && (
-            <LlmCatalogView
-              layoutMode={layoutMode}
-              selectedLlmId={draftSettings.llm.model}
-              modelPresence={modelPresence}
-              downloadStatuses={downloadStatuses}
-              confirmDeleteId={confirmDeleteId}
-              setConfirmDeleteId={setConfirmDeleteId}
-              startDownload={startDownload}
-              handleDeleteModelGroup={handleDeleteModelGroup}
-              isGroupRequired={isGroupRequired}
-              isRemoteLlm={isRemoteLlm}
-              provider={provider}
-              remoteModels={remoteModels}
-              loadingRemoteModels={loadingRemoteModels}
-              remoteModelsError={remoteModelsError}
-              probingMap={probingMap}
-              handleProbeCapabilities={handleProbeCapabilities}
-              customModelId={customModelId}
-              setCustomModelId={setCustomModelId}
-              customModelStatus={customModelStatus}
-              handleValidateCustomModel={handleValidateCustomModel}
-              activeCategoryTab={activeCategoryTab}
-            />
+            activeCategoryTab === "settings" ? (
+              <LlmSettingsView
+                layoutMode={layoutMode}
+                isRemoteLlm={isRemoteLlm}
+                provider={provider}
+              />
+            ) : (
+              <LlmCatalogView
+                layoutMode={layoutMode}
+                selectedLlmId={draftSettings.llm.model}
+                modelPresence={modelPresence}
+                downloadStatuses={downloadStatuses}
+                confirmDeleteId={confirmDeleteId}
+                setConfirmDeleteId={setConfirmDeleteId}
+                startDownload={startDownload}
+                handleDeleteModelGroup={handleDeleteModelGroup}
+                isGroupRequired={isGroupRequired}
+                isRemoteLlm={isRemoteLlm}
+                provider={provider}
+                remoteModels={remoteModels}
+                loadingRemoteModels={loadingRemoteModels}
+                remoteModelsError={remoteModelsError}
+                probingMap={probingMap}
+                handleProbeCapabilities={handleProbeCapabilities}
+                customModelId={customModelId}
+                setCustomModelId={setCustomModelId}
+                customModelStatus={customModelStatus}
+                handleValidateCustomModel={handleValidateCustomModel}
+              />
+            )
           )}
 
           {activePipelineTab === "tts" && (

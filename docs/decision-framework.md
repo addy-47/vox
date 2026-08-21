@@ -1,3 +1,15 @@
+---
+title: "Vox Technology Decision Framework"
+audience: "Internal — architects, contributors, agents"
+last_updated: 2026-08-21
+owners: "system-architect role"
+related_docs:
+  - "docs/backend.md — Resulting architecture"
+  - "docs/vision.md — Product intent"
+  - "docs/frontend.md — Frontend constraints"
+  - "docs/models.md — Model choices"
+---
+
 # Vox Technology Decision Framework
 
 This document captures the major architectural decisions behind Vox and, more importantly, **why those decisions were made**.

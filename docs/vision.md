@@ -1,3 +1,14 @@
+---
+title: "Vox Vision"
+audience: "Internal — all contributors, product/strategy readers"
+last_updated: 2026-08-21
+owners: "system-architect role"
+related_docs:
+  - "docs/decision-framework.md — Why these architectural choices"
+  - "docs/roadmap.md — What has shipped"
+  - "docs/backend.md — How it is built"
+---
+
 # Vox Vision
 
 ## Why Vox Exists
