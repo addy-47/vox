@@ -170,9 +170,10 @@ fn test_cancellation_during_playback_clears_pipeline_buffers() {
         let mut state_lock = pipeline.state.lock();
         *state_lock = InteractionState::AssistantSpeaking;
     }
-    pipeline
-        .current_state_atomic
-        .store(InteractionState::AssistantSpeaking as u32, Ordering::Relaxed);
+    pipeline.current_state_atomic.store(
+        InteractionState::AssistantSpeaking as u32,
+        Ordering::Relaxed,
+    );
 
     // 2. User presses cancel / barge-in occurs.
     pipeline.cancel_flag.store(true, Ordering::Relaxed);

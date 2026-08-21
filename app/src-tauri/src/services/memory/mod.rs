@@ -62,7 +62,9 @@ pub fn unload_all_onnx_models() {
 pub(crate) fn trim_heap(caller: &str) {
     #[cfg(target_os = "linux")]
     {
-        unsafe { libc::malloc_trim(0); }
+        unsafe {
+            libc::malloc_trim(0);
+        }
         log::debug!("[Heap] malloc_trim(0) called from {}", caller);
     }
 
@@ -78,7 +80,10 @@ pub(crate) fn trim_heap(caller: &str) {
         if ok != 0 {
             log::debug!("[Heap] EmptyWorkingSet succeeded (called from {})", caller);
         } else {
-            log::warn!("[Heap] EmptyWorkingSet returned 0 (called from {}). Non-fatal.", caller);
+            log::warn!(
+                "[Heap] EmptyWorkingSet returned 0 (called from {}). Non-fatal.",
+                caller
+            );
         }
     }
 
@@ -88,7 +93,10 @@ pub(crate) fn trim_heap(caller: &str) {
         // an internal symbol and must not be called externally). The OS allocator releases
         // pages to the kernel on its own schedule when memory pressure is detected.
         // PLATFORM_LIMITATION: no explicit trim possible on macOS without private API.
-        log::debug!("[Heap] trim_heap no-op on macOS (called from {}). OS allocator self-manages.", caller);
+        log::debug!(
+            "[Heap] trim_heap no-op on macOS (called from {}). OS allocator self-manages.",
+            caller
+        );
         let _ = caller;
     }
 }

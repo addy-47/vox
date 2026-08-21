@@ -26,7 +26,7 @@ Vox is not one UI; it is **two independent Tauri webviews plus one ephemeral wiz
 
 | Surface | Window label | Lifecycle | Entry file |
 |---|---|---|---|
-| Main App | `main` | Persistent; hidden (not closed) on `CloseRequested` | `app/src/App.tsx`, `app/src/pages/Home.tsx` |
+| Main App | `main` | Persistent; hidden (not closed) on `CloseRequested`; lazily re-created by `ensure_main_window` if the renderer is destroyed (crash / DevTools `close`) | `app/src/App.tsx`, `app/src/pages/Home.tsx` |
 | Tray HUD | `tray` | Created on demand via `ensure_tray_window`, destroyed when dictation disabled / non-Tray output | `app/src/tray/TrayApp.tsx` |
 | Setup Wizard | `wizard` | Created on demand via `ensure_wizard_window`, closed on completion | `app/src/wizard/WizardRoot.tsx` |
 
@@ -62,6 +62,7 @@ Package manager is **pnpm** (never npm/yarn).
 
 - **Main window** is defined statically in `tauri.conf.json`. **Tray and wizard windows are NOT** — they are constructed on demand by `ensure_tray_window` / `ensure_wizard_window` in `app/src-tauri/src/tray.rs` and `wizard.rs`, and `.close()`d when inactive. This keeps ~490MB RAM off cold boot (detail: `features/performance-memory-optimizations.md` §1.1).
 - **Engine offload on hide** — closing the main window hides it and calls `stop_engine()` when dictation is disabled and not engaged (`app/src-tauri/src/lib.rs`).
+- **Crash recovery (lazy recreate)** — the main webview is never destroyed on `CloseRequested` (hidden only). If the renderer dies (crash / DevTools), its `WebviewWindow` handle vanishes; the next "Launch Vox" tray action calls `ensure_main_window` (`src/window_main.rs`), which rebuilds a fresh `main` window from `tauri.conf.json` attributes. A "Restart Vox" tray item (`app.restart()`) performs a full process restart for deep recovery (`src/lib.rs`).
 - **Platform positioning** — Linux uses a GTK virtual layer with Cairo input-shape regions for click-through; macOS/Windows use `tauri-plugin-positioner`. Full detail and the cross-platform matrix are in `features/performance-memory-optimizations.md` §4 matrix. Frontend code must not hardcode window geometry.
 
 ## 5. State management

@@ -63,10 +63,9 @@ pub async fn route_transcript(app: &AppHandle, text: &str) -> Result<(), Dictati
             let input_adapter = create_input_adapter();
 
             // Safely write to clipboard, simulate OS paste, and restore prior clipboard if successful
-            let paste_result = clipboard::with_clipboard_safe(text, || async {
-                input_adapter.simulate_paste()
-            })
-            .await;
+            let paste_result =
+                clipboard::with_clipboard_safe(text, || async { input_adapter.simulate_paste() })
+                    .await;
 
             match paste_result {
                 Ok(()) => {
