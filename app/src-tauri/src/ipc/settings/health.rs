@@ -219,17 +219,42 @@ pub async fn probe_model_capabilities(
 ) -> Result<crate::core::settings::ModelCapabilities, String> {
     use crate::services::llm::CapabilityProbeEngine;
 
-    let config = match provider {
-        Some(prov) => prov,
-        None => {
-            let settings = state.settings.read().map_err(|e| e.to_string())?;
-            settings.llm.provider.clone()
-        }
+    let (config, active_model) = {
+        let settings = state.settings.read().map_err(|e| e.to_string())?;
+        (
+            provider.unwrap_or_else(|| settings.llm.provider.clone()),
+            settings.llm.model.clone(),
+        )
     };
 
-    CapabilityProbeEngine::probe_capabilities(&config, model_id.as_deref())
+    let target = model_id.or(Some(active_model));
+
+    CapabilityProbeEngine::probe_capabilities(&config, target.as_deref())
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn validate_llm_token_cap(
+    state: State<'_, std::sync::Arc<AppState>>,
+    provider: Option<crate::core::settings::LlmProviderConfig>,
+    model_id: Option<String>,
+    target_cap: u32,
+) -> Result<Option<u32>, String> {
+    use crate::services::llm::CapabilityProbeEngine;
+
+    let (config, active_model) = {
+        let settings = state.settings.read().map_err(|e| e.to_string())?;
+        (
+            provider.unwrap_or_else(|| settings.llm.provider.clone()),
+            settings.llm.model.clone(),
+        )
+    };
+
+    let target = model_id.or(Some(active_model));
+
+    CapabilityProbeEngine::validate_token_cap(&config, target.as_deref(), target_cap)
+        .await
 }
 
 #[tauri::command]

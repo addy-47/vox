@@ -81,7 +81,15 @@ rounded:
   xs: 0.3125rem
   sm2: 0.5625rem
   pill: 9999px
----
+  # ── Doc metadata ──
+  title: "Vox Design System Spec — Liquid Space"
+  audience: "Internal — UI contributors, designers, frontend agents"
+  last_updated: 2026-08-20
+  owners: "frontend-engineer role"
+  related_docs:
+    - "docs/frontend.md — Consumes these tokens"
+    - "docs/backend.md — Pipeline mood source"
+    - "docs/features/performance-memory-optimizations.md — UI perf invariants"
 
 # Vox Design System Spec — "Liquid Space"
 
@@ -92,6 +100,14 @@ must follow. Implementation and UX-mechanic details live in
 frontend architecture doc and the impeccable design rules.
 
 ---
+
+## 0. How to read this doc
+
+- **Audience:** any UI contributor, designer, or frontend agent.
+- **Scope:** the authoritative design system — tokens, type roles, elevation, motion, accessibility.
+- **Convention:** tokens are declared as CSS variables in `app/src/index.css` and mirrored in this file's frontmatter; implementation lives in `app/src/`.
+- **Non-goals:** not the frontend architecture (→ `docs/frontend.md`); not backend (→ `docs/backend.md`).
+- **SSOT:** the frontmatter token maps are what the `impeccable` design detector enforces.
 
 ## 1. Design Principles
 

@@ -1,8 +1,29 @@
+---
+title: "Vox Model Inventory & Specifications"
+audience: "Internal — ML/model-config contributors, backend engineers, agents"
+last_updated: 2026-08-21
+owners: "ml-research-engineer role"
+related_docs:
+  - "docs/backend.md — Engines, threading, lifecycle"
+  - "docs/features/memory-architecture.md — Memory subsystem models"
+  - "docs/features/query-sieve.md — Query sieve architecture"
+  - "docs/features/transliteration-rnn.md — Transliteration architecture"
+  - "submodules/distilbert-query-classifier, vox-models — Model source"
+---
+
 # Vox — Model Inventory & Specifications
 
 > **Complete reference of all models used in Vox**, their parameters, quantization, inference engines, load paths, and category-specific algorithms. This is a model catalog, not an architecture document — see `docs/backend.md` for threading, lifecycle, and system architecture.
 
 ---
+
+## 0. How to read this doc
+
+- **Audience:** ML/model-config contributors, backend engineers, and agents.
+- **Scope:** the complete model catalog — parameters, quantization, engines, load paths, and category algorithms.
+- **Convention:** claims use `path/file` pointers; manifest paths are canonical (`~/.vox/models/...`).
+- **Non-goals:** not an architecture doc (→ `docs/backend.md`); not a memory-subsystem deep dive (→ `docs/features/memory-architecture.md`).
+- **SSOT:** model IDs and manifest entries are authoritative; every model must appear in `~/.vox/models/models_manifest.json`.
 
 ## 1. Model Inventory — Complete Reference
 
@@ -233,28 +254,53 @@ All cloud LLMs use the same `OpenAiCompatProvider` struct — no provider-specif
 
 ## 5. Model Lifecycle & Management
 
-### Load/Unload by Category
+### Load/Unload by Configuration
 
-| Category | Load Trigger | Unload Trigger | Resident During Pipeline? |
-| :--- | :--- | :--- | :---: |
-| **VAD** (Earshot) | Embedded at compile time | Never | ✅ Always resident |
-| **VAD** (TenVAD) | Boot (if selected) | On backend switch | ✅ Always resident |
-| **STT** | Pipeline warm-up (`engage`) | Pipeline cooldown (`auto-sleep`) | ✅ While engaged |
-| **LLM** (local) | Pipeline warm-up (`engage`) | Pipeline cooldown (`auto-sleep`) | ✅ While engaged |
-| **LLM** (cloud) | Per-request HTTP | N/A (connection closed) | ❌ Stateless |
-| **TTS** | Pipeline warm-up (`engage`) | Pipeline cooldown (`auto-sleep`) | ✅ While engaged |
-| **Embedding** | On-demand (memory worker idle sweep) | After sweep completes | ❌ Loaded per sweep |
-| **NLI** | On-demand (memory worker idle sweep) | After sweep completes | ❌ Loaded per sweep |
-| **Edge Classifier** | On-demand (memory worker idle sweep) | After sweep completes | ❌ Loaded per sweep |
-| **MemoryScope Classifier** | Boot (eager init in `ensure_scope_classifier_loaded()`) | Never (kept warm) | ✅ Resident (tiny) |
+What sits in RAM is decided by **settings**, not by model family. The two master switches are `dictation.enabled` and *how the engine gets launched* — `engage()` (main window), passive auto-launch at boot, or the PTT hotkey. Read this matrix top-to-bottom as the lifecycle of a running app.
+
+Legend: ✅ resident · ❌ not loaded · ↺ lazy/on-demand (loaded on first warm-up or first turn, offloaded again on auto-sleep, re-warmed on next activity) · — n/a (cloud / not applicable).
+
+¹ *Idle-sweep ONNX* = Embedding (MiniLM/BGE-M3) + NLI (DeBERTa-v3) + Edge Classifier (ModernBERT). Loaded **only** during the 30s-debounced idle consolidation sweep, evicted the instant the pipeline goes active or on `stop_engine` — never concurrently resident with a live turn.
+
+| # | Configuration / state | VAD | STT | LLM | TTS | Scope Clf² | Idle-sweep ONNX¹ | Tray HUD | What moves it to the next state |
+|:--|:---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|---|
+| 1 | **dictation disabled**, app boot, nothing engaged | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | user `engage()` → #4; or enable dictation → #2 / #3a |
+| 2 | **dictation enabled · PTT**, app boot | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ (lazy) | first hotkey press → #3b |
+| 3a | **dictation enabled · Passive**, app boot | ✅ | ✅ | ↺ | ↺ | ❌ | ❌ | ✅ if `output_mode=Tray` | first warm-up (any speech) → #3b |
+| 3b | Passive/PTT **after first use** (engine warm) | ✅ | ✅ | ↺ | ↺ | ❌ | ❌ | ✅ if Tray | auto-sleep → #5; `engage()` main → #4 |
+| 4 | **MainWindow engaged** (`engage()`) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | n/a | auto-sleep → #5; idle sweep → #6 |
+| 5 | **Auto-sleep** reached (idle > `auto_sleep_timeout`) | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | per owner | new activity re-warms LLM+TTS → #3b/#4 |
+| 6 | **Idle memory sweep** (mem pipeline on + queue + 30s idle) | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ transient | — | any activity evicts sweep ONNX → #5 |
+| 7 | **Realtime S2S** session active | ✅ | ✅ | — | — | ✅ | ❌ | — | cloud WebSocket — no local model |
+| 8 | **stop_engine** / app quit (dictation off or disengage) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | hidden | everything evicted + `trim_heap()` |
+
+² *Scope Clf* = MemoryScope Classifier (ModernBERT). Loaded only by `engage()` (`ensure_scope_classifier_loaded`), i.e. the **main-window** conversational session — not by dictation PTT/passive, which need only transcription.
+
+**The three things that actually change your RAM footprint:**
+
+- **`dictation.enabled = false`** → boots with **zero models and zero webviews**. Nothing loads until the user engages the main window (#1 → #4).
+- **`dictation.enabled = true` + `interaction_mode = Ptt`** → still **zero RAM at boot** (#2). The audio/STT engine lazy-launches on the *first* hotkey press and then stays warm (VAD+STT resident) so subsequent presses are instant; LLM/TTS only spin up per turn and cool on auto-sleep.
+- **`dictation.enabled = true` + `interaction_mode = Passive`** → engine **auto-launches at boot**, so VAD+STT are resident immediately (#3a). Cheapest to *use*, costs the most RAM at idle.
+
+**Transliteration (ONNX)** is orthogonal to the above: it loads on the first Devanagari string seen in *any* state (`transliterate` → `init_transliteration_engine`) and stays resident until `stop_engine`.
+
+**Reference — load entry points** (for tracing in code):
+- VAD / STT: `ipc/pipeline/engine_launch.rs` (`launch_engine`) — eager at engine launch.
+- LLM / TTS: `services/pipeline/{llm,tts}_lifecycle.rs` (`warm_up_*`) — lazy on `VoxEvent::WarmUp` / first turn; `cool_down_*` on auto-sleep.
+- Scope Clf: `ipc/pipeline/lifecycle.rs` (`engage` → `ensure_scope_classifier_loaded`).
+- Embedding / NLI / Edge: `services/memory/**` + `persistence/memory_worker.rs` — idle sweep only.
+- Transliteration: `services/translit.rs`.
+- Realtime S2S: `ipc/pipeline/realtime.rs` (`start_realtime_session_internal`) — cloud, no local weights.
+- Full teardown: `ipc/pipeline/lifecycle.rs` (`stop_engine` → `unload_all_onnx_models` + `trim_heap`).
 
 ### Auto-Sleep Cooldown
 
-```
-if last_interaction.elapsed() > auto_sleep_timeout (default: 5 min):
-    cool_down_llm()  → drop LlamaModel + LlamaContext, save ~0.75–1.4 GB
-    cool_down_tts()  → drop TTS engine, save ~0.14–1.1 GB
-```
+Auto-sleep is driven by the pipeline event loop (`services/pipeline/event_loop.rs`) using `interaction.auto_sleep_timeout` (default 300s). On sustained inactivity it sets `is_sleeping` and runs a **tiered offload**:
+
+- `cool_down_llm()` (`services/pipeline/llm_lifecycle.rs`) — drops the local GGUF model / closes the cloud provider, frees ~0.75–1.4 GB.
+- `cool_down_tts()` (`services/pipeline/tts_lifecycle.rs`) — drops the TTS engine, frees ~0.14–1.1 GB.
+
+VAD and STT are **not** cooled on auto-sleep — they stay resident so the mic keeps listening for the next wake word / push-to-talk. Any new activity flips `is_sleeping` back to false and re-warms LLM + TTS lazily via `warm_up_*`. Only `stop_engine()` (main-window close with dictation disabled, disengage, or app quit) tears down VAD/STT and evicts **every** ONNX model via `unload_all_onnx_models()` followed by a cross-platform `trim_heap()`.
 
 ### Hot-Reload Rules
 
@@ -288,8 +334,8 @@ Memory models loaded transiently during idle sweeps (not in pipeline budget):
 └── Edge Classifier:      ~0.14 GB  (Loaded, classify edges, unloaded)
 ```
 
-Memory models are **not concurrently resident** with pipeline models. The background worker loads them during prolonged idle (30s debounce), processes the queue, and drops them before the pipeline resumes. Tier 1A machines never load memory models.
+The three idle-sweep memory models (Embedding, NLI, Edge Classifier) are **not concurrently resident** with an active pipeline turn — the background worker loads them during prolonged idle (30s debounce), processes the queue, and drops them before the pipeline resumes. The **MemoryScope Classifier** and **Transliteration** engine are exceptions: they are intentionally kept resident once loaded (until `stop_engine`). Tier 1A machines never load the idle-sweep memory models.
 
 ---
 
-**Last Updated:** 2026-08-02
+**Last Updated:** 2026-08-21

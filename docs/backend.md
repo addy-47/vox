@@ -1,8 +1,28 @@
+---
+title: "Vox Backend Architecture"
+audience: "Internal — backend (Rust) contributors, system architects, agents"
+last_updated: 2026-08-21
+owners: "backend-engineer role"
+related_docs:
+  - "docs/frontend.md — Frontend consumes the IPC event contract (§9)"
+  - "docs/models.md — Model inventory & specs"
+  - "docs/features/* — Deep dives (memory, dictation, ptt, ...)"
+  - "AGENTS.md §2, §5 — Workspace map & invariants"
+---
+
 # Vox — Backend Architecture
 
 > **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems.
 
 ---
+
+## 0. How to read this doc
+
+- **Audience:** backend (Rust) contributors, system architects, and agents needing accurate context on the native runtime.
+- **Scope:** the Rust 4-layer architecture, provider/trait system, threading model, lifecycle, and the Tauri IPC event contract.
+- **Convention:** claims use `path/file.rs` pointers; schemas are linked, not pasted.
+- **Non-goals:** not the frontend (→ `docs/frontend.md`), not model specs (→ `docs/models.md`). The IPC event list in §8 is the contract the frontend consumes.
+- **SSOT:** event payloads (§8), settings reload policies (§10), and hardware tiers (§2) are authoritative here.
 
 ## 1. Architecture Stack
 
@@ -146,9 +166,26 @@ Every AI domain uses a **trait-based provider system** — the pipeline dispatch
 | Provider | Backend | Routing | Memory |
 |----------|---------|---------|:------:|
 | **EmbeddedProvider** | `llama.cpp` (GGUF) via `llama-cpp-4` crate | Local CPU inference | ~750 MB–1.4 GB |
-| **OpenAiCompatProvider** | `reqwest` HTTP (streaming) | `provider_name` → URL mapping (openai, gemini, anthropic) | 0 MB (local) |
+| **OpenAiCompatProvider** | `reqwest` HTTP (streaming) | `provider_name` → URL mapping (openai, gemini, anthropic, nvidia, groq, openrouter, together) | 0 MB (local) |
 
-Cloud routing is automatic: `provider_name = "openai"` → `api.openai.com`, `"gemini"` → `generativelanguage.googleapis.com/v1beta/openai`, `"anthropic"` → `api.anthropic.com` (with `x-api-key` + `anthropic-version` headers).
+Cloud routing is automatic: `provider_name = "openai"` → `api.openai.com`, `"gemini"` → `generativelanguage.googleapis.com/v1beta/openai`, `"anthropic"` → `api.anthropic.com`, `"nvidia"` → `integrate.api.nvidia.com/v1`, `"groq"` → `api.groq.com/openai/v1`.
+
+#### Capability Probing & Settings Engine (`services/llm/capability_probe.rs`)
+
+- **Multi-Phase Streaming Probe (`CapabilityProbeEngine`)**:
+  - **Phase 1: Streaming Latency & Script**: Dispatches streaming `/v1/chat/completions` request measuring true Time-to-First-Token (`ttft_ms`) on initial byte arrival, pure inter-token generation throughput (`tps` = tokens / duration), and multi-lingual script output for Unicode Devanagari (`U+0900..U+097F`) and Latin scripts.
+  - **Phase 2: Structured Tool Calling**: Sends `lookup_user(user_id: integer)` JSON schema with `tool_choice: "auto"` to verify structured `tool_calls` object generation without guessing.
+  - **Phase 3: Hardware & Context Attribution**: Automatically tags cloud providers (NVIDIA NIM, Groq, OpenRouter, Together, OpenAI, Gemini, Anthropic) as Cloud GPU clusters, skipping 404-prone Ollama endpoints. Local servers probe `/api/show` and `/api/ps` for Ollama VRAM allocations and exact context lengths.
+  - **Zero-Guessing Context Policy**: When exact context metadata is unexposed, context length returns `None` (`Provider Managed`) rather than artificially clamping to a guessed number.
+  - **URL Normalization (`resolve_chat_url`)**: Seamlessly normalizes base URLs ending in `/v1`, `/chat/completions`, or root hostnames (`https://integrate.api.nvidia.com/v1` $\to$ `https://integrate.api.nvidia.com/v1/chat/completions`), preventing double-path 404 errors.
+- **Runtime Token Smoke Validator (`validate_token_cap`)**:
+  - By default, remote API requests omit `max_tokens` (`null`) for full uncapped model capacity.
+  - Custom token inputs are validated on-demand via a 1-token smoke probe. If the server returns HTTP 400, a regular expression engine (`\d{3,7}`) parses the server's ceiling (`cannot exceed 8192`, `maximum allowed 16384`) and enables 1-click auto-clamping in the UI.
+- **Hardware-Aware CPU Profiles**:
+  - Local GGUF allocates CPU cores dynamically: `Auto` (`max(2, cores - 2)` headroom), `Power Saver` (`max(1, cores / 2)`), `Maximum`. Cloud endpoints offload 100% of compute to remote clusters.
+- **UI Decoupling**:
+  - `LlmCatalogView.tsx`: 2-column model discovery grid with `fzf` fuzzy subsequence search (`shared/lib/fuzzy.ts`).
+  - `LlmSettingsView.tsx`: Flat underline sub-tabs (`Performance`, `Tokens & Context`, `Creativity`) eliminating tall vertical scrollbars.
 
 ### 4.4 TTS — Text-to-Speech
 
@@ -317,4 +354,4 @@ Cold ──(engage)──→ Warm ──(auto-sleep timeout)──→ Cold
 
 ---
 
-**Last Updated:** 2026-08-12
+**Last Updated:** 2026-08-21

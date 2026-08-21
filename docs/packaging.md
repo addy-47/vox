@@ -1,6 +1,25 @@
+---
+title: "Vox Packaging & Distribution Architecture"
+audience: "Internal — release engineering, DevOps, contributors"
+last_updated: 2026-08-21
+owners: "system-architect role"
+related_docs:
+  - "docs/backend.md — Native runtime & build targets"
+  - "AGENTS.md — Workspace & build invariants"
+  - ".github/workflows/* — CI release pipelines"
+---
+
 # Vox — Packaging & Distribution Architecture (Native Stack)
 
 ---
+
+## 0. How to read this doc
+
+- **Audience:** release engineering, DevOps, and contributors building/distributing Vox.
+- **Scope:** native packaging strategy, installer architecture, update mechanism, and platform targets.
+- **Convention:** claims reference `tauri.conf.json`, GitHub workflows, and Rust build targets.
+- **Non-goals:** not the runtime architecture (→ `docs/backend.md`); not CI YAML detail (→ `.github/workflows/*`).
+- **SSOT:** packaging decisions and platform matrix are authoritative here.
 
 ## 1. Overview
 
