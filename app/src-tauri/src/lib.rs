@@ -476,6 +476,7 @@ pub fn run() {
             check_tts_provider_health,
             list_llm_models,
             crate::ipc::settings::probe_model_capabilities,
+            crate::ipc::settings::validate_llm_token_cap,
             setup_remote_server,
             get_settings,
             update_setting,

@@ -132,6 +132,9 @@ export interface VoxSettings {
     ctx_size: number;
     threads: number;
     provider: LlmProviderConfig;
+    chat_temperature?: number;
+    compaction_temperature?: number;
+    max_output_tokens?: number;
   };
   tts: {
     provider: TtsProviderConfig;

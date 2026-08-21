@@ -1,1272 +1,214 @@
-# Vox — Frontend Architecture (Dual-Surface UI System)
+---
+title: "Vox Frontend Architecture"
+audience: "Internal — agents & contributors needing quick, accurate context"
+last_updated: 2026-08-21
+owners: "frontend-engineer role"
+related_docs:
+  - "docs/design.md            — Authoritative design system (tokens, type, elevation)"
+  - "docs/backend.md           — Rust backend, IPC events, provider architecture"
+  - "docs/features/performance-memory-optimizations.md — Sole owner of perf/memory details"
+  - "docs/features/memory-architecture.md            — Cognitive memory backend + graph"
+  - "AGENTS.md §2, §5          — Workspace map & system invariants"
+---
+
+# Vox Frontend Architecture
+
+## 0. How to read this doc
+
+- **Audience:** internal. Other agents and contributors use this to get accurate, fast context on the React/Tauri UI without reading every file.
+- **Scope:** the frontend only — `app/src/`. Backend pipeline logic, IPC event contracts, and design tokens live in the referenced docs (see header). This file *consumes and points*, it does not duplicate them.
+- **Convention:** every technical claim uses a `path/to/file.ts` or `dir/` pointer, never invented code. Schemas and types are linked, not pasted.
+- **Non-goals:** not a design-token reference (→ `docs/design.md`), not a backend/IPC spec (→ `docs/backend.md` §8), not a performance ledger (→ `docs/features/performance-memory-optimizations.md`).
+
+## 1. Overview — dual-surface model
+
+Vox is not one UI; it is **two independent Tauri webviews plus one ephemeral wizard**, all talking to a single Rust core over IPC.
+
+| Surface | Window label | Lifecycle | Entry file |
+|---|---|---|---|
+| Main App | `main` | Persistent; hidden (not closed) on `CloseRequested` | `app/src/App.tsx`, `app/src/pages/Home.tsx` |
+| Tray HUD | `tray` | Created on demand via `ensure_tray_window`, destroyed when dictation disabled / non-Tray output | `app/src/tray/TrayApp.tsx` |
+| Setup Wizard | `wizard` | Created on demand via `ensure_wizard_window`, closed on completion | `app/src/wizard/WizardRoot.tsx` |
+
+State flows **one way: pipeline → UI** (see `frontend-engineer.md` invariants). Visual mood is always derived from backend events, never invented locally.
+
+## 2. Stack at a glance
+
+Pinned versions live in `app/package.json`. Summary:
+
+| Layer | Choice | Notes |
+|---|---|---|
+| Language | TypeScript + React 19 | Strict mode, `any` prohibited (code-style-guide §2) |
+| Build | Vite 7 | `pnpm build` = `tsc && vite build` |
+| Desktop runtime | Tauri 2.11 | Two/three webviews over a Rust core |
+| State | Zustand 5 | Single settings store, draft/committed pattern |
+| Styling | Tailwind 4 + shadcn primitives | Glassmorphism "Liquid Space" system (→ `docs/design.md`) |
+| Animation | Framer Motion 12 | Mood-synced, frame-throttled |
+| 3D / WebGL | Three 0.184 | Memory graph engine only |
+| Routing | react-router-dom 7 | File-based lazy routes in `App.tsx` |
+| Charts | recharts 3 | Monitoring sparklines |
+| Test | vitest 4 | `pnpm test`; service-layer + hook tests under `__tests__/` |
+
+Package manager is **pnpm** (never npm/yarn).
+
+## 3. App shell & routing
+
+- **Boot gate** — `app/src/App.tsx:50-75`: reads `getOnboardingStatus()`; if setup incomplete, routes to `/wizard`, else mounts `ResponsiveLayout` with the five main routes. Window reveal uses a double-`requestAnimationFrame` + `show()` + 300ms cross-fade behind an `OrbitalLoader` (`shared/components/common/OrbitalLoader.tsx`).
+- **Lazy + prewarm** — secondary pages (`History`, `Memory`, `Settings`, `Monitoring`) are `React.lazy`; their chunks are imported in the background on boot (`App.tsx:46-48`) so navigation is instant.
+- **Providers** (mount order in `App.tsx`): `ErrorBoundary` (root) → `MemoryProfilerProvider` → `Router` → `ProfilerDrawerProvider` → `installOverlayStack()` (`shared/lib/overlayStack.ts`).
+- **Layout shell** — `app/src/layout/ResponsiveLayout.tsx` renders `TitleBar`, `AmbientBackground`, `EdgeNav`, the bottom-left engine monitor toggle, and an `<Outlet/>` inside a `contain: layout style` `<main>`. It also owns the viewport-transition engine (compact ↔ desktop) and arrow-key page navigation (`ResponsiveLayout.tsx:32-96`).
+
+## 4. Window system (Tauri)
+
+- **Main window** is defined statically in `tauri.conf.json`. **Tray and wizard windows are NOT** — they are constructed on demand by `ensure_tray_window` / `ensure_wizard_window` in `app/src-tauri/src/tray.rs` and `wizard.rs`, and `.close()`d when inactive. This keeps ~490MB RAM off cold boot (detail: `features/performance-memory-optimizations.md` §1.1).
+- **Engine offload on hide** — closing the main window hides it and calls `stop_engine()` when dictation is disabled and not engaged (`app/src-tauri/src/lib.rs`).
+- **Platform positioning** — Linux uses a GTK virtual layer with Cairo input-shape regions for click-through; macOS/Windows use `tauri-plugin-positioner`. Full detail and the cross-platform matrix are in `features/performance-memory-optimizations.md` §4 matrix. Frontend code must not hardcode window geometry.
+
+## 5. State management
+
+- **Store** — `app/src/store/settingsStore.ts` is the single source of truth for `VoxSettings` (full schema: `settingsStore.ts:108-207`). It uses a draft/committed pattern: edits mutate `draftSettings`; `commitChanges()` diffs against `settings` and writes only changed keys via `updateSetting`, collecting `restartKeys` for `Restart`-policy domains. Domain-dirty checks (`isDomainDirty`) drive the unsaved-changes badge.
+- **Selector discipline** — components read with `useSettingsStore(s => s.ui.theme)` to avoid re-renders. New code uses the store directly.
+- **Adapter** — `app/src/shared/context/SettingsContext.tsx` wraps the store for legacy `useSettings()` consumers. It exists only for backward compatibility; do not add new consumers.
+- **Model catalog** — `ModelCatalog` / `ModelGroupInfo` / `ModelCapabilities` types and `requestModelCatalog()` live in the store + `services/settingsService.ts`. Catalog drives the Settings model workspaces.
+- **Shared state rule** — low-frequency config in the store/context; fast-changing animation values stay in local state or refs (`code-style-guide.md` §2).
+
+## 6. Service layer — the only IPC boundary
+
+Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-style-guide §2). All IPC/API access flows through `app/src/services/`:
+
+| Service file | Responsibility |
+|---|---|
+| `services/settingsService.ts` | Boot state, settings get/update, model catalog, provider health, input devices |
+| `services/pipelineService.ts` | Engine lifecycle (`engage`, `stopEngine`, `launchEngine`), realtime session, PTT, runtime snapshots, voice library |
+| `services/eventsService.ts` | Typed Tauri `listen` wrappers for all pipeline events (see §9) |
+| `services/historyService.ts` | Session/turn CRUD, transcript history, delete |
+| `services/memoryService.ts` | Memory graph topology, stats, fact mutations, ingestion control |
+| `services/memoryProfilerService.ts` | Multi-dimensional RAM/heap/DOM profiling snapshots |
+| `services/modelService.ts` | Onboarding status, model download/setup, manifest |
+| `services/windowService.ts` | Tray/wizard window visibility + HUD control |
+
+**Rule:** pages compose layout only (`code-style-guide.md` §2). Business logic, data transforms, and IPC belong in `services/`, `hooks/`, or `store/`.
+
+## 7. Page architecture
+
+| Page | Entry | Key components (under `shared/components/`) | Notes |
+|---|---|---|---|
+| Home (Orb) | `pages/Home.tsx` | `home/AdvancedOrb`, `home/PipelineField`, `home/StatusCapsule`, `home/ActiveTranscript` | Orchestrates engage/pause/PTT via `hooks/useHomePage.ts`. Modular vs realtime pipeline mode; three-button control group. Marks down realtime session-cache resume. |
+| History | `pages/History.tsx` | `history/OrbitCarousel`, `history/CentralClockNode`, `history/VoiceDial`, `history/DetailPanel` | 2.5D single-ring CSS ellipse carousel (`history/orbitMath.ts`), windowed chunking, holographic dialogue in a global `Drawer`. |
+| Memory | `pages/Memory.tsx` | `memory/MemoryGraph`, `memory/MemoryNodeTooltip`, `memory/MemoryPipelineDrawer`, `memory/SearchBar` | Custom Three.js InstancedMesh WebGL engine. Deep-dive + invariants: `features/memory-architecture.md` §1 and `features/performance-memory-optimizations.md` §2.5–2.7. |
+| Settings | `pages/Settings.tsx` | `settings/RadialHub` + domain cards (`appearance/`, `interaction/`, `models/`, `memory/`, `persona/`, `history/`, `realtime/`) | Radial hub of cards; flat underline tab strips for providers; prewarmed at boot. |
+| Monitoring | `pages/Monitoring.tsx` | `monitoring/MetricCarousel`, `monitoring/LiquidChamber` + `profiler/*` | Runtime metrics dashboard; offload/reload dual-button engine control; 30 FPS throttled canvas. |
+
+Component responsibilities and the "no new component that already exists in the design system" rule are in `frontend-engineer.md`.
+
+## 8. Shared layer
+
+`shared/` is organized by domain (code-style-guide §2 — flat dirs banned):
+
+- **`shared/components/`** — `common/` (ErrorBoundary, AmbientBackground, LiveWaveform, OrbitalLoader, GlassSkeleton, AudioLevelMeter), `home/`, `history/`, `memory/`, `settings/`, `monitoring/`, `profiler/`.
+- **`shared/hooks/`** — reusable stateful logic (used in 2+ components):
+  - `useDynamicFPS` — unified frame-rate-targeted RAF loop (60/15/0 tiers). Owner: `features/performance-memory-optimizations.md` §2.2.
+  - `useInteraction` — logical interaction-session continuity (committed/partial text, id stability, 4000-char cap).
+  - `useVisibility` — Tray HUD ephemeral state machine (`HIDDEN→APPEARING→ACTIVE→FADING`).
+  - `useStreamingRenderer` — character-stream animation for transcripts.
+  - `useOverlay` — registers a surface with the global `overlayStack`.
+  - `useTelemetry`, `useMonitoringMetrics`, `useMemoryProfiler`, `useMemoryTrace`, `useVoxFootprint`, `useHomePage`, `useSettingsPage`.
+- **`shared/ui/`** — primitives: `Drawer` (the single bottom-sheet, `position="page"|"global"`), `Tooltip` (the **only** sanctioned tooltip — native `title` banned for tooltips), `Card`, `SegmentedControl`, `SliderField`, `RotaryKnob`, `Badge`, `SearchInput`, `ProgressBar`, `icons/VendorLogos`.
+- **`shared/lib/`** — `overlayStack.ts` (global FILO dismissal authority), `fuzzy.ts` (catalog search), `utils.ts` (`cn`, `hexToRgb`).
+- **`shared/context/`** — `SettingsContext` (adapter), `MemoryProfilerContext`.
+- **`shared/data/`** — all static copy/labels (zero hardcoded text in components — code-style-guide §2).
+
+## 9. IPC & events — consumer view
+
+The Rust event contract is authoritative in `docs/backend.md` §8. The frontend consumes it through typed wrappers in `services/eventsService.ts` (e.g. `onStateChanged`, `onTranscriptPartial`, `onRealtimeSessionStarted`). Key events and their consumers:
+
+| Event | Payload source | Consumer surface |
+|---|---|---|
+| `state_changed` | `InteractionState` (core/state.rs) | Main + Tray (mood sync) |
+| `audio_energy` | `{ energy }` | Orb waveform, Tray HUD |
+| `transcript_partial` / `transcript_final` | `TranscriptPayload` | ActiveTranscript, Tray |
+| `ptt_status` | `PttStatusPayload` | Main PTT button, Tray |
+| `pipeline_paused` / `pipeline_resumed` | — | Main controls |
+| `realtime_session_started` / `ended` / `resumed` | — | Main lifecycle + Tray |
+| `realtime_interrupted` | — | Barge-in flash |
+| `realtime_idle_warning` | `{ seconds_remaining }` | StatusCapsule countdown |
+| `pipeline_error` | `String` | Error toasts |
+| `speech_start` / `speech_end` | `SpeechEventPayload` | Tray visibility + interaction |
+| `mode_changed_main` / `mode_changed_tray` | `String` | Cross-surface mode sync |
+| `model_setup_status` | `ModelSetupStatusPayload` | Wizard steps |
+
+Commands are issued via the service modules in §6 (never bare `invoke` in components). Full command list and reload policies: `docs/backend.md` §10.
+
+## 10. Design system consumption
+
+Frontend consumes — it does not redefine — the design system in `docs/design.md`:
+
+- **Tokens** are CSS variables (`rgb(var(--token))`) declared in `app/src/index.css` and mirrored in `design.md` frontmatter.
+- **Elevation** uses the closed glass system (`.glass-whisper` / `.glass-surface` / `.glass-card`). Do not invent a new level.
+- **Type roles** (`font-display` / `font-sans` / `font-mono`) and the uppercase policy are enforced by `design.md` §4.
+- **Custom Tooltip** (`shared/ui/Tooltip.tsx`) is mandatory for hover explanations.
+- The `impeccable` design-system detector enforces token/size compliance against `design.md`.
+
+## 11. Performance & memory invariants
+
+The **sole owner** of all performance and memory detail is `docs/features/performance-memory-optimizations.md`. This section only lists what the frontend owns and where to read it. Frontend must not duplicate those specifics.
+
+- **`useDynamicFPS`** unified loop — `features/performance-memory-optimizations.md` §2.2; hook at `shared/hooks/useDynamicFPS.ts`.
+- **`LiquidChamber`** 30 FPS throttle — §2.3.
+- **`AmbientBackground`** compositor promotion — §2.4.
+- **`MemoryGraph`** WebGL physics settlement, zero-teardown theme switch, O(1) badge updates — §2.5, §2.6, §2.7.
+- **Markdown fast-path** in `DetailPanel` — §2.8.
+- **Global drawer portal** (`position="global"` → `createPortal` to `document.body`) escaping `contain:layout` — §2.9; implementation `shared/ui/Drawer.tsx:240-242`.
+- **Backend-side** optimizations (on-demand webviews, heap trim, process-tree filtering, zero-idle ONNX eviction) — §1 and §3 of that doc.
+
+General rule from `frontend-engineer.md`: anything visually heavy is memoized and frame-throttled; idle/sleep states drive 0 FPS.
+
+## 12. Responsiveness & overlay stack
+
+- **Breakpoints** — desktop `≥1024px` (floating `EdgeNav` capsule + monitoring popover bottom-left); compact `<1024px` (monitoring becomes a 4th `EdgeNav` tab routed to `/monitoring`, soft glass fade mask, `pb-[110px]` scroll padding). Viewport transitions are handled bidirectionally in `ResponsiveLayout.tsx:32-53` — never break this (code-style-guide layout rules).
+- **Orb scaling** — mobile `min(92vw, 85vh)`, desktop `min(70vw, 65vh)`; do not change without design review.
+- **Overlay stack** — `shared/lib/overlayStack.ts` is the single FILO authority. `installOverlayStack()` (called once in `App.tsx`) installs capture-phase `keydown` (Escape pops topmost) and `pointerdown` (outside-click dismisses topmost if `dismissOnOutside`). Surfaces register via `useOverlay` (`shared/hooks/useOverlay.ts`) and `Drawer` (`shared/ui/Drawer.tsx`). Tier model: `design.md` §13 (Tier 0 accordion cards, Tier 1 popovers, Tier 2 bottom drawers). Surfaces must not add their own Escape listeners.
+
+## 13. Resilience
+
+- **Error boundaries** — `shared/components/common/ErrorBoundary.tsx` wraps the root (`App.tsx`) and every route element individually, so one page crash does not take down the app.
+- **IPC failure** — service calls are wrapped in try/catch by consumers; failures degrade to toasts or cached/empty state. The store's `loadSettings` falls back to defaults on error (`store/settingsStore.ts:275-279`).
+- **Settings recovery** — `restoreDefaults()` (`store/settingsStore.ts:579-588`) resets via `resetSettings()`; `discardChanges()` / `discardDomainChanges()` revert drafts without IPC.
+- **Backend-not-ready** is treated as the default case, not an edge case (`frontend-engineer.md` invariants).
 
 ---
 
-## 1. Overview
-
-Vox frontend is a **multi-surface UI system**, not a single application UI. It consists of **two independent UI surfaces** that communicate via Tauri IPC:
-
-1. **Main Application UI** (user-invoked, persistent)
-2. **Ephemeral Overlay UI** (Tray HUD, system-triggered)
-
----
-
-## 2. Tech Stack
-
-### Core Framework
-* React + TypeScript
-* Vite (build system)
-* Tauri (desktop runtime)
-
-### State Management
-* **zustand v5** (primary store) — `app/src/store/settingsStore.ts`
-  * Selective subscriptions via `useSettingsStore(selector)` for zero unnecessary re-renders
-  * Settings, draft settings, model catalog
-  * Hot-applies theme/accent/interaction mode changes immediately
-* **React Context (adapter)** — `SettingsContext.tsx` wraps zustand store for backward compat
-  * Existing `useSettings()` consumers unchanged
-  * **New components should use `useSettingsStore(selector)` directly**
-* Custom hooks for interaction logic (useInteraction, useVisibility, useStreamingRenderer, useTelemetry)
-* **Performance hooks** (Phase 0):
-  * `useDynamicFPS` — RAF loop with frame-skipping (60/15/0 FPS tiers)
-  * `usePerformanceMonitor` — Debug FPS tracker (dev-only)
-
-### UI System
-* TailwindCSS
-* shadcn/ui (component primitives)
-* Framer Motion (animations)
-* Glassmorphism design system
-
-### Audio Visualization
-* ElevenLabs waveform component
-* Custom Orb interface
-
----
-
-## 3. Project Structure (app/src/)
+## Appendix A — Project structure (`app/src/`)
 
 ```
 app/src/
-├── main.tsx                     # App entry point
-├── App.tsx                      # Router setup, lazy loading, setup-completed gate
-├── index.css                    # Global styles
-├── layout/
-│   ├── ResponsiveLayout.tsx     # Main app layout (uses AmbientBackground)
-│   ├── EdgeNav.tsx              # Unified bottom navigation strip (uses hover tooltips)
-│   └── TitleBar.tsx             # Window controls
-├── pages/
-│   ├── Home.tsx                 # Orb interface page (~1028 lines, pipeline/realtime control)
-│   ├── History.tsx              # Conversation history
-│   ├── Settings.tsx             # Full settings page with card-based layout
-│   ├── Monitoring.tsx           # System monitoring dashboard
-│   └── Memory.tsx               # 3D Cognitive Memory Graph & Ingestion Queue
-├── tray/
-│   ├── TrayApp.tsx              # Overlay UI root component (~376 lines)
-│   └── components/
-│       ├── Header.tsx           # Tray header (status + controls)
-│       ├── TranscriptRenderer.tsx # Live transcript display
-│       └── Footer.tsx           # History navigation
-├── wizard/
-│   ├── WizardRoot.tsx           # XState-driven first-run setup wizard
-│   ├── state/
-│   │   └── setupMachine.ts      # XState machine definition
-│   ├── steps/
-│   │   ├── WelcomeStep.tsx      # Welcome screen
-│   │   ├── SystemCheckStep.tsx  # Hardware/OS compatibility check
-│   │   ├── ModelSetupStep.tsx   # Model download and selection
-│   │   ├── AudioSetupStep.tsx   # Microphone/speaker test
-│   │   ├── LiveTestStep.tsx     # End-to-end voice test
-│   │   └── CompletedStep.tsx    # Setup complete confirmation
-│   └── components/
-│       ├── WizardHeader.tsx     # Wizard navigation header
-│       ├── WizardFooter.tsx     # Wizard action buttons
-│       ├── ModelCategory.tsx    # Model category selector
-│       └── StatusCard.tsx       # Status indicator card
-├── store/
-│   └── settingsStore.ts         # Zustand v5 store (295 lines, draft/committed pattern)
+├── main.tsx                     # Entry: mounts <App/>
+├── App.tsx                      # Boot gate, router, providers, overlay stack
+├── index.css                   # Token CSS vars + glass elevation classes
+├── layout/                     # ResponsiveLayout, EdgeNav, TitleBar
+├── pages/                      # Home, History, Memory, Settings, Monitoring
+├── tray/                       # TrayApp + components/{Header,TranscriptRenderer,Footer}
+├── wizard/                     # WizardRoot, state/setupMachine, steps/, components/
+├── services/                   # IPC boundary (see §6 table)
+├── store/                      # settingsStore.ts (Zustand)
 └── shared/
-    ├── components/
-    │   ├── AdvancedOrb.tsx           # Central AI state orb (useDynamicFPS optimized)
-    │   ├── AmbientBackground.tsx     # Animated deep-space ambient background
-    │   ├── ErrorBoundary.tsx         # React error boundary
-    │   ├── GlassCard.tsx             # Glassmorphism container
-    │   ├── GlassSkeleton.tsx         # Loading skeleton with glass styling
-    │   ├── LiveWaveform.tsx          # Audio visualization (useDynamicFPS optimized)
-    │   ├── MonitoringPopover.tsx     # Telemetry popover overlay
-    │   ├── PipelineField.tsx         # Pipeline mode display field
-    │   ├── StatusCapsule.tsx         # Status indicator capsule
-    │   └── settings/                # Settings sub-components
-    │       ├── cards/                # Individual settings cards
-    │       └── overlays/             # Settings overlay modals
-    ├── hooks/
-    │   ├── useDynamicFPS.ts          # RAF loop with frame-skipping (60/15/0 FPS)
-    │   ├── usePerformanceMonitor.ts  # Debug FPS tracker (dev-only)
-    │   ├── useInteraction.ts         # Interaction session management
-    │   ├── useStreamingRenderer.ts   # Text streaming animation
-    │   ├── useTelemetry.ts           # Telemetry data hooks
-    │   ├── useVisibility.ts          # Tray visibility logic
-    │   └── useVoxFootprint.ts        # Runtime memory/footprint tracking
-    ├── context/
-    │   └── SettingsContext.tsx        # Settings provider (zustand adapter)
-    └── lib/
-        └── utils.ts                   # cn() helper, hexToRgb, etc.
+    ├── components/             # common/ home/ history/ memory/ settings/ monitoring/ profiler/
+    ├── hooks/                  # useDynamicFPS, useInteraction, useVisibility, useOverlay, ...
+    ├── ui/                     # Drawer, Tooltip, Card, SegmentedControl, SliderField, ...
+    ├── lib/                    # overlayStack, fuzzy, utils
+    ├── context/                # SettingsContext, MemoryProfilerContext
+    └── data/                   # All static copy (homeCopy, settingsCopy, memoryCopy, ...)
 ```
+
+## Appendix B — Cross-links
+
+- `docs/design.md` — tokens, type system, elevation, motion, accessibility (authoritative).
+- `docs/backend.md` — Rust architecture, IPC event contract (§8), settings reload policies (§10).
+- `docs/features/performance-memory-optimizations.md` — **SSOT for all perf/memory detail** (frontend §11 + backend §1).
+- `docs/features/memory-architecture.md` — cognitive memory backend, graph topology, pipeline.
+- `AGENTS.md §2` — workspace directory map. `AGENTS.md §5` — system invariants (dictation axes, lazy windows, drawer portal).
+- `.agents/rules/frontend-engineer.md` — frontend role invariants. `.agents/rules/code-style-guide.md` — Rust + TS standards.
 
 ---
 
-## 4. Window Architecture (Tauri)
-
-### Window Types
-
-```typescript
-interface WindowLabels {
-  "main": WebviewWindow;  // Main application window
-  "tray": WebviewWindow;  // Overlay HUD window
-}
-```
-
-### Main Window Configuration
-
-```json
-{
-  "label": "main",
-  "title": "Vox",
-  "width": 400,
-  "height": 800,
-  "minWidth": 400,
-  "minHeight": 300,
-  "decorations": true,
-  "resizable": true,
-  "center": true
-}
-```
-
-### Overlay Window Configuration
-
-```json
-{
-  "label": "tray",
-  "decorations": false,
-  "transparent": true,
-  "alwaysOnTop": true,
-  "skipTaskbar": true,
-  "resizable": false,
-  "visible": false,
-  "width": 420,
-  "height": 250
-}
-```
-
-### Platform-Specific Setup
-
-#### Linux (Wayland/X11)
-- Fullscreen transparent window
-- Input shape regions for click-through
-- Virtual layer positioning
-
-#### macOS/Windows
-- Standard overlay positioning
-- Native always-on-top behavior
-
----
-
-## 5. Main Application UI
-
-### Layout System
-
-The main app uses a **responsive layout system** that adapts to window size:
-
-#### Desktop Mode (>768px)
-- Sidebar navigation
-- Full page content
-- Persistent window controls
-
-#### Mobile Mode (≤768px)
-- Bottom tab navigation
-- Stacked page layout
-- Touch-optimized interactions
-
-### Navigation Structure
-
-```typescript
-const routes = [
-  { path: "/", label: "Home", icon: HomeIcon },
-  { path: "/history", label: "History", icon: HistoryIcon },
-  { path: "/settings", label: "Settings", icon: SettingsIcon },
-  { path: "/monitoring", label: "Monitor", icon: MonitorIcon },
-];
-```
-
-### Home Page (Orb Interface)
-
-#### AdvancedOrb Component
-
-```typescript
-interface OrbState {
-  isListening: boolean;
-  isSpeaking: boolean;
-  volumeLevel: number;
-  interactionState: InteractionState;
-}
-
-const OrbVariants = {
-  idle: { scale: 1, opacity: 0.7 },
-  listening: { scale: 1.1, opacity: 1 },
-  speaking: { scale: 1.2, opacity: 1 },
-  thinking: { scale: 1.05, opacity: 0.9 },
-};
-```
-
-#### Realtime Session Lifecycle (v0.9.0)
-
-Home.tsx manages the full realtime S2S session lifecycle with local state
-(`useState` + `useRef`, no Zustand for hot paths):
-
-- **Pipeline mode**: `"modular"` or `"realtime"` — set by backend on `engage`.
-  The `launch_engine` command conditionally spawns VAD/STT based on active mode.
-- **Engage handler**: Calls `start_realtime_session` (realtime) or `engage` (modular)
-  based on settings. Uses `engageLockRef` to prevent double-engage during WS handshake.
-- **End handler**: Calls `stop_realtime_session` — disconnects WS, clears session cache,
-  reverts to modular mode, archives conversation.
-- **Pause/Resume**: Calls `pause_pipeline`/`resume_pipeline` IPC — sets `is_paused` atomic
-  (router drops chunks), calls `activity_end()` on session, stops playback; resume
-  reopens audio gate, lazy-reconnects WS if disconnected.
-- **PTT toggle**: Calls `ptt_start`/`ptt_stop` — only rendered when `interactionMode === "PTT"`.
-  In realtime PTT, triggers `activity_start`/`activity_end` over WebSocket.
-- **Session cache**: On mount, calls `get_realtime_session_cache` IPC. If a valid cached
-  session exists (Gemini provides 2-hour resumption handles), the engage button shows
-  "Resume Session" instead of "Engage". Session is persisted to `~/.vox/cache/realtime_session.json`.
-
-Three-button control group layout:
-```
-NOT Engaged:        [Power icon] (enables engagement)
-Engaged + Passive:  [Pause/Resume icon] [X icon (disengage)]
-Engaged + PTT:      [Pause/Resume icon] [Mic icon] [X icon (disengage)]
-```
-
-#### State Synchronization
-
-### History Page
-
-#### Data Structure
-
-```typescript
-// services/historyService.ts — the only sanctioned IPC gateway for history
-interface SessionRow {
-  id: number;
-  started_at: number;          // epoch ms
-  ended_at: number | null;     // null while the session is still open
-  turn_count: number;
-  first_message: string | null;
-}
-
-interface TurnRow {
-  id: number;
-  session_id: number;
-  turn_id: number;
-  user_text: string;
-  assistant_text: string;
-  stt_latency_ms: number | null;
-  ttft_ms: number | null;
-  created_at: number;
-}
-```
-
-#### Celestial View Architecture (single-ring carousel)
-
-The orbit view is a **2.5D single-ring carousel** — no WebGL. The ring is a static
-CSS ellipse (`border-radius: 50%` compressed by `ORBIT_TILT_COMPRESSION`); cards are
-projected onto it with pure math from `orbitMath.ts`:
-
-- `ellipsePoint(angle, radius)` — card position; angle 0 = right, +π/2 = bottom (front).
-- `depthFromAngle(angle)` — 0 (top-back) → 1 (bottom-front) drives scale (0.55→1.12)
-  and opacity (0.45→1).
-- `zIndexForAngle(angle, selected)` — back-half cards (z 10-39) slide **behind** the
-  central clock (z-50); front-half (z 51-79) above; selected card wins (z-80).
-- Rotation is **unbounded** (infinite circular scroll): drag or momentum fling spins
-  the wheel; cards cycle front→back→front with depth attenuation. The rAF loop is
-  **self-stopping** — it runs only while dragging or decaying momentum, then dies.
-  No idle drift, no idle CPU.
-
-#### Window Model (bounded orbit)
-
-Days/months with more sessions than the orbit can hold are chunked into windows of
-`orbitCapacityFor(width, height)` cards (clamped 6-12, dynamic by viewport):
-
-- `chunkSessionsIntoWindows(sessions, cap)` → windows labeled by their actual hour
-  range, e.g. "07:12 – 11:48".
-- `chunkDaysIntoWindows(days, cap)` → month windows labeled "1–12", "13–24", "25–31".
-- The central clock shows the active window's range + a segmented rim arc
-  (`WINDOW 1/3`). Chevrons step windows first, then roll over to the previous/next
-  day/month at boundaries.
-- Deleting the last session of a window collapses the window automatically.
-
-#### Voice Print Dial
-
-`VoiceDial.tsx` renders a static SVG ring between the clock and the orbit: one dot
-per session (day view) at its clock position on a 24h face, or per active day
-(month view, 31-day face). Dot size encodes turn count; the current window's dots
-are accent-lit, the rest dimmed. Zero animation.
-
-#### IPC Integration
-
-```typescript
-import { getSessions, getTurns, deleteSession } from "@/services/historyService";
-
-const [sessions, setSessions] = useState<SessionRow[]>([]);
-
-useEffect(() => {
-  getSessions().then(setSessions);
-}, []);
-
-const loadTurns = (sessionId: number) => {
-  getTurns(sessionId).then(setTurns);
-};
-```
-
-### Settings Page
-
-The Settings page is **fully responsive** — cards (`AppearanceCard`, `InteractionCard`, `MemoryCard`, `ModelsCard`, `PersonaCard`, `TrayCard`) and the `RestoreDefaultsButton` overlay adapt layout across desktop and mobile viewports.
-
-#### Settings Structure
-
-```typescript
-interface VoxSettings {
-  ui: {
-    theme: string;
-    accent_seed: string;
-    tray_enabled: boolean;
-    tray_blur_density: number;
-    tray_glass_tint: boolean;
-    tray_history_limit: number;
-  };
-  audio: {
-    output_mode: "Speaker" | "Headset";
-    input_device: string | null;
-  };
-  vad: {
-    threshold: number;           // 0.0-1.0 (default 0.5)
-    ptt_noise_gate: number;      // 0.0-1.0 (default 0.005)
-    vad_backend: "Earshot" | "TenVad";  // TenVad=default, Earshot=preferred
-  };
-  asr: {
-    model: string;               // "nvidia_nemotron" | "qwen3_asr"
-    transliterate_enabled: boolean;
-    provider: {                  // SttProviderConfig tagged enum
-      kind: "embedded" | "cloud";
-      model_type?: string;       // embedded only
-      provider?: string;         // cloud only: "google" | "deepgram" | "whisperflow"
-    };
-  };
-  llm: {
-    model: string;
-    ctx_size: number;            // 1024-4096 (default 2048)
-    threads: number;             // 1-N (default 4)
-    provider: {                  // LlmProviderConfig tagged enum
-      kind: "embedded" | "open_ai_compat";
-      base_url?: string;
-      model?: string;
-      api_key?: string;
-      provider_name?: string;    // "openai" | "gemini" | "anthropic"
-    };
-  };
-  tts: {
-    provider: {                  // TtsProviderConfig tagged enum
-      kind: "supertonic" | "chatterbox" | "chatterbox_remote";
-      language?: string;
-      quality_steps?: number;
-      speed?: number;
-      voice_id?: string;
-      endpoint?: string;         // remote only
-      remote_path?: string;      // remote only
-    };
-    voice: number;               // Supertonic voice index (0-9)
-    quality_steps: number;       // Diffusion steps (2-12, default 12)
-    speed: number;               // Speed factor (0.7-2.0, default 1.05)
-  };
-  interaction: {
-    main_app_mode: "Passive" | "PTT";
-    tray_mode: "Passive" | "PTT";
-    pipeline_mode: "Modular" | "Realtime";  // v0.9.0
-    auto_sleep_timeout: number;  // seconds (default 400)
-  };
-
-  // Realtime S2S settings (v0.9.0)
-  realtime: {
-    provider: "gemini_live" | "openai_realtime" | "deepgram_voice_agent" | "elevenlabs_convai";
-    gemini: {
-      api_key: string;
-      model: string;             // default "gemini-2.0-flash-live-001"
-      voice_name: string;        // default "Aoede"
-      language_code: string;     // BCP-47, default "en-US"
-      temperature: number;       // default 0.2
-      enable_web_search: boolean;
-    };
-    openai: {
-      api_key: string;
-      model: string;
-    };
-    deepgram: {
-      api_key: string;
-      model: string;
-    };
-    elevenlabs: {
-      api_key: string;
-      agent_id: string;
-    };
-  };
-  telemetry: {
-    enabled: boolean;            // default true
-    log_level: string;           // default "info"
-  };
-  persistence: {
-    private_mode: boolean;       // default false
-    max_sessions: number;        // default 500
-    retention_days: number;      // default 30
-  };
-  assistant: {
-    modular_prompt: string;      // Hindi prompt (alias: hindi_prompt)
-    realtime_prompt: string;     // English prompt (alias: english_prompt)
-  };
-  setup: {
-    completed: boolean;
-  };
-}
-```
-
-#### Hot-Reload Logic
-
-```typescript
-const updateSetting = async (domain: string, key: string, value: any) => {
-  const reloadPolicy = await invoke<string>("reload_policy_for", { domain, key });
-
-  if (reloadPolicy === "restart") {
-    setShowRestartModal(true);
-  }
-
-  await invoke("update_setting", { domain, key, value });
-  updateLocalSettings(domain, key, value);
-};
-```
-
-### Monitoring Page
-
-#### Offload / Reload Dual-Button UI
-
-The monitoring page uses **conditional button rendering** for engine lifecycle control:
-
-- **Skull button** (red): displayed when `models_loaded === true`. Clicking it invokes `stop_engine` to offload/unload models from memory.
-- **RefreshCw button**: displayed when `models_loaded === false`. Clicking it invokes `launch_engine` to reload models into memory.
-
-Only one button is visible at any time based on the current engine state.
-
-#### Runtime Metrics
-
-```typescript
-interface RuntimeSnapshot {
-  timestamp: number;
-  system_cpu: number;       // CPU usage percentage
-  system_ram_pct: number;   // System RAM usage percentage
-  system_ram_gb: number;    // System RAM in GB
-  vox_cpu: number;          // Vox process CPU usage
-  vox_ram_mb: number;       // Vox process RAM in MB
-  threads: number;          // Active thread count
-  stt_rtf: number;          // STT real-time factor
-  ttft_ms: number;          // Time to first token
-  ttfa_ms: number;          // Time to first audio (voice pipeline latency)
-  tts_rtf: number;          // TTS real-time factor
-  playback_start_ms: number; // Time from TTS chunk to playback start
-  persistence_rate: number;  // Persistence write rate (events/sec)
-  playback_underruns: number; // Playback buffer underrun count
-  audio_energy: number;      // Current mic RMS energy
-  models_loaded: boolean;    // Whether models are warm
-}
-```
-
-#### Live Charts
-
-Uses Chart.js or similar for:
-- CPU usage over time
-- Memory usage trends
-- Latency distributions
-- Throughput metrics
-
----
-
-## 6. Overlay UI (Tray HUD)
-
-### Core Concept
-
-The Tray HUD is an **ephemeral transcription capsule** that:
-
-- Appears automatically on speech detection
-- Displays real-time transcription
-- Disappears after silence
-- Never persists or accumulates history
-
-### Visibility State Machine
-
-```typescript
-enum VisibilityState {
-  HIDDEN = 'HIDDEN',
-  APPEARING = 'APPEARING',
-  ACTIVE = 'ACTIVE',
-  HOLD = 'HOLD',
-  FADING = 'FADING'
-}
-
-interface VisibilityConfig {
-  holdDuration: number;    // ms to hold after speech end
-  fadeDuration: number;    // ms for fade animation
-}
-```
-
-### Positioning Logic
-
-#### Linux (Virtual Layer)
-
-```typescript
-const setup_linux_virtual_layer = (app: AppHandle, label: string) => {
-  const window = app.get_webview_window(label);
-  const monitor = window.primary_monitor();
-
-  // Position at top-right with padding
-  const x = screen_w - hud_w - padding_x;
-  const y = (screen_h * 0.15); // 15vh from top
-
-  // Create input shape region for click-through
-  const region = cairo::Region::create_rectangle(rect);
-  gtk_window.input_shape_combine_region(Some(&region));
-};
-```
-
-#### macOS/Windows
-
-```typescript
-// Use tauri-plugin-positioner
-window.move_window(Position::TopRight);
-```
-
-### Component Architecture
-
-#### TrayApp.tsx (Root Component)
-
-```typescript
-const TrayApp: React.FC = () => {
-  const settings = useSettingsStore(s => s.settings);
-  const [interactionState, setInteractionState] = useState<string>("Idle");
-  const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
-  const [processingMessage, setProcessingMessage] = useState(false);
-
-  // Audio visualization
-  const [audioEnergy, setAudioEnergy] = useState(0);
-
-  // History system (ephemeral, in-memory only)
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState<number>(-1);
-  const [viewingHistory, setViewingHistory] = useState(false);
-
-  // Interaction management
-  const {
-    interactionId,
-    committedText,
-    partialText,
-    startNewInteraction,
-    endSpeechSegment,
-    updatePartial,
-    commitFinal,
-    reset
-  } = useInteraction();
-
-  // Visibility management
-  const {
-    state: visibilityState,
-    setIsHovered,
-    show,
-    startHold,
-    hideImmediately
-  } = useVisibility({
-    holdDuration: (settings?.ui.tray_hide_delay || 3) * 1000,
-    fadeDuration: 500, // Always snappy for tray
-  });
-
-  // Telemetry ref for live data
-  const telemetryRef = useRef({ energy: 0, vadProb: 0 });
-
-  // Listen for IPC events
-  useEffect(() => {
-    const unlisteners = [
-      listen("state_changed", (e) => setInteractionState(e.payload as string)),
-      listen("audio_energy", (e) => { setAudioEnergy(e.payload.energy); }),
-      listen("ptt_status", (e) => setPttStatus(e.payload.state)),
-      // ... more listeners
-    ];
-    return () => unlisteners.forEach(u => u());
-  }, [settings]);
-};
-```
-
-#### Header Component
-
-```typescript
-interface HeaderProps {
-  isListening: boolean;
-  hasContent: boolean;
-  copied: boolean;
-  isPttActive: boolean;
-  interactionMode: string;
-  onCopy: () => void;
-  onClose: () => void;
-  onTogglePtt: () => void;
-}
-```
-
-#### TranscriptRenderer Component
-
-```typescript
-interface TranscriptRendererProps {
-  displayText: string;
-  interactionState: string;
-  pttStatus: string;
-  telemetryRef: React.RefObject<any>;
-}
-```
-
-### Text Streaming Animation
-
-#### useStreamingRenderer Hook
-
-```typescript
-const useStreamingRenderer = (targetText: string) => {
-  const [displayText, setDisplayText] = useState("");
-  const prevTargetRef = useRef("");
-
-  useEffect(() => {
-    if (targetText === prevTargetRef.current) return;
-    prevTargetRef.current = targetText;
-
-    // Character-by-character streaming animation
-    let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      setDisplayText(targetText.slice(0, i));
-      if (i >= targetText.length) clearInterval(interval);
-    }, 20); // 50 CPS
-
-    return () => clearInterval(interval);
-  }, [targetText]);
-
-  return displayText;
-};
-```
-
-### History Navigation
-
-#### Ephemeral History System
-
-```typescript
-const MAX_HISTORY = settings?.ui.tray_history_limit || 10;
-
-const addToHistory = (text: string) => {
-  setHistory(prev => [text, ...prev.slice(0, MAX_HISTORY - 1)]);
-};
-
-const navigateHistory = (direction: 'prev' | 'next') => {
-  setViewingHistory(true);
-  setHistoryIndex(prev => {
-    if (direction === 'prev') {
-      return prev === -1 ? history.length - 1 : Math.max(0, prev - 1);
-    } else {
-      return prev <= 0 ? -1 : prev - 1;
-    }
-  });
-};
-```
-
----
-
-## 7. State Management Patterns
-
-### Interaction Management (useInteraction)
-
-```typescript
-const CONTINUITY_WINDOW = 1200; // ms
-
-export const useInteraction = () => {
-  const [interactionId, setInteractionId] = useState(0);
-  const [committedText, setCommittedText] = useState("");
-  const [partialText, setPartialText] = useState("");
-
-  const lastSpeechEndTime = useRef<number>(0);
-  const currentIdRef = useRef<number>(0);
-
-  const startNewInteraction = useCallback(() => {
-    const now = Date.now();
-    const diff = now - lastSpeechEndTime.current;
-
-    // Continuity logic: merge if within window
-    if (diff > CONTINUITY_WINDOW || currentIdRef.current === 0) {
-      currentIdRef.current += 1;
-      setInteractionId(currentIdRef.current);
-      setCommittedText("");
-      setPartialText("");
-    }
-  }, []);
-
-  const commitFinal = useCallback((text: string) => {
-    if (!text) return;
-    setCommittedText(prev => prev ? `${prev} ${text}` : text);
-    setPartialText("");
-  }, []);
-};
-```
-
-### Visibility Management (useVisibility)
-
-```typescript
-const useVisibility = (config: VisibilityConfig) => {
-  const [state, setState] = useState<VisibilityState>('HIDDEN');
-  const [isHovered, setIsHovered] = useState(false);
-
-  const holdTimeoutRef = useRef<NodeJS.Timeout>();
-  const fadeTimeoutRef = useRef<NodeJS.Timeout>();
-
-  const show = useCallback(() => {
-    setState('APPEARING');
-    setTimeout(() => setState('ACTIVE'), 50);
-  }, []);
-
-  const startHold = useCallback(() => {
-    setState('HOLD');
-    holdTimeoutRef.current = setTimeout(() => {
-      if (!isHovered) {
-        setState('FADING');
-        fadeTimeoutRef.current = setTimeout(() => {
-          setState('HIDDEN');
-        }, config.fadeDuration);
-      }
-    }, config.holdDuration);
-  }, [config, isHovered]);
-};
-```
-
-### Settings Context
-
-```typescript
-const SettingsContext = createContext<SettingsContextType>({
-  settings: null,
-  isLoading: true,
-  updateSetting: async () => {},
-});
-
-export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [settings, setSettings] = useState<VoxSettings | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    invoke<VoxSettings>('get_settings')
-      .then(setSettings)
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  const updateSetting = async (domain: string, key: string, value: any) => {
-    await invoke('update_setting', { domain, key, value });
-    setSettings(prev => prev ? deepMerge(prev, { [domain]: { [key]: value } }) : null);
-  };
-};
-```
-
----
-
-## 8. IPC Communication
-
-### Event Listeners
-
-#### Main Window Events
-
-```typescript
-// State synchronization
-window.listen("state_changed", ({ payload }) => {
-  setInteractionState(payload);
-});
-
-// Audio visualization
-window.listen("audio_energy", ({ payload }) => {
-  setVolumeLevel(payload.energy);
-});
-
-// PTT status updates
-window.listen("ptt_status", ({ payload }) => {
-  setPttStatus(payload.state);
-});
-
-// Realtime session lifecycle (v0.9.0)
-window.listen("realtime_session_started", () => {
-  setPipelineMode("realtime");
-  setSessionResumed(false);
-});
-
-window.listen("realtime_session_resumed", () => {
-  setPipelineMode("realtime");
-  setSessionResumed(true);
-  // Show "Resumed previous session" toast
-});
-
-window.listen("realtime_session_ended", (event) => {
-  const reason = event.payload; // "user" | "idle_timeout" | "error"
-  setIsEngaged(false);
-  setPipelineMode("modular");
-  flushAndClearTranscripts();
-});
-
-window.listen("realtime_idle_warning", (event) => {
-  // event.payload.seconds_remaining for countdown display
-});
-
-window.listen("realtime_interrupted", () => {
-  // Flash UI — barge-in confirmed by server
-  setInteractionState("Interrupted");
-});
-
-// Pause/Resume events
-window.listen("pipeline_paused", () => {
-  setIsPaused(true);
-  archiveCurrentTurn();
-});
-
-window.listen("pipeline_resumed", () => {
-  setIsPaused(false);
-});
-```
-
-#### Tray Window Events
-
-```typescript
-// Speech lifecycle
-window.listen("state_changed", ({ payload }) => {
-  // payload is InteractionState: "Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Interrupted"
-  setInteractionState(payload);
-});
-
-window.listen("speech_start", () => {
-  startNewInteraction();
-  show();
-});
-
-window.listen("transcript_partial", ({ payload }) => {
-  updatePartial(payload.text);
-});
-
-window.listen("transcript_final", ({ payload }) => {
-  commitFinal(payload.text);
-  addToHistory(payload.text);
-  startHold();
-});
-
-window.listen("speech_end", () => {
-  endSpeechSegment();
-  startHold();
-});
-
-window.listen("ptt_status", ({ payload }) => {
-  // payload.state: "IDLE" | "RECORDING" | "PROCESSING"
-  setPttStatus(payload.state);
-});
-
-window.listen("realtime_session_started", () => {
-  setPipelineMode("realtime");
-});
-
-window.listen("realtime_session_ended", (event) => {
-  const reason = event.payload; // "user" | "idle_timeout" | "error"
-  flushAndClearTranscripts();
-});
-
-window.listen("realtime_interrupted", () => {
-  setInteractionState("Interrupted");
-});
-
-window.listen("realtime_idle_warning", (event) => {
-  // event.payload.seconds_remaining for countdown display
-});
-
-window.listen("pipeline_paused", () => {
-  setIsPaused(true);
-});
-
-window.listen("pipeline_resumed", () => {
-  setIsPaused(false);
-});
-
-window.listen("pipeline_error", ({ payload }) => {
-  setError(payload);
-});
-```
-
-### Command Invocations
-
-```typescript
-// Settings management
-await invoke("get_settings");
-await invoke("update_setting", { domain, key, value });
-await invoke("request_boot_state");
-await invoke("request_model_catalog");
-await invoke("reset_settings");
-await invoke("update_theme", { theme: "dark" });
-await invoke("check_llm_provider_health", { provider });
-await invoke("check_stt_provider_health");
-await invoke("check_tts_provider_health");
-await invoke("list_remote_llm_models", { endpoint, apiKey, providerName });
-await invoke("setup_remote_server", { providerKind, endpoint, apiKey });
-
-// Engine control
-await invoke("engage");
-await invoke("check_engine_status");
-await invoke("stop_engine");       // Offload/unload models (Skull button)
-await invoke("launch_engine");     // Reload models (RefreshCw button)
-await invoke("test_clip");         // Play test clip
-await invoke("test_clip_cancel");  // Stop test clip
-
-// Realtime session control (v0.9.0)
-await invoke("start_realtime_session");       // Start WebSocket session
-await invoke("stop_realtime_session");         // Stop and clean up
-await invoke("pause_pipeline");               // Soft pause (WS alive, audio halted)
-await invoke("resume_pipeline");              // Resume audio routing
-await invoke("get_realtime_session_cache");    // Check for cached resume token
-
-// PTT control
-await invoke("ptt_start", { owner: "MainWindow" | "Tray" });
-await invoke("ptt_stop", { owner: "MainWindow" | "Tray" });
-await invoke("ptt_cancel");
-
-// History management
-await invoke<string[]>("get_transcript_history");
-const sessions = await invoke<Session[]>("get_sessions");
-const turns = await invoke<Turn[]>("get_turns", { sessionId });
-await invoke("commit_session_to_history", { turns, ... });
-await invoke("delete_session", { sessionId });
-
-// Voice library
-await invoke<ListVoicesResponse>("list_voices");
-await invoke("add_voice_from_file", { path, name });
-await invoke("add_voice_from_recording", { name });
-await invoke("start_backend_recording");
-await invoke("stop_backend_recording");
-await invoke("delete_voice", { voiceId });
-await invoke("rename_voice", { voiceId, name });
-await invoke("preview_voice", { voiceId });
-
-// Audio device management
-const devices = await invoke<AudioDevice[]>("list_input_devices");
-
-// Setup/Wizard
-await invoke("fetch_manifest");
-await invoke("check_for_updates");
-await invoke("check_for_model_updates");
-await invoke("get_onboarding_status");
-await invoke("get_runtime_report");
-await invoke("start_model_setup", { modelIds });
-await invoke("cancel_model_setup");
-await invoke("complete_setup_wizard");
-await invoke("reveal_wizard");
-await invoke("check_model_exists", { modelId });
-await invoke("download_optional_model", { modelId });
-await invoke("delete_model", { modelId });
-
-// Monitoring
-await invoke<RuntimeSnapshot>("get_runtime_snapshot");
-await invoke<RuntimeSnapshot[]>("get_runtime_history", { limit });
-await invoke("clear_runtime_history");
-```
-
----
-
-## 9. Performance Optimizations
-
-### React Optimizations
-
-```typescript
-// Memoized components
-const Header = memo(({ ...props }) => { ... });
-
-// Callback stabilization
-const handleCopy = useCallback(() => {
-  navigator.clipboard.writeText(text);
-}, [text]);
-
-// Ref-based state for hot paths
-const telemetryRef = useRef({ energy: 0, vadProb: 0 });
-```
-
-### Animation Performance
-
-```typescript
-// Hardware acceleration
-const containerVariants = {
-  ACTIVE: {
-    opacity: 1,
-    x: 0,
-    scale: 1,
-    willChange: "transform, opacity"
-  }
-};
-
-// Reduced motion support
-const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-```
-
-### Bundle Optimization
-
-```typescript
-// Lazy loading
-const Home = lazy(() => import("@/pages/Home"));
-const History = lazy(() => import("@/pages/History"));
-
-// Code splitting
-const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({
-  default: m.Monitoring
-})));
-```
-
----
-
-## 10. Design System
-
-The **authoritative design system spec lives in [`design.md`](./design.md)** — tokens
-(colors, type ramp, radii), type roles, uppercase policy, elevation levels, and motion
-rules. Frontend code must only use tokens and sizes declared there; the impeccable
-design-system detector enforces this against `docs/design.md`'s frontmatter.
-
-Implementation of the tokens in CSS/Tailwind:
-
-```css
-:root {
-  --background: 5, 5, 5;        /* rgb(var(--background)) */
-  --foreground: 229, 226, 225;
-  --accent: 0, 219, 233;         /* voice signal cyan */
-  --accent-foreground: 5, 5, 5;
-  --border: 255, 255, 255;
-}
-```
-
-Glass surfaces use the `.glass-*` elevation classes in `index.css` (blur + tint per
-`design.md` §Elevation). For the full token reference and all UI rules, read
-`docs/design.md`.
-
----
-
-## 11. Platform-Specific Code
-
-### Linux (Wayland/X11)
-
-```typescript
-// Click-through regions
-const setupVirtualLayer = async () => {
-  const window = getCurrentWindow();
-  const monitor = await window.primaryMonitor();
-
-  // Position calculations in logical pixels
-  const scaleFactor = await window.scaleFactor();
-  const hud_w = 380 * scaleFactor;
-  const hud_h = 250 * scaleFactor;
-
-  // GTK input shape for click-through
-  // (Handled in Rust backend)
-};
-```
-
-### macOS/Windows
-
-```typescript
-// Native overlay positioning
-import { move_window, Position } from "@tauri-apps/plugin-positioner";
-
-await move_window(Position.TopRight);
-```
-
----
-
-## 12. Error Handling & Resilience
-
-### IPC Error Handling
-
-```typescript
-try {
-  const result = await invoke("some_command", params);
-  // Handle success
-} catch (error) {
-  console.warn("[UI] IPC failed:", error);
-  // Graceful degradation
-}
-```
-
-### Component Error Boundaries
-
-```typescript
-class ErrorBoundary extends React.Component {
-  state = { hasError: false };
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    console.error("Component error:", error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return <div>Something went wrong. Please restart the app.</div>;
-    }
-    return this.props.children;
-  }
-}
-```
-
-### Settings Recovery
-
-```typescript
-const loadSettings = async () => {
-  try {
-    const settings = await invoke<VoxSettings>("get_settings");
-    setSettings(settings);
-  } catch (error) {
-    console.error("Failed to load settings:", error);
-    // Use defaults or cached settings
-  }
-};
-```
-
----
-
-## 15. Cognitive Memory Graph & Ingestion Telemetry (`Memory.tsx` + `MemoryGraph.tsx`)
-
-Vox features a full-screen, ultra-scalable 3D Cognitive Memory Graph visualization built on a **Custom Three.js InstancedMesh WebGL Engine** capable of rendering 10,000+ nodes and directed edges at sub-60fps with <15MB RAM usage.
-
-### Key Architecture & Invariants:
-* **Custom Three.js WebGL Engine**: All nodes are rendered in **1 single `THREE.InstancedMesh`** draw call; all graph edges are packed into **1 single `THREE.LineSegments` BufferGeometry** draw call.
-* **Scene Stability**: WebGL scene teardown on state/prop updates is strictly BANNED. Updates to colors, scales, and positions are imperatively written to GPU buffer attributes via stable `useRef` handles (`updateWebGLBuffersRef`).
-* **Interaction**:
-  * **Screen-space 24px proximity picking**: Projects 3D node coordinates to 2D screen space to guarantee 100% reliable node selection even when zoomed out.
-  * **Smart Zoom-Preserving Fly-To**: Smooth camera interpolation centers the target node while preserving the user's current zoom depth if already zoomed in (`targetZ = Math.min(currentZ, 1200)`). Re-clicking an active node toggles its tooltip off.
-* **Search & Visual Filtering**: Searching over facts highlights matching nodes with glowing halo rings while non-matching nodes and connecting edges are ghosted out (`#1e293b`). Search suggestions display collection swatch icons and fact snippets constrained to `max-h-[260px]`.
-* **Borderless UI Overlays**:
-  * **Orbital Network Loader**: Borderless dual-orbital network core with a pulsing central `Sparkles` emblem and clean typography.
-  * **Frameless Alternating Zig-Zag Telemetry Drawer (`MemoryPipelineDrawer.tsx`)**: Borderless telemetry dashboard using 100% full available height with a minimal metric strip (Active Nodes, Throughput, In Queue), alternating Left/Right zig-zag conduit pipeline flow, live events log, and consolidation sweep trigger button.
-
----
-
-## 16. UX Implementation Guidelines
-
-Mechanic-level UX patterns (moved from the old `design.md`). These describe *how* the UI
-behaves; the *rules* it must obey live in [`design.md`](./design.md).
-
-### 16.1 Responsive & Dynamic Layouts
-
-The desktop layout transitions dynamically to a unified layout on small screens
-(mobile viewports).
-
-* **Central Navigation Capsule (`EdgeNav`)**: On desktop, navigation is a floating bottom
-  capsule. On mobile, the system monitoring metrics (bottom-left on desktop) are hidden and
-  the **Activity Monitor** is integrated as a 4th `NavLink` tab inside the capsule, routing
-  directly to `/monitoring`.
-* **Unified Responsive Diagnostics Monitor (`Monitoring.tsx`)**: On mobile it renders as a
-  dedicated page route (`/monitoring`) with a solid glass background; on desktop it renders
-  as an anchored floating popover modal (`popover={true}`) bottom-left without duplicating
-  component hierarchy.
-* **Viewport Transition Engine**:
-  * Mobile ➔ Desktop: on `/monitoring`, resizing to desktop redirects to `/` and launches
-    the popover panel.
-  * Desktop ➔ Mobile: an open popover closes and routes to `/monitoring` so context is kept.
-* **Sentient Core Scale**: On mobile the central Orb scales up **50%**
-  (`min(92vw, 85vh)` instead of `min(70vw, 65vh)`) to act as the dominant touch target.
-
-### 16.2 Performance Constraints & Best Practices
-
-To hit high rendering performance on baseline systems (8GB RAM, CPU-first):
-
-* **Dynamic FPS (`useDynamicFPS`)**: Heavy visual loops (Three.js WebGL Orb, HTML5 Canvas
-  Waveform) throttle frame rate: *Active* 60fps, *Idle* 15fps, *Sleep* 0fps.
-* **React Memoization**: Visually intensive components (`AmbientBackground`, `PipelineField`,
-  `VoxOrb`, `LiveWaveform`) are wrapped in `React.memo` to avoid re-renders during text
-  streaming or DB reads.
-
-### 16.3 Settings & Configuration Hub UX
-
-* **Flat Underline Tab Strips**: For list selections (LLM providers, gateway options) avoid
-  heavy card grids. Use a flat left-aligned tab strip with a shared underline track
-  (`border-b border-[rgba(var(--border),0.12)]`), active tab indicated by `text` color + a
-  thicker `border-b-2 border-[rgb(var(--accent))]`, pipe separators (`|`) in
-  `text-[rgb(var(--accent))]/30 font-light`. Inline provider/system icons render on desktop
-  and hide on mobile.
-* **Consolidated Card Headers on Mobile**: Hide internal settings card titles ("Appearance",
-  "Model Hub", "Interaction Console") on small layouts; rely on the outer Category Page
-  Headers, which are larger and high-contrast (`text-[15px] font-black uppercase
-  tracking-[0.18em] text-[rgb(var(--foreground))]`).
-* **Hover-Only Slide-Out Action Sidebars**: Toggle buttons wrap in a group row with a hidden
-  sidebar panel (`w-0 opacity-0` → `group-hover:w-[38px] group-hover:opacity-100`) while the
-  main button scales to fit (`flex-1`) and flattens shared borders.
-* **Alignment & Padding Discipline**: Respect parent padding (a `p-3` desk needs no duplicate
-  `px-3`/`mx-3` on children); align labels, tabs, inputs, and cards on one vertical axis.
-
-### 16.4 Settings Hub & Synchronous Loading UX
-
-* **Boot-Time Import Prewarming**: All lazy-loaded domain cards (`PersonaCard`, `ModelsCard`,
-  `RealtimeCard`, `HistoryCard`, `MemoryCard`, `AppearanceCard`, `InteractionCard`) are
-  eagerly prewarmed in parallel at **App boot** (`App.tsx`), so the radial hub opens with no
-  lazy-load latency. Cards mount instantly and only play a brief skeleton cross-fade.
-* **Premium Charging Skeleton**: `GlassSkeleton variant="card"` is the Suspense fallback for
-  every domain card — a glass card with an accent-tinted border, ambient corner glow, a skewed
-  shimmer sweep (`skeleton-shimmer`), a pulsing accent orb (`animate-ping`), and breathing
-  glow (`skeleton-glow`), matching the Liquid Space aesthetic.
-* **Radial Node Tooltips**: Each `RadialNode` and the `HubCenter` are wrapped in the custom
-  `Tooltip` primitive (via `wrapperClassName`/`wrapperStyle` so the absolute node placement is
-  preserved) with action copy from `SETTINGS_COPY` (`Open {label} settings` /
-  `Close {label} settings` / `Open all settings` / `Clear all settings`).
-* **Gated Connection Lines + Decorative Power Pulse**: SVG node-to-card connector lines render
-  strictly when `activeDomains.includes(domain.id)`. On activation a thin accent `path` runs a
-  one-shot `connector-flow` stroke-dashoffset animation (0.9s, staggered 0.12s per domain) —
-  a decorative "node sent power to the card" pulse, not load-synced.
-
-### 16.5 Memory Graph & Telemetry Drawer Invariants
-
-See §15 for the WebGL engine invariants. Additional UI mechanics:
-
-* **Decoupled Renderer Setup**: window/panel resizing triggers only a lightweight
-  `renderer.setSize` update — GPU buffers and controls are never disposed.
-* **Failsafe Stabilization**: layout stabilization enforces a **700ms max failsafe timeout**
-  so the borderless network loader (`isLayoutStable`) always dismisses cleanly.
-* **Clean Pill Selection**: collection/relation filters in `MemoryLegendCard.tsx` use rounded
-  active ring highlights (`ring-1 ring-[rgb(var(--accent))]/30 bg-[rgb(var(--accent))]/15`)
-  instead of vertical `border-l-2` accent borders.
-* **100% Height Telemetry Drawer**: `MemoryPipelineDrawer.tsx` uses full available height with
-  an alternating Left/Right zig-zag conduit (`01 Deduplicate` → `02 Embed` → `03 Evaluate
-  Relations` → `04 Commit & Sync`) down to the `Memory Graph` destination. `Escape` closes it.
-
-### 16.6 Keyboard Navigation & Route Sequence
-
-* **Arrow Key Navigation**: `ArrowRight`/`ArrowLeft` cycles views in exact visual order
-  matching the `EdgeNav` pills: `Home` (`/`) ➔ `History` (`/history`) ➔ `Memory` (`/memory`)
-  ➔ `System` (`/settings`).
-
-### 16.7 Small Layout Navigation & Scroll Backdrop Mask
-
-For mobile and small viewports (`< 1024px`):
-
-* **Floating EdgeNav Capsule**: navigation floats centered near the bottom with compact pill
-  styling.
-* **Soft Glass Fade Mask Backdrop**: a `110px` gradient overlay
-  (`fixed bottom-0 left-0 right-0 pointer-events-none z-40 bg-gradient-to-b from-transparent
-  via-[rgb(var(--background))]/60 to-[rgb(var(--background))]/95 backdrop-blur-[16px]`)
-  sits behind the EdgeNav pill.
-* **Seamless Content Fade**: content scrolls under the mask and fades/blurs out approaching
-  the bottom edge.
-* **Scroll Padding Baseline**: scrollable views (History, Settings, Monitoring) enforce
-  `pb-[110px]` on small layouts.
-* **Mobile Category Headers**: small layouts display explicit category headers
-  (e.g. `HISTORY & SESSIONS`) at the top of scrollable lists.
-
----
-
-**Last Updated:** 2026-08-16
-
+**Last Updated:** 2026-08-21

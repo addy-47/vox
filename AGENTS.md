@@ -7,7 +7,7 @@
 > 🛑 **MANDATORY POST-TASK DOCUMENTATION HOOK (NON-NEGOTIABLE):**
 > Every time code, architecture, candidate thresholds, system prompts, or LLM judge models are modified, or a task/phase is completed:
 > 1. You **MUST** automatically update `AGENTS.md` to reflect the exact current implementation, model configuration, and threshold matrix. 
-> 2. You **MUST** automatically update any relevant feature, component, design, or architecture documentation to match the actual code state.
+> 2. You **MUST** automatically update any relevant feature, component, design, or architecture documentation in docs/ to match the actual code state, key files include `backend.md`, `models.md`, `frontend.md`and `docs/features/*`.
 > 3. This is a **mandatory post-task completion hook** — do NOT wait for the user to explicitly remind you to sync documentation.
 
 ---
@@ -81,31 +81,27 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - No unbuffered stderr prints from `edge_tts.rs` (IPC spam).
 
 ### 5.2 Decoupled Realtime Dictation Subsystem (Phase 9)
-- **Decoupled Architecture**: Dictation backend is decoupled from Tray UI (`services/dictation/`). `InteractionOwner::Dictation = 0` is a first-class citizen.
-- **Two Independent Axes**:
-  - `interaction_mode`: `Passive` (Continuous) vs `Ptt` (Push-To-Talk via global hotkey `Alt+Space`).
-  - `output_mode`: `Paste` (Simulated keystroke injection — Linux X11: `Ctrl+V`, Linux Wayland: `Ctrl+V` best-effort, macOS: `Cmd+V` via `MacOsInputAdapter`, Windows: `Ctrl+V` via `WindowsInputAdapter` — all with clipboard backup & 350ms restore), `Clipboard` (Clipboard copy only), and `Tray` (Desktop floating HUD window).
-- **Zero Idle RAM & Lazy Warming**: In PTT mode, 0 ONNX models loaded on boot; `DictationController` lazily initializes audio/STT pipeline on-demand when the hotkey is triggered. The Tray HUD webview window is dynamically destroyed when Dictation or Tray output mode is inactive, and lazily re-created on-demand via `ensure_tray_window` when Tray output mode is selected or Vox Live is invoked.
-- **Transliteration & Recovery Invariants**: Spoken Hindi/Devanagari text is transliterated before output dispatch across all modes. Last transcript is cached in `AppState.dictation_last_transcript` for recovery (`get_last_dictation_transcript`, `copy_last_dictation_transcript`).
-- **UI System**: `InteractionCard.tsx` provides clean layman switching between `Assistant` and `Dictation` views, mounting `DictationConfigDesk.tsx` with a matching minimal ribbon header, full-width extending SVG connector arrow, underline tabs (`Paste | Clipboard | Tray`), and hotkey trigger rebinding.
-- **Dictation Serialization & Error Safeguards**: Dictation interaction mode normalized to `"passive" | "ptt"` matching Rust `serde(rename_all = "snake_case")`. ErrorBoundary covers all critical interactive canvases (`HistoryStage`, `MemoryGraphCanvas`, `LiquidChamber`, `TrayAppContent`, `MemoryProfilerTabs`). `DictationConfigDesk` features interactive keyboard shortcut recording with Liquid Space aesthetics.
-- **Cascading Subsystem Power & Clean Tray Sync**: When Voice Typing (`dictation.enabled`) is turned off or output mode is non-Tray, child controls are dimmed and the system tray `Vox Live` menu item is strictly disabled (`set_enabled(dictation.enabled && output_mode == Tray)`). The menu item is only clickable when dictation is enabled and output mode is set to Tray, preventing accidental auto-enabling.
+> Full specification: [`docs/features/dictation.md`](docs/features/dictation.md)
+- **Decoupled Architecture**: Dictation backend is decoupled from Tray UI (`services/dictation/`). `InteractionOwner::Dictation = 0` is a first-class citizen with two independent axes: `interaction_mode` (`passive` continuous vs `ptt` hotkey `Alt+Space`) and `output_mode` (`paste` keystroke injection via platform adapters with clipboard backup, `clipboard`, and `tray` HUD window).
+- **Zero Idle RAM & Lazy Warming**: In PTT mode, 0 ONNX models loaded on boot; audio/STT pipeline initializes on-demand when the hotkey triggers. Tray HUD and Setup Wizard WebViews are dynamically constructed strictly on-demand and destroyed when inactive (~490MB RAM saved on cold boot).
+- **Transliteration & Recovery**: Hindi/Devanagari text transliterated before dispatch; last transcript cached in `AppState.dictation_last_transcript`.
+- **UI & Cascading Sync**: `InteractionCard.tsx` provides clean switching to `DictationConfigDesk.tsx`. When Voice Typing is disabled or output is non-Tray, child controls dim and system tray `Vox Live` menu item is disabled (`dictation.enabled && output_mode == Tray`).
 
-### 5.3 Memory Management, WebGL Annealing & Drawer Stacking Invariants
-- **Global Drawer Portal Mounting**: `Drawer.tsx` with `position="global"` renders via React `createPortal(..., document.body)`, escaping any parent CSS `contain: "layout style"` isolation (such as `<main>` in `ResponsiveLayout.tsx`). This allows the transparent drawer body design to float cleanly over `<EdgeNav />` (`z-50`) without z-index clipping.
-- **Markdown Fast-Path Rendering**: `DetailPanel.tsx` uses memoized `TurnBubble` with plain text regex fast-path (`/[*_#`\[\]]/`), bypassing heavy ReactMarkdown AST initialization on session select and eliminating UI click latency.
-- **Memory Graph Physics Settlement & Zero Expansion Drift**: `MemoryGraph.tsx` runs the original natural topology physics (`alpha = 0.08`, `repulsion = 1200`, `springLength = 85`, `damping = 0.85`) during initial layout settlement (`ticks < 100`). Once settled, physics calculation and WebGL Float32 instance buffer uploads halt completely, freezing nodes in their natural organic constellation equilibrium and eliminating continuous WebKit GPU allocations and expansion drift with zero UI changes.
-- **Cross-Platform Heap Trimming (`trim_heap`)**: On model eviction (`unload_all_onnx_models`, `unload_memory_pipeline_onnx_models`) and audio engine shutdown (`stop_engine`), `trim_heap(caller)` is called via a unified function in `services/memory/mod.rs` with platform-specific branches: Linux → `libc::malloc_trim(0)` (glibc arena release), Windows → `EmptyWorkingSet(GetCurrentProcess())` via raw FFI (working set trim, zero new deps), macOS → intentional no-op (libmalloc is self-managing; `malloc_zone_pressure_relief` is a private symbol and must not be called).
-- **`enigo` Platform Feature Scoping**: The `x11rb` feature for `enigo` is scoped to `[target.'cfg(target_os = "linux")'.dependencies]` only. macOS and Windows use `enigo` with `default-features = false` and no extra features (both are supported natively by enigo 0.2's default build).
+### 5.3 Performance, Memory Management & WebGL Annealing
+> Full specification: [`docs/features/performance-memory-optimizations.md`](docs/features/performance-memory-optimizations.md)
+- **Global Drawer Portal Mounting**: `Drawer.tsx` (`position="global"`) renders via `createPortal(..., document.body)` to escape CSS layout containment and float above `<EdgeNav />` (`z-50`).
+- **Markdown Fast-Path Rendering**: `DetailPanel.tsx` uses memoized plain text regex fast-path (`/[*_#`\[\]]/`), bypassing heavy ReactMarkdown AST initialization.
+- **Memory Graph Physics Settlement & 0 FPS Equilibrium**: Layout physics calculates during initial settlement (`ticks < 100`) and halts completely once stable, freezing nodes in natural equilibrium to eliminate WebKit GPU allocations and expansion drift. Re-arms dynamically on graph prop updates.
+- **Cross-Platform Heap Trimming (`trim_heap`)**: Eviction hooks invoke platform-specific heap trimming: Linux $\to$ `libc::malloc_trim(0)`, Windows $\to$ `EmptyWorkingSet(GetCurrentProcess())`, macOS $\to$ no-op.
+- **UI Throttling & Profiler**: `LiquidChamber` throttled to 30 FPS; centroid badge updates throttled to ~8Hz with $O(1)$ node lookup; theme switching executes zero-teardown WebGL color remapping. Memory Profiler WebProcess attribution inspects active window handles (`has_main`, `has_tray`, `has_wizard`).
 
-### 5.4 Heavy UI Component Optimization, Dynamic On-Demand Webviews & Profiler Attribution
-- **100% Dynamic On-Demand Webviews (Tray + Wizard)**: Removed static `"tray"` and `"wizard"` window definitions from `tauri.conf.json`. Both Tray HUD and Setup Wizard WebKitGTK processes are constructed strictly on demand (`crate::tray::ensure_tray_window`, `crate::wizard::ensure_wizard_window`) and destroyed/closed when inactive, saving ~490MB combined RAM on cold boot.
-- **Accurate Profiler WebView Process Attribution**: In `src-tauri/src/ipc/memory_profiler.rs`, `get_profiler_snapshot` inspects actual existing window handles (`has_main`, `has_tray`, `has_wizard`) to eliminate false attribution of auxiliary WebProcesses as the Tray HUD.
-- **MemoryGraph Re-Armed Organic Simulation & Zero Freeze**: Re-arms physics layout settlement (`isSettledRef.current = false`, `ticksRef.current = 0`, `setIsLayoutStable(false)`) whenever topology `nodes` or `edges` props update. Sized GPU instance buffers to generous static capacities (`maxNodes = 10000`, `maxEdges = 20000`) and pre-warms before relaxing smoothly into organic equilibrium at 0 FPS idle.
-- **Memory Profiler Snapshot Feedback & Disk Persistence**: `useMemoryProfiler` tracks `lastManualSnapshot` (filename, timestamp, RAM) and renders a live confirmation badge in `ProfilerDrawer.tsx` header (`temp/<timestamp>-<page>.jsonl`) with button loading animation and browser console logging.
-- **O(1) Centroid Badges & State Throttling**: Projected cluster centroid updates use a pre-indexed `nodeById` Map and `Set.has` check for O(1) cross-relation analysis, throttled to max ~8Hz (`lastBadgeUpdateRef` delta >= 120ms) to prevent 60 FPS React `setState` overhead.
-- **Zero-Teardown Theme Switching**: Removed `isLightMode` from WebGL scene setup effect dependencies. Theme toggling dynamically updates line material opacity, node instance colors, and badge palettes in-place without destroying WebGL contexts, canvas, or controls.
-- **LiquidChamber 30 FPS Throttling**: Wave animation loop throttled to 30 FPS with frame interval tracking, cutting canvas drawing CPU usage by 50% while running at 0 FPS when closed or hidden.
-- **Unified Waveform Loop**: Eliminated competing duplicate `requestAnimationFrame` loops in `LiveWaveform.tsx` for synthetic processing waves and idle fade; unified all rendering inside `useDynamicFPS`.
-- **Layout-Thrash-Free CSS Profiling**: Replaced synchronous `window.getComputedStyle(el)` scan across 300 DOM elements in `sampleCSSIndicators()` with non-blocking CSS class/attribute selectors.
-- **AmbientBackground Middle-Ground Optimization**: Optimized atmospheric background to 2 organic blobs (`42vmax` and `36vmax`) with `will-change: transform` compositor acceleration and relaxed idle polling (600ms).
+### 5.4 LLM Capability Probing, Provider Differentiation & Settings Decoupling
+> Full specification: [`docs/backend.md#43-llm--language-model`](docs/backend.md#43-llm--language-model)
+- **Unified Single LLM Model**: Local GGUF, local GPU servers (Ollama/vLLM), and Cloud APIs share identical universal controls: Response Limit (`Voice Concise ~300`, `Conversational ~1,000`, `Native Full`), Creativity (`Precise 0.2`, `Balanced 0.7`, `Creative 1.0`), and Context Window.
+- **Zero-Guessing Context Transparency**: Transparently displays context window: selectable RAM budget (`2k`, `4k`, `8k`, `16k`) for local models, or `Provider Managed (Full Capacity)` for cloud endpoints with zero artificial client-side clamping.
+- **Streaming Capability Probe Engine (`capability_probe.rs`)**: Uses SSE streaming to measure true TTFT and TPS, validates structured JSON tool calling schema (`lookup_user`), and normalizes URLs (`resolve_chat_url`) to support root and `/v1` endpoints.
+- **Runtime Token Smoke Validator (`validate_llm_token_cap`)**: 1-token smoke probe catching HTTP 400 server ceiling errors with 1-click auto-clamping.
+- **Flat Underline Sub-Tabs & Decoupling**: Organized into non-scrollable flat tabs (`Performance`, `Tokens & Context`, `Creativity`) in `LlmSettingsView.tsx`, decoupled from `LlmCatalogView.tsx` (`fzf` fuzzy search).
+
+
+

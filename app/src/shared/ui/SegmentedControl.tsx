@@ -7,6 +7,7 @@ export interface SegmentedOption<T extends string = string> {
   label?: string;
   icon?: React.ElementType;
   title?: string;
+  disabled?: boolean;
 }
 
 export interface SegmentedControlProps<T extends string = string> {
@@ -34,19 +35,26 @@ export function SegmentedControl<T extends string = string>({
       {options.map((opt) => {
         const isActive = value === opt.id;
         const Icon = opt.icon;
+        const isDisabled = !!opt.disabled;
 
         const button = (
           <button
             type="button"
-            onClick={() => onChange(opt.id)}
+            disabled={isDisabled}
+            onClick={() => !isDisabled && onChange(opt.id)}
             aria-label={opt.title || opt.label || opt.id}
             className={cn(
-              "transition-all duration-300 cursor-pointer border flex items-center justify-center font-bold",
+              "transition-all duration-300 border flex items-center justify-center font-bold",
               size === "sm" && "px-2.5 py-0.5 text-[11px] rounded-lg min-h-[26px]",
               size === "md" && "px-3 py-1 text-[12px] rounded-lg min-h-[30px]",
-              isActive
+              isDisabled
+                ? "opacity-35 cursor-not-allowed bg-transparent border-transparent text-[rgb(var(--foreground-muted))]"
+                : "cursor-pointer",
+              !isDisabled && isActive
                 ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.1)] font-extrabold"
-                : "bg-transparent border-transparent text-[rgb(var(--foreground))] hover:text-[rgb(var(--accent))]"
+                : !isDisabled
+                ? "bg-transparent border-transparent text-[rgb(var(--foreground))] hover:text-[rgb(var(--accent))]"
+                : ""
             )}
           >
             {Icon && <Icon size={size === "sm" ? 14 : 16} className={opt.label ? "mr-1" : ""} />}

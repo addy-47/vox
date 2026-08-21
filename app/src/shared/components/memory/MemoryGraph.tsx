@@ -828,8 +828,8 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
               : "#ef4444"
             : isSelected
             ? isLightMode
-              ? "#0284c7"
-              : "#38bdf8"
+              ? "#000000"
+              : "#ffffff"
             : colPalette.main;
         }
 

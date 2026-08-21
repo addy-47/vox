@@ -131,3 +131,51 @@ Every evaluation capability suite lives in its own dedicated subdirectory under 
 - **Secrets & Credentials:** Sensitive values in `temp/.env` (never committed). GPU server credentials in `temp/server.txt`.
 - **Dependencies:** Never add a new Rust crate (`Cargo.toml`) or npm package (`package.json`) without explicit approval.
 - **Model Registration:** Every model added or updated in Vox MUST have an entry in `~/.vox/models/models_manifest.json` and the app catalog.
+
+---
+
+## 4. Documentation Standards
+
+Root architecture/reference docs in `docs/*.md` follow a **uniform frontmatter + "How to read"** convention so agents and contributors get accurate, scannable context fast. This is a house convention (composed from Diátaxis information-architecture, RFC-style YAML frontmatter, and ADR-style scope preambles) — not a third-party spec.
+
+### 4.1 Required frontmatter (YAML, at file top)
+
+```yaml
+---
+title: "Doc Title"
+audience: "Internal — <who this is for>"
+last_updated: YYYY-MM-DD
+owners: "<role> role"
+related_docs:
+  - "docs/other.md — one-line relationship"
+---
+```
+
+`design.md` already carries content YAML (tokens); merge these keys into its existing frontmatter rather than adding a second block.
+
+### 4.2 Required "How to read this doc" section
+
+Immediately after the title/intro, add a `## 0. How to read this doc` block with exactly these bullets:
+
+- **Audience:** who the doc is for.
+- **Scope:** what it covers.
+- **Convention:** how claims are cited (e.g. `path/file.ts` pointers; no invented code blocks).
+- **Non-goals:** what it is explicitly NOT, with cross-links (→ `docs/other.md`).
+- **SSOT:** where the authoritative detail lives (so the doc never duplicates it).
+
+Narrative docs (`vision.md`, `roadmap.md`, `decision-framework.md`) get the frontmatter but may omit §0 since they are self-evidently prose.
+
+### 4.3 Single Source of Truth (SSOT) rule
+
+Docs must **point, not copy**. The canonical homes are:
+
+| Topic | Owner doc |
+|---|---|
+| Perf & memory optimizations | `docs/features/performance-memory-optimizations.md` |
+| Design tokens / elevation / type | `docs/design.md` (+ `app/src/index.css`) |
+| IPC event contract | `docs/backend.md` §8 |
+| Settings reload policies | `docs/backend.md` §10 |
+| Memory subsystem | `docs/features/memory-architecture.md` |
+| Frontend architecture | `docs/frontend.md` |
+
+When adding a root doc, copy the `frontend.md` header + §0 shape as the template. Keep code blocks out of architecture docs — cite files instead; schemas/types are linked, never pasted.
