@@ -27,7 +27,6 @@ pub async fn toggle_hud_visibility(app: AppHandle) {
         return;
     }
 
-
     let mut hud_lock = state.hud_visible.lock().await;
     let new_state = !*hud_lock;
     *hud_lock = new_state;
@@ -225,7 +224,9 @@ pub async fn update_interaction_mode(
             }
             "tray" | "dictation" => {
                 settings.dictation.interaction_mode = match new_mode {
-                    InteractionMode::Passive => crate::core::settings::DictationInteractionMode::Passive,
+                    InteractionMode::Passive => {
+                        crate::core::settings::DictationInteractionMode::Passive
+                    }
                     InteractionMode::PTT => crate::core::settings::DictationInteractionMode::Ptt,
                 };
             }
@@ -294,10 +295,8 @@ pub async fn update_interaction_mode(
 
 #[tauri::command]
 pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
+    // Rebuilds the window if it was destroyed (renderer crash); otherwise
+    // un-hides and focuses the existing one.
+    crate::window_main::ensure_main_window(&app)?;
     Ok(())
 }

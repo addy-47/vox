@@ -1,6 +1,6 @@
 use serde::Serialize;
-use sysinfo::System;
 use std::time::{SystemTime, UNIX_EPOCH};
+use sysinfo::System;
 
 /// Robustly resolves the workspace `temp` directory across any execution working directory.
 pub fn resolve_temp_dir() -> std::path::PathBuf {
@@ -35,7 +35,13 @@ pub fn sanitize_page_name(route: &str) -> String {
     let clean = route.trim_matches('/').replace('/', "_").to_lowercase();
     let sanitized: String = clean
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if sanitized.is_empty() {
         "home".to_string()
@@ -43,7 +49,6 @@ pub fn sanitize_page_name(route: &str) -> String {
         sanitized
     }
 }
-
 
 #[derive(Debug, Clone, serde::Deserialize, Serialize)]
 pub struct ProcessMemoryEntry {
@@ -74,7 +79,11 @@ pub struct ProfilerSnapshot {
     pub accuracy: &'static str,
 }
 
-fn collect_profiler_snapshot_internal(has_main: bool, has_tray: bool, has_wizard: bool) -> ProfilerSnapshot {
+fn collect_profiler_snapshot_internal(
+    has_main: bool,
+    has_tray: bool,
+    has_wizard: bool,
+) -> ProfilerSnapshot {
     let mut sys = System::new_all();
     sys.refresh_all();
 
@@ -161,9 +170,14 @@ fn collect_profiler_snapshot_internal(has_main: bool, has_tray: bool, has_wizard
                     role,
                 };
 
-                if !is_main && (entry.name.contains("WebKitWeb") || entry.name.contains("WebProcess")) {
+                if !is_main
+                    && (entry.name.contains("WebKitWeb") || entry.name.contains("WebProcess"))
+                {
                     web_processes.push(entry.clone());
-                } else if !is_main && !entry.name.contains("WebKitNetwork") && !entry.name.contains("NetworkProcess") {
+                } else if !is_main
+                    && !entry.name.contains("WebKitNetwork")
+                    && !entry.name.contains("NetworkProcess")
+                {
                     other_children_ram_mb += mem_mb;
                 }
 
@@ -174,7 +188,9 @@ fn collect_profiler_snapshot_internal(has_main: bool, has_tray: bool, has_wizard
 
     // Sort WebProcesses chronologically by start_time (or PID as fallback)
     web_processes.sort_by(|a, b| {
-        a.start_time.cmp(&b.start_time).then_with(|| a.pid.cmp(&b.pid))
+        a.start_time
+            .cmp(&b.start_time)
+            .then_with(|| a.pid.cmp(&b.pid))
     });
 
     let mut main_webview_ram_mb: Option<f32> = None;
@@ -185,7 +201,10 @@ fn collect_profiler_snapshot_internal(has_main: bool, has_tray: bool, has_wizard
 
     if has_main && proc_idx < web_processes.len() {
         main_webview_ram_mb = Some(web_processes[proc_idx].memory_mb);
-        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[proc_idx].pid) {
+        if let Some(entry) = process_tree
+            .iter_mut()
+            .find(|p| p.pid == web_processes[proc_idx].pid)
+        {
             entry.role = "Main WebView (Primary UI)".to_string();
         }
         proc_idx += 1;
@@ -193,7 +212,10 @@ fn collect_profiler_snapshot_internal(has_main: bool, has_tray: bool, has_wizard
 
     if has_tray && proc_idx < web_processes.len() {
         tray_webview_ram_mb = Some(web_processes[proc_idx].memory_mb);
-        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[proc_idx].pid) {
+        if let Some(entry) = process_tree
+            .iter_mut()
+            .find(|p| p.pid == web_processes[proc_idx].pid)
+        {
             entry.role = "Tray WebView (HUD Overlay)".to_string();
         }
         proc_idx += 1;
@@ -201,14 +223,20 @@ fn collect_profiler_snapshot_internal(has_main: bool, has_tray: bool, has_wizard
 
     if has_wizard && proc_idx < web_processes.len() {
         wizard_webview_ram_mb = Some(web_processes[proc_idx].memory_mb);
-        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[proc_idx].pid) {
+        if let Some(entry) = process_tree
+            .iter_mut()
+            .find(|p| p.pid == web_processes[proc_idx].pid)
+        {
             entry.role = "Wizard WebView (Setup Window)".to_string();
         }
         proc_idx += 1;
     }
 
     while proc_idx < web_processes.len() {
-        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_processes[proc_idx].pid) {
+        if let Some(entry) = process_tree
+            .iter_mut()
+            .find(|p| p.pid == web_processes[proc_idx].pid)
+        {
             entry.role = "WebKit Auxiliary WebProcess".to_string();
         }
         proc_idx += 1;
@@ -216,10 +244,13 @@ fn collect_profiler_snapshot_internal(has_main: bool, has_tray: bool, has_wizard
 
     // Sort complete process_tree with Main Process first, then WebViews, then others
     process_tree.sort_by(|a, b| {
-        b.is_main_process.cmp(&a.is_main_process).then_with(|| a.pid.cmp(&b.pid))
+        b.is_main_process
+            .cmp(&a.is_main_process)
+            .then_with(|| a.pid.cmp(&b.pid))
     });
 
-    let total_vox_ram_mb = (total_vox_memory_bytes as f32 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
+    let total_vox_ram_mb =
+        (total_vox_memory_bytes as f32 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
 
     ProfilerSnapshot {
         total_vox_ram_mb,
@@ -239,7 +270,11 @@ fn collect_profiler_snapshot_internal(has_main: bool, has_tray: bool, has_wizard
 }
 
 /// Public helper for gathering profiler snapshot metrics with known window states.
-pub fn collect_profiler_snapshot(has_main: bool, has_tray: bool, has_wizard: bool) -> ProfilerSnapshot {
+pub fn collect_profiler_snapshot(
+    has_main: bool,
+    has_tray: bool,
+    has_wizard: bool,
+) -> ProfilerSnapshot {
     collect_profiler_snapshot_internal(has_main, has_tray, has_wizard)
 }
 
@@ -336,5 +371,3 @@ pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result
     .await
     .map_err(|e| format!("Failed to record memory event: {e}"))
 }
-
-

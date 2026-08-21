@@ -8,14 +8,20 @@ use arboard::Clipboard;
 /// Retrieve the current text from the system clipboard.
 pub fn get_text() -> Result<String, DictationError> {
     let mut clipboard = Clipboard::new().map_err(|e| {
-        log::error!("[Dictation::Clipboard] Failed to initialize clipboard reader: {}", e);
+        log::error!(
+            "[Dictation::Clipboard] Failed to initialize clipboard reader: {}",
+            e
+        );
         DictationError::ClipboardFailed {
             message: format!("Failed to open clipboard: {}", e),
         }
     })?;
 
     clipboard.get_text().map_err(|e| {
-        log::warn!("[Dictation::Clipboard] No text on clipboard or failed to read: {}", e);
+        log::warn!(
+            "[Dictation::Clipboard] No text on clipboard or failed to read: {}",
+            e
+        );
         DictationError::ClipboardFailed {
             message: format!("Failed to read clipboard text: {}", e),
         }
@@ -25,14 +31,20 @@ pub fn get_text() -> Result<String, DictationError> {
 /// Set the system clipboard text.
 pub fn set_text(text: &str) -> Result<(), DictationError> {
     let mut clipboard = Clipboard::new().map_err(|e| {
-        log::error!("[Dictation::Clipboard] Failed to initialize clipboard writer: {}", e);
+        log::error!(
+            "[Dictation::Clipboard] Failed to initialize clipboard writer: {}",
+            e
+        );
         DictationError::ClipboardFailed {
             message: format!("Failed to open clipboard: {}", e),
         }
     })?;
 
     clipboard.set_text(text.to_string()).map_err(|e| {
-        log::error!("[Dictation::Clipboard] Failed to write text to clipboard: {}", e);
+        log::error!(
+            "[Dictation::Clipboard] Failed to write text to clipboard: {}",
+            e
+        );
         DictationError::ClipboardFailed {
             message: format!("Failed to write clipboard text: {}", e),
         }
@@ -66,7 +78,9 @@ where
                         e
                     );
                 } else {
-                    log::debug!("[Dictation::Clipboard] Restored prior clipboard content successfully.");
+                    log::debug!(
+                        "[Dictation::Clipboard] Restored prior clipboard content successfully."
+                    );
                 }
             }
             Ok(val)

@@ -27,7 +27,8 @@ mod tests {
         assert_eq!(res, Ok(false));
 
         // 4. Type mismatch: string passed to boolean field (dictation.enabled)
-        let res = apply_setting_mutation(&mut settings, "dictation", "enabled", &json!("not_a_bool"));
+        let res =
+            apply_setting_mutation(&mut settings, "dictation", "enabled", &json!("not_a_bool"));
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(err.contains("enabled must be a boolean"));

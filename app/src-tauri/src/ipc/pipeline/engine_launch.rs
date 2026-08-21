@@ -26,7 +26,11 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     if lock.is_some() {
         let (should_show_tray, setup_completed) = {
             let s = state.settings.read().unwrap();
-            (s.dictation.enabled && s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray, s.setup.completed)
+            (
+                s.dictation.enabled
+                    && s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
+                s.setup.completed,
+            )
         };
         if setup_completed && should_show_tray {
             if let Some(window) = app.get_webview_window("tray") {

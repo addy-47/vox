@@ -34,7 +34,10 @@ pub async fn copy_last_dictation_transcript(
     let last = state.dictation_last_transcript.lock().clone();
     if let Some(text) = last {
         clipboard::set_text(&text).map_err(|e| format!("Failed to copy to clipboard: {:?}", e))?;
-        let _ = app.emit("dictation_transcript_copied", serde_json::json!({ "success": true }));
+        let _ = app.emit(
+            "dictation_transcript_copied",
+            serde_json::json!({ "success": true }),
+        );
         Ok(())
     } else {
         Err("No previous dictation transcript available to copy".to_string())

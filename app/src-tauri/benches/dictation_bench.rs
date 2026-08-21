@@ -59,7 +59,10 @@ fn resolve_clip_path(clip_arg: &str) -> Result<PathBuf, String> {
         format!("test-clips/{}.wav", clip_arg),
         format!("app/src-tauri/test-clips/{}.wav", clip_arg),
         format!("../test-clips/{}.wav", clip_arg),
-        format!("/home/addy/projects/apps/vox/app/src-tauri/test-clips/{}.wav", clip_arg),
+        format!(
+            "/home/addy/projects/apps/vox/app/src-tauri/test-clips/{}.wav",
+            clip_arg
+        ),
     ];
 
     for path_str in &possible_paths {
@@ -144,7 +147,14 @@ async fn main() {
     println!("════════════════════════════════════════════════════════════════════");
     println!(" • Output Destination : {}", cli.mode.to_uppercase());
     println!(" • Audio Test Clip    : {}", cli.clip);
-    println!(" • Transliteration    : {}", if cli.transliterate { "ENABLED" } else { "DISABLED" });
+    println!(
+        " • Transliteration    : {}",
+        if cli.transliterate {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        }
+    );
     println!(" • STT Engine Family  : {}", cli.engine);
     println!(" • Iterations         : {}", cli.iterations);
     println!("────────────────────────────────────────────────────────────────────");
@@ -196,7 +206,9 @@ async fn main() {
         Ok(p) => p,
         Err(e) => {
             eprintln!("⚠️ STT Provider Initialization skipped (model missing or unsupported in test env): {}", e);
-            println!(" Generating synthetic transcription validation pass for dispatch pipeline...");
+            println!(
+                " Generating synthetic transcription validation pass for dispatch pipeline..."
+            );
             run_synthetic_dispatch_benchmark(&cli, &audio_samples, duration_sec).await;
             return;
         }
@@ -206,7 +218,10 @@ async fn main() {
 
     // 3. Execute End-to-End Pipeline
     for iter in 1..=cli.iterations {
-        println!("\n▶ Running Pipeline Iteration {}/{}...", iter, cli.iterations);
+        println!(
+            "\n▶ Running Pipeline Iteration {}/{}...",
+            iter, cli.iterations
+        );
         let t_e2e_start = Instant::now();
 
         // Stage 1: STT Acoustic Model Inference
@@ -221,8 +236,14 @@ async fn main() {
         let t_stt = t_stt_start.elapsed();
         let rtf = t_stt.as_secs_f64() / duration_sec;
 
-        println!(" [Stage 1: STT Inference]       : {:.2?} (RTF: {:.3}x)", t_stt, rtf);
-        println!(" Raw Transcript Output       : \"{}\"", raw_transcript.trim());
+        println!(
+            " [Stage 1: STT Inference]       : {:.2?} (RTF: {:.3}x)",
+            t_stt, rtf
+        );
+        println!(
+            " Raw Transcript Output       : \"{}\"",
+            raw_transcript.trim()
+        );
 
         // Stage 2: Transliteration
         let t_translit_start = Instant::now();
@@ -247,16 +268,28 @@ async fn main() {
                             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                             match cb.get_text() {
                                 Ok(read_back) => {
-                                    assert_eq!(read_back, final_text, "Clipboard readback mismatch");
-                                    println!(" ✓ Clipboard Physical State Verified ({} chars): \"{}\"", read_back.len(), read_back.trim());
+                                    assert_eq!(
+                                        read_back, final_text,
+                                        "Clipboard readback mismatch"
+                                    );
+                                    println!(
+                                        " ✓ Clipboard Physical State Verified ({} chars): \"{}\"",
+                                        read_back.len(),
+                                        read_back.trim()
+                                    );
                                 }
                                 Err(_) => {
                                     // Fallback check with system clipboard CLI tool
                                     let output = std::process::Command::new("wl-paste")
                                         .output()
-                                        .or_else(|_| std::process::Command::new("xclip").args(["-o", "-selection", "clipboard"]).output());
+                                        .or_else(|_| {
+                                            std::process::Command::new("xclip")
+                                                .args(["-o", "-selection", "clipboard"])
+                                                .output()
+                                        });
                                     if let Ok(out) = output {
-                                        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                                        let text =
+                                            String::from_utf8_lossy(&out.stdout).trim().to_string();
                                         if !text.is_empty() {
                                             println!(" ✓ OS Clipboard Verified via Display Server ({} chars): \"{}\"", text.len(), text);
                                         }
@@ -274,7 +307,8 @@ async fn main() {
                 let adapter = create_input_adapter();
                 let paste_res = clipboard::with_clipboard_safe(&final_text, || async {
                     adapter.simulate_paste()
-                }).await;
+                })
+                .await;
 
                 match paste_res {
                     Ok(()) => {
@@ -302,7 +336,10 @@ async fn main() {
 
         println!(" [Stage 3: Dispatch Duration]   : {:.2?}", t_dispatch);
         println!("────────────────────────────────────────────────────────────────────");
-        println!(" Total End-to-End Latency    : {:.2?} (Speech End -> OS Delivery)", t_total_e2e);
+        println!(
+            " Total End-to-End Latency    : {:.2?} (Speech End -> OS Delivery)",
+            t_total_e2e
+        );
         println!("════════════════════════════════════════════════════════════════════\n");
     }
 }
@@ -325,21 +362,26 @@ async fn run_synthetic_dispatch_benchmark(cli: &Cli, _audio: &[f32], duration_se
         }
         "paste" => {
             let adapter = create_input_adapter();
-            let _ = clipboard::with_clipboard_safe(&final_text, || async {
-                adapter.simulate_paste()
-            }).await;
+            let _ =
+                clipboard::with_clipboard_safe(&final_text, || async { adapter.simulate_paste() })
+                    .await;
             if let Ok(read_back) = clipboard::get_text() {
                 assert_eq!(read_back, final_text);
                 println!(" ✓ Clipboard Fallback Retained: \"{}\"", read_back);
             }
         }
         "tray" => {
-            println!(" ✓ Tray Dispatch Payload Structured: {} chars", final_text.len());
+            println!(
+                " ✓ Tray Dispatch Payload Structured: {} chars",
+                final_text.len()
+            );
         }
         _ => {}
     }
 
     let elapsed = t_start.elapsed();
-    println!(" Dispatch Latency: {:.2?} (Audio Length: {:.2}s)", elapsed, duration_sec);
+    println!(
+        " Dispatch Latency: {:.2?} (Audio Length: {:.2}s)",
+        elapsed, duration_sec
+    );
 }
-

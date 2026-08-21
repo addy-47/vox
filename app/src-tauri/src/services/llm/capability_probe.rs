@@ -1,8 +1,8 @@
-use std::time::Instant;
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
-use futures_util::StreamExt;
+use std::time::Instant;
 
 use crate::core::settings::{LlmProviderConfig, ModelCapabilities};
 
@@ -65,10 +65,16 @@ impl CapabilityProbeEngine {
 
         match config {
             LlmProviderConfig::Embedded => {
-                let model_id = target_model_id.unwrap_or(crate::core::defaults::DEFAULT_LLM_MODEL).to_string();
-                log::info!("[CapabilityProbe] Probing Local Embedded GGUF model '{}'...", model_id);
+                let model_id = target_model_id
+                    .unwrap_or(crate::core::defaults::DEFAULT_LLM_MODEL)
+                    .to_string();
+                log::info!(
+                    "[CapabilityProbe] Probing Local Embedded GGUF model '{}'...",
+                    model_id
+                );
 
-                let (family, supports_tools, supports_devanagari) = Self::heuristic_embedded_caps(&model_id);
+                let (family, supports_tools, supports_devanagari) =
+                    Self::heuristic_embedded_caps(&model_id);
 
                 let caps = ModelCapabilities {
                     model_id: model_id.clone(),
@@ -149,13 +155,9 @@ impl CapabilityProbeEngine {
                     "[CapabilityProbe] Phase 2: Testing structured JSON tool/function calling capabilities..."
                 );
 
-                let tool_probe_success = Self::structured_tool_probe(
-                    &client,
-                    base_url,
-                    &model_id,
-                    api_key.as_deref(),
-                )
-                .await;
+                let tool_probe_success =
+                    Self::structured_tool_probe(&client, base_url, &model_id, api_key.as_deref())
+                        .await;
 
                 log::info!(
                     "[CapabilityProbe] Phase 2 Complete: tool_probe_success={}",
@@ -239,7 +241,9 @@ impl CapabilityProbeEngine {
                                                     );
                                                 }
                                             }
-                                            if context_window.is_none() && m.context_length.is_some() {
+                                            if context_window.is_none()
+                                                && m.context_length.is_some()
+                                            {
                                                 context_window = m.context_length;
                                             }
                                         }
@@ -339,7 +343,7 @@ impl CapabilityProbeEngine {
                 api_key,
                 ..
             } => (base_url, model, api_key),
-            LlmProviderConfig::Embedded { .. } => return Ok(None),
+            LlmProviderConfig::Embedded => return Ok(None),
         };
 
         let model_id = target_model_id.unwrap_or(model);
@@ -370,7 +374,11 @@ impl CapabilityProbeEngine {
         }
 
         let err_text = resp.text().await.unwrap_or_default();
-        log::warn!("[CapabilityProbe] Token cap validation HTTP {}: {}", status, err_text);
+        log::warn!(
+            "[CapabilityProbe] Token cap validation HTTP {}: {}",
+            status,
+            err_text
+        );
 
         // Regex parsing to extract the server's true ceiling
         // Handles: "greater than maximum allowed 16384", "> 8192", "exceeds maximum supported output tokens (16384)"
@@ -378,7 +386,11 @@ impl CapabilityProbeEngine {
             return Ok(Some(ceiling));
         }
 
-        Err(format!("Server returned HTTP {}: {}", status.as_u16(), err_text))
+        Err(format!(
+            "Server returned HTTP {}: {}",
+            status.as_u16(),
+            err_text
+        ))
     }
 
     fn is_cloud_provider(base_url: &str, provider_name: &str) -> bool {
@@ -434,7 +446,7 @@ impl CapabilityProbeEngine {
 
     fn parse_token_ceiling_from_error(err_text: &str) -> Option<u32> {
         let lower = err_text.to_lowercase();
-        
+
         let re_patterns = [
             r"(?:maximum(?: allowed)?|supported|limit|cap)[^\d]*(\d{3,7})",
             r">\s*(\d{3,7})",
@@ -447,7 +459,7 @@ impl CapabilityProbeEngine {
                 if let Some(caps) = re.captures(&lower) {
                     if let Some(m) = caps.get(1) {
                         if let Ok(val) = m.as_str().parse::<u32>() {
-                            if val >= 256 && val <= 2_000_000 {
+                            if (256..=2_000_000).contains(&val) {
                                 return Some(val);
                             }
                         }
@@ -525,14 +537,18 @@ impl CapabilityProbeEngine {
                                         stream_done = true;
                                         break;
                                     }
-                                    if let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(json_str) {
+                                    if let Ok(chunk) =
+                                        serde_json::from_str::<ChatCompletionChunk>(json_str)
+                                    {
                                         if let Some(choice) = chunk.choices.first() {
                                             if let Some(ref text) = choice.delta.content {
                                                 if !text.is_empty() {
                                                     if first_chunk_time.is_none() {
                                                         let now = Instant::now();
                                                         first_chunk_time = Some(now);
-                                                        ttft_ms = Some(start.elapsed().as_millis() as u32);
+                                                        ttft_ms = Some(
+                                                            start.elapsed().as_millis() as u32
+                                                        );
                                                     }
                                                     full_text.push_str(text);
                                                     token_chunks += 1;
@@ -547,7 +563,10 @@ impl CapabilityProbeEngine {
                 }
 
                 // Check generated text
-                if full_text.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c)) {
+                if full_text
+                    .chars()
+                    .any(|c| ('\u{0900}'..='\u{097F}').contains(&c))
+                {
                     supports_devanagari = true;
                 }
                 supports_latin = true;
@@ -587,9 +606,14 @@ impl CapabilityProbeEngine {
                 if resp2.status().is_success() {
                     if let Ok(body) = resp2.json::<serde_json::Value>().await {
                         if let Some(content) = body["choices"][0]["message"]["content"].as_str() {
-                            supports_devanagari = content.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c));
+                            supports_devanagari = content
+                                .chars()
+                                .any(|c| ('\u{0900}'..='\u{097F}').contains(&c));
                         }
-                        if let Some(completion_tokens) = body.get("usage").and_then(|u| u["completion_tokens"].as_f64()) {
+                        if let Some(completion_tokens) = body
+                            .get("usage")
+                            .and_then(|u| u["completion_tokens"].as_f64())
+                        {
                             if completion_tokens > 0.0 {
                                 let secs = (latency.as_secs_f32() as f64).max(0.1);
                                 tps = Some((completion_tokens / secs) as f32);
@@ -682,34 +706,40 @@ mod tests {
     #[test]
     fn test_heuristic_embedded_caps_known_families() {
         // Qwen models
-        let (family, tools, devanagari) = CapabilityProbeEngine::heuristic_embedded_caps("qwen-3.5-0.8b-q4_k_m.gguf");
+        let (family, tools, devanagari) =
+            CapabilityProbeEngine::heuristic_embedded_caps("qwen-3.5-0.8b-q4_k_m.gguf");
         assert_eq!(family, "Qwen");
         assert!(tools);
         assert!(devanagari);
 
-        let (family, tools, devanagari) = CapabilityProbeEngine::heuristic_embedded_caps("Qwen/Qwen2.5-Coder-7B-Instruct");
+        let (family, tools, devanagari) =
+            CapabilityProbeEngine::heuristic_embedded_caps("Qwen/Qwen2.5-Coder-7B-Instruct");
         assert_eq!(family, "Qwen");
         assert!(tools);
         assert!(devanagari);
 
         // Gemma models
-        let (family, tools, devanagari) = CapabilityProbeEngine::heuristic_embedded_caps("gemma-4-e2b-q4_k_m.gguf");
+        let (family, tools, devanagari) =
+            CapabilityProbeEngine::heuristic_embedded_caps("gemma-4-e2b-q4_k_m.gguf");
         assert_eq!(family, "Gemma");
         assert!(tools);
         assert!(devanagari);
 
-        let (family, tools, devanagari) = CapabilityProbeEngine::heuristic_embedded_caps("google/gemma-2-9b-it");
+        let (family, tools, devanagari) =
+            CapabilityProbeEngine::heuristic_embedded_caps("google/gemma-2-9b-it");
         assert_eq!(family, "Gemma");
         assert!(tools);
         assert!(devanagari);
 
         // Llama models
-        let (family, tools, devanagari) = CapabilityProbeEngine::heuristic_embedded_caps("meta-llama/Llama-3.1-8B-Instruct");
+        let (family, tools, devanagari) =
+            CapabilityProbeEngine::heuristic_embedded_caps("meta-llama/Llama-3.1-8B-Instruct");
         assert_eq!(family, "Llama");
         assert!(tools);
         assert!(devanagari);
 
-        let (family, tools, devanagari) = CapabilityProbeEngine::heuristic_embedded_caps("LLAMA-2-7B");
+        let (family, tools, devanagari) =
+            CapabilityProbeEngine::heuristic_embedded_caps("LLAMA-2-7B");
         assert_eq!(family, "Llama");
         assert!(tools);
         assert!(devanagari);
@@ -717,12 +747,14 @@ mod tests {
 
     #[test]
     fn test_heuristic_embedded_caps_unknown_models() {
-        let (family, tools, devanagari) = CapabilityProbeEngine::heuristic_embedded_caps("mistralai/Mistral-7B-v0.1");
+        let (family, tools, devanagari) =
+            CapabilityProbeEngine::heuristic_embedded_caps("mistralai/Mistral-7B-v0.1");
         assert_eq!(family, "Unknown");
         assert!(!tools);
         assert!(!devanagari);
 
-        let (family, tools, devanagari) = CapabilityProbeEngine::heuristic_embedded_caps("microsoft/phi-3-mini");
+        let (family, tools, devanagari) =
+            CapabilityProbeEngine::heuristic_embedded_caps("microsoft/phi-3-mini");
         assert_eq!(family, "Unknown");
         assert!(!tools);
         assert!(!devanagari);
@@ -736,9 +768,22 @@ mod tests {
     #[test]
     fn test_is_cloud_provider_by_provider_name() {
         let cloud_providers = [
-            "nvidia", "NVIDIA NIM", "NIM", "groq", "Groq Cloud", "openrouter",
-            "together", "Together AI", "deepseek", "mistral", "openai", "OpenAI",
-            "gemini", "Google Gemini", "anthropic", "Anthropic Claude"
+            "nvidia",
+            "NVIDIA NIM",
+            "NIM",
+            "groq",
+            "Groq Cloud",
+            "openrouter",
+            "together",
+            "Together AI",
+            "deepseek",
+            "mistral",
+            "openai",
+            "OpenAI",
+            "gemini",
+            "Google Gemini",
+            "anthropic",
+            "Anthropic Claude",
         ];
 
         for name in cloud_providers {
@@ -789,7 +834,8 @@ mod tests {
             assert!(
                 !CapabilityProbeEngine::is_cloud_provider(url, name),
                 "Expected ('{}', '{}') to be non-cloud / local",
-                url, name
+                url,
+                name
             );
         }
     }
@@ -798,11 +844,15 @@ mod tests {
     fn test_parse_token_ceiling_from_error_valid_patterns() {
         // Pattern 1: maximum allowed / supported / limit / cap
         assert_eq!(
-            CapabilityProbeEngine::parse_token_ceiling_from_error("max_tokens is greater than maximum allowed 16384"),
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "max_tokens is greater than maximum allowed 16384"
+            ),
             Some(16384)
         );
         assert_eq!(
-            CapabilityProbeEngine::parse_token_ceiling_from_error("exceeds maximum supported output tokens (16384)"),
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "exceeds maximum supported output tokens (16384)"
+            ),
             Some(16384)
         );
         assert_eq!(
@@ -810,7 +860,9 @@ mod tests {
             Some(8192)
         );
         assert_eq!(
-            CapabilityProbeEngine::parse_token_ceiling_from_error("Token cap reached: 32768 tokens maximum"),
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "Token cap reached: 32768 tokens maximum"
+            ),
             Some(32768)
         );
 
@@ -826,17 +878,23 @@ mod tests {
 
         // Pattern 3: cannot exceed N
         assert_eq!(
-            CapabilityProbeEngine::parse_token_ceiling_from_error("Total response tokens cannot exceed 65536"),
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "Total response tokens cannot exceed 65536"
+            ),
             Some(65536)
         );
 
         // Pattern 4: greater than N
         assert_eq!(
-            CapabilityProbeEngine::parse_token_ceiling_from_error("Parameter max_tokens is greater than 4096"),
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "Parameter max_tokens is greater than 4096"
+            ),
             Some(4096)
         );
         assert_eq!(
-            CapabilityProbeEngine::parse_token_ceiling_from_error("greater than maximum allowed 131072"),
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "greater than maximum allowed 131072"
+            ),
             Some(131072)
         );
     }
@@ -871,11 +929,15 @@ mod tests {
             None
         );
         assert_eq!(
-            CapabilityProbeEngine::parse_token_ceiling_from_error("Unauthorized: Invalid API key provided"),
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "Unauthorized: Invalid API key provided"
+            ),
             None
         );
         assert_eq!(
-            CapabilityProbeEngine::parse_token_ceiling_from_error("Rate limit exceeded. Try again in 30 seconds."),
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "Rate limit exceeded. Try again in 30 seconds."
+            ),
             None
         );
         assert_eq!(
@@ -884,4 +946,3 @@ mod tests {
         );
     }
 }
-

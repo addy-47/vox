@@ -24,8 +24,14 @@ fn test_dictation_interaction_owner_fast_path_invariants() {
     assert_eq!(InteractionOwner::from(0u32), InteractionOwner::Dictation);
 
     // Contract: Dictation does not collide with Assistant window owners
-    assert_ne!(InteractionOwner::MainWindow as u32, InteractionOwner::Dictation as u32);
-    assert_ne!(InteractionOwner::Ptt as u32, InteractionOwner::Dictation as u32);
+    assert_ne!(
+        InteractionOwner::MainWindow as u32,
+        InteractionOwner::Dictation as u32
+    );
+    assert_ne!(
+        InteractionOwner::Ptt as u32,
+        InteractionOwner::Dictation as u32
+    );
 }
 
 // ─── 2. Safe Clipboard Backup & Restore Lifecycle Contract ───────────────────
@@ -34,7 +40,13 @@ fn test_dictation_interaction_owner_fast_path_invariants() {
 async fn test_with_clipboard_safe_preserves_data_on_failure() {
     // Contract: When paste simulation fails (e.g. Wayland compositor denial or app error),
     // the transcribed text MUST remain on the clipboard so the user never loses their transcript.
-    let dictation_text = format!("dictation_recovery_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+    let dictation_text = format!(
+        "dictation_recovery_test_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
 
     let action_failure = || async {
         Err::<(), DictationError>(DictationError::InputSimulationFailed {
@@ -48,7 +60,10 @@ async fn test_with_clipboard_safe_preserves_data_on_failure() {
     // If an active display server / clipboard context exists in the test runner,
     // verify the text is retained on clipboard.
     if let Ok(current_clip) = clipboard::get_text() {
-        assert_eq!(current_clip, dictation_text, "Failed paste must leave transcript on clipboard for recovery");
+        assert_eq!(
+            current_clip, dictation_text,
+            "Failed paste must leave transcript on clipboard for recovery"
+        );
     }
 }
 
@@ -81,20 +96,14 @@ fn test_create_input_adapter_resolution() {
 fn test_dictation_transliteration_delivery_transformation() {
     // Spoken Hindi text must be transliterated if enabled
     let sample_devanagari = "नमस्ते दुनिया";
-    let transliterated = vox_lib::services::utils::transliterate_if_hi(
-        sample_devanagari,
-        true,
-        true,
-    );
+    let transliterated =
+        vox_lib::services::utils::transliterate_if_hi(sample_devanagari, true, true);
     assert!(!transliterated.is_empty());
     assert_ne!(transliterated, "");
 
     // When transliteration is disabled, original text is preserved verbatim
-    let untransliterated = vox_lib::services::utils::transliterate_if_hi(
-        sample_devanagari,
-        true,
-        false,
-    );
+    let untransliterated =
+        vox_lib::services::utils::transliterate_if_hi(sample_devanagari, true, false);
     assert_eq!(untransliterated, sample_devanagari);
 }
 
@@ -125,10 +134,18 @@ fn test_last_transcript_cache_lifecycle() {
 #[test]
 fn test_dictation_error_propagation_contract() {
     let errors = vec![
-        DictationError::ClipboardFailed { message: "Permission denied".into() },
-        DictationError::InputSimulationFailed { message: "Enigo error".into() },
-        DictationError::HotkeyRegistrationFailed { message: "Key occupied".into() },
-        DictationError::EngineNotReady { message: "VAD failed".into() },
+        DictationError::ClipboardFailed {
+            message: "Permission denied".into(),
+        },
+        DictationError::InputSimulationFailed {
+            message: "Enigo error".into(),
+        },
+        DictationError::HotkeyRegistrationFailed {
+            message: "Key occupied".into(),
+        },
+        DictationError::EngineNotReady {
+            message: "VAD failed".into(),
+        },
     ];
 
     for err in errors {

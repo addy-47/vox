@@ -75,7 +75,6 @@ pub async fn update_setting(
             }
         }
 
-
         if !enabled {
             // Disable Tray: Revert interaction owner to MainWindow, destroy window to save RAM, and evaluate engine offload
             log::info!(
@@ -148,14 +147,17 @@ pub async fn update_setting(
             }
         }
         if enabled && is_tray_mode {
-            log::info!("[Settings] Output mode set to Tray: Ensuring tray HUD webview is constructed...");
+            log::info!(
+                "[Settings] Output mode set to Tray: Ensuring tray HUD webview is constructed..."
+            );
             let _ = crate::tray::ensure_tray_window(&app);
         } else if !is_tray_mode {
-            log::info!("[Settings] Output mode set to non-Tray: Destroying tray webview to save RAM...");
+            log::info!(
+                "[Settings] Output mode set to non-Tray: Destroying tray webview to save RAM..."
+            );
             crate::tray::destroy_tray_window(&app);
         }
     }
-
 
     if applied && domain == "interaction" && key == "main_app_mode" {
         // Evaluate offload: If switching to PTT and Tray is disabled, we might want to stop engine
@@ -325,7 +327,8 @@ pub(crate) fn apply_setting_mutation(
                 .map_err(|e| format!("Invalid interaction_mode: {}", e))?;
         }
         ("dictation", "hotkey") => {
-            settings.dictation.hotkey = value.as_str().ok_or("hotkey must be a string")?.to_string();
+            settings.dictation.hotkey =
+                value.as_str().ok_or("hotkey must be a string")?.to_string();
         }
         ("dictation", "output_mode") => {
             settings.dictation.output_mode = serde_json::from_value(value.clone())

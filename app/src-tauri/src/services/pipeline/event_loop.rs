@@ -536,20 +536,40 @@ impl PipelineOrchestrator {
                 } => {
                     // Dictation Interception: route directly to OutputRouter, bypassing LLM/TTS/Playback
                     if owner == InteractionOwner::Dictation {
-                        log::info!("[Pipeline] Intercepting final transcript for Dictation (turn: {})", turn_id);
+                        log::info!(
+                            "[Pipeline] Intercepting final transcript for Dictation (turn: {})",
+                            turn_id
+                        );
                         metrics.mark(MetricField::FinalTranscript);
 
                         let app = app_handle.clone();
                         let text_clone = text.clone();
                         let translit_enabled = local_transliterate_enabled;
                         tauri::async_runtime::spawn(async move {
-                            let final_text = crate::services::utils::transliterate_if_hi(&text_clone, true, translit_enabled);
-                            if let Err(e) = crate::services::dictation::output_router::route_transcript(&app, &final_text).await {
-                                log::error!("[Pipeline] Failed to route dictation transcript: {}", e);
+                            let final_text = crate::services::utils::transliterate_if_hi(
+                                &text_clone,
+                                true,
+                                translit_enabled,
+                            );
+                            if let Err(e) =
+                                crate::services::dictation::output_router::route_transcript(
+                                    &app,
+                                    &final_text,
+                                )
+                                .await
+                            {
+                                log::error!(
+                                    "[Pipeline] Failed to route dictation transcript: {}",
+                                    e
+                                );
                             }
                         });
 
-                        self.update_interaction_state(crate::core::state::InteractionState::Idle, owner, &app_handle);
+                        self.update_interaction_state(
+                            crate::core::state::InteractionState::Idle,
+                            owner,
+                            &app_handle,
+                        );
                         continue;
                     }
 

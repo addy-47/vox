@@ -114,6 +114,18 @@ automatically calls `stop_engine()` if `!dictation.enabled && !is_engaged`.
 
 ---
 
+### 1.7 Main Window Crash Recovery (Lazy Recreate)
+
+**Problem**: If the main renderer is destroyed (renderer crash or a DevTools `window.close()`), the `"main"` `WebviewWindow` handle disappears from the manager. The old `show_main_window` blindly called `get_webview_window("main")` and silently no-op'd when it was `None`, leaving "Launch Vox" dead.
+
+**Fix**:
+- `CloseRequested` on `"main"` is still intercepted → `window.hide()` + `prevent_close` (standard hide-to-tray; no behavior change).
+- `src/window_main.rs::ensure_main_window` rebuilds the window when `get_webview_window("main")` is `None`, mirroring the `tauri.conf.json` attributes, then shows + focuses it. `show_main_window` (`src/ipc/tray.rs`) now delegates to it.
+- `AppState::main_window_destroyed` (`src/core/state.rs`) is set by the `RunEvent::WindowEvent::Destroyed` handler in `src/lib.rs` for label `"main"`, and cleared once `ensure_main_window` reconstructs a fresh window.
+- A "Restart Vox" tray menu item calls `app.restart()` (full process restart) for deep recovery when a window rebuild is insufficient.
+
+**Files**: `src/window_main.rs`, `src/core/state.rs`, `src/lib.rs`, `src/ipc/tray.rs`
+
 ## 2. Frontend (React / TypeScript) Optimizations
 
 ### 2.1 Memory Profiler Infrastructure
