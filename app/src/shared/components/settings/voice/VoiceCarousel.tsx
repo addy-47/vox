@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Folder, Mic, Trash2, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { Folder, Mic, Trash2, ChevronLeft, ChevronRight, Search, X, Globe } from "lucide-react";
 import {
   startBackendRecording,
   stopBackendRecording,
@@ -63,6 +63,10 @@ export const VoiceCarousel = memo(function VoiceCarousel({
   onVoicesChanged,
   isAdding,
   setIsAdding,
+  showRegions = false,
+  selectedRegion = "ALL",
+  onSelectRegion,
+  regions = ["ALL", "US", "UK", "AU", "GLOBAL"],
 }: {
   voices: { id: string; name: string; isCustom?: boolean }[];
   selected: string;
@@ -71,6 +75,10 @@ export const VoiceCarousel = memo(function VoiceCarousel({
   onVoicesChanged?: () => void;
   isAdding: boolean;
   setIsAdding: (val: boolean) => void;
+  showRegions?: boolean;
+  selectedRegion?: string;
+  onSelectRegion?: (region: string) => void;
+  regions?: readonly string[];
 }) {
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -339,9 +347,41 @@ export const VoiceCarousel = memo(function VoiceCarousel({
         disabled && "opacity-50 pointer-events-none"
       )}
     >
-      {/* Dynamic Animated Top Flat Underline Search Bar or Standard Title Header */}
-      <div className="relative w-full h-8 flex items-center justify-center mt-0.5 mb-2 shrink-0">
-        {/* Layer 1: Search Input (Smoothly reveals when isSearching = true) */}
+      {/* ─── Top Line: Full-width Region Tabs with Globe Icon ─── */}
+      <div className="w-full flex items-center gap-1.5 border-b border-[rgba(var(--border),0.08)] pb-1 mb-2 shrink-0 px-0.5">
+        {showRegions ? (
+          <>
+            <Globe size={13} className="text-[rgb(var(--accent))] shrink-0 mr-0.5" />
+            <div className="flex-1 grid grid-cols-5 gap-1 items-center">
+              {regions.map((region) => (
+                <button
+                  key={region}
+                  type="button"
+                  onClick={() => onSelectRegion?.(region)}
+                  className={cn(
+                    "py-0.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-all duration-150 rounded cursor-pointer text-center",
+                    selectedRegion === region
+                      ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/12 border border-[rgb(var(--accent))]/30 shadow-[0_0_8px_rgba(var(--accent),0.2)] font-black"
+                      : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                  )}
+                >
+                  {region}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center gap-1.5 w-full">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
+              Voice Library
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Middle Line: Search & Voice Name ─── */}
+      <div className="relative w-full h-7 flex items-center justify-center my-0.5 shrink-0">
+        {/* Layer 1: Search Input (reveals on isSearching) */}
         <div
           className={cn(
             "absolute inset-0 flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 transition-all duration-200 ease-out",
@@ -355,7 +395,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Type voice name or locale..."
+            placeholder="Search voice name..."
             className="flex-1 bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/35"
           />
           {searchQuery && (
@@ -381,67 +421,58 @@ export const VoiceCarousel = memo(function VoiceCarousel({
           </Tooltip>
         </div>
 
-        {/* Layer 2: Title Header & Search Trigger Icon (Fades out when searching) */}
+        {/* Layer 2: Title Header & Search Trigger Icon */}
         <div
           className={cn(
-            "absolute inset-0 flex items-center justify-center transition-all duration-200 ease-out",
+            "absolute inset-0 flex items-center justify-between transition-all duration-200 ease-out px-1",
             isSearching
               ? "opacity-0 translate-y-1 pointer-events-none"
               : "opacity-100 translate-y-0 pointer-events-auto"
           )}
         >
-          {/* Search Expand Icon (Top Left Corner - Primary Accent Color) */}
-          <Tooltip label="Search Voices" className="absolute left-0 top-1/2 -translate-y-1/2">
+          <Tooltip label="Search Voices">
             <button
               type="button"
               onClick={() => setIsSearching(true)}
-              className="p-1 text-[rgb(var(--accent))] hover:scale-110 active:scale-95 transition-all duration-150 cursor-pointer"
+              className="p-1 text-[rgb(var(--accent))] hover:scale-110 active:scale-95 transition-all duration-150 cursor-pointer shrink-0"
               aria-label="Search Voices"
             >
-              <Search size={15} />
+              <Search size={14} />
             </button>
           </Tooltip>
 
-          {/* Delete Custom Voice (Top Right Corner) */}
-          {currentVoice?.isCustom && (
-            <Tooltip label="Delete Custom Voice" className="absolute right-0 top-1/2 -translate-y-1/2 z-10">
+          <span className="text-[14px] font-black tracking-wide text-[rgb(var(--foreground))] truncate text-center flex-1 px-2">
+            {currentVoice?.name || "No Voice"}
+          </span>
+
+          {currentVoice?.isCustom ? (
+            <Tooltip label="Delete Custom Voice">
               <button
                 onClick={() => handleDeleteVoice(currentVoice.id)}
-                className="p-1 text-rose-400 hover:text-rose-300 hover:scale-110 transition-all duration-150 cursor-pointer"
+                className="p-1 text-rose-400 hover:text-rose-300 hover:scale-110 transition-all duration-150 cursor-pointer shrink-0"
               >
-                <Trash2 size={14} />
+                <Trash2 size={13} />
               </button>
             </Tooltip>
+          ) : (
+            <div className="w-5 shrink-0" />
           )}
-
-          <div className="flex flex-col items-center justify-center min-w-0 max-w-[70%]">
-            <span className="text-[14px] font-black tracking-wide text-[rgb(var(--foreground))] truncate leading-tight">
-              {currentVoice?.name || "No Voice"}
-            </span>
-            <span className="text-[11px] leading-tight font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/40 mt-0.5">
-              {currentVoice?.isCustom
-                ? "Custom Clone"
-                : activeList.length > 1
-                ? `${activeIndex + 1} of ${activeList.length} Voices`
-                : "System Preset"}
-            </span>
-          </div>
         </div>
       </div>
 
-      {/* Voice Carousel Soundwave with Left / Right Navigation */}
-      <div className="flex-1 flex items-center justify-between gap-4 w-full px-2">
+      {/* ─── Bottom Line: Voice Carousel Soundwave with Left / Right Navigation ─── */}
+      <div className="flex-1 flex items-center justify-between gap-3 w-full px-1 min-h-[44px]">
         <button
           type="button"
           onClick={() => cycle(-1)}
           disabled={disabled || activeList.length <= 1}
-          className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-10 cursor-pointer"
+          className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
           aria-label="Previous Voice"
         >
-          <ChevronLeft size={20} />
+          <ChevronLeft size={18} />
         </button>
 
-        <div className="flex-1 flex items-center justify-center min-w-0 h-12">
+        <div className="flex-1 flex items-center justify-center min-w-0 h-10">
           <VoiceBars seed={currentVoice?.name || "default"} disabled={disabled} />
         </div>
 
@@ -449,10 +480,10 @@ export const VoiceCarousel = memo(function VoiceCarousel({
           type="button"
           onClick={() => cycle(1)}
           disabled={disabled || activeList.length <= 1}
-          className="p-2 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-10 cursor-pointer"
+          className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
           aria-label="Next Voice"
         >
-          <ChevronRight size={20} />
+          <ChevronRight size={18} />
         </button>
       </div>
     </div>

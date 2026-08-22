@@ -105,76 +105,77 @@ export function useSettingsPage() {
       calcRafId = requestAnimationFrame(() => {
         if (!containerRef.current) return;
         const containerRect = containerRef.current.getBoundingClientRect();
-        const newLines = { ...lines };
-        let changed = false;
 
-        DOMAINS.forEach((domain) => {
-          if (!activeDomains.includes(domain.id)) {
-            if (newLines[domain.id] !== null) {
-              newLines[domain.id] = null;
-              changed = true;
-            }
-            return;
-          }
+        setLines((prevLines) => {
+          const newLines = { ...prevLines };
+          let changed = false;
 
-          const nodeEl = document.getElementById(`node-${domain.id}`);
-          const cardEl = document.getElementById(`card-${domain.id}`);
-
-          if (nodeEl && cardEl) {
-            const nodeRect = nodeEl.getBoundingClientRect();
-            const cardRect = cardEl.getBoundingClientRect();
-
-            const x1 = (nodeRect.left + nodeRect.right) / 2 - containerRect.left;
-            const y1 = (nodeRect.top + nodeRect.bottom) / 2 - containerRect.top;
-
-            let x2 = 0;
-            let y2 = 0;
-
-            switch (domain.id) {
-              case "persona":
-                x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
-                y2 = cardRect.bottom - containerRect.top;
-                break;
-              case "appearance":
-                x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
-                y2 = cardRect.top - containerRect.top;
-                break;
-              case "models":
-              case "history":
-                x2 = cardRect.left - containerRect.left;
-                y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
-                break;
-              case "memory":
-              case "interaction":
-                x2 = cardRect.right - containerRect.left;
-                y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
-                break;
+          DOMAINS.forEach((domain) => {
+            if (!activeDomains.includes(domain.id)) {
+              if (newLines[domain.id] !== null) {
+                newLines[domain.id] = null;
+                changed = true;
+              }
+              return;
             }
 
-            if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
-              const existing = newLines[domain.id];
-              if (
-                !existing ||
-                Math.abs(existing.x1 - x1) > 0.5 ||
-                Math.abs(existing.y1 - y1) > 0.5 ||
-                Math.abs(existing.x2 - x2) > 0.5 ||
-                Math.abs(existing.y2 - y2) > 0.5
-              ) {
-                newLines[domain.id] = { x1, y1, x2, y2 };
+            const nodeEl = document.getElementById(`node-${domain.id}`);
+            const cardEl = document.getElementById(`card-${domain.id}`);
+
+            if (nodeEl && cardEl) {
+              const nodeRect = nodeEl.getBoundingClientRect();
+              const cardRect = cardEl.getBoundingClientRect();
+
+              const x1 = (nodeRect.left + nodeRect.right) / 2 - containerRect.left;
+              const y1 = (nodeRect.top + nodeRect.bottom) / 2 - containerRect.top;
+
+              let x2 = 0;
+              let y2 = 0;
+
+              switch (domain.id) {
+                case "persona":
+                  x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
+                  y2 = cardRect.bottom - containerRect.top;
+                  break;
+                case "appearance":
+                  x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
+                  y2 = cardRect.top - containerRect.top;
+                  break;
+                case "models":
+                case "history":
+                  x2 = cardRect.left - containerRect.left;
+                  y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
+                  break;
+                case "memory":
+                case "interaction":
+                  x2 = cardRect.right - containerRect.left;
+                  y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
+                  break;
+              }
+
+              if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
+                const existing = newLines[domain.id];
+                if (
+                  !existing ||
+                  Math.abs(existing.x1 - x1) > 0.5 ||
+                  Math.abs(existing.y1 - y1) > 0.5 ||
+                  Math.abs(existing.x2 - x2) > 0.5 ||
+                  Math.abs(existing.y2 - y2) > 0.5
+                ) {
+                  newLines[domain.id] = { x1, y1, x2, y2 };
+                  changed = true;
+                }
+              }
+            } else {
+              if (newLines[domain.id] !== null) {
+                newLines[domain.id] = null;
                 changed = true;
               }
             }
-          } else {
-            if (newLines[domain.id] !== null) {
-              newLines[domain.id] = null;
-              changed = true;
-            }
-          }
-        });
+          });
 
-        if (changed) {
-          setLines(newLines);
-        }
+          return changed ? newLines : prevLines;
+        });
       });
     };
 

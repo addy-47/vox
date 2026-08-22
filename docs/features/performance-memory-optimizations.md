@@ -317,6 +317,22 @@ escaping the `contain` boundary.
 
 ---
 
+### 2.10 Settings Surface Reactive Architecture & Layer Demotion
+
+**Problem**: Draft configuration modifications during high-frequency user actions (e.g. HexColorPicker drag or API key keystrokes) caused cascading re-renders across all `useSettings()` consumers, redundant whole-scope string comparisons, and persistent compositor layer promotion at idle.
+
+**Fix**:
+1. **Context Fan-Out Elimination**: Migrated `SettingsCardWrapper` and `RealtimeCard` to fine-grained `useSettingsStore` selectors, stopping context-wide re-render ripples on `draftSettings` replacement.
+2. **Coalesced Appearance Color Picker**: `AppearanceCard` buffers color tweaks in local component state while writing CSS variables directly to `document.documentElement.style` (`--accent`), committing to Zustand state strictly on `pointerup`.
+3. **Reactive Geometry Calculation**: Replaced stale state closures in `useSettingsPage` with functional updates (`setLines(prev => ...)`), preserving layout calculation precision across concurrent card activations.
+4. **Fine-Grained Dirty Comparison**: Added explicit `keys` arrays to `DOMAIN_DIRTY_KEYS.models` scopes, bypassing whole-scope JSON serialization.
+5. **Idle Layer Demotion**: `AmbientBackground` dynamically switches blob layers to `will-change: auto` and halts ripple ring iterations when ambient energy reaches resting zero ($< 0.001$).
+6. **Accessible Motion Reductions**: Expanded `@media (prefers-reduced-motion)` to pause wave-bar and decorative pulsing micro-animations.
+
+**Files**: `app/src/pages/Settings.tsx`, `app/src/shared/components/settings/appearance/AppearanceCard.tsx`, `app/src/shared/hooks/useSettingsPage.ts`, `app/src/store/settingsStore.ts`, `app/src/shared/components/common/AmbientBackground.tsx`, `app/src/shared/ui/Tooltip.tsx`, `app/src/index.css`
+
+---
+
 ## 3. Observed Memory Behavior & Expected Baseline Shifts
 
 ### 3.1 Why RSS Doesn't Return to Cold-Boot Baseline

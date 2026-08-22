@@ -27,7 +27,7 @@ export const RotaryKnob = memo(({
   formatValue = (v: number) => `${v.toFixed(2)}x`,
   formatPreset,
   onChange,
-  presetSteps = [0.8, 1.0, 1.25, 1.5, 2.0],
+  presetSteps = [0.8, 1.0, 1.25],
   className,
 }: RotaryKnobProps) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -112,17 +112,6 @@ export const RotaryKnob = memo(({
       {label && (
         <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75 mb-1.5 flex items-center gap-1">
           {label}
-          {value !== defaultValue && (
-            <Tooltip label={`Reset to ${formatValue(defaultValue)}`}>
-            <button
-              type="button"
-              onClick={resetDefault}
-              className="text-[11px] text-[rgb(var(--accent))] hover:underline cursor-pointer"
-            >
-              (reset)
-            </button>
-          </Tooltip>
-          )}
         </span>
       )}
 
