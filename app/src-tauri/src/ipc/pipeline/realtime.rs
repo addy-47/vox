@@ -20,12 +20,20 @@ pub async fn start_realtime_session_internal(
 ) -> Result<(), String> {
     log::info!("[IPC] start_realtime_session_internal requested");
 
-    // 1. Ensure engine is running
-    let engine_guard = state.engine.lock().await;
-    let engine = match &*engine_guard {
-        Some(e) => e,
-        None => {
-            return Err("Audio engine is not running. Please start the engine first.".to_string())
+    // 1. Ensure engine is running (auto-launch if not running)
+    let (vad_tx, pipeline_tx, playback_engine) = {
+        let engine_guard = state.engine.lock().await;
+        if engine_guard.is_none() {
+            drop(engine_guard);
+            log::info!("[IPC] Audio engine not running. Launching engine for Realtime session...");
+            crate::ipc::pipeline::lifecycle::launch_engine(app.clone()).await?;
+        }
+        let engine_guard = state.engine.lock().await;
+        match engine_guard.as_ref() {
+            Some(e) => (e.vad_tx.clone(), e.pipeline_tx.clone(), e.playback_engine.clone()),
+            None => {
+                return Err("Failed to launch audio engine for realtime session.".to_string())
+            }
         }
     };
 
@@ -34,8 +42,7 @@ pub async fn start_realtime_session_internal(
         crate::core::state::InteractionOwner::MainWindow as u32,
         std::sync::atomic::Ordering::Relaxed,
     );
-    let _ = engine
-        .vad_tx
+    let _ = vad_tx
         .send(crate::core::state::VadCommand::UpdateOwner(
             crate::core::state::InteractionOwner::MainWindow,
         ));
@@ -45,10 +52,10 @@ pub async fn start_realtime_session_internal(
     if let Some(mut old_rt) = rt_guard.take() {
         log::info!("[IPC] Stopping existing realtime session...");
         old_rt.stop();
-        let _ = engine
-            .vad_tx
+        let _ = vad_tx
             .send(crate::core::state::VadCommand::StopRealtime);
     }
+
 
     // 3. Load settings to determine active provider
     let settings = state.settings.read().unwrap().clone();
@@ -143,8 +150,7 @@ pub async fn start_realtime_session_internal(
     let mut rt_engine =
         crate::services::realtime::engine::RealtimeEngine::new(provider, tokio_handle);
 
-    let playback_engine = engine.playback_engine.clone();
-    let event_tx = engine.pipeline_tx.clone();
+    let event_tx = pipeline_tx.clone();
 
     rt_engine
         .start(interaction_mode, playback_engine, event_tx)
@@ -164,8 +170,7 @@ pub async fn start_realtime_session_internal(
     };
 
     // 6. Propagate settings update to the pipeline event loop
-    let _ = engine
-        .pipeline_tx
+    let _ = pipeline_tx
         .send(crate::core::events::VoxEvent::SettingsUpdated(Box::new(
             current_settings,
         )));
@@ -176,12 +181,12 @@ pub async fn start_realtime_session_internal(
         "[IPC] Sending StartRealtime to VAD actor (is_ptt={})",
         is_ptt
     );
-    let _ = engine
-        .vad_tx
+    let _ = vad_tx
         .send(crate::core::state::VadCommand::StartRealtime {
             tx: audio_tx,
             is_ptt,
         });
+
 
     // Update backend engagement state
     state

@@ -27,6 +27,7 @@ export function useSettingsPage() {
     const closed = lastActiveDomains.current.filter((d) => !activeDomains.includes(d));
     if (closed.length > 0) {
       closed.forEach((domainId) => {
+        // If uncommitted restart-required changes are left behind on card close, discard them safely
         useSettingsStore.getState().discardDomainChanges(domainId);
       });
     }

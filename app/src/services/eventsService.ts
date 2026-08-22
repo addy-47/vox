@@ -102,12 +102,45 @@ export interface ModelSetupStatusPayload {
 export type PlaybackFinishedPayload = Record<string, unknown>;
 
 /**
+ * Active listener registry to guarantee synchronous teardown before webview unloads/reloads.
+ */
+const activeListeners = new Set<() => void>();
+
+if (typeof window !== "undefined") {
+  const cleanupAll = () => {
+    activeListeners.forEach((cleanup) => {
+      try {
+        cleanup();
+      } catch (err) {
+        console.warn("[events] Error during beforeunload cleanup:", err);
+      }
+    });
+    activeListeners.clear();
+  };
+
+  window.addEventListener("beforeunload", cleanupAll, { capture: true });
+  window.addEventListener("pagehide", cleanupAll, { capture: true });
+}
+
+/**
  * Typed wrapper around Tauri `listen`. Returns a synchronous unlisten
  * function that is safe to call before the underlying listener resolves.
  */
 export function on<T>(eventName: string, handler: (payload: T) => void): () => void {
   let unlisten: UnlistenFn | null = null;
   let cancelled = false;
+
+  const cleanup = () => {
+    cancelled = true;
+    activeListeners.delete(cleanup);
+    if (unlisten) {
+      unlisten();
+      unlisten = null;
+    }
+  };
+
+  activeListeners.add(cleanup);
+
   listen<T>(eventName, (event) => handler(event.payload))
     .then((u) => {
       if (cancelled) {
@@ -117,13 +150,13 @@ export function on<T>(eventName: string, handler: (payload: T) => void): () => v
       }
     })
     .catch((err) => {
+      activeListeners.delete(cleanup);
       console.error(`[events] Failed to listen to "${eventName}":`, err);
     });
-  return () => {
-    cancelled = true;
-    if (unlisten) unlisten();
-  };
+
+  return cleanup;
 }
+
 
 export function onStateChanged(handler: (state: InteractionState) => void): () => void {
   return on("state_changed", handler);

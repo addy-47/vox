@@ -34,12 +34,12 @@ export const VadWorkspace = memo(
     const vadModels = modelCatalog?.vad || [];
 
     return (
-      <div className="space-y-3">
+      <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1">
         {activeCategoryTab === "model" ? (
           <div
             className={cn(
-              "grid gap-3",
-              layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
+              "grid gap-2.5 auto-rows-max content-start",
+              layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
             )}
           >
             {vadModels.map((model) => {

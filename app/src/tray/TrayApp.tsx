@@ -11,7 +11,7 @@ import { hideTrayWindow, syncHudVisibility, setHudIgnoreCursor } from "@/service
 import { pttStart, pttStop } from "@/services/pipelineService";
 import { commitSessionToHistory, getTranscriptHistory } from "@/services/historyService";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettings } from "@/shared/hooks/useSettings";
 import { ErrorBoundary } from "@/shared/components/common";
 import { cn } from "@/shared/lib/utils";
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo } from "react";
+import React, { createContext, useEffect, useMemo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "@/store/settingsStore";
 
@@ -18,7 +18,7 @@ interface SettingsContextType {
   modelCatalog: ModelCatalog | null;
 }
 
-const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+export const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useEffect(() => {
@@ -83,8 +83,3 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 };
 
-export const useSettings = () => {
-  const context = useContext(SettingsContext);
-  if (!context) throw new Error("useSettings must be used within SettingsProvider");
-  return context;
-};

@@ -1,6 +1,6 @@
 import { memo, useState, useEffect } from "react";
 import { RotateCcw, AlertTriangle } from "lucide-react";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettings } from "@/shared/hooks/useSettings";
 import { cn } from "@/shared/lib/utils";
 
 export const RestoreDefaultsButton = memo(() => {
