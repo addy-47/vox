@@ -97,7 +97,7 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 | Home (Orb) | `pages/Home.tsx` | `home/AdvancedOrb`, `home/PipelineField`, `home/StatusCapsule`, `home/ActiveTranscript` | Orchestrates engage/pause/PTT via `hooks/useHomePage.ts`. Modular vs realtime pipeline mode; three-button control group. Marks down realtime session-cache resume. |
 | History | `pages/History.tsx` | `history/OrbitCarousel`, `history/CentralClockNode`, `history/VoiceDial`, `history/DetailPanel` | 2.5D single-ring CSS ellipse carousel (`history/orbitMath.ts`), windowed chunking, holographic dialogue in a global `Drawer`. |
 | Memory | `pages/Memory.tsx` | `memory/MemoryGraph`, `memory/MemoryNodeTooltip`, `memory/MemoryPipelineDrawer`, `memory/SearchBar` | Custom Three.js InstancedMesh WebGL engine. Deep-dive + invariants: `features/memory-architecture.md` §1 and `features/performance-memory-optimizations.md` §2.5–2.7. |
-| Settings | `pages/Settings.tsx` | `settings/RadialHub` + domain cards (`appearance/`, `interaction/`, `models/`, `memory/`, `persona/`, `history/`, `realtime/`) | Radial hub of cards; flat underline tab strips for providers; prewarmed at boot. |
+| Settings | `pages/Settings.tsx` | `settings/RadialHub` + domain cards (`appearance/`, `interaction/`, `models/`, `memory/`, `persona/`, `history/`, `realtime/`) | Radial hub of cards; flat underline tab strips for providers; `RealtimeConfigDesk` for duplex S2S provider & API key config; prewarmed at boot. |
 | Monitoring | `pages/Monitoring.tsx` | `monitoring/MetricCarousel`, `monitoring/LiquidChamber` + `profiler/*` | Runtime metrics dashboard; offload/reload dual-button engine control; 30 FPS throttled canvas. |
 
 Component responsibilities and the "no new component that already exists in the design system" rule are in `frontend-engineer.md`.
@@ -156,10 +156,11 @@ The **sole owner** of all performance and memory detail is `docs/features/perfor
 
 - **`useDynamicFPS`** unified loop — `features/performance-memory-optimizations.md` §2.2; hook at `shared/hooks/useDynamicFPS.ts`.
 - **`LiquidChamber`** 30 FPS throttle — §2.3.
-- **`AmbientBackground`** compositor promotion — §2.4.
+- **`AmbientBackground`** compositor promotion & idle settlement demotion — §2.4, §2.10.
 - **`MemoryGraph`** WebGL physics settlement, zero-teardown theme switch, O(1) badge updates — §2.5, §2.6, §2.7.
 - **Markdown fast-path** in `DetailPanel` — §2.8.
 - **Global drawer portal** (`position="global"` → `createPortal` to `document.body`) escaping `contain:layout` — §2.9; implementation `shared/ui/Drawer.tsx:240-242`.
+- **Settings reactive architecture** (zero context fan-out, pointerup color picker, dirty check scalar comparison) — §2.10.
 - **Backend-side** optimizations (on-demand webviews, heap trim, process-tree filtering, zero-idle ONNX eviction) — §1 and §3 of that doc.
 
 General rule from `frontend-engineer.md`: anything visually heavy is memoized and frame-throttled; idle/sleep states drive 0 FPS.

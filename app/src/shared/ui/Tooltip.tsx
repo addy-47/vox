@@ -22,7 +22,6 @@ export const Tooltip: React.FC<TooltipProps> = ({
   children,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
-  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLSpanElement>(null);
 
@@ -65,11 +64,13 @@ export const Tooltip: React.FC<TooltipProps> = ({
     const maxLeft = typeof window !== "undefined" ? window.innerWidth - tooltipWidth - 10 : 800;
     left = Math.max(minLeft, Math.min(maxLeft, left));
 
-    setCoords({ top: Math.round(top), left: Math.round(left) });
+    if (tooltipRef.current) {
+      tooltipRef.current.style.top = `${Math.round(top)}px`;
+      tooltipRef.current.style.left = `${Math.round(left)}px`;
+    }
   }, [side, align]);
 
   const handleMouseEnter = () => {
-    updatePosition();
     setIsVisible(true);
   };
 
@@ -108,8 +109,6 @@ export const Tooltip: React.FC<TooltipProps> = ({
             role="tooltip"
             style={{
               position: "fixed",
-              top: `${coords.top}px`,
-              left: `${coords.left}px`,
             }}
             className={cn(
               "pointer-events-none z-[9999] max-w-[220px] w-max whitespace-normal break-words rounded-xl border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 text-[rgb(var(--foreground))] shadow-2xl backdrop-blur-2xl px-2.5 py-1 text-[11px] font-medium leading-snug animate-fade-in text-center",

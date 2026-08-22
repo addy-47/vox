@@ -1,6 +1,6 @@
 import React, { useState, useMemo, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { Sparkles, ArrowLeft, RefreshCw, Loader2 } from "lucide-react";
+import { Sparkles, ArrowLeft } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SliderField, RotaryKnob } from "@/shared/ui";
 import { VoiceCarousel } from "../voice/VoiceCarousel";
@@ -41,9 +41,6 @@ export const TtsVoiceManager = memo(({
   chatterboxIsAdding,
   setChatterboxIsAdding,
   edgeTtsVoices,
-  edgeTtsError,
-  loadingEdgeVoices,
-  loadEdgeVoices,
 }: TtsVoiceManagerProps) => {
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
@@ -154,10 +151,11 @@ export const TtsVoiceManager = memo(({
         layoutMode === "small" ? "flex flex-col gap-3" : "flex flex-row gap-4"
       )}
     >
+      {/* ─── Left Column: Voice Carousel & Region Filter ─── */}
       <div
         className={cn(
           "shrink-0 flex flex-col justify-center",
-          layoutMode === "small" ? "w-full" : "w-[60%] min-w-[200px]"
+          layoutMode === "small" ? "w-full" : "w-[64%] min-w-[220px]"
         )}
       >
         <VoiceCarousel
@@ -168,71 +166,30 @@ export const TtsVoiceManager = memo(({
           onVoicesChanged={loadCustomVoices}
           isAdding={chatterboxIsAdding}
           setIsAdding={setChatterboxIsAdding}
+          showRegions={isEdgeTts}
+          selectedRegion={selectedRegion}
+          onSelectRegion={setSelectedRegion}
+          regions={["ALL", "US", "UK", "AU", "GLOBAL"]}
         />
       </div>
 
-      <div className="flex-1 flex flex-col justify-between gap-3 min-w-0">
+      {/* ─── Right Column: Speed Rotary Knob with Presets ─── */}
+      <div className="flex-1 flex flex-col justify-center gap-3 min-w-0">
         <div className="flex flex-col gap-3">
           {isEdgeTts ? (
-            <>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[12px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
-                    Region
-                  </span>
-                  {loadingEdgeVoices ? (
-                    <Loader2 size={10} className="animate-spin text-yellow-400" />
-                  ) : edgeTtsError ? (
-                    <button
-                      type="button"
-                      onClick={loadEdgeVoices}
-                      className="text-[11px] font-bold text-rose-400 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <RefreshCw size={10} />
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)] animate-pulse" />
-                      <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70">
-                        {edgeTtsVoices.length > 0 ? `${edgeTtsVoices.length}` : "Live"}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1 border-b border-[rgba(var(--border),0.1)] pb-1">
-                  {(["ALL", "US", "UK", "AU", "GLOBAL"] as const).map((region) => (
-                    <button
-                      key={region}
-                      type="button"
-                      onClick={() => setSelectedRegion(region)}
-                      className={cn(
-                        "flex-1 py-0.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer text-center",
-                        selectedRegion === region
-                          ? "text-[rgb(var(--accent))] border-b-2 border-[rgb(var(--accent))]"
-                          : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
-                      )}
-                    >
-                      {region}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex-1 flex items-center justify-center pt-1">
-                <RotaryKnob
-                  label="Speech Speed"
-                  value={draftSettings.tts.speed || 1.0}
-                  min={0.7}
-                  max={2.0}
-                  step={0.05}
-                  formatValue={(v) => `${v.toFixed(2)}x`}
-                  formatPreset={(v) => `${v.toFixed(2)}x`}
-                  onChange={(v) => updateDraft("tts", "speed", v)}
-                  presetSteps={[0.8, 1.0, 1.25, 1.5, 2.0]}
-                />
-              </div>
-            </>
+            <div className="flex-1 flex items-center justify-center py-1">
+              <RotaryKnob
+                label="Speech Speed"
+                value={draftSettings.tts.speed || 1.0}
+                min={0.7}
+                max={2.0}
+                step={0.05}
+                formatValue={(v) => `${v.toFixed(2)}x`}
+                formatPreset={(v) => `${v}x`}
+                onChange={(v) => updateDraft("tts", "speed", v)}
+                presetSteps={[0.8, 1.0, 1.25]}
+              />
+            </div>
           ) : isChatterbox ? (
             <>
               <SliderField
@@ -303,17 +260,17 @@ export const TtsVoiceManager = memo(({
                   max={2.0}
                   step={0.05}
                   formatValue={(v) => `${v.toFixed(2)}x`}
-                  formatPreset={(v) => `${v.toFixed(2)}x`}
+                  formatPreset={(v) => `${v}x`}
                   onChange={(v) => updateDraft("tts", "speed", v)}
-                  presetSteps={[0.8, 1.0, 1.25, 1.5, 2.0]}
+                  presetSteps={[0.8, 1.0, 1.25]}
                 />
               </div>
             </>
           )}
         </div>
 
-        <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex items-center justify-between">
-          {isChatterbox && (
+        {isChatterbox && (
+          <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex items-center justify-between">
             <button
               type="button"
               onClick={() => setChatterboxIsAdding((prev) => !prev)}
@@ -331,19 +288,8 @@ export const TtsVoiceManager = memo(({
                 </>
               )}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              updateDraft("tts", "speed", 1.0);
-              updateDraft("tts", "quality_steps", 8);
-            }}
-            className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer flex items-center gap-1 ml-auto"
-          >
-            <Sparkles size={12} />
-            <span>Reset Audio Defaults</span>
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

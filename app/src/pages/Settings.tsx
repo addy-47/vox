@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, memo, Suspense, lazy } from "react";
 import { RotateCcw, AlertCircle } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { useSettings } from "@/shared/context/SettingsContext";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
@@ -87,7 +86,7 @@ const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
         width: "52px",
         height: "52px",
         borderColor: `rgba(var(--accent), ${hasActiveCards ? 0.35 : 0.20})`,
-        animation: "border-rotate 18s linear infinite",
+        animation: hasActiveCards ? "border-rotate 18s linear infinite" : "none",
         background: "transparent",
       }}
     />
@@ -141,7 +140,9 @@ interface SettingsCardWrapperProps {
 }
 
 const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCardWrapperProps) => {
-  const { settings, draftSettings, commitChanges } = useSettings();
+  const settings = useSettingsStore((s) => s.settings);
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const commitChanges = useSettingsStore((s) => s.commitChanges);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
 
   const hasChanges = useSettingsStore(useCallback((s: any) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
@@ -176,7 +177,11 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
   const isCloudSttMissingKey =
     draftSettings?.stt?.active === "cloud" &&
     !draftSettings?.stt?.cloud?.api_key?.trim();
-  const isMissingCloudKey = isCloudLlmMissingKey || isCloudSttMissingKey;
+  const isRealtimeMissingKey =
+    draftSettings?.interaction?.pipeline_mode === "realtime" &&
+    ((draftSettings?.realtime?.active === "gemini_live" && !(draftSettings?.realtime?.gemini_live?.api_key || (draftSettings?.realtime as any)?.gemini?.api_key)?.trim()) ||
+     (draftSettings?.realtime?.active === "deepgram_voice_agent" && !(draftSettings?.realtime?.deepgram_voice_agent?.api_key || (draftSettings?.realtime as any)?.deepgram?.api_key)?.trim()));
+  const isMissingCloudKey = isCloudLlmMissingKey || isCloudSttMissingKey || isRealtimeMissingKey;
 
   const handleSave = () => {
     if (isMissingCloudKey) return;
@@ -287,7 +292,11 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
 SettingsCardWrapper.displayName = "SettingsCardWrapper";
 
 export const Settings: React.FC = () => {
-  const { draftSettings, commitChanges, discardChanges, hasChanges, restoreDefaults } = useSettings();
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const commitChanges = useSettingsStore((s) => s.commitChanges);
+  const discardChanges = useSettingsStore((s) => s.discardChanges);
+  const hasChanges = useSettingsStore((s) => s.hasChanges);
+  const restoreDefaults = useSettingsStore((s) => s.restoreDefaults);
   const [isMobileConfirmRestore, setIsMobileConfirmRestore] = useState(false);
   const {
     containerRef,
@@ -490,7 +499,10 @@ export const Settings: React.FC = () => {
               >
                 Discard
               </button>
-              <div className="relative group">
+              <Tooltip
+                label={isMobileConfirmRestore ? "Tap again to confirm reset" : SETTINGS_COPY.restoreDefaults}
+                side="bottom"
+              >
                 <button
                   onClick={() => {
                     if (isMobileConfirmRestore) {
@@ -511,10 +523,7 @@ export const Settings: React.FC = () => {
                 >
                   <RotateCcw size={14} />
                 </button>
-                <div className="absolute bottom-full mb-2 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/95 backdrop-blur-md text-[rgb(var(--accent))] shadow-2xl text-[11px] font-bold tracking-wide uppercase z-50">
-                  {isMobileConfirmRestore ? "Tap again to confirm reset" : SETTINGS_COPY.restoreDefaults}
-                </div>
-              </div>
+              </Tooltip>
             </div>
           </div>
 

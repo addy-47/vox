@@ -108,19 +108,39 @@ export const checkIfCloudUrl = (url: string) => {
 };
 
 export const REALTIME_PROVIDERS = [
-  { id: "gemini_live", name: "Gemini Live", subkey: "gemini", icon: GeminiLogo, desc: "Sub-300ms Duplex", url: "https://aistudio.google.com/apikey", tagline: "Google's multimodal live streaming with sub-300ms duplex voice interaction" },
-  { id: "openai_realtime", name: "OpenAI Realtime", subkey: "openai", icon: OpenAiLogo, desc: "S2S WebSocket", url: "https://platform.openai.com/api-keys", tagline: "OpenAI's speech-to-speech API via persistent WebSocket connections" },
-  { id: "deepgram_voice_agent", name: "Deepgram Agent", subkey: "deepgram", icon: DeepgramLogo, desc: "Voice Agent SDK", url: "https://console.deepgram.com/", tagline: "Deepgram's voice agent platform for building custom AI assistants" },
-  { id: "elevenlabs_convai", name: "ElevenLabs ConvAI", subkey: "elevenlabs", icon: ElevenLabsLogo, desc: "Conversational AI", url: "https://elevenlabs.io/app/settings/api-keys", tagline: "ElevenLabs' conversational AI with ultra-realistic voice synthesis" },
+  {
+    id: "gemini_live",
+    name: "Gemini Live",
+    subkey: "gemini_live",
+    icon: GeminiLogo,
+    desc: "Live Speech",
+    url: "https://aistudio.google.com/apikey",
+    tagline: "Google's direct live speech model with search grounding",
+    keyPlaceholder: "AIzaSy...",
+  },
+  {
+    id: "deepgram_voice_agent",
+    name: "Deepgram Agent",
+    subkey: "deepgram_voice_agent",
+    icon: DeepgramLogo,
+    desc: "Voice Assistant",
+    url: "https://console.deepgram.com/",
+    tagline: "Deepgram's real-time conversational voice agent",
+    keyPlaceholder: "Token...",
+  },
 ] as const;
 
 export type RealtimeProvider = (typeof REALTIME_PROVIDERS)[number];
 
 export const REALTIME_PROVIDER_SUBKEY: Record<string, string> = {
-  gemini_live: "gemini",
-  openai_realtime: "openai",
-  deepgram_voice_agent: "deepgram",
-  elevenlabs_convai: "elevenlabs",
+  gemini_live: "gemini_live",
+  gemini: "gemini_live",
+  openai_realtime: "openai_realtime",
+  openai: "openai_realtime",
+  deepgram_voice_agent: "deepgram_voice_agent",
+  deepgram: "deepgram_voice_agent",
+  elevenlabs_convai: "elevenlabs_convai",
+  elevenlabs: "elevenlabs_convai",
 };
 
 export const REALTIME_PROVIDER_DISPLAY_NAMES = {

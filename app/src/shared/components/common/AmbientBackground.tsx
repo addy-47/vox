@@ -102,6 +102,8 @@ export const AmbientBackground = React.memo(({
   const glowOpacityMultiplier = isLight ? 3.0 : 2.0;
   const rippleOpacityMultiplier = isLight ? 2.5 : 1.8;
 
+  const blobRefs = React.useRef<(HTMLDivElement | null)[]>([]);
+
   React.useEffect(() => {
     let animId: number | null = null;
     let smoothedEnergy = 0;
@@ -112,6 +114,13 @@ export const AmbientBackground = React.memo(({
       if (isRunning || document.hidden) return;
       isRunning = true;
       isSettled = false;
+      // Re-enable willChange on active wake
+      blobRefs.current.forEach((el) => {
+        if (el) el.style.willChange = "transform";
+      });
+      if (rippleRef.current) {
+        rippleRef.current.style.animationPlayState = "running";
+      }
       animId = requestAnimationFrame(update);
     };
 
@@ -152,6 +161,10 @@ export const AmbientBackground = React.memo(({
           isSettled = true;
           if (glowRef.current) glowRef.current.style.opacity = baseGlow.toFixed(3);
           if (rippleRef.current) rippleRef.current.style.opacity = baseRipple.toFixed(3);
+          // Demote compositor layer on idle
+          blobRefs.current.forEach((el) => {
+            if (el) el.style.willChange = "auto";
+          });
         }
         stopLoop();
         return;
@@ -208,6 +221,9 @@ export const AmbientBackground = React.memo(({
       {BLOBS.map((blob, i) => (
         <div
           key={i}
+          ref={(el) => {
+            blobRefs.current[i] = el;
+          }}
           className="amb-blob"
           style={{
             left: blob.x,

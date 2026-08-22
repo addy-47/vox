@@ -32,11 +32,11 @@ export const ApiKeyField = memo(
     const [showKey, setShowKey] = useState(false);
 
     return (
-      <div className={cn("space-y-2", className)}>
+      <div className={cn("space-y-1", className)}>
         {label && (
-          <div className="flex items-center justify-between text-xs font-semibold tracking-wider text-[rgb(var(--foreground-muted))] uppercase">
-            <span className={cn("flex items-center gap-1.5", error && "text-rose-400 font-bold")}>
-              <Key size={13} className={error ? "text-rose-400" : "text-[rgb(var(--accent))]"} />
+          <div className="flex items-center justify-between text-[11px] font-bold tracking-wider uppercase">
+            <span className={cn("flex items-center gap-1 ml-0.5", error ? "text-rose-400/85" : "text-[rgb(var(--foreground-muted))]/75")}>
+              <Key size={12} className={error ? "text-rose-400/70" : "text-[rgb(var(--accent))]"} />
               {label}
             </span>
             {onTestConnection && (
@@ -44,10 +44,10 @@ export const ApiKeyField = memo(
                 type="button"
                 onClick={onTestConnection}
                 disabled={testing || !value.trim()}
-                className="flex items-center gap-1 text-[12px] font-medium text-[rgb(var(--accent))] hover:underline disabled:opacity-40 transition-opacity"
+                className="flex items-center gap-1 text-[11px] font-medium text-[rgb(var(--accent))] hover:underline disabled:opacity-40 transition-opacity"
               >
                 {testing ? (
-                  <RefreshCw size={12} className="animate-spin" />
+                  <RefreshCw size={11} className="animate-spin" />
                 ) : (
                   "Test Connection"
                 )}
@@ -63,19 +63,19 @@ export const ApiKeyField = memo(
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             className={cn(
-              "w-full bg-[rgba(var(--foreground),0.03)] rounded-xl px-3.5 py-2.5 pr-10 text-xs font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none transition-all",
+              "w-full bg-[rgba(var(--foreground),0.03)] rounded-lg px-2.5 h-[32px] pr-8 text-[11px] sm:text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30 focus:outline-none transition-all",
               error
-                ? "border-2 border-rose-500/80 bg-rose-500/10 focus:border-rose-400 focus:ring-2 focus:ring-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.2)] text-rose-100"
+                ? "border border-rose-500/35 bg-rose-500/[0.02] focus:border-rose-400/60 focus:bg-rose-500/[0.04]"
                 : "border border-[rgba(var(--border),0.12)] focus:border-[rgba(var(--accent),0.4)] focus:bg-[rgba(var(--accent),0.02)]"
             )}
           />
-          <Tooltip label={showKey ? "Hide key" : "Show key"} className="absolute right-3">
+          <Tooltip label={showKey ? "Hide key" : "Show key"} className="absolute right-2">
             <button
               type="button"
               onClick={() => setShowKey(!showKey)}
-              className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors p-1"
+              className="text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] transition-colors p-1"
             >
-              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
           </Tooltip>
         </div>

@@ -769,7 +769,15 @@ input[type="range"]:active::-webkit-slider-thumb {
 
 /* Orbit card positioning is handled strictly imperatively via inline transforms to prevent frame overrides */
 @media (prefers-reduced-motion: reduce) {
-  .orbit-card-enter {
+  .orbit-card-enter,
+  .animate-wave-bar-1,
+  .animate-wave-bar-2,
+  .animate-wave-bar-3,
+  .animate-wave-bar-4,
+  .animate-flow-dot,
+  .animate-ribbon-flow,
+  .animate-particle-drift,
+  .animate-ring-pulse-slow {
     animation: none !important;
   }
 }

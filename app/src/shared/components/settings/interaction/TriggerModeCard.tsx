@@ -2,6 +2,7 @@ import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { Activity, Radio } from "lucide-react";
 import { ToggleTile } from "@/shared/ui";
+import { TRIGGER_MODE_COPY } from "@/data/settingsCopy";
 
 interface TriggerModeCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -17,10 +18,10 @@ export const TriggerModeCard = memo(({ layoutMode }: TriggerModeCardProps) => {
     <ToggleTile
       title="Trigger"
       active={isPassive}
-      activeLabel="Continuous"
-      inactiveLabel="Push-To-Talk"
-      activeSublabel="Passive Sense"
-      inactiveSublabel="Manual Trigger"
+      activeLabel={TRIGGER_MODE_COPY.continuousTitle}
+      inactiveLabel={TRIGGER_MODE_COPY.pttTitle}
+      activeSublabel={TRIGGER_MODE_COPY.continuousSub}
+      inactiveSublabel={TRIGGER_MODE_COPY.pttSub}
       icon={isPassive ? Activity : Radio}
       onToggle={() =>
         updateDraft("interaction", "main_app_mode", isPassive ? "PTT" : "Passive")

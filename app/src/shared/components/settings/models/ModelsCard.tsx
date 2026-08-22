@@ -244,7 +244,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
   }, [draftSettings?.tts?.provider?.kind, edgeTtsVoices.length, loadingEdgeVoices, loadEdgeVoices]);
 
-  // 4. Chatterbox Remote Health Polling (gated by visibility)
+  // 4. Chatterbox Remote Health Polling (gated by visibility & active tab)
   useEffect(() => {
     if (draftSettings?.tts?.provider?.kind !== "chatterbox_remote") {
       setIsRemoteTtsHealthy(null);
@@ -252,7 +252,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
 
     const checkHealth = async () => {
-      if (document.hidden || !draftSettings?.tts?.provider) return;
+      if (document.hidden || !draftSettings?.tts?.provider || activePipelineTab !== "tts") return;
       setCheckingTtsHealth(true);
       try {
         const healthy = await checkTtsProviderHealth(draftSettings.tts.provider);
@@ -267,7 +267,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     checkHealth();
     const interval = setInterval(checkHealth, 5000);
     return () => clearInterval(interval);
-  }, [draftSettings?.tts?.provider]);
+  }, [draftSettings?.tts?.provider, activePipelineTab]);
 
   useEffect(() => {
     return eventsService.onRemoteSetupStatus((payload) => {

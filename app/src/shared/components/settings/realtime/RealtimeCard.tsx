@@ -1,5 +1,5 @@
 import { memo, useState, useMemo } from "react";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettingsStore } from "@/store/settingsStore";
 import {
   Globe,
   Search,
@@ -603,44 +603,58 @@ function UnifiedConfig({
   disabled: boolean;
   layoutMode?: "full-max" | "full-min" | "small";
 }) {
-  const config = draftSettings.realtime[subkey];
+  const isDeepgram = subkey === "deepgram_voice_agent" || subkey === "deepgram";
+  const isOpenAi = subkey === "openai_realtime" || subkey === "openai";
+  const isElevenLabs = subkey === "elevenlabs_convai" || subkey === "elevenlabs";
+  const isGemini = !isDeepgram && !isOpenAi && !isElevenLabs;
+
+  const canonicalSubkey = isDeepgram
+    ? "deepgram_voice_agent"
+    : isOpenAi
+    ? "openai_realtime"
+    : isElevenLabs
+    ? "elevenlabs_convai"
+    : "gemini_live";
+
+  const config =
+    draftSettings?.realtime?.[canonicalSubkey] ||
+    draftSettings?.realtime?.[subkey] ||
+    (isGemini ? draftSettings?.realtime?.gemini : isDeepgram ? draftSettings?.realtime?.deepgram : {});
+
   if (!config) return null;
 
   const defaultModelId: string = (() => {
-    if (subkey === "gemini") return "gemini-2.5-flash";
-    if (subkey === "openai") return "gpt-4o-realtime-preview";
-    if (subkey === "deepgram") return "gpt-4o-mini";
+    if (isGemini) return "gemini-2.5-flash";
+    if (isOpenAi) return "gpt-4o-realtime-preview";
+    if (isDeepgram) return "gpt-4o-mini";
     return "";
   })();
 
-  const voiceField = subkey === "gemini" ? "voice_name" : "voice";
+  const voiceField = isGemini ? "voice_name" : "voice";
   const currentVoice = config[voiceField] || VOICE_OPTIONS[0];
 
-  const toggleEnabled =
-    subkey === "gemini"
-      ? config.enable_web_search
-      : subkey === "openai"
-        ? config.voice_activity_detection
-        : subkey === "deepgram"
-          ? config.agent_mode
-          : config.dynamic_vars;
+  const toggleEnabled = isGemini
+    ? Boolean(config.enable_web_search)
+    : isOpenAi
+    ? Boolean(config.voice_activity_detection)
+    : isDeepgram
+    ? Boolean(config.agent_mode)
+    : Boolean(config.dynamic_vars);
 
-  const toggleLabel =
-    subkey === "gemini"
-      ? "Google Search"
-      : subkey === "openai"
-        ? "VAD"
-        : subkey === "deepgram"
-          ? "Agent Mode"
-          : "Dynamic Vars";
-  const toggleSub =
-    subkey === "gemini"
-      ? "Live web grounding"
-      : subkey === "openai"
-        ? "Activity detection"
-        : subkey === "deepgram"
-          ? "AI agent routing"
-          : "Context variables";
+  const toggleLabel = isGemini
+    ? "Google Search"
+    : isOpenAi
+    ? "VAD"
+    : isDeepgram
+    ? "Agent Mode"
+    : "Dynamic Vars";
+  const toggleSub = isGemini
+    ? "Live web grounding"
+    : isOpenAi
+    ? "Activity detection"
+    : isDeepgram
+    ? "AI agent routing"
+    : "Context variables";
 
   return (
     <div
@@ -660,7 +674,7 @@ function UnifiedConfig({
           value={config.model || ""}
           onChange={(v) => {
             if (!disabled)
-              updateDraft("realtime", subkey, { ...config, model: v });
+              updateDraft("realtime", canonicalSubkey, { ...config, model: v });
           }}
           placeholder={defaultModelId || "Model ID"}
           disabled={disabled}
@@ -672,7 +686,7 @@ function UnifiedConfig({
           value={config.temperature ?? 0.7}
           onChange={(v) => {
             if (!disabled)
-              updateDraft("realtime", subkey, { ...config, temperature: v });
+              updateDraft("realtime", canonicalSubkey, { ...config, temperature: v });
           }}
           disabled={disabled}
         />
@@ -684,29 +698,29 @@ function UnifiedConfig({
           enabled={toggleEnabled}
           onChange={() => {
             if (disabled) return;
-            if (subkey === "gemini")
-              updateDraft("realtime", "gemini", {
+            if (isGemini)
+              updateDraft("realtime", "gemini_live", {
                 ...config,
                 enable_web_search: !config.enable_web_search,
               });
-            else if (subkey === "openai")
-              updateDraft("realtime", "openai", {
+            else if (isOpenAi)
+              updateDraft("realtime", "openai_realtime", {
                 ...config,
                 voice_activity_detection: !config.voice_activity_detection,
               });
-            else if (subkey === "deepgram")
-              updateDraft("realtime", "deepgram", {
+            else if (isDeepgram)
+              updateDraft("realtime", "deepgram_voice_agent", {
                 ...config,
                 agent_mode: !config.agent_mode,
               });
             else
-              updateDraft("realtime", "elevenlabs", {
+              updateDraft("realtime", "elevenlabs_convai", {
                 ...config,
                 dynamic_vars: !config.dynamic_vars,
               });
           }}
           icon={
-            subkey === "gemini" ? (
+            isGemini ? (
               <Search size={11} className="text-[rgb(var(--accent))]" />
             ) : undefined
           }
@@ -725,8 +739,7 @@ function UnifiedConfig({
           selected={currentVoice}
           onChange={(v) => {
             if (disabled) return;
-            const field = subkey === "gemini" ? "voice_name" : "voice";
-            updateDraft("realtime", subkey, { ...config, [field]: v });
+            updateDraft("realtime", canonicalSubkey, { ...config, [voiceField]: v });
           }}
           disabled={disabled}
         />
@@ -743,21 +756,31 @@ interface RealtimeCardProps {
 
 export const RealtimeCard = memo(
   ({ layoutMode = "full-max" }: RealtimeCardProps) => {
-    const { settings, draftSettings, updateDraft } = useSettings();
+    const settings = useSettingsStore((s) => s.settings);
+    const draftSettings = useSettingsStore((s) => s.draftSettings);
+    const updateDraft = useSettingsStore((s) => s.updateDraft);
 
     if (!settings || !draftSettings) return null;
 
-    const providerId = draftSettings.realtime?.provider || "gemini_live";
+    const providerId =
+      draftSettings.realtime?.active ||
+      draftSettings.realtime?.provider ||
+      "gemini_live";
 
     const subkeyMap: Record<string, string> = {
-      gemini_live: "gemini",
-      openai_realtime: "openai",
-      deepgram_voice_agent: "deepgram",
-      elevenlabs_convai: "elevenlabs",
+      gemini_live: "gemini_live",
+      gemini: "gemini_live",
+      openai_realtime: "openai_realtime",
+      openai: "openai_realtime",
+      deepgram_voice_agent: "deepgram_voice_agent",
+      deepgram: "deepgram_voice_agent",
+      elevenlabs_convai: "elevenlabs_convai",
+      elevenlabs: "elevenlabs_convai",
     };
-    const subkey = subkeyMap[providerId] || "gemini";
+    const subkey = subkeyMap[providerId] || "gemini_live";
     const disabled =
-      providerId !== "gemini_live" && providerId !== "deepgram_voice_agent";
+      (providerId as string) !== "gemini_live" &&
+      (providerId as string) !== "deepgram_voice_agent";
 
     return (
       <div
