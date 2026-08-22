@@ -36,8 +36,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         useSettingsStore.getState().loadSettings();
       });
       const u2 = await win.listen("settings-updated", () => {
+        if (useSettingsStore.getState().isCommitting) return;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
+          if (useSettingsStore.getState().isCommitting) return;
           useSettingsStore.getState().loadSettings();
         }, 80);
       });

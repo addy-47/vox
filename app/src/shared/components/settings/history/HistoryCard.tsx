@@ -123,7 +123,7 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
               formatValue={(v) => `${v}`}
               formatPreset={(v) => `${v}`}
               onChange={(v) => updateDraft("history", "tray_history_limit", v)}
-              presetSteps={[3, 5, 8, 10, 15]}
+              presetSteps={[3, 5, 10]}
             />
           </div>
         </div>

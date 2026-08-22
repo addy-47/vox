@@ -36,7 +36,7 @@ const SimilarityCutoffKnobSection = memo(() => {
       defaultValue={0.40}
       formatValue={(v) => `${Math.round(v * 100)}%`}
       formatPreset={(v) => `${Math.round(v * 100)}%`}
-      presetSteps={[0.25, 0.40, 0.60, 0.75]}
+      presetSteps={[0.25, 0.40, 0.70]}
       onChange={handleChange}
     />
   );

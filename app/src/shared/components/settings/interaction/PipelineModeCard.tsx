@@ -2,6 +2,7 @@ import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { Layers, Zap } from "lucide-react";
 import { ToggleTile } from "@/shared/ui";
+import { PIPELINE_MODE_COPY } from "@/data/settingsCopy";
 
 interface PipelineModeCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -17,10 +18,10 @@ export const PipelineModeCard = memo(({ layoutMode }: PipelineModeCardProps) => 
     <ToggleTile
       title="Pipeline"
       active={isModular}
-      activeLabel="Modular"
-      inactiveLabel="Realtime"
-      activeSublabel="Hybrid Grid"
-      inactiveSublabel="Stream Duplex"
+      activeLabel={PIPELINE_MODE_COPY.modularTitle}
+      inactiveLabel={PIPELINE_MODE_COPY.realtimeTitle}
+      activeSublabel={PIPELINE_MODE_COPY.modularSub}
+      inactiveSublabel={PIPELINE_MODE_COPY.realtimeSub}
       icon={isModular ? Layers : Zap}
       onToggle={() =>
         updateDraft("interaction", "pipeline_mode", isModular ? "realtime" : "modular")
