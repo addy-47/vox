@@ -22,7 +22,7 @@ import { WIZARD_STEPS } from '@/data/welcomeCopy';
 
 export const WizardRoot: React.FC = () => {
   const [state, send] = useMachine(setupMachine);
-  const theme = useSettingsStore(s => s.draftSettings?.ui.theme || 'dark');
+  const theme = useSettingsStore(s => s.draftSettings?.appearance?.theme || 'dark');
   
   React.useEffect(() => {
     // Reveal window after a short delay to ensure React is hydrated and CSS is loaded

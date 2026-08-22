@@ -2,7 +2,7 @@
 //! src/ipc/settings/mutation.rs — Setting update, mutation logic, and persistence commands
 //! ============================================================================
 
-use crate::core::settings::{reload_policy_for, InteractionMode, SettingReloadPolicy, VoxSettings};
+use crate::core::settings::{get_setting_reload_policy, InteractionMode, SettingReloadPolicy, VoxSettings};
 use crate::core::state::AppState;
 use crate::ipc::pipeline::{launch_engine, stop_engine};
 use std::time::Duration;
@@ -41,14 +41,14 @@ pub async fn update_setting(
     app: AppHandle,
 ) -> Result<SettingUpdateResult, String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
-    let policy = reload_policy_for(&domain, &key);
+    let policy = get_setting_reload_policy(&domain, &key);
 
     let applied = {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
         apply_setting_mutation(&mut settings, &domain, &key, &value)?
     };
 
-    if applied && domain == "persistence" && key == "private_mode" {
+    if applied && domain == "history" && key == "private_mode" {
         let is_private = value.as_bool().unwrap_or(false);
         state
             .is_private_mode
@@ -159,7 +159,7 @@ pub async fn update_setting(
         }
     }
 
-    if applied && domain == "interaction" && key == "main_app_mode" {
+    if applied && domain == "interaction" && (key == "mode" || key == "main_app_mode") {
         // Evaluate offload: If switching to PTT and Tray is disabled, we might want to stop engine
         let (dictation_enabled, is_engaged, is_passive) = {
             let s = state.settings.read().unwrap();
@@ -169,7 +169,7 @@ pub async fn update_setting(
                     .pipeline
                     .is_engaged
                     .load(std::sync::atomic::Ordering::Relaxed),
-                s.interaction.main_app_mode == InteractionMode::Passive,
+                s.interaction.mode == InteractionMode::Passive,
             )
         };
 
@@ -207,7 +207,7 @@ pub async fn update_setting(
         }
     }
 
-    if applied && domain == "vad" && key == "vad_backend" {
+    if applied && domain == "vad" && (key == "backend" || key == "vad_backend") {
         log::info!("[Settings] VAD backend changed. Hot-swapping 3-Tier Engine...");
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
@@ -242,7 +242,7 @@ pub async fn update_setting(
 
     log::info!("[Settings] Updated: {}", message);
 
-    if domain == "ui" && key == "theme" {
+    if domain == "appearance" && key == "theme" {
         let _ = app.emit("theme-changed", value.as_str().unwrap_or("dark"));
     }
 
@@ -271,10 +271,10 @@ pub async fn update_theme(app: AppHandle, theme: String) -> Result<(), String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
-        if settings.ui.theme == theme {
+        if settings.appearance.theme == theme {
             return Ok(());
         }
-        settings.ui.theme = theme.clone();
+        settings.appearance.theme = theme.clone();
     }
     let _ = app.emit("theme-changed", theme);
     schedule_debounced_save(app.clone(), state.clone()).await;
@@ -292,7 +292,7 @@ pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
     }
 
     // Immediate apply for theme and other hot settings
-    let _ = app.emit("theme-changed", defaults.ui.theme.clone());
+    let _ = app.emit("theme-changed", defaults.appearance.theme.clone());
 
     schedule_debounced_save(app.clone(), state.clone()).await;
 
@@ -310,15 +310,316 @@ pub(crate) fn apply_setting_mutation(
     value: &serde_json::Value,
 ) -> Result<bool, String> {
     match (domain, key) {
-        ("ui", "theme") => {
-            settings.ui.theme = value.as_str().ok_or("theme must be a string")?.to_string();
+        // Appearance
+        ("appearance", "theme") => {
+            settings.appearance.theme =
+                value.as_str().ok_or("theme must be a string")?.to_string();
         }
-        ("ui", "accent_seed") => {
-            settings.ui.accent_seed = value
+        ("appearance", "accent_seed") => {
+            settings.appearance.accent_seed = value
                 .as_str()
                 .ok_or("accent_seed must be a string")?
                 .to_string();
         }
+
+        // Audio
+        ("audio", "output_mode") => {
+            settings.audio.output_mode = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid output_mode: {}", e))?;
+        }
+        ("audio", "input_device") => {
+            settings.audio.input_device = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid input_device: {}", e))?;
+        }
+
+        // VAD
+        ("vad", "threshold") => {
+            let threshold = value.as_f64().ok_or("threshold must be a number")? as f32;
+            if !(0.0..=1.0).contains(&threshold) {
+                return Err("threshold must be between 0.0 and 1.0".to_string());
+            }
+            settings.vad.threshold = threshold;
+        }
+        ("vad", "ptt_noise_gate") => {
+            settings.vad.ptt_noise_gate =
+                value.as_f64().ok_or("ptt_noise_gate must be a number")? as f32;
+        }
+        ("vad", "backend" | "vad_backend") => {
+            settings.vad.backend = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid vad backend: {}", e))?;
+        }
+
+        // STT
+        ("stt", "active") => {
+            settings.stt.active = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid STT active provider: {}", e))?;
+        }
+        ("stt", "model") => {
+            settings.stt.embedded.model =
+                value.as_str().ok_or("model must be a string")?.to_string();
+        }
+        ("stt", "transliterate_enabled") => {
+            settings.stt.transliterate_enabled = value
+                .as_bool()
+                .ok_or("transliterate_enabled must be a boolean")?;
+        }
+        ("stt", "embedded") => {
+            settings.stt.embedded = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid STT embedded config: {}", e))?;
+        }
+        ("stt", "cloud") => {
+            settings.stt.cloud = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid STT cloud config: {}", e))?;
+        }
+        ("stt" | "asr", "provider") => {
+            if let Ok(config) =
+                serde_json::from_value::<crate::core::settings::SttProviderConfig>(value.clone())
+            {
+                match config {
+                    crate::core::settings::SttProviderConfig::Embedded { model_type } => {
+                        settings.stt.active =
+                            crate::core::settings::SttActiveProvider::Embedded;
+                        settings.stt.embedded.model = model_type;
+                    }
+                    crate::core::settings::SttProviderConfig::Cloud {
+                        provider,
+                        model,
+                        language,
+                        region,
+                        credentials_path,
+                        credentials_json,
+                        project_id,
+                        endpoint,
+                    } => {
+                        settings.stt.active = crate::core::settings::SttActiveProvider::Cloud;
+                        settings.stt.cloud = crate::core::settings::SttCloudConfig {
+                            provider,
+                            model,
+                            language,
+                            region,
+                            credentials_path,
+                            credentials_json,
+                            project_id,
+                            endpoint,
+                        };
+                    }
+                }
+            }
+        }
+
+        // LLM
+        ("llm", "active") => {
+            settings.llm.active = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid LLM active provider: {}", e))?;
+        }
+        ("llm", "model") => {
+            let model_str = value.as_str().ok_or("model must be a string")?.to_string();
+            match settings.llm.active {
+                crate::core::settings::LlmActiveProvider::Embedded => {
+                    settings.llm.embedded.model = model_str;
+                }
+                crate::core::settings::LlmActiveProvider::Server => {
+                    settings.llm.server.model = model_str;
+                }
+                crate::core::settings::LlmActiveProvider::Cloud => {
+                    settings.llm.cloud.model = model_str;
+                }
+            }
+        }
+        ("llm", "temperature") => {
+            settings.llm.temperature =
+                value.as_f64().ok_or("temperature must be a number")? as f32;
+        }
+        ("llm", "compaction_temperature") => {
+            settings.llm.compaction_temperature =
+                value.as_f64().ok_or("compaction_temperature must be a number")? as f32;
+        }
+        ("llm", "max_output_tokens") => {
+            settings.llm.max_output_tokens = value
+                .as_u64()
+                .ok_or("max_output_tokens must be a positive integer")?
+                as u32;
+        }
+        ("llm", "context_window") => {
+            let val = value
+                .as_u64()
+                .ok_or("context_window must be a positive integer")? as u32;
+            if matches!(
+                settings.llm.active,
+                crate::core::settings::LlmActiveProvider::Server
+                    | crate::core::settings::LlmActiveProvider::Cloud
+            ) && val < 8192
+            {
+                return Err(
+                    "Cloud/Server LLM providers require a minimum context size of 8192 tokens"
+                        .to_string(),
+                );
+            }
+            settings.llm.context_window = val;
+        }
+        ("llm", "threads") => {
+            settings.llm.threads =
+                value.as_u64().ok_or("threads must be a positive integer")? as u32;
+        }
+        ("llm", "embedded") => {
+            settings.llm.embedded = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid LLM embedded config: {}", e))?;
+        }
+        ("llm", "server") => {
+            settings.llm.server = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid LLM server config: {}", e))?;
+        }
+        ("llm", "cloud") => {
+            settings.llm.cloud = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid LLM cloud config: {}", e))?;
+        }
+        ("llm", "provider") => {
+            if let Ok(prov) =
+                serde_json::from_value::<crate::core::settings::LlmProviderConfig>(value.clone())
+            {
+                match prov {
+                    crate::core::settings::LlmProviderConfig::Embedded => {
+                        settings.llm.active =
+                            crate::core::settings::LlmActiveProvider::Embedded;
+                    }
+                    crate::core::settings::LlmProviderConfig::OpenAiCompat {
+                        base_url,
+                        model,
+                        api_key,
+                        provider_name,
+                    } => {
+                        let is_cloud = provider_name.as_deref().is_some_and(|p| {
+                            let pl = p.to_lowercase();
+                            pl.contains("nvidia")
+                                || pl.contains("groq")
+                                || pl.contains("openrouter")
+                                || pl.contains("together")
+                                || pl.contains("openai")
+                                || pl.contains("gemini")
+                                || pl.contains("mistral")
+                        });
+                        if is_cloud {
+                            settings.llm.active =
+                                crate::core::settings::LlmActiveProvider::Cloud;
+                            settings.llm.cloud = crate::core::settings::LlmRemoteConfig {
+                                base_url,
+                                model,
+                                api_key,
+                                provider_name,
+                            };
+                        } else {
+                            settings.llm.active =
+                                crate::core::settings::LlmActiveProvider::Server;
+                            settings.llm.server = crate::core::settings::LlmRemoteConfig {
+                                base_url,
+                                model,
+                                api_key,
+                                provider_name,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        // TTS
+        ("tts", "active") => {
+            settings.tts.active = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid TTS active provider: {}", e))?;
+        }
+        ("tts", "voice" | "voice_index") => {
+            settings.tts.voice_index =
+                value.as_i64().ok_or("voice must be an integer")? as i32;
+        }
+        ("tts", "quality_steps") => {
+            settings.tts.quality_steps = value
+                .as_u64()
+                .ok_or("quality_steps must be a positive integer")?
+                as u32;
+        }
+        ("tts", "speed") => {
+            settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
+        }
+        ("tts", "edge_tts") => {
+            settings.tts.edge_tts = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid edge_tts config: {}", e))?;
+        }
+        ("tts", "supertonic") => {
+            settings.tts.supertonic = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid supertonic config: {}", e))?;
+        }
+        ("tts", "chatterbox") => {
+            settings.tts.chatterbox = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid chatterbox config: {}", e))?;
+        }
+        ("tts", "chatterbox_remote") => {
+            settings.tts.chatterbox_remote = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid chatterbox_remote config: {}", e))?;
+        }
+        ("tts", "provider") => {
+            if let Ok(prov) =
+                serde_json::from_value::<crate::core::settings::TtsProviderConfig>(value.clone())
+            {
+                match prov {
+                    crate::core::settings::TtsProviderConfig::Supertonic => {
+                        settings.tts.active =
+                            crate::core::settings::TtsActiveProvider::Supertonic;
+                    }
+                    crate::core::settings::TtsProviderConfig::EdgeTts { voice } => {
+                        settings.tts.active = crate::core::settings::TtsActiveProvider::EdgeTts;
+                        settings.tts.edge_tts.voice = voice;
+                    }
+                    crate::core::settings::TtsProviderConfig::Chatterbox {
+                        language,
+                        quality_steps,
+                        speed,
+                        voice_id,
+                    } => {
+                        settings.tts.active =
+                            crate::core::settings::TtsActiveProvider::Chatterbox;
+                        settings.tts.chatterbox.language = language;
+                        settings.tts.chatterbox.voice_id = voice_id;
+                        settings.tts.quality_steps = quality_steps;
+                        settings.tts.speed = speed;
+                    }
+                    crate::core::settings::TtsProviderConfig::ChatterboxRemote {
+                        endpoint,
+                        language,
+                        quality_steps,
+                        speed,
+                        remote_path,
+                        voice_id,
+                    } => {
+                        settings.tts.active =
+                            crate::core::settings::TtsActiveProvider::ChatterboxRemote;
+                        settings.tts.chatterbox_remote.endpoint = endpoint;
+                        settings.tts.chatterbox_remote.language = language;
+                        settings.tts.chatterbox_remote.remote_path = remote_path;
+                        settings.tts.chatterbox_remote.voice_id = voice_id;
+                        settings.tts.quality_steps = quality_steps;
+                        settings.tts.speed = speed;
+                    }
+                }
+            }
+        }
+
+        // Interaction
+        ("interaction", "mode" | "main_app_mode") => {
+            settings.interaction.mode = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid interaction mode: {}", e))?;
+        }
+        ("interaction", "auto_sleep_timeout") => {
+            settings.interaction.auto_sleep_timeout = value
+                .as_u64()
+                .ok_or("auto_sleep_timeout must be a positive integer")?
+                as u32;
+        }
+        ("interaction", "pipeline_mode") => {
+            settings.interaction.pipeline_mode = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid pipeline_mode: {}", e))?;
+        }
+
+        // Dictation
         ("dictation", "enabled") => {
             settings.dictation.enabled = value.as_bool().ok_or("enabled must be a boolean")?;
         }
@@ -334,169 +635,56 @@ pub(crate) fn apply_setting_mutation(
             settings.dictation.output_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid output_mode: {}", e))?;
         }
-        ("ui", "tray_blur_density") => {
-            settings.ui.tray_blur_density = value
-                .as_u64()
-                .ok_or("tray_blur_density must be a positive integer")?
-                as u32;
+
+        // History
+        ("history", "private_mode") => {
+            settings.history.private_mode =
+                value.as_bool().ok_or("private_mode must be a boolean")?;
         }
-        ("ui", "tray_glass_tint") => {
-            settings.ui.tray_glass_tint =
-                value.as_bool().ok_or("tray_glass_tint must be a boolean")?;
-        }
-        ("ui", "tray_history_limit") => {
-            settings.ui.tray_history_limit = value
+        ("history", "tray_history_limit") => {
+            settings.history.tray_history_limit = value
                 .as_u64()
                 .ok_or("tray_history_limit must be a positive integer")?
                 as u32;
         }
-        ("vad", "threshold") => {
-            let threshold = value.as_f64().ok_or("threshold must be a number")? as f32;
-            if !(0.0..=1.0).contains(&threshold) {
-                return Err("threshold must be between 0.0 and 1.0".to_string());
-            }
-            settings.vad.threshold = threshold;
-        }
-        ("vad", "ptt_noise_gate") => {
-            settings.vad.ptt_noise_gate =
-                value.as_f64().ok_or("ptt_noise_gate must be a number")? as f32;
-        }
-        ("vad", "vad_backend") => {
-            settings.vad.vad_backend = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid vad_backend: {}", e))?;
-        }
-        ("asr", "model") => {
-            settings.asr.model = value.as_str().ok_or("model must be a string")?.to_string();
-        }
-        ("asr", "provider") => {
-            settings.asr.provider = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid STT provider: {}", e))?;
-        }
-        ("asr", "transliterate_enabled") => {
-            settings.asr.transliterate_enabled = value
-                .as_bool()
-                .ok_or("transliterate_enabled must be a boolean")?;
-        }
-        ("audio", "output_mode") => {
-            settings.audio.output_mode = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid output_mode: {}", e))?;
-        }
-        ("audio", "input_device") => {
-            settings.audio.input_device = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid input_device: {}", e))?;
-        }
-        ("llm", "model") => {
-            settings.llm.model = value.as_str().ok_or("model must be a string")?.to_string();
-        }
-        ("llm", "ctx_size") => {
-            let val = value
-                .as_u64()
-                .ok_or("ctx_size must be a positive integer")? as u32;
-            if let crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } =
-                settings.llm.provider
-            {
-                if val < 8192 {
-                    return Err(
-                        "Cloud/Server LLM providers require a minimum context size of 8192 tokens"
-                            .to_string(),
-                    );
-                }
-            }
-            settings.llm.ctx_size = val;
-        }
-        ("llm", "threads") => {
-            settings.llm.threads =
-                value.as_u64().ok_or("threads must be a positive integer")? as u32;
-        }
-        ("llm", "provider") => {
-            let prov: crate::core::settings::LlmProviderConfig =
-                serde_json::from_value(value.clone())
-                    .map_err(|e| format!("Invalid provider: {}", e))?;
-            if settings.llm.provider == prov {
-                return Ok(false);
-            }
-            if let crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } = prov {
-                if settings.llm.ctx_size < 8192 {
-                    settings.llm.ctx_size = 8192;
-                }
-            }
-            settings.llm.provider = prov;
-        }
-        ("interaction", "main_app_mode") => {
-            settings.interaction.main_app_mode = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid main_app_mode: {}", e))?;
-        }
-        ("interaction", "auto_sleep_timeout") => {
-            settings.interaction.auto_sleep_timeout = value
-                .as_u64()
-                .ok_or("auto_sleep_timeout must be a positive integer")?
-                as u32;
-        }
-        ("interaction", "pipeline_mode") => {
-            settings.interaction.pipeline_mode = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid pipeline_mode: {}", e))?;
-        }
-        ("telemetry", "enabled") => {
-            settings.telemetry.enabled = value.as_bool().ok_or("enabled must be a boolean")?;
-        }
-        ("telemetry", "log_level") => {
-            settings.telemetry.log_level = value
-                .as_str()
-                .ok_or("log_level must be a string")?
-                .to_string();
-        }
-        ("tts", "provider") => {
-            settings.tts.provider = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid TTS provider: {}", e))?;
-        }
-        ("tts", "voice") => {
-            settings.tts.voice = value.as_i64().ok_or("voice must be an integer")? as i32;
-        }
-        ("tts", "quality_steps") => {
-            settings.tts.quality_steps = value
-                .as_u64()
-                .ok_or("quality_steps must be a positive integer")?
-                as u32;
-        }
-        ("tts", "speed") => {
-            settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
-        }
-        ("persistence", "private_mode") => {
-            settings.persistence.private_mode =
-                value.as_bool().ok_or("private_mode must be a boolean")?;
-        }
-        ("assistant", "modular_prompt") => {
-            settings.assistant.modular_prompt = value
+
+        // Persona
+        ("persona", "modular_prompt") => {
+            settings.persona.modular_prompt = value
                 .as_str()
                 .ok_or("modular_prompt must be a string")?
                 .to_string();
         }
-        ("assistant", "realtime_prompt") => {
-            settings.assistant.realtime_prompt = value
+        ("persona", "realtime_prompt") => {
+            settings.persona.realtime_prompt = value
                 .as_str()
                 .ok_or("realtime_prompt must be a string")?
                 .to_string();
         }
-        ("realtime", "provider") => {
-            settings.realtime.provider = serde_json::from_value(value.clone())
+
+        // Realtime
+        ("realtime", "active" | "provider") => {
+            settings.realtime.active = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid realtime provider: {}", e))?;
         }
-        ("realtime", "gemini") => {
-            settings.realtime.gemini = serde_json::from_value(value.clone())
+        ("realtime", "gemini" | "gemini_live") => {
+            settings.realtime.gemini_live = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid gemini config: {}", e))?;
         }
-        ("realtime", "openai") => {
-            settings.realtime.openai = serde_json::from_value(value.clone())
+        ("realtime", "openai" | "openai_realtime") => {
+            settings.realtime.openai_realtime = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid openai config: {}", e))?;
         }
-        ("realtime", "deepgram") => {
-            settings.realtime.deepgram = serde_json::from_value(value.clone())
+        ("realtime", "deepgram" | "deepgram_voice_agent") => {
+            settings.realtime.deepgram_voice_agent = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid deepgram config: {}", e))?;
         }
-        ("realtime", "elevenlabs") => {
-            settings.realtime.elevenlabs = serde_json::from_value(value.clone())
+        ("realtime", "elevenlabs" | "elevenlabs_convai") => {
+            settings.realtime.elevenlabs_convai = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid elevenlabs config: {}", e))?;
         }
+
+        // Memory
         ("memory", "context_retrieval_enabled") => {
             settings.memory.context_retrieval_enabled = value
                 .as_bool()
@@ -507,14 +695,14 @@ pub(crate) fn apply_setting_mutation(
                 .as_bool()
                 .ok_or("pipeline_processing_enabled must be a boolean")?;
         }
-        ("memory", "max_personal_memory_share") => {
+        ("memory", "max_context_share") => {
             let val = value
                 .as_f64()
-                .ok_or("max_personal_memory_share must be a number")? as f32;
+                .ok_or("max_context_share must be a number")? as f32;
             if !(0.0..=1.0).contains(&val) {
-                return Err("max_personal_memory_share must be between 0.0 and 1.0".to_string());
+                return Err("max_context_share must be between 0.0 and 1.0".to_string());
             }
-            settings.memory.max_personal_memory_share = val;
+            settings.memory.max_context_share = val;
         }
         ("memory", "context_chaining_window_hours") => {
             settings.memory.context_chaining_window_hours = value
@@ -549,6 +737,23 @@ pub(crate) fn apply_setting_mutation(
             }
             settings.memory.semantic_similarity_cutoff = val;
         }
+
+        // System
+        ("system", "telemetry_enabled") => {
+            settings.system.telemetry_enabled =
+                value.as_bool().ok_or("telemetry_enabled must be a boolean")?;
+        }
+        ("system", "log_level") => {
+            settings.system.log_level = value
+                .as_str()
+                .ok_or("log_level must be a string")?
+                .to_string();
+        }
+        ("system", "setup_completed") => {
+            settings.system.setup_completed =
+                value.as_bool().ok_or("setup_completed must be a boolean")?;
+        }
+
         _ => return Ok(false),
     }
     Ok(true)

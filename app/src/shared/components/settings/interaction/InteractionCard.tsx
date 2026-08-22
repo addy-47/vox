@@ -8,7 +8,7 @@ import { PipelineModeCard } from "./PipelineModeCard";
 import { CategorySelector } from "./CategorySelector";
 import { LlmConfigDesk } from "./LlmConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
-import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providersCopy";
+import { checkIfCloudUrl } from "@/data/providersCopy";
 import { DICTATION_COPY } from "@/data/settingsCopy";
 
 interface InteractionCardProps {
@@ -38,22 +38,24 @@ export const InteractionCard = memo(
 
     const dictationEnabled = dictation?.enabled ?? true;
     const dictationInteractionMode = dictation?.interaction_mode ?? "ptt";
-
-    const currentProvider = llm.provider || { kind: "embedded" };
-    const isCloudUrl = checkIfCloudUrl(currentProvider.base_url || "");
+    const activeLlm = llm.active || "embedded";
+    const activeRemoteUrl = activeLlm === "server" ? llm.server?.base_url : activeLlm === "cloud" ? llm.cloud?.base_url : "";
+    const isCloudUrl = checkIfCloudUrl(activeRemoteUrl || "");
 
     const providerPill =
-      currentProvider.kind === "embedded"
+      activeLlm === "embedded"
         ? "local"
+        : activeLlm === "cloud"
+        ? "cloud"
         : isCloudUrl
-          ? "cloud"
-          : "remote";
+        ? "cloud"
+        : "remote";
 
     const isModular = interaction.pipeline_mode === "modular";
 
     const sttPill = sttPillOverride || "local";
     const llmPill = providerPill;
-    const ttsKind = draftSettings.tts?.provider?.kind || "supertonic";
+    const ttsKind = draftSettings.tts?.active || "supertonic";
     const ttsPill =
       ttsPillOverride ||
       (ttsKind === "chatterbox_remote"
@@ -100,62 +102,32 @@ export const InteractionCard = memo(
 
     const handleLlmPillChange = (value: string) => {
       if (value === "local") {
-        const savedModel = settings.llm.provider.kind === "embedded" ? settings.llm.provider.model : "";
-        updateDraft("llm", "provider", { kind: "embedded", model: savedModel });
+        updateDraft("llm", "active", "embedded");
       } else if (value === "remote") {
-        const savedRemote =
-          settings.llm.provider.kind === "open_ai_compat" &&
-          !checkIfCloudUrl(settings.llm.provider.base_url || "")
-            ? settings.llm.provider
-            : null;
-        updateDraft("llm", "provider", {
-          kind: "open_ai_compat",
-          base_url: savedRemote?.base_url || "http://127.0.0.1:11434",
-          api_key: savedRemote?.api_key || "",
-          provider_name: savedRemote?.provider_name || "Ollama",
-          model: savedRemote?.model || "",
-        });
+        updateDraft("llm", "active", "server");
       } else if (value === "cloud") {
-        const savedCloud =
-          settings.llm.provider.kind === "open_ai_compat" &&
-          checkIfCloudUrl(settings.llm.provider.base_url || "")
-            ? settings.llm.provider
-            : null;
-        updateDraft("llm", "provider", {
-          kind: "open_ai_compat",
-          base_url: savedCloud?.base_url || CLOUD_PROVIDERS[0].url,
-          api_key: savedCloud?.api_key || "",
-          provider_name: savedCloud?.provider_name || CLOUD_PROVIDERS[0].name,
-          model: savedCloud?.model || "",
-        });
+        updateDraft("llm", "active", "cloud");
       }
     };
 
     const handlePillChange = (value: "local" | "remote" | "cloud") => {
       if (activeCategory === "STT") {
         setSttPillOverride(value === "local" ? null : value);
+        if (value === "local") {
+          updateDraft("stt", "active", "embedded");
+        } else if (value === "cloud") {
+          updateDraft("stt", "active", "cloud");
+        }
       } else if (activeCategory === "LLM") {
         handleLlmPillChange(value);
       } else if (activeCategory === "TTS") {
+        setTtsPillOverride(null);
         if (value === "local") {
-          setTtsPillOverride(null);
-          updateDraft("tts", "provider", { kind: "supertonic" });
+          updateDraft("tts", "active", "supertonic");
         } else if (value === "remote") {
-          setTtsPillOverride(null);
-          updateDraft("tts", "provider", {
-            kind: "chatterbox_remote",
-            endpoint: "http://127.0.0.1:7860",
-            language: "en",
-            quality_steps: 8,
-            speed: 1.0,
-            remote_path: "~/.vox",
-          });
+          updateDraft("tts", "active", "chatterbox_remote");
         } else {
-          setTtsPillOverride(null);
-          updateDraft("tts", "provider", {
-            kind: "edge_tts",
-            voice: (draftSettings.tts.provider as any)?.voice || "en-US-AriaNeural",
-          });
+          updateDraft("tts", "active", "edge_tts");
         }
       }
     };

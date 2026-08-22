@@ -1,4 +1,7 @@
 use std::time::Duration;
+use tauri::menu::{
+    CheckMenuItem, CheckMenuItemBuilder, Menu, MenuItemBuilder, PredefinedMenuItem,
+};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 #[cfg(target_os = "linux")]
@@ -41,6 +44,76 @@ pub fn destroy_tray_window(app: &AppHandle) {
         let _ = window.close();
     }
 }
+
+/// Builds the main tray menu. The "Restart Vox" item is included **only** when a
+/// renderer crash has been detected (`main_window_destroyed`), so the action is
+/// not offered under normal operation.
+pub fn build_main_tray_menu(
+    app: &AppHandle<tauri::Wry>,
+) -> tauri::Result<(Menu<tauri::Wry>, CheckMenuItem<tauri::Wry>)> {
+    let state = app.state::<std::sync::Arc<crate::core::state::AppState>>();
+    let crash_detected = state
+        .main_window_destroyed
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    let tray_menu = Menu::new(app)?;
+    let launch_i = MenuItemBuilder::new("Launch Vox").id("launch").build(app)?;
+    let live_i = CheckMenuItemBuilder::new("Vox Live").id("live").build(app)?;
+    tray_menu.append(&launch_i)?;
+    tray_menu.append(&live_i)?;
+
+    if crash_detected {
+        tray_menu.append(&PredefinedMenuItem::separator(app)?)?;
+        let restart_i = MenuItemBuilder::new("Restart Vox").id("restart").build(app)?;
+        tray_menu.append(&restart_i)?;
+    }
+
+    tray_menu.append(&PredefinedMenuItem::separator(app)?)?;
+    let quit_i = MenuItemBuilder::new("Quit").id("quit").build(app)?;
+    tray_menu.append(&quit_i)?;
+
+    Ok((tray_menu, live_i))
+}
+
+/// Syncs the "Vox Live" check item against current dictation settings and stores
+/// its handle in `AppState` for backend-driven updates.
+pub fn sync_live_menu_item(app: &AppHandle<tauri::Wry>, live_i: &CheckMenuItem<tauri::Wry>) {
+    let state = app.state::<std::sync::Arc<crate::core::state::AppState>>();
+    {
+        let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
+        *menu_item_lock = Some(live_i.clone());
+    }
+
+    let (hud_visible, dictation_enabled, is_tray_mode) = {
+        let s = state.settings.read().unwrap();
+        let v = tauri::async_runtime::block_on(state.hud_visible.lock());
+        (
+            *v,
+            s.dictation.enabled,
+            s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
+        )
+    };
+    let is_clickable = dictation_enabled && is_tray_mode;
+    let _ = live_i.set_enabled(is_clickable);
+    let _ = live_i.set_checked(hud_visible && is_clickable);
+}
+
+/// Rebuilds the main tray menu (honoring the crash flag) and re-applies it to the
+/// live tray icon. Used after a renderer crash and after a window rebuild resets it.
+pub fn refresh_tray_menu(app: &AppHandle<tauri::Wry>) {
+    let (tray_menu, live_i) = match build_main_tray_menu(app) {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!("[Tray] Failed to rebuild tray menu: {}", e);
+            return;
+        }
+    };
+    sync_live_menu_item(app, &live_i);
+    if let Some(tray) = app.tray_by_id("vox-tray") {
+        let _ = tray.set_menu(Some(tray_menu));
+    }
+}
+
 
 /// Configures the tray window with standard HUD settings: frameless, always-on-top, etc.
 pub fn setup_tray_window(window: &WebviewWindow) {

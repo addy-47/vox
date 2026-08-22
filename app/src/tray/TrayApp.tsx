@@ -93,13 +93,15 @@ export const TrayApp: React.FC = () => {
   }, [visibilityState, reset]);
 
   // ─── Stable Refs for Listeners ───────────────────────────────────────────
+  const historyLimit = settings?.history?.tray_history_limit || 5;
+
   const stateRef = useRef({
     pttStatus,
     visibilityState,
     interactionId,
     interactionState,
     history,
-    historyLimit: settings?.ui.tray_history_limit || 5,
+    historyLimit,
     liveTargetText,
     callbacks: {
       startNewInteraction,
@@ -121,7 +123,7 @@ export const TrayApp: React.FC = () => {
       interactionId, 
       interactionState, 
       history,
-      historyLimit: settings?.ui.tray_history_limit || 5,
+      historyLimit,
       liveTargetText,
       callbacks: {
         startNewInteraction,
@@ -135,7 +137,7 @@ export const TrayApp: React.FC = () => {
         reset
       }
     };
-  }, [pttStatus, visibilityState, interactionId, interactionState, history, settings?.ui.tray_history_limit, 
+  }, [pttStatus, visibilityState, interactionId, interactionState, history, historyLimit, 
       liveTargetText, startNewInteraction, updatePartial, commitFinal, endSpeechSegment, show, startFade, cancelFade, hideImmediately, reset]);
 
   // ─── Actions ───────────────────────────────────────────────────────────────
@@ -371,8 +373,8 @@ export const TrayApp: React.FC = () => {
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             style={{ 
-               backdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
-               WebkitBackdropFilter: `blur(${settings.ui.tray_blur_density}px) saturate(180%)`,
+               backdropFilter: `blur(20px) saturate(180%)`,
+               WebkitBackdropFilter: `blur(20px) saturate(180%)`,
                backgroundColor: `rgba(var(--card), 0.88)`,
             }}
           >

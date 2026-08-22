@@ -1,5 +1,5 @@
 import { useState, useEffect, memo } from "react";
-import { useSettingsStore } from "@/store/settingsStore";
+import { useSettingsStore, LlmProviderConfig } from "@/store/settingsStore";
 import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providersCopy";
 import { checkLlmProviderHealth } from "@/services/settingsService";
 import {
@@ -28,7 +28,6 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
   const [remoteTtsEndpoint, setRemoteTtsEndpoint] = useState("");
   const [remoteTtsPath, setRemoteTtsPath] = useState("");
-  const [prevTtsProvider, setPrevTtsProvider] = useState<any>(null);
 
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
@@ -36,22 +35,37 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
   if (!draftSettings || !settings) return null;
 
-  const activeLlmId = draftSettings.llm?.model;
+  const activeLlmId =
+    draftSettings.llm?.active === "embedded"
+      ? draftSettings.llm?.embedded?.model
+      : draftSettings.llm?.active === "server"
+      ? draftSettings.llm?.server?.model
+      : draftSettings.llm?.cloud?.model;
   const activeLlm = modelCatalog?.llm?.find((m) => m.id === activeLlmId) || modelCatalog?.llm?.[0];
   const activeLlmDescription = activeLlm?.description || "";
 
-  const activeAsrId = draftSettings.asr?.model;
+  const activeAsrId = draftSettings.stt?.embedded?.model;
   const activeAsr = modelCatalog?.asr?.find((m) => m.id === activeAsrId) || modelCatalog?.asr?.[0];
   const activeAsrDescription = activeAsr?.description || "";
 
-  const activeTtsKind = draftSettings.tts?.provider?.kind;
+  const activeTtsKind = draftSettings.tts?.active;
   const activeTts = modelCatalog?.tts?.find((m) => m.id === activeTtsKind || (activeTtsKind && m.id.includes(activeTtsKind))) || modelCatalog?.tts?.[0];
   const activeTtsDescription = activeTts?.description || "";
 
   const edgeTtsModel = modelCatalog?.tts?.find((m) => m.id === "edge_tts");
   const edgeTtsDescription = edgeTtsModel?.description || "";
 
-  const currentProvider = draftSettings.llm.provider || { kind: "embedded" };
+  const activeLlmProvider = draftSettings.llm.active || "embedded";
+  const currentRemoteConfig = activeLlmProvider === "server" ? draftSettings.llm.server : activeLlmProvider === "cloud" ? draftSettings.llm.cloud : null;
+  const currentProvider: LlmProviderConfig = activeLlmProvider === "embedded"
+    ? { kind: "embedded" }
+    : {
+        kind: "open_ai_compat",
+        base_url: currentRemoteConfig?.base_url || "",
+        model: currentRemoteConfig?.model || "",
+        api_key: currentRemoteConfig?.api_key || undefined,
+        provider_name: currentRemoteConfig?.provider_name || undefined,
+      };
   const isCloudUrl = checkIfCloudUrl(currentProvider.base_url || "");
   const providerPill = currentProvider.kind === "embedded" ? "local" : isCloudUrl ? "cloud" : "remote";
 
@@ -74,30 +88,27 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
     }
   }, [currentProvider, prevLlmProvider, isCloudUrl]);
 
-  const currentTtsProvider = draftSettings.tts?.provider || { kind: "supertonic" };
+  const chatterboxRemote = draftSettings.tts.chatterbox_remote;
 
   useEffect(() => {
-    if (currentTtsProvider !== prevTtsProvider) {
-      setPrevTtsProvider(currentTtsProvider);
-      if (currentTtsProvider.kind === "chatterbox_remote") {
-        setRemoteTtsEndpoint(currentTtsProvider.endpoint || "http://127.0.0.1:7860");
-        setRemoteTtsPath(currentTtsProvider.remote_path || "~/.vox");
-      }
+    if (chatterboxRemote) {
+      setRemoteTtsEndpoint(chatterboxRemote.endpoint || "http://127.0.0.1:7860");
+      setRemoteTtsPath(chatterboxRemote.remote_path || "~/.vox");
     }
-  }, [currentTtsProvider, prevTtsProvider]);
+  }, [chatterboxRemote]);
 
   const handleRemoteTtsEndpointChange = (val: string) => {
     setRemoteTtsEndpoint(val);
-    updateDraft("tts", "provider", {
-      ...currentTtsProvider,
+    updateDraft("tts", "chatterbox_remote", {
+      ...draftSettings.tts.chatterbox_remote,
       endpoint: val || "http://127.0.0.1:7860",
     });
   };
 
   const handleRemoteTtsPathChange = (val: string) => {
     setRemoteTtsPath(val);
-    updateDraft("tts", "provider", {
-      ...currentTtsProvider,
+    updateDraft("tts", "chatterbox_remote", {
+      ...draftSettings.tts.chatterbox_remote,
       remote_path: val || "~/.vox",
     });
   };
@@ -117,13 +128,13 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
           const healthy = await checkLlmProviderHealth(currentProvider);
           setIsHealthy(healthy);
 
-          if (healthy && providerPill === "remote") {
+          if (healthy && providerPill === "remote" && activeLlmProvider === "server") {
             const detectedName = currentProvider.base_url?.includes("11434")
               ? "Ollama"
               : "Remote Host";
             if (currentProvider.provider_name !== detectedName) {
-              updateDraft("llm", "provider", {
-                ...currentProvider,
+              updateDraft("llm", "server", {
+                ...draftSettings.llm.server,
                 provider_name: detectedName,
               });
             }
@@ -146,23 +157,38 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
     currentProvider.kind,
     currentProvider.provider_name,
     providerPill,
+    activeLlmProvider,
     updateDraft,
   ]);
 
   const handleUrlChange = (val: string) => {
     setUrl(val);
-    updateDraft("llm", "provider", {
-      ...currentProvider,
-      base_url: val || "http://127.0.0.1:11434",
-    });
+    if (activeLlmProvider === "server") {
+      updateDraft("llm", "server", {
+        ...draftSettings.llm.server,
+        base_url: val || "http://127.0.0.1:11434",
+      });
+    } else if (activeLlmProvider === "cloud") {
+      updateDraft("llm", "cloud", {
+        ...draftSettings.llm.cloud,
+        base_url: val || CLOUD_PROVIDERS[0].url,
+      });
+    }
   };
 
   const handleApiKeyChange = (key: string) => {
     setApiKey(key);
-    updateDraft("llm", "provider", {
-      ...currentProvider,
-      api_key: key || undefined,
-    });
+    if (activeLlmProvider === "server") {
+      updateDraft("llm", "server", {
+        ...draftSettings.llm.server,
+        api_key: key || null,
+      });
+    } else if (activeLlmProvider === "cloud") {
+      updateDraft("llm", "cloud", {
+        ...draftSettings.llm.cloud,
+        api_key: key || null,
+      });
+    }
   };
 
   const handleCloudCycle = (direction: "left" | "right") => {
@@ -172,14 +198,14 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
         ? (currentIdx - 1 + CLOUD_PROVIDERS.length) % CLOUD_PROVIDERS.length
         : (currentIdx + 1) % CLOUD_PROVIDERS.length;
 
-    updateDraft("llm", "provider", {
-      ...currentProvider,
+    updateDraft("llm", "cloud", {
+      ...draftSettings.llm.cloud,
       base_url: CLOUD_PROVIDERS[nextIdx].url,
       provider_name: CLOUD_PROVIDERS[nextIdx].name,
       api_key:
-        currentProvider.provider_name === CLOUD_PROVIDERS[nextIdx].name
-          ? currentProvider.api_key
-          : "",
+        draftSettings.llm.cloud?.provider_name === CLOUD_PROVIDERS[nextIdx].name
+          ? draftSettings.llm.cloud?.api_key
+          : null,
     });
   };
 
@@ -418,6 +444,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
               value={apiKey}
               onChange={handleApiKeyChange}
               placeholder={CLOUD_PROVIDERS[cloudIndex].keyPlaceholder}
+              error={!apiKey?.trim()}
             />
           </div>
 

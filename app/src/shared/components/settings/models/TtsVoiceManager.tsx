@@ -54,10 +54,10 @@ export const TtsVoiceManager = memo(({
 
   if (!draftSettings) return null;
 
-  const isEdgeTts = draftSettings.tts.provider?.kind === "edge_tts";
+  const isEdgeTts = draftSettings.tts.active === "edge_tts";
   const isChatterbox =
-    draftSettings.tts.provider?.kind === "chatterbox_remote" ||
-    (draftSettings.tts.provider?.kind as any) === "chatterbox";
+    draftSettings.tts.active === "chatterbox_remote" ||
+    draftSettings.tts.active === "chatterbox";
 
   // 1. Simplify Voice Name for Local Presets
   const simplifyVoiceName = (n: string) => {
@@ -72,7 +72,6 @@ export const TtsVoiceManager = memo(({
     return n;
   };
 
-  // 2. Simplify Voice Name for Edge Neural Cloud Voices (e.g. "en-US-AriaNeural" -> "Aria (US)")
   const simplifyEdgeVoiceName = (shortName: string, friendlyName: string) => {
     const parts = shortName.split("-");
     const rawClean = (friendlyName || "").replace(/Microsoft | Server Speech.*Voice | Text to Speech/gi, "").trim();
@@ -91,7 +90,6 @@ export const TtsVoiceManager = memo(({
     return `${cleanName}${country ? ` (${country})` : ""}`;
   };
 
-  // Region bucket filtered Edge Neural Voices List for VoiceCarousel
   const edgeVoicesList = useMemo(() => {
     const rawList = edgeTtsVoices.length > 0 ? edgeTtsVoices : [
       { short_name: "en-US-AriaNeural", friendly_name: "Aria", gender: "Female", locale: "en-US", name: "" },
@@ -118,7 +116,6 @@ export const TtsVoiceManager = memo(({
     }));
   }, [edgeTtsVoices, selectedRegion]);
 
-  // Local / Chatterbox voices
   const localVoices = isChatterbox
     ? [
         { id: "default", name: "Default" },
@@ -129,28 +126,24 @@ export const TtsVoiceManager = memo(({
   const activeVoices = isEdgeTts ? edgeVoicesList : localVoices;
 
   const selectedVoiceId = isEdgeTts
-    ? (draftSettings.tts.provider as any)?.voice || (edgeVoicesList[0]?.id || "en-US-AriaNeural")
+    ? draftSettings.tts.edge_tts?.voice || (edgeVoicesList[0]?.id || "en-US-AriaNeural")
     : isChatterbox
-      ? (draftSettings.tts.provider?.kind === "chatterbox"
-          ? (draftSettings.tts.provider as any).voice_id || "default"
-          : (draftSettings.tts.provider as any)?.voice || "default")
-      : String(draftSettings.tts.voice);
+      ? draftSettings.tts.chatterbox?.language || "default"
+      : String(draftSettings.tts.voice_index ?? 0);
 
   const handleVoiceChange = (id: string) => {
     if (isEdgeTts) {
-      updateDraft("tts", "provider", {
-        kind: "edge_tts",
+      updateDraft("tts", "edge_tts", {
+        ...draftSettings.tts.edge_tts,
         voice: id,
       });
     } else if (isChatterbox) {
-      const voiceIdVal = id === "default" ? null : id;
-      updateDraft("tts", "provider", {
-        ...draftSettings.tts.provider,
-        voice_id: voiceIdVal,
-        voice: id,
-      } as any);
+      updateDraft("tts", "chatterbox", {
+        ...draftSettings.tts.chatterbox,
+        language: id,
+      });
     } else {
-      updateDraft("tts", "voice", Number(id));
+      updateDraft("tts", "voice_index", Number(id));
     }
   };
 
@@ -161,7 +154,6 @@ export const TtsVoiceManager = memo(({
         layoutMode === "small" ? "flex flex-col gap-3" : "flex flex-row gap-4"
       )}
     >
-      {/* Left column: Universal Voice Carousel (60% width) */}
       <div
         className={cn(
           "shrink-0 flex flex-col justify-center",
@@ -179,18 +171,15 @@ export const TtsVoiceManager = memo(({
         />
       </div>
 
-      {/* Right column: Controls, Region Buckets & Speed Sliders (40% width) */}
       <div className="flex-1 flex flex-col justify-between gap-3 min-w-0">
         <div className="flex flex-col gap-3">
           {isEdgeTts ? (
             <>
-              {/* Region Bucket Selector */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-[12px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
                     Region
                   </span>
-                  {/* Minimal Live Status Sphere */}
                   {loadingEdgeVoices ? (
                     <Loader2 size={10} className="animate-spin text-yellow-400" />
                   ) : edgeTtsError ? (
@@ -211,7 +200,6 @@ export const TtsVoiceManager = memo(({
                   )}
                 </div>
 
-                {/* Flat Underline / Segment Region Buttons */}
                 <div className="flex items-center gap-1 border-b border-[rgba(var(--border),0.1)] pb-1">
                   {(["ALL", "US", "UK", "AU", "GLOBAL"] as const).map((region) => (
                     <button
@@ -231,7 +219,6 @@ export const TtsVoiceManager = memo(({
                 </div>
               </div>
 
-              {/* Edge TTS Rotary Speed Knob */}
               <div className="flex-1 flex items-center justify-center pt-1">
                 <RotaryKnob
                   label="Speech Speed"
@@ -248,72 +235,16 @@ export const TtsVoiceManager = memo(({
             </>
           ) : isChatterbox ? (
             <>
-              {/* Chatterbox Quality Slider */}
               <SliderField
                 label="Quality (Steps)"
-                value={((draftSettings.tts.provider as any).quality_steps || 8)}
+                value={draftSettings.tts.quality_steps || 8}
                 min={2}
                 max={12}
                 step={1}
                 formatValue={(v) => `${v} steps`}
-                onChange={(v) =>
-                  updateDraft("tts", "provider", {
-                    ...draftSettings.tts.provider,
-                    quality_steps: v,
-                  } as any)
-                }
+                onChange={(v) => updateDraft("tts", "quality_steps", v)}
               />
 
-              {/* Chatterbox Speed Slider */}
-              <SliderField
-                label="Speed"
-                value={((draftSettings.tts.provider as any).speed || 1.0)}
-                min={0.7}
-                max={2.0}
-                step={0.05}
-                formatValue={(v) => `${v.toFixed(2)}x`}
-                onChange={(v) =>
-                  updateDraft("tts", "provider", {
-                    ...draftSettings.tts.provider,
-                    speed: v,
-                  } as any)
-                }
-              />
-            </>
-          ) : (
-            <>
-              {/* Supertonic Quality Steps */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Quality</span>
-                  <span className="text-[13px] text-[rgb(var(--accent))] font-bold">
-                    {draftSettings.tts.quality_steps <= 4
-                      ? "Speed"
-                      : draftSettings.tts.quality_steps <= 8
-                        ? "Quality"
-                        : "Best"}
-                  </span>
-                </div>
-                <div className="flex gap-1">
-                  {[2, 4, 6, 8, 10, 12].map((step) => (
-                    <button
-                      key={step}
-                      type="button"
-                      onClick={() => updateDraft("tts", "quality_steps", step)}
-                      className={cn(
-                        "flex-1 py-1 rounded-lg text-[12px] font-bold uppercase tracking-wider transition-all duration-300",
-                        draftSettings.tts.quality_steps === step
-                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                          : "glass text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--border),0.04)] hover:border-[rgb(var(--accent))]/20"
-                      )}
-                    >
-                      {step}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Supertonic Speed */}
               <SliderField
                 label="Speed"
                 value={draftSettings.tts.speed || 1.0}
@@ -324,34 +255,95 @@ export const TtsVoiceManager = memo(({
                 onChange={(v) => updateDraft("tts", "speed", v)}
               />
             </>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] text-[rgb(var(--foreground))] font-bold">Quality</span>
+                  <span className="text-[13px] text-[rgb(var(--accent))] font-bold">
+                    {draftSettings.tts.quality_steps <= 4
+                      ? "Fast (4 Steps)"
+                      : draftSettings.tts.quality_steps <= 8
+                      ? "Standard (8 Steps)"
+                      : "High (16 Steps)"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "Fast", steps: 4, desc: "Ultra-low latency" },
+                    { label: "Standard", steps: 8, desc: "Balanced natural" },
+                    { label: "High", steps: 16, desc: "Maximum quality" },
+                  ].map((preset) => {
+                    const isSelected = draftSettings.tts.quality_steps === preset.steps;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => updateDraft("tts", "quality_steps", preset.steps)}
+                        className={cn(
+                          "p-2 rounded-xl border text-center transition-all cursor-pointer",
+                          isSelected
+                            ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] text-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
+                            : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:border-[rgba(var(--accent),0.3)] hover:text-[rgb(var(--foreground))]"
+                        )}
+                      >
+                        <div className="font-bold text-[12px]">{preset.label}</div>
+                        <div className="text-[10px] opacity-70 mt-0.5">{preset.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex-1 flex items-center justify-center pt-1">
+                <RotaryKnob
+                  label="Speech Speed"
+                  value={draftSettings.tts.speed || 1.0}
+                  min={0.7}
+                  max={2.0}
+                  step={0.05}
+                  formatValue={(v) => `${v.toFixed(2)}x`}
+                  formatPreset={(v) => `${v.toFixed(2)}x`}
+                  onChange={(v) => updateDraft("tts", "speed", v)}
+                  presetSteps={[0.8, 1.0, 1.25, 1.5, 2.0]}
+                />
+              </div>
+            </>
           )}
         </div>
 
-        {/* Clone Voice button for Chatterbox */}
-        {isChatterbox && (
+        <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex items-center justify-between">
+          {isChatterbox && (
+            <button
+              type="button"
+              onClick={() => setChatterboxIsAdding((prev) => !prev)}
+              className="text-[11px] font-bold text-[rgb(var(--accent))] hover:underline transition-colors cursor-pointer flex items-center gap-1"
+            >
+              {chatterboxIsAdding ? (
+                <>
+                  <ArrowLeft size={11} />
+                  Back to Presets
+                </>
+              ) : (
+                <>
+                  <Sparkles size={11} />
+                  Clone Voice Profile
+                </>
+              )}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setChatterboxIsAdding((prev) => !prev)}
-            className={cn(
-              "w-full py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(var(--accent),0.1)]",
-              chatterboxIsAdding
-                ? "bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20"
-                : "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-[1.01] active:scale-95 hover:shadow-[0_0_16px_rgba(var(--accent),0.25)]"
-            )}
+            onClick={() => {
+              updateDraft("tts", "speed", 1.0);
+              updateDraft("tts", "quality_steps", 8);
+            }}
+            className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer flex items-center gap-1 ml-auto"
           >
-            {chatterboxIsAdding ? (
-              <>
-                <ArrowLeft size={11} />
-                Back to Presets
-              </>
-            ) : (
-              <>
-                <Sparkles size={11} />
-                Clone Voice Profile
-              </>
-            )}
+            <Sparkles size={12} />
+            <span>Reset Audio Defaults</span>
           </button>
-        )}
+        </div>
       </div>
     </div>
   );

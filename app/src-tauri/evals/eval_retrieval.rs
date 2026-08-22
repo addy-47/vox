@@ -184,9 +184,9 @@ async fn main() -> Result<()> {
         queries_path
     );
 
-    let settings = MemorySettings::default(); // max_personal_memory_share = 0.15
+    let settings = MemorySettings::default(); // max_context_share = 0.15
     let context_window_size = 4096;
-    let budget_cap = (context_window_size as f32 * settings.max_personal_memory_share) as usize; // 614 tokens
+    let budget_cap = (context_window_size as f32 * settings.max_context_share) as usize; // 614 tokens
 
     let mut raw_vec = vec![0.0f32; 384];
     raw_vec[0] = 1.0;

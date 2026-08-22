@@ -13,7 +13,7 @@ pub async fn toggle_hud_visibility(app: AppHandle) {
     let (setup_completed, dictation_enabled, is_tray_mode) = {
         let s = state.settings.read().unwrap();
         (
-            s.setup.completed,
+            s.system.setup_completed,
             s.dictation.enabled,
             s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
         )
@@ -220,7 +220,7 @@ pub async fn update_interaction_mode(
 
         match target.to_lowercase().as_str() {
             "main" => {
-                settings.interaction.main_app_mode = new_mode.clone();
+                settings.interaction.mode = new_mode.clone();
             }
             "tray" | "dictation" => {
                 settings.dictation.interaction_mode = match new_mode {
@@ -264,7 +264,7 @@ pub async fn update_interaction_mode(
                     .pipeline
                     .is_engaged
                     .load(std::sync::atomic::Ordering::Relaxed),
-                s.interaction.main_app_mode == InteractionMode::Passive,
+                s.interaction.mode == InteractionMode::Passive,
             )
         };
 

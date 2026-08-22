@@ -1,7 +1,7 @@
 import { memo, useState, useMemo, useRef, useEffect } from "react";
 import { useSettingsStore, type LlmModelInfo, type ModelCapabilities, type LlmProviderConfig } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
-import { Loader2, Network, RefreshCw, AlertCircle, Sparkles, Check, Search, X } from "lucide-react";
+import { Loader2, Network, RefreshCw, AlertCircle, Sparkles, Search, X, Plus } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { fzfMultiTermScore } from "@/shared/lib/fuzzy";
@@ -25,8 +25,8 @@ export interface LlmCatalogViewProps {
   handleProbeCapabilities: (id?: string) => void;
   customModelId: string;
   setCustomModelId: (id: string) => void;
-  customModelStatus: 'idle' | 'checking' | 'valid' | 'invalid';
-  handleValidateCustomModel: () => void;
+  customModelStatus?: 'idle' | 'checking' | 'valid' | 'invalid';
+  handleValidateCustomModel?: () => void;
 }
 
 export const LlmCatalogView = memo(({
@@ -48,8 +48,6 @@ export const LlmCatalogView = memo(({
   handleProbeCapabilities,
   customModelId,
   setCustomModelId,
-  customModelStatus,
-  handleValidateCustomModel,
 }: LlmCatalogViewProps) => {
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
@@ -59,51 +57,195 @@ export const LlmCatalogView = memo(({
   const [isSearching, setIsSearching] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Custom Model ID expandable bar
+  const [isCustomInputOpen, setIsCustomInputOpen] = useState(false);
+  const customInputRef = useRef<HTMLInputElement | null>(null);
+
   useEffect(() => {
     if (isSearching && searchInputRef.current) {
       searchInputRef.current.focus();
     }
   }, [isSearching]);
 
-  // Filtered Remote Models with fzf-style fuzzy matching and ranking
+  useEffect(() => {
+    if (isCustomInputOpen && customInputRef.current) {
+      customInputRef.current.focus();
+    }
+  }, [isCustomInputOpen]);
+
+  const selectedModelId = provider && "model" in provider ? provider.model : undefined;
+
+  // Filtered Remote Models with fzf-style fuzzy matching and selected model prioritized first
   const filteredRemoteModels = useMemo(() => {
     const trimmed = searchQuery.trim();
-    if (!trimmed) return remoteModels;
+    let models = remoteModels;
 
-    const terms = trimmed.split(/\s+/).filter(Boolean);
-    if (terms.length === 0) return remoteModels;
+    if (trimmed) {
+      const terms = trimmed.split(/\s+/).filter(Boolean);
+      if (terms.length > 0) {
+        const scored: Array<{ model: LlmModelInfo; score: number }> = [];
 
-    const scored: Array<{ model: LlmModelInfo; score: number }> = [];
+        for (const model of remoteModels) {
+          const candidateFields = [
+            model.id,
+            model.name,
+            model.family || "",
+            model.quantization || "",
+          ];
+          const score = fzfMultiTermScore(terms, candidateFields);
+          if (score !== null) {
+            scored.push({ model, score });
+          }
+        }
 
-    for (const model of remoteModels) {
-      const candidateFields = [
-        model.id,
-        model.name,
-        model.family || "",
-        model.quantization || "",
-      ];
-      const score = fzfMultiTermScore(terms, candidateFields);
-      if (score !== null) {
-        scored.push({ model, score });
+        // Sort descending by match score so the best fuzzy match is at the top
+        scored.sort((a, b) => b.score - a.score);
+        models = scored.map((item) => item.model);
       }
     }
 
-    // Sort descending by match score so the best fuzzy match is at the top
-    scored.sort((a, b) => b.score - a.score);
+    // Pinned: The selected model is placed first in the list
+    if (selectedModelId) {
+      const selectedIndex = models.findIndex((m) => m.id === selectedModelId);
+      if (selectedIndex > 0) {
+        const copy = [...models];
+        const [selected] = copy.splice(selectedIndex, 1);
+        copy.unshift(selected);
+        return copy;
+      }
+    }
 
-    return scored.map((item) => item.model);
-  }, [remoteModels, searchQuery]);
+    return models;
+  }, [remoteModels, searchQuery, selectedModelId]);
+
+  const handleApplyCustomModel = () => {
+    const modelId = customModelId.trim();
+    if (!modelId) return;
+    const draft = useSettingsStore.getState().draftSettings;
+    const activeLlm = draft?.llm?.active || "embedded";
+    if (activeLlm === "server" && draft?.llm?.server) {
+      updateDraft("llm", "server", { ...draft.llm.server, model: modelId });
+    } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
+      updateDraft("llm", "cloud", { ...draft.llm.cloud, model: modelId });
+    } else if (activeLlm === "embedded" && draft?.llm?.embedded) {
+      updateDraft("llm", "embedded", { ...draft.llm.embedded, model: modelId });
+    }
+    setIsCustomInputOpen(false);
+  };
+
+  const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
+
+  // Model Tab: Local GGUF Model Grid (Pinned: selected model first)
+  const sortedLocalModels = useMemo(() => {
+    const list = [...(modelCatalog?.llm || [])];
+    if (selectedLlmId) {
+      const idx = list.findIndex((m) => m.id === selectedLlmId);
+      if (idx > 0) {
+        const [selected] = list.splice(idx, 1);
+        list.unshift(selected);
+      }
+    }
+    return list;
+  }, [modelCatalog?.llm, selectedLlmId]);
 
   // Remote / OpenAI-Compat Server Catalog
   if (isRemoteLlm) {
     const remoteUrl = provider && "base_url" in provider ? provider.base_url : undefined;
-    const selectedModelId = provider && "model" in provider ? provider.model : undefined;
 
     return (
-      <div className="space-y-3 w-full animate-fade-in">
-        {/* Connected Server Header with Search Bar */}
-        <div className="flex items-center justify-between gap-2 min-h-[38px] pb-1 border-b border-[rgba(var(--foreground),0.04)]">
-          {!isSearching && !searchQuery ? (
+      <div className="w-full h-full flex flex-col min-h-0 space-y-2 animate-fade-in">
+        {/* Connected Server Header with Search Bar / Custom Model Input (Fixed/Sticky at top) */}
+        <div className="flex items-center justify-between gap-2 min-h-[34px] pb-1 border-b border-[rgba(var(--foreground),0.04)] shrink-0">
+          {isCustomInputOpen ? (
+            <div className="flex items-center gap-2 w-full animate-fade-in">
+              <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.35)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
+                <Plus size={14} className="text-[rgb(var(--accent))] shrink-0" />
+                <input
+                  ref={customInputRef}
+                  type="text"
+                  value={customModelId}
+                  onChange={(e) => setCustomModelId(e.target.value)}
+                  placeholder="Enter custom model ID (e.g. mistralai/mistral-large)..."
+                  className="w-full bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setIsCustomInputOpen(false);
+                    } else if (e.key === "Enter" && customModelId.trim()) {
+                      handleApplyCustomModel();
+                    }
+                  }}
+                />
+                {customModelId && (
+                  <button
+                    type="button"
+                    onClick={() => setCustomModelId("")}
+                    className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                disabled={!customModelId.trim()}
+                onClick={handleApplyCustomModel}
+                className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
+              >
+                Use
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCustomInputOpen(false)}
+                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.05)] transition-all cursor-pointer shrink-0"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          ) : isSearching || searchQuery ? (
+            <div className="flex items-center gap-2 w-full animate-fade-in">
+              <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.35)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
+                <Search size={14} className="text-[rgb(var(--accent))] shrink-0" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      if (searchQuery) {
+                        setSearchQuery("");
+                      } else {
+                        setIsSearching(false);
+                      }
+                    } else if (e.key === "Enter") {
+                      searchInputRef.current?.blur();
+                    }
+                  }}
+                  placeholder="Filter models with fuzzy matching (e.g. llama 70b, gemma q4)..."
+                  className="w-full bg-transparent border-none outline-none text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSearching(false);
+                  setSearchQuery("");
+                }}
+                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.05)] transition-all cursor-pointer shrink-0"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          ) : (
             <>
               <div className="flex flex-col min-w-0">
                 <span className="font-bold text-[rgb(var(--foreground))] text-[13px] flex items-center gap-1.5 truncate">
@@ -124,7 +266,22 @@ export const LlmCatalogView = memo(({
                   <>
                     <button
                       type="button"
-                      onClick={() => setIsSearching(true)}
+                      onClick={() => {
+                        setIsCustomInputOpen(true);
+                        setIsSearching(false);
+                      }}
+                      className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] hover:border-[rgb(var(--accent))]/40 hover:bg-[rgba(var(--accent),0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer shadow-sm flex items-center justify-center"
+                      title="Enter custom model ID"
+                      aria-label="Custom model ID"
+                    >
+                      <Plus size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSearching(true);
+                        setIsCustomInputOpen(false);
+                      }}
                       className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] hover:border-[rgb(var(--accent))]/40 hover:bg-[rgba(var(--accent),0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer shadow-sm flex items-center justify-center"
                       title="Search models (fzf fuzzy filter)"
                       aria-label="Search models"
@@ -138,77 +295,21 @@ export const LlmCatalogView = memo(({
                 )}
               </div>
             </>
-          ) : (
-            <div className="flex items-center gap-2 w-full animate-fade-in">
-              <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.35)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
-                <Search size={14} className="text-[rgb(var(--accent))] shrink-0" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      if (searchQuery) {
-                        setSearchQuery("");
-                      } else {
-                        setIsSearching(false);
-                      }
-                    } else if (e.key === "Enter") {
-                      searchInputRef.current?.blur();
-                    }
-                  }}
-                  placeholder="Fuzzy search models by name, ID, family, or quant..."
-                  className="w-full bg-transparent border-none outline-none text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 font-sans"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery("");
-                      searchInputRef.current?.focus();
-                    }}
-                    className="p-0.5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-                    title="Clear search text"
-                  >
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-
-              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] shrink-0 font-medium px-1">
-                {filteredRemoteModels.length}/{remoteModels.length}
-              </span>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSearching(false);
-                  setSearchQuery("");
-                }}
-                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.05)] transition-colors cursor-pointer shrink-0"
-                title="Close search"
-              >
-                <X size={15} />
-              </button>
-            </div>
           )}
         </div>
 
         {remoteModelsError && (
-          <div className="text-[12px] font-bold text-red-400/90 bg-red-400/5 border border-red-400/20 rounded-xl px-3 py-2 flex items-center gap-2">
+          <div className="text-[12px] font-bold text-red-400/90 bg-red-400/5 border border-red-400/20 rounded-xl px-3 py-2 flex items-center gap-2 shrink-0">
             <AlertCircle size={16} className="shrink-0 text-red-400" />
             <span>{remoteModelsError}</span>
           </div>
         )}
 
-        {/* Remote Models 2-Column Grid */}
+        {/* Remote Models 2-Column Grid (Only Scrollable Area) */}
         <div
           className={cn(
-            "grid gap-2.5 pr-1",
-            layoutMode === "small"
-              ? "grid-cols-1 max-h-none overflow-y-visible"
-              : "grid-cols-1 sm:grid-cols-2 max-h-[240px] overflow-y-auto custom-scrollbar"
+            "grid auto-rows-max content-start gap-2 pr-1 flex-1 min-h-0 overflow-y-auto custom-scrollbar",
+            layoutMode === "small" ? "grid-cols-1 max-h-[235px]" : "grid-cols-1 sm:grid-cols-2"
           )}
         >
           {remoteModels.length === 0 ? (
@@ -230,7 +331,14 @@ export const LlmCatalogView = memo(({
           ) : (
             filteredRemoteModels.map((model) => {
               const isSelected = selectedModelId === model.id;
-              const probed = probingMap[model.id]?.capabilities || model.capabilities;
+              const probed =
+                probingMap[model.id]?.capabilities ||
+                model.capabilities ||
+                capabilitiesCache?.[`open_ai_compat:${model.id}`] ||
+                capabilitiesCache?.[`server:${model.id}`] ||
+                capabilitiesCache?.[`cloud:${model.id}`] ||
+                capabilitiesCache?.[`embedded:${model.id}`] ||
+                capabilitiesCache?.[model.id];
               const isTesting = probingMap[model.id]?.status === "testing";
               const isGpu = probed?.is_gpu_accelerated;
 
@@ -250,23 +358,44 @@ export const LlmCatalogView = memo(({
               }
 
               return (
-                <button
+                <div
                   key={model.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => {
-                    if (provider && "base_url" in provider) {
-                      updateDraft("llm", "provider", { ...provider, model: model.id });
+                    const draft = useSettingsStore.getState().draftSettings;
+                    const activeLlm = draft?.llm?.active || "embedded";
+                    if (activeLlm === "server" && draft?.llm?.server) {
+                      updateDraft("llm", "server", { ...draft.llm.server, model: model.id });
+                    } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
+                      updateDraft("llm", "cloud", { ...draft.llm.cloud, model: model.id });
+                    } else if (activeLlm === "embedded" && draft?.llm?.embedded) {
+                      updateDraft("llm", "embedded", { ...draft.llm.embedded, model: model.id });
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      const draft = useSettingsStore.getState().draftSettings;
+                      const activeLlm = draft?.llm?.active || "embedded";
+                      if (activeLlm === "server" && draft?.llm?.server) {
+                        updateDraft("llm", "server", { ...draft.llm.server, model: model.id });
+                      } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
+                        updateDraft("llm", "cloud", { ...draft.llm.cloud, model: model.id });
+                      } else if (activeLlm === "embedded" && draft?.llm?.embedded) {
+                        updateDraft("llm", "embedded", { ...draft.llm.embedded, model: model.id });
+                      }
                     }
                   }}
                   className={cn(
-                    "group w-full text-left p-3.5 rounded-xl border transition-all duration-200 relative overflow-hidden cursor-pointer",
+                    "group w-full text-left p-3 rounded-xl border transition-all duration-200 relative shrink-0 cursor-pointer min-h-[64px] flex flex-col justify-between hover:z-20",
                     isSelected
                       ? "bg-[rgba(var(--accent),0.07)] border-[rgb(var(--accent))] shadow-[0_0_16px_rgba(var(--accent),0.12)] ring-1 ring-[rgb(var(--accent))]/40"
                       : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.06)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--accent),0.03)]",
                     isGpu && !isSelected ? "border-purple-500/30" : ""
                   )}
                 >
-                  {/* Top Row: Title + Tags + Selection Indicator */}
+                  {/* Top Row: Title + Quantization + Reset Icon on Top Right */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -295,11 +424,6 @@ export const LlmCatalogView = memo(({
                             {model.quantization}
                           </span>
                         )}
-                        {model.family && (
-                          <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.1)] leading-none">
-                            {model.family}
-                          </span>
-                        )}
                       </div>
 
                       {/* Optional Subtitle (Only shown if model.name is genuinely different from model.id, or to display size) */}
@@ -318,102 +442,106 @@ export const LlmCatalogView = memo(({
                       )}
                     </div>
 
-                    {/* Right Top: GPU/Hardware Tag + Selection Circle */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      {isGpu ? (
-                        <Tooltip label={probed?.gpu_status || "GPU Offloaded"}>
-                          <span className="text-[10.5px] font-bold font-mono px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1">
-                            🚀 GPU {probed?.vram_bytes ? `${(probed.vram_bytes / (1024 * 1024)).toFixed(0)}MB` : ""}
-                          </span>
-                        </Tooltip>
-                      ) : probed?.server_has_gpu ? (
-                        <Tooltip label="Server has GPU hardware, but model is running in CPU mode">
-                          <span className="text-[10.5px] font-bold font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                            ⚠️ CPU Mode
-                          </span>
-                        </Tooltip>
-                      ) : null}
-
-                      <div className={cn(
-                        "w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200",
-                        isSelected
-                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm ring-2 ring-[rgb(var(--accent))]/30"
-                          : "border border-[rgba(var(--foreground),0.18)] group-hover:border-[rgb(var(--accent))]/60 group-hover:scale-105"
-                      )}>
-                        {isSelected && <Check size={12} strokeWidth={3} />}
-                      </div>
+                    {/* Right Top: Reset / Re-run Probe Icon */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {probed && !isTesting && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleProbeCapabilities(model.id);
+                          }}
+                          className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all cursor-pointer"
+                          title="Re-run capability benchmark"
+                        >
+                          <RefreshCw size={12} />
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {/* Bottom Row: Capabilities & Metrics (Spanning Left to Right) */}
-                  <div className="flex items-center justify-between gap-2 mt-2.5 pt-2 border-t border-[rgba(var(--foreground),0.04)]">
-                    {/* Left: Capability badges */}
-                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                  {/* Bottom Row: Unified Capabilities Trigger (Left) & Family Badge or Benchmark (Right) */}
+                  <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-[rgba(var(--foreground),0.04)] text-[11px]">
+                    {/* Left: Unified Capabilities with Info Tooltip on Hover */}
+                    <div className="flex items-center gap-1 min-w-0">
                       {isTesting ? (
-                        <span className="text-[11px] font-bold text-[rgb(var(--accent))] flex items-center gap-1.5 py-0.5">
-                          <Loader2 size={12} className="animate-spin" />
-                          <span>Testing capabilities...</span>
+                        <span className="font-bold text-[rgb(var(--accent))] flex items-center gap-1.5 py-0.5">
+                          <Loader2 size={12} className="animate-spin shrink-0" />
+                          <span className="truncate">Benchmarking...</span>
                         </span>
                       ) : probed ? (
-                        <>
-                          {probed.supports_tools && (
-                            <Tooltip label="Supports tool calling / function calling">
-                              <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1">
-                                🛠️ Tools
-                              </span>
-                            </Tooltip>
-                          )}
-                          {probed.supports_latin && (
-                            <Tooltip label="Supports Latin Script (English)">
-                              <span className="text-[10.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                EN
-                              </span>
-                            </Tooltip>
-                          )}
-                          {probed.supports_devanagari && (
-                            <Tooltip label="Supports Devanagari Script (Hindi / Hinglish)">
-                              <span className="text-[10.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                DEV
-                              </span>
-                            </Tooltip>
-                          )}
-                          {!probed.supports_tools && !probed.supports_latin && !probed.supports_devanagari && (
-                            <span className="text-[10.5px] text-[rgb(var(--foreground-muted))]/60 font-mono">Standard LLM</span>
-                          )}
-                        </>
+                        <Tooltip
+                          side="top"
+                          align="start"
+                          className="p-3 min-w-[220px] whitespace-normal text-left z-50 border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-2xl backdrop-blur-2xl"
+                          label={
+                            <div className="space-y-1.5 text-[11px] font-sans">
+                              <div className="font-bold text-[rgb(var(--foreground))] border-b border-[rgba(var(--foreground),0.08)] pb-1 flex items-center justify-between">
+                                <span>Model Capabilities</span>
+                                {isGpu ? (
+                                  <span className="text-purple-400 font-mono text-[10px] font-bold">🚀 GPU</span>
+                                ) : probed?.server_has_gpu ? (
+                                  <span className="text-amber-400 font-mono text-[10px] font-bold">⚠️ CPU</span>
+                                ) : null}
+                              </div>
+                              <div className="space-y-1 font-mono text-[10.5px]">
+                                {probed.tps != null && probed.tps > 0 && (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-[rgb(var(--foreground-muted))]">Speed:</span>
+                                    <span className="text-emerald-400 font-bold">⚡ {probed.tps.toFixed(1)} tps</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-[rgb(var(--foreground-muted))]">Context:</span>
+                                  <span className="text-[rgb(var(--foreground))]">
+                                    {probed.context_window
+                                      ? probed.context_window >= 1000000
+                                        ? `${(probed.context_window / 1000000).toFixed(1)}M tokens`
+                                        : `${Math.round(probed.context_window / 1024)}k tokens`
+                                      : "Managed"}
+                                  </span>
+                                </div>
+                                {probed.vram_bytes ? (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-[rgb(var(--foreground-muted))]">VRAM:</span>
+                                    <span className="text-purple-300">{(probed.vram_bytes / (1024 * 1024)).toFixed(0)} MB</span>
+                                  </div>
+                                ) : null}
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-[rgb(var(--foreground-muted))]">Tools:</span>
+                                  <span className={probed.supports_tools ? "text-blue-400 font-bold" : "text-[rgb(var(--foreground-muted))]/60"}>
+                                    {probed.supports_tools ? "Supported" : "None"}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-[rgb(var(--foreground-muted))]">Languages:</span>
+                                  <span className="text-[rgb(var(--foreground))] font-bold">
+                                    {[
+                                      probed.supports_latin && "EN",
+                                      probed.supports_devanagari && "HIN",
+                                    ].filter(Boolean).join(", ") || "Standard"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          }
+                        >
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.4)] transition-all cursor-help">
+                            <Sparkles size={11} className="text-[rgb(var(--accent))] shrink-0" />
+                            <span>Capabilities</span>
+                          </div>
+                        </Tooltip>
                       ) : (
-                        <span className="text-[11px] text-[rgb(var(--foreground-muted))]/50 italic">Capabilities not yet probed</span>
+                        <span className="text-[10.5px] text-[rgb(var(--foreground-muted))]/50 font-mono">Not benchmarked</span>
                       )}
                     </div>
 
-                    {/* Right: Context Window, TPS & Probe action */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      {probed?.context_window ? (
-                        <Tooltip label={`Context Window: ${probed.context_window.toLocaleString()} tokens`}>
-                          <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground))]/85 border border-[rgba(var(--foreground),0.06)] flex items-center gap-1 font-medium">
-                            <span>🧠</span>
-                            <span>
-                              {probed.context_window >= 1000000
-                                ? `${(probed.context_window / 1000000).toFixed(1)}M`
-                                : `${Math.round(probed.context_window / 1024)}k`}
-                            </span>
-                          </span>
-                        </Tooltip>
-                      ) : probed ? (
-                        <Tooltip label="Context window is managed by the remote endpoint (no client clamp)">
-                          <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 border border-[rgba(var(--foreground),0.05)]">
-                            Managed
-                          </span>
-                        </Tooltip>
-                      ) : null}
-
-                      {probed?.tps && (
-                        <Tooltip label={`Response Speed: ${probed.tps.toFixed(1)} tokens/sec`}>
-                          <span className="text-[11px] font-mono font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-1">
-                            <span>⚡</span>
-                            <span>{probed.tps.toFixed(0)} tps</span>
-                          </span>
-                        </Tooltip>
+                    {/* Right: Family Badge (when probed) OR Benchmark Button (when unprobed) */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {probed && model.family && (
+                        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] leading-none">
+                          {model.family}
+                        </span>
                       )}
 
                       {!probed && !isTesting && (
@@ -423,77 +551,32 @@ export const LlmCatalogView = memo(({
                             e.stopPropagation();
                             handleProbeCapabilities(model.id);
                           }}
-                          className="text-[11px] font-bold text-[rgb(var(--accent))] px-2.5 py-0.5 rounded-lg bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))]/40 transition-all flex items-center gap-1 cursor-pointer"
-                          title="Run quick capability test (tools, speed, scripts)"
+                          className="text-[11px] font-bold text-[rgb(var(--accent))] px-2.5 py-0.5 rounded-lg bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/25 hover:bg-[rgb(var(--accent))]/20 transition-all flex items-center gap-1 cursor-pointer"
+                          title="Run capability benchmark"
                         >
                           <Sparkles size={11} />
-                          <span>Test</span>
+                          <span>Benchmark</span>
                         </button>
                       )}
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })
-          )}
-        </div>
-
-        {/* Custom Model ID field */}
-        <div className="mt-3 pt-3 border-t border-[rgba(var(--foreground),0.06)] space-y-2">
-          <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/80 uppercase tracking-wider block">
-            Use Custom Model ID
-          </span>
-          <div className="flex gap-2">
-            <div className="flex-1 border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-              <input
-                type="text"
-                value={customModelId}
-                onChange={(e) => {
-                  setCustomModelId(e.target.value);
-                }}
-                placeholder="e.g. gemini-2.5-pro"
-                className="w-full bg-transparent border-none outline-none text-[12px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleValidateCustomModel}
-              disabled={!customModelId.trim() || customModelStatus === "checking"}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border shrink-0 cursor-pointer",
-                customModelStatus === "checking" && "bg-[rgba(var(--foreground),0.05)] border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground-muted))]",
-                customModelStatus === "valid" && "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20",
-                customModelStatus === "invalid" && "bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20",
-                customModelStatus === "idle" && "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] border-[rgba(var(--accent),0.2)] hover:scale-[1.02] active:scale-95"
-              )}
-            >
-              {customModelStatus === "checking" && "Checking..."}
-              {customModelStatus === "valid" && "Valid ✓"}
-              {customModelStatus === "invalid" && "Not Listed ⚠"}
-              {customModelStatus === "idle" && "Validate & Use"}
-            </button>
-          </div>
-          {customModelStatus === "invalid" && (
-            <div className="text-[11px] text-amber-400/80 leading-normal flex items-start gap-1">
-              <span>⚠</span>
-              <span>Model ID not in standard server list. Selected in draft anyway, but verify spelling.</span>
-            </div>
-          )}
-          {customModelStatus === "valid" && (
-            <div className="text-[11px] text-emerald-400/80 leading-normal flex items-start gap-1">
-              <span>✓</span>
-              <span>Model verified successfully! Selected and ready to save.</span>
-            </div>
           )}
         </div>
       </div>
     );
   }
 
-  // Model Tab: Local GGUF Model Grid
   return (
-    <div className={cn("grid gap-2.5", layoutMode === "small" ? "grid-cols-1" : "grid-cols-2")}>
-      {(modelCatalog?.llm || []).map((model) => {
+    <div
+      className={cn(
+        "grid auto-rows-max content-start gap-2.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1",
+        layoutMode === "small" ? "grid-cols-1 max-h-[235px]" : "grid-cols-2"
+      )}
+    >
+      {sortedLocalModels.map((model) => {
         const isSelected = selectedLlmId === model.id;
         const isDownloaded = modelPresence[model.id];
         const status = downloadStatuses[model.id];
@@ -511,7 +594,12 @@ export const LlmCatalogView = memo(({
             isActive={isSelected}
             isRequired={isGroupRequired(model.id)}
             layoutMode={layoutMode}
-            onSelect={() => updateDraft("llm", "model", model.id)}
+            onSelect={() => {
+              const draft = useSettingsStore.getState().draftSettings;
+              if (draft?.llm?.embedded) {
+                updateDraft("llm", "embedded", { ...draft.llm.embedded, model: model.id });
+              }
+            }}
             confirmDeleteId={confirmDeleteId}
             setConfirmDeleteId={setConfirmDeleteId}
             downloadStatus={status}

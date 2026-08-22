@@ -436,7 +436,7 @@ async fn main() -> anyhow::Result<()> {
     let root = home.join(".vox");
     vox_lib::utils::paths::init_with_root(root.clone());
     let settings = VoxSettings::load();
-    let system_prompt = settings.assistant.realtime_prompt.clone();
+    let system_prompt = settings.persona.realtime_prompt.clone();
     let cli = Cli::parse();
 
     let provider_name = cli.provider.to_lowercase();

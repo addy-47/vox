@@ -239,8 +239,8 @@ function isTouchingProtectedTag(spans: TagSpan[], start: number, end: number, is
 }
 
 export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) => {
-  const modularPrompt = useSettingsStore((s) => s.draftSettings?.assistant.modular_prompt ?? "");
-  const realtimePrompt = useSettingsStore((s) => s.draftSettings?.assistant.realtime_prompt ?? "");
+  const modularPrompt = useSettingsStore((s) => s.draftSettings?.persona.modular_prompt ?? "");
+  const realtimePrompt = useSettingsStore((s) => s.draftSettings?.persona.realtime_prompt ?? "");
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   const [activeTab, setActiveTab] = useState<"modular" | "realtime">("modular");
@@ -259,25 +259,12 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       const start = target.selectionStart;
       const end = target.selectionEnd;
 
-      // Allow navigation and copy/paste hotkeys
-      if (
-        e.key.startsWith("Arrow") ||
-        e.key === "Home" ||
-        e.key === "End" ||
-        e.key === "PageUp" ||
-        e.key === "PageDown" ||
-        e.key === "Tab" ||
-        e.key === "Escape" ||
-        (e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "a")
-      ) {
-        return;
-      }
-
       const isBackspace = e.key === "Backspace";
       const isDelete = e.key === "Delete";
 
       if (isTouchingProtectedTag(tagSpans, start, end, isBackspace, isDelete)) {
         e.preventDefault();
+        return;
       }
     },
     [tagSpans]
@@ -310,7 +297,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       }
 
       const field = activeTab === "modular" ? "modular_prompt" : "realtime_prompt";
-      updateDraft("assistant", field, nextValue);
+      updateDraft("persona", field, nextValue);
     },
     [activeTab, tagSpans, updateDraft]
   );

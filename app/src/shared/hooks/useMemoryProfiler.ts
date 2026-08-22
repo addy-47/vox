@@ -107,7 +107,7 @@ export function useMemoryProfiler(enabled = true) {
 
         setPageRecords((prev) => ({ ...prev, [r]: updated }));
 
-        // Record snapshot event to backend when triggered manually or upon new peak
+        // Record snapshot event to backend ONLY when triggered manually via button click
         if (options?.isManual) {
           const now = Date.now();
           const cleanRoute = r.replace(/^\/+|\/+$/g, "").replace(/\//g, "_") || "home";
@@ -139,24 +139,6 @@ export function useMemoryProfiler(enabled = true) {
 
           // Ensure visual feedback on button
           await new Promise((res) => setTimeout(res, 350));
-        } else if (existing && existing.baseline && isNewPeak && peakDelta > 5) {
-          recordMemoryProfileEvent({
-            route: r,
-            event_type: "peak",
-            baseline_ram_mb: baselineTotal,
-            current_ram_mb: currentTotal,
-            peak_ram_mb: peakTotal,
-            peak_delta_mb: peakDelta,
-            retained_ram_mb: null,
-            retained_delta_mb: null,
-            main_webview_ram_mb: snap.main_webview_ram_mb,
-            tray_webview_ram_mb: snap.tray_webview_ram_mb,
-            active_components: activeComps,
-            dom_node_count: domCount,
-            font_face_count: fontCount,
-            timestamp_ms: Date.now(),
-            process_tree: snap.process_tree,
-          });
         }
 
         return snap;
@@ -171,7 +153,7 @@ export function useMemoryProfiler(enabled = true) {
     []
   );
 
-  // ─── Track Route Changes (Baseline -> Peak -> Retained) ──────────────────────
+  // ─── Track Route Changes for UI Display (No Disk Snapshot Writes on Drawer Open) ──────
   useEffect(() => {
     if (!enabled) return;
     const route = location.pathname;
@@ -180,9 +162,9 @@ export function useMemoryProfiler(enabled = true) {
       (k) => componentTracesRef.current[k].activeInstances > 0
     );
 
-    // 1. Capture Route Baseline
+    // Capture memory state for UI inspection only (without writing files to disk)
     (async () => {
-      const snap = await captureSnapshot();
+      const snap = await captureSnapshot({ isManual: false });
       if (!snap) return;
 
       setPageRecords((prev) => {
@@ -202,85 +184,7 @@ export function useMemoryProfiler(enabled = true) {
           },
         };
       });
-
-      // Always record the mount event so we have an empirical baseline
-      recordMemoryProfileEvent({
-        route,
-        event_type: "mount",
-        baseline_ram_mb: snap.total_vox_ram_mb,
-        current_ram_mb: snap.total_vox_ram_mb,
-        peak_ram_mb: snap.total_vox_ram_mb,
-        peak_delta_mb: 0,
-        retained_ram_mb: null,
-        retained_delta_mb: null,
-        main_webview_ram_mb: snap.main_webview_ram_mb,
-        tray_webview_ram_mb: snap.tray_webview_ram_mb,
-        active_components: activeComponents,
-        dom_node_count: document.querySelectorAll("*").length,
-        font_face_count: document.fonts ? document.fonts.size : 0,
-        timestamp_ms: Date.now(),
-      });
     })();
-
-    // 2. Cleanup function on route unmount: wait 2.5s for GC and capture Retained RAM
-    return () => {
-      const unmountedRoute = route;
-      setTimeout(async () => {
-        try {
-          const retainedSnap = await getProfilerSnapshot();
-          if (retainedSnap) {
-            let delta = 0;
-            setPageRecords((prev) => {
-              const rec = prev[unmountedRoute];
-              const baselineMb = rec?.baseline?.total_vox_ram_mb ?? retainedSnap.total_vox_ram_mb;
-              delta = Math.round((retainedSnap.total_vox_ram_mb - baselineMb) * 100) / 100;
-              return {
-                ...prev,
-                [unmountedRoute]: {
-                  ...(rec || {
-                    route: unmountedRoute,
-                    mountedAt: performance.now(),
-                    baseline: retainedSnap,
-                    peak: retainedSnap,
-                    current: retainedSnap,
-                    peakDeltaMb: 0,
-                    activeComponentsOnMount: [],
-                  }),
-                  unmountedAt: performance.now(),
-                  retained: retainedSnap,
-                  retainedDeltaMb: delta,
-                },
-              };
-            });
-
-            const rec = pageRecordsRef.current[unmountedRoute];
-            const baselineTotal = rec?.baseline?.total_vox_ram_mb;
-            const computedDelta = baselineTotal != null ? Math.round((retainedSnap.total_vox_ram_mb - baselineTotal) * 100) / 100 : 0.0;
-
-            recordMemoryProfileEvent({
-              route: unmountedRoute,
-              event_type: "retained",
-              baseline_ram_mb: baselineTotal || retainedSnap.total_vox_ram_mb,
-              current_ram_mb: retainedSnap.total_vox_ram_mb,
-              peak_ram_mb: rec?.peak?.total_vox_ram_mb || null,
-              peak_delta_mb: rec?.peakDeltaMb || null,
-              retained_ram_mb: retainedSnap.total_vox_ram_mb,
-              retained_delta_mb: computedDelta,
-              main_webview_ram_mb: retainedSnap.main_webview_ram_mb,
-              tray_webview_ram_mb: retainedSnap.tray_webview_ram_mb,
-              active_components: Object.keys(componentTracesRef.current).filter(
-                (k) => componentTracesRef.current[k].activeInstances > 0
-              ),
-              dom_node_count: document.querySelectorAll("*").length,
-              font_face_count: document.fonts ? document.fonts.size : 0,
-              timestamp_ms: Date.now(),
-            });
-          }
-        } catch {
-          // best-effort retained measurement
-        }
-      }, 2500);
-    };
   }, [location.pathname, enabled, captureSnapshot]);
 
   // ─── Initial Snapshot on Open (No periodic auto-polling; manual snapshots on-demand) ─────

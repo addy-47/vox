@@ -29,7 +29,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
             (
                 s.dictation.enabled
                     && s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
-                s.setup.completed,
+                s.system.setup_completed,
             )
         };
         if setup_completed && should_show_tray {
@@ -94,8 +94,8 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let (vad_backend, asr_provider, input_device) = {
             let settings = state.settings.read().unwrap();
             (
-                settings.vad.vad_backend.clone(),
-                settings.asr.provider.clone(),
+                settings.vad.backend.clone(),
+                settings.stt.to_provider_config(),
                 settings.audio.input_device.clone(),
             )
         };
@@ -296,7 +296,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
     let (super_tts_path, llm_path) = {
         let llm_model = {
             let settings = state.settings.read().unwrap();
-            settings.llm.model.clone()
+            settings.llm.active_model().to_string()
         };
         let models_dir = paths::get().models.clone();
         let manifest_lock = state.manifest.read().await;

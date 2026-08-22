@@ -170,7 +170,7 @@ pub async fn cancel_model_setup(state: State<'_, Arc<AppState>>) -> Result<(), S
 #[tauri::command]
 pub async fn get_onboarding_status(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     let settings = state.settings.read().unwrap();
-    Ok(settings.setup.completed)
+    Ok(settings.system.setup_completed)
 }
 
 #[tauri::command]
@@ -180,7 +180,7 @@ pub async fn complete_setup_wizard(
 ) -> Result<(), String> {
     {
         let mut settings = state.settings.write().unwrap();
-        settings.setup.completed = true;
+        settings.system.setup_completed = true;
         settings.save().map_err(|e| e.to_string())?;
     }
 
