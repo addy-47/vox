@@ -37,13 +37,13 @@ export const ModelsTopologyMap = memo(
     return (
       <div
         className={cn(
-          "gap-1 shrink-0 p-1 rounded-xl glass overflow-visible mb-1 bg-[rgba(var(--foreground),0.02)]",
+          "gap-1 shrink-0 p-1 rounded-xl glass overflow-visible mb-2.5 bg-[rgba(var(--foreground),0.02)]",
           layoutMode === "small"
             ? "flex overflow-x-auto snap-x no-scrollbar scrollbar-none w-full scroll-smooth"
             : "grid grid-cols-5"
         )}
       >
-        {PIPELINE_NODES.map(({ id, label, Icon, isVerified }) => (
+        {PIPELINE_NODES.map(({ id, label, Icon }) => (
           <button
             key={id}
             type="button"
@@ -68,14 +68,6 @@ export const ModelsTopologyMap = memo(
             <span className="text-[11px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate max-w-full leading-tight">
               {label}
             </span>
-            <span
-              className={cn(
-                "w-1 h-1 rounded-full shrink-0 mt-0.5",
-                isVerified
-                  ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
-                  : "bg-[rgb(var(--accent))]/30"
-              )}
-            />
           </button>
         ))}
       </div>

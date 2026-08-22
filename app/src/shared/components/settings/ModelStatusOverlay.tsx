@@ -1,6 +1,6 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import { checkModelExists } from "@/services/modelService";
-import { useSettings } from "@/shared/context/SettingsContext";
+import { useSettings } from "@/shared/hooks/useSettings";
 import { Brain, Sparkles, Volume2, AlertTriangle, AlertCircle } from "lucide-react";
 
 /** Extract a compact single-word model identifier from a display name. */

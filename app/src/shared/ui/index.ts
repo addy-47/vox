@@ -7,5 +7,7 @@ export * from "./SearchInput";
 export * from "./SliderField";
 export * from "./StatusDot";
 export * from "./ApiKeyField";
+export * from "./UnderlineInput";
+export * from "./CarouselSelector";
 export * from "./ProgressBar";
 export * from "./RotaryKnob";

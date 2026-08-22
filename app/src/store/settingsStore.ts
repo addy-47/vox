@@ -332,8 +332,10 @@ interface SettingsState {
   discardDomainChanges: (domainId: string) => void;
   restoreDefaults: () => Promise<void>;
   toggleTheme: () => void;
-  clearRestartKeys: () => void;
   isCommitting: boolean;
+  autoSavedDomain: string | null;
+  lastSavedTimestamp: number;
+  triggerAutoSaveToast: (domainId: string) => void;
 }
 
 function applyAppearance(appearance?: AppearanceSettings) {
@@ -352,6 +354,7 @@ function applyAppearance(appearance?: AppearanceSettings) {
 }
 
 let appearanceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let settingsAutoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
@@ -412,6 +415,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
+  lastSavedTimestamp: 0,
+  autoSavedDomain: null as string | null,
+  triggerAutoSaveToast: (domainId: string) => {
+    set({ autoSavedDomain: domainId, lastSavedTimestamp: Date.now() });
+    setTimeout(() => {
+      set((state) => (state.autoSavedDomain === domainId ? { autoSavedDomain: null } : {}));
+    }, 1800);
+  },
+
   updateDraft: (domain: keyof VoxSettings, key: string, value: any) => {
     const { settings, draftSettings } = get();
     if (!draftSettings || !settings) return;
@@ -447,6 +459,53 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       get().isDomainDirty(d)
     );
     set({ hasChanges });
+
+    // ─── Hybrid Auto-Save Logic ───
+    // Check if the modified key requires a heavy restart
+    const requiresRestart =
+      (domain === "stt" && key === "embedded") ||
+      (domain === "stt" && key === "active") ||
+      (domain === "llm" && key === "embedded") ||
+      (domain === "llm" && key === "active") ||
+      (domain === "llm" && key === "context_window") ||
+      (domain === "llm" && key === "threads") ||
+      (domain === "tts" && key === "active") ||
+      (domain === "vad" && key === "backend") ||
+      (domain === "audio" && key === "input_device");
+
+    if (!requiresRestart) {
+      // Determine mapped SettingsDomainId for the toast
+      const domainMap: Record<string, string> = {
+        persona: "persona",
+        memory: "memory",
+        history: "history",
+        appearance: "appearance",
+        interaction: "interaction",
+        dictation: "interaction",
+        realtime: "models",
+        audio: "models",
+        vad: "models",
+        stt: "models",
+        llm: "models",
+        tts: "models",
+        system: "models",
+      };
+      const targetDomainId = domainMap[domain as string] || "models";
+
+      // Hot or WorkerCommand: Automatically commit with 600ms debounce and flash "Saved" toast on that specific card
+      if (settingsAutoSaveTimer) {
+        clearTimeout(settingsAutoSaveTimer);
+      }
+      settingsAutoSaveTimer = setTimeout(() => {
+        get()
+          .commitChanges()
+          .then(() => {
+            get().triggerAutoSaveToast(targetDomainId);
+          })
+          .catch(console.error);
+        settingsAutoSaveTimer = null;
+      }, 600);
+    }
   },
 
   isDomainDirty: (domainId: string) => {

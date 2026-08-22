@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Network, Info, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { UnderlineInput } from "@/shared/ui";
 
 export interface RemoteServerSetupProps {
   sshConnectionString: string;
@@ -57,49 +58,25 @@ export const RemoteServerSetup = memo(({
           </span>
         </div>
 
-        <div className="grid grid-cols-[2.5fr_1fr_2.5fr] gap-2.5">
-          <div className="space-y-1">
-            <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
-              SSH Host / Profile
-            </label>
-            <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-              <input
-                type="text"
-                value={sshConnectionString}
-                onChange={(e) => setSshConnectionString(e.target.value)}
-                placeholder="user@hostname"
-                className="w-full bg-transparent border-none outline-none text-[12px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-              />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
-              SSH Port
-            </label>
-            <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-              <input
-                type="text"
-                value={sshPort}
-                onChange={(e) => setSshPort(e.target.value)}
-                placeholder="22"
-                className="w-full bg-transparent border-none outline-none text-[12px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-              />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
-              Identity Key Path
-            </label>
-            <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-              <input
-                type="text"
-                value={sshIdentityKey}
-                onChange={(e) => setSshIdentityKey(e.target.value)}
-                placeholder="~/.ssh/id_rsa"
-                className="w-full bg-transparent border-none outline-none text-[12px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-              />
-            </div>
-          </div>
+        <div className="grid grid-cols-[2.5fr_1fr_2.5fr] gap-3">
+          <UnderlineInput
+            label="SSH Host / Profile"
+            value={sshConnectionString}
+            onChange={(e) => setSshConnectionString(e.target.value)}
+            placeholder="user@hostname"
+          />
+          <UnderlineInput
+            label="SSH Port"
+            value={sshPort}
+            onChange={(e) => setSshPort(e.target.value)}
+            placeholder="22"
+          />
+          <UnderlineInput
+            label="Identity Key Path"
+            value={sshIdentityKey}
+            onChange={(e) => setSshIdentityKey(e.target.value)}
+            placeholder="~/.ssh/id_rsa"
+          />
         </div>
 
         {setupStatus && (
