@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, memo, Suspense, lazy } from "react";
-import { RotateCcw, AlertCircle } from "lucide-react";
+import { RotateCcw, AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
@@ -193,6 +193,8 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
     }
   };
 
+  const isAutoSavedHere = useSettingsStore((s) => s.autoSavedDomain === domain.id);
+
   return (
     <AnimatePresence>
       {isActive && (
@@ -215,73 +217,80 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
               <DomainContent domain={domain.id} layoutMode={layoutMode} />
             </ErrorBoundary>
 
-            {/* Dynamic Save/Discard Expanded Footer */}
-            {hasChanges && (layoutMode === "full-max" || layoutMode === "full-min") && (
-              <div
-                className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px] animate-fade-in transition-all duration-150 ease-out"
-              >
-                {isMissingCloudKey ? (
-                  <>
-                    <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
-                      <AlertCircle size={14} /> API Key Required for Cloud Provider
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        disabled
-                        className="px-3.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)]"
-                      >
-                        {SETTINGS_COPY.saveChanges}
-                      </button>
-                      <button
-                        onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                        className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
-                      >
-                        {SETTINGS_COPY.discardChanges}
-                      </button>
-                    </div>
-                  </>
-                ) : showRestartConfirm ? (
-                  <>
-                    <span className="font-bold uppercase tracking-wider text-amber-400">
-                      {SETTINGS_COPY.restartRequired}
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleSave}
-                        className="px-3.5 py-1 rounded-lg bg-amber-500 dark:bg-amber-400 text-black dark:text-white font-black text-[12px] uppercase tracking-wider shadow-[0_0_12px_rgba(245,158,11,0.35)] hover:bg-amber-400 active:scale-95 transition-all cursor-pointer"
-                      >
-                        Yes
-                      </button>
-                      <button
-                        onClick={() => setShowRestartConfirm(false)}
-                        className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground))] border border-[rgba(var(--border),0.12)] text-[12px] font-bold uppercase tracking-wider hover:bg-[rgba(var(--foreground),0.1)] transition-colors cursor-pointer"
-                      >
-                        No
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
-                      {SETTINGS_COPY.unsavedChanges}
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleSave}
-                        className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-black dark:text-white font-black text-[12px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-md"
-                      >
-                        {SETTINGS_COPY.saveChanges}
-                      </button>
-                      <button
-                        onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                        className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
-                      >
-                        {SETTINGS_COPY.discardChanges}
-                      </button>
-                    </div>
-                  </>
+            {/* ─── Repurposed Dynamic Footer: Auto-Save Confirmation OR Heavy Restart Action Bar ─── */}
+            {(layoutMode === "full-max" || layoutMode === "full-min") && (
+              <AnimatePresence>
+                {/* Mode A: Explicit Restart Required Bar (ONLY for Type 3 Restart or Missing Cloud Key) */}
+                {hasChanges && (requiresRestart || isMissingCloudKey) && (
+                  <motion.div
+                    key="restart-footer"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
+                  >
+                    {isMissingCloudKey ? (
+                      <>
+                        <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                          <AlertCircle size={14} /> API Key Required for Cloud Provider
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            disabled
+                            className="px-3.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)]"
+                          >
+                            {SETTINGS_COPY.saveChanges}
+                          </button>
+                          <button
+                            onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                            className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                          >
+                            {SETTINGS_COPY.discardChanges}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
+                          <RefreshCw size={14} /> {requiresRestart ? "Pipeline Restart Required" : SETTINGS_COPY.unsavedChanges}
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleSave}
+                            className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-black dark:text-white font-black text-[12px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                          >
+                            <span>{requiresRestart ? "Apply & Reload" : SETTINGS_COPY.saveChanges}</span>
+                          </button>
+                          <button
+                            onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                            className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                          >
+                            {SETTINGS_COPY.discardChanges}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </motion.div>
                 )}
-              </div>
+
+                {/* Mode B: Debounced "Changes Saved" Auto-Toast (Only on the specific modified card, using Primary Accent) */}
+                {!hasChanges && isAutoSavedHere && (
+                  <motion.div
+                    key="saved-toast-footer"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full py-2 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
+                  >
+                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
+                      <Check size={14} /> Changes Saved
+                    </span>
+                    <span className="text-[11px] text-[rgb(var(--accent))]/70 font-mono">Auto-synced</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             )}
           </div>
         </motion.div>

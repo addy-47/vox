@@ -1,8 +1,6 @@
 import { memo } from "react";
-import { ChevronLeft, Brain, Server, Cloud } from "lucide-react";
+import { ChevronLeft, ChevronRight, Brain, Server, Cloud } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Tooltip } from "@/shared/ui/Tooltip";
-import { CATEGORY_SWITCH_COPY } from "@/data/settingsCopy";
 
 interface CategorySelectorProps {
   activeCategory: "STT" | "LLM" | "TTS";
@@ -13,7 +11,11 @@ interface CategorySelectorProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
-const CATEGORIES: Array<"STT" | "LLM" | "TTS"> = ["STT", "LLM", "TTS"];
+const CATEGORIES: Array<{ id: "STT" | "LLM" | "TTS"; label: string }> = [
+  { id: "STT", label: "Speech to Text" },
+  { id: "LLM", label: "Reasoning" },
+  { id: "TTS", label: "Speech" },
+];
 
 const PILLS = [
   { id: "local" as const, label: "Embedded", icon: Brain },
@@ -30,41 +32,61 @@ export const CategorySelector = memo(
     onPillChange,
     layoutMode,
   }: CategorySelectorProps) => {
-    const handleNext = (e: React.MouseEvent) => {
+    const handlePrev = (e: React.MouseEvent) => {
       e.stopPropagation();
-      const currentIndex = CATEGORIES.indexOf(activeCategory);
-      const nextIndex = (currentIndex + 1) % CATEGORIES.length;
+      const currentIndex = CATEGORIES.findIndex((c) => c.id === activeCategory);
+      const prevIndex = (currentIndex - 1 + CATEGORIES.length) % CATEGORIES.length;
       if (onSetCategory) {
-        onSetCategory(CATEGORIES[nextIndex]);
+        onSetCategory(CATEGORIES[prevIndex].id);
       } else {
         onCycleCategory();
       }
     };
 
-    return (
-      <div className="shrink-0 flex flex-col gap-1.5 sm:gap-2 w-full mt-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-y-1.5 gap-x-1 w-full pb-1.5 sm:pb-2 pt-1 shrink-0 px-1.5 sm:px-3">
-          {/* Left: Minimal Category Switcher with left chevron + text only */}
-          <div className="flex items-center shrink-0 pr-0.5 sm:pr-1">
-            <Tooltip label={CATEGORY_SWITCH_COPY.switchTooltip}>
-              <button
-                type="button"
-                onClick={handleNext}
-                className="flex items-center gap-1 sm:gap-1.5 p-0.5 bg-transparent outline-none cursor-pointer group select-none active:scale-95 transition-transform"
-                aria-label={CATEGORY_SWITCH_COPY.switchTooltip}
-              >
-                <div className="p-0.5 sm:p-1 rounded-md text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] transition-colors flex items-center justify-center">
-                  <ChevronLeft size={13} className="shrink-0 sm:w-3.5 sm:h-3.5" />
-                </div>
+    const handleNext = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const currentIndex = CATEGORIES.findIndex((c) => c.id === activeCategory);
+      const nextIndex = (currentIndex + 1) % CATEGORIES.length;
+      if (onSetCategory) {
+        onSetCategory(CATEGORIES[nextIndex].id);
+      } else {
+        onCycleCategory();
+      }
+    };
 
-                <span
-                  key={activeCategory}
-                  className="text-[12px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] group-hover:brightness-125 transition-opacity duration-150 animate-fade-in"
-                >
-                  {activeCategory}
-                </span>
-              </button>
-            </Tooltip>
+    const currentCatObj = CATEGORIES.find((c) => c.id === activeCategory) || CATEGORIES[0];
+
+    return (
+      <div className="shrink-0 flex flex-col w-full">
+        <div className="flex items-center justify-between gap-x-1 w-full pt-1 pb-2 shrink-0 px-0.5">
+          {/* Left: Interactive Category Carousel with Left & Right Chevrons */}
+          <div className="flex items-center gap-1 shrink-0 pr-0.5 sm:pr-1 select-none">
+            <button
+              type="button"
+              onClick={handlePrev}
+              className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-colors cursor-pointer flex items-center justify-center"
+              title="Previous category"
+              aria-label="Previous category"
+            >
+              <ChevronLeft size={13} className="shrink-0" />
+            </button>
+
+            <span
+              key={activeCategory}
+              className="text-[12px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] transition-opacity duration-150 animate-fade-in px-1"
+            >
+              {currentCatObj.label}
+            </span>
+
+            <button
+              type="button"
+              onClick={handleNext}
+              className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-colors cursor-pointer flex items-center justify-center"
+              title="Next category"
+              aria-label="Next category"
+            >
+              <ChevronRight size={13} className="shrink-0" />
+            </button>
           </div>
 
           {/* Center Connector: Crisp, clean straight arrow extending across the remaining space */}
@@ -111,14 +133,14 @@ export const CategorySelector = memo(
                       "flex items-center justify-center gap-1 pb-0.5 sm:pb-1 border-b-2 transition-all duration-200 bg-transparent text-[11px] sm:text-[12px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer",
                       isActive
                         ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
-                        : "text-[rgb(var(--foreground-muted))]/50 border-transparent hover:text-[rgb(var(--foreground-muted))]/80"
+                        : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
                     )}
                   >
                     <span>{mode.label}</span>
                     {layoutMode !== "small" && <IconComponent size={10} className="shrink-0 hidden md:inline-block" />}
                   </button>
                   {idx < arr.length - 1 && (
-                    <span className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/20 font-light select-none pb-0.5 sm:pb-1">
+                    <span className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/25 font-light select-none pb-0.5 sm:pb-1">
                       |
                     </span>
                   )}

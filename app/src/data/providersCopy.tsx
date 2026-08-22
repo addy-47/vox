@@ -144,11 +144,12 @@ export const REALTIME_PROVIDER_SUBKEY: Record<string, string> = {
 };
 
 export const REALTIME_PROVIDER_DISPLAY_NAMES = {
-  gemini_live: "Gemini Multimodal Live",
+  gemini_live: "Gemini Multimodal API",
   openai_realtime: "OpenAI Realtime API",
   deepgram_voice_agent: "Deepgram Voice Agent",
   elevenlabs_convai: "ElevenLabs Conversational AI",
 } as const;
+
 
 export const REALTIME_PROVIDER_SHORT_NAMES = {
   gemini_live: "Gemini",
