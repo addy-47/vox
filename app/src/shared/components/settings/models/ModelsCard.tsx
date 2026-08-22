@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import {
   setupRemoteServer,
@@ -19,7 +19,7 @@ import * as eventsService from "@/services/eventsService";
 import { Database } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl } from "@/shared/ui";
-import { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
+import { LlmModelInfo, ModelCapabilities, LlmProviderConfig } from "@/store/settingsStore";
 
 import { ModelsTopologyMap } from "./ModelsTopologyMap";
 import { VadWorkspace } from "./VadWorkspace";
@@ -47,7 +47,6 @@ interface ModelsCardProps {
 }
 
 export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) => {
-  const settings = useSettingsStore((s) => s.settings);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
@@ -92,10 +91,64 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [customModelId, setCustomModelId] = useState("");
   const [customModelStatus, setCustomModelStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
 
+  const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
+
+  // Load disk capabilities cache on initial mount
+  useEffect(() => {
+    useSettingsStore.getState().loadCapabilitiesCache();
+  }, []);
+
+  // Sync disk capabilities cache into component state on mount / update
+  useEffect(() => {
+    if (capabilitiesCache && Object.keys(capabilitiesCache).length > 0) {
+      setProbingMap((prev) => {
+        const next = { ...prev };
+        for (const [_, caps] of Object.entries(capabilitiesCache)) {
+          const mId = caps.model_id;
+          if (!next[mId] || next[mId].status === "idle") {
+            next[mId] = { status: "success", capabilities: caps };
+          }
+        }
+        return next;
+      });
+    }
+  }, [capabilitiesCache]);
+
   // Base layout decisions on committed and draft settings
-  const savedProvider = settings?.llm?.provider;
-  const isRemoteLlm = draftSettings?.llm?.provider?.kind === "open_ai_compat" || savedProvider?.kind === "open_ai_compat";
-  const provider = draftSettings?.llm?.provider || savedProvider;
+  const activeProviderKind = draftSettings?.llm?.active || "embedded";
+  const isRemoteLlm = activeProviderKind === "server" || activeProviderKind === "cloud";
+
+  const provider: LlmProviderConfig = useMemo(() => {
+    if (activeProviderKind === "embedded") {
+      return { kind: "embedded" };
+    }
+    if (activeProviderKind === "server") {
+      return {
+        kind: "open_ai_compat",
+        base_url: draftSettings?.llm?.server?.base_url || "",
+        model: draftSettings?.llm?.server?.model || "",
+        api_key: draftSettings?.llm?.server?.api_key || undefined,
+        provider_name: draftSettings?.llm?.server?.provider_name || undefined,
+      };
+    }
+    return {
+      kind: "open_ai_compat",
+      base_url: draftSettings?.llm?.cloud?.base_url || "",
+      model: draftSettings?.llm?.cloud?.model || "",
+      api_key: draftSettings?.llm?.cloud?.api_key || undefined,
+      provider_name: draftSettings?.llm?.cloud?.provider_name || undefined,
+    };
+  }, [
+    activeProviderKind,
+    draftSettings?.llm?.server?.base_url,
+    draftSettings?.llm?.server?.model,
+    draftSettings?.llm?.server?.api_key,
+    draftSettings?.llm?.server?.provider_name,
+    draftSettings?.llm?.cloud?.base_url,
+    draftSettings?.llm?.cloud?.model,
+    draftSettings?.llm?.cloud?.api_key,
+    draftSettings?.llm?.cloud?.provider_name,
+  ]);
 
   // 1. Bidirectional Pipeline Tab Synchronization with InteractionCard
   useEffect(() => {
@@ -281,8 +334,15 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   }, [sshIdentityKey]);
 
   // 5. Remote LLM Fetching & Probing
-  const fetchRemoteModels = useCallback(async () => {
-    if (!provider || provider.kind !== "open_ai_compat") return;
+  const lastFetchedKeyRef = useRef<string>("");
+
+  const fetchRemoteModels = useCallback(async (force = false) => {
+    if (!provider || provider.kind !== "open_ai_compat" || !provider.base_url) return;
+    const fetchKey = `${provider.base_url}:${provider.api_key || ""}`;
+    if (!force && lastFetchedKeyRef.current === fetchKey && remoteModels.length > 0) {
+      return;
+    }
+    lastFetchedKeyRef.current = fetchKey;
     setLoadingRemoteModels(true);
     setRemoteModelsError(null);
     try {
@@ -294,13 +354,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     } finally {
       setLoadingRemoteModels(false);
     }
-  }, [provider]);
+  }, [provider, remoteModels.length]);
 
   useEffect(() => {
-    if (activePipelineTab === "llm" && isRemoteLlm) {
+    if (activePipelineTab === "llm" && isRemoteLlm && provider?.kind === "open_ai_compat" && provider.base_url) {
       fetchRemoteModels();
     }
-  }, [activePipelineTab, isRemoteLlm, fetchRemoteModels]);
+  }, [activePipelineTab, isRemoteLlm, provider, fetchRemoteModels]);
 
   const handleProbeCapabilities = useCallback(
     async (modelId?: string) => {
@@ -322,6 +382,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         setRemoteModels((prev) =>
           prev.map((m) => (m.id === targetId ? { ...m, capabilities: caps } : m))
         );
+        useSettingsStore.setState((state) => ({
+          capabilitiesCache: {
+            ...state.capabilitiesCache,
+            [`${caps.provider_kind}:${caps.model_id}`]: caps,
+          },
+        }));
       } catch (err) {
         console.error("[CapabilityProbe] Failed to probe model:", err);
         setProbingMap((prev) => ({
@@ -336,22 +402,36 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const handleValidateCustomModel = async () => {
     if (!customModelId.trim() || !provider) return;
     setCustomModelStatus("checking");
+    const mId = customModelId.trim();
+    const draft = useSettingsStore.getState().draftSettings;
+    const activeLlm = draft?.llm?.active || (provider && "base_url" in provider ? "server" : "embedded");
+
     try {
-      const caps = await probeModelCapabilities(provider, customModelId.trim());
-      updateDraft("llm", "provider", {
-        ...provider,
-        model: customModelId.trim(),
-      });
+      const caps = await probeModelCapabilities(provider, mId);
+      if (activeLlm === "server" && draft?.llm?.server) {
+        updateDraft("llm", "server", { ...draft.llm.server, model: mId });
+      } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
+        updateDraft("llm", "cloud", { ...draft.llm.cloud, model: mId });
+      }
+      if (provider && "base_url" in provider) {
+        updateDraft("llm", "provider", { ...provider, model: mId });
+      }
+      updateDraft("llm", "model", mId);
       setProbingMap((prev) => ({
         ...prev,
-        [customModelId.trim()]: { status: "success", capabilities: caps },
+        [mId]: { status: "success", capabilities: caps },
       }));
       setCustomModelStatus("valid");
     } catch (_) {
-      updateDraft("llm", "provider", {
-        ...provider,
-        model: customModelId.trim(),
-      });
+      if (activeLlm === "server" && draft?.llm?.server) {
+        updateDraft("llm", "server", { ...draft.llm.server, model: mId });
+      } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
+        updateDraft("llm", "cloud", { ...draft.llm.cloud, model: mId });
+      }
+      if (provider && "base_url" in provider) {
+        updateDraft("llm", "provider", { ...provider, model: mId });
+      }
+      updateDraft("llm", "model", mId);
       setCustomModelStatus("invalid");
     }
   };
@@ -442,42 +522,56 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     if (isRemoteTtsSetupNotDone && activeCategoryTab === "settings") {
       setActiveCategoryTab("model");
     }
-  }, [activePipelineTab, draftSettings?.tts?.provider?.kind, isRemoteTtsHealthy, activeCategoryTab]);
-
-
+  }, [activePipelineTab, draftSettings?.tts?.active, isRemoteTtsHealthy, activeCategoryTab]);
 
   if (!draftSettings) return null;
 
-  // Topology verification flags
-  const isVadVerified = draftSettings?.vad?.vad_backend === "earshot" || !!modelPresence["ten_vad"];
-  const isAsrVerified = !!(modelPresence[draftSettings?.asr?.model || "nvidia_nemotron"] || modelPresence["nvidia_nemotron"] || modelPresence["qwen3_asr"]);
-  const isLlmDownloaded = isRemoteLlm || !!(modelPresence[draftSettings?.llm?.model || "llama_3_2_reasoning_q4"] || modelPresence["gemma_4_reasoning"]);
+  // Topology verification flags (dynamically checking configured active models and providers)
+  const isVadVerified =
+    draftSettings?.vad?.backend === "earshot" ||
+    !!modelPresence[modelCatalog?.vad?.[0]?.id || "ten_vad"];
+
+  const isAsrVerified =
+    draftSettings?.stt?.active === "cloud"
+      ? true
+      : !!(draftSettings?.stt?.embedded?.model && modelPresence[draftSettings.stt.embedded.model]);
+
+  const isLlmDownloaded =
+    isRemoteLlm
+      ? true
+      : !!(draftSettings?.llm?.embedded?.model && modelPresence[draftSettings.llm.embedded.model]);
+
   const isTtsVerified =
-    draftSettings?.tts?.provider?.kind === "chatterbox_remote"
+    draftSettings?.tts?.active === "edge_tts"
+      ? true
+      : draftSettings?.tts?.active === "chatterbox_remote"
       ? isRemoteTtsHealthy === true
-      : draftSettings?.tts?.provider?.kind === "edge_tts"
-        ? true
-        : !!(modelPresence["supertonic_tts"] || modelPresence["chatterbox_tts"]);
+      : draftSettings?.tts?.active === "supertonic"
+      ? !!modelPresence[modelCatalog?.tts?.find((m) => m.id.includes("supertonic"))?.id || "supertonic_tts"]
+      : draftSettings?.tts?.active === "chatterbox"
+      ? !!modelPresence[modelCatalog?.tts?.find((m) => m.id.includes("chatterbox"))?.id || "chatterbox_tts"]
+      : false;
+
   const isAuxiliaryVerified =
     (modelCatalog?.auxiliary?.length || 0) > 0
-      ? modelCatalog?.auxiliary?.every((m) => !!modelPresence[m.id])
+      ? (modelCatalog?.auxiliary ?? []).filter((m) => (m as { required?: boolean }).required !== false).every((m) => !!modelPresence[m.id])
       : true;
 
   return (
     <div
       className={cn(
-        "w-full h-auto flex flex-col text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
+        "w-full flex flex-col text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none justify-between",
         layoutMode === "small"
-          ? "bg-transparent p-0"
+          ? "bg-transparent p-0 h-auto"
           : cn(
-              "glass-card p-5",
+              "glass-card p-5 lg:h-[340px]",
               layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
             )
       )}
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2.5 flex-1 min-h-0">
         {/* Header with Model vs Settings Toggle */}
-        <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+        <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1.5 w-full shrink-0">
           <div className="flex items-center gap-2">
             <Database className="text-[rgb(var(--accent))]" size={18} />
             <span className="font-display text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
@@ -513,22 +607,24 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         </div>
 
         {/* Models Topology Interactive Bar */}
-        <ModelsTopologyMap
-          activeTab={activePipelineTab}
-          onChangeTab={setActivePipelineTab}
-          layoutMode={layoutMode}
-          isVadVerified={isVadVerified}
-          isAsrVerified={isAsrVerified}
-          isLlmDownloaded={isLlmDownloaded}
-          isTtsVerified={isTtsVerified}
-          isAuxiliaryVerified={isAuxiliaryVerified}
-        />
+        <div className="shrink-0">
+          <ModelsTopologyMap
+            activeTab={activePipelineTab}
+            onChangeTab={setActivePipelineTab}
+            layoutMode={layoutMode}
+            isVadVerified={isVadVerified}
+            isAsrVerified={isAsrVerified}
+            isLlmDownloaded={isLlmDownloaded}
+            isTtsVerified={isTtsVerified}
+            isAuxiliaryVerified={isAuxiliaryVerified}
+          />
+        </div>
 
         {/* Workspaces by Pipeline Tab */}
         <div
           className={cn(
-            "h-auto w-full flex flex-col glass rounded-xl p-3 relative bg-[rgba(var(--foreground),0.02)]",
-            layoutMode === "small" ? "max-h-none overflow-y-visible" : "max-h-[220px] overflow-y-auto custom-scrollbar"
+            "flex-1 w-full flex flex-col glass rounded-xl p-2.5 relative bg-[rgba(var(--foreground),0.02)] min-h-0 overflow-hidden",
+            layoutMode === "small" ? "h-[290px] max-h-[290px]" : "h-full"
           )}
         >
           {activePipelineTab === "vad" && (
@@ -567,7 +663,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             ) : (
               <LlmCatalogView
                 layoutMode={layoutMode}
-                selectedLlmId={draftSettings.llm.model}
+                selectedLlmId={
+                  (draftSettings.llm.active === "embedded"
+                    ? draftSettings.llm.embedded?.model
+                    : draftSettings.llm.active === "server"
+                    ? draftSettings.llm.server?.model
+                    : draftSettings.llm.cloud?.model) || ""
+                }
                 modelPresence={modelPresence}
                 downloadStatuses={downloadStatuses}
                 confirmDeleteId={confirmDeleteId}

@@ -39,7 +39,7 @@ pub async fn ptt_start(
             }
             crate::core::state::InteractionOwner::MainWindow
             | crate::core::state::InteractionOwner::Ptt => {
-                settings.interaction.main_app_mode.clone()
+                settings.interaction.mode.clone()
             }
             crate::core::state::InteractionOwner::Wizard => {
                 crate::core::settings::InteractionMode::Passive

@@ -18,15 +18,15 @@ fn test_interaction_mode_settings_mutation() {
     let mut settings = VoxSettings::default();
 
     // Default modes in Vox
-    assert_eq!(settings.interaction.main_app_mode, InteractionMode::Passive);
+    assert_eq!(settings.interaction.mode, InteractionMode::Passive);
     assert_eq!(
         settings.dictation.interaction_mode,
         DictationInteractionMode::Ptt
     );
 
     // Switch main app mode to PTT
-    settings.interaction.main_app_mode = InteractionMode::PTT;
-    assert_eq!(settings.interaction.main_app_mode, InteractionMode::PTT);
+    settings.interaction.mode = InteractionMode::PTT;
+    assert_eq!(settings.interaction.mode, InteractionMode::PTT);
 
     // Switch dictation mode to Passive
     settings.dictation.interaction_mode = DictationInteractionMode::Passive;
@@ -36,8 +36,8 @@ fn test_interaction_mode_settings_mutation() {
     );
 
     // Switch main back to Passive
-    settings.interaction.main_app_mode = InteractionMode::Passive;
-    assert_eq!(settings.interaction.main_app_mode, InteractionMode::Passive);
+    settings.interaction.mode = InteractionMode::Passive;
+    assert_eq!(settings.interaction.mode, InteractionMode::Passive);
 }
 
 // ─── 2. Target Window to Interaction Owner Matching Tests ────────────────────

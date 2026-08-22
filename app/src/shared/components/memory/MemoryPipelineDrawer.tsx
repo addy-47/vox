@@ -70,8 +70,8 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
 
   // Settings Store SSOT for Pipeline Processing Enabled
   const pipelineProcessingEnabled = useSettingsStore((s) => s.settings?.memory?.pipeline_processing_enabled ?? true);
-  const accentSeed = useSettingsStore((s) => s.settings?.ui.accent_seed);
-  const theme = useSettingsStore((s) => s.settings?.ui.theme);
+  const accentSeed = useSettingsStore((s) => s.settings?.appearance.accent_seed);
+  const theme = useSettingsStore((s) => s.settings?.appearance.theme);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
 

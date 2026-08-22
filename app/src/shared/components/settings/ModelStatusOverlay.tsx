@@ -32,24 +32,41 @@ export const ModelStatusOverlay = memo(() => {
 
   const isNarrow = vw < 1200;
 
-  const llmId = draftSettings?.llm?.model || "";
-  const asrId = draftSettings?.asr?.model || "";
-  const ttsKind = draftSettings?.tts?.provider?.kind || "";
+  const isRemoteLlm = draftSettings?.llm?.active === "server" || draftSettings?.llm?.active === "cloud";
+  const isCloudStt = draftSettings?.stt?.active === "cloud";
+
+  const llmId =
+    draftSettings?.llm?.active === "embedded"
+      ? draftSettings?.llm?.embedded?.model || ""
+      : draftSettings?.llm?.active === "server"
+      ? draftSettings?.llm?.server?.model || ""
+      : draftSettings?.llm?.cloud?.model || "";
+
+  const asrId =
+    draftSettings?.stt?.active === "embedded"
+      ? draftSettings?.stt?.embedded?.model || ""
+      : draftSettings?.stt?.cloud?.model || "";
+
+  const ttsKind = draftSettings?.tts?.active || "";
 
   const checkPresence = useCallback(async () => {
     if (!draftSettings) return;
-    const items = [llmId, asrId].filter(Boolean);
+    const items = [
+      !isRemoteLlm ? llmId : "",
+      !isCloudStt ? asrId : "",
+    ].filter(Boolean);
     const results: Record<string, boolean> = {};
 
     for (const id of items) {
       try {
-        results[id] = await checkModelExists(id);
+        const res = await checkModelExists(id);
+        results[id] = res;
       } catch {
         results[id] = false;
       }
     }
     setPresence(results);
-  }, [llmId, asrId, draftSettings]);
+  }, [llmId, asrId, isRemoteLlm, isCloudStt, draftSettings]);
 
   useEffect(() => {
     checkPresence();
@@ -61,10 +78,10 @@ export const ModelStatusOverlay = memo(() => {
   const activeLlm = modelCatalog.llm.find((m) => m.id === llmId) || modelCatalog.llm[0];
   const activeAsr = modelCatalog.asr.find((m) => m.id === asrId) || modelCatalog.asr[0];
   const activeTts = modelCatalog.tts.find((m) => m.id === ttsKind || m.id.includes(ttsKind)) || modelCatalog.tts[0];
-  const activeVoice = modelCatalog.voices.find((v) => v.id === draftSettings.tts.voice) || modelCatalog.voices[0];
+  const activeVoice = modelCatalog.voices.find((v) => v.id === draftSettings.tts.voice_index) || modelCatalog.voices[0];
 
-  const llmExists = presence[llmId] ?? true;
-  const asrExists = presence[asrId] ?? true;
+  const llmExists = isRemoteLlm ? true : (presence[llmId] ?? true);
+  const asrExists = isCloudStt ? true : (presence[asrId] ?? true);
 
   const llmName = isNarrow && activeLlm ? compactModelName(activeLlm.name) : activeLlm?.name;
   const asrName = isNarrow && activeAsr ? compactModelName(activeAsr.name) : activeAsr?.name;

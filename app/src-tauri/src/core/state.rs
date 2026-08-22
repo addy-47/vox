@@ -396,8 +396,8 @@ impl AppState {
     ) -> Self {
         // paths::init() must have been called before AppState::new()
         let settings = VoxSettings::load();
-        let initial_ctx_size = settings.llm.ctx_size as usize;
-        is_private_mode.store(settings.persistence.private_mode, Ordering::Relaxed);
+        let initial_ctx_size = settings.llm.context_window as usize;
+        is_private_mode.store(settings.history.private_mode, Ordering::Relaxed);
 
         let model_manager = Arc::new(crate::setup::model_manager::ModelManager::new(Some(
             app_handle.clone(),
@@ -407,7 +407,7 @@ impl AppState {
         Self {
             engine: Mutex::new(None),
             realtime_engine: Mutex::new(None),
-            owner: Arc::new(AtomicU32::new(if settings.setup.completed {
+            owner: Arc::new(AtomicU32::new(if settings.system.setup_completed {
                 InteractionOwner::Dictation as u32
             } else {
                 InteractionOwner::Wizard as u32

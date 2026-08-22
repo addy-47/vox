@@ -140,23 +140,24 @@ impl PipelineOrchestrator {
             self.cancel_flag.store(false, Ordering::Relaxed);
 
             let settings_snap = self.settings.read().unwrap().clone();
-            let assistant_settings = &settings_snap.assistant;
+            let persona_settings = &settings_snap.persona;
             let is_hi = is_devanagari(&text);
             let (lang, script) = if is_hi {
                 ("Hindi", "Devanagari")
             } else {
                 ("English", "Latin")
             };
-            let resolved_prompt = assistant_settings
+            let resolved_prompt = persona_settings
                 .modular_prompt
                 .replace("<lang>", lang)
                 .replace("<script>", script);
 
-            let provider_kind = match &settings_snap.llm.provider {
-                crate::core::settings::LlmProviderConfig::Embedded => {
+            let provider_kind = match settings_snap.llm.active {
+                crate::core::settings::LlmActiveProvider::Embedded => {
                     crate::services::llm::ProviderKind::Embedded
                 }
-                crate::core::settings::LlmProviderConfig::OpenAiCompat { .. } => {
+                crate::core::settings::LlmActiveProvider::Server
+                | crate::core::settings::LlmActiveProvider::Cloud => {
                     crate::services::llm::ProviderKind::OpenAiCompat
                 }
             };
@@ -188,7 +189,7 @@ impl PipelineOrchestrator {
                             &query_embedding,
                             scope,
                             &settings_snap.memory,
-                            settings_snap.llm.ctx_size as usize,
+                            settings_snap.llm.context_window as usize,
                         )
                         .await
                         .unwrap_or_default()
@@ -205,15 +206,15 @@ impl PipelineOrchestrator {
 
             let provider_ref: Option<Box<dyn crate::services::llm::LlmProvider>> = {
                 let is_tier_1a = provider_kind == crate::services::llm::ProviderKind::Embedded
-                    && settings_snap.llm.ctx_size <= 4096;
+                    && settings_snap.llm.context_window <= 4096;
 
                 if settings_snap.memory.context_retrieval_enabled && !is_tier_1a {
-                    match &settings_snap.llm.provider {
-                        crate::core::settings::LlmProviderConfig::Embedded => {
+                    match settings_snap.llm.active {
+                        crate::core::settings::LlmActiveProvider::Embedded => {
                             let provider =
                                 crate::services::llm::providers::embedded::EmbeddedProvider::new(
                                     &self.llm_path,
-                                    settings_snap.llm.ctx_size,
+                                    settings_snap.llm.context_window,
                                     settings_snap.llm.threads,
                                 );
                             if let Ok(p) = provider {
@@ -222,17 +223,21 @@ impl PipelineOrchestrator {
                                 None
                             }
                         }
-                        crate::core::settings::LlmProviderConfig::OpenAiCompat {
-                            base_url,
-                            model,
-                            api_key,
-                            provider_name,
-                        } => {
+                        crate::core::settings::LlmActiveProvider::Server => {
                             let provider = crate::services::llm::providers::openai_compat::OpenAiCompatProvider::new(
-                                base_url,
-                                model,
-                                api_key.as_deref(),
-                                provider_name.as_deref(),
+                                &settings_snap.llm.server.base_url,
+                                &settings_snap.llm.server.model,
+                                settings_snap.llm.server.api_key.as_deref(),
+                                settings_snap.llm.server.provider_name.as_deref(),
+                            );
+                            Some(Box::new(provider) as Box<dyn crate::services::llm::LlmProvider>)
+                        }
+                        crate::core::settings::LlmActiveProvider::Cloud => {
+                            let provider = crate::services::llm::providers::openai_compat::OpenAiCompatProvider::new(
+                                &settings_snap.llm.cloud.base_url,
+                                &settings_snap.llm.cloud.model,
+                                settings_snap.llm.cloud.api_key.as_deref(),
+                                settings_snap.llm.cloud.provider_name.as_deref(),
                             );
                             Some(Box::new(provider) as Box<dyn crate::services::llm::LlmProvider>)
                         }
@@ -244,7 +249,7 @@ impl PipelineOrchestrator {
 
             let (ctx, transition_speech, personal_memory) = {
                 let mut mgr = self.conversation_manager.lock();
-                mgr.set_max_context_tokens(settings_snap.llm.ctx_size as usize);
+                mgr.set_max_context_tokens(settings_snap.llm.context_window as usize);
                 mgr.update_system_prompt(&final_prompt);
                 if mgr.context_utilization() == 0.0 {
                     mgr.new_session(&final_prompt);

@@ -35,7 +35,7 @@ pub async fn retrieve_personal_context_v7(
         return Ok(String::new());
     }
 
-    let total_budget = (context_size as f32 * settings.max_personal_memory_share) as usize;
+    let total_budget = (context_size as f32 * settings.max_context_share) as usize;
     let mut remaining_budget = total_budget;
 
     let mut out_sections = Vec::new();

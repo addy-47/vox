@@ -22,39 +22,68 @@ export const SETTINGS_DOMAINS: SettingsDomain[] = [
 
 export const MOBILE_SETTINGS_ORDER = ["interaction", "history", "models", "appearance", "memory", "persona"] as const;
 
-export const REALTIME_SUBKEYS = ["gemini", "openai", "deepgram", "elevenlabs"] as const;
-
 export type SettingsScope =
-  | "ui"
+  | "appearance"
   | "audio"
   | "vad"
-  | "asr"
+  | "stt"
   | "llm"
   | "tts"
   | "interaction"
   | "dictation"
-  | "telemetry"
-  | "persistence"
+  | "history"
   | "memory"
-  | "assistant"
-  | "setup"
-  | "realtime";
+  | "persona"
+  | "realtime"
+  | "system";
 
 export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
-  ui: ["theme", "accent_seed", "tray_blur_density", "tray_glass_tint", "tray_history_limit"],
+  appearance: ["theme", "accent_seed"],
   audio: ["output_mode", "input_device"],
-  vad: ["threshold", "ptt_noise_gate", "vad_backend"],
-  asr: ["model", "transliterate_enabled", "provider"],
-  llm: ["model", "ctx_size", "threads", "provider"],
-  tts: ["provider", "voice", "quality_steps", "speed"],
-  interaction: ["main_app_mode", "auto_sleep_timeout", "pipeline_mode"],
+  vad: ["threshold", "ptt_noise_gate", "backend"],
+  stt: ["active", "transliterate_enabled", "embedded", "cloud"],
+  llm: [
+    "active",
+    "temperature",
+    "compaction_temperature",
+    "max_output_tokens",
+    "context_window",
+    "threads",
+    "embedded",
+    "server",
+    "cloud",
+  ],
+  tts: [
+    "active",
+    "voice_index",
+    "quality_steps",
+    "speed",
+    "edge_tts",
+    "supertonic",
+    "chatterbox",
+    "chatterbox_remote",
+  ],
+  interaction: ["mode", "auto_sleep_timeout", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode"],
-  telemetry: ["enabled", "log_level"],
-  persistence: ["private_mode"],
-  memory: ["context_retrieval_enabled", "pipeline_processing_enabled", "max_personal_memory_share", "context_chaining_window_hours", "top_k_facts", "max_hops", "semantic_similarity_cutoff"],
-  assistant: ["modular_prompt", "realtime_prompt"],
-  setup: ["completed"],
-  realtime: ["provider", "gemini", "openai", "deepgram", "elevenlabs"],
+  history: ["private_mode", "tray_history_limit"],
+  memory: [
+    "context_retrieval_enabled",
+    "pipeline_processing_enabled",
+    "max_context_share",
+    "context_chaining_window_hours",
+    "top_k_facts",
+    "max_hops",
+    "semantic_similarity_cutoff",
+  ],
+  persona: ["modular_prompt", "realtime_prompt"],
+  realtime: [
+    "active",
+    "gemini_live",
+    "openai_realtime",
+    "deepgram_voice_agent",
+    "elevenlabs_convai",
+  ],
+  system: ["log_level", "telemetry_enabled", "setup_completed"],
 };
 
 export interface DomainDirtyKey {
@@ -65,24 +94,28 @@ export interface DomainDirtyKey {
 
 export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey[]> = {
   models: [
+    { scope: "audio" },
     { scope: "vad" },
-    { scope: "asr" },
+    { scope: "stt" },
     { scope: "tts" },
-    { scope: "llm", keys: ["model", "ctx_size", "threads"] },
-    { scope: "llm", keys: ["provider"], nestedKey: "model" },
+    { scope: "llm" },
+    { scope: "realtime" },
   ],
   history: [
-    { scope: "persistence" },
-    { scope: "ui", keys: ["tray_history_limit"] },
+    { scope: "history" },
   ],
-  persona: [{ scope: "assistant" }],
-  memory: [{ scope: "memory" }],
-  appearance: [{ scope: "ui", keys: ["theme", "accent_seed"] }],
+  persona: [
+    { scope: "persona" },
+  ],
+  memory: [
+    { scope: "memory" },
+  ],
+  appearance: [
+    { scope: "appearance" },
+  ],
   interaction: [
-    { scope: "interaction", keys: ["main_app_mode", "auto_sleep_timeout", "pipeline_mode"] },
-    { scope: "dictation", keys: ["enabled", "interaction_mode", "hotkey", "output_mode"] },
-    { scope: "llm", keys: ["provider"] },
-    { scope: "realtime", keys: ["provider", "gemini", "openai", "deepgram", "elevenlabs"] },
+    { scope: "interaction" },
+    { scope: "dictation" },
   ],
 };
 
